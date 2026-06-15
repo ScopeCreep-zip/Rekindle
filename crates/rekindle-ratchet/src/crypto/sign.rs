@@ -1,7 +1,19 @@
-//! Ed25519 signing and verification for prekey bundles.
+//! Ed25519 signing and verification.
 //!
-//! Used by PQXDH to sign SPK, OPK, PQPK (one-time), and PQPK (last-resort)
-//! with distinct algorithm-byte prefixes and domain-separation tags.
+//! Two API surfaces:
+//!
+//! ## General-purpose (used by rekindle-identity)
+//!
+//! - `sign_raw(keypair, message) -> [u8; 64]` — raw Ed25519 sign.
+//! - `verify_raw(pubkey, message, signature) -> Result<()>` — raw verify.
+//!
+//! No algorithm-byte prefix, no domain-tag prefix. The caller (the identity
+//! crate's `Signable` trait) handles domain separation at the CBOR layer.
+//!
+//! ## PQXDH-specific (used by pqxdh module)
+//!
+//! - `sign_ec_prekey` / `verify_ec_prekey` — `0x01 || key_bytes`
+//! - `sign_pq_prekey` / `verify_pq_prekey` — `0x02 || domain_tag || key_bytes`
 //!
 //! Algorithm-byte scheme (PQXDH rev 2, F3 mitigation):
 //! - `0x01` = X25519 key (SPK, OPK)
@@ -11,7 +23,11 @@
 //! - `"OT"` for one-time PQ prekeys
 //! - `"LR"` for last-resort PQ prekeys
 
-use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair, UnparsedPublicKey, ED25519};
+// Ed25519KeyPair is re-exported so consumers (rekindle-identity, rekindle-chat)
+// can use the return type of keypair_from_seed() and ed25519_keypair() without
+// depending on aws-lc-rs directly.
+pub use aws_lc_rs::signature::Ed25519KeyPair;
+use aws_lc_rs::signature::{KeyPair, UnparsedPublicKey, ED25519};
 
 use crate::error::RatchetError;
 
@@ -93,4 +109,40 @@ pub fn public_key_bytes(kp: &Ed25519KeyPair) -> [u8; 32] {
     let mut out = [0u8; 32];
     out.copy_from_slice(pk.as_ref());
     out
+}
+
+// ── General-purpose sign/verify ─────────────────────────────────
+//
+// Raw Ed25519 over caller-provided bytes. No algorithm-byte prefix,
+// no domain-tag prefix. Domain separation is the caller's concern
+// (the identity crate uses CBOR Sequence framing for this).
+
+/// Sign arbitrary bytes with an Ed25519 keypair. Returns a 64-byte signature.
+///
+/// The caller is responsible for domain separation — typically by
+/// constructing the message via the `Signable` trait which prepends
+/// a CBOR text string domain prefix.
+pub fn sign_raw(kp: &Ed25519KeyPair, message: &[u8]) -> [u8; 64] {
+    let sig = kp.sign(message);
+    let mut out = [0u8; 64];
+    out.copy_from_slice(sig.as_ref());
+    out
+}
+
+/// Verify a raw Ed25519 signature over arbitrary bytes.
+///
+/// `public_key`: 32-byte Ed25519 public key.
+/// `message`: the bytes that were signed (including any domain prefix).
+/// `signature`: 64-byte Ed25519 signature.
+///
+/// Returns `Ok(())` on valid signature, `Err(RatchetError::SignFailed)`
+/// on invalid signature or malformed public key.
+pub fn verify_raw(
+    public_key: &[u8; 32],
+    message: &[u8],
+    signature: &[u8; 64],
+) -> Result<(), RatchetError> {
+    UnparsedPublicKey::new(&ED25519, public_key)
+        .verify(message, signature)
+        .map_err(|_| RatchetError::SignFailed)
 }

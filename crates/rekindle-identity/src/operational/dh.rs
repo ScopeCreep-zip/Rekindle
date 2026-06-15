@@ -95,6 +95,26 @@ pub fn x25519_seed_from(seed: &[u8; 32]) -> [u8; 32] {
     blake3::derive_key(crate::origin::tags::derivation_tags::DH_FROM_SEED, seed)
 }
 
+/// Derive the X25519 DH public key from raw seed bytes.
+///
+/// Takes any 32-byte seed (typically from `x25519_seed_from`), constructs
+/// the X25519 private key, and extracts the public key as a typed `DhKey`.
+///
+/// This is the public API for downstream crates that have a raw X25519 seed
+/// but cannot construct the sealed `DhSeed` type. Every MEK wrap/unwrap
+/// call site that needs the operator's public key calls this instead of
+/// inlining `reusable_from_seed` + `compute_public_key`.
+pub fn x25519_public_from_raw_seed(seed: &[u8; 32]) -> Result<DhKey, crate::error::IdentityError> {
+    let private = ratchet_dh::reusable_from_seed(seed)
+        .map_err(|_| crate::error::IdentityError::InvalidDhKey)?;
+    let public = private
+        .compute_public_key()
+        .map_err(|_| crate::error::IdentityError::InvalidDhKey)?;
+    let mut out = [0u8; 32];
+    out.copy_from_slice(public.as_ref());
+    Ok(DhKey(out))
+}
+
 /// Perform X25519 DH agreement between our seed and a peer's DhKey.
 ///
 /// Returns the 32-byte shared secret wrapped in `Zeroizing`.

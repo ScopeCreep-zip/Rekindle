@@ -190,20 +190,22 @@ impl PlatformIO {
         payload: &GossipPayload,
         ttl: u8,
     ) -> Result<Vec<u8>, ChatError> {
-        let (pseudonym_hex, pseudonym_seed) = self.with_signing_key(|sk| {
-            let seed = sk.pseudonym_seed(community);
-            let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&seed)
+        let (pseudonym_hex, pseudonym_seed) = self.with_identity(|si| {
+            let gov = rekindle_identity::GovernanceKey::parse(community)
+                .map_err(|e| ChatError::Internal(format!("governance key parse: {e}")))?;
+            let seed = si.pseudonym_seed(&gov);
+            let kp = rekindle_identity::SigningKeypair::from_seed(&seed)
                 .map_err(|e| ChatError::Internal(format!("pseudonym keypair: {e}")))?;
-            let hex = hex::encode(rekindle_ratchet::crypto::sign::public_key_bytes(&kp));
-            Ok((hex, seed))
+            let hex_str = hex::encode(kp.public_key_bytes());
+            Ok((hex_str, *seed))
         })?;
 
         let payload_bytes = postcard::to_stdvec(&payload)
             .map_err(|e| ChatError::Serialization(format!("gossip payload: {e}")))?;
 
-        let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&pseudonym_seed)
+        let kp = rekindle_identity::SigningKeypair::from_seed(&pseudonym_seed)
             .map_err(|e| ChatError::Internal(format!("sign keypair: {e}")))?;
-        let sig = rekindle_ratchet::crypto::sign::sign_ec_prekey(&kp, &payload_bytes);
+        let sig = kp.sign_ec_prekey(&payload_bytes);
 
         let envelope = SignedGossipEnvelope {
             community_id: community.to_string(),

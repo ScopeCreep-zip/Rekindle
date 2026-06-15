@@ -122,7 +122,46 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
             state.presence.remove_dm_peer(peer_key);
         }
 
-        _ => {}
+        // ── No state side-effects (exhaustive, compiler-enforced) ──
+        SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::Edited { .. } | ChannelMessageEvent::Deleted { .. }
+        )
+        | SubscriptionEvent::Typing(TypingEvent::Stopped { context: TypingContext::Channel { .. }, .. })
+        | SubscriptionEvent::Voice(
+            VoiceEvent::ModeChanged { .. } | VoiceEvent::RosterUpdated { .. }
+        )
+        | SubscriptionEvent::Friend(
+            FriendEvent::RequestSent { .. }
+            | FriendEvent::RequestAcknowledged { .. }
+            | FriendEvent::Accepted { .. }
+            | FriendEvent::Rejected { .. }
+            | FriendEvent::RemoveAcknowledged { .. }
+            | FriendEvent::ProfileKeyRotated { .. }
+        )
+        | SubscriptionEvent::Membership(
+            MembershipEvent::Created { .. }
+            | MembershipEvent::CommunityJoined { .. }
+            | MembershipEvent::CommunityLeft { .. }
+            | MembershipEvent::JoinRequested { .. }
+            | MembershipEvent::JoinAccepted { .. }
+            | MembershipEvent::JoinRejected { .. }
+            | MembershipEvent::Joined { .. }
+            | MembershipEvent::Unbanned { .. }
+            | MembershipEvent::TimedOut { .. }
+            | MembershipEvent::TimeoutRemoved { .. }
+            | MembershipEvent::TimeoutStatusChanged { .. }
+            | MembershipEvent::RolesChanged { .. }
+            | MembershipEvent::OnboardingCompleted { .. }
+            | MembershipEvent::OnboardingAnswersSubmitted { .. }
+        )
+        | SubscriptionEvent::Crypto(_)
+        | SubscriptionEvent::Governance(_)
+        | SubscriptionEvent::Social(_)
+        | SubscriptionEvent::Network(_)
+        | SubscriptionEvent::System(_)
+        | SubscriptionEvent::Dm(_)
+        | SubscriptionEvent::UnreadChanged { .. }
+        | SubscriptionEvent::BulkTransferProgress { .. } => {}
     }
 
     extra

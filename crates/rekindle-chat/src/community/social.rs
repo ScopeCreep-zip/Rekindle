@@ -19,6 +19,7 @@
 //! MANIFEST_EVENTS (15), MANIFEST_THREADS (8).
 
 use rekindle_types::dht_types::{
+    PinEntry, ReactionEntry,
     MANIFEST_EVENTS, MANIFEST_PINS, MANIFEST_REACTIONS, MANIFEST_THREADS,
 };
 use rekindle_types::gossip_payload::{
@@ -82,7 +83,7 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&reactions)
             .map_err(|e| ChatError::Serialization(format!("reactions: {e}")))?;
 
-        if let Err(e) = self.io.write_record(
+        if let Err(e) = self.io.open_and_write(
             governance_key, MANIFEST_REACTIONS, &bytes, Some(&keypair), Confirm::Accepted,
         ).await {
             // Step 4: DHT write failed — retract the optimistic render
@@ -149,7 +150,7 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&reactions)
             .map_err(|e| ChatError::Serialization(format!("reactions: {e}")))?;
 
-        if let Err(e) = self.io.write_record(
+        if let Err(e) = self.io.open_and_write(
             governance_key, MANIFEST_REACTIONS, &bytes, Some(&keypair), Confirm::Accepted,
         ).await {
             // Rollback: re-add the reaction locally since removal didn't persist
@@ -212,7 +213,7 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&pins)
             .map_err(|e| ChatError::Serialization(format!("pins: {e}")))?;
 
-        if let Err(e) = self.io.write_record(
+        if let Err(e) = self.io.open_and_write(
             governance_key, MANIFEST_PINS, &bytes, Some(&keypair), Confirm::Accepted,
         ).await {
             // Rollback
@@ -258,7 +259,7 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&pins)
             .map_err(|e| ChatError::Serialization(format!("pins: {e}")))?;
 
-        self.io.write_record(
+        self.io.open_and_write(
             governance_key, MANIFEST_PINS, &bytes, Some(&keypair), Confirm::Accepted,
         ).await?;
 
@@ -300,8 +301,9 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&events)
             .map_err(|e| ChatError::Serialization(format!("events: {e}")))?;
 
+        let gov_record = self.io.open_record(governance_key, None).await?;
         self.io.write_and_notify(
-            governance_key, governance_key, MANIFEST_EVENTS, &bytes,
+            governance_key, &gov_record, MANIFEST_EVENTS, &bytes,
             Some(&keypair), GossipPayload::Control(ControlPayload::EventCreated { event }),
             Confirm::Accepted,
         ).await?;
@@ -352,8 +354,9 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&events)
             .map_err(|e| ChatError::Serialization(format!("events: {e}")))?;
 
+        let gov_record = self.io.open_record(governance_key, None).await?;
         self.io.write_and_notify(
-            governance_key, governance_key, MANIFEST_EVENTS, &bytes,
+            governance_key, &gov_record, MANIFEST_EVENTS, &bytes,
             Some(&keypair),
             GossipPayload::Control(ControlPayload::EventUpdated { event: updated }),
             Confirm::Accepted,
@@ -373,8 +376,9 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&events)
             .map_err(|e| ChatError::Serialization(format!("events: {e}")))?;
 
+        let gov_record = self.io.open_record(governance_key, None).await?;
         self.io.write_and_notify(
-            governance_key, governance_key, MANIFEST_EVENTS, &bytes,
+            governance_key, &gov_record, MANIFEST_EVENTS, &bytes,
             Some(&keypair),
             GossipPayload::Control(ControlPayload::EventDeleted { event_id: event_id.into() }),
             Confirm::Accepted,
@@ -443,8 +447,9 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&threads)
             .map_err(|e| ChatError::Serialization(format!("threads: {e}")))?;
 
+        let gov_record = self.io.open_record(governance_key, None).await?;
         self.io.write_and_notify(
-            governance_key, governance_key, MANIFEST_THREADS, &bytes,
+            governance_key, &gov_record, MANIFEST_THREADS, &bytes,
             Some(&keypair),
             GossipPayload::Control(ControlPayload::ThreadCreated { thread }),
             Confirm::Accepted,
@@ -493,8 +498,9 @@ impl CommunityService {
         let bytes = serde_json::to_vec(&threads)
             .map_err(|e| ChatError::Serialization(format!("threads: {e}")))?;
 
+        let gov_record = self.io.open_record(governance_key, None).await?;
         self.io.write_and_notify(
-            governance_key, governance_key, MANIFEST_THREADS, &bytes,
+            governance_key, &gov_record, MANIFEST_THREADS, &bytes,
             Some(&keypair),
             GossipPayload::Control(ControlPayload::ThreadArchived {
                 thread_id: thread_id.into(), archived,
@@ -544,31 +550,8 @@ impl CommunityService {
         Ok(())
     }
 
-    // ── Internal read helpers ──────────────────────────────────────
-
-    async fn read_reactions(&self, gov_key: &str) -> Result<Vec<ReactionEntry>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_REACTIONS, true).await?
-            .unwrap_or_else(|| b"[]".to_vec());
-        serde_json::from_slice(&raw)
-            .map_err(|e| ChatError::Deserialization(format!("reactions: {e}")))
-    }
-
-    async fn read_pins(&self, gov_key: &str) -> Result<Vec<PinEntry>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_PINS, true).await?
-            .unwrap_or_else(|| b"[]".to_vec());
-        serde_json::from_slice(&raw)
-            .map_err(|e| ChatError::Deserialization(format!("pins: {e}")))
-    }
-
-    pub(crate) async fn read_events(&self, gov_key: &str) -> Result<Vec<CommunityEvent>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_EVENTS, true).await?
-            .unwrap_or_else(|| b"[]".to_vec());
-        serde_json::from_slice(&raw)
-            .map_err(|e| ChatError::Deserialization(format!("events: {e}")))
-    }
-
     pub(crate) async fn read_threads(&self, gov_key: &str) -> Result<Vec<ThreadInfo>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_THREADS, true).await?
+        let raw = self.io.open_and_read(gov_key, MANIFEST_THREADS, true).await?
             .unwrap_or_else(|| b"[]".to_vec());
         serde_json::from_slice(&raw)
             .map_err(|e| ChatError::Deserialization(format!("threads: {e}")))
@@ -577,19 +560,4 @@ impl CommunityService {
 
 // ── Local types for DHT-persisted social state ─────────────────────
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct ReactionEntry {
-    channel_id: String,
-    message_id: String,
-    emoji: String,
-    reactor_pseudonym: String,
-    created_at: u64,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct PinEntry {
-    channel_id: String,
-    message_id: String,
-    pinned_by: String,
-    pinned_at: u64,
-}
+// ReactionEntry and PinEntry moved to rekindle_types::dht_types

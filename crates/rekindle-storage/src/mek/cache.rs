@@ -68,6 +68,27 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Query the most recent cached_at timestamp for each (community, channel) pair.
+    /// Returns entries where the MEK is older than `max_age_secs` seconds.
+    pub fn stale_meks(&self, community_id: &str, max_age_secs: u64) -> StorageResult<Vec<(String, u64)>> {
+        let conn = self.conn();
+        let cutoff = timestamp_secs() - i64::try_from(max_age_secs).unwrap_or(i64::MAX);
+        let mut stmt = conn.prepare(
+            "SELECT channel_id, MAX(generation) FROM mek_cache
+             WHERE community_id = ?1
+             GROUP BY channel_id
+             HAVING MAX(cached_at) < ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![community_id, cutoff], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .filter_map(Result::ok)
+            .map(|(ch, gen)| (ch, u64::try_from(gen).unwrap_or(0)))
+            .collect();
+        Ok(rows)
+    }
+
     /// Count of cached MEK entries across all communities.
     pub fn count_meks(&self) -> StorageResult<u64> {
         let conn = self.conn();

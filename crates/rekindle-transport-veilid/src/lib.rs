@@ -14,8 +14,8 @@
 //!
 //! - `broadcast/` — ALL outbound Veilid I/O: sends, DHT writes, route
 //!   management, node lifecycle, mesh broadcast.
-//! - `subscriptions/` — ALL inbound Veilid I/O: event dispatch (raw bytes
-//!   to TransportCallback), DHT watches, poll sweeps, gossip dedup.
+//! - `subscriptions/` — ALL inbound Veilid I/O: event dispatch (typed
+//!   InboundEvent to mpsc channel), DHT watches, gossip dedup, bulk transfer.
 //! - `transport_impl.rs` — `Transport` trait implementation wrapping
 //!   `TransportNode`.
 //! - `config.rs`, `frame.rs`, `gossip.rs`, `shared.rs` — Veilid-specific
@@ -35,6 +35,12 @@ pub mod frame;
 pub mod gossip;
 pub mod shared;
 pub mod transport_impl;
+
+// ── Commoditized delivery layer ──────────────────────────────────
+pub mod resolver;
+pub mod delivery;
+pub mod mesh_manager;
+pub mod bulk_transfer;
 
 // ── Payload re-exports + transport-specific ser/de ────────────────
 pub mod payload;
@@ -84,6 +90,20 @@ pub use rekindle_utils::{timestamp_ms, timestamp_secs};
 
 // Broadcast manager
 pub use broadcast::BroadcastManager;
+
+// Commoditized delivery
+pub use resolver::RouteResolver;
+pub use delivery::DeliveryEngine;
+// Durability and DeliveryReport are defined in rekindle_types::transport (SSOT)
+pub use rekindle_types::transport::{Durability, DeliveryReport};
+pub use mesh_manager::MeshManager;
+
+// Bulk file transfer
+pub use bulk_transfer::{
+    BulkSender, TransferRegistry, TransferFrame, TransferProgress,
+    TransferDirection, TransferStatus, TransferError,
+    TYPEID_BULK_TRANSFER,
+};
 
 // Re-export node::deserialize_keypair for daemon use
 pub use broadcast::node::deserialize_keypair;

@@ -3,7 +3,7 @@
 //! Split into domain-specific submodules:
 //! - `roles.rs` — create, update, delete, assign, unassign
 //! - `moderation.rs` — ban, unban, kick, timeout
-//! - `channels.rs` — create, delete, update, register_channel_record
+//! - `channels.rs` — create (with shared SMPL record), delete, update
 //! - `invites.rs` — create, revoke
 //! - `mek.rs` — rotate, rekey, request, handle_request, receive_transfer
 //!
@@ -18,8 +18,10 @@ mod invites;
 mod mek;
 
 use rekindle_types::dht_types::{
-    BanEntry, ChannelEntry, InviteEntry, RoleEntry,
-    MANIFEST_BANS, MANIFEST_CHANNELS, MANIFEST_INVITES, MANIFEST_ROLES,
+    BanEntry, ChannelEntry, InviteEntry, PinEntry, ReactionEntry, RoleEntry,
+    MANIFEST_BANS, MANIFEST_CHANNELS, MANIFEST_EVENTS, MANIFEST_INVITES,
+    MANIFEST_METADATA, MANIFEST_ONBOARDING, MANIFEST_PINS, MANIFEST_REACTIONS,
+    MANIFEST_ROLES, MANIFEST_WELCOME,
 };
 use rekindle_types::gossip_payload::{GossipPayload, ControlPayload};
 use rekindle_types::rpc_payload::{GovernanceOp, GovernanceRequest};
@@ -55,32 +57,187 @@ impl CommunityService {
             })
     }
 
+    // ── Signed governance write ──────────────────────────────────
+
+    pub(crate) async fn write_signed_governance(
+        &self, gov_key: &str, subkey: u32, data: &[u8],
+    ) -> Result<(), ChatError> {
+        let gov_keypair = self.require_governance_keypair(gov_key)?;
+        let pseudonym_hex = self.io.pseudonym_hex(gov_key)?;
+        let pseudonym_seed = self.io.pseudonym_seed(gov_key)?;
+        let pseudonym_kp = rekindle_identity::SigningKeypair::from_seed(&pseudonym_seed)
+            .map_err(|e| ChatError::Internal(format!("pseudonym keypair: {e}")))?;
+
+        let lamport = {
+            let mut meta = self.session_meta.write();
+            if let Some(m) = meta.communities.get_mut(gov_key) {
+                m.lamport_counter += 1;
+                m.lamport_counter
+            } else { 1 }
+        };
+
+        let mut payload = rekindle_types::dht_types::GovernanceSubkeyPayload {
+            author_pseudonym: pseudonym_hex,
+            subkey_index: subkey,
+            data: data.to_vec(),
+            lamport_ts: lamport,
+            signature: Vec::new(),
+        };
+        let sig = pseudonym_kp.sign_raw(&payload.signing_bytes());
+        payload.signature = sig.to_vec();
+
+        let payload_bytes = serde_json::to_vec(&payload)
+            .map_err(|e| ChatError::Serialization(format!("governance payload: {e}")))?;
+        self.io.open_and_write(gov_key, subkey, &payload_bytes, Some(&gov_keypair), crate::io::Confirm::Accepted).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn read_verified_governance(
+        &self, gov_key: &str, subkey: u32,
+    ) -> Result<Option<Vec<u8>>, ChatError> {
+        let raw = self.io.open_and_read(gov_key, subkey, true).await?;
+        let Some(bytes) = raw else { return Ok(None) };
+        if bytes.is_empty() { return Ok(None); }
+
+        // Try parsing as signed payload
+        if let Ok(payload) = serde_json::from_slice::<rekindle_types::dht_types::GovernanceSubkeyPayload>(&bytes) {
+            if !payload.signature.is_empty() {
+                if let Ok(pub_bytes) = hex::decode(&payload.author_pseudonym) {
+                    if pub_bytes.len() == 32 {
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&pub_bytes);
+                        if let Ok(sig_arr) = <[u8; 64]>::try_from(payload.signature.as_slice()) {
+                            if rekindle_identity::verify_signature(&arr, &payload.signing_bytes(), &sig_arr).is_err() {
+                                tracing::warn!(subkey, author = &payload.author_pseudonym[..12.min(payload.author_pseudonym.len())], "governance signature FAILED");
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(Some(payload.data));
+        }
+
+        // Fallback: unsigned raw data (backwards compat)
+        Ok(Some(bytes))
+    }
+
     // ── DHT read helpers ────────────────────────────────────────
 
     pub(crate) async fn read_roles(&self, gov_key: &str) -> Result<Vec<RoleEntry>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_ROLES, true).await?
+        let raw = self.read_verified_governance(gov_key, MANIFEST_ROLES).await?
             .unwrap_or_else(|| b"[]".to_vec());
         serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("roles: {e}")))
     }
 
     pub(crate) async fn read_bans(&self, gov_key: &str) -> Result<Vec<BanEntry>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_BANS, true).await?
+        let raw = self.read_verified_governance(gov_key, MANIFEST_BANS).await?
             .unwrap_or_else(|| b"[]".to_vec());
         serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("bans: {e}")))
     }
 
     pub(crate) async fn read_invites(&self, gov_key: &str) -> Result<Vec<InviteEntry>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_INVITES, true).await?
+        let raw = self.read_verified_governance(gov_key, MANIFEST_INVITES).await?
             .unwrap_or_else(|| b"[]".to_vec());
         serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("invites: {e}")))
     }
 
+    /// Read only the mek_rotation_interval_hours from governance metadata.
+    /// Returns None if metadata can't be read or parsed.
+    pub(crate) async fn read_governance_metadata_interval(&self, gov_key: &str) -> Option<u32> {
+        let raw = self.read_verified_governance(gov_key, MANIFEST_METADATA).await.ok()??;
+        let metadata: rekindle_types::dht_types::CommunityMetadata = serde_json::from_slice(&raw).ok()?;
+        Some(metadata.mek_rotation_interval_hours)
+    }
+
     pub(crate) async fn read_channels(&self, gov_key: &str) -> Result<Vec<ChannelEntry>, ChatError> {
-        let raw = self.io.read_record(gov_key, MANIFEST_CHANNELS, true).await?
+        let raw = self.read_verified_governance(gov_key, MANIFEST_CHANNELS).await?
             .unwrap_or_else(|| b"[]".to_vec());
         serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("channels: {e}")))
     }
 
+    pub(crate) async fn read_pins(&self, gov_key: &str) -> Result<Vec<PinEntry>, ChatError> {
+        let raw = self.read_verified_governance(gov_key, MANIFEST_PINS).await?
+            .unwrap_or_else(|| b"[]".to_vec());
+        serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("pins: {e}")))
+    }
+
+    pub(crate) async fn read_reactions(&self, gov_key: &str) -> Result<Vec<ReactionEntry>, ChatError> {
+        let raw = self.read_verified_governance(gov_key, MANIFEST_REACTIONS).await?
+            .unwrap_or_else(|| b"[]".to_vec());
+        serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("reactions: {e}")))
+    }
+
+    pub(crate) async fn read_events(&self, gov_key: &str) -> Result<Vec<rekindle_types::gossip_payload::CommunityEvent>, ChatError> {
+        let raw = self.read_verified_governance(gov_key, MANIFEST_EVENTS).await?
+            .unwrap_or_else(|| b"[]".to_vec());
+        serde_json::from_slice(&raw).map_err(|e| ChatError::Deserialization(format!("events: {e}")))
+    }
+
+    pub(crate) async fn append_audit_entry(
+        &self,
+        gov_key: &str,
+        action: &str,
+        actor_pseudonym: &str,
+        target: Option<&str>,
+        details: Option<&str>,
+    ) {
+        let entry = rekindle_types::dht_types::AuditLogEntry {
+            action: action.to_string(),
+            actor_pseudonym: actor_pseudonym.to_string(),
+            target: target.map(String::from),
+            timestamp: crate::time::timestamp_ms(),
+            details: details.map(String::from),
+        };
+        let mut log = self.read_verified_governance(gov_key, rekindle_types::dht_types::MANIFEST_AUDIT_LOG_KEY).await
+            .ok().flatten()
+            .and_then(|raw| serde_json::from_slice::<Vec<rekindle_types::dht_types::AuditLogEntry>>(&raw).ok())
+            .unwrap_or_default();
+        log.push(entry);
+        if log.len() > 1000 { log.drain(..log.len() - 1000); }
+        if let Ok(bytes) = serde_json::to_vec(&log) {
+            let _ = self.write_signed_governance(gov_key, rekindle_types::dht_types::MANIFEST_AUDIT_LOG_KEY, &bytes).await;
+        }
+    }
+
+    pub(crate) async fn read_onboarding_config(&self, gov_key: &str) -> Result<Option<rekindle_types::dht_types::OnboardingConfig>, ChatError> {
+        let raw = self.read_verified_governance(gov_key, MANIFEST_ONBOARDING).await?;
+        match raw {
+            Some(bytes) if !bytes.is_empty() => Ok(Some(
+                serde_json::from_slice(&bytes).map_err(|e| ChatError::Deserialization(format!("onboarding config: {e}")))?
+            )),
+            _ => Ok(None),
+        }
+    }
+
+    pub(crate) async fn write_onboarding_config(&self, gov_key: &str, config: &rekindle_types::dht_types::OnboardingConfig) -> Result<(), ChatError> {
+        let bytes = serde_json::to_vec(config).map_err(|e| ChatError::Serialization(format!("onboarding config: {e}")))?;
+        self.write_signed_governance(gov_key, MANIFEST_ONBOARDING, &bytes).await
+    }
+
+    pub(crate) async fn read_welcome_screen(&self, gov_key: &str) -> Result<Option<rekindle_types::dht_types::WelcomeScreen>, ChatError> {
+        let raw = self.read_verified_governance(gov_key, MANIFEST_WELCOME).await?;
+        match raw {
+            Some(bytes) if !bytes.is_empty() => Ok(Some(
+                serde_json::from_slice(&bytes).map_err(|e| ChatError::Deserialization(format!("welcome screen: {e}")))?
+            )),
+            _ => Ok(None),
+        }
+    }
+
+    pub(crate) async fn write_welcome_screen(&self, gov_key: &str, screen: &rekindle_types::dht_types::WelcomeScreen) -> Result<(), ChatError> {
+        let bytes = serde_json::to_vec(screen).map_err(|e| ChatError::Serialization(format!("welcome screen: {e}")))?;
+        self.write_signed_governance(gov_key, MANIFEST_WELCOME, &bytes).await
+    }
+
+    pub(crate) async fn read_audit_log(&self, gov_key: &str, limit: u32) -> Result<Vec<rekindle_types::dht_types::AuditLogEntry>, ChatError> {
+        let raw = self.read_verified_governance(gov_key, rekindle_types::dht_types::MANIFEST_AUDIT_LOG_KEY).await?
+            .unwrap_or_else(|| b"[]".to_vec());
+        let mut entries: Vec<rekindle_types::dht_types::AuditLogEntry> = serde_json::from_slice(&raw)
+            .map_err(|e| ChatError::Deserialization(format!("audit log: {e}")))?;
+        entries.reverse();
+        entries.truncate(limit as usize);
+        Ok(entries)
+    }
 
     // ── RPC dispatch (called from events/router.rs) ─────────────
 
@@ -92,8 +249,7 @@ impl CommunityService {
     ) -> Result<(), ChatError> {
         let gov_key = &req.governance_key;
         match req.operation {
-            GovernanceOp::RegisterChannelRecord { member_pseudonym, channel_id, record_key } =>
-                self.register_channel_record(gov_key, &member_pseudonym, &channel_id, &record_key).await,
+            GovernanceOp::RegisterChannelRecord { .. } => Ok(()),
             GovernanceOp::Ban { target_pseudonym, reason } =>
                 self.ban_member(gov_key, &target_pseudonym, reason.as_deref(), sender).await,
             GovernanceOp::Kick { target_pseudonym } =>

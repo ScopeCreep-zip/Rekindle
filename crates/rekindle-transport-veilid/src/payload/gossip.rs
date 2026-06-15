@@ -9,13 +9,13 @@ pub use rekindle_types::gossip_payload::*;
 
 /// Compute a dedup key for a gossip envelope.
 ///
-/// For message notifications: use the message_id.
+/// For channel messages: use the message_id (stable across TTL changes).
 /// For typing/presence: use a time-bucketed key to collapse rapid updates.
 /// For everything else: BLAKE3 hash of the payload bytes.
 pub fn dedup_key(envelope: &SignedGossipEnvelope) -> String {
     if let Ok(payload) = postcard::from_bytes::<GossipPayload>(&envelope.payload_bytes) {
         match &payload {
-            GossipPayload::MessageNotification { message_id, .. } => {
+            GossipPayload::ChannelMessage { message_id, .. } => {
                 return message_id.clone();
             }
             GossipPayload::TypingIndicator { channel_id, .. } => {

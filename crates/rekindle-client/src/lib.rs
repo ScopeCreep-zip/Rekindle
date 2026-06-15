@@ -27,7 +27,7 @@ use rekindle_transport_ipc::v3::client::IpcClient;
 use rekindle_transport_ipc::v3::context::SessionConfig;
 use rekindle_transport_ipc::v3::session::handshake::HandshakeConfig;
 use rekindle_transport_ipc::v3::wire::frame_kind::DatagramKind;
-pub use rekindle_types::daemon::{AgentType, DaemonRequest, DaemonResponse, ReadContext};
+pub use rekindle_types::daemon::{AgentType, ChatRequest, DaemonRequest, DaemonResponse, LifecycleRequest, ReadContext};
 use rekindle_types::subscription_events::{SubscriptionEvent, SubscriptionFilter};
 
 /// Default RPC timeout — 5 seconds for quick operations.
@@ -126,9 +126,9 @@ impl DaemonClient {
 
     /// Subscribe to all events from the daemon.
     pub async fn subscribe_all(&self) -> anyhow::Result<()> {
-        let response = self.request(DaemonRequest::Subscribe {
+        let response = self.request(DaemonRequest::Lifecycle(LifecycleRequest::Subscribe {
             filters: vec![SubscriptionFilter::all()],
-        }).await?;
+        })).await?;
         match response {
             DaemonResponse::Ok(_) => {
                 info!("subscribed to all daemon events");
@@ -142,9 +142,9 @@ impl DaemonClient {
 
     /// Subscribe with a community-scoped filter.
     pub async fn subscribe_scoped(&self, community: &str) -> anyhow::Result<()> {
-        let response = self.request(DaemonRequest::Subscribe {
+        let response = self.request(DaemonRequest::Lifecycle(LifecycleRequest::Subscribe {
             filters: vec![SubscriptionFilter::community(community.to_string())],
-        }).await?;
+        })).await?;
         match response {
             DaemonResponse::Error { code, message, .. } => {
                 anyhow::bail!("subscribe_scoped failed ({code}): {message}")
@@ -217,25 +217,127 @@ impl DaemonClient {
 /// are added that involve network I/O.
 fn request_timeout(request: &DaemonRequest) -> Duration {
     match request {
-        DaemonRequest::Unlock { .. }
-        | DaemonRequest::IdentityCreate { .. }
-        | DaemonRequest::IdentityRotate
-        | DaemonRequest::IdentityDestroy { .. }
-        | DaemonRequest::IdentityWipe { .. }
-        | DaemonRequest::CommunityCreate { .. }
-        | DaemonRequest::CommunityJoin { .. }
-        | DaemonRequest::CommunityLeave { .. }
-        | DaemonRequest::FriendAdd { .. }
-        | DaemonRequest::FriendAccept { .. }
-        | DaemonRequest::ChannelSend { .. }
-        | DaemonRequest::DmSend { .. }
-        | DaemonRequest::ChannelHistory { .. }
-        | DaemonRequest::DmInbox { .. }
-        | DaemonRequest::DmThread { .. }
-        | DaemonRequest::MekRotate { .. }
-        | DaemonRequest::PrekeyReplenish
-        | DaemonRequest::BootstrapRespond { .. } => LONG_TIMEOUT,
-        _ => DEFAULT_TIMEOUT,
+        DaemonRequest::Lifecycle(l) => match l {
+            // Unlock involves Argon2id + vault open + transport start
+            LifecycleRequest::Unlock { .. } => LONG_TIMEOUT,
+            // All other lifecycle ops are local/fast
+            LifecycleRequest::Status
+            | LifecycleRequest::Lock
+            | LifecycleRequest::Shutdown
+            | LifecycleRequest::NetworkStatus
+            | LifecycleRequest::NetworkPeers
+            | LifecycleRequest::AgentRegister { .. }
+            | LifecycleRequest::AgentRevoke { .. }
+            | LifecycleRequest::PolicyReload
+            | LifecycleRequest::BulkTransferStart { .. }
+            | LifecycleRequest::BulkTransferComplete { .. }
+            | LifecycleRequest::BulkTransferCancel { .. }
+            | LifecycleRequest::BulkTransferStatus { .. }
+            | LifecycleRequest::EventResume { .. }
+            | LifecycleRequest::Subscribe { .. }
+            | LifecycleRequest::Unsubscribe { .. } => DEFAULT_TIMEOUT,
+        },
+        DaemonRequest::Chat(c) => match c {
+            // Operations involving Veilid network I/O get the long timeout
+            ChatRequest::IdentityCreate { .. }
+            | ChatRequest::IdentityRotate
+            | ChatRequest::IdentityDestroy { .. }
+            | ChatRequest::IdentityWipe { .. }
+            | ChatRequest::CommunityCreate { .. }
+            | ChatRequest::CommunityJoin { .. }
+            | ChatRequest::CommunityLeave { .. }
+            | ChatRequest::FriendAdd { .. }
+            | ChatRequest::FriendAccept { .. }
+            | ChatRequest::ChannelSend { .. }
+            | ChatRequest::DmSend { .. }
+            | ChatRequest::ChannelHistory { .. }
+            | ChatRequest::DmInbox { .. }
+            | ChatRequest::DmThread { .. }
+            | ChatRequest::DmStart { .. }
+            | ChatRequest::DmAccept { .. }
+            | ChatRequest::MekRotate { .. }
+            | ChatRequest::PrekeyReplenish
+            | ChatRequest::BootstrapRequest { .. }
+            | ChatRequest::BootstrapRespond { .. }
+            | ChatRequest::SyncRequest { .. }
+            | ChatRequest::SyncRespond { .. }
+            | ChatRequest::CommunityInfo { .. }
+            | ChatRequest::CommunityApprove { .. }
+            | ChatRequest::CommunityReject { .. }
+            | ChatRequest::CommunityPendingMembers { .. }
+            | ChatRequest::ChannelList { .. }
+            | ChatRequest::ChannelCreate { .. }
+            | ChatRequest::ChannelDelete { .. } => LONG_TIMEOUT,
+            // Local operations — no network I/O
+            ChatRequest::IdentityShow
+            | ChatRequest::IdentityExport
+            | ChatRequest::IdentityExportEncrypted { .. }
+            | ChatRequest::IdentityImportEncrypted { .. }
+            | ChatRequest::IdentityImport { .. }
+            | ChatRequest::FriendReject { .. }
+            | ChatRequest::FriendRemove { .. }
+            | ChatRequest::FriendList
+            | ChatRequest::FriendRequests
+            | ChatRequest::CommunityList
+            | ChatRequest::CommunityTransferOwnership { .. }
+            | ChatRequest::ChannelUpdate { .. }
+            | ChatRequest::ChannelTyping { .. }
+            | ChatRequest::MessageEdit { .. }
+            | ChatRequest::MessageDelete { .. }
+            | ChatRequest::DmTyping { .. }
+            | ChatRequest::MarkRead { .. }
+            | ChatRequest::MekList { .. }
+            | ChatRequest::MekRequest { .. }
+            | ChatRequest::PresenceSet { .. }
+            | ChatRequest::GamePresenceSet { .. }
+            | ChatRequest::GamePresenceClear
+            | ChatRequest::RoleList { .. }
+            | ChatRequest::RoleCreate { .. }
+            | ChatRequest::RoleUpdate { .. }
+            | ChatRequest::RoleDelete { .. }
+            | ChatRequest::RoleAssign { .. }
+            | ChatRequest::RoleUnassign { .. }
+            | ChatRequest::Kick { .. }
+            | ChatRequest::Ban { .. }
+            | ChatRequest::Unban { .. }
+            | ChatRequest::Timeout { .. }
+            | ChatRequest::BanList { .. }
+            | ChatRequest::InviteCreate { .. }
+            | ChatRequest::InviteList { .. }
+            | ChatRequest::InviteRevoke { .. }
+            | ChatRequest::ReactionAdd { .. }
+            | ChatRequest::ReactionRemove { .. }
+            | ChatRequest::PinAdd { .. }
+            | ChatRequest::PinRemove { .. }
+            | ChatRequest::EventCreate { .. }
+            | ChatRequest::EventUpdate { .. }
+            | ChatRequest::EventDelete { .. }
+            | ChatRequest::EventRsvp { .. }
+            | ChatRequest::EventRemind { .. }
+            | ChatRequest::ThreadCreate { .. }
+            | ChatRequest::ThreadMessage { .. }
+            | ChatRequest::ThreadArchive { .. }
+            | ChatRequest::GameServerAdd { .. }
+            | ChatRequest::GameServerRemove { .. }
+            | ChatRequest::SystemAnnounce { .. }
+            | ChatRequest::RaidAlert { .. }
+            | ChatRequest::LockdownToggle { .. }
+            | ChatRequest::KickNotify { .. }
+            | ChatRequest::VoiceJoin { .. }
+            | ChatRequest::VoiceLeave
+            | ChatRequest::VoiceMute { .. }
+            | ChatRequest::VoiceDeafen { .. }
+            | ChatRequest::PinList { .. }
+            | ChatRequest::EventList { .. }
+            | ChatRequest::ThreadList { .. }
+            | ChatRequest::ReactionList { .. }
+            | ChatRequest::AuditLog { .. }
+            | ChatRequest::ThreadHistory { .. }
+            | ChatRequest::OnboardingConfigGet { .. }
+            | ChatRequest::OnboardingConfigSet { .. }
+            | ChatRequest::WelcomeScreenGet { .. }
+            | ChatRequest::WelcomeScreenSet { .. } => DEFAULT_TIMEOUT,
+        },
     }
 }
 

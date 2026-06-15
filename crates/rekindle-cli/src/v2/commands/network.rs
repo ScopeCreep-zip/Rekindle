@@ -1,6 +1,6 @@
 //! Network and status commands.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{DaemonRequest, LifecycleRequest};
 
 use crate::v2::cli::{NetworkCmd, StatusArgs};
 use crate::v2::helpers;
@@ -12,7 +12,7 @@ use crate::v2::prelude::DaemonClient;
 pub async fn cmd_status(client: &DaemonClient, args: &StatusArgs, mode: OutputMode) -> anyhow::Result<()> {
     use rekindle_types::display::{StatusSnapshot, Check};
 
-    let value = client.request_ok(DaemonRequest::Status).await?;
+    let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::Status)).await?;
 
     if mode.is_structured() {
         return format::print_structured(&value, mode);
@@ -121,7 +121,7 @@ pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
 pub async fn dispatch(cmd: &NetworkCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         NetworkCmd::Peers { .. } => {
-            let value = client.request_ok(DaemonRequest::NetworkPeers).await?;
+            let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::NetworkPeers)).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -136,7 +136,7 @@ pub async fn dispatch(cmd: &NetworkCmd, client: &DaemonClient, mode: OutputMode)
             table::print_table(&["Peer", "Route", "Failures", "Circuit"], &peers, mode)
         }
         NetworkCmd::Status | NetworkCmd::Routes { .. } | NetworkCmd::Config => {
-            let value = client.request_ok(DaemonRequest::NetworkStatus).await?;
+            let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::NetworkStatus)).await?;
             format::print_structured(&value, mode)
         }
     }

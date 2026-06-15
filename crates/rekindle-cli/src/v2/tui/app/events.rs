@@ -307,15 +307,104 @@ impl App {
                 // Navigate away from the community view
                 Some(Action::ShowDashboard)
             }
-            // Silent events
+            // ── Dispatch-emitted events (new: subscriber visibility) ─
+            SubscriptionEvent::Friend(FriendEvent::RequestSent { ref target_profile_key, .. }) => {
+                self.notifications.push(
+                    format!("Friend request sent to {}…", &target_profile_key[..12.min(target_profile_key.len())]),
+                    ToastLevel::Success,
+                );
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Friend(FriendEvent::RequestAcknowledged { .. }
+                | FriendEvent::RemoveAcknowledged { .. }
+                | FriendEvent::ProfileKeyRotated { .. }) => {
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Membership(MembershipEvent::Created { ref community, .. }) => {
+                self.notifications.push(format!("Community created: {community}"), ToastLevel::Success);
+                self.load_dashboard_data();
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Membership(MembershipEvent::CommunityJoined { ref community, .. }) => {
+                self.notifications.push(format!("Joined community: {community}"), ToastLevel::Success);
+                self.load_dashboard_data();
+                Some(Action::ShowOnboarding { community: community.clone() })
+            }
+            SubscriptionEvent::Membership(MembershipEvent::CommunityLeft { ref community, .. }) => {
+                self.notifications.push(format!("Left community: {community}"), ToastLevel::Info);
+                self.cached_communities.retain(|c| c.governance_key != *community);
+                self.load_dashboard_data();
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Membership(
+                MembershipEvent::JoinRequested { .. }
+                | MembershipEvent::Left { .. }
+                | MembershipEvent::Removed { .. }
+                | MembershipEvent::Unbanned { .. }
+                | MembershipEvent::TimedOut { .. }
+                | MembershipEvent::TimeoutRemoved { .. }
+                | MembershipEvent::TimeoutStatusChanged { .. }
+                | MembershipEvent::RolesChanged { .. }
+                | MembershipEvent::OnboardingCompleted { .. }
+                | MembershipEvent::OnboardingAnswersSubmitted { .. }
+            ) => Some(Action::Render),
+            SubscriptionEvent::System(SystemEvent::IdentityCreated { ref public_key }) => {
+                self.notifications.push(
+                    format!("Identity created: {}…", &public_key[..12.min(public_key.len())]),
+                    ToastLevel::Success,
+                );
+                Some(Action::Render)
+            }
+            SubscriptionEvent::System(SystemEvent::IdentityRotated { ref new_public_key }) => {
+                self.notifications.push(
+                    format!("Identity rotated: {}…", &new_public_key[..12.min(new_public_key.len())]),
+                    ToastLevel::Info,
+                );
+                Some(Action::Render)
+            }
+            SubscriptionEvent::System(SystemEvent::SyncReceived { .. }) => Some(Action::Render),
+
+            // ── Silent events (no UI impact) ─────────────────────
             SubscriptionEvent::Network(NetworkEvent::WatchRenewed { .. } | NetworkEvent::WatchReestablished { .. })
             | SubscriptionEvent::System(SystemEvent::BootstrapRequested { .. } | SystemEvent::BootstrapReceived { .. } | SystemEvent::SyncRequested { .. }) => None,
             SubscriptionEvent::Network(NetworkEvent::WatchFailed { ref record_key, .. }) => {
                 tracing::warn!(record_key, "watch failed");
                 None
             }
-            // All other events: render only
-            _ => Some(Action::Render),
+
+            // ── Remaining events: render only (exhaustive) ───────
+            SubscriptionEvent::Network(
+                NetworkEvent::LocalRoutesDied { .. }
+                | NetworkEvent::RemoteRoutesDied { .. }
+                | NetworkEvent::ValueChanged { .. }
+            )
+            | SubscriptionEvent::Crypto(
+                CryptoEvent::MekRotated { .. }
+                | CryptoEvent::MekRequested { .. }
+                | CryptoEvent::MekTransferred { .. }
+                | CryptoEvent::SlotKeypairGranted { .. }
+            )
+            | SubscriptionEvent::Governance(
+                GovernanceEvent::BansChanged { .. }
+                | GovernanceEvent::InvitesChanged { .. }
+                | GovernanceEvent::ChannelPermissionsChanged { .. }
+                | GovernanceEvent::GovernanceSubkeyUpdated { .. }
+            )
+            | SubscriptionEvent::Social(
+                SocialEvent::ReactionAdded { .. }
+                | SocialEvent::ReactionRemoved { .. }
+                | SocialEvent::MessagePinned { .. }
+                | SocialEvent::MessageUnpinned { .. }
+                | SocialEvent::ThreadMessagePosted { .. }
+                | SocialEvent::ThreadArchiveChanged { .. }
+                | SocialEvent::EventUpdated { .. }
+                | SocialEvent::EventDeleted { .. }
+                | SocialEvent::EventRsvpChanged { .. }
+                | SocialEvent::GameServerAdded { .. }
+                | SocialEvent::GameServerRemoved { .. }
+            )
+            | SubscriptionEvent::Dm(_)
+            | SubscriptionEvent::BulkTransferProgress { .. } => Some(Action::Render),
         }
     }
 

@@ -14,6 +14,8 @@ use zeroize::Zeroizing;
 
 use rekindle_storage::VaultStore;
 
+use rekindle_identity::DhKey;
+
 use crate::ChatError;
 
 /// Snapshot of a single cached MEK entry for display.
@@ -147,8 +149,11 @@ const TAG_LEN: usize = 16;
 
 /// Encrypt plaintext with a MEK. Output: `[12-byte nonce || ciphertext || 16-byte tag]`.
 ///
-/// Used for channel message encryption. Each message gets a random nonce.
-pub fn mek_encrypt(mek_key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, ChatError> {
+/// `aad_bytes` binds the ciphertext to a specific context (channel_key,
+/// subkey, lamport_ts). Prevents replay of ciphertext across channels or slots.
+/// Pass `&[]` for backwards-compatible empty AAD (gossip ChannelMessage path
+/// where the gossip envelope signature provides authentication).
+pub fn mek_encrypt(mek_key: &[u8; 32], plaintext: &[u8], aad_bytes: &[u8]) -> Result<Vec<u8>, ChatError> {
     let unbound = UnboundKey::new(&AES_256_GCM, mek_key)
         .map_err(|e| ChatError::Internal(format!("MEK key init: {e}")))?;
     let aead = LessSafeKey::new(unbound);
@@ -160,7 +165,7 @@ pub fn mek_encrypt(mek_key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, Chat
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
 
     let mut in_out = plaintext.to_vec();
-    aead.seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
+    aead.seal_in_place_append_tag(nonce, Aad::from(aad_bytes), &mut in_out)
         .map_err(|e| ChatError::Internal(format!("MEK encrypt: {e}")))?;
 
     let mut wire = Vec::with_capacity(NONCE_LEN + in_out.len());
@@ -171,8 +176,10 @@ pub fn mek_encrypt(mek_key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, Chat
 
 /// Decrypt ciphertext with a MEK. Input: `[12-byte nonce || ciphertext || 16-byte tag]`.
 ///
-/// Used for channel message decryption on receive.
-pub fn mek_decrypt(mek_key: &[u8; 32], wire: &[u8]) -> Result<Vec<u8>, ChatError> {
+/// `aad_bytes` must match the AAD used during encryption. Mismatch causes
+/// GCM tag verification failure — the ciphertext was encrypted for a
+/// different context (wrong channel, wrong subkey, wrong lamport_ts).
+pub fn mek_decrypt(mek_key: &[u8; 32], wire: &[u8], aad_bytes: &[u8]) -> Result<Vec<u8>, ChatError> {
     if wire.len() < NONCE_LEN + TAG_LEN {
         return Err(ChatError::Internal(format!(
             "MEK ciphertext too short: {} bytes (min {})",
@@ -192,7 +199,7 @@ pub fn mek_decrypt(mek_key: &[u8; 32], wire: &[u8]) -> Result<Vec<u8>, ChatError
 
     let mut in_out = wire[NONCE_LEN..].to_vec();
     let plaintext = aead
-        .open_in_place(nonce, Aad::empty(), &mut in_out)
+        .open_in_place(nonce, Aad::from(aad_bytes), &mut in_out)
         .map_err(|_| ChatError::Internal("MEK decrypt: GCM tag verification failed".into()))?;
     Ok(plaintext.to_vec())
 }
@@ -205,32 +212,34 @@ const MEK_WRAP_HKDF_INFO: &[u8] = b"rekindle-mek-wrap-v1";
 /// Wrap MEK bytes for a specific recipient via X25519 ECDH + HKDF + AES-256-GCM.
 ///
 /// `sender_x25519_seed`: the sender's X25519 DH private key seed (32 bytes).
-/// `recipient_x25519_pub`: the recipient's X25519 DH public key (32 bytes).
+/// `recipient_x25519_pub`: the recipient's X25519 DH public key. Typed as `DhKey`
+///     to prevent passing an Ed25519 key (which is also 32 bytes but on a different curve).
 /// `mek_wire_bytes`: the MEK in wire format `[generation(8 LE) || key(32)]` (40 bytes).
 ///
 /// Output: `[12-byte nonce || ciphertext || 16-byte tag]` (68 bytes for 40-byte input).
 pub fn wrap_mek(
     sender_x25519_seed: &[u8; 32],
-    recipient_x25519_pub: &[u8; 32],
+    recipient_x25519_pub: &DhKey,
     mek_wire_bytes: &[u8],
 ) -> Result<Vec<u8>, ChatError> {
-    let wrapping_key = ecdh_derive_wrapping_key(sender_x25519_seed, recipient_x25519_pub)?;
+    let wrapping_key = ecdh_derive_wrapping_key(sender_x25519_seed, recipient_x25519_pub.as_bytes())?;
     aes_gcm_wrap(&wrapping_key, mek_wire_bytes)
 }
 
 /// Unwrap MEK bytes received from a sender via X25519 ECDH + HKDF + AES-256-GCM.
 ///
 /// `recipient_x25519_seed`: our X25519 DH private key seed (32 bytes).
-/// `sender_x25519_pub`: the sender's X25519 DH public key (32 bytes).
+/// `sender_x25519_pub`: the sender's X25519 DH public key. Typed as `DhKey`
+///     to prevent passing an Ed25519 pseudonym key (GCM tag will fail silently).
 /// `wrapped`: the AES-256-GCM wrapped blob from `wrap_mek`.
 ///
 /// Returns the original MEK wire bytes `[generation(8 LE) || key(32)]`.
 pub fn unwrap_mek(
     recipient_x25519_seed: &[u8; 32],
-    sender_x25519_pub: &[u8; 32],
+    sender_x25519_pub: &DhKey,
     wrapped: &[u8],
 ) -> Result<Vec<u8>, ChatError> {
-    let wrapping_key = ecdh_derive_wrapping_key(recipient_x25519_seed, sender_x25519_pub)?;
+    let wrapping_key = ecdh_derive_wrapping_key(recipient_x25519_seed, sender_x25519_pub.as_bytes())?;
     aes_gcm_unwrap(&wrapping_key, wrapped)
 }
 

@@ -1,13 +1,6 @@
 //! Role management — create, update, delete, assign, unassign.
-//!
-//! Roles define permission sets for community members. Each role has a unique ID,
-//! a name, color, permissions bitmask, and position (for hierarchy ordering).
-//! Role assignment/unassignment modifies the member registry and broadcasts
-//! MemberRolesChanged gossip for immediate peer visibility.
 
-use rekindle_types::dht_types::{
-    RoleEntry, MANIFEST_ROLES, REGISTRY_MEMBER_INDEX,
-};
+use rekindle_types::dht_types::{RoleEntry, MANIFEST_ROLES};
 use rekindle_types::gossip_payload::ControlPayload;
 
 use crate::io::Confirm;
@@ -18,7 +11,7 @@ impl CommunityService {
     pub async fn create_role(
         &self, gov_key: &str, name: &str, permissions: u64, color: u32, position: i32,
     ) -> Result<RoleEntry, ChatError> {
-        let keypair = self.require_governance_keypair(gov_key)?;
+        self.require_operator(gov_key)?;
         let mut roles = self.read_roles(gov_key).await?;
         let next_id = roles.iter().map(|r| r.id).max().map_or(1, |m| m + 1);
         let role = RoleEntry {
@@ -27,7 +20,7 @@ impl CommunityService {
         };
         roles.push(role.clone());
         let bytes = serde_json::to_vec(&roles).map_err(|e| ChatError::Serialization(format!("{e}")))?;
-        self.io.write_record(gov_key, MANIFEST_ROLES, &bytes, Some(&keypair), Confirm::Accepted).await?;
+        self.write_signed_governance(gov_key, MANIFEST_ROLES, &bytes).await?;
         self.notify_governance_updated(gov_key, MANIFEST_ROLES).await;
         Ok(role)
     }
@@ -35,7 +28,7 @@ impl CommunityService {
     pub async fn update_role(
         &self, gov_key: &str, role_id: u32, name: Option<&str>, permissions: Option<u64>, color: Option<u32>,
     ) -> Result<RoleEntry, ChatError> {
-        let keypair = self.require_governance_keypair(gov_key)?;
+        self.require_operator(gov_key)?;
         let mut roles = self.read_roles(gov_key).await?;
         let role = roles.iter_mut().find(|r| r.id == role_id)
             .ok_or_else(|| ChatError::Internal(format!("role {role_id} not found")))?;
@@ -44,17 +37,17 @@ impl CommunityService {
         if let Some(c) = color { role.color = c; }
         let updated = role.clone();
         let bytes = serde_json::to_vec(&roles).map_err(|e| ChatError::Serialization(format!("{e}")))?;
-        self.io.write_record(gov_key, MANIFEST_ROLES, &bytes, Some(&keypair), Confirm::Accepted).await?;
+        self.write_signed_governance(gov_key, MANIFEST_ROLES, &bytes).await?;
         self.notify_governance_updated(gov_key, MANIFEST_ROLES).await;
         Ok(updated)
     }
 
     pub async fn delete_role(&self, gov_key: &str, role_id: u32) -> Result<(), ChatError> {
-        let keypair = self.require_governance_keypair(gov_key)?;
+        self.require_operator(gov_key)?;
         let mut roles = self.read_roles(gov_key).await?;
         roles.retain(|r| r.id != role_id);
         let bytes = serde_json::to_vec(&roles).map_err(|e| ChatError::Serialization(format!("{e}")))?;
-        self.io.write_record(gov_key, MANIFEST_ROLES, &bytes, Some(&keypair), Confirm::Accepted).await?;
+        self.write_signed_governance(gov_key, MANIFEST_ROLES, &bytes).await?;
         self.notify_governance_updated(gov_key, MANIFEST_ROLES).await;
         Ok(())
     }
@@ -63,13 +56,17 @@ impl CommunityService {
         &self, gov_key: &str, member_pseudonym: &str, role_id: u32,
     ) -> Result<(), ChatError> {
         let membership = self.require_operator(gov_key)?;
-        let keypair = self.require_registry_keypair(&membership.registry_key)?;
-        let mut members = self.read_members(&membership.registry_key).await?;
-        if let Some(m) = members.iter_mut().find(|m| m.pseudonym_key == member_pseudonym) {
-            if !m.role_ids.contains(&role_id) { m.role_ids.push(role_id); }
+        let members = self.read_members(&membership.registry_key).await?;
+        if let Some(member) = members.iter().find(|m| m.pseudonym_key == member_pseudonym) {
+            let mut updated = member.clone();
+            if !updated.role_ids.contains(&role_id) { updated.role_ids.push(role_id); }
+            let slot_kp_bytes = self.derive_member_slot_keypair_bytes(&membership, member.subkey_index)?;
+            let bytes = serde_json::to_vec(&updated).map_err(|e| ChatError::Serialization(format!("{e}")))?;
+            self.io.open_and_write(
+                &membership.registry_key, member.subkey_index, &bytes,
+                Some(&slot_kp_bytes), Confirm::Accepted,
+            ).await?;
         }
-        let bytes = serde_json::to_vec(&members).map_err(|e| ChatError::Serialization(format!("{e}")))?;
-        self.io.write_record(&membership.registry_key, REGISTRY_MEMBER_INDEX, &bytes, Some(&keypair), Confirm::Accepted).await?;
         self.notify_membership(gov_key, ControlPayload::MemberRolesChanged {
             pseudonym_key: member_pseudonym.into(), role_ids: vec![role_id],
         }).await;
@@ -80,13 +77,17 @@ impl CommunityService {
         &self, gov_key: &str, member_pseudonym: &str, role_id: u32,
     ) -> Result<(), ChatError> {
         let membership = self.require_operator(gov_key)?;
-        let keypair = self.require_registry_keypair(&membership.registry_key)?;
-        let mut members = self.read_members(&membership.registry_key).await?;
-        if let Some(m) = members.iter_mut().find(|m| m.pseudonym_key == member_pseudonym) {
-            m.role_ids.retain(|&id| id != role_id);
+        let members = self.read_members(&membership.registry_key).await?;
+        if let Some(member) = members.iter().find(|m| m.pseudonym_key == member_pseudonym) {
+            let mut updated = member.clone();
+            updated.role_ids.retain(|&id| id != role_id);
+            let slot_kp_bytes = self.derive_member_slot_keypair_bytes(&membership, member.subkey_index)?;
+            let bytes = serde_json::to_vec(&updated).map_err(|e| ChatError::Serialization(format!("{e}")))?;
+            self.io.open_and_write(
+                &membership.registry_key, member.subkey_index, &bytes,
+                Some(&slot_kp_bytes), Confirm::Accepted,
+            ).await?;
         }
-        let bytes = serde_json::to_vec(&members).map_err(|e| ChatError::Serialization(format!("{e}")))?;
-        self.io.write_record(&membership.registry_key, REGISTRY_MEMBER_INDEX, &bytes, Some(&keypair), Confirm::Accepted).await?;
         self.notify_membership(gov_key, ControlPayload::MemberRolesChanged {
             pseudonym_key: member_pseudonym.into(), role_ids: vec![],
         }).await;

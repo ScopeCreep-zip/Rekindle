@@ -36,22 +36,23 @@ fn dm_roundtrip_friend_request_ack() {
 
 #[test]
 fn gossip_payload_roundtrip() {
-    let payload = GossipPayload::MessageNotification {
+    let payload = GossipPayload::ChannelMessage {
         channel_id: "ch_01".into(),
         message_id: "msg_abc".into(),
-        author_pseudonym: "pseudo_123".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
+        ciphertext: vec![0xDE, 0xAD, 0xBE, 0xEF],
+        mek_generation: 1,
         sequence: 3,
-        content_hash: "abc123".into(),
         timestamp: 1234567890,
+        reply_to: None,
+        thread_id: None,
     };
     let bytes = postcard::to_stdvec(&payload).unwrap();
     let back: GossipPayload = postcard::from_bytes(&bytes).unwrap();
     match back {
-        GossipPayload::MessageNotification { channel_id, message_id, .. } => {
+        GossipPayload::ChannelMessage { channel_id, message_id, ciphertext, .. } => {
             assert_eq!(channel_id, "ch_01");
             assert_eq!(message_id, "msg_abc");
+            assert_eq!(ciphertext, vec![0xDE, 0xAD, 0xBE, 0xEF]);
         }
         _ => panic!("wrong variant"),
     }
@@ -110,15 +111,15 @@ fn call_response_roundtrip() {
 
 #[test]
 fn signed_gossip_envelope_dedup_key_message() {
-    let payload = GossipPayload::MessageNotification {
+    let payload = GossipPayload::ChannelMessage {
         channel_id: "ch_01".into(),
         message_id: "unique_msg_id".into(),
-        author_pseudonym: "p".into(),
-        subkey_index: 0,
-        lamport_ts: 1,
+        ciphertext: vec![0xAB],
+        mek_generation: 1,
         sequence: 1,
-        content_hash: "hash".into(),
         timestamp: 0,
+        reply_to: None,
+        thread_id: None,
     };
     let payload_bytes = postcard::to_stdvec(&payload).unwrap();
     let envelope = SignedGossipEnvelope {
@@ -154,21 +155,21 @@ fn signed_gossip_envelope_private_detection() {
 }
 
 #[test]
-fn message_notification_stays_compact() {
-    let payload = GossipPayload::MessageNotification {
+fn channel_message_with_short_body_stays_compact() {
+    let payload = GossipPayload::ChannelMessage {
         channel_id: "ch01".into(),
         message_id: "m01".into(),
-        author_pseudonym: "p01".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
+        ciphertext: vec![0u8; 64], // ~64 byte encrypted message
+        mek_generation: 1,
         sequence: 3,
-        content_hash: "abc123".into(),
         timestamp: 1234567890,
+        reply_to: None,
+        thread_id: None,
     };
     let bytes = postcard::to_stdvec(&payload).unwrap();
     assert!(
         bytes.len() < 200,
-        "MessageNotification should be compact (< 200 bytes), was {} bytes",
+        "ChannelMessage with short body should be compact (< 200 bytes), was {} bytes",
         bytes.len()
     );
 }

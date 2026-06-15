@@ -27,6 +27,10 @@ pub struct DmInboxView {
     pub(crate) use_unicode: bool,
     pub(crate) typing_peers: HashSet<String>,
     pub(crate) click_rects: HashMap<FocusId, Rect>,
+    /// IPC concurrency guard: which peer's thread load is in-flight.
+    /// Set on LoadDmThread dispatch, cleared on DmThreadLoaded response.
+    /// Prevents 60x redundant IPC calls during the response window.
+    pub(crate) loading_peer: Option<String>,
 }
 
 impl DmInboxView {
@@ -37,6 +41,7 @@ impl DmInboxView {
             input_box: InputBox::new(), loaded: false, use_unicode,
             typing_peers: HashSet::new(),
             click_rects: HashMap::new(),
+            loading_peer: None,
         }
     }
 
@@ -52,10 +57,10 @@ impl super::ViewQuery for DmInboxView {}
 impl View for DmInboxView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> { render::draw(self, frame, area, theme); Ok(()) }
     fn update(&mut self, action: Action) -> Result<Option<Action>> { Ok(input::handle_update(self, &action)) }
-    fn on_command_result(&mut self, result: CommandResult) -> Result<()> { events::handle_command_result(self, result); Ok(()) }
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_command_result(&mut self, result: CommandResult) -> Result<Option<Action>> { Ok(events::handle_command_result(self, result)) }
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<Action>> {
         events::handle_subscription_event(self, event);
-        Ok(())
+        Ok(None)
     }
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> { input::handle_focused_key(self, key) }
     fn handle_click(&mut self, column: u16, row: u16) -> Option<Action> { input::handle_click(self, column, row) }

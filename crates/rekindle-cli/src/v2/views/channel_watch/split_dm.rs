@@ -44,6 +44,7 @@ impl ChannelWatchView {
                 is_encrypted: false,
                 needs_mek: None,
                 delivery_status: rekindle_types::display::DeliveryStatus::Sending,
+                thread_id: None,
             });
         }
 

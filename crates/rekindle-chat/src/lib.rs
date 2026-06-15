@@ -14,12 +14,14 @@ mod time;
 pub mod io;
 pub mod service;
 pub mod crypto;
+pub mod dm;
 pub mod messaging;
 pub mod friendship;
 pub mod community;
 pub mod identity;
 pub mod events;
 pub mod presence;
+pub mod validation;
 pub mod voice;
 
 pub use error::ChatError;

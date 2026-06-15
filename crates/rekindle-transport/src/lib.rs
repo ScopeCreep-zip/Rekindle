@@ -1,20 +1,14 @@
 //! Transport provider registry for the Rekindle messaging platform.
 //!
-//! Re-exports the `Transport` and `TransportCallback` traits from
+//! Re-exports the `Transport` trait and `InboundEvent` enum from
 //! `rekindle-types` and all enabled backend implementations behind
-//! feature flags. Consumers depend on this crate only — never on
-//! backend crates directly.
-//!
-//! ```toml
-//! # Enable specific backends:
-//! rekindle-transport = { features = ["veilid"] }       # default
-//! rekindle-transport = { features = ["veilid", "ipc"] }
-//! ```
+//! feature flags.
 
-// Re-export the trait ecosystem from rekindle-types
 pub use rekindle_types::transport::{
-    Transport, TransportCallback, TransportError, TransportEvent,
+    Transport, InboundEvent, TransportError, TransportEvent,
     TransportResult, RecordSchema, BroadcastReport, WatchToken,
+    Durability, DeliveryReport,
+    TransferProgress, TransferDirection, TransferStatus,
 };
 
 // ── Backend providers (feature-gated) ──────────────────────────────

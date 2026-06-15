@@ -15,7 +15,7 @@
 pub mod request;
 pub mod response;
 
-pub use request::DaemonRequest;
+pub use request::{DaemonRequest, LifecycleRequest, ChatRequest};
 pub use response::{DaemonResponse, ReadContext};
 
 use serde::{Deserialize, Serialize};

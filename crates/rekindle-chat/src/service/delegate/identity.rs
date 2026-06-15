@@ -42,7 +42,7 @@ impl ChatService {
         // 4. Derive new X25519, generate new prekey bundle
         // 5. Update profile DHT with new keys
         // 6. Notify all friends via DM (ProfileKeyRotated)
-        // 7. Update session_meta.identity.public_key_hex
+        // 7. Update session_meta.identity.public_key
         //
         // This is a complex multi-step operation. The underlying
         // IdentityService method handles the full ceremony.
@@ -182,8 +182,7 @@ impl ChatService {
             Ok(())
         }
 
-        // Ed25519 public key = 32 bytes = 64 hex chars
-        check_hex("public_key_hex", &id.public_key_hex, 32)?;
+        // public_key: IdentityRoot is validated at deserialization (rejects all-zeros, wrong length)
         check_non_empty("display_name", &id.display_name)?;
         // DHT keys are Veilid TypedKey strings — not raw hex, but must be non-empty
         check_non_empty("profile_dht_key", &id.profile_dht_key)?;

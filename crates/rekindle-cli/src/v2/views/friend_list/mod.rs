@@ -47,10 +47,10 @@ impl super::ViewQuery for FriendListView {}
 impl View for FriendListView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> { render::draw(self, frame, area, theme); Ok(()) }
     fn update(&mut self, action: Action) -> Result<Option<Action>> { Ok(input::handle_update(self, &action)) }
-    fn on_command_result(&mut self, result: CommandResult) -> Result<()> { events::handle_command_result(self, result); Ok(()) }
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_command_result(&mut self, result: CommandResult) -> Result<Option<Action>> { events::handle_command_result(self, result); Ok(None) }
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<Action>> {
         events::handle_subscription_event(self, event);
-        Ok(())
+        Ok(None)
     }
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> { input::handle_focused_key(self, key) }
     fn focus_ring(&mut self) -> &mut FocusRing { &mut self.focus }

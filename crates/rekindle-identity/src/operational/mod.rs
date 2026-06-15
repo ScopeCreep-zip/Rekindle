@@ -5,6 +5,6 @@ pub mod dh;
 pub mod device;
 pub mod prekey_binding;
 
-pub use dh::{DhKey, dh_public_from_seed, dh_agree, x25519_seed_from};
+pub use dh::{DhKey, dh_public_from_seed, dh_agree, x25519_seed_from, x25519_public_from_raw_seed};
 pub use device::{DeviceId, DeviceSigningKey, DeviceRecord};
 pub use prekey_binding::PrekeyBundleBinding;

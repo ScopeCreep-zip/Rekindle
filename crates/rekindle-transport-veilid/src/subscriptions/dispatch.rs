@@ -1,127 +1,58 @@
-//! Inbound message dispatcher — forwards raw bytes to TransportCallback.
+//! Inbound message dispatcher — sends typed InboundEvent to mpsc channel.
 //!
-//! Receives `VeilidUpdate` events from the node's update channel and
-//! performs minimal transport-level processing:
+//! Receives `VeilidUpdate` events from the Veilid node's update channel and:
+//! 1. TypeId 0x30 (BulkTransfer): handled internally — decode, route to
+//!    TransferRegistry, send reply frames via DeliveryEngine. Never forwarded
+//!    to the chat layer.
+//! 2. TypeId 0x0A (GossipBroadcast): BLAKE3 dedup via OpaqueSeenSet from
+//!    rekindle-transport-buff, then forward as InboundEvent::Message.
+//! 3. All other AppMessage: forward as InboundEvent::Message.
+//! 4. AppCall: forward as InboundEvent::Call with oneshot reply_tx.
+//!    Chat layer sends response bytes via reply_tx. Dispatch calls
+//!    api.app_call_reply() internally. No Veilid types leak.
+//! 5. ValueChange: forward as InboundEvent::RecordChange.
+//! 6. Attachment/RouteChange: forward as InboundEvent::Event.
 //!
-//! 1. Read first byte (TypeId) for routing decisions
-//! 2. TypeId 0x0A (GossipBroadcast): BLAKE3 content dedup before forwarding
-//! 3. Everything else: forward immediately
-//!
-//! The callback is installed via `parking_lot::RwLock<Option<Arc<dyn TransportCallback>>>`
-//! after ChatService construction. Before the callback is installed, events are
-//! buffered (bounded at 4096). When the callback becomes available, the buffer
-//! is drained first, then live dispatch resumes. Zero events lost during the
-//! construction window.
-//!
-//! `parking_lot::RwLock` is used instead of `ArcSwapOption` because
-//! `ArcSwapOption<dyn Trait>` requires `Arc<dyn Trait>: RefCnt` which requires
-//! `dyn Trait: Sized` — unsatisfiable for trait objects. The RwLock read is
-//! ~2ns uncontended; the write happens exactly once (during `set_callback`).
+//! No callback RwLock. No lazy installation. No buffering. All deps
+//! available at spawn time. The mpsc channel IS the buffer (bounded 4096).
 
-use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
-use std::time::Instant;
 
-use parking_lot::RwLock as CallbackLock;
+use rekindle_transport_buff::OpaqueSeenSet;
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 use veilid_core::VeilidUpdate;
 
-use crate::config::TransportConfig;
 use crate::shared::{AttachmentState, SharedState};
-use rekindle_types::transport::{TransportCallback, TransportEvent};
+use rekindle_types::transport::{InboundEvent, TransportEvent};
 
-/// TypeId byte for gossip broadcasts — transport applies BLAKE3 dedup.
 const TYPEID_GOSSIP_DEDUP: u8 = 0x0A;
 
-/// Maximum events to buffer while waiting for callback installation.
-const EVENT_BUFFER_CAPACITY: usize = 4096;
-
-/// Run the inbound dispatch loop until a shutdown signal is received.
-///
-/// The callback starts as None. Events are buffered until `set_callback()`
-/// is called on the TransportNode, which stores the callback in the RwLock.
-/// The loop checks on every iteration — when the callback appears, the
-/// buffer is drained first, then live dispatch resumes.
+/// Run the inbound dispatch loop. All deps passed at spawn time.
+/// No lazy callback. No buffering. mpsc channel provides backpressure.
 pub(crate) async fn run_dispatch_loop(
-    callback: Arc<CallbackLock<Option<Arc<dyn TransportCallback>>>>,
-    config: Arc<TransportConfig>,
+    inbound_tx: mpsc::Sender<InboundEvent>,
+    _config: Arc<crate::config::TransportConfig>,
     mut update_rx: mpsc::Receiver<VeilidUpdate>,
     mut shutdown_rx: mpsc::Receiver<()>,
     api: veilid_core::VeilidAPI,
     shared: Arc<SharedState>,
+    transfer_registry: Arc<crate::bulk_transfer::TransferRegistry>,
+    delivery: Arc<crate::delivery::DeliveryEngine>,
 ) {
-    let mut gossip_dedup = GossipDedup::new(10_000, 300);
-    let mut buffer: Vec<VeilidUpdate> = Vec::new();
-    let mut buffer_drained = false;
-    // Cache the callback Arc once it's installed to avoid repeated RwLock reads.
-    let mut cached_handler: Option<Arc<dyn TransportCallback>> = None;
-    info!("transport dispatch loop started — awaiting callback installation");
+    let gossip_dedup = OpaqueSeenSet::new(16, 10_000);
+    info!("transport dispatch loop started — all deps available, no buffering");
 
     loop {
         tokio::select! {
             Some(update) = update_rx.recv() => {
-                // Try cached handler first (zero-cost after first installation).
-                // If not cached, read the RwLock once, clone the Arc, cache it.
-                if cached_handler.is_none() {
-                    let guard = callback.read();
-                    if let Some(ref cb) = *guard {
-                        cached_handler = Some(Arc::clone(cb));
-                    }
-                    // Guard dropped here — never held across .await
-                }
-
-                match cached_handler.as_ref() {
-                    Some(handler) => {
-                        // Callback installed — drain buffer on first live event
-                        if !buffer_drained && !buffer.is_empty() {
-                            info!(
-                                buffered = buffer.len(),
-                                "draining event buffer after callback installation"
-                            );
-                            for buffered in buffer.drain(..) {
-                                dispatch_update(
-                                    handler.as_ref(), &config, &mut gossip_dedup,
-                                    &api, &shared, buffered,
-                                ).await;
-                            }
-                            buffer_drained = true;
-                        }
-
-                        // Process live event
-                        dispatch_update(
-                            handler.as_ref(), &config, &mut gossip_dedup,
-                            &api, &shared, update,
-                        ).await;
-                    }
-                    None => {
-                        // No callback yet — buffer the event
-                        if buffer.len() < EVENT_BUFFER_CAPACITY {
-                            buffer.push(update);
-                        } else {
-                            let label = veilid_update_label(&update);
-                            warn!(
-                                label,
-                                buffer_size = EVENT_BUFFER_CAPACITY,
-                                "event buffer full before callback installation — \
-                                 dropping oldest event. This indicates slow ChatService \
-                                 construction."
-                            );
-                            let _ = buffer.remove(0);
-                            buffer.push(update);
-                        }
-                    }
-                }
+                dispatch_update(
+                    &inbound_tx, &gossip_dedup, &api, &shared,
+                    &transfer_registry, &delivery, update,
+                ).await;
             }
             _ = shutdown_rx.recv() => {
                 info!("transport dispatch loop shutting down");
-                if !buffer.is_empty() {
-                    warn!(
-                        dropped = buffer.len(),
-                        "shutdown with {} buffered events — events lost",
-                        buffer.len()
-                    );
-                }
                 break;
             }
         }
@@ -129,11 +60,12 @@ pub(crate) async fn run_dispatch_loop(
 }
 
 async fn dispatch_update(
-    handler: &dyn TransportCallback,
-    _config: &TransportConfig,
-    gossip_dedup: &mut GossipDedup,
+    inbound_tx: &mpsc::Sender<InboundEvent>,
+    gossip_dedup: &OpaqueSeenSet,
     api: &veilid_core::VeilidAPI,
     shared: &SharedState,
+    transfer_registry: &crate::bulk_transfer::TransferRegistry,
+    delivery: &Arc<crate::delivery::DeliveryEngine>,
     update: VeilidUpdate,
 ) {
     match update {
@@ -149,30 +81,98 @@ async fn dispatch_update(
             }
 
             let first_byte = data[0];
+            info!(
+                type_id = first_byte,
+                data_len = data.len(),
+                sender = if sender_key.is_empty() { "anonymous" } else { &sender_key[..16.min(sender_key.len())] },
+                "dispatch: AppMessage received"
+            );
 
-            if first_byte == TYPEID_GOSSIP_DEDUP {
-                let hash = blake3::hash(&data[1..]);
-                if !gossip_dedup.check(hash.as_bytes()) {
-                    trace!("gossip dedup: duplicate suppressed");
-                    return;
+            // ── Bulk transfer (0x30): handled internally ────────────
+            if first_byte == crate::bulk_transfer::TYPEID_BULK_TRANSFER {
+                match crate::bulk_transfer::TransferFrame::decode(data) {
+                    Ok(frame) => {
+                        let tid = *frame.transfer_id();
+
+                        let delivery_clone = delivery.clone();
+                        transfer_registry.handle_frame(frame, |peer_key, reply_frame| {
+                            let de = delivery_clone.clone();
+                            let pk = peer_key.to_string();
+                            Box::pin(async move {
+                                if let Ok(wire) = reply_frame.encode() {
+                                    let _ = de.deliver(&pk, &wire, rekindle_types::transport::Durability::Ephemeral).await;
+                                }
+                            })
+                        }).await;
+
+                        if let Some(progress) = transfer_registry.transfer_progress(&tid) {
+                            let _ = inbound_tx.send(InboundEvent::TransferProgress {
+                                transfer_id: progress.transfer_id,
+                                filename: progress.filename,
+                                total_size: progress.total_size,
+                                bytes_transferred: progress.bytes_transferred,
+                                chunks_received: progress.chunks_received,
+                                chunk_count: progress.chunk_count,
+                                status: progress.status,
+                            }).await;
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "bulk transfer frame decode failed");
+                    }
                 }
+                return;
             }
 
-            handler.on_message(&sender_key, data).await;
+            // ── Gossip dedup (0x0A): OpaqueSeenSet from buff ───────
+            if first_byte == TYPEID_GOSSIP_DEDUP {
+                let hash = *blake3::hash(&data[1..]).as_bytes();
+                if !gossip_dedup.insert(hash) {
+                    debug!(data_len = data.len(), "dispatch: gossip dedup SUPPRESSED duplicate");
+                    return;
+                }
+                info!(data_len = data.len(), hash = hex::encode(&hash[..8]), "dispatch: gossip dedup PASSED — forwarding to chat");
+            }
+
+            // ── Forward to chat layer ───────────────────────────────
+            if let Err(e) = inbound_tx.send(InboundEvent::Message {
+                sender_key: sender_key.clone(),
+                data: data.to_vec(),
+            }).await {
+                warn!(type_id = first_byte, "dispatch: inbound_tx.send FAILED — chat channel closed: {e}");
+                return;
+            }
+            info!(type_id = first_byte, data_len = data.len(), "dispatch: forwarded to chat layer via inbound_tx");
         }
 
         VeilidUpdate::AppCall(call) => {
             let sender_key = call.sender()
                 .map(std::string::ToString::to_string)
                 .unwrap_or_default();
-            let data = call.message();
+            let data = call.message().to_vec();
             let call_id = call.id();
 
-            let response = handler.on_call(&sender_key, data).await;
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<Vec<u8>>();
 
-            if let Err(e) = api.app_call_reply(call_id, response).await {
-                warn!(error = %e, "app_call_reply failed — caller will timeout");
-            }
+            let _ = inbound_tx.send(InboundEvent::Call {
+                sender_key,
+                data,
+                reply_tx,
+            }).await;
+
+            let api_clone = api.clone();
+            tokio::spawn(async move {
+                match reply_rx.await {
+                    Ok(response) => {
+                        if let Err(e) = api_clone.app_call_reply(call_id, response).await {
+                            warn!(error = %e, "app_call_reply failed");
+                        }
+                    }
+                    Err(_) => {
+                        warn!("app_call reply_tx dropped — caller will timeout");
+                    }
+                }
+            });
         }
 
         VeilidUpdate::ValueChange(change) => {
@@ -181,13 +181,18 @@ async fn dispatch_update(
             let first_value = change.value.as_ref().map(|v| v.data().to_vec());
 
             if change.count == 0 || subkeys.is_empty() {
-                handler.on_event(TransportEvent::WatchExpired {
+                let _ = inbound_tx.send(InboundEvent::Event(TransportEvent::WatchExpired {
                     record_key: key,
-                }).await;
+                })).await;
                 return;
             }
 
-            handler.on_record_change(&key, subkeys, change.count, first_value).await;
+            let _ = inbound_tx.send(InboundEvent::RecordChange {
+                record_key: key,
+                subkeys,
+                count: change.count,
+                data: first_value,
+            }).await;
         }
 
         VeilidUpdate::Attachment(attachment) => {
@@ -197,91 +202,24 @@ async fn dispatch_update(
             let att_state = AttachmentState::from_veilid_string(&state_str);
             shared.set_attachment(att_state, attached, pir);
 
-            if attached {
-                handler.on_event(TransportEvent::Attached).await;
-            } else {
-                handler.on_event(TransportEvent::Detached).await;
-            }
+            let event = if attached { TransportEvent::Attached } else { TransportEvent::Detached };
+            let _ = inbound_tx.send(InboundEvent::Event(event)).await;
         }
 
         VeilidUpdate::RouteChange(change) => {
             for dead in &change.dead_routes {
-                handler.on_event(TransportEvent::RouteDied {
+                let _ = inbound_tx.send(InboundEvent::Event(TransportEvent::RouteDied {
                     route_id: dead.to_string(),
-                }).await;
+                })).await;
             }
             for dead_remote in &change.dead_remote_routes {
-                handler.on_event(TransportEvent::RouteDied {
+                let _ = inbound_tx.send(InboundEvent::Event(TransportEvent::RouteDied {
                     route_id: dead_remote.to_string(),
-                }).await;
+                })).await;
             }
         }
 
-        VeilidUpdate::Shutdown => {
-            info!("veilid shutdown event received");
-        }
-
-        _ => {
-            trace!("ignoring unhandled VeilidUpdate variant");
-        }
-    }
-}
-
-fn veilid_update_label(update: &VeilidUpdate) -> &'static str {
-    match update {
-        VeilidUpdate::AppCall(_) => "AppCall",
-        VeilidUpdate::AppMessage(_) => "AppMessage",
-        VeilidUpdate::RouteChange(_) => "RouteChange",
-        VeilidUpdate::Attachment(_) => "Attachment",
-        VeilidUpdate::ValueChange(_) => "ValueChange",
-        VeilidUpdate::Shutdown => "Shutdown",
-        _ => "Other",
-    }
-}
-
-// ── Transport-level gossip dedup ────────────────────────────────────
-
-struct GossipDedup {
-    digests: HashSet<[u8; 32]>,
-    order: VecDeque<([u8; 32], Instant)>,
-    capacity: usize,
-    ttl_secs: u64,
-}
-
-impl GossipDedup {
-    fn new(capacity: usize, ttl_secs: u64) -> Self {
-        Self {
-            digests: HashSet::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
-            capacity,
-            ttl_secs,
-        }
-    }
-
-    fn check(&mut self, hash: &[u8; 32]) -> bool {
-        let now = Instant::now();
-        while let Some((oldest_hash, inserted)) = self.order.front() {
-            if now.duration_since(*inserted) > std::time::Duration::from_secs(self.ttl_secs) {
-                let h = *oldest_hash;
-                self.order.pop_front();
-                self.digests.remove(&h);
-            } else {
-                break;
-            }
-        }
-
-        if self.digests.contains(hash) {
-            return false;
-        }
-
-        if self.digests.len() >= self.capacity {
-            if let Some((evicted, _)) = self.order.pop_front() {
-                self.digests.remove(&evicted);
-            }
-        }
-
-        self.digests.insert(*hash);
-        self.order.push_back((*hash, now));
-        true
+        VeilidUpdate::Shutdown => { info!("veilid shutdown event received"); }
+        _ => { trace!("ignoring unhandled VeilidUpdate"); }
     }
 }

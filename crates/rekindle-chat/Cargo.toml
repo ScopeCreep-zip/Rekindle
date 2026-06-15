@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-ratchet = { path = "../rekindle-ratchet" }
+rekindle-identity = { path = "../rekindle-identity" }
 rekindle-storage = { path = "../rekindle-storage" }
 rekindle-types = { path = "../rekindle-types" }
 

@@ -49,19 +49,45 @@ impl PresenceService {
 
         // Presence is ephemeral — Confirm::None (fire and forget).
         // Published every 60s via heartbeat. Loss is acceptable.
-        self.io.write_record(
+        self.io.open_and_write(
             &identity.profile_dht_key, PROFILE_SUBKEY_STATUS,
             &payload, None, Confirm::None,
         ).await?;
 
         if let Some(msg) = message {
-            self.io.write_record(
+            self.io.open_and_write(
                 &identity.profile_dht_key, PROFILE_SUBKEY_STATUS_MESSAGE,
                 msg.as_bytes(), None, Confirm::None,
             ).await?;
         }
 
-        tracing::info!(status, "presence updated");
+        // Gossip-broadcast presence to all joined communities with our route blob.
+        // This is the receive-side counterpart to the route_blob extraction in
+        // community/mod.rs handle_gossip(). Community members learn our status
+        // AND our current route in one message.
+        let communities: Vec<(String, String)> = {
+            let meta = self.session_meta.read();
+            meta.communities.values()
+                .map(|m| (m.governance_key.clone(), m.pseudonym_key.clone()))
+                .collect()
+        };
+        let route_blob = self.io.route_blob();
+        for (gov_key, pseudonym) in &communities {
+            let _ = self.io.broadcast_gossip_dedup(
+                gov_key,
+                rekindle_types::gossip_payload::GossipPayload::PresenceUpdate {
+                    pseudonym_key: pseudonym.clone(),
+                    status: status.to_string(),
+                    game_name: None,
+                    game_id: None,
+                    elapsed_seconds: None,
+                    server_address: None,
+                    route_blob: route_blob.clone(),
+                },
+            ).await;
+        }
+
+        tracing::info!(status, communities = communities.len(), "presence updated + broadcast");
         Ok(())
     }
 
@@ -86,7 +112,7 @@ impl PresenceService {
         let bytes = serde_json::to_vec(&game_info)
             .map_err(|e| ChatError::Serialization(format!("game presence: {e}")))?;
 
-        self.io.write_record(
+        self.io.open_and_write(
             &identity.profile_dht_key, PROFILE_SUBKEY_GAME_INFO,
             &bytes, None, Confirm::None,
         ).await?;
@@ -101,7 +127,7 @@ impl PresenceService {
             meta.identity.clone().ok_or(ChatError::NotInitialized)?
         };
 
-        self.io.write_record(
+        self.io.open_and_write(
             &identity.profile_dht_key, PROFILE_SUBKEY_GAME_INFO,
             &[], None, Confirm::None,
         ).await?;

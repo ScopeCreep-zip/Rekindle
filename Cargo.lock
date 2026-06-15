@@ -1239,6 +1239,15 @@ dependencies = [
 
 [[package]]
 name = "cbor4ii"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "472931dd4dfcc785075b09be910147f9c6258883fc4591d0dac6116392b2daa6"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "cbor4ii"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faed1a83001dc2c9201451030cc317e35bef36c84d3781d7c5bb9f343c397da8"
@@ -7898,12 +7907,13 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
  "blake3",
- "cbor4ii",
+ "cbor4ii 1.2.2",
  "dashmap",
  "hex",
  "lru 0.12.5",
  "parking_lot 0.12.5",
  "postcard",
+ "rekindle-identity",
  "rekindle-ratchet",
  "rekindle-storage",
  "rekindle-transport",
@@ -8112,6 +8122,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-identity"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "blake3",
+ "dashmap",
+ "getrandom 0.2.17",
+ "hex",
+ "proptest",
+ "rekindle-ratchet",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "trybuild",
+ "zeroize",
+]
+
+[[package]]
 name = "rekindle-keys"
 version = "0.1.0"
 dependencies = [
@@ -8205,6 +8234,7 @@ dependencies = [
  "aws-lc-rs",
  "bitvec",
  "blake3",
+ "cbor4ii 0.3.3",
  "hex",
  "proptest",
  "prost",
@@ -8215,6 +8245,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "tracing",
+ "tracing-subscriber",
  "zeroize",
 ]
 
@@ -8264,6 +8295,7 @@ dependencies = [
  "blake3",
  "hex",
  "keyring",
+ "rekindle-types",
  "rusqlite",
  "rustix 1.1.4",
  "serde",
@@ -8357,6 +8389,7 @@ dependencies = [
  "async-trait",
  "bitflags 2.11.1",
  "blake3",
+ "dirs 5.0.1",
  "futures",
  "hex",
  "indexmap 2.14.0",
@@ -8364,6 +8397,7 @@ dependencies = [
  "postcard",
  "proptest",
  "rand 0.8.6",
+ "rekindle-transport-buff",
  "rekindle-types",
  "rekindle-utils",
  "serde",
@@ -8382,9 +8416,11 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "postcard",
+ "rekindle-identity",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "toml 0.8.2",
 ]
 
@@ -9830,6 +9866,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
+name = "target-triple"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "591ef38edfb78ca4771ee32cf494cb8771944bee237a9b91fc9c1424ac4b777b"
+
+[[package]]
 name = "tauri"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10815,6 +10857,21 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "trybuild"
+version = "1.0.116"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47c635f0191bd3a2941013e5062667100969f8c4e9cd787c14f977265d73616e"
+dependencies = [
+ "glob",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "target-triple",
+ "termcolor",
+ "toml 1.1.2+spec-1.1.0",
+]
 
 [[package]]
 name = "tsify"

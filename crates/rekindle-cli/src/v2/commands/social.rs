@@ -1,6 +1,6 @@
 //! Social feature commands: reactions, pins, events, threads, game servers.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{ChatRequest, DaemonRequest};
 
 use crate::v2::cli::SocialCmd;
 use crate::v2::output::format;
@@ -10,25 +10,25 @@ use crate::v2::prelude::DaemonClient;
 pub async fn dispatch(cmd: &SocialCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         SocialCmd::ReactionAdd { community, channel, message_id, emoji } => {
-            let value = client.request_ok(DaemonRequest::ReactionAdd {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ReactionAdd {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
                 emoji: emoji.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::ReactionRemove { community, channel, message_id, emoji } => {
-            let value = client.request_ok(DaemonRequest::ReactionRemove {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ReactionRemove {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
                 emoji: emoji.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::EventCreate { community, title, description, start_time, end_time, channel_id, max_attendees } => {
-            let value = client.request_ok(DaemonRequest::EventCreate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::EventCreate {
                 community: community.clone(),
                 title: title.clone(),
                 description: description.clone(),
@@ -36,11 +36,11 @@ pub async fn dispatch(cmd: &SocialCmd, client: &DaemonClient, mode: OutputMode) 
                 end_time: *end_time,
                 channel_id: channel_id.clone(),
                 max_attendees: *max_attendees,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::EventUpdate { community, event_id, title, description, start_time, end_time, max_attendees } => {
-            let value = client.request_ok(DaemonRequest::EventUpdate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::EventUpdate {
                 community: community.clone(),
                 event_id: event_id.clone(),
                 title: title.clone(),
@@ -48,77 +48,101 @@ pub async fn dispatch(cmd: &SocialCmd, client: &DaemonClient, mode: OutputMode) 
                 start_time: *start_time,
                 end_time: *end_time,
                 max_attendees: *max_attendees,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::EventDelete { community, event_id } => {
-            let value = client.request_ok(DaemonRequest::EventDelete {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::EventDelete {
                 community: community.clone(),
                 event_id: event_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::EventRsvp { community, event_id, status } => {
-            let value = client.request_ok(DaemonRequest::EventRsvp {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::EventRsvp {
                 community: community.clone(),
                 event_id: event_id.clone(),
                 status: status.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::EventRemind { community, event_id, title, minutes } => {
-            let value = client.request_ok(DaemonRequest::EventRemind {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::EventRemind {
                 community: community.clone(),
                 event_id: event_id.clone(),
                 title: title.clone(),
                 minutes_until: *minutes,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::ThreadCreate { community, channel, parent_message_id, title, auto_archive_seconds } => {
-            let value = client.request_ok(DaemonRequest::ThreadCreate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ThreadCreate {
                 community: community.clone(),
                 channel: channel.clone(),
                 parent_message_id: parent_message_id.clone(),
                 title: title.clone(),
                 auto_archive_seconds: *auto_archive_seconds,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::ThreadMessage { community, thread_id, ciphertext, mek_generation, reply_to_id } => {
             let ct_bytes = hex::decode(ciphertext)
                 .map_err(|e| anyhow::anyhow!("invalid hex ciphertext: {e}"))?;
-            let value = client.request_ok(DaemonRequest::ThreadMessage {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ThreadMessage {
                 community: community.clone(),
                 thread_id: thread_id.clone(),
                 ciphertext: ct_bytes,
                 mek_generation: *mek_generation,
                 reply_to_id: reply_to_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::ThreadArchive { community, thread_id, archived } => {
-            let value = client.request_ok(DaemonRequest::ThreadArchive {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ThreadArchive {
                 community: community.clone(),
                 thread_id: thread_id.clone(),
                 archived: *archived,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::GameServerAdd { community, game_id, label, address } => {
-            let value = client.request_ok(DaemonRequest::GameServerAdd {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::GameServerAdd {
                 community: community.clone(),
                 game_id: game_id.clone(),
                 label: label.clone(),
                 address: address.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         SocialCmd::GameServerRemove { community, server_id } => {
-            let value = client.request_ok(DaemonRequest::GameServerRemove {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::GameServerRemove {
                 community: community.clone(),
                 server_id: server_id.clone(),
-            }).await?;
+            })).await?;
+            format::print_structured(&value, mode)
+        }
+        SocialCmd::Pins { community } => {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::PinList {
+                community: community.clone(),
+            })).await?;
+            format::print_structured(&value, mode)
+        }
+        SocialCmd::Events { community } => {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::EventList {
+                community: community.clone(),
+            })).await?;
+            format::print_structured(&value, mode)
+        }
+        SocialCmd::Threads { community } => {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ThreadList {
+                community: community.clone(),
+            })).await?;
+            format::print_structured(&value, mode)
+        }
+        SocialCmd::Reactions { community } => {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ReactionList {
+                community: community.clone(),
+            })).await?;
             format::print_structured(&value, mode)
         }
     }

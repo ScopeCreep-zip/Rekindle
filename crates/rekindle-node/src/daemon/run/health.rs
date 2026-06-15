@@ -88,7 +88,7 @@ pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths)
     let chat = ctx.chat.read().clone();
     if let Some(ref chat) = chat {
         let _ = writeln!(dump, "\n--- Chat Service ---");
-        let _ = writeln!(dump, "signing_key_loaded: {}", chat.io().is_signing_key_loaded());
+        let _ = writeln!(dump, "identity_loaded: {}", chat.io().is_identity_loaded());
         let _ = writeln!(dump, "transport_attached: {}", chat.io().transport().is_attached());
         let _ = writeln!(dump, "peer_count: {}", chat.io().transport().peer_count());
         let _ = writeln!(dump, "uptime_secs: {}", chat.io().transport().uptime_secs());
@@ -101,7 +101,7 @@ pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths)
 
         if let Some(identity) = chat.session_identity() {
             let _ = writeln!(dump, "\n--- Identity ---");
-            let _ = writeln!(dump, "public_key: {}", identity.public_key_hex);
+            let _ = writeln!(dump, "public_key: {}", identity.public_key.to_hex());
             let _ = writeln!(dump, "display_name: {}", identity.display_name);
             let _ = writeln!(dump, "profile_dht_key: {}", identity.profile_dht_key);
         }

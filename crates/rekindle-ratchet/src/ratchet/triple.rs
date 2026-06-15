@@ -10,6 +10,7 @@
 //! This ensures the SPQR epoch secret is mixed into every message key
 //! when active, providing post-quantum security on top of the EC ratchet.
 
+use tracing::debug;
 use zeroize::Zeroizing;
 
 use crate::crypto::{aead, kdf};
@@ -27,17 +28,21 @@ pub fn encrypt(
     session: &mut TripleRatchetSession,
     plaintext: &[u8],
 ) -> Result<EncryptedMessage, RatchetError> {
-    // Phase 1: advance EC sending chain
-    let (ec_mk, header, next_ck) = advance_sending_chain(&session.ec)?;
+    debug!(
+        direction = ?session.direction,
+        n_send = session.ec.n_send,
+        spqr_active = session.spqr_active,
+        "triple::encrypt: entering"
+    );
+
+    // Phase 1: advance EC sending chain (cks always initialized — Olm model)
+    let (ec_mk, header, next_ck) = advance_sending_chain(&session.ec);
 
     // Phase 2: mix with SPQR epoch secret
     let final_mk = derive_message_key(&ec_mk, session)?;
 
     // Phase 3: encrypt header
-    let hks = session.ec.hks.as_ref().ok_or_else(|| {
-        RatchetError::SessionCorrupt("no sending header key".into())
-    })?;
-    let hk_key = aead::build_key(hks)?;
+    let hk_key = aead::build_key(&session.ec.hks)?;
     let header_bytes = header.to_bytes();
     let mut enc_header = header_bytes.to_vec();
     aead::seal(&hk_key, header.n, &[], &mut enc_header)?;
@@ -48,7 +53,7 @@ pub fn encrypt(
     aead::seal(&mk_key, header.n, &enc_header, &mut ciphertext)?;
 
     // Commit state
-    session.ec.cks = Some(next_ck);
+    session.ec.cks = next_ck;
     session.ec.n_send = header
         .n
         .checked_add(1)
@@ -73,6 +78,14 @@ pub fn decrypt(
     ciphertext: &[u8],
     skipped: &dyn SkippedKeyCallback,
 ) -> Result<Vec<u8>, RatchetError> {
+    debug!(
+        direction = ?session.direction,
+        n_recv = session.ec.n_recv,
+        header_len = encrypted_header.len(),
+        ct_len = ciphertext.len(),
+        "triple::decrypt: entering"
+    );
+
     // Header decrypt + DH ratchet + chain advance (mutates state in-place)
     let (ec_mk, header) =
         ec_decrypt_split(&mut session.ec, encrypted_header, skipped)?;
@@ -85,7 +98,9 @@ pub fn decrypt(
     let plaintext = aead::open(&mk_key, header.n, encrypted_header, &mut body)?;
     let result = plaintext.to_vec();
 
-    session.last_active = now_secs();
+    let now = now_secs();
+    session.last_active = now;
+    session.last_decrypted_at = now;
 
     Ok(result)
 }
@@ -122,17 +137,14 @@ type AdvanceResult = (Zeroizing<[u8; 32]>, MessageHeader, Zeroizing<[u8; 32]>);
 /// Advance the EC sending chain without performing AEAD.
 fn advance_sending_chain(
     state: &DoubleRatchetState,
-) -> Result<AdvanceResult, RatchetError> {
-    let cks = state.cks.as_ref().ok_or_else(|| {
-        RatchetError::SessionCorrupt("no sending chain key".into())
-    })?;
-    let (next_ck, mk) = kdf::kdf_ck(cks);
+) -> AdvanceResult {
+    let (next_ck, mk) = kdf::kdf_ck(&state.cks);
     let header = MessageHeader {
         dh_pub: state.dhs_pub,
         pn: state.pn,
         n: state.n_send,
     };
-    Ok((mk, header, next_ck))
+    (mk, header, next_ck)
 }
 
 /// EC decrypt split: header decrypt + DH ratchet + chain advance, without body AEAD.
@@ -149,14 +161,8 @@ fn ec_decrypt_split(
 
     // Try HKr at n_recv, then NHKr scanning
     let mut dh_ratchet_needed = false;
-    let header = if let Some(hkr) = &state.hkr {
-        if let Some(h) = ec::try_decrypt_header_at(hkr, state.n_recv, encrypted_header) {
-            h
-        } else {
-            scan_nhkr_header(&state.nhkr, encrypted_header)
-                .inspect(|_| { dh_ratchet_needed = true; })
-                .ok_or(RatchetError::DrHeaderDecrypt)?
-        }
+    let header = if let Some(h) = ec::try_decrypt_header_at(&state.hkr, state.n_recv, encrypted_header) {
+        h
     } else {
         let h = scan_nhkr_header(&state.nhkr, encrypted_header)
             .ok_or(RatchetError::DrHeaderDecrypt)?;

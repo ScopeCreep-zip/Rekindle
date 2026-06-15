@@ -190,6 +190,10 @@ impl App {
             ViewKind::FriendList => "Friends".into(),
             ViewKind::Doctor => "Doctor".into(),
             ViewKind::CommunityInfo { community } => format!("{} / Info", self.community_name(community)),
+            ViewKind::Moderation { community } => format!("{} / Moderation", self.community_name(community)),
+            ViewKind::Invite { community } => format!("{} / Invites", self.community_name(community)),
+            ViewKind::Events { community } => format!("{} / Events", self.community_name(community)),
+            ViewKind::Onboarding { community } => format!("{} / Welcome", self.community_name(community)),
             ViewKind::FilePreview { ref path, .. } => format!("File / {}", helpers::abbreviate_key(path)),
         }
     }

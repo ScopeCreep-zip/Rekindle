@@ -16,7 +16,7 @@ use crate::v2::cli::{Cli, Command};
 use crate::v2::error;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
-use crate::v2::prelude::{AgentType, DaemonClient, DaemonRequest};
+use crate::v2::prelude::{AgentType, DaemonClient, DaemonRequest, LifecycleRequest};
 
 /// CLI entry point — called from the crate's actual main.rs.
 ///
@@ -146,6 +146,13 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
     let mut client = DaemonClient::connect().await?;
     let command = cli.command.expect("command required");
 
+    // Batch mode: read JSONL requests from stdin over one connection.
+    if matches!(&command, Command::Batch) {
+        let result = run_batch(&client).await;
+        client.shutdown().await;
+        return result;
+    }
+
     // Streaming commands need the event receiver before dispatch.
     let result = match &command {
         Command::Dm(crate::v2::cli::DmCmd::Watch { friend }) if !matches!(mode, OutputMode::Tui) => {
@@ -177,11 +184,42 @@ async fn watch_status_loop(client: &DaemonClient, mode: OutputMode) -> anyhow::R
         if !mode.is_structured() {
             eprint!("\x1b[2J\x1b[H");
         }
-        let value = client.request_ok(DaemonRequest::Status).await?;
+        let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::Status)).await?;
         let snapshot: rekindle_types::display::StatusSnapshot = serde_json::from_value(value)?;
         crate::v2::commands::network::print_status_compact(&snapshot, mode)?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+}
+
+/// Batch mode: read JSON DaemonRequests from stdin, one per line.
+/// Each request is sent over the existing IPC connection.
+/// Responses are printed as JSON to stdout, one per line.
+/// Single handshake, N requests, clean shutdown at EOF.
+#[allow(clippy::print_stdout)]
+async fn run_batch(client: &DaemonClient) -> anyhow::Result<()> {
+    use std::io::BufRead;
+    let stdin = std::io::stdin();
+    for line in stdin.lock().lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let request: DaemonRequest = serde_json::from_str(trimmed)
+            .map_err(|e| anyhow::anyhow!("batch: invalid JSON on stdin: {e}\n  line: {trimmed}"))?;
+        let response = client.request(request).await?;
+        let json = match &response {
+            rekindle_types::daemon::DaemonResponse::Ok(bytes) => {
+                let value: serde_json::Value = serde_json::from_slice(bytes)?;
+                serde_json::json!({"ok": value})
+            }
+            rekindle_types::daemon::DaemonResponse::Error { code, message, remediation } => {
+                serde_json::json!({"error": {"code": code, "message": message, "remediation": remediation}})
+            }
+        };
+        println!("{}", serde_json::to_string(&json)?);
+    }
+    Ok(())
 }
 
 async fn dispatch_command(
@@ -191,7 +229,7 @@ async fn dispatch_command(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Completions { .. } | Command::Config(_) | Command::Status(_) => {
+        Command::Completions { .. } | Command::Config(_) | Command::Status(_) | Command::Batch => {
             unreachable!("handled before dispatch")
         }
         Command::Init(args) => crate::v2::commands::identity::cmd_init(&args, client, mode).await,
@@ -199,7 +237,7 @@ async fn dispatch_command(
         Command::Node(cmd) => match cmd {
             crate::v2::cli::NodeCmd::Start { .. } => unreachable!("handled before daemon connect"),
             crate::v2::cli::NodeCmd::Stop => {
-                let value = client.request_ok(DaemonRequest::Shutdown).await?;
+                let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::Shutdown)).await?;
                 if mode.is_structured() { format::print_structured(&value, mode) }
                 else { format::print_text("Daemon shutdown initiated.") }
             }
@@ -207,11 +245,11 @@ async fn dispatch_command(
                 format::print_text("Restart: use 'rekindle node stop && rekindle node start'")
             }
             crate::v2::cli::NodeCmd::Attach | crate::v2::cli::NodeCmd::Detach => {
-                let value = client.request_ok(DaemonRequest::NetworkStatus).await?;
+                let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::NetworkStatus)).await?;
                 format::print_structured(&value, mode)
             }
             crate::v2::cli::NodeCmd::Lock => {
-                let value = client.request_ok(DaemonRequest::Lock).await?;
+                let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::Lock)).await?;
                 if mode.is_structured() { format::print_structured(&value, mode) }
                 else { format::print_text("Daemon locked — secrets zeroized.") }
             }
@@ -255,13 +293,13 @@ async fn dispatch_command(
                     "system" => AgentType::System,
                     other => anyhow::bail!("unknown agent type '{other}' — expected: human, ai-llm, bot, filter, analyzer, bridge, system"),
                 };
-                let value = client.request_ok(DaemonRequest::AgentRegister {
+                let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::AgentRegister {
                     name, agent_type: at, capabilities,
-                }).await?;
+                })).await?;
                 format::print_structured(&value, mode)
             }
             crate::v2::cli::AgentCmd::Revoke { name } => {
-                let value = client.request_ok(DaemonRequest::AgentRevoke { name }).await?;
+                let value = client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::AgentRevoke { name })).await?;
                 format::print_structured(&value, mode)
             }
         },

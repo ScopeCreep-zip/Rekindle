@@ -21,6 +21,7 @@ pub fn handle_command_result(view: &mut DmThreadView, result: CommandResult) {
                         body: m.body.clone(), timestamp: m.timestamp, reply_to_sequence: None,
                         mek_generation: 0, is_encrypted: false, needs_mek: None,
                         delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                        thread_id: None,
                     }
                 }).collect();
                 let count = display_msgs.len();
@@ -50,6 +51,7 @@ pub fn handle_subscription_event(view: &mut DmThreadView, event: &SubscriptionEv
                         author_display_name: display_name, body: body_text.clone(), timestamp: *timestamp,
                         reply_to_sequence: None, mek_generation: 0, is_encrypted: false, needs_mek: None,
                         delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                        thread_id: None,
                     });
                 }
             } else {
@@ -59,6 +61,7 @@ pub fn handle_subscription_event(view: &mut DmThreadView, event: &SubscriptionEv
                     author_display_name: display_name, body: "(decrypting...)".into(), timestamp: *timestamp,
                     reply_to_sequence: None, mek_generation: 0, is_encrypted: true, needs_mek: None,
                     delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                    thread_id: None,
                 });
             }
         }

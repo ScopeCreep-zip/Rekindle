@@ -75,12 +75,18 @@ pub fn slot_seed(gov_key_short: &str, slot_index: u32) -> String {
     assert_valid(&format!("community.slot.{}.{slot_index}", strip_key_prefix(gov_key_short)))
 }
 
-/// Strip the `VLD0:` (or any `XXX:`) type-tag prefix from a key string.
-/// Key labels allow only alphanumeric, dots, and hyphens — the colon in
-/// the prefix would fail validation. The prefix is a type tag, not part
-/// of the key identifier.
-pub fn strip_key_prefix(key: &str) -> &str {
-    key.find(':').map_or(key, |pos| &key[pos + 1..])
+/// Strip the `VLD0:` (or any `XXX:`) type-tag prefix from a key string
+/// and sanitize the remainder for use as a vault label component.
+///
+/// The vault label allowed set is: ASCII alphanumeric, dots, hyphens.
+/// Any character outside that set is replaced with a hyphen. This is
+/// an allowlist — it handles base64url (`_`, `+`, `/`), future encodings,
+/// and any unexpected input without enumerating bad characters.
+pub fn strip_key_prefix(key: &str) -> String {
+    let stripped = key.find(':').map_or(key, |pos| &key[pos + 1..]);
+    stripped.chars().map(|c| {
+        if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '-' }
+    }).collect()
 }
 
 /// Assert a label is valid at construction time. Every label builder
@@ -149,7 +155,6 @@ mod tests {
 
     #[test]
     fn plain_keys_pass_through_strip_unchanged() {
-        // Keys without a colon prefix pass through strip_key_prefix unchanged.
         assert_eq!(strip_key_prefix("abc123"), "abc123");
         assert_eq!(strip_key_prefix("5fVBSx3abc"), "5fVBSx3abc");
     }
@@ -159,6 +164,17 @@ mod tests {
         assert_eq!(strip_key_prefix("VLD0:5fVBSx3abc"), "5fVBSx3abc");
         assert_eq!(strip_key_prefix("VLD1:xyz"), "xyz");
         assert_eq!(strip_key_prefix(":empty-prefix"), "empty-prefix");
+    }
+
+    #[test]
+    fn base64url_chars_sanitized() {
+        // Veilid keys use base64url which includes _ + /
+        // All must be replaced with hyphens for vault label validity
+        assert_eq!(strip_key_prefix("VLD0:Ez5a_a_"), "Ez5a-a-");
+        assert_eq!(strip_key_prefix("VLD0:abc+def/ghi"), "abc-def-ghi");
+        assert_eq!(strip_key_prefix("abc_def"), "abc-def");
+        // Verify the sanitized output passes validation
+        assert!(validate(&format!("test.{}", strip_key_prefix("VLD0:Ez5a_a_"))).is_ok());
     }
 
     #[test]

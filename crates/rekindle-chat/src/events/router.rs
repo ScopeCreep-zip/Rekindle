@@ -1,281 +1,325 @@
-//! EventRouter — implements TransportCallback, verifies inbound messages,
-//! dispatches to services, emits events through the pipeline.
+//! Inbound event reader — reads InboundEvent from mpsc channel,
+//! verifies inbound messages, dispatches to services, emits events
+//! through the pipeline.
 //!
-//! Every inbound byte from transport flows through this struct.
-//! Every outbound event to the IPC bus flows through this struct's pipeline.
-//!
-//! Verification order:
+//! Verification order for Message events:
 //! 1. Read TypeId byte (first byte of raw data)
 //! 2. For DM TypeIds (0x01-0x06): parse SignedEnvelope, verify Ed25519
 //!    signature + timestamp freshness (5min window, 60s future skew)
 //! 3. For gossip TypeId (0x0A): delegate to community.handle_gossip
-//!    which verifies the gossip envelope signature
 //! 4. For RPC TypeId (0x0B): delegate to community.handle_rpc_message
 //! 5. Convert verified payload to SubscriptionEvent
 //! 6. Process through EventPipeline (state_effects → dedup → emit)
-//!
-//! If verification fails at any step, the message is dropped and logged
-//! with the sender key, TypeId, and specific failure reason. No partial
-//! dispatch. No silent drops.
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use rekindle_types::transport::{TransportCallback, TransportEvent};
+use tokio::sync::mpsc;
+use rekindle_types::transport::{InboundEvent, TransportEvent};
 use rekindle_types::subscription_events::SubscriptionEvent;
 
 use super::pipeline::EventPipeline;
 use super::registry::{WatchKind, WatchRegistry};
 use crate::crypto::envelope::SignedEnvelope;
+use crate::dm::DmDeps;
 use crate::friendship::FriendshipService;
 use crate::messaging::MessagingService;
 use crate::community::CommunityService;
 
-/// Routes inbound transport events to chat services via the event pipeline.
-pub struct EventRouter {
+/// Run the inbound event reader loop. Spawned by ChatService after
+/// receiving the mpsc::Receiver from TransportNode::start().
+///
+/// Runs until the channel closes (transport shutdown).
+pub async fn run_inbound_loop(
+    mut rx: mpsc::Receiver<InboundEvent>,
     watches: Arc<WatchRegistry>,
     pipeline: Arc<EventPipeline>,
     friendship: Arc<FriendshipService>,
     messaging: Arc<MessagingService>,
     community: Arc<CommunityService>,
-}
+    dm_deps: Arc<dyn DmDeps>,
+) {
+    tracing::info!("router: inbound event reader started");
 
-impl EventRouter {
-    pub fn new(
-        watches: Arc<WatchRegistry>,
-        pipeline: Arc<EventPipeline>,
-        friendship: Arc<FriendshipService>,
-        messaging: Arc<MessagingService>,
-        community: Arc<CommunityService>,
-    ) -> Self {
-        Self { watches, pipeline, friendship, messaging, community }
-    }
-}
-
-#[async_trait]
-impl TransportCallback for EventRouter {
-    async fn on_message(&self, sender_key: &str, data: &[u8]) {
-        if data.is_empty() {
-            tracing::debug!("dropping empty app_message");
-            return;
+    while let Some(event) = rx.recv().await {
+        match event {
+            InboundEvent::Message { sender_key, data } => {
+                let type_id = data.first().copied().unwrap_or(0);
+                tracing::info!(
+                    type_id,
+                    data_len = data.len(),
+                    sender = if sender_key.is_empty() { "anonymous" } else { &sender_key[..16.min(sender_key.len())] },
+                    "router: InboundEvent::Message"
+                );
+                handle_message(
+                    &sender_key, &data, &pipeline, &friendship,
+                    &messaging, &community, &*dm_deps,
+                ).await;
+            }
+            InboundEvent::Call { sender_key, data, reply_tx } => {
+                let response = community.handle_rpc_call(&sender_key, &data, &*dm_deps).await;
+                let _ = reply_tx.send(response);
+            }
+            InboundEvent::RecordChange { record_key, subkeys, count: _, data } => {
+                handle_record_change(
+                    &record_key, &subkeys, data, &watches, &friendship,
+                    &messaging, &community, &*dm_deps,
+                ).await;
+            }
+            InboundEvent::Event(transport_event) => {
+                handle_transport_event(transport_event, &pipeline);
+            }
+            InboundEvent::TransferProgress { transfer_id, total_size, bytes_transferred, status, .. } => {
+                pipeline.process(SubscriptionEvent::BulkTransferProgress {
+                    transfer_id: hex::encode(transfer_id),
+                    stream_id: 0,
+                    direction: "receive".into(),
+                    bytes_transferred,
+                    total_size,
+                    status: format!("{status:?}"),
+                });
+            }
+            InboundEvent::TransferOffer { transfer_id, sender_peer_key, filename, total_size, .. } => {
+                tracing::info!(
+                    filename = %filename,
+                    size = total_size,
+                    sender = &sender_peer_key[..16.min(sender_peer_key.len())],
+                    "router: transfer offer"
+                );
+                pipeline.process(SubscriptionEvent::BulkTransferProgress {
+                    transfer_id: hex::encode(transfer_id),
+                    stream_id: 0, direction: "receive".into(),
+                    bytes_transferred: 0, total_size, status: "Offering".into(),
+                });
+            }
+            InboundEvent::TransferComplete { transfer_id, path, hash_match } => {
+                tracing::info!(path = %path, hash_match, "router: transfer complete");
+                pipeline.process(SubscriptionEvent::BulkTransferProgress {
+                    transfer_id: hex::encode(transfer_id),
+                    stream_id: 0, direction: "receive".into(),
+                    bytes_transferred: 0, total_size: 0,
+                    status: if hash_match { "Completed".into() } else { "Failed".into() },
+                });
+            }
+            InboundEvent::TransferFailed { transfer_id, reason } => {
+                tracing::warn!(reason = %reason, "router: transfer failed");
+                pipeline.process(SubscriptionEvent::BulkTransferProgress {
+                    transfer_id: hex::encode(transfer_id),
+                    stream_id: 0, direction: "receive".into(),
+                    bytes_transferred: 0, total_size: 0,
+                    status: format!("Failed: {reason}"),
+                });
+            }
         }
+    }
 
-        let type_id = data[0];
+    tracing::info!("router: inbound event reader exiting — channel closed");
+}
 
-        match type_id {
-            // ── DM TypeIds (0x01-0x06): SignedEnvelope verification ──
-            1..=6 => {
-                // Parse SignedEnvelope: [TypeId(1) || timestamp(8) || pubkey(32) || sig(64) || payload]
-                // The full data includes the TypeId byte which is part of the envelope.
-                let envelope = match SignedEnvelope::parse(data) {
-                    Ok(e) => e,
-                    Err(e) => {
-                        tracing::warn!(
-                            type_id,
-                            sender = &sender_key[..12.min(sender_key.len())],
-                            error = %e,
-                            "dropping DM: envelope parse failed"
-                        );
-                        return;
-                    }
-                };
+/// Handle an inbound Message (TypeId dispatch).
+async fn handle_message(
+    sender_key: &str,
+    data: &[u8],
+    pipeline: &EventPipeline,
+    friendship: &FriendshipService,
+    messaging: &MessagingService,
+    community: &CommunityService,
+    _dm_deps: &dyn DmDeps,
+) {
+    if data.is_empty() { return; }
+    let type_id = data[0];
 
-                // Verify signature + timestamp freshness
-                if let Err(e) = envelope.verify() {
+    match type_id {
+        1..=6 => {
+            let envelope = match SignedEnvelope::parse(data) {
+                Ok(e) => e,
+                Err(e) => {
                     tracing::warn!(
                         type_id,
                         sender = &sender_key[..12.min(sender_key.len())],
                         error = %e,
-                        "dropping DM: verification failed (forgery, replay, or clock skew)"
+                        "router: DM envelope parse failed"
                     );
                     return;
                 }
-
-                let verified_sender = hex::encode(&envelope.sender_key[..]);
-                let payload = &envelope.payload;
-
-                match type_id {
-                    1 => {
-                        // Typing indicator — gate on known peer
-                        if !self.messaging.handle_typing(&verified_sender, payload) {
-                            return;
-                        }
-                        let dm_payload: rekindle_types::dm_payload::DmPayload =
-                            match postcard::from_bytes(payload) {
-                                Ok(p) => p,
-                                Err(_) => return,
-                            };
-                        let event = crate::events::conversions::dm_to_event(dm_payload, &verified_sender);
-                        self.pipeline.process(event);
-                    }
-                    2 => {
-                        // FriendRequestAck — trigger inbox scan
-                        self.friendship.trigger_inbox_scan();
-                        let event = SubscriptionEvent::Friend(
-                            rekindle_types::subscription_events::FriendEvent::RequestAcknowledged {
-                                peer_key: verified_sender,
-                            },
-                        );
-                        self.pipeline.process(event);
-                    }
-                    3 => {
-                        // Unfriend
-                        self.friendship.handle_unfriend(&verified_sender).await;
-                        let event = SubscriptionEvent::Friend(
-                            rekindle_types::subscription_events::FriendEvent::Removed {
-                                peer_key: verified_sender,
-                            },
-                        );
-                        self.pipeline.process(event);
-                    }
-                    4 => {
-                        // UnfriendAck — acknowledged, emit event only
-                        let event = SubscriptionEvent::Friend(
-                            rekindle_types::subscription_events::FriendEvent::RemoveAcknowledged {
-                                peer_key: verified_sender,
-                            },
-                        );
-                        self.pipeline.process(event);
-                    }
-                    5 => {
-                        // ProfileKeyRotated
-                        self.friendship.handle_profile_rotated(&verified_sender, payload).await;
-                        let dm_payload: rekindle_types::dm_payload::DmPayload =
-                            match postcard::from_bytes(payload) {
-                                Ok(p) => p,
-                                Err(_) => return,
-                            };
-                        let event = crate::events::conversions::dm_to_event(dm_payload, &verified_sender);
-                        self.pipeline.process(event);
-                    }
-                    6 => {
-                        // PresenceUpdate — gate on known peer
-                        if !self.messaging.handle_presence_update(&verified_sender, payload) {
-                            return;
-                        }
-                        let dm_payload: rekindle_types::dm_payload::DmPayload =
-                            match postcard::from_bytes(payload) {
-                                Ok(p) => p,
-                                Err(_) => return,
-                            };
-                        let event = crate::events::conversions::dm_to_event(dm_payload, &verified_sender);
-                        self.pipeline.process(event);
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            // ── Gossip TypeId (0x0A): community handles verification ──
-            10 => {
-                // payload = everything after TypeId byte
-                let payload = &data[1..];
-                if let Some(event) = self.community.handle_gossip(sender_key, payload).await {
-                    self.pipeline.process(event);
-                }
-                // None means handle_gossip dropped it (malformed, forged, or
-                // deserialization failed) — already logged inside handle_gossip.
-            }
-
-            // ── RPC TypeId (0x0B): community handles verification ──
-            11 => {
-                let payload = &data[1..];
-                self.community.handle_rpc_message(sender_key, payload).await;
-            }
-
-            // ── Unknown TypeId ──
-            _ => {
-                tracing::debug!(
+            };
+            if let Err(e) = envelope.verify() {
+                tracing::warn!(
                     type_id,
                     sender = &sender_key[..12.min(sender_key.len())],
-                    "unknown TypeId — dropping"
+                    error = %e,
+                    "router: DM verification failed"
                 );
+                return;
+            }
+            let verified_sender = hex::encode(&envelope.sender_key[..]);
+            let payload = &envelope.payload;
+
+            match type_id {
+                1 => {
+                    if !messaging.handle_typing(&verified_sender, payload) { return; }
+                    if let Ok(dm_payload) = postcard::from_bytes::<rekindle_types::dm_payload::DmPayload>(payload) {
+                        pipeline.process(dm_payload.into_event(&verified_sender));
+                    }
+                }
+                2 => {
+                    friendship.trigger_inbox_scan();
+                    pipeline.process(SubscriptionEvent::Friend(
+                        rekindle_types::subscription_events::FriendEvent::RequestAcknowledged {
+                            peer_key: verified_sender,
+                        },
+                    ));
+                }
+                3 => {
+                    friendship.handle_unfriend(&verified_sender).await;
+                    pipeline.process(SubscriptionEvent::Friend(
+                        rekindle_types::subscription_events::FriendEvent::Removed {
+                            peer_key: verified_sender,
+                        },
+                    ));
+                }
+                4 => {
+                    pipeline.process(SubscriptionEvent::Friend(
+                        rekindle_types::subscription_events::FriendEvent::RemoveAcknowledged {
+                            peer_key: verified_sender,
+                        },
+                    ));
+                }
+                5 => {
+                    friendship.handle_profile_rotated(&verified_sender, payload).await;
+                    if let Ok(dm_payload) = postcard::from_bytes::<rekindle_types::dm_payload::DmPayload>(payload) {
+                        pipeline.process(dm_payload.into_event(&verified_sender));
+                    }
+                }
+                6 => {
+                    if !messaging.handle_presence_update(&verified_sender, payload) { return; }
+                    if let Ok(dm_payload) = postcard::from_bytes::<rekindle_types::dm_payload::DmPayload>(payload) {
+                        pipeline.process(dm_payload.into_event(&verified_sender));
+                    }
+                }
+                _ => unreachable!(),
             }
         }
-    }
-
-    async fn on_call(&self, sender_key: &str, data: &[u8]) -> Vec<u8> {
-        // RPC calls go through community governance dispatch.
-        // The call data is raw bytes — community.handle_rpc_call parses,
-        // deserializes, dispatches to the governance op handler, and
-        // returns serialized response bytes.
-        self.community.handle_rpc_call(sender_key, data).await
-    }
-
-    async fn on_record_change(
-        &self,
-        record_key: &str,
-        subkeys: Vec<u32>,
-        _value_count: u32,
-        data: Option<Vec<u8>>,
-    ) {
-        match self.watches.lookup(record_key) {
-            Some(WatchKind::DmLog { ref peer_key }) => {
-                self.messaging.handle_dm_log_change(peer_key, record_key, data).await;
-            }
-            Some(WatchKind::ChannelLog { ref community, ref channel_id, ref member }) => {
-                self.messaging.handle_channel_log_change(community, channel_id, member, data);
-            }
-            Some(WatchKind::FriendInbox) => {
-                self.friendship.trigger_inbox_scan();
-            }
-            Some(WatchKind::GovernanceManifest { ref community }) => {
-                self.community.handle_governance_change(community, &subkeys).await;
-            }
-            Some(WatchKind::MemberRegistry { ref community }) => {
-                self.community.handle_registry_change(community, &subkeys).await;
-            }
-            Some(WatchKind::JoinInbox { ref community }) => {
-                self.community.handle_join_inbox_change(community).await;
-            }
-            None => {
-                tracing::debug!(
-                    record_key,
-                    subkeys = ?subkeys,
-                    "record change for unregistered watch — dropping"
-                );
+        10 => {
+            let payload = &data[1..];
+            tracing::info!(
+                payload_len = payload.len(),
+                "router: TypeId=10 gossip → handle_gossip"
+            );
+            match community.handle_gossip(sender_key, payload).await {
+                Some(event) => {
+                    tracing::info!("router: handle_gossip returned event → pipeline.process");
+                    pipeline.process(event);
+                }
+                None => {
+                    tracing::warn!("router: handle_gossip returned None — dropped");
+                }
             }
         }
+        11 => {
+            let payload = &data[1..];
+            community.handle_rpc_message(sender_key, payload).await;
+        }
+        _ => {
+            tracing::debug!(
+                type_id,
+                sender = &sender_key[..12.min(sender_key.len())],
+                "router: unknown TypeId"
+            );
+        }
     }
+}
 
-    async fn on_event(&self, event: TransportEvent) {
-        match event {
-            TransportEvent::Attached => {
-                tracing::info!("transport attached — platform is online");
-                self.pipeline.process(SubscriptionEvent::Network(
-                    rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
-                        is_attached: true,
-                        public_internet_ready: true,
-                    },
-                ));
+/// Handle a DHT record change (watch dispatch).
+async fn handle_record_change(
+    record_key: &str,
+    subkeys: &[u32],
+    data: Option<Vec<u8>>,
+    watches: &WatchRegistry,
+    friendship: &FriendshipService,
+    messaging: &MessagingService,
+    community_svc: &CommunityService,
+    dm_deps: &dyn DmDeps,
+) {
+    match watches.lookup(record_key) {
+        Some(WatchKind::DmLog { ref peer_key }) => {
+            messaging.handle_dm_log_change(peer_key, record_key, data).await;
+        }
+        Some(WatchKind::DmSmpl { record_key: ref rk }) => {
+            for &subkey in subkeys {
+                if let Err(e) = crate::dm::handle_dm_subkey_change(
+                    dm_deps, rk, subkey, data.as_deref(),
+                ).await {
+                    tracing::warn!(
+                        record_key = &rk[..12.min(rk.len())],
+                        subkey,
+                        error = %e,
+                        "router: DmSmpl subkey change failed"
+                    );
+                }
             }
-            TransportEvent::Detached => {
-                tracing::warn!("transport detached — platform is offline");
-                self.pipeline.process(SubscriptionEvent::Network(
-                    rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
-                        is_attached: false,
-                        public_internet_ready: false,
-                    },
-                ));
-            }
-            TransportEvent::RouteDied { ref route_id } => {
-                tracing::warn!(route_id, "route died — clients using this route will fail");
-            }
-            TransportEvent::WatchExpired { ref record_key } => {
-                tracing::debug!(record_key, "watch expired — needs renewal");
-                self.pipeline.process(SubscriptionEvent::Network(
-                    rekindle_types::subscription_events::NetworkEvent::WatchFailed {
-                        record_key: record_key.clone(),
-                        error: "watch expired — renewal needed".into(),
-                    },
-                ));
-            }
-            TransportEvent::RouteAllocated { .. } => {}
-            TransportEvent::PeerCountChanged { count } => {
-                tracing::debug!(count, "peer count changed");
-            }
-            TransportEvent::PublicInternet { available } => {
-                tracing::info!(available, "public internet reachability changed");
-            }
+        }
+        Some(WatchKind::ChannelLog { ref community, ref channel_id, ref member }) => {
+            messaging.handle_channel_log_change(community, channel_id, member, data);
+        }
+        Some(WatchKind::FriendInbox) => {
+            friendship.trigger_inbox_scan();
+        }
+        Some(WatchKind::GovernanceManifest { ref community }) => {
+            community_svc.handle_governance_change(community, subkeys).await;
+        }
+        Some(WatchKind::MemberRegistry { ref community }) => {
+            community_svc.handle_registry_change(community, subkeys).await;
+        }
+        Some(WatchKind::JoinInbox { ref community }) => {
+            community_svc.handle_join_inbox_change(community).await;
+        }
+        None => {
+            tracing::debug!(record_key, "router: record change for unregistered watch");
+        }
+    }
+}
+
+/// Handle a transport lifecycle event.
+fn handle_transport_event(event: TransportEvent, pipeline: &EventPipeline) {
+    match event {
+        TransportEvent::Attached => {
+            tracing::info!("router: transport attached");
+            pipeline.process(SubscriptionEvent::Network(
+                rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
+                    is_attached: true,
+                    public_internet_ready: true,
+                },
+            ));
+        }
+        TransportEvent::Detached => {
+            tracing::warn!("router: transport detached");
+            pipeline.process(SubscriptionEvent::Network(
+                rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
+                    is_attached: false,
+                    public_internet_ready: false,
+                },
+            ));
+        }
+        TransportEvent::RouteDied { ref route_id } => {
+            tracing::warn!(route_id, "router: route died");
+            pipeline.process(SubscriptionEvent::Network(
+                rekindle_types::subscription_events::NetworkEvent::LocalRoutesDied { count: 1 },
+            ));
+        }
+        TransportEvent::WatchExpired { ref record_key } => {
+            pipeline.process(SubscriptionEvent::Network(
+                rekindle_types::subscription_events::NetworkEvent::WatchFailed {
+                    record_key: record_key.clone(),
+                    error: "expired".into(),
+                },
+            ));
+        }
+        TransportEvent::RouteAllocated { .. } => {}
+        TransportEvent::PeerCountChanged { count } => {
+            tracing::debug!(count, "router: peer count changed");
+        }
+        TransportEvent::PublicInternet { available } => {
+            tracing::info!(available, "router: public internet changed");
         }
     }
 }

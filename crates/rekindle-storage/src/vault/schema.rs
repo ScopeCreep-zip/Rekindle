@@ -1,8 +1,9 @@
-//! Vault database schema — all CREATE TABLE statements and migrations.
+//! Vault database schema — single canonical definition.
 //!
-//! Schema version is tracked in the `schema_version` table. Migrations
-//! are append-only (ALTER TABLE ADD COLUMN, CREATE TABLE IF NOT EXISTS).
-//! No destructive migrations.
+//! Zero users. Zero deployments. No migration logic. The schema is
+//! defined once and created fresh on every `rekindle:reset`. When we
+//! ship to real users, migration logic goes here. Until then, the
+//! schema is freely changeable.
 
 use rusqlite::Connection;
 
@@ -10,7 +11,7 @@ use crate::error::{StorageError, StorageResult};
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
-const SCHEMA_V1: &str = "
+const SCHEMA: &str = "
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -55,6 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_skipped_session ON skipped_keys(session_id);
 CREATE TABLE IF NOT EXISTS dm_sent (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     peer_key TEXT NOT NULL,
+    sender_key TEXT,
     body BLOB NOT NULL,
     timestamp INTEGER NOT NULL,
     message_id TEXT NOT NULL UNIQUE
@@ -65,6 +67,7 @@ CREATE INDEX IF NOT EXISTS idx_dm_sent_peer ON dm_sent(peer_key, timestamp);
 CREATE TABLE IF NOT EXISTS dm_received (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     peer_key TEXT NOT NULL,
+    sender_key TEXT,
     sender_name TEXT NOT NULL,
     body BLOB NOT NULL,
     timestamp INTEGER NOT NULL,
@@ -73,7 +76,7 @@ CREATE TABLE IF NOT EXISTS dm_received (
 );
 CREATE INDEX IF NOT EXISTS idx_dm_recv_peer ON dm_received(peer_key, timestamp);
 
--- Channel message cache
+-- Channel message cache (MEK-decrypted, entry-encrypted at rest)
 CREATE TABLE IF NOT EXISTS channel_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     community_id TEXT NOT NULL,
@@ -84,12 +87,15 @@ CREATE TABLE IF NOT EXISTS channel_messages (
     timestamp INTEGER NOT NULL,
     sequence INTEGER NOT NULL,
     message_id TEXT NOT NULL,
-    mek_generation INTEGER NOT NULL
+    mek_generation INTEGER NOT NULL,
+    reply_to_sequence INTEGER,
+    thread_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chan_msg ON channel_messages(community_id, channel_id, timestamp);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chan_dedup ON channel_messages(community_id, channel_id, sequence);
+CREATE INDEX IF NOT EXISTS idx_chan_thread ON channel_messages(thread_id) WHERE thread_id IS NOT NULL;
 
--- MEK cache (per-channel encryption keys)
+-- MEK cache (per-channel encryption keys, entry-encrypted at rest)
 CREATE TABLE IF NOT EXISTS mek_cache (
     community_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
@@ -99,7 +105,7 @@ CREATE TABLE IF NOT EXISTS mek_cache (
     PRIMARY KEY (community_id, channel_id, generation)
 );
 
--- Friend display names
+-- Friend display names (resolved from profile DHT records)
 CREATE TABLE IF NOT EXISTS friend_names (
     peer_key TEXT PRIMARY KEY NOT NULL,
     display_name TEXT NOT NULL,
@@ -112,10 +118,48 @@ CREATE TABLE IF NOT EXISTS pending_outbound_logs (
     outbound_log_key TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+
+-- DM conversations (SMPL record-based, 1:1 and group)
+CREATE TABLE IF NOT EXISTS dm_conversations (
+    record_key        TEXT PRIMARY KEY,
+    is_group          INTEGER NOT NULL DEFAULT 0,
+    initiator_pub_key TEXT NOT NULL,
+    initiator_pseudo  TEXT NOT NULL DEFAULT '',
+    my_subkey         INTEGER NOT NULL,
+    participants_json TEXT NOT NULL DEFAULT '[]',
+    slot_seed_hex     TEXT NOT NULL DEFAULT '',
+    wrapped_mek_blob  BLOB,
+    mek_generation    INTEGER NOT NULL DEFAULT 0,
+    created_at        INTEGER NOT NULL,
+    last_message_at   INTEGER
+);
+
+-- DM messages (entry-encrypted body, keyed by record_key)
+CREATE TABLE IF NOT EXISTS dm_messages (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_key       TEXT NOT NULL REFERENCES dm_conversations(record_key),
+    sender_pseudonym TEXT NOT NULL,
+    body             BLOB NOT NULL,
+    timestamp_secs   INTEGER NOT NULL,
+    sequence         INTEGER NOT NULL,
+    mek_generation   INTEGER NOT NULL DEFAULT 0,
+    is_self          INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(record_key, sender_pseudonym, sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_dm_msg_record_ts
+    ON dm_messages(record_key, timestamp_secs DESC);
+
+-- Replay detection: BLAKE3 hash of (record_key || subkey || raw_bytes)
+CREATE TABLE IF NOT EXISTS dm_message_hashes (
+    hash BLOB PRIMARY KEY NOT NULL,
+    record_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dm_hash_ttl ON dm_message_hashes(created_at);
 ";
 
 pub fn create_all(conn: &Connection) -> StorageResult<()> {
-    conn.execute_batch(SCHEMA_V1).map_err(|e| StorageError::VaultCreationFailed {
+    conn.execute_batch(SCHEMA).map_err(|e| StorageError::VaultCreationFailed {
         reason: format!("schema: {e}"),
     })?;
 
@@ -153,8 +197,6 @@ pub fn migrate(conn: &Connection) -> StorageResult<()> {
         });
     }
 
-    // Migration chain: when v2 is needed, add: if current < 2 { migrate_v1_to_v2(conn)?; }
-
     conn.execute(
         "UPDATE schema_version SET version = ?1, migrated_at = ?2 WHERE id = 1",
         rusqlite::params![CURRENT_SCHEMA_VERSION, timestamp_secs()],
@@ -163,7 +205,6 @@ pub fn migrate(conn: &Connection) -> StorageResult<()> {
     Ok(())
 }
 
-// Timestamps won't exceed i64::MAX until year ~292 billion.
 #[allow(clippy::cast_possible_wrap)]
 pub(crate) fn timestamp_secs() -> i64 {
     std::time::SystemTime::now()

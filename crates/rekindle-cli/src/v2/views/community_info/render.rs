@@ -25,29 +25,37 @@ pub fn draw(view: &mut CommunityInfoView, frame: &mut Frame, area: Rect, theme: 
     let detail = view.detail.as_ref().expect("checked above");
 
     #[allow(clippy::cast_possible_truncation)]
-    let channel_height = (detail.channels.len() as u16 + 2).min(area.height / 3);
+    let channel_height = (detail.channels.len() as u16 + 2).min(area.height / 4);
     #[allow(clippy::cast_possible_truncation)]
-    let role_height = (detail.roles.len() as u16 + 2).min(area.height / 4);
+    let role_height = (detail.roles.len() as u16 + 2).min(area.height / 5);
+    #[allow(clippy::cast_possible_truncation)]
+    let member_height = (detail.members.len() as u16 + 2).min(area.height / 4);
+    #[allow(clippy::cast_possible_truncation)]
+    let game_height = if view.game_servers.is_empty() { 0 } else { (view.game_servers.len() as u16 + 2).min(area.height / 5) };
 
-    let [meta_area, channels_area, roles_area] = Layout::vertical([
-        Constraint::Length(8), Constraint::Length(channel_height), Constraint::Min(role_height),
+    let [meta_area, channels_area, members_area, game_area, roles_area] = Layout::vertical([
+        Constraint::Length(8),
+        Constraint::Length(channel_height),
+        Constraint::Length(member_height),
+        Constraint::Length(game_height),
+        Constraint::Min(role_height),
     ]).areas(area);
 
     render_metadata(frame, meta_area, detail);
     render_channels(frame, channels_area, detail, view.selected_channel);
+    render_members(frame, members_area, detail);
+    if !view.game_servers.is_empty() {
+        render_game_servers(frame, game_area, &view.game_servers);
+    }
     render_roles(frame, roles_area, detail);
 }
 
 fn render_metadata(frame: &mut Frame, area: Rect, detail: &rekindle_types::display::CommunityDetail) {
     let gov_short = helpers::abbreviate_key(&detail.governance_key);
     let owner_short = helpers::abbreviate_key(&detail.owner_pseudonym);
-    let created = helpers::format_timestamp(detail.created_at);
+    let created = if detail.created_at == 0 { "unknown".to_string() } else { helpers::format_timestamp(detail.created_at) };
     let our_key = helpers::abbreviate_key(&detail.our_pseudonym);
-    let roles_str = if detail.our_roles.is_empty() {
-        "none".to_string()
-    } else {
-        detail.our_roles.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-    };
+    let operator_badge = if detail.is_operator { " [operator]" } else { "" };
 
     let lines = vec![
         Line::from(vec![Span::styled("  Name:         ", Style::new().dim()), Span::styled(&detail.name, Style::new().bold())]),
@@ -55,7 +63,8 @@ fn render_metadata(frame: &mut Frame, area: Rect, detail: &rekindle_types::displ
         else { Line::from(vec![Span::styled("  Description:  ", Style::new().dim()), Span::raw(&detail.description)]) },
         Line::from(vec![
             Span::styled("  Members:      ", Style::new().dim()), Span::raw(detail.member_count.to_string()),
-            Span::styled("      Channels: ", Style::new().dim()), Span::raw(detail.channels.len().to_string()),
+            Span::styled("  Channels: ", Style::new().dim()), Span::raw(detail.channels.len().to_string()),
+            Span::styled("  Roles: ", Style::new().dim()), Span::raw(detail.roles.len().to_string()),
         ]),
         Line::from(vec![Span::styled("  Governance:   ", Style::new().dim()), Span::raw(gov_short)]),
         Line::from(vec![
@@ -64,7 +73,8 @@ fn render_metadata(frame: &mut Frame, area: Rect, detail: &rekindle_types::displ
         ]),
         Line::from(vec![
             Span::styled("  Your key:     ", Style::new().dim()), Span::raw(our_key),
-            Span::styled("  Roles: ", Style::new().dim()), Span::raw(roles_str),
+            Span::styled(operator_badge, Style::new().bold()),
+            Span::styled("  Policy: ", Style::new().dim()), Span::raw(&detail.join_policy),
         ]),
     ];
 
@@ -84,9 +94,10 @@ fn render_channels(frame: &mut Frame, area: Rect, detail: &rekindle_types::displ
     let items: Vec<ListItem<'_>> = detail.channels.iter().enumerate().map(|(i, ch)| {
         let topic = if ch.topic.is_empty() { String::new() } else { format!("  — {}", ch.topic) };
         let prefix = if i == selected { "▸ " } else { "  " };
+        let kind_str = format!("{:?}", ch.kind);
         ListItem::new(Line::from(vec![
             Span::raw(format!("{prefix}#{:<20} ", ch.name)),
-            Span::styled(&ch.kind, Style::new().dim()),
+            Span::styled(kind_str, Style::new().dim()),
             Span::styled(topic, Style::new().dim()),
         ]))
     }).collect();
@@ -97,6 +108,56 @@ fn render_channels(frame: &mut Frame, area: Rect, detail: &rekindle_types::displ
         List::new(items).block(block).highlight_style(Style::new().reversed()),
         area, &mut list_state,
     );
+}
+
+fn render_members(frame: &mut Frame, area: Rect, detail: &rekindle_types::display::CommunityDetail) {
+    let title = format!(" Members ({}) ", detail.members.len());
+    let block = Block::bordered().title(title).border_style(Style::new().dim());
+
+    if detail.members.is_empty() {
+        frame.render_widget(Paragraph::new("  No members.").style(Style::new().dim()).block(block), area);
+        return;
+    }
+
+    let lines: Vec<Line<'_>> = detail.members.iter().map(|m| {
+        let (status_glyph, status_label) = match m.status.as_str() {
+            "online" => ("●", "[ONLINE]"),
+            "away" => ("◐", "[AWAY]"),
+            "busy" => ("●", "[BUSY]"),
+            "offline" => ("○", "[OFFLINE]"),
+            _ => ("○", "[OFFLINE]"),
+        };
+        let role = m.role_name.as_deref().map_or(String::new(), |r| format!("  [{r}]"));
+        let timeout = m.member.timeout_until.map_or(String::new(), |t| format!("  [timeout until {t}]"));
+        Line::from(vec![
+            Span::raw(format!("  {status_glyph} {status_label} ")),
+            Span::styled(&m.member.display_name, Style::new().bold()),
+            Span::styled(role, Style::new().dim()),
+            Span::styled(timeout, Style::new().dim()),
+        ])
+    }).collect();
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_game_servers(frame: &mut Frame, area: Rect, servers: &[serde_json::Value]) {
+    let title = format!(" 🎮 Game Servers ({}) ", servers.len());
+    let block = Block::bordered().title(title).border_style(Style::new().dim());
+
+    let lines: Vec<Line<'_>> = servers.iter().map(|s| {
+        let label = s.get("label").and_then(|v| v.as_str()).unwrap_or("?");
+        let address = s.get("address").and_then(|v| v.as_str()).unwrap_or("?");
+        let game = s.get("game_id").and_then(|v| v.as_str()).unwrap_or("?");
+        let by = s.get("added_by").and_then(|v| v.as_str()).unwrap_or("?");
+        let by_short = helpers::abbreviate_key(by);
+        Line::from(vec![
+            Span::raw(format!("  🎮 {label} — ")),
+            Span::styled(address, Style::new().bold()),
+            Span::styled(format!("  ({game})  added by {by_short}"), Style::new().dim()),
+        ])
+    }).collect();
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn render_roles(frame: &mut Frame, area: Rect, detail: &rekindle_types::display::CommunityDetail) {

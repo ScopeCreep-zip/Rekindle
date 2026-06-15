@@ -47,7 +47,9 @@ impl CommunityService {
             .map_err(|e| ChatError::Internal(format!("MEK gen: {e}")))?;
 
         let operator_seed = self.io.pseudonym_seed(gov_key)?;
-        let operator_x25519_seed = blake3::derive_key("rekindle identity x25519 v1", &operator_seed);
+        let operator_x25519_seed = rekindle_identity::x25519_seed_from(&operator_seed);
+        let operator_x25519_pub = rekindle_identity::x25519_public_from_raw_seed(&operator_x25519_seed)
+            .map_err(|e| ChatError::Internal(format!("operator DhKey: {e}")))?;
         let mek_wire = crate::crypto::mek::mek_to_wire(&new_key, new_gen);
 
         let our_pseudonym_hex = self.io.pseudonym_hex(gov_key)?;
@@ -55,8 +57,7 @@ impl CommunityService {
         let mut copies = Vec::with_capacity(members.len());
         for m in members {
             let Some(x25519_pub) = m.x25519_pub.as_ref()
-                .and_then(|h| hex::decode(h).ok())
-                .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()) else {
+                .and_then(|h| rekindle_identity::DhKey::from_hex(h).ok()) else {
                 tracing::warn!(
                     member = &m.pseudonym_key[..12.min(m.pseudonym_key.len())],
                     channel = channel_id,
@@ -88,7 +89,9 @@ impl CommunityService {
             channel_id: channel_id.to_string(),
             generation: new_gen,
             rotator_pseudonym: our_pseudonym_hex.clone(),
+            rotator_x25519_pub: Some(operator_x25519_pub.clone()),
             copies,
+            wrapped_slot_seeds: Vec::new(),
         };
 
         let mut vault = self.read_mek_vault(registry_key).await.unwrap_or_default();
@@ -179,13 +182,14 @@ impl CommunityService {
             .find(|m| m.pseudonym_key == requester_pseudonym)
             .ok_or_else(|| ChatError::Internal(format!("requester {} not in registry", &requester_pseudonym[..12.min(requester_pseudonym.len())])))?;
 
-        let requester_x25519_pub: [u8; 32] = requester_member.x25519_pub.as_ref()
-            .and_then(|h| hex::decode(h).ok())
-            .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
+        let requester_x25519_pub = requester_member.x25519_pub.as_ref()
+            .and_then(|h| rekindle_identity::DhKey::from_hex(h).ok())
             .ok_or_else(|| ChatError::Internal("requester has no x25519_pub".into()))?;
 
         let pseudonym_seed = self.io.pseudonym_seed(gov_key)?;
-        let our_x25519_seed = blake3::derive_key("rekindle identity x25519 v1", &pseudonym_seed);
+        let our_x25519_seed = rekindle_identity::x25519_seed_from(&pseudonym_seed);
+        let our_x25519_pub = rekindle_identity::x25519_public_from_raw_seed(&our_x25519_seed)
+            .map_err(|e| ChatError::Internal(format!("our DhKey: {e}")))?;
         let our_pseudonym_hex = self.io.pseudonym_hex(gov_key)?;
 
         let mek_wire = crate::crypto::mek::mek_to_wire(&mek_key, needed_generation);
@@ -198,6 +202,7 @@ impl CommunityService {
                 generation: needed_generation,
                 sender_pseudonym: our_pseudonym_hex,
                 wrapped_mek: wrapped,
+                sender_x25519_pub: Some(our_x25519_pub.clone()),
             }),
         ).await.map_err(|e| ChatError::Internal(format!("MEK transfer send failed: {e}")))?;
 
@@ -206,17 +211,17 @@ impl CommunityService {
     }
 
     pub fn receive_mek_transfer(
-        &self, gov_key: &str, channel_id: &str, generation: u64, sender_pseudonym_hex: &str, wrapped_mek: &[u8],
+        &self,
+        gov_key: &str,
+        channel_id: &str,
+        generation: u64,
+        wrapped_mek: &[u8],
+        sender_dh_key: &rekindle_identity::DhKey,
     ) -> Result<(), ChatError> {
         let pseudonym_seed = self.io.pseudonym_seed(gov_key)?;
-        let our_x25519_seed = blake3::derive_key("rekindle identity x25519 v1", &pseudonym_seed);
+        let our_x25519_seed = rekindle_identity::x25519_seed_from(&pseudonym_seed);
 
-        let sender_pub: [u8; 32] = hex::decode(sender_pseudonym_hex)
-            .ok()
-            .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
-            .ok_or_else(|| ChatError::Internal("invalid sender pseudonym hex".into()))?;
-
-        let mek_wire = crate::crypto::mek::unwrap_mek(&our_x25519_seed, &sender_pub, wrapped_mek)
+        let mek_wire = crate::crypto::mek::unwrap_mek(&our_x25519_seed, sender_dh_key, wrapped_mek)
             .map_err(|e| {
                 tracing::error!(governance = &gov_key[..12.min(gov_key.len())], channel = channel_id, generation, error = %e, "MEK unwrap FAILED");
                 e

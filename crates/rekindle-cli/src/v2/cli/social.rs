@@ -96,6 +96,21 @@ pub enum DmCmd {
         #[arg(long, default_value = "true")]
         typing: bool,
     },
+    /// Start a new DM conversation with a friend.
+    Start {
+        /// Friend's Ed25519 public key hex.
+        #[arg(long, short = 'p')]
+        peer: String,
+        /// Display name to use in this DM.
+        #[arg(long, default_value = "anonymous")]
+        pseudonym: String,
+    },
+    /// Accept a pending DM invite.
+    Accept {
+        /// SMPL record key from the invite.
+        #[arg(long, short = 'r')]
+        record_key: String,
+    },
 }
 
 /// Presence management subcommands.

@@ -22,6 +22,7 @@ pub struct CommunityInfoView {
     pub(crate) detail: Option<CommunityDetail>,
     pub(crate) loading: bool,
     pub(crate) selected_channel: usize,
+    pub(crate) game_servers: Vec<serde_json::Value>,
 }
 
 impl CommunityInfoView {
@@ -29,6 +30,7 @@ impl CommunityInfoView {
         Self {
             focus: FocusRing::new(vec![FocusId::CommunityInfoPanel]),
             community, detail: None, loading: true, selected_channel: 0,
+            game_servers: Vec::new(),
         }
     }
     pub fn community(&self) -> &str { &self.community }
@@ -42,10 +44,10 @@ impl View for CommunityInfoView {
         Ok(())
     }
     fn update(&mut self, action: Action) -> Result<Option<Action>> { Ok(input::handle_update(self, &action)) }
-    fn on_command_result(&mut self, result: CommandResult) -> Result<()> { events::handle_command_result(self, result); Ok(()) }
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_command_result(&mut self, result: CommandResult) -> Result<Option<Action>> { events::handle_command_result(self, result); Ok(None) }
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<Action>> {
         events::handle_subscription_event(self, event);
-        Ok(())
+        Ok(None)
     }
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> { input::handle_focused_key(self, key) }
     fn focus_ring(&mut self) -> &mut FocusRing { &mut self.focus }

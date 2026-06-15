@@ -1,6 +1,6 @@
 //! Channel commands: list, create, delete, update, send, history, watch, edit, delete, pin, unpin, typing.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{ChatRequest, DaemonRequest};
 
 use crate::v2::cli::ChannelCmd;
 use crate::v2::helpers;
@@ -11,7 +11,9 @@ use crate::v2::prelude::DaemonClient;
 pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         ChannelCmd::List { community, .. } => {
-            let value = client.request_ok(DaemonRequest::ChannelList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelList {
+                community: community.clone(),
+            })).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -26,14 +28,14 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
         }
         ChannelCmd::Create { community, name, kind, category, topic, slowmode } => {
             let validated_name = helpers::validate_name(name, "Channel")?;
-            let value = client.request_ok(DaemonRequest::ChannelCreate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelCreate {
                 community: community.clone(),
                 name: validated_name,
                 kind: kind.clone(),
                 category: category.clone(),
                 topic: topic.clone(),
                 slowmode_seconds: slowmode.unwrap_or(0),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Delete { community, channel, yes } => {
@@ -42,85 +44,85 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
                 if !confirmed { return format::print_text("Cancelled."); }
             }
             let channel_id = helpers::resolve_channel_id(channel);
-            let value = client.request_ok(DaemonRequest::ChannelDelete {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelDelete {
                 community: community.clone(),
                 channel_id,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Update { community, channel, name, topic, slowmode } => {
             let channel_id = helpers::resolve_channel_id(channel);
             let validated_name = name.as_ref().map(|n| helpers::validate_name(n, "Channel")).transpose()?;
-            let value = client.request_ok(DaemonRequest::ChannelUpdate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelUpdate {
                 community: community.clone(),
                 channel_id,
                 name: validated_name,
                 topic: topic.clone(),
                 slowmode_seconds: *slowmode,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Send { community, channel, message, reply_to } => {
             let reply = reply_to.as_ref().and_then(|s| s.parse::<u64>().ok());
-            let value = client.request_ok(DaemonRequest::ChannelSend {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelSend {
                 community: community.clone(),
                 channel: channel.clone(),
                 body: message.clone(),
                 reply_to: reply,
                 client_msg_id: None,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::History { community, channel, limit, .. } => {
             #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(DaemonRequest::ChannelHistory {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelHistory {
                 community: community.clone(),
                 channel: channel.clone(),
                 limit: *limit as u32,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Watch { .. } => {
             anyhow::bail!("channel watch: use the streaming path in main dispatch")
         }
         ChannelCmd::Edit { community, channel, message_id, new_body } => {
-            let value = client.request_ok(DaemonRequest::MessageEdit {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::MessageEdit {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
                 new_body: new_body.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::MessageDelete { community, channel, message_id } => {
-            let value = client.request_ok(DaemonRequest::MessageDelete {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::MessageDelete {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Pin { community, channel, message_id } => {
-            let value = client.request_ok(DaemonRequest::PinAdd {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::PinAdd {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Unpin { community, channel, message_id } => {
-            let value = client.request_ok(DaemonRequest::PinRemove {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::PinRemove {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         ChannelCmd::Typing { community, channel } => {
-            let value = client.request_ok(DaemonRequest::ChannelTyping {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelTyping {
                 community: community.clone(),
                 channel: channel.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
     }

@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
 use crate::v2::patch::{apply, generate};
-use crate::v2::prelude::{DaemonClient, DaemonRequest};
+use crate::v2::prelude::{ChatRequest, DaemonClient, DaemonRequest};
 
 /// `rekindle patch [files...] [--staged] [--message] [--channel-community -C channel] [--dm-peer]`
 pub async fn cmd_patch(
@@ -54,13 +54,13 @@ pub async fn cmd_patch(
         };
 
         if let (Some(community), Some(channel)) = (channel_community, channel_name) {
-            let value = client.request_ok(DaemonRequest::ChannelSend {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ChannelSend {
                 community: community.to_string(),
                 channel: channel.to_string(),
                 body,
                 reply_to: None,
                 client_msg_id: None,
-            }).await?;
+            })).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -70,10 +70,10 @@ pub async fn cmd_patch(
                 patch.summary(),
             ))
         } else if let Some(peer) = dm_peer {
-            let value = client.request_ok(DaemonRequest::DmSend {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmSend {
                 peer_key: peer.to_string(),
                 body,
-            }).await?;
+            })).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }

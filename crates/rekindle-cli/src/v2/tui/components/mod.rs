@@ -5,17 +5,20 @@
 
 pub mod channel_tree;
 pub mod confirm_dialog;
+pub mod emoji_picker;
 pub mod file_content_search;
 pub mod help_bar;
 pub mod input_box;
 pub mod message_list;
 pub mod peer_list;
+pub mod pins_panel;
 pub mod search_overlay;
 pub mod spinner;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod notification_rail;
 pub mod toast;
+pub mod transfer_rail;
 pub mod typing_indicator;
 pub mod unread_badge;
 

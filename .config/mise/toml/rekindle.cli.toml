@@ -1,0 +1,110 @@
+# Rekindle CLI Introspection
+#
+# Usage:
+#   mise run rekindle:help-tree        # Walk all commands/subcommands, print every --help
+
+["rekindle:help-tree"]
+description = "Walk all CLI commands and subcommands to full depth, print every --help"
+alias = ["rkht"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve the rekindle binary: argument, container, or local PATH.
+# Usage:
+#   mise run rekindle:help-tree                      # local binary
+#   mise run rekindle:help-tree alice                 # container node
+#   mise run rekindle:help-tree /path/to/rekindle     # explicit binary
+if [[ -n "${1:-}" ]]; then
+  case "$1" in
+    alice|bob|carol)
+      RK() { docker exec --user rekindle "rekindle-$1" rekindle "${@:2}"; }
+      NODE="$1"
+      echo "Using container: rekindle-${NODE}"
+      ;;
+    *)
+      BINARY="$1"
+      RK() { "$BINARY" "${@}"; }
+      echo "Using binary: ${BINARY}"
+      ;;
+  esac
+else
+  if [[ -f target/release/rekindle ]]; then
+    BINARY=target/release/rekindle
+  elif [[ -f target/debug/rekindle ]]; then
+    BINARY=target/debug/rekindle
+  else
+    echo "No binary found in target/. Building debug..."
+    cargo build -p rekindle-cli
+    BINARY=target/debug/rekindle
+  fi
+  RK() { "$BINARY" "$@"; }
+  echo "Using: ${BINARY}"
+fi
+
+OUTFILE="tmp/rekindle.help"
+mkdir -p "$(dirname "${OUTFILE}")"
+
+{
+echo ""
+
+# Parse subcommand names from --help output.
+# clap lists commands between "Commands:" and the next blank line or "Options:".
+parse_subcommands() {
+  local help_text="$1"
+  echo "${help_text}" | awk '
+    /^Commands:/ { capture=1; next }
+    /^Options:/  { capture=0 }
+    /^$/         { if (capture) capture=0 }
+    capture && /^  [a-z]/ {
+      # First word after leading spaces is the subcommand name
+      sub(/^[[:space:]]+/, "")
+      sub(/[[:space:]].*/, "")
+      if ($0 != "help") print $0
+    }
+  '
+}
+
+# Recursive walker. Args: prefix tokens (e.g. "community" "join")
+walk() {
+  local -a cmd_parts=("$@")
+  local label="rekindle ${cmd_parts[*]}"
+  local separator="════════════════════════════════════════════════════════════════════════════════"
+
+  echo "${separator}"
+  echo "  ${label} --help"
+  echo "${separator}"
+  echo ""
+
+  local help_text
+  help_text=$(RK "${cmd_parts[@]}" --help 2>&1) || true
+  echo "${help_text}"
+  echo ""
+
+  # Extract subcommands and recurse
+  local subs
+  subs=$(parse_subcommands "${help_text}")
+
+  for sub in ${subs}; do
+    walk "${cmd_parts[@]}" "${sub}"
+  done
+}
+
+# Start: top-level help (already shown by user, but include for completeness)
+help_text=$(RK --help 2>&1) || true
+
+echo "════════════════════════════════════════════════════════════════════════════════"
+echo "  rekindle --help"
+echo "════════════════════════════════════════════════════════════════════════════════"
+echo ""
+echo "${help_text}"
+echo ""
+
+# Walk each top-level subcommand
+top_subs=$(parse_subcommands "${help_text}")
+for sub in ${top_subs}; do
+  walk "${sub}"
+done
+
+} | tee "${OUTFILE}"
+'''

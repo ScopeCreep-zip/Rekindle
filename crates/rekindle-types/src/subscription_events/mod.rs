@@ -9,6 +9,7 @@
 
 mod channel;
 mod crypto;
+pub mod dm;
 mod friend;
 mod governance;
 mod membership;
@@ -21,6 +22,7 @@ mod voice;
 
 pub use channel::ChannelMessageEvent;
 pub use crypto::CryptoEvent;
+pub use dm::DmLifecycleEvent;
 pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
@@ -48,6 +50,8 @@ pub enum SubscriptionEvent {
     Membership(MembershipEvent),
     /// Friend lifecycle (request, accept, reject, remove).
     Friend(FriendEvent),
+    /// DM conversation lifecycle (invite, decline, leave).
+    Dm(DmLifecycleEvent),
     /// Cryptographic key events (MEK rotation, MEK request, MEK transfer).
     Crypto(CryptoEvent),
     /// Voice channel activity (join, leave, mute, roster).
@@ -102,6 +106,7 @@ pub enum EventCategory {
     Social,
     Network,
     System,
+    Dm,
     UnreadChanged,
 }
 
@@ -124,6 +129,7 @@ impl SubscriptionEvent {
             Self::Presence(_) => EventCategory::Presence,
             Self::Membership(_) => EventCategory::Membership,
             Self::Friend(_) => EventCategory::Friend,
+            Self::Dm(_) => EventCategory::Dm,
             Self::Crypto(_) => EventCategory::Crypto,
             Self::Voice(_) => EventCategory::Voice,
             Self::Governance(_) => EventCategory::Governance,
@@ -156,7 +162,10 @@ impl SubscriptionEvent {
                 PresenceEvent::FriendChanged { .. } => None,
             },
             Self::Membership(e) => Some(match e {
-                MembershipEvent::JoinRequested { community, .. }
+                MembershipEvent::Created { community, .. }
+                | MembershipEvent::CommunityJoined { community, .. }
+                | MembershipEvent::CommunityLeft { community, .. }
+                | MembershipEvent::JoinRequested { community, .. }
                 | MembershipEvent::JoinAccepted { community, .. }
                 | MembershipEvent::JoinRejected { community, .. }
                 | MembershipEvent::Joined { community, .. }
@@ -213,6 +222,8 @@ impl SubscriptionEvent {
                 | SocialEvent::GameServerRemoved { community, .. } => community,
             }),
             Self::System(e) => match e {
+                SystemEvent::IdentityCreated { .. }
+                | SystemEvent::IdentityRotated { .. } => None,
                 SystemEvent::Announcement { community, .. } => community.as_deref(),
                 SystemEvent::RaidAlert { community, .. }
                 | SystemEvent::ChannelLockdown { community, .. }
@@ -226,6 +237,7 @@ impl SubscriptionEvent {
             Self::UnreadChanged { .. } => None,
             Self::BulkTransferProgress { .. } => None,
             Self::Friend(_) => None,
+            Self::Dm(_) => None,
         }
     }
 }

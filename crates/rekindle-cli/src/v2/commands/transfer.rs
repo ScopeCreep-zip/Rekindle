@@ -4,7 +4,7 @@
 //! via control-plane DaemonRequest messages. The actual bulk data flows
 //! through the lane 0x01–0x02 wire protocol, not through these commands.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{DaemonRequest, LifecycleRequest};
 
 use crate::v2::output::{format, OutputMode};
 use crate::v2::prelude::DaemonClient;
@@ -69,32 +69,32 @@ pub async fn dispatch(
             media_type,
             digest,
             direction,
-        } => DaemonRequest::BulkTransferStart {
+        } => DaemonRequest::Lifecycle(LifecycleRequest::BulkTransferStart {
             transfer_id: transfer_id.clone(),
             total_size: *total_size,
             media_type: media_type.clone(),
             digest: digest.clone(),
             direction: direction.clone(),
-        },
-        TransferCmd::Status { transfer_id } => DaemonRequest::BulkTransferStatus {
+        }),
+        TransferCmd::Status { transfer_id } => DaemonRequest::Lifecycle(LifecycleRequest::BulkTransferStatus {
             transfer_id: transfer_id.clone(),
-        },
+        }),
         TransferCmd::Cancel {
             transfer_id,
             reason,
-        } => DaemonRequest::BulkTransferCancel {
+        } => DaemonRequest::Lifecycle(LifecycleRequest::BulkTransferCancel {
             transfer_id: transfer_id.clone(),
             reason: reason.clone(),
-        },
+        }),
         TransferCmd::Complete {
             transfer_id,
             digest,
             bytes_transferred,
-        } => DaemonRequest::BulkTransferComplete {
+        } => DaemonRequest::Lifecycle(LifecycleRequest::BulkTransferComplete {
             transfer_id: transfer_id.clone(),
             digest: digest.clone(),
             bytes_transferred: *bytes_transferred,
-        },
+        }),
     };
 
     let value = client.request_ok(request).await?;

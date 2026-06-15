@@ -54,9 +54,11 @@ pub fn draw(view: &mut DmInboxView, frame: &mut Frame, area: Rect, theme: &Theme
 fn build_thread_items(view: &DmInboxView, theme: &ThemeManager) -> Vec<ListItem<'static>> {
     view.threads.iter().map(|thread| {
         let name = helpers::sanitize_for_display(&thread.peer_name);
+        let is_invite = thread.peer_name.starts_with("[invite]");
+        let name_style = if is_invite { Style::new().italic().dim() } else { Style::new().bold() };
         #[allow(clippy::cast_possible_truncation)]
         let unread = thread.messages.iter().filter(|m| !m.is_self).count() as u32;
-        let time = if thread.last_message_at > 0 { helpers::format_time_short(thread.last_message_at) } else { String::new() };
+        let time = thread.last_message_at.filter(|&t| t > 0).map(|t| helpers::format_time_short(t)).unwrap_or_default();
         let badge = unread_badge::unread_span(unread, theme);
         let glyph = if unread > 0 { if view.use_unicode { "● " } else { "* " } } else { "  " };
 
@@ -67,7 +69,7 @@ fn build_thread_items(view: &DmInboxView, theme: &ThemeManager) -> Vec<ListItem<
 
         ListItem::new(Line::from(vec![
             Span::raw(format!("  {glyph}")),
-            Span::styled(name, Style::new().bold()),
+            Span::styled(name, name_style),
             badge,
             Span::styled(delivery, Style::new().dim()),
             Span::styled(format!("  {time}"), Style::new().dim()),

@@ -5,9 +5,13 @@ use std::collections::{HashMap, HashSet};
 use ratatui::layout::Rect;
 
 use crate::v2::tui::components::channel_tree::ChannelTree;
+use crate::v2::tui::components::emoji_picker::EmojiPicker;
 use crate::v2::tui::components::input_box::InputBox;
 use crate::v2::tui::components::message_list::MessageList;
 use crate::v2::tui::components::peer_list::PeerList;
+use crate::v2::tui::components::pins_panel::PinsPanel;
+use crate::v2::tui::components::transfer_rail::TransferProgressRail;
+use super::thread_panel::ThreadPanel;
 use crate::v2::tui::focus::{FocusId, FocusRing};
 use crate::v2::tui::navigator::SplitPaneState;
 
@@ -33,6 +37,10 @@ pub struct ChannelWatchView {
     pub(super) split_dm: SplitPaneState,
     pub(super) split_dm_message_list: Option<MessageList>,
     pub(super) split_dm_input_box: Option<InputBox>,
+    pub(super) emoji_picker: EmojiPicker,
+    pub(super) pins_panel: PinsPanel,
+    pub(super) transfer_rail: TransferProgressRail,
+    pub(super) thread_panel: ThreadPanel,
 }
 
 impl ChannelWatchView {
@@ -57,6 +65,10 @@ impl ChannelWatchView {
             split_dm: SplitPaneState::new(),
             split_dm_message_list: None,
             split_dm_input_box: None,
+            emoji_picker: EmojiPicker::new(),
+            pins_panel: PinsPanel::new(),
+            transfer_rail: TransferProgressRail::new(),
+            thread_panel: ThreadPanel::new(),
         }
     }
 

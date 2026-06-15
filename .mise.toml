@@ -11,6 +11,7 @@ _.file = [".env.example", { path = ".env", required = false }]
 [task_config]
 includes = [
     ".config/mise/toml/rekindle.buff.toml",
+    ".config/mise/toml/rekindle.cli.toml",
     ".config/mise/toml/rekindle.compose.toml",
     ".config/mise/toml/rekindle.ipc.toml",
     ".config/mise/toml/rekindle.test.toml",

@@ -10,6 +10,8 @@ pub mod reject;
 pub mod remove;
 pub mod inbox;
 pub mod respond;
+pub mod scanner;
+pub mod coordinator;
 
 use std::sync::Arc;
 
@@ -119,7 +121,11 @@ impl FriendshipService {
             };
             if fl_key.is_empty() { return; }
 
-            let Ok(Some(existing)) = self.io.read_record(&fl_key, 0, false).await else { return };
+            let fl_record = match self.io.open_record(&fl_key, None).await {
+                Ok(r) => r,
+                Err(_) => return,
+            };
+            let Ok(Some(existing)) = self.io.read_record(&fl_record, 0, false).await else { return };
 
             let mut friend_list: rekindle_types::dht_types::FriendList =
                 if existing.is_empty() || existing == b"[]" {
@@ -129,7 +135,7 @@ impl FriendshipService {
                 };
 
             // Find the friend entry for this peer and update their profile key
-            let Some(entry) = friend_list.friends.iter_mut().find(|f| f.public_key == sender_key) else {
+            let Some(entry) = friend_list.friends.iter_mut().find(|f| f.public_key.to_hex() == sender_key) else {
                 return; // peer not in friend list (unexpected but not fatal)
             };
             entry.profile_dht_key = Some(new_profile_dht_key.clone());
@@ -143,7 +149,7 @@ impl FriendshipService {
             };
 
             if let Err(e) = self.io.write_record(
-                &fl_key, 0, &bytes, Some(kp), crate::io::Confirm::Accepted,
+                &fl_record, 0, &bytes, Some(kp), crate::io::Confirm::Accepted,
             ).await {
                 tracing::warn!(
                     peer = &sender_key[..12.min(sender_key.len())],

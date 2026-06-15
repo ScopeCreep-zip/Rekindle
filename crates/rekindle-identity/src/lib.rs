@@ -57,7 +57,7 @@ pub use root::termination::DeathNotice;
 
 // Layer 2 — Operational
 pub use origin::DhSeed;
-pub use operational::{DhKey, dh_public_from_seed, dh_agree, x25519_seed_from};
+pub use operational::{DhKey, dh_public_from_seed, dh_agree, x25519_seed_from, x25519_public_from_raw_seed};
 pub use operational::{DeviceId, DeviceSigningKey, DeviceRecord};
 pub use operational::PrekeyBundleBinding;
 
@@ -70,7 +70,7 @@ pub use persona::{DisplayName, KindDescriptor};
 
 // Layer 5 — Projection
 pub use projection::{Pseudonym, CommunityPersona, ResolvedPersona, PersonaSecrets, derive_persona};
-pub use projection::{LinkageProof, derive_slot_seed};
+pub use projection::{LinkageProof, derive_slot_seed, derive_slot_keypair};
 
 // Grant / Delegation
 pub use grant::{Capability, CapabilitySet, CustomCapability};

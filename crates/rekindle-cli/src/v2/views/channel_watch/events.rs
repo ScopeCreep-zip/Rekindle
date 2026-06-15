@@ -31,6 +31,32 @@ pub fn handle_command_result(view: &mut ChannelWatchView, result: CommandResult)
         CommandResult::SendFailed => {
             view.message_list.fail_pending_message();
         }
+        CommandResult::ThreadMessagesLoaded { thread_id, messages } => {
+            if view.thread_panel.visible && view.thread_panel.thread_id == thread_id {
+                view.thread_panel.message_list.set_messages(messages);
+            }
+        }
+        CommandResult::PinsLoaded { mut pins } => {
+            // Enrich pin previews from cached message list
+            for pin in &mut pins {
+                if pin.body_preview == "(pinned message)" {
+                    for i in 0..view.message_list.len() {
+                        if let Some(msg) = view.message_list.message_at(i) {
+                            if msg.message_id == pin.message_id {
+                                let body = &msg.body;
+                                pin.body_preview = if body.len() > 80 {
+                                    format!("{}...", &body[..77])
+                                } else {
+                                    body.clone()
+                                };
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            view.pins_panel.set_pins(pins);
+        }
         CommandResult::CommunityInfoLoaded { detail } => {
             if detail.governance_key == view.community {
                 if view.channel_id.is_none() {
@@ -38,17 +64,21 @@ pub fn handle_command_result(view: &mut ChannelWatchView, result: CommandResult)
                         view.channel_id = Some(ch.id.clone());
                     }
                 }
-                let channels: Vec<ChannelEntry> = detail.channels.iter().map(|ch| ChannelEntry {
-                    id: ch.id.clone(), name: ch.name.clone(), kind: ch.kind.clone(),
-                    category: ch.category_id.clone(), unread: 0, sort_order: ch.sort_order,
+                let channels: Vec<ChannelEntry> = detail.channels.iter().map(|ch| {
+                    let unread = detail.channel_unreads.get(&ch.id).copied().unwrap_or(0);
+                    ChannelEntry {
+                        id: ch.id.clone(), name: ch.name.clone(), kind: format!("{:?}", ch.kind),
+                        category: ch.category_id.clone(), unread, sort_order: ch.sort_order,
+                    }
                 }).collect();
                 view.channel_tree.expand(&TreeNodeId::Community(detail.governance_key.clone()));
                 view.channel_tree.set_communities(&[(detail.governance_key.clone(), detail.name.clone(), channels)], &[]);
 
                 let members: Vec<PeerEntry> = detail.members.iter().map(|m| PeerEntry {
-                    key: m.pseudonym.clone(),
-                    display_name: m.display_name.clone().unwrap_or_else(|| helpers::abbreviate_key(&m.pseudonym)),
-                    status: m.status.clone(), role: m.role_name.clone(),
+                    key: m.member.pseudonym_key.clone(),
+                    display_name: m.member.display_name.clone(),
+                    status: m.status.clone(),
+                    role: m.role_name.clone(),
                 }).collect();
                 view.peer_list.set_members(members);
             }
@@ -67,6 +97,7 @@ pub fn handle_command_result(view: &mut ChannelWatchView, result: CommandResult)
                             reply_to_sequence: None, mek_generation: 0,
                             is_encrypted: false, needs_mek: None,
                             delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                            thread_id: None,
                         }
                     }).collect();
                     ml.set_messages(display_msgs);
@@ -95,6 +126,7 @@ pub fn handle_subscription_event(view: &mut ChannelWatchView, event: &Subscripti
                         body: body_text.clone(), timestamp: *timestamp, reply_to_sequence: *reply_to_sequence,
                         mek_generation: 0, is_encrypted: false, needs_mek: None,
                         delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                        thread_id: None,
                     });
                 }
             } else {
@@ -106,6 +138,7 @@ pub fn handle_subscription_event(view: &mut ChannelWatchView, event: &Subscripti
                     body: "(decrypting...)".into(), timestamp: *timestamp, reply_to_sequence: *reply_to_sequence,
                     mek_generation: 0, is_encrypted: true, needs_mek: Some(0),
                     delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                    thread_id: None,
                 });
             }
         }
@@ -152,6 +185,7 @@ pub fn handle_subscription_event(view: &mut ChannelWatchView, event: &Subscripti
                         timestamp: *timestamp, reply_to_sequence: None, mek_generation: 0,
                         is_encrypted: body.is_none(), needs_mek: None,
                         delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                        thread_id: None,
                     });
                 }
             }
@@ -192,9 +226,36 @@ pub fn handle_subscription_event(view: &mut ChannelWatchView, event: &Subscripti
             view.message_list.set_thread(thread_id, thread_id);
         }
         SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted {
-            community, ref thread_id, ..
+            community, ref thread_id, ref message_id, ref sender_pseudonym, timestamp, ..
         }) if *community == view.community => {
             view.message_list.increment_thread_replies(thread_id);
+            // If thread panel is open for this thread, push the message
+            if view.thread_panel.visible && view.thread_panel.thread_id == *thread_id {
+                let display_name = view.peer_list.resolve_name(sender_pseudonym)
+                    .unwrap_or_else(|| crate::v2::helpers::abbreviate_key(sender_pseudonym));
+                view.thread_panel.message_list.push(DecryptedMessageDisplay {
+                    message_id: message_id.clone(), sequence: 0,
+                    author_pseudonym: sender_pseudonym.clone(), author_display_name: display_name,
+                    body: "(thread message — decrypting...)".into(), timestamp: *timestamp,
+                    reply_to_sequence: None, mek_generation: 0, is_encrypted: true, needs_mek: None,
+                    delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                    thread_id: Some(thread_id.clone()),
+                });
+            }
+        }
+        SubscriptionEvent::BulkTransferProgress {
+            ref transfer_id, bytes_transferred, total_size, ref status, ..
+        } => {
+            match status.as_str() {
+                "completed" => view.transfer_rail.complete(transfer_id),
+                "failed" => view.transfer_rail.fail(transfer_id, "transfer failed"),
+                "cancelled" => {
+                    if let Some(t) = view.transfer_rail.transfers.iter_mut().find(|t| t.transfer_id == *transfer_id) {
+                        t.status = crate::v2::tui::components::transfer_rail::TransferStatus::Cancelled;
+                    }
+                }
+                _ => view.transfer_rail.update(transfer_id, *bytes_transferred, *total_size),
+            }
         }
         _ => {}
     }

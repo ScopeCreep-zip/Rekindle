@@ -1,12 +1,9 @@
 //! Consolidated outbound module — the sole Veilid boundary for all outgoing data.
 //!
-//! Every way data leaves the node to Veilid lives here. No other module
-//! in the workspace imports `veilid_core`. This is the strict outbound boundary.
-//!
 //! # Submodules
 //!
 //! ## Veilid lifecycle & infrastructure
-//! - `node` — VeilidAPI lifecycle (startup, shutdown, attach, detach, RoutingContext)
+//! - `node` — VeilidAPI lifecycle, all subsystem construction, dispatch spawn
 //! - `send` — app_message / app_call outbound wrappers (opaque bytes only)
 //! - `peer_route` — route allocation, import, release (RouteManager)
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
@@ -14,8 +11,6 @@
 //!
 //! ## Broadcast helpers
 //! - `dht_writes` — thin primitive wrappers over dht/ for TransportNode callers
-//! - `rpc` — request-response RPC calls (opaque bytes)
-//! - `voice` — voice packet send (opaque bytes)
 //! - `route` — route lifecycle convenience (allocate, refresh, publish)
 
 // Veilid infrastructure (imports veilid_core)
@@ -35,9 +30,9 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tracing::{debug, trace};
 
+use crate::config::TransportConfig;
 use crate::gossip::GossipMesh;
-use node::TransportNode;
-use send::BroadcastReport;
+use send::{BroadcastReport, Sender};
 
 /// Rate limiter for outbound gossip, keyed by a string identifier.
 #[derive(Debug, Default)]
@@ -49,9 +44,7 @@ impl OutboundRateLimiter {
     pub fn check(&mut self, key: &str, min_interval: std::time::Duration) -> bool {
         let now = std::time::Instant::now();
         if let Some(last) = self.last_sent.get(key) {
-            if now.duration_since(*last) < min_interval {
-                return false;
-            }
+            if now.duration_since(*last) < min_interval { return false; }
         }
         self.last_sent.insert(key.to_string(), now);
         true
@@ -64,19 +57,20 @@ impl OutboundRateLimiter {
 
 /// Centralized outbound broadcast manager.
 ///
-/// Holds the TransportNode (Veilid API) and gossip mesh state.
-/// Does NOT hold Session or MekCache — those are application concerns
-/// managed by rekindle-chat. Transport sends opaque bytes.
+/// Takes raw primitives (VeilidAPI, Config) — NOT Arc<TransportNode>.
+/// Constructed in TransportNode::start() before the node is returned.
 pub struct BroadcastManager {
-    pub(crate) node: Arc<TransportNode>,
+    api: veilid_core::VeilidAPI,
+    config: Arc<TransportConfig>,
     pub(crate) meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
     pub(crate) rate_limiter: RwLock<OutboundRateLimiter>,
 }
 
 impl BroadcastManager {
-    pub fn new(node: Arc<TransportNode>) -> Self {
+    pub fn new(api: veilid_core::VeilidAPI, config: Arc<TransportConfig>) -> Self {
         Self {
-            node,
+            api,
+            config,
             meshes: Arc::new(RwLock::new(HashMap::new())),
             rate_limiter: RwLock::new(OutboundRateLimiter::default()),
         }
@@ -94,26 +88,47 @@ impl BroadcastManager {
         self.rate_limiter.write().remove_community(community_id);
     }
 
-    pub fn node(&self) -> &TransportNode { &self.node }
     pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> { &self.meshes }
 
+    /// Add or update a peer in a community's gossip mesh, then refresh peer set.
+    pub fn upsert_mesh_peer(
+        &self, community_id: &str, pseudonym: &str,
+        route_blob: Vec<u8>, status: &str, now_secs: u64, my_pseudonym: &str,
+    ) {
+        let mut guard = self.meshes.write();
+        let Some(mesh) = guard.get_mut(community_id) else {
+            debug!(community_id, "upsert_mesh_peer: no mesh");
+            return;
+        };
+        mesh.upsert_member(pseudonym.to_string(), crate::gossip::OnlineMember {
+            route_blob, status: status.to_string(), last_seen: now_secs,
+        });
+        mesh.refresh_peer_set(my_pseudonym);
+        tracing::info!(
+            community_id, pseudonym = &pseudonym[..16.min(pseudonym.len())],
+            online = mesh.online_members.len(), selected = mesh.peers.len(),
+            "mesh peer upserted"
+        );
+    }
+
+    /// Remove a peer from a community's gossip mesh.
+    pub fn remove_mesh_peer(&self, community_id: &str, pseudonym: &str) {
+        let mut guard = self.meshes.write();
+        if let Some(mesh) = guard.get_mut(community_id) {
+            mesh.remove_member(pseudonym);
+            debug!(community_id, pseudonym = &pseudonym[..16.min(pseudonym.len())], "mesh peer removed");
+        }
+    }
+
     /// Fan out pre-signed, pre-framed bytes to all mesh peers for a community.
-    ///
-    /// Chat has already serialized, signed, and framed the gossip envelope.
-    /// Transport resolves mesh peers, imports routes, and sends raw bytes.
-    pub async fn broadcast_to_mesh(
-        &self,
-        community_id: &str,
-        data: &[u8],
-    ) -> BroadcastReport {
+    pub async fn broadcast_to_mesh(&self, community_id: &str, data: &[u8]) -> BroadcastReport {
         let peer_targets = {
             let guard = self.meshes.read();
             let Some(mesh) = guard.get(community_id) else {
-                debug!(community_id, "broadcast: no mesh for community");
+                debug!(community_id, "broadcast: no mesh");
                 return BroadcastReport::default();
             };
-            mesh.peers
-                .iter()
+            mesh.peers.iter()
                 .map(|(k, m)| (k.clone(), m.route_blob.clone()))
                 .collect::<Vec<(String, Vec<u8>)>>()
         };
@@ -123,17 +138,36 @@ impl BroadcastManager {
             return BroadcastReport::default();
         }
 
-        let sender = self.node.sender();
+        let sender = Sender::new(self.api.clone(), Arc::clone(&self.config));
         let mut targets_with_routes = Vec::with_capacity(peer_targets.len());
         for (key, blob) in &peer_targets {
-            match self.node.import_route(blob) {
-                Ok(target) => targets_with_routes.push((key.clone(), target)),
-                Err(e) => debug!(peer = %key, error = %e, "broadcast: route import failed"),
+            match self.api.import_remote_private_route(blob.clone()) {
+                Ok(route_id) => {
+                    tracing::info!(
+                        peer = &key[..16.min(key.len())],
+                        route_id = %route_id,
+                        blob_len = blob.len(),
+                        "broadcast: route imported for peer"
+                    );
+                    targets_with_routes.push((key.clone(), peer_registry::PeerTarget { route_id }));
+                }
+                Err(e) => tracing::warn!(peer = &key[..16.min(key.len())], error = %e, blob_len = blob.len(), "broadcast: route import FAILED"),
             }
         }
 
-        sender
-            .broadcast_raw_parallel(&targets_with_routes, data, 16)
-            .await
+        tracing::info!(
+            community_id = &community_id[..20.min(community_id.len())],
+            data_len = data.len(),
+            targets = targets_with_routes.len(),
+            type_id = data.first().copied().unwrap_or(0),
+            "broadcast: sending to mesh peers"
+        );
+        let report = sender.broadcast_raw_parallel(&targets_with_routes, data, 16).await;
+        tracing::info!(
+            delivered = report.delivered,
+            failed = report.failures.len(),
+            "broadcast: parallel send complete"
+        );
+        report
     }
 }

@@ -5,7 +5,13 @@ use super::super::ChatService;
 
 impl ChatService {
     pub fn mek_list(&self, community: &str) -> Vec<crate::crypto::mek::MekSnapshot> {
-        self.mek_cache.snapshot(community)
+        let gov_key = {
+            let meta = self.session_meta.read();
+            meta.resolve_community(community)
+                .map(|(_, m)| m.governance_key.clone())
+                .unwrap_or_else(|| community.to_string())
+        };
+        self.mek_cache.snapshot(&gov_key)
     }
 
     pub async fn mek_rotate(

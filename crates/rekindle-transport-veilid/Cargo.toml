@@ -12,6 +12,8 @@ workspace = true
 # Workspace — depends on rekindle-types for Transport trait, NOT rekindle-transport
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
+# Shared transport primitives (ReorderRing, CreditGuard, DispatchQueue, SlabPool)
+rekindle-transport-buff = { path = "../rekindle-transport-buff", features = ["tokio", "seen-set"] }
 
 # Veilid — the ONLY crate in the workspace that imports this
 veilid-core = { version = "0.5.2", default-features = true }
@@ -38,6 +40,8 @@ bitflags = { version = "2", features = ["serde"] }
 
 # Identity generation
 uuid = { version = "1", features = ["v4", "fast-rng"] }
+# XDG directory resolution for download paths
+dirs = "5"
 
 # Logging
 tracing = { workspace = true }

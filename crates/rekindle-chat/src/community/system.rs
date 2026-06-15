@@ -89,7 +89,7 @@ impl CommunityService {
         let policy = serde_json::json!({ "locked_down": locked });
         let policy_bytes = serde_json::to_vec(&policy)
             .map_err(|e| ChatError::Serialization(format!("lockdown policy: {e}")))?;
-        self.io.write_record(
+        self.io.open_and_write(
             governance_key, rekindle_types::dht_types::MANIFEST_POLICIES,
             &policy_bytes, Some(&keypair), crate::io::Confirm::Accepted,
         ).await?;

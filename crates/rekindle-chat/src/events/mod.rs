@@ -1,10 +1,9 @@
 //! Inbound event routing, deduplication, and reactive state management.
 //!
 //! The event pipeline:
-//! 1. Transport delivers raw bytes via `TransportCallback::on_message`
-//!    or `TransportCallback::on_record_change`
-//! 2. `router.rs` parses TypeId, verifies signatures, decrypts, dispatches
-//!    to the correct service (messaging, friendship, community)
+//! 1. Transport sends `InboundEvent::Message` via mpsc channel
+//! 2. `router.rs` `run_inbound_loop` reads events, parses TypeId,
+//!    verifies signatures, dispatches to services
 //! 3. The service constructs a `SubscriptionEvent`
 //! 4. `state_effects::apply` updates reactive state (unread, typing, presence)
 //! 5. `dedup::EventDedup::check` suppresses duplicates from parallel tiers

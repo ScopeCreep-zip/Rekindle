@@ -106,7 +106,7 @@ impl View for VoiceSessionView {
         Ok(None)
     }
 
-    fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
+    fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<Option<Action>> {
         match event {
             SubscriptionEvent::Voice(VoiceEvent::Joined { community, channel, pseudonym })
                 if *community == self.community && *channel == self.channel =>
@@ -140,9 +140,9 @@ impl View for VoiceSessionView {
             }
             _ => {}
         }
-        Ok(())
+        Ok(None)
     }
 
-    fn on_command_result(&mut self, _result: CommandResult) -> Result<()> { Ok(()) }
+    fn on_command_result(&mut self, _result: CommandResult) -> Result<Option<Action>> { Ok(None) }
     fn focus_ring(&mut self) -> &mut FocusRing { &mut self.focus }
 }

@@ -52,11 +52,19 @@ pub enum Action {
     ShowVoiceSession { community: String, channel: String },
     ShowDoctor,
     ShowCommunityInfo { community: String },
+    ShowModeration { community: String },
+    ShowInvites { community: String },
+    ShowEvents { community: String },
+    ShowOnboarding { community: String },
     ShowFilePreview { path: String, line: Option<usize> },
 
     // ── Split pane DM (channel watch right side) ───────────
     OpenSplitDm { peer_key: String },
     CloseSplitDm,
+
+    // ── Thread panel ──────────────────────────────────────
+    OpenThread { thread_id: String, thread_name: String },
+    CloseThread,
 
     // ── Message operations ─────────────────────────────────
     SendChannelMessage { community: String, channel: String, text: String, reply_to: Option<String> },
@@ -65,6 +73,9 @@ pub enum Action {
     DeleteMessage { community: String, channel: String, message_id: String },
     SendChannelTyping { community: String, channel: String },
     SendDmTyping { peer_key: String },
+    /// Load DM thread messages into the current view without navigating.
+    /// The inbox view uses this to populate the inline message panel.
+    LoadDmThread { peer_key: String },
 
     /// Scroll the active message list to a specific message by ID.
     ScrollToMessage { message_id: String },
@@ -97,8 +108,27 @@ pub enum Action {
     // ── Clipboard ───────────────────────────────────────────
     YankToClipboard { text: String },
 
+    // ── Reaction operations ─────────────────────────────────
+    AddReaction { community: String, channel: String, message_id: String, emoji: String },
+    RemoveReaction { community: String, channel: String, message_id: String, emoji: String },
+
+    // ── Pin operations ────────────────────────────────────
+    UnpinMessage { community: String, channel: String, message_id: String },
+
     // ── Community operations ───────────────────────────────
     LeaveCommunity { community: String },
+
+    // ── Moderation operations ─────────────────────────────
+    KickMember { community: String, pseudonym: String, display_name: String },
+    BanMember { community: String, pseudonym: String, display_name: String },
+    UnbanMember { community: String, pseudonym: String },
+    TimeoutMember { community: String, pseudonym: String, display_name: String, duration_secs: u64 },
+    ApproveMember { community: String, pseudonym: String, display_name: String },
+    RejectMember { community: String, pseudonym: String, display_name: String },
+
+    // ── Invite operations ─────────────────────────────────
+    CreateInvite { community: String, max_uses: u32, expires_seconds: Option<u64> },
+    RevokeInvite { community: String, invite_code: String },
 
     // ── Key operations ─────────────────────────────────────
     RequestMek { community: String, channel: String },
@@ -175,4 +205,17 @@ pub enum CommandResult {
         friend_inbox_key: String,
     },
     SendFailed,
+    InvitesLoaded { invites: Vec<serde_json::Value> },
+    EventsLoaded { events: Vec<serde_json::Value> },
+    PinsLoaded { pins: Vec<crate::v2::tui::components::pins_panel::PinDisplay> },
+    ThreadMessagesLoaded { thread_id: String, messages: Vec<rekindle_types::display::DecryptedMessageDisplay> },
+    OnboardingLoaded {
+        config: Option<rekindle_types::dht_types::OnboardingConfig>,
+        welcome: Option<rekindle_types::dht_types::WelcomeScreen>,
+    },
+    ModerationDataLoaded {
+        detail: rekindle_types::display::CommunityDetail,
+        bans: Vec<serde_json::Value>,
+        pending: Vec<serde_json::Value>,
+    },
 }

@@ -67,6 +67,10 @@ pub enum TypeId {
     SyncResponse      = 0x24,
     /// DM-class message via app_call (friend request/accept handshake).
     DmCall            = 0x25,
+
+    // ── Bulk transfer (chunked file transfer) ──────────────────
+    /// Bulk file transfer frame (offer, chunk, ack, fin, cancel, resume).
+    BulkTransfer      = 0x30,
 }
 
 impl TypeId {
@@ -90,6 +94,7 @@ impl TypeId {
             0x23 => Some(Self::SyncRequest),
             0x24 => Some(Self::SyncResponse),
             0x25 => Some(Self::DmCall),
+            0x30 => Some(Self::BulkTransfer),
             _    => None,
         }
     }
@@ -97,7 +102,7 @@ impl TypeId {
     /// Whether this type requires Ed25519 signature verification on receive.
     #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)]
     pub fn requires_signature(&self) -> bool {
-        true
+        !matches!(self, Self::BulkTransfer)
     }
 
     /// Whether this type carries encrypted content that needs decryption.

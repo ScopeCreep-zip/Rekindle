@@ -69,4 +69,46 @@ impl ChatService {
     pub async fn remove_game_server(&self, gov: &str, server_id: &str) -> Result<(), ChatError> {
         self.community.remove_game_server(gov, server_id).await
     }
+
+    // ── Read methods (expose internal reads for dispatch + TUI) ──
+
+    pub async fn list_pins(&self, gov: &str) -> Result<Vec<rekindle_types::dht_types::PinEntry>, ChatError> {
+        self.community.read_pins(gov).await
+    }
+
+    pub async fn list_events(&self, gov: &str) -> Result<Vec<rekindle_types::gossip_payload::CommunityEvent>, ChatError> {
+        self.community.read_events(gov).await
+    }
+
+    pub async fn list_threads(&self, gov: &str) -> Result<Vec<rekindle_types::gossip_payload::ThreadInfo>, ChatError> {
+        self.community.read_threads(gov).await
+    }
+
+    pub async fn list_reactions(&self, gov: &str) -> Result<Vec<rekindle_types::dht_types::ReactionEntry>, ChatError> {
+        self.community.read_reactions(gov).await
+    }
+
+    pub async fn list_audit_log(&self, gov: &str, limit: u32) -> Result<Vec<rekindle_types::dht_types::AuditLogEntry>, ChatError> {
+        self.community.read_audit_log(gov, limit).await
+    }
+
+    pub fn thread_history(&self, thread_id: &str, limit: u32) -> Result<Vec<rekindle_storage::messages::ChannelRecord>, ChatError> {
+        Ok(self.vault.query_thread_messages(thread_id, limit)?)
+    }
+
+    pub async fn get_onboarding_config(&self, gov: &str) -> Result<Option<rekindle_types::dht_types::OnboardingConfig>, ChatError> {
+        self.community.read_onboarding_config(gov).await
+    }
+
+    pub async fn set_onboarding_config(&self, gov: &str, config: &rekindle_types::dht_types::OnboardingConfig) -> Result<(), ChatError> {
+        self.community.write_onboarding_config(gov, config).await
+    }
+
+    pub async fn get_welcome_screen(&self, gov: &str) -> Result<Option<rekindle_types::dht_types::WelcomeScreen>, ChatError> {
+        self.community.read_welcome_screen(gov).await
+    }
+
+    pub async fn set_welcome_screen(&self, gov: &str, screen: &rekindle_types::dht_types::WelcomeScreen) -> Result<(), ChatError> {
+        self.community.write_welcome_screen(gov, screen).await
+    }
 }

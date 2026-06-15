@@ -56,6 +56,15 @@ pub fn handle_focused_key(view: &mut CommunityInfoView, key: KeyEvent) -> Option
                 })
             })
         }
+        KeyCode::Char('m') => {
+            Some(Action::ShowModeration { community: view.community.clone() })
+        }
+        KeyCode::Char('i') => {
+            Some(Action::ShowInvites { community: view.community.clone() })
+        }
+        KeyCode::Char('e') => {
+            Some(Action::ShowEvents { community: view.community.clone() })
+        }
         _ => None,
     }
 }

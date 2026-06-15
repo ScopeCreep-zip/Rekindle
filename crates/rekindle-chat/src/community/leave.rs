@@ -33,7 +33,8 @@ impl CommunityService {
 
             if !inbox_kp.is_empty() {
                 let pseudonym_seed = self.io.pseudonym_seed(governance_key)?;
-                let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&pseudonym_seed)?;
+                let kp = rekindle_identity::SigningKeypair::from_seed(&pseudonym_seed)
+                    .map_err(|e| ChatError::Internal(format!("pseudonym keypair: {e}")))?;
 
                 let now = timestamp_ms();
                 let mut leave_entry = PendingJoinEntry {
@@ -47,14 +48,14 @@ impl CommunityService {
                     signature_hex: String::new(),
                 };
                 let content = leave_entry.signature_content();
-                let sig = rekindle_ratchet::crypto::sign::sign_ec_prekey(&kp, &content);
+                let sig = kp.sign_ec_prekey(&content);
                 leave_entry.signature_hex = hex::encode(sig);
 
                 // Read-append-write to preserve other entries in the subkey
-                self.io.open_record(&metadata.join_inbox_key, Some(&inbox_kp)).await?;
+                let inbox_record = self.io.open_record(&metadata.join_inbox_key, Some(&inbox_kp)).await?;
                 let subkey = blake3_subkey(&membership.pseudonym_key, 32);
 
-                let existing = self.io.read_record(&metadata.join_inbox_key, subkey, true)
+                let existing = self.io.read_record(&inbox_record, subkey, true)
                     .await?
                     .unwrap_or_default();
                 let mut entries: Vec<PendingJoinEntry> = if existing.is_empty() || existing == b"[]" {
@@ -69,7 +70,7 @@ impl CommunityService {
                     .map_err(|e| ChatError::Serialization(format!("leave entry: {e}")))?;
 
                 match self.io.write_record(
-                    &metadata.join_inbox_key, subkey, &bytes,
+                    &inbox_record, subkey, &bytes,
                     Some(&inbox_kp), Confirm::Accepted,
                 ).await {
                     Ok(_) => tracing::info!(

@@ -13,6 +13,7 @@ pub mod channel;
 pub mod config;
 pub mod cross_device_sync;
 pub mod display;
+pub mod dm_store;
 pub mod error;
 pub mod event;
 pub mod expression;
@@ -31,6 +32,10 @@ pub mod presence;
 pub mod search;
 pub mod subscription_events;
 pub mod thread;
+
+/// Milliseconds since UNIX epoch. The canonical timestamp type for the platform.
+/// SQLite stores as i64 — conversion happens once at the storage boundary.
+pub type EpochMs = u64;
 
 // Wire payload types (moved from rekindle-transport)
 pub mod dht_types;

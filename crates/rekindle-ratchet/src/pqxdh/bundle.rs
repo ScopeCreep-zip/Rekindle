@@ -125,7 +125,14 @@ pub struct PqxdhInitMessage {
     pub opk_b_id: u64,
     /// ML-KEM-768 ciphertext (1088 bytes).
     pub kem_ct: Vec<u8>,
-    /// Initial AEAD ciphertext (first DR message).
+    /// Initiator's ratchet DH public key. The Responder uses this with
+    /// their own SPK seed to compute the same DH output as the Initiator,
+    /// deriving matching header and chain keys so both sides can decrypt
+    /// immediately after session establishment.
+    pub initiator_ratchet_dh_pub: [u8; 32],
+    /// Initial DR-encrypted header from encrypt_he(b"PQXDH-INIT").
+    pub initial_encrypted_header: Vec<u8>,
+    /// Initial AEAD ciphertext (body = b"PQXDH-INIT"), proves SK possession.
     pub initial_ciphertext: Vec<u8>,
 }
 

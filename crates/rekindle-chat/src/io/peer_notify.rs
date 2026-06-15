@@ -57,8 +57,11 @@ impl PlatformIO {
                 "peer notification (type 0x{type_id:02x}): {e}"
             )))?;
 
-        let signing_seed = self.require_signing_key()?;
-        let wire = SignedEnvelope::build(type_id, &signing_seed, &payload_bytes)?;
+        let wire = self.with_identity(|si| {
+            let kp = si.signing_keypair()
+                .map_err(|e| ChatError::Internal(format!("signing keypair: {e}")))?;
+            SignedEnvelope::build(type_id, &kp, &payload_bytes)
+        })?;
 
         self.transport()
             .send_to_peer(peer_key, &wire)

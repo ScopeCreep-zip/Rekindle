@@ -107,6 +107,9 @@ pub enum RatchetError {
     #[error("session state corruption: {0}")]
     SessionCorrupt(String),
 
+    #[error("session wedged with peer {peer_key} — AEAD failed on previously working session")]
+    SessionWedged { peer_key: String },
+
     #[error("session promotion pending receipt-ack (Cremers 2023 guard)")]
     PromotionPending,
 

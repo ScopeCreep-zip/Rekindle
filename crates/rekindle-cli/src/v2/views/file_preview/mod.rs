@@ -243,6 +243,6 @@ impl View for FilePreviewView {
         }
     }
 
-    fn on_command_result(&mut self, _result: CommandResult) -> Result<()> { Ok(()) }
+    fn on_command_result(&mut self, _result: CommandResult) -> Result<Option<Action>> { Ok(None) }
     fn focus_ring(&mut self) -> &mut FocusRing { &mut self.focus }
 }

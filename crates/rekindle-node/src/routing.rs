@@ -11,7 +11,7 @@ use rekindle_transport_ipc::v3::router::{ConnectionInfo, ConnectionPhase, FrameR
 use rekindle_transport_ipc::v3::server::ConnectionHandle;
 use rekindle_transport_ipc::v3::wire::clearance::Clearance;
 use rekindle_transport_ipc::v3::wire::frame_kind::DatagramKind;
-use rekindle_types::daemon::{DaemonRequest, DaemonResponse};
+use rekindle_types::daemon::{ChatRequest, DaemonRequest, DaemonResponse, LifecycleRequest};
 
 use crate::daemon::dispatch::{dispatch, DaemonContext};
 use crate::subscriptions::SubscriptionRegistry;
@@ -86,7 +86,7 @@ impl FrameRouter for DaemonRouter {
 
         // Subscribe/Unsubscribe: server-side, synchronous
         match &request {
-            DaemonRequest::Subscribe { filters } => {
+            DaemonRequest::Lifecycle(LifecycleRequest::Subscribe { filters }) => {
                 self.subs.subscribe(
                     info.conn_id,
                     self.handle.clone(),
@@ -98,7 +98,7 @@ impl FrameRouter for DaemonRouter {
                 );
                 return;
             }
-            DaemonRequest::Unsubscribe { filters } => {
+            DaemonRequest::Lifecycle(LifecycleRequest::Unsubscribe { filters }) => {
                 self.subs.unsubscribe(info.conn_id, filters);
                 self.send_reply(
                     message_id,
@@ -111,10 +111,10 @@ impl FrameRouter for DaemonRouter {
 
         // Idempotency check
         let client_msg_id = match &request {
-            DaemonRequest::ChannelSend {
+            DaemonRequest::Chat(ChatRequest::ChannelSend {
                 client_msg_id: Some(id),
                 ..
-            } => {
+            }) => {
                 if let Some(cached) = self.ctx.idempotency_cache.check(id) {
                     self.send_reply(message_id, &cached);
                     return;

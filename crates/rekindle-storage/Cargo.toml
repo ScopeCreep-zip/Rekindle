@@ -14,6 +14,7 @@ default = []
 regulatory-fips = ["aws-lc-rs/fips"]
 
 [dependencies]
+rekindle-types = { path = "../rekindle-types" }
 aws-lc-rs = { version = "1.16", features = ["aws-lc-sys"] }
 blake3 = "1"
 zeroize = { version = "1", features = ["derive", "alloc", "serde"] }

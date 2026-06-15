@@ -8,6 +8,7 @@ pub mod governance;
 pub mod membership;
 pub mod social;
 pub mod system;
+mod gossip_dispatch;
 
 use std::sync::Arc;
 
@@ -46,11 +47,25 @@ impl CommunityService {
     /// Errors are logged with full context (sender, community, error detail)
     /// and return None — a malformed gossip message from one peer must not
     /// crash the daemon or block processing of subsequent messages.
+    /// Handle an inbound gossip message.
+    ///
+    /// Verification skeleton: deserialize envelope, verify Ed25519 signature,
+    /// deserialize inner payload. Then delegates to `gossip_dispatch` for
+    /// route extraction, TTL forwarding, MEK decrypt, and event conversion.
+    ///
+    /// `RequestMek` is handled here (not in gossip_dispatch) because it
+    /// calls `self.handle_mek_request()` which requires `&CommunityService`.
     pub async fn handle_gossip(
         &self,
         sender_key: &str,
         payload: &[u8],
     ) -> Option<SubscriptionEvent> {
+        tracing::info!(
+            payload_len = payload.len(),
+            sender = if sender_key.is_empty() { "anonymous" } else { &sender_key[..16.min(sender_key.len())] },
+            "handle_gossip: ENTERED — deserializing envelope"
+        );
+
         let envelope: rekindle_types::gossip_payload::SignedGossipEnvelope =
             match postcard::from_bytes(payload) {
                 Ok(e) => e,
@@ -64,7 +79,7 @@ impl CommunityService {
                 }
             };
 
-        // Verify Ed25519 signature over payload_bytes
+        // ── Verify Ed25519 signature ───────────────────────────────
         let Some(pub_bytes) = hex::decode(&envelope.sender_pseudonym)
             .ok()
             .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()) else {
@@ -85,7 +100,7 @@ impl CommunityService {
             return None;
         };
 
-        if rekindle_ratchet::crypto::sign::verify_ec_prekey(
+        if rekindle_identity::verify_ec_prekey(
             &pub_bytes, &envelope.payload_bytes, &sig_bytes,
         ).is_err() {
             tracing::warn!(
@@ -96,7 +111,14 @@ impl CommunityService {
             return None;
         }
 
-        // Deserialize inner payload
+        tracing::info!(
+            community = &envelope.community_id[..20.min(envelope.community_id.len())],
+            sender_pseudonym = &envelope.sender_pseudonym[..16.min(envelope.sender_pseudonym.len())],
+            ttl = envelope.ttl,
+            payload_bytes_len = envelope.payload_bytes.len(),
+            "handle_gossip: signature VERIFIED — deserializing inner payload"
+        );
+
         let gossip_payload: GossipPayload = match postcard::from_bytes(&envelope.payload_bytes) {
             Ok(p) => p,
             Err(e) => {
@@ -110,55 +132,42 @@ impl CommunityService {
             }
         };
 
-        // Handle MEK-specific gossip payloads that need action beyond event emission
-        if let GossipPayload::Control(ref ctrl) = gossip_payload {
-            match ctrl {
-                ControlPayload::RequestMek { channel_id, needed_generation, requester_pseudonym } => {
-                    if let Err(e) = self.handle_mek_request(
-                        &envelope.community_id, channel_id, requester_pseudonym, *needed_generation,
-                    ).await {
-                        tracing::debug!(error = %e, "MEK request handling failed (may not be operator)");
-                    }
+        match &gossip_payload {
+            GossipPayload::Control(ControlPayload::RequestMek {
+                ref channel_id, needed_generation, ref requester_pseudonym,
+            }) => {
+                if let Err(e) = self.handle_mek_request(
+                    &envelope.community_id, channel_id, requester_pseudonym, *needed_generation,
+                ).await {
+                    tracing::debug!(error = %e, "MEK request handling failed (may not be operator)");
                 }
-                ControlPayload::MekTransfer { community_id, channel_id, generation, sender_pseudonym, wrapped_mek } => {
-                    let ch = channel_id.as_deref().unwrap_or("unknown");
-                    if let Err(e) = self.receive_mek_transfer(
-                        community_id, ch, *generation, sender_pseudonym, wrapped_mek,
-                    ) {
-                        tracing::warn!(error = %e, "MEK transfer receive failed");
-                    }
-                }
-                ControlPayload::ChannelLockdown { locked } => {
-                    // Update cached lockdown state — the messaging send path
-                    // reads this to enforce lockdown without DHT reads per message.
-                    let mut meta = self.session_meta.write();
-                    if let Some(membership) = meta.communities.get_mut(&envelope.community_id) {
-                        membership.locked_down = *locked;
-                        tracing::info!(
-                            community = &envelope.community_id[..12.min(envelope.community_id.len())],
-                            locked,
-                            "lockdown state updated from gossip"
-                        );
-                    }
-                }
-                _ => {}
             }
+            GossipPayload::Control(ControlPayload::MekTransfer {
+                ref community_id, ref channel_id, generation, ref sender_pseudonym,
+                ref wrapped_mek, ref sender_x25519_pub,
+            }) => {
+                let ch = channel_id.as_deref().unwrap_or("unknown");
+                let Some(ref sender_dh_key) = sender_x25519_pub else {
+                    tracing::warn!(
+                        sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+                        "MekTransfer missing sender_x25519_pub — dropping"
+                    );
+                    return None;
+                };
+                if let Err(e) = self.receive_mek_transfer(
+                    community_id, ch, *generation, wrapped_mek, sender_dh_key,
+                ) {
+                    tracing::warn!(error = %e, "MEK transfer receive failed");
+                }
+            }
+            _ => {}
         }
 
-        // Convert to SubscriptionEvent for the dedup + state_effects + IPC pipeline
-        let event = crate::events::conversions::gossip_to_event(
-            gossip_payload,
-            &envelope.community_id,
-            &envelope.sender_pseudonym,
-        );
-
-        tracing::debug!(
-            community = &envelope.community_id[..12.min(envelope.community_id.len())],
-            sender = &envelope.sender_pseudonym[..12.min(envelope.sender_pseudonym.len())],
-            "gossip: verified and dispatched"
-        );
-
-        Some(event)
+        // ── Delegate to gossip_dispatch for everything else ────────
+        gossip_dispatch::dispatch_verified_gossip(
+            &self.io, &self.vault, &self.mek_cache, &self.session_meta,
+            &envelope, gossip_payload,
+        ).await
     }
 
     // ── Inbound RPC dispatch ────────────────────────────────────
@@ -185,7 +194,7 @@ impl CommunityService {
         }
     }
 
-    pub async fn handle_rpc_call(&self, sender_key: &str, data: &[u8]) -> Vec<u8> {
+    pub async fn handle_rpc_call(&self, sender_key: &str, data: &[u8], dm_deps: &dyn crate::dm::DmDeps) -> Vec<u8> {
         let call: InboundCall = match postcard::from_bytes(data) {
             Ok(c) => c,
             Err(e) => {
@@ -218,9 +227,32 @@ impl CommunityService {
                 tracing::debug!("sync request received — not yet implemented");
                 CallResponse::Ack
             }
-            InboundCall::Dm(_data) => {
-                tracing::debug!("DM via RPC received — forwarding to messaging");
-                CallResponse::Ack
+            InboundCall::Dm(dm_data) => {
+                match serde_json::from_slice::<crate::dm::invite::DmInvite>(&dm_data) {
+                    Ok(invite) => {
+                        tracing::info!(
+                            record_key = &invite.record_key[..20.min(invite.record_key.len())],
+                            sender = &sender_key[..16.min(sender_key.len())],
+                            "community::rpc: DM invite via InboundCall::Dm"
+                        );
+                        match crate::dm::ingest::handle_incoming_dm_invite(
+                            dm_deps, sender_key, &invite,
+                        ).await {
+                            Ok(()) => CallResponse::Ack,
+                            Err(e) => {
+                                tracing::warn!(error = %e, "community::rpc: DM invite ingest failed");
+                                CallResponse::Rejected { reason: format!("dm invite: {e}") }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            error = %e,
+                            "community::rpc: InboundCall::Dm payload is not a DmInvite"
+                        );
+                        CallResponse::Rejected { reason: format!("unrecognized DM payload: {e}") }
+                    }
+                }
             }
         };
 
@@ -236,7 +268,7 @@ impl CommunityService {
             "governance manifest changed — refreshing local state"
         );
         for &subkey in subkeys {
-            match self.io.read_record(community, subkey, true).await {
+            match self.io.open_and_read(community, subkey, true).await {
                 Ok(Some(_data)) => {
                     tracing::debug!(
                         community = &community[..12.min(community.len())],
@@ -323,13 +355,98 @@ impl CommunityService {
         &self,
         governance_key: &str,
     ) -> Result<rekindle_types::dht_types::CommunityMetadata, ChatError> {
-        let raw = self.io
-            .read_record(governance_key, rekindle_types::dht_types::MANIFEST_METADATA, true)
+        let raw = self
+            .read_verified_governance(governance_key, rekindle_types::dht_types::MANIFEST_METADATA)
             .await?
             .ok_or_else(|| ChatError::CommunityNotFound {
                 community: governance_key.into(),
             })?;
         serde_json::from_slice(&raw)
             .map_err(|e| ChatError::Deserialization(format!("community metadata: {e}")))
+    }
+
+    /// Discover routes for all members in a community and populate the gossip mesh.
+    ///
+    /// Reads the member registry from DHT, iterates members with profile_dht_key,
+    /// reads each member's route blob from their profile, caches the route in the
+    /// peer registry, and upserts into the community's gossip mesh.
+    ///
+    /// Called during resume and after join completion. Non-fatal — errors on
+    /// individual members are logged and skipped.
+    pub async fn discover_community_member_routes(
+        &self,
+        governance_key: &str,
+        my_pseudonym: &str,
+        registry_key: &str,
+    ) {
+        if registry_key.is_empty() {
+            return;
+        }
+        let members = match self.list_members(governance_key).await {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(
+                    community = &governance_key[..20.min(governance_key.len())],
+                    error = %e,
+                    "member list read failed — gossip mesh will be empty"
+                );
+                return;
+            }
+        };
+
+        let mut discovered = 0u32;
+        for member in &members {
+            // Skip ourselves
+            if member.pseudonym_key == my_pseudonym {
+                continue;
+            }
+            // Skip members without profile DHT keys
+            let Some(ref profile_key) = member.profile_dht_key else {
+                continue;
+            };
+            if profile_key.is_empty() {
+                continue;
+            }
+
+            // Open the member's profile read-only
+            if let Err(e) = self.io.open_record(profile_key, None).await {
+                tracing::debug!(
+                    member = &member.pseudonym_key[..16.min(member.pseudonym_key.len())],
+                    error = %e,
+                    "member profile open failed — skipping"
+                );
+                continue;
+            }
+
+            // Discover route and upsert into mesh
+            let mesh_info = crate::io::route::MeshPeerInfo {
+                community_id: governance_key,
+                pseudonym: &member.pseudonym_key,
+                status: "online",
+                my_pseudonym,
+            };
+            match self.io.discover_peer_route(
+                &member.pseudonym_key,
+                profile_key,
+                Some(mesh_info),
+            ).await {
+                Ok(true) => { discovered += 1; }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::debug!(
+                        member = &member.pseudonym_key[..16.min(member.pseudonym_key.len())],
+                        error = %e,
+                        "member route discovery failed — skipping"
+                    );
+                }
+            }
+        }
+
+        tracing::info!(
+            community = &governance_key[..20.min(governance_key.len())],
+            total_members = members.len(),
+            routes_discovered = discovered,
+            "community member routes discovered"
+        );
     }
 }

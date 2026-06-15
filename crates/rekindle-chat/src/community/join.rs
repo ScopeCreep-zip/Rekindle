@@ -10,7 +10,6 @@ use rekindle_types::dht_types::{
     MANIFEST_REGISTRY_SPINE, REGISTRY_MEMBER_INDEX, REGISTRY_MEK_VAULT,
 };
 use rekindle_types::session_types::CommunityMembership;
-use rekindle_types::transport::RecordSchema;
 
 use crate::events::registry::WatchKind;
 use crate::io::Confirm;
@@ -61,7 +60,6 @@ impl CommunityService {
         display_name: &str,
     ) -> Result<JoinRequestSubmitted, ChatError> {
         // Read governance metadata
-        self.io.open_record(governance_key, None).await?;
         let metadata = self.read_governance_metadata(governance_key).await?;
 
         if metadata.join_inbox_key.is_empty() || metadata.join_inbox_keypair_hex.is_empty() {
@@ -81,20 +79,27 @@ impl CommunityService {
         // be opened before any read_record call (await_join_approval polls
         // REGISTRY_MEMBER_INDEX, complete_join reads REGISTRY_MEK_VAULT).
         let registry_key = self.read_registry_key(governance_key, &metadata.name).await?;
-        self.io.open_record(&registry_key, None).await?;
 
-        // Derive pseudonym
+        // max_members enforcement
+        let current_members = self.read_members(&registry_key).await.map_or(0, |m| m.len());
+        if current_members >= metadata.max_members as usize {
+            return Err(ChatError::CommunityFull {
+                current: current_members,
+                max: metadata.max_members,
+            });
+        }
+
+        // Derive pseudonym via identity crate (governance key canonicalized)
         let pseudonym_hex = self.io.pseudonym_hex(governance_key)?;
         let pseudonym_seed = self.io.pseudonym_seed(governance_key)?;
-        let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&pseudonym_seed)?;
+        let kp = rekindle_identity::SigningKeypair::from_seed(&pseudonym_seed)
+            .map_err(|e| ChatError::Internal(format!("pseudonym keypair: {e}")))?;
 
-        // Derive X25519 public key for MEK wrapping
-        let community_x25519_seed = blake3::derive_key("rekindle identity x25519 v1", &pseudonym_seed);
-        let x25519_key = rekindle_ratchet::crypto::dh::reusable_from_seed(&community_x25519_seed)
+        // Derive X25519 public key for MEK wrapping (G5 from pseudonym seed)
+        let community_x25519_seed = rekindle_identity::x25519_seed_from(&pseudonym_seed);
+        let our_community_dh = rekindle_identity::x25519_public_from_raw_seed(&community_x25519_seed)
             .map_err(|e| ChatError::Internal(format!("x25519 from seed: {e}")))?;
-        let x25519_pub_raw = x25519_key.compute_public_key()
-            .map_err(|_| ChatError::Internal("x25519 pubkey derive".into()))?;
-        let x25519_pub_hex = hex::encode(x25519_pub_raw.as_ref());
+        let x25519_pub_hex = our_community_dh.to_hex();
 
         // Build + sign join entry
         let mut entry = PendingJoinEntry {
@@ -111,16 +116,16 @@ impl CommunityService {
             signature_hex: String::new(),
         };
         let content = entry.signature_content();
-        let sig = rekindle_ratchet::crypto::sign::sign_ec_prekey(&kp, &content);
+        let sig = kp.sign_ec_prekey(&content);
         entry.signature_hex = hex::encode(sig);
 
         // Write to join inbox with Confirm::Verified
         let inbox_kp_bytes = hex::decode(&metadata.join_inbox_keypair_hex)
             .map_err(|e| ChatError::Internal(format!("inbox keypair hex: {e}")))?;
-        self.io.open_record(&metadata.join_inbox_key, Some(&inbox_kp_bytes)).await?;
+        let inbox_record = self.io.open_record(&metadata.join_inbox_key, Some(&inbox_kp_bytes)).await?;
 
         let subkey = blake3_hash_mod(&pseudonym_hex, governance_key, 32);
-        let existing = self.io.read_record(&metadata.join_inbox_key, subkey, true)
+        let existing = self.io.read_record(&inbox_record, subkey, true)
             .await?
             .unwrap_or_default();
 
@@ -136,7 +141,7 @@ impl CommunityService {
             .map_err(|e| ChatError::Serialization(format!("join entry: {e}")))?;
 
         let receipt = self.io.write_record(
-            &metadata.join_inbox_key, subkey, &bytes,
+            &inbox_record, subkey, &bytes,
             Some(&inbox_kp_bytes), Confirm::Verified,
         ).await?;
 
@@ -204,7 +209,7 @@ impl CommunityService {
         );
 
         // Establish registry watch for faster discovery
-        if let Err(e) = self.io.watch_and_register(
+        if let Err(e) = self.io.open_and_watch(
             &submitted.registry_key, &[REGISTRY_MEMBER_INDEX],
             WatchKind::MemberRegistry { community: submitted.governance_key.clone() },
             &self.watches,
@@ -225,7 +230,7 @@ impl CommunityService {
             }
 
             // Poll registry for our pseudonym
-            let members_data = self.io.read_record(
+            let members_data = self.io.open_and_read(
                 &submitted.registry_key, REGISTRY_MEMBER_INDEX, true,
             ).await?;
 
@@ -260,16 +265,9 @@ impl CommunityService {
         submitted: &JoinRequestSubmitted,
         approved: &JoinApproved,
     ) -> Result<JoinCompleted, ChatError> {
-        // Re-open governance and registry records. await_join_approval may
-        // have polled for up to 120s — the routing table can evict records
-        // that haven't been touched. open_record is idempotent (no-op if
-        // already open, re-opens if evicted).
-        self.io.open_record(&submitted.governance_key, None).await?;
-        self.io.open_record(&submitted.registry_key, None).await?;
-
         // Read channel list
-        let channels_data = self.io.read_record(
-            &submitted.governance_key, MANIFEST_CHANNELS, true,
+        let channels_data = self.read_verified_governance(
+            &submitted.governance_key, MANIFEST_CHANNELS,
         ).await?;
         let channels: Vec<rekindle_types::dht_types::ChannelEntry> = channels_data
             .and_then(|d| serde_json::from_slice(&d).ok())
@@ -283,55 +281,107 @@ impl CommunityService {
             &submitted.pseudonym_hex,
         ).await;
 
-        // Derive and store SMPL slot seed
-        let signing_seed = self.io.require_signing_key()?;
-        let slot_seed = blake3::derive_key(
-            &format!("rekindle slot seed v1 {} {}", submitted.governance_key, approved.slot_index),
-            &signing_seed,
-        );
-        let gov_short = &submitted.governance_key[..12.min(submitted.governance_key.len())];
-        self.vault.store_key(
-            &rekindle_storage::keys::labels::slot_seed(gov_short, approved.slot_index),
-            &slot_seed,
-        )?;
-
-        // Build channel name→UUID resolution map from governance channel list.
+        // Build channel name→UUID resolution map and slowmode config from governance channel list.
         let mut channel_name_to_id = HashMap::new();
+        let mut channel_slowmode = HashMap::new();
         for ch in &channels {
             channel_name_to_id.insert(ch.name.clone(), ch.id.clone());
+            channel_slowmode.insert(ch.id.clone(), ch.slowmode_seconds);
         }
 
-        // Create per-channel DhtLog records so we can write messages to channels.
-        // Each member owns their own DhtLog per channel — no shared write access.
+        // Unwrap slot_seed from MEK vault (ECDH-encrypted per member)
+        let metadata = self.read_governance_metadata(&submitted.governance_key).await?;
+        let slot_seed = self.unwrap_slot_seed_from_vault(
+            &submitted.governance_key,
+            &submitted.pseudonym_hex,
+        ).await.or_else(|_| {
+            // Fallback: read from metadata (operator-only, plaintext)
+            hex::decode(&metadata.slot_seed_hex)
+                .ok()
+                .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
+                .ok_or_else(|| ChatError::Internal("slot_seed not available from vault or metadata".into()))
+        })?;
+
         let mut channel_record_keys = HashMap::new();
+
+        // Derive our slot keypair for writing to channel SMPL records
+        let slot_keypair = rekindle_identity::derive_slot_keypair(&slot_seed, approved.slot_index)
+            .map_err(|e| ChatError::Internal(format!("slot keypair derivation: {e}")))?;
+        let slot_keypair_bytes = {
+            let mut buf = [0u8; 64];
+            buf[..32].copy_from_slice(&slot_keypair.public_key_bytes());
+            // SigningKeypair doesn't expose secret bytes directly — re-derive
+            // the seed and use it as the secret half for Veilid's KeyPair format
+            let mut ikm = Vec::with_capacity(36);
+            ikm.extend_from_slice(&slot_seed);
+            ikm.extend_from_slice(&approved.slot_index.to_le_bytes());
+            let seed = blake3::derive_key(
+                rekindle_identity::derivation_tags::SLOT_KEYPAIR,
+                &ikm,
+            );
+            buf[32..].copy_from_slice(&seed);
+            buf
+        };
+
         for ch in &channels {
-            match self.io.create_record(RecordSchema::SingleWriter { subkey_count: 1 }).await {
-                Ok((record_key, keypair)) => {
-                    let ch_short = &record_key[..12.min(record_key.len())];
-                    if let Err(e) = self.vault.store_key(
-                        &rekindle_storage::keys::labels::channel_log_keypair(ch_short),
-                        &keypair,
-                    ) {
-                        tracing::warn!(channel = %ch.id, error = %e, "channel log keypair vault store failed");
-                        continue;
-                    }
-                    channel_record_keys.insert(ch.id.clone(), record_key);
-                }
-                Err(e) => {
+            if let Some(ref record_key) = ch.message_record_key {
+                if record_key.is_empty() { continue; }
+                // Open the shared SMPL channel record with our slot keypair
+                if let Err(e) = self.io.open_record(record_key, Some(&slot_keypair_bytes)).await {
                     tracing::warn!(
-                        channel = %ch.id,
+                        channel = %ch.name,
+                        record_key = &record_key[..12.min(record_key.len())],
                         error = %e,
-                        "per-channel DhtLog creation failed — will retry on next message send"
+                        "channel SMPL record open failed — will retry on first message send"
                     );
                 }
+                channel_record_keys.insert(ch.id.clone(), record_key.clone());
             }
         }
+        tracing::info!(
+            channels = channel_record_keys.len(),
+            slot = approved.slot_index,
+            "channel SMPL records opened with slot keypair"
+        );
 
-        // Channel record registration with the operator happens via
-        // GovernanceOp::RegisterChannelRecord RPC when the member first
-        // sends a message to a channel. The RPC carries the record key
-        // so the operator can update the member registry. This is deferred
-        // to first-message-send to avoid RPC overhead during join.
+        // Write signed MemberSummary to our registry slot, replacing
+        // the operator's unsigned placeholder from approval.
+        let pseudonym_seed = self.io.pseudonym_seed(&submitted.governance_key)?;
+        let pseudonym_kp = rekindle_identity::SigningKeypair::from_seed(&pseudonym_seed)
+            .map_err(|e| ChatError::Internal(format!("pseudonym keypair: {e}")))?;
+        let community_x25519_seed = rekindle_identity::x25519_seed_from(&pseudonym_seed);
+        let our_x25519_dh = rekindle_identity::x25519_public_from_raw_seed(&community_x25519_seed)
+            .map_err(|e| ChatError::Internal(format!("x25519: {e}")))?;
+
+        let display_name_for_member = {
+            let meta = self.session_meta.read();
+            meta.identity.as_ref().map(|i| i.display_name.clone()).unwrap_or_default()
+        };
+        let mut my_member = rekindle_types::dht_types::MemberSummary {
+            pseudonym_key: submitted.pseudonym_hex.clone(),
+            display_name: display_name_for_member.clone(),
+            role_ids: Vec::new(),
+            joined_at: crate::time::timestamp_ms(),
+            subkey_index: approved.slot_index,
+            onboarding_complete: true,
+            timeout_until: None,
+            x25519_pub: Some(our_x25519_dh.to_hex()),
+            profile_dht_key: {
+                let meta = self.session_meta.read();
+                meta.identity.as_ref().map(|i| i.profile_dht_key.clone())
+            },
+            channel_records: HashMap::new(),
+            signature: Vec::new(),
+        };
+        let sig = pseudonym_kp.sign_raw(&my_member.signing_bytes());
+        my_member.signature = sig.to_vec();
+        let my_member_bytes = serde_json::to_vec(&my_member)
+            .map_err(|e| ChatError::Serialization(format!("signed member: {e}")))?;
+        self.io.open_and_write(
+            &submitted.registry_key, approved.slot_index, &my_member_bytes,
+            Some(&slot_keypair_bytes), crate::io::Confirm::Accepted,
+        ).await?;
+        tracing::info!(slot = approved.slot_index, "signed MemberSummary written to registry");
 
         // Establish subscription watches
         self.setup_community_watches(
@@ -366,19 +416,31 @@ impl CommunityService {
                 slot_index: approved.slot_index,
                 channel_record_keys,
                 channel_name_to_id,
+                channel_slowmode,
                 community_mailbox_key: submitted.community_mailbox_key.clone(),
                 join_inbox_key: submitted.join_inbox_key.clone(),
                 is_operator: false,
                 locked_down: false,
                 joined_at: timestamp_ms(),
+                last_seen_seqs: HashMap::new(),
+                slot_seed: Some(metadata.slot_seed_hex.clone()),
+                lamport_counter: 0,
             });
         }
+
+        // Discover routes for existing community members → populate gossip mesh
+        self.discover_community_member_routes(
+            &submitted.governance_key,
+            &submitted.pseudonym_hex,
+            &submitted.registry_key,
+        ).await;
 
         tracing::info!(
             community = %submitted.community_name,
             slot = approved.slot_index,
             channels = channels_discovered,
             meks = meks_cached,
+            mesh_peers = self.io.transport().gossip_mesh_peer_count(),
             "join completed — watches + gossip mesh active"
         );
 
@@ -396,11 +458,41 @@ impl CommunityService {
 
     // ── Convenience wrapper ─────────────────────────────────────
 
-    /// Join a community — submit → await (120s) → complete.
+    /// Join a community — returns existing membership if already joined.
     pub async fn join_community(
         &self,
         governance_key: &str,
     ) -> Result<JoinCompleted, ChatError> {
+        // Idempotent: if already a member, return existing membership.
+        {
+            let meta = self.session_meta.read();
+            if let Some(m) = meta.communities.get(governance_key) {
+                return Ok(JoinCompleted {
+                    community_name: m.community_name.clone(),
+                    governance_key: governance_key.to_string(),
+                    pseudonym_hex: m.pseudonym_key.clone(),
+                    slot_index: m.slot_index,
+                    registry_key: m.registry_key.clone(),
+                    community_mailbox_key: m.community_mailbox_key.clone(),
+                    channels_discovered: m.channel_name_to_id.len(),
+                    meks_cached: 0,
+                });
+            }
+            // Also check by name in case governance key format differs
+            if let Some(m) = meta.community_by_name(governance_key) {
+                return Ok(JoinCompleted {
+                    community_name: m.community_name.clone(),
+                    governance_key: m.governance_key.clone(),
+                    pseudonym_hex: m.pseudonym_key.clone(),
+                    slot_index: m.slot_index,
+                    registry_key: m.registry_key.clone(),
+                    community_mailbox_key: m.community_mailbox_key.clone(),
+                    channels_discovered: m.channel_name_to_id.len(),
+                    meks_cached: 0,
+                });
+            }
+        }
+
         let display_name = {
             let meta = self.session_meta.read();
             meta.identity.as_ref().map(|i| i.display_name.clone()).unwrap_or_default()
@@ -415,7 +507,7 @@ impl CommunityService {
     async fn read_governance_metadata(
         &self, governance_key: &str,
     ) -> Result<CommunityMetadata, ChatError> {
-        let raw = self.io.read_record(governance_key, MANIFEST_METADATA, false).await?
+        let raw = self.read_verified_governance(governance_key, MANIFEST_METADATA).await?
             .ok_or_else(|| ChatError::CommunityNotFound { community: governance_key.into() })?;
         serde_json::from_slice(&raw)
             .map_err(|e| ChatError::Deserialization(format!("governance metadata: {e}")))
@@ -424,7 +516,7 @@ impl CommunityService {
     async fn read_governance_metadata_fresh(
         &self, governance_key: &str,
     ) -> Result<CommunityMetadata, ChatError> {
-        let raw = self.io.read_record(governance_key, MANIFEST_METADATA, true).await?
+        let raw = self.read_verified_governance(governance_key, MANIFEST_METADATA).await?
             .ok_or_else(|| ChatError::CommunityNotFound { community: governance_key.into() })?;
         serde_json::from_slice(&raw)
             .map_err(|e| ChatError::Deserialization(format!("governance metadata: {e}")))
@@ -433,7 +525,7 @@ impl CommunityService {
     async fn read_registry_key(
         &self, governance_key: &str, community_name: &str,
     ) -> Result<String, ChatError> {
-        let raw = self.io.read_record(governance_key, MANIFEST_REGISTRY_SPINE, true).await?
+        let raw = self.read_verified_governance(governance_key, MANIFEST_REGISTRY_SPINE).await?
             .ok_or_else(|| ChatError::Internal(format!(
                 "community '{community_name}' has no registry spine — community may be corrupted"
             )))?;
@@ -445,6 +537,32 @@ impl CommunityService {
             .ok_or_else(|| ChatError::Internal(format!(
                 "registry spine missing 'primary_key' for community '{community_name}'"
             )))
+    }
+
+    /// Unwrap slot_seed from the MEK vault's wrapped_slot_seeds.
+    async fn unwrap_slot_seed_from_vault(
+        &self, governance_key: &str, our_pseudonym_hex: &str,
+    ) -> Result<[u8; 32], ChatError> {
+        let vault = self.read_mek_vault_from_metadata(governance_key).await?;
+        let pseudonym_seed = self.io.pseudonym_seed(governance_key)?;
+        let our_x25519_seed = rekindle_identity::x25519_seed_from(&pseudonym_seed);
+
+        for entry in &vault {
+            for ws in &entry.wrapped_slot_seeds {
+                if ws.target_pseudonym != our_pseudonym_hex { continue; }
+                let Some(ref rotator_dh) = entry.rotator_x25519_pub else { continue; };
+                let decrypted = crate::crypto::mek::unwrap_mek(
+                    &our_x25519_seed, rotator_dh, &ws.encrypted_slot_seed,
+                )?;
+                if decrypted.len() != 32 {
+                    return Err(ChatError::Internal(format!("slot_seed wrong length: {}", decrypted.len())));
+                }
+                let mut seed = [0u8; 32];
+                seed.copy_from_slice(&decrypted);
+                return Ok(seed);
+            }
+        }
+        Err(ChatError::Internal("no wrapped_slot_seed found for our pseudonym in vault".into()))
     }
 
     /// Read MEK vault, find copies for our pseudonym, unwrap via ECDH, cache.
@@ -471,7 +589,7 @@ impl CommunityService {
                 return 0;
             }
         };
-        let our_x25519_seed = blake3::derive_key("rekindle identity x25519 v1", &pseudonym_seed);
+        let our_x25519_seed = rekindle_identity::x25519_seed_from(&pseudonym_seed);
 
         let mut cached = 0usize;
         for entry in &vault {
@@ -479,18 +597,16 @@ impl CommunityService {
                 continue;
             };
 
-            let Some(rotator_pub) = hex::decode(&entry.rotator_pseudonym)
-                .ok()
-                .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()) else {
-                tracing::warn!(
+            let Some(ref rotator_dh_key) = entry.rotator_x25519_pub else {
+                tracing::error!(
                     channel = %entry.channel_id,
                     rotator = &entry.rotator_pseudonym[..12.min(entry.rotator_pseudonym.len())],
-                    "invalid rotator pseudonym hex — skipping MEK"
+                    "vault entry missing rotator_x25519_pub — cannot unwrap MEK"
                 );
                 continue;
             };
 
-            match crate::crypto::mek::unwrap_mek(&our_x25519_seed, &rotator_pub, &copy.encrypted_mek) {
+            match crate::crypto::mek::unwrap_mek(&our_x25519_seed, rotator_dh_key, &copy.encrypted_mek) {
                 Ok(mek_wire) => {
                     match crate::crypto::mek::mek_from_wire(&mek_wire) {
                         Ok((key, generation)) => {
@@ -537,7 +653,7 @@ impl CommunityService {
         let start = Instant::now();
 
         loop {
-            let data = self.io.read_record(registry_key, REGISTRY_MEK_VAULT, true)
+            let data = self.io.open_and_read(registry_key, REGISTRY_MEK_VAULT, true)
                 .await
                 .ok()?;
 
@@ -570,7 +686,7 @@ impl CommunityService {
         join_inbox_key: &str,
     ) {
         // Governance manifest (channels, roles, bans, invites, metadata, social subkeys)
-        if let Err(e) = self.io.watch_and_register(
+        if let Err(e) = self.io.open_and_watch(
             governance_key, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             WatchKind::GovernanceManifest { community: governance_key.to_string() },
             &self.watches,
@@ -583,7 +699,7 @@ impl CommunityService {
         }
 
         // Member registry
-        if let Err(e) = self.io.watch_and_register(
+        if let Err(e) = self.io.open_and_watch(
             registry_key, &[REGISTRY_MEMBER_INDEX],
             WatchKind::MemberRegistry { community: governance_key.to_string() },
             &self.watches,
@@ -597,7 +713,7 @@ impl CommunityService {
 
         // Join inbox (operators only — but set up for all, harmless if not operator)
         let inbox_subkeys: Vec<u32> = (0..32).collect();
-        if let Err(e) = self.io.watch_and_register(
+        if let Err(e) = self.io.open_and_watch(
             join_inbox_key, &inbox_subkeys,
             WatchKind::JoinInbox { community: governance_key.to_string() },
             &self.watches,

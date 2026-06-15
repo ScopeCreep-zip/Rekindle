@@ -6,11 +6,13 @@ description = "Shared type definitions for Rekindle community system"
 license = "MIT"
 
 [dependencies]
+rekindle-identity = { path = "../rekindle-identity" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 postcard = { version = "1", features = ["use-std"] }
 thiserror = { workspace = true }
 async-trait = "0.1"
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

@@ -9,7 +9,6 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use zeroize::Zeroizing;
 use rekindle_storage::VaultStore;
 use rekindle_storage::keys::labels;
 use rekindle_types::session_types::{SessionMeta, SessionIdentity};
@@ -17,14 +16,12 @@ use rekindle_types::transport::RecordSchema;
 use rekindle_types::dht_types::{
     PROFILE_SUBKEY_DISPLAY_NAME, PROFILE_SUBKEY_PREKEY_BUNDLE, PROFILE_SUBKEY_ROUTE_BLOB,
     PROFILE_SUBKEY_FRIEND_INBOX_KEY, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
+    PROFILE_SUBKEY_X25519_PUB, PROFILE_SUBKEY_COUNT,
 };
 
-use crate::crypto::SigningKeyHandle;
 use crate::io::{Confirm, PlatformIO};
 use crate::time::{timestamp_ms, timestamp_secs};
 use crate::ChatError;
-
-use aws_lc_rs::rand::SecureRandom;
 
 pub struct IdentityService {
     pub(crate) io: Arc<PlatformIO>,
@@ -34,7 +31,7 @@ pub struct IdentityService {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IdentityCreated {
-    pub public_key_hex: String,
+    pub public_key: rekindle_identity::IdentityRoot,
     pub profile_dht_key: String,
     pub mailbox_dht_key: String,
     pub friend_list_dht_key: String,
@@ -56,58 +53,53 @@ impl IdentityService {
     ) -> Result<IdentityCreated, ChatError> {
         {
             let meta = self.session_meta.read();
-            if meta.identity.is_some() {
-                return Err(ChatError::AlreadyInitialized);
+            if let Some(ref id) = meta.identity {
+                return Ok(IdentityCreated {
+                    public_key: id.public_key,
+                    profile_dht_key: id.profile_dht_key.clone(),
+                    mailbox_dht_key: id.mailbox_dht_key.clone(),
+                    friend_list_dht_key: id.friend_list_dht_key.clone(),
+                    friend_inbox_key: id.friend_inbox_key.clone(),
+                    route_blob: Vec::new(),
+                });
             }
         }
 
-        // Step 1: Generate Ed25519 signing seed
-        let mut signing_seed = Zeroizing::new([0u8; 32]);
-        aws_lc_rs::rand::SystemRandom::new()
-            .fill(signing_seed.as_mut())
-            .map_err(|e| ChatError::Internal(format!("signing key generation failed: {e}")))?;
+        // Step 1: Originate via identity crate — returns OriginationResult
+        // with vault data accessible before consuming into SelfIdentity.
+        let mut result = rekindle_identity::SelfIdentity::originate_new(
+            "pending", // placeholder profile key — updated after DHT record creation
+            Some(display_name),
+        ).map_err(|e| ChatError::Internal(format!("identity origination: {e}")))?;
 
-        // Step 2: Store signing seed in vault
-        self.vault.store_key(labels::SIGNING_KEY, signing_seed.as_ref())?;
+        // Step 2: Store seed material to vault before into_identity() consumes it
+        self.vault.store_key(labels::SIGNING_KEY, result.vault_seed())?;
+        self.vault.store_key(labels::IDENTITY_X25519_SEED, result.vault_x25519_seed())?;
 
-        // Step 3: Derive and store X25519 DH seed (deterministic from signing seed)
-        let x25519_seed = blake3::derive_key("rekindle identity x25519 v1", signing_seed.as_ref());
-        self.vault.store_key(labels::IDENTITY_X25519_SEED, &x25519_seed)?;
+        // Step 3: Extract public keys for DHT publication and prekey bundle
+        let public_key_hex = result.public_key_hex();
+        let ed_pub = *result.root.as_bytes();
+        let x25519_pub = result.dh_public;
 
-        // Step 4: Set signing key handle on PlatformIO.
-        // After this point, all PlatformIO identity/pseudonym methods work.
-        // This is the ONLY place that sets the key outside of ChatService::resume/lock.
-        let handle = SigningKeyHandle::from_vault(&self.vault)?;
-        self.io.set_signing_key(handle);
+        // Step 4: Build signing keypair for PQXDH prekey bundle
+        let kp = rekindle_identity::SigningKeypair::from_seed(result.vault_seed())
+            .map_err(|e| ChatError::Internal(format!("signing keypair: {e}")))?;
 
-        // Build Ed25519 keypair for prekey signing
-        let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&signing_seed)?;
-        let ed_pub = rekindle_ratchet::crypto::sign::public_key_bytes(&kp);
-        let public_key_hex = hex::encode(ed_pub);
-
-        // Step 5: Derive X25519 public key deterministically
-        let x25519_key = rekindle_ratchet::crypto::dh::reusable_from_seed(&x25519_seed)
-            .map_err(|e| ChatError::Internal(format!("x25519 from seed: {e}")))?;
-        let x25519_pub_raw = x25519_key.compute_public_key()
-            .map_err(|_| ChatError::Internal("x25519 pubkey derivation failed".into()))?;
-        let mut x25519_pub = [0u8; 32];
-        x25519_pub.copy_from_slice(x25519_pub_raw.as_ref());
-
-        // Step 6: Generate PQXDH prekey bundle
+        // Step 5: Generate PQXDH prekey bundle
         let (spk_seed, spk_pub) = rekindle_ratchet::crypto::dh::generate_ratchet_keypair()
             .map_err(|e| ChatError::Internal(format!("SPK keygen: {e}")))?;
-        let spk_sig = rekindle_ratchet::crypto::sign::sign_ec_prekey(&kp, &spk_pub);
+        let spk_sig = kp.sign_ec_prekey(&spk_pub);
 
         let pq_ot = rekindle_ratchet::crypto::kem::keygen()
             .map_err(|e| ChatError::Internal(format!("ML-KEM OT keygen: {e}")))?;
-        let pqpk_ot_sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-            &kp, rekindle_ratchet::crypto::sign::DOMAIN_OT, &pq_ot.ek_bytes,
+        let pqpk_ot_sig = kp.sign_pq_prekey(
+            rekindle_identity::DOMAIN_OT, &pq_ot.ek_bytes,
         );
 
         let pq_lr = rekindle_ratchet::crypto::kem::keygen()
             .map_err(|e| ChatError::Internal(format!("ML-KEM LR keygen: {e}")))?;
-        let pqpk_lr_sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-            &kp, rekindle_ratchet::crypto::sign::DOMAIN_LR, &pq_lr.ek_bytes,
+        let pqpk_lr_sig = kp.sign_pq_prekey(
+            rekindle_identity::DOMAIN_LR, &pq_lr.ek_bytes,
         );
 
         let bundle = rekindle_ratchet::pqxdh::bundle::PreKeyBundle {
@@ -134,18 +126,22 @@ impl IdentityService {
         self.vault.store_key(&labels::pq_last_resort(), pq_lr.dk_bytes.as_ref())?;
 
         // Step 8: Create DHT records
-        let (profile_key, profile_keypair) = self.io
-            .create_record(RecordSchema::SingleWriter { subkey_count: 10 })
+        let (profile_record, profile_keypair) = self.io
+            .create_record(RecordSchema::SingleWriter { subkey_count: PROFILE_SUBKEY_COUNT })
             .await?;
-        let (mailbox_key, _mailbox_keypair) = self.io
+        let profile_key = profile_record.key().to_string();
+        let (mailbox_record, _) = self.io
             .create_record(RecordSchema::SingleWriter { subkey_count: 1 })
             .await?;
-        let (friend_list_key, friend_list_keypair) = self.io
+        let mailbox_key = mailbox_record.key().to_string();
+        let (friend_list_record, friend_list_keypair) = self.io
             .create_record(RecordSchema::SingleWriter { subkey_count: 1 })
             .await?;
-        let (friend_inbox_key, friend_inbox_keypair) = self.io
+        let friend_list_key = friend_list_record.key().to_string();
+        let (friend_inbox_record, friend_inbox_keypair) = self.io
             .create_record(RecordSchema::SingleWriter { subkey_count: 32 })
             .await?;
+        let friend_inbox_key = friend_inbox_record.key().to_string();
         let friend_inbox_keypair_hex = hex::encode(&friend_inbox_keypair);
 
         // Step 9: Store DHT keypairs in vault
@@ -160,51 +156,67 @@ impl IdentityService {
         // Every write must propagate before init returns — peers need to
         // discover this profile to send friend requests.
         self.io.write_record(
-            &profile_key, PROFILE_SUBKEY_DISPLAY_NAME,
+            &profile_record, PROFILE_SUBKEY_DISPLAY_NAME,
             display_name.as_bytes(), Some(&profile_keypair), Confirm::Propagated,
         ).await.map_err(|e| ChatError::Internal(format!(
             "profile display_name propagation failed: {e} — retry init"
         )))?;
 
         self.io.write_record(
-            &profile_key, PROFILE_SUBKEY_PREKEY_BUNDLE,
+            &profile_record, PROFILE_SUBKEY_PREKEY_BUNDLE,
             &bundle_bytes, Some(&profile_keypair), Confirm::Propagated,
         ).await.map_err(|e| ChatError::Internal(format!(
             "profile prekey_bundle propagation failed: {e} — peers cannot establish sessions until propagated"
         )))?;
 
         self.io.write_record(
-            &profile_key, PROFILE_SUBKEY_ROUTE_BLOB,
+            &profile_record, PROFILE_SUBKEY_ROUTE_BLOB,
             &route_blob, Some(&profile_keypair), Confirm::Propagated,
         ).await.map_err(|e| ChatError::Internal(format!(
             "profile route_blob propagation failed: {e} — peers cannot reach this node until propagated"
         )))?;
 
         self.io.write_record(
-            &profile_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY,
+            &profile_record, PROFILE_SUBKEY_FRIEND_INBOX_KEY,
             friend_inbox_key.as_bytes(), Some(&profile_keypair), Confirm::Propagated,
         ).await.map_err(|e| ChatError::Internal(format!(
             "profile friend_inbox_key propagation failed: {e} — peers cannot send friend requests until propagated"
         )))?;
 
         self.io.write_record(
-            &profile_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
+            &profile_record, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
             friend_inbox_keypair_hex.as_bytes(), Some(&profile_keypair), Confirm::Propagated,
         ).await.map_err(|e| ChatError::Internal(format!(
             "profile friend_inbox_keypair propagation failed: {e}"
         )))?;
 
+        // Step 11b: Publish X25519 DH public key for group DM MEK wrapping
+        self.io.write_record(
+            &profile_record, PROFILE_SUBKEY_X25519_PUB,
+            &x25519_pub, Some(&profile_keypair), Confirm::Propagated,
+        ).await.map_err(|e| ChatError::Internal(format!(
+            "profile x25519_pub propagation failed: {e}"
+        )))?;
+
         // Step 12: Seed friend inbox subkey 0
         self.io.write_record(
-            &friend_inbox_key, 0, b"[]",
+            &friend_inbox_record, 0, b"[]",
             Some(&friend_inbox_keypair), Confirm::Accepted,
         ).await?;
 
-        // Step 13: Update session_meta
+        // Step 13: Extract root before into_identity consumes the result
+        let identity_root = result.root;
+        result.set_profile_key(&profile_key)
+            .map_err(|e| ChatError::Internal(format!("set profile key: {e}")))?;
+        let self_id = result.into_identity()
+            .map_err(|e| ChatError::Internal(format!("identity construct: {e}")))?;
+        self.io.set_identity(self_id);
+
+        // Step 14: Update session_meta
         {
             let mut meta = self.session_meta.write();
             meta.identity = Some(SessionIdentity {
-                public_key_hex: public_key_hex.clone(),
+                public_key: identity_root,
                 display_name: display_name.to_string(),
                 profile_dht_key: profile_key.clone(),
                 mailbox_dht_key: mailbox_key.clone(),
@@ -221,7 +233,7 @@ impl IdentityService {
         );
 
         Ok(IdentityCreated {
-            public_key_hex,
+            public_key: identity_root,
             profile_dht_key: profile_key,
             mailbox_dht_key: mailbox_key,
             friend_list_dht_key: friend_list_key,
@@ -236,16 +248,13 @@ impl IdentityService {
     /// is long-lived and loaded from vault (not regenerated on replenish).
     /// If the last-resort key is missing from vault, a new one is generated.
     pub async fn replenish_prekeys(&self) -> Result<u32, ChatError> {
-        let signing_seed = self.io.require_signing_key()?;
+        let kp = self.io.signing_keypair()?;
         let identity = {
             let meta = self.session_meta.read();
             meta.identity.clone().ok_or(ChatError::NotInitialized)?
         };
 
-        let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&signing_seed)?;
-        let ed_pub = rekindle_ratchet::crypto::sign::public_key_bytes(&kp);
-
-        // Deterministic X25519 pub from identity seed
+        let ed_pub = kp.public_key_bytes();
         let x25519_seed = self.io.x25519_seed()?;
         let x25519_key = rekindle_ratchet::crypto::dh::reusable_from_seed(&x25519_seed)
             .map_err(|e| ChatError::Internal(format!("x25519: {e}")))?;
@@ -254,43 +263,22 @@ impl IdentityService {
         let mut x25519_pub = [0u8; 32];
         x25519_pub.copy_from_slice(x25519_pub_raw.as_ref());
 
-        // Fresh SPK
         let (new_spk_seed, new_spk_pub) = rekindle_ratchet::crypto::dh::generate_ratchet_keypair()
             .map_err(|e| ChatError::Internal(format!("SPK keygen: {e}")))?;
-        let spk_sig = rekindle_ratchet::crypto::sign::sign_ec_prekey(&kp, &new_spk_pub);
-        let spk_id = timestamp_ms(); // monotonic ID based on time
+        let spk_sig = kp.sign_ec_prekey(&new_spk_pub);
+        let spk_id = timestamp_ms();
 
-        // Fresh ML-KEM-768 OT
         let pq_ot = rekindle_ratchet::crypto::kem::keygen()
             .map_err(|e| ChatError::Internal(format!("ML-KEM OT keygen: {e}")))?;
-        let pqpk_ot_sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-            &kp, rekindle_ratchet::crypto::sign::DOMAIN_OT, &pq_ot.ek_bytes,
-        );
+        let pqpk_ot_sig = kp.sign_pq_prekey(rekindle_identity::DOMAIN_OT, &pq_ot.ek_bytes);
         let pqpk_ot_id = timestamp_ms();
 
-        // Last-resort PQ prekey — load from vault, generate if missing
-        let (pq_lr_ek, pqpk_lr_sig) = match self.vault.load_key(&labels::pq_last_resort()) {
-            Ok(Some(dk_bytes)) if dk_bytes.len() == 2400 => {
-                // Reconstruct ek from dk is not possible — we need the ek stored separately.
-                // The LR ek was published at init time and is in the profile DHT.
-                // For replenish, we generate a fresh LR if we can't recover the ek.
-                let fresh_lr = rekindle_ratchet::crypto::kem::keygen()
-                    .map_err(|e| ChatError::Internal(format!("ML-KEM LR regen: {e}")))?;
-                let sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-                    &kp, rekindle_ratchet::crypto::sign::DOMAIN_LR, &fresh_lr.ek_bytes,
-                );
-                self.vault.store_key(&labels::pq_last_resort(), fresh_lr.dk_bytes.as_ref())?;
-                (fresh_lr.ek_bytes.to_vec(), sig)
-            }
-            _ => {
-                let fresh_lr = rekindle_ratchet::crypto::kem::keygen()
-                    .map_err(|e| ChatError::Internal(format!("ML-KEM LR keygen: {e}")))?;
-                let sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-                    &kp, rekindle_ratchet::crypto::sign::DOMAIN_LR, &fresh_lr.ek_bytes,
-                );
-                self.vault.store_key(&labels::pq_last_resort(), fresh_lr.dk_bytes.as_ref())?;
-                (fresh_lr.ek_bytes.to_vec(), sig)
-            }
+        let (pq_lr_ek, pqpk_lr_sig) = {
+            let fresh_lr = rekindle_ratchet::crypto::kem::keygen()
+                .map_err(|e| ChatError::Internal(format!("ML-KEM LR keygen: {e}")))?;
+            let sig = kp.sign_pq_prekey(rekindle_identity::DOMAIN_LR, &fresh_lr.ek_bytes);
+            self.vault.store_key(&labels::pq_last_resort(), fresh_lr.dk_bytes.as_ref())?;
+            (fresh_lr.ek_bytes.to_vec(), sig)
         };
 
         let bundle = rekindle_ratchet::pqxdh::bundle::PreKeyBundle {
@@ -319,7 +307,7 @@ impl IdentityService {
 
         // Publish with Confirm::Verified — must be readable after write
         let profile_keypair = self.vault.load_key(labels::PROFILE_KEYPAIR)?;
-        self.io.write_record(
+        self.io.open_and_write(
             &identity.profile_dht_key, PROFILE_SUBKEY_PREKEY_BUNDLE,
             &bundle_bytes, profile_keypair.as_deref(), Confirm::Verified,
         ).await.map_err(|e| ChatError::Internal(format!(
@@ -353,51 +341,35 @@ impl IdentityService {
             meta.identity.clone().ok_or(ChatError::NotInitialized)?
         };
 
-        // Step 1: Generate new Ed25519 signing seed
-        let mut new_signing_seed = Zeroizing::new([0u8; 32]);
-        aws_lc_rs::rand::SystemRandom::new()
-            .fill(new_signing_seed.as_mut())
-            .map_err(|e| ChatError::Internal(format!("new signing key generation: {e}")))?;
+        // Originate a new identity for rotation
+        let new_result = rekindle_identity::SelfIdentity::originate_new(
+            &old_identity.profile_dht_key,
+            Some(&old_identity.display_name),
+        ).map_err(|e| ChatError::Internal(format!("rotation origination: {e}")))?;
 
-        // Step 2: Store new signing seed in vault (overwrites old)
-        self.vault.store_key(labels::SIGNING_KEY, new_signing_seed.as_ref())?;
+        // Store new seed material to vault (overwrites old)
+        self.vault.store_key(labels::SIGNING_KEY, new_result.vault_seed())?;
+        self.vault.store_key(labels::IDENTITY_X25519_SEED, new_result.vault_x25519_seed())?;
 
-        // Step 3: Derive and store new X25519 DH seed
-        let new_x25519_seed = blake3::derive_key("rekindle identity x25519 v1", new_signing_seed.as_ref());
-        self.vault.store_key(labels::IDENTITY_X25519_SEED, &new_x25519_seed)?;
+        // Build signing keypair for PQXDH bundle
+        let kp = rekindle_identity::SigningKeypair::from_seed(new_result.vault_seed())
+            .map_err(|e| ChatError::Internal(format!("signing keypair: {e}")))?;
+        let new_public_key_hex = new_result.public_key_hex();
+        let new_ed_pub = *new_result.root.as_bytes();
+        let x25519_pub = new_result.dh_public;
 
-        // Step 4: Set new signing key on PlatformIO (old key is ZeroizeOnDrop'd)
-        let handle = SigningKeyHandle::from_vault(&self.vault)?;
-        self.io.set_signing_key(handle);
-
-        // Step 5: Derive new public keys
-        let kp = rekindle_ratchet::crypto::sign::keypair_from_seed(&new_signing_seed)?;
-        let new_ed_pub = rekindle_ratchet::crypto::sign::public_key_bytes(&kp);
-        let new_public_key_hex = hex::encode(new_ed_pub);
-
-        let x25519_key = rekindle_ratchet::crypto::dh::reusable_from_seed(&new_x25519_seed)
-            .map_err(|e| ChatError::Internal(format!("x25519 from seed: {e}")))?;
-        let x25519_pub_raw = x25519_key.compute_public_key()
-            .map_err(|_| ChatError::Internal("x25519 pub derive failed".into()))?;
-        let mut x25519_pub = [0u8; 32];
-        x25519_pub.copy_from_slice(x25519_pub_raw.as_ref());
-
-        // Step 6: Generate fresh PQXDH prekey bundle with new identity
+        // Generate fresh PQXDH prekey bundle with new identity
         let (spk_seed, spk_pub) = rekindle_ratchet::crypto::dh::generate_ratchet_keypair()
             .map_err(|e| ChatError::Internal(format!("SPK keygen: {e}")))?;
-        let spk_sig = rekindle_ratchet::crypto::sign::sign_ec_prekey(&kp, &spk_pub);
+        let spk_sig = kp.sign_ec_prekey(&spk_pub);
 
         let pq_ot = rekindle_ratchet::crypto::kem::keygen()
             .map_err(|e| ChatError::Internal(format!("ML-KEM OT keygen: {e}")))?;
-        let pqpk_ot_sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-            &kp, rekindle_ratchet::crypto::sign::DOMAIN_OT, &pq_ot.ek_bytes,
-        );
+        let pqpk_ot_sig = kp.sign_pq_prekey(rekindle_identity::DOMAIN_OT, &pq_ot.ek_bytes);
 
         let pq_lr = rekindle_ratchet::crypto::kem::keygen()
             .map_err(|e| ChatError::Internal(format!("ML-KEM LR keygen: {e}")))?;
-        let pqpk_lr_sig = rekindle_ratchet::crypto::sign::sign_pq_prekey(
-            &kp, rekindle_ratchet::crypto::sign::DOMAIN_LR, &pq_lr.ek_bytes,
-        );
+        let pqpk_lr_sig = kp.sign_pq_prekey(rekindle_identity::DOMAIN_LR, &pq_lr.ek_bytes);
 
         let spk_id = timestamp_ms();
         let pqpk_ot_id = timestamp_ms();
@@ -427,17 +399,29 @@ impl IdentityService {
 
         // Step 8: Update profile DHT with new prekey bundle
         let profile_keypair = self.vault.load_key(labels::PROFILE_KEYPAIR)?;
-        self.io.write_record(
+        self.io.open_and_write(
             &old_identity.profile_dht_key, PROFILE_SUBKEY_PREKEY_BUNDLE,
             &bundle_bytes, profile_keypair.as_deref(), Confirm::Verified,
         ).await.map_err(|e| ChatError::Internal(format!(
             "profile prekey update failed during rotation: {e}"
         )))?;
 
-        // Step 9: Notify all friends via DM (ProfileKeyRotated)
+        // Step 9: Extract root before into_identity consumes the result
+        let new_identity_root = new_result.root;
+        let new_self_id = new_result.into_identity()
+            .map_err(|e| ChatError::Internal(format!("rotation identity construct: {e}")))?;
+        self.io.set_identity(new_self_id);
+
+        // Step 10: Notify all friends via DM (ProfileKeyRotated)
         let dm_peers: Vec<String> = {
             let meta = self.session_meta.read();
-            meta.dm_peers.keys().cloned().collect()
+            let mut keys: Vec<String> = meta.dm_peers.keys().cloned().collect();
+            for k in meta.dm_smpl_peers.keys() {
+                if !keys.contains(k) {
+                    keys.push(k.clone());
+                }
+            }
+            keys
         };
         for peer_key in &dm_peers {
             if let Err(e) = self.io.send_peer_notification(
@@ -455,11 +439,11 @@ impl IdentityService {
             }
         }
 
-        // Step 10: Update session_meta with new public key
+        // Step 11: Update session_meta with new public key
         {
             let mut meta = self.session_meta.write();
             if let Some(ref mut identity) = meta.identity {
-                identity.public_key_hex.clone_from(&new_public_key_hex);
+                identity.public_key = new_identity_root;
             }
         }
 
@@ -485,7 +469,7 @@ impl IdentityService {
             ("friend_list", &identity.friend_list_dht_key),
             ("friend_inbox", &identity.friend_inbox_key),
         ] {
-            if let Err(e) = self.io.close_record(key).await {
+            if let Err(e) = self.io.close_record_by_key(key).await {
                 tracing::warn!(
                     record = name,
                     key = &key[..12.min(key.len())],
@@ -501,12 +485,32 @@ impl IdentityService {
             meta.identity = None;
             meta.communities.clear();
             meta.dm_peers.clear();
+            meta.dm_smpl_peers.clear();
             meta.pending_friend_requests.clear();
             meta.friend_display_names.clear();
             meta.pending_outbound_logs.clear();
         }
 
         tracing::info!("identity destroyed — all local state cleared");
+        Ok(())
+    }
+
+    /// Rotate the ML-KEM last-resort prekey. Generates a new keypair,
+    /// publishes via replenish_prekeys (which rebuilds the full bundle).
+    pub async fn rotate_last_resort(&self) -> Result<(), ChatError> {
+        // Generate new last-resort PQ prekey
+        let pq_lr = rekindle_ratchet::crypto::kem::keygen()?;
+
+        // Store new dk to vault (overwrites old)
+        self.vault.store_key(
+            &rekindle_storage::keys::labels::pq_last_resort(),
+            pq_lr.dk_bytes.as_ref(),
+        )?;
+
+        // Republish prekey bundle with new last-resort key
+        self.replenish_prekeys().await?;
+
+        tracing::info!("last-resort PQ prekey rotated");
         Ok(())
     }
 }

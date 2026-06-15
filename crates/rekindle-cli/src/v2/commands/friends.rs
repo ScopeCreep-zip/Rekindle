@@ -1,6 +1,6 @@
 //! Friend commands: add, accept, reject, remove, list, requests.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{ChatRequest, DaemonRequest};
 
 use crate::v2::cli::FriendCmd;
 use crate::v2::helpers;
@@ -11,22 +11,22 @@ use crate::v2::prelude::DaemonClient;
 pub async fn dispatch(cmd: &FriendCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         FriendCmd::Add { target, message } => {
-            let value = client.request_ok(DaemonRequest::FriendAdd {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::FriendAdd {
                 target_profile_key: target.clone(),
                 message: message.clone().unwrap_or_default(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Accept { request_id } => {
-            let value = client.request_ok(DaemonRequest::FriendAccept {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::FriendAccept {
                 public_key: request_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Reject { request_id } => {
-            let value = client.request_ok(DaemonRequest::FriendReject {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::FriendReject {
                 public_key: request_id.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Remove { friend, yes } => {
@@ -34,14 +34,14 @@ pub async fn dispatch(cmd: &FriendCmd, client: &DaemonClient, mode: OutputMode) 
                 let confirmed = helpers::confirm(&format!("Remove friend '{}'?", helpers::abbreviate_key(friend)))?;
                 if !confirmed { return format::print_text("Cancelled."); }
             }
-            let value = client.request_ok(DaemonRequest::FriendRemove {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::FriendRemove {
                 public_key: friend.clone(),
-            }).await?;
+            })).await?;
             helpers::audit_log("remove_friend", friend, "ok");
             format::print_structured(&value, mode)
         }
         FriendCmd::List { status, .. } => {
-            let value = client.request_ok(DaemonRequest::FriendList).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::FriendList)).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -63,7 +63,7 @@ pub async fn dispatch(cmd: &FriendCmd, client: &DaemonClient, mode: OutputMode) 
             table::print_table(&["Name", "Status", "Key", "Route"], &rows, mode)
         }
         FriendCmd::Requests => {
-            let value = client.request_ok(DaemonRequest::FriendRequests).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::FriendRequests)).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Block { .. } | FriendCmd::Unblock { .. } => {

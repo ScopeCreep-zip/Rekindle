@@ -49,4 +49,21 @@ pub enum SystemCmd {
     },
     /// Hot-reload authorization policy from disk.
     PolicyReload,
+    /// View the community audit log (operator actions).
+    AuditLog {
+        #[arg(long, short = 'c')]
+        community: String,
+        #[arg(long, default_value = "50")]
+        limit: u32,
+    },
+    /// Get the onboarding config for a community.
+    OnboardingConfig {
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+    /// Get the welcome screen for a community.
+    WelcomeScreen {
+        #[arg(long, short = 'c')]
+        community: String,
+    },
 }

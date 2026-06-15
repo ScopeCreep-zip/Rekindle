@@ -37,8 +37,8 @@ pub enum CommunityCmd {
     Info {
         #[arg(long, short = 'c')]
         community: String,
-        #[arg(long)]
-        verbose: bool,
+        #[arg(long = "detailed")]
+        detailed: bool,
     },
     /// Approve a pending member.
     Approve {

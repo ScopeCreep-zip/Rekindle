@@ -21,7 +21,7 @@ use super::keybinds::KeymapStore;
 use super::navigator::Navigator;
 use super::terminal::Tui;
 use super::theme::ThemeManager;
-use crate::v2::prelude::{DaemonClient, DaemonRequest};
+use crate::v2::prelude::{DaemonClient, DaemonRequest, LifecycleRequest};
 
 pub struct App {
     pub(crate) should_quit: bool,
@@ -258,9 +258,9 @@ impl App {
 
                             // Replay missed events via cursor-based resume
                             if let Some(seq) = self.last_event_seq {
-                                match new_client.request_ok(DaemonRequest::EventResume {
+                                match new_client.request_ok(DaemonRequest::Lifecycle(LifecycleRequest::EventResume {
                                     last_seen_seq: Some(seq),
-                                }).await {
+                                })).await {
                                     Ok(_) => tracing::info!(last_seq = seq, "event resume successful"),
                                     Err(e) => tracing::warn!(error = %e, last_seq = seq, "event resume failed — full reload"),
                                 }

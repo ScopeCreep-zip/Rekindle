@@ -32,11 +32,35 @@ pub fn handle_subscription_event(view: &mut FriendListView, event: &Subscription
         SubscriptionEvent::Friend(FriendEvent::Removed { peer_key }) => {
             view.friends.retain(|f| f.public_key != *peer_key);
         }
+        SubscriptionEvent::Friend(FriendEvent::RequestSent { .. }) => {
+            // Outbound request — no pending list change (we track inbound only)
+        }
+        SubscriptionEvent::Friend(FriendEvent::Rejected { peer_key }) => {
+            view.pending_requests.retain(|r| r.public_key != *peer_key);
+        }
+        SubscriptionEvent::Friend(
+            FriendEvent::RequestAcknowledged { .. }
+            | FriendEvent::RemoveAcknowledged { .. }
+            | FriendEvent::ProfileKeyRotated { .. }
+        ) => {}
         SubscriptionEvent::Presence(PresenceEvent::FriendChanged { peer_key, status, .. }) => {
             if let Some(f) = view.friends.iter_mut().find(|f| f.public_key == *peer_key) {
                 f.status.clone_from(status);
             }
         }
-        _ => {}
+        // Exhaustive: every top-level variant listed so the compiler catches new ones.
+        SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged { .. })
+        | SubscriptionEvent::ChannelMessage(_)
+        | SubscriptionEvent::Typing(_)
+        | SubscriptionEvent::Membership(_)
+        | SubscriptionEvent::Crypto(_)
+        | SubscriptionEvent::Voice(_)
+        | SubscriptionEvent::Governance(_)
+        | SubscriptionEvent::Social(_)
+        | SubscriptionEvent::Network(_)
+        | SubscriptionEvent::System(_)
+        | SubscriptionEvent::Dm(_)
+        | SubscriptionEvent::UnreadChanged { .. }
+        | SubscriptionEvent::BulkTransferProgress { .. } => {}
     }
 }

@@ -21,6 +21,7 @@ use rekindle_types::subscription_events::{
     PresenceEvent, MembershipEvent, FriendEvent,
     CryptoEvent, VoiceEvent, GovernanceEvent,
     SocialEvent, NetworkEvent, SystemEvent,
+    DmLifecycleEvent,
 };
 
 /// Content-addressed event deduplication using BLAKE3 digests.
@@ -134,6 +135,7 @@ fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
         SubscriptionEvent::Presence(p) => hash_presence(&mut h, p),
         SubscriptionEvent::Membership(m) => hash_membership(&mut h, m),
         SubscriptionEvent::Friend(f) => hash_friend(&mut h, f),
+        SubscriptionEvent::Dm(d) => hash_dm(&mut h, d),
         SubscriptionEvent::Crypto(c) => hash_crypto(&mut h, c),
         SubscriptionEvent::Voice(v) => hash_voice(&mut h, v),
         SubscriptionEvent::Governance(g) => hash_governance(&mut h, g),
@@ -155,6 +157,7 @@ fn event_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Presence(_) => "pr",
         SubscriptionEvent::Membership(_) => "mb",
         SubscriptionEvent::Friend(_) => "fr",
+        SubscriptionEvent::Dm(_) => "dm",
         SubscriptionEvent::Crypto(_) => "cr",
         SubscriptionEvent::Voice(_) => "vo",
         SubscriptionEvent::Governance(_) => "go",
@@ -221,6 +224,9 @@ fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
 
 fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
     match m {
+        MembershipEvent::Created { community, governance_key } => hash_fields!(h, "created", community, governance_key),
+        MembershipEvent::CommunityJoined { community, governance_key, slot_index } => hash_fields!(h, "comm_joined", community, governance_key, *slot_index),
+        MembershipEvent::CommunityLeft { community, governance_key } => hash_fields!(h, "comm_left", community, governance_key),
         MembershipEvent::JoinRequested { community, pseudonym, .. } => hash_fields!(h, "join_req", community, pseudonym),
         MembershipEvent::JoinAccepted { community, .. } => hash_fields!(h, "join_acc", community),
         MembershipEvent::JoinRejected { community, reason } => hash_fields!(h, "join_rej", community, reason),
@@ -244,6 +250,7 @@ fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
 
 fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
     match f {
+        FriendEvent::RequestSent { target_profile_key, dm_log_key } => hash_fields!(h, "sent", target_profile_key, dm_log_key),
         FriendEvent::RequestReceived { from_key, .. } => hash_fields!(h, "req", from_key),
         FriendEvent::RequestAcknowledged { peer_key } => hash_fields!(h, "ack", peer_key),
         FriendEvent::Accepted { peer_key, .. } => hash_fields!(h, "acc", peer_key),
@@ -342,6 +349,8 @@ fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
 fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent) {
     let bucket = now_secs() / 10;
     match s {
+        SystemEvent::IdentityCreated { public_key } => hash_fields!(h, "id_created", public_key),
+        SystemEvent::IdentityRotated { new_public_key } => hash_fields!(h, "id_rotated", new_public_key),
         SystemEvent::Announcement { community, body, .. } => {
             h.update(b"announce|");
             h.update(community.as_deref().unwrap_or("global").as_bytes());
@@ -357,6 +366,17 @@ fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent) {
             hash_fields!(h, "sync_req", community, channel, *since_timestamp),
         SystemEvent::SyncReceived { community, channel, message_count } =>
             hash_fields!(h, "sync_recv", community, channel, *message_count),
+    }
+}
+
+fn hash_dm(h: &mut blake3::Hasher, d: &DmLifecycleEvent) {
+    match d {
+        DmLifecycleEvent::InviteReceived { record_key, sender_public_key_hex, .. } =>
+            hash_fields!(h, "invite", record_key, sender_public_key_hex),
+        DmLifecycleEvent::InviteDeclined { record_key, .. } =>
+            hash_fields!(h, "decline", record_key),
+        DmLifecycleEvent::MemberLeft { record_key, sender_public_key_hex } =>
+            hash_fields!(h, "leave", record_key, sender_public_key_hex),
     }
 }
 

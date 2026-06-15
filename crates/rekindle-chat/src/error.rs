@@ -49,6 +49,12 @@ pub enum ChatError {
     #[error("insufficient permissions: {action}")]
     InsufficientPermissions { action: String },
 
+    #[error("slowmode active — wait {remaining_secs}s before sending again")]
+    SlowmodeActive { remaining_secs: u64 },
+
+    #[error("community is full ({current}/{max} members)")]
+    CommunityFull { current: usize, max: u32 },
+
     #[error("identity not initialized")]
     NotInitialized,
 
@@ -67,8 +73,8 @@ pub enum ChatError {
     #[error("deserialization: {0}")]
     Deserialization(String),
 
-    #[error("signing key not loaded")]
-    SigningKeyNotLoaded,
+    #[error("identity not loaded")]
+    IdentityNotLoaded,
 
     #[error("internal: {0}")]
     Internal(String),

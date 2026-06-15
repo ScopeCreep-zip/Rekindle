@@ -116,6 +116,8 @@ pub enum SocialEvent {
         server_id: String,
         game_id: String,
         label: String,
+        address: String,
+        added_by: String,
     },
     /// A game server was removed from the community.
     /// Triggered by: gossip `ControlPayload::GameServerRemoved`.

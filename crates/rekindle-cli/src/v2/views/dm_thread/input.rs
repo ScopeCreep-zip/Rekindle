@@ -22,6 +22,7 @@ pub fn handle_update(view: &mut DmThreadView, action: &Action) -> Option<Action>
                     body: text.clone(), timestamp: now, reply_to_sequence: None,
                     mek_generation: 0, is_encrypted: false, needs_mek: None,
                     delivery_status: rekindle_types::display::DeliveryStatus::Sending,
+                    thread_id: None,
                 });
                 view.input_box.clear();
                 return Some(Action::SendDm { peer_key: view.peer_key.clone(), text });

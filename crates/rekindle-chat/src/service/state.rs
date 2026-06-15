@@ -21,12 +21,22 @@ impl ChatService {
     }
 
     pub fn mark_channel_read(&self, community: &str, channel: &str) {
-        let prev = self.pipeline.state().write().unread.mark_channel_read(community, channel);
+        let (gov_key, channel_id) = {
+            let meta = self.session_meta.read();
+            match meta.resolve_community(community) {
+                Some((_, m)) => {
+                    let cid = m.resolve_channel(channel).unwrap_or_else(|_| channel.to_string());
+                    (m.governance_key.clone(), cid)
+                }
+                None => (community.to_string(), channel.to_string()),
+            }
+        };
+        let prev = self.pipeline.state().write().unread.mark_channel_read(&gov_key, &channel_id);
         if prev > 0 {
             self.pipeline.process(SubscriptionEvent::UnreadChanged {
                 context: UnreadContext::Channel {
-                    community: community.into(),
-                    channel: channel.into(),
+                    community: gov_key,
+                    channel: channel_id,
                 },
                 count: 0,
             });

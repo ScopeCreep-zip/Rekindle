@@ -59,7 +59,9 @@ impl TabBarState {
             ViewKind::Dashboard | ViewKind::Doctor | ViewKind::IdentitySettings | ViewKind::FilePreview { .. } => "dashboard",
             ViewKind::DmInbox | ViewKind::DmThread { .. } => "dms",
             ViewKind::FriendList => "friends",
-            ViewKind::ChannelWatch { .. } | ViewKind::CommunityInfo { .. } | ViewKind::VoiceSession { .. } => "communities",
+            ViewKind::ChannelWatch { .. } | ViewKind::CommunityInfo { .. } | ViewKind::VoiceSession { .. }
+            | ViewKind::Moderation { .. } | ViewKind::Invite { .. } | ViewKind::Events { .. }
+            | ViewKind::Onboarding { .. } => "communities",
         };
         self.select_by_id(tab_id);
     }

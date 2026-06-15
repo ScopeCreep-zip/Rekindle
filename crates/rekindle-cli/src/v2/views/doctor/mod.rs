@@ -196,7 +196,7 @@ impl View for DoctorView {
         Ok(None)
     }
 
-    fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
+    fn on_command_result(&mut self, result: CommandResult) -> Result<Option<Action>> {
         match result {
             CommandResult::StatusLoaded { snapshot } => {
                 self.checks = snapshot.checks;
@@ -279,10 +279,10 @@ impl View for DoctorView {
             }
             _ => {}
         }
-        Ok(())
+        Ok(None)
     }
 
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<Action>> {
         match event {
             rekindle_types::subscription_events::SubscriptionEvent::Network(
                 rekindle_types::subscription_events::NetworkEvent::AttachmentChanged { .. }
@@ -314,7 +314,7 @@ impl View for DoctorView {
             }
             _ => {}
         }
-        Ok(())
+        Ok(None)
     }
 
     fn focus_ring(&mut self) -> &mut FocusRing { &mut self.focus }

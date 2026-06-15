@@ -5,6 +5,16 @@ use serde::{Deserialize, Serialize};
 /// System-level events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SystemEvent {
+    /// Identity was created (dispatch-emitted for subscriber visibility).
+    /// Triggered by: dispatch after successful `init_identity()`.
+    IdentityCreated {
+        public_key: String,
+    },
+    /// Identity was rotated (dispatch-emitted for subscriber visibility).
+    /// Triggered by: dispatch after successful `identity_rotate()`.
+    IdentityRotated {
+        new_public_key: String,
+    },
     /// A system message (community-wide announcement from operator).
     /// Triggered by: gossip `ControlPayload::SystemMessage`.
     Announcement {

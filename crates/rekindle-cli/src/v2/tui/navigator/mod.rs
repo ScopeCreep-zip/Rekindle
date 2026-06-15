@@ -65,7 +65,7 @@ impl Navigator {
     pub fn forward_event_to_all_views(
         &mut self,
         event: &rekindle_types::subscription_events::SubscriptionEvent,
-    ) {
-        let _ = self.views.forward_event_to_all(event);
+    ) -> Vec<super::action::Action> {
+        self.views.forward_event_to_all(event)
     }
 }

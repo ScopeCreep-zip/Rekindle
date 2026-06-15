@@ -3,16 +3,16 @@
 //! Every service (messaging, friendship, community, identity, presence, voice,
 //! and every future feature module) holds `Arc<PlatformIO>` and calls its
 //! methods for all network operations. No service directly calls transport
-//! methods, constructs gossip envelopes, or accesses the signing key.
+//! methods, constructs gossip envelopes, or accesses raw key material.
 //!
-//! PlatformIO owns: signing key lifecycle, envelope construction, TypeId framing,
+//! PlatformIO owns: identity lifecycle, envelope construction, TypeId framing,
 //! postcard serialization, gossip envelope signing, transport dispatch, write
 //! verification, and propagation confirmation.
 //!
-//! The signing key is PlatformIO's internal concern. It starts as None
-//! (daemon locked / uninitialized). `set_signing_key()` is called during
-//! unlock/resume. `clear_signing_key()` is called during lock/shutdown.
-//! The `Arc<RwLock<Option<SigningKeyHandle>>>` is born inside PlatformIO
+//! The `SelfIdentity` is PlatformIO's internal concern. It starts as None
+//! (daemon locked / uninitialized). `set_identity()` is called during
+//! unlock/resume. `clear_identity()` is called during lock/shutdown.
+//! The `Arc<RwLock<Option<SelfIdentity>>>` is born inside PlatformIO
 //! and never leaves — no external code holds or mutates it.
 
 pub mod gossip;
@@ -21,13 +21,14 @@ pub mod dht;
 pub mod route;
 pub mod identity;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rekindle_types::transport::Transport;
 
-use crate::crypto::SigningKeyHandle;
+use rekindle_identity::self_id::SelfIdentity;
 use crate::ChatError;
 
 /// How thoroughly to verify an outbound operation succeeded.
@@ -88,60 +89,65 @@ pub struct SendReceipt {
 /// The sole outbound I/O interface for all application logic.
 ///
 /// Constructed once per daemon lifetime with `PlatformIO::new(transport)`.
-/// The signing key starts as None and is set/cleared during the daemon
-/// lifecycle via `set_signing_key()` / `clear_signing_key()`.
+/// The identity starts as None and is set/cleared during the daemon
+/// lifecycle via `set_identity()` / `clear_identity()`.
 ///
 /// All services hold `Arc<PlatformIO>`. When the signing key is set,
 /// every service's signing operations immediately start working. When
-/// cleared, they all immediately return `ChatError::SigningKeyNotLoaded`.
+/// cleared, they all immediately return `ChatError::IdentityNotLoaded`.
 pub struct PlatformIO {
     transport: Arc<dyn Transport>,
-    signing_key: Arc<RwLock<Option<SigningKeyHandle>>>,
+    self_identity: Arc<RwLock<Option<SelfIdentity>>>,
+    /// Keys of DHT records opened this session. Checked by `open_record`
+    /// to skip redundant transport calls. Cleared on `clear_identity`.
+    pub(crate) open_keys: Mutex<HashSet<String>>,
 }
 
 impl PlatformIO {
     /// Construct a new PlatformIO. The signing key starts as None.
     ///
-    /// Call `set_signing_key()` during unlock/resume after loading the
-    /// key from vault. Call `clear_signing_key()` during lock/shutdown.
+    /// Call `set_identity()` during unlock/resume after constructing
+    /// SelfIdentity. Call `clear_identity()` during lock/shutdown.
     pub fn new(transport: Arc<dyn Transport>) -> Self {
         Self {
             transport,
-            signing_key: Arc::new(RwLock::new(None)),
+            self_identity: Arc::new(RwLock::new(None)),
+            open_keys: Mutex::new(HashSet::new()),
         }
     }
 
-    // ── Signing key lifecycle ───────────────────────────────────
+    // ── Identity lifecycle ──────────────────────────────────────
 
-    /// Set the signing key. Called during unlock/resume after loading
-    /// the key from vault. All services sharing this PlatformIO
-    /// immediately gain signing capability.
+    /// Set the identity. Called during unlock/resume after loading
+    /// the seed from vault and constructing SelfIdentity.
+    /// All services sharing this PlatformIO immediately gain
+    /// signing and derivation capability.
     ///
-    /// If a signing key was already set (e.g., from a previous unlock
-    /// cycle without an intervening clear), the old handle is dropped
-    /// and ZeroizeOnDrop fires on the old key material.
-    pub fn set_signing_key(&self, handle: SigningKeyHandle) {
-        let mut guard = self.signing_key.write();
-        *guard = Some(handle);
-        tracing::debug!("signing key loaded on PlatformIO");
+    /// If an identity was already set (e.g., from a previous unlock
+    /// cycle without an intervening clear), the old SelfIdentity is
+    /// dropped and OriginSeed's ZeroizeOnDrop fires.
+    pub fn set_identity(&self, identity: SelfIdentity) {
+        let mut guard = self.self_identity.write();
+        *guard = Some(identity);
+        tracing::debug!("identity loaded on PlatformIO");
     }
 
-    /// Clear the signing key. Called during lock/shutdown.
-    /// ZeroizeOnDrop fires on the old SigningKeyHandle, zeroing
-    /// the key material in memory.
+    /// Clear the identity. Called during lock/shutdown.
+    /// OriginSeed's ZeroizeOnDrop fires, zeroing the seed in memory.
     ///
-    /// After this call, all signing operations return
-    /// `ChatError::SigningKeyNotLoaded` until `set_signing_key`
+    /// After this call, all identity operations return
+    /// `ChatError::IdentityNotLoaded` until `set_identity`
     /// is called again.
-    pub fn clear_signing_key(&self) {
-        let mut guard = self.signing_key.write();
+    pub fn clear_identity(&self) {
+        let mut guard = self.self_identity.write();
         *guard = None;
-        tracing::debug!("signing key cleared from PlatformIO");
+        self.open_keys.lock().clear();
+        tracing::debug!("identity cleared from PlatformIO — open record cache flushed");
     }
 
-    /// Whether the signing key is currently loaded.
-    pub fn is_signing_key_loaded(&self) -> bool {
-        self.signing_key.read().is_some()
+    /// Whether the identity is currently loaded.
+    pub fn is_identity_loaded(&self) -> bool {
+        self.self_identity.read().is_some()
     }
 
     // ── Transport diagnostics ─────────────────────────────────────
@@ -173,28 +179,39 @@ impl PlatformIO {
         &self.transport
     }
 
-    // ── Internal signing key access ─────────────────────────────
+    // ── Internal identity access ────────────────────────────────
 
-    /// Require the signing key seed bytes. Returns
-    /// `ChatError::SigningKeyNotLoaded` if the daemon is locked.
-    pub(crate) fn require_signing_key(&self) -> Result<[u8; 32], ChatError> {
-        let guard = self.signing_key.read();
-        let handle = guard.as_ref().ok_or(ChatError::SigningKeyNotLoaded)?;
-        Ok(*handle.as_bytes())
+    /// Execute a closure with a reference to the SelfIdentity.
+    /// Returns `ChatError::IdentityNotLoaded` if the daemon is locked.
+    ///
+    /// This is the ONLY way to access the identity from service code.
+    /// The closure pattern ensures the RwLock guard is dropped before
+    /// any async work.
+    pub(crate) fn with_identity<F, R>(&self, f: F) -> Result<R, ChatError>
+    where
+        F: FnOnce(&SelfIdentity) -> Result<R, ChatError>,
+    {
+        let guard = self.self_identity.read();
+        let si = guard.as_ref().ok_or(ChatError::IdentityNotLoaded)?;
+        f(si)
     }
 
-    /// Execute a closure with a reference to the signing key handle.
-    /// Returns `ChatError::SigningKeyNotLoaded` if the daemon is locked.
-    ///
-    /// Use when multiple derivations are needed from the same key to
-    /// avoid copying the seed for each derivation.
-    pub(crate) fn with_signing_key<F, R>(&self, f: F) -> Result<R, ChatError>
-    where
-        F: FnOnce(&SigningKeyHandle) -> Result<R, ChatError>,
-    {
-        let guard = self.signing_key.read();
-        let handle = guard.as_ref().ok_or(ChatError::SigningKeyNotLoaded)?;
-        f(handle)
+    /// Get the signing keypair from the identity. Convenience wrapper
+    /// that reconstructs the Ed25519 keypair for PQXDH operations.
+    pub(crate) fn signing_keypair(&self) -> Result<rekindle_identity::SigningKeypair, ChatError> {
+        self.with_identity(|si| {
+            si.signing_keypair().map_err(|e| ChatError::Internal(format!("signing keypair: {e}")))
+        })
+    }
+
+    /// Get the X25519 identity seed for PQXDH initiate/respond.
+    pub(crate) fn x25519_identity_seed(&self) -> Result<zeroize::Zeroizing<[u8; 32]>, ChatError> {
+        self.with_identity(|si| Ok(si.x25519_identity_seed()))
+    }
+
+    /// Get the identity root as IdentityRoot.
+    pub(crate) fn identity_root(&self) -> Result<rekindle_identity::IdentityRoot, ChatError> {
+        self.with_identity(|si| Ok(*si.root()))
     }
 }
 
@@ -202,7 +219,8 @@ impl std::fmt::Debug for PlatformIO {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformIO")
             .field("transport_attached", &self.transport.is_attached())
-            .field("signing_key_loaded", &self.signing_key.read().is_some())
+            .field("identity_loaded", &self.self_identity.read().is_some())
+            .field("open_records", &self.open_keys.lock().len())
             .finish()
     }
 }

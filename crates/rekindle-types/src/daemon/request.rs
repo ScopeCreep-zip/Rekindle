@@ -1,13 +1,24 @@
 //! Daemon request vocabulary — every command the daemon accepts.
 //!
-//! Every variant maps 1:1 to a `ChatService` method or a daemon lifecycle
-//! operation. No catch-all variants — the match in daemon dispatch is
-//! exhaustive without a wildcard arm.
+//! Split into two sub-enums at the type level:
 //!
-//! Variant naming: `{Domain}{Verb}` — e.g., `ChannelCreate`, `FriendAdd`.
+//! - [`LifecycleRequest`]: daemon infrastructure operations that don't need
+//!   ChatService (status, lock/unlock, bulk transfers, agent management,
+//!   event journal, subscriptions). Handled directly by the daemon dispatch
+//!   function in any daemon state.
 //!
-//! Secrets (`Unlock`, `IdentityExportEncrypted`) have a custom [`Debug`]
-//! impl that redacts sensitive fields. Message bodies are shown as length
+//! - [`ChatRequest`]: application logic that requires an operational
+//!   ChatService (identity, communities, channels, DMs, friends, MEKs,
+//!   presence, roles, moderation, invites, social features, voice, system).
+//!   Requires OPERATIONAL state + ChatService.
+//!
+//! The outer [`DaemonRequest`] wraps both. The daemon's dispatch function
+//! matches on two arms — `Lifecycle(l)` and `Chat(c)` — each exhaustive
+//! over its sub-enum. Adding a new variant to either sub-enum produces a
+//! compile error in the dispatch match, not a runtime `unreachable!()`.
+//!
+//! Secrets (`Unlock`, `IdentityExportEncrypted`) have custom [`Debug`]
+//! impls that redact sensitive fields. Message bodies are shown as length
 //! only to avoid logging user content.
 
 use serde::{Deserialize, Serialize};
@@ -16,9 +27,19 @@ use super::AgentType;
 use crate::subscription_events::SubscriptionFilter;
 use super::response::ReadContext;
 
+/// Top-level daemon request — two arms, exhaustive dispatch.
 #[derive(Clone, Serialize, Deserialize)]
 pub enum DaemonRequest {
-    // ── Lifecycle ──────────────────────────────────────────────────
+    /// Daemon infrastructure — no ChatService needed, any state.
+    Lifecycle(LifecycleRequest),
+    /// Application logic — requires OPERATIONAL state + ChatService.
+    Chat(ChatRequest),
+}
+
+/// Daemon infrastructure operations — handled directly, any state.
+#[derive(Clone, Serialize, Deserialize)]
+pub enum LifecycleRequest {
+    // ── Daemon state machine ─────────────────────────────────────
     /// Unlock the daemon (passphrase → Argon2id → vault open → transport start).
     Unlock { passphrase: String },
     /// Lock the daemon (zeroize secrets, stop transport, transition to Locked).
@@ -28,7 +49,51 @@ pub enum DaemonRequest {
     /// Graceful shutdown: drain connections, stop transport, exit.
     Shutdown,
 
-    // ── Identity ──────────────────────────────────────────────────
+    // ── Network / Node ───────────────────────────────────────────
+    /// Get detailed network status.
+    NetworkStatus,
+    /// Get peer snapshot.
+    NetworkPeers,
+
+    // ── Agent Management ─────────────────────────────────────────
+    /// Register as a named agent.
+    AgentRegister { name: String, agent_type: AgentType, capabilities: Vec<String> },
+    /// Revoke an agent's registration.
+    AgentRevoke { name: String },
+    /// Reload authorization policy from disk.
+    PolicyReload,
+
+    // ── Bulk Transfer (control-plane signaling) ──────────────────
+    /// Initiate a bulk transfer.
+    BulkTransferStart {
+        transfer_id: String,
+        total_size: u64,
+        media_type: String,
+        digest: String,
+        direction: String,
+    },
+    /// Signal completion of a bulk transfer.
+    BulkTransferComplete { transfer_id: String, digest: String, bytes_transferred: u64 },
+    /// Cancel an in-progress bulk transfer.
+    BulkTransferCancel { transfer_id: String, reason: String },
+    /// Query transfer progress.
+    BulkTransferStatus { transfer_id: String },
+
+    // ── Event Journal ────────────────────────────────────────────
+    /// Resume event delivery from a cursor position.
+    EventResume { last_seen_seq: Option<u64> },
+
+    // ── Subscriptions (handled server-side in DaemonRouter) ──────
+    /// Subscribe to events matching filters.
+    Subscribe { filters: Vec<SubscriptionFilter> },
+    /// Unsubscribe from events matching filters.
+    Unsubscribe { filters: Vec<SubscriptionFilter> },
+}
+
+/// Application logic operations — requires OPERATIONAL state + ChatService.
+#[derive(Clone, Serialize, Deserialize)]
+pub enum ChatRequest {
+    // ── Identity ─────────────────────────────────────────────────
     /// Create a new identity (init ceremony).
     IdentityCreate { display_name: String },
     /// Show local identity (pubkey, display name, DHT keys).
@@ -48,21 +113,21 @@ pub enum DaemonRequest {
     /// Import identity from plaintext JSON bundle.
     IdentityImport { data: String },
 
-    // ── Friends ───────────────────────────────────────────────────
-    /// Send a friend request.
+    // ── Friends ──────────────────────────────────────────────────
+    /// Send a friend request. `target_profile_key` is a Veilid DHT key, NOT an identity.
     FriendAdd { target_profile_key: String, message: String },
-    /// Accept a pending friend request.
+    /// Accept a pending friend request. `public_key` is Ed25519 hex (64 chars).
     FriendAccept { public_key: String },
-    /// Reject a pending friend request.
+    /// Reject a pending friend request. `public_key` is Ed25519 hex (64 chars).
     FriendReject { public_key: String },
-    /// Remove a friend.
+    /// Remove a friend. `public_key` is Ed25519 hex (64 chars).
     FriendRemove { public_key: String },
     /// List all friends.
     FriendList,
     /// List pending inbound friend requests.
     FriendRequests,
 
-    // ── Communities ───────────────────────────────────────────────
+    // ── Communities ──────────────────────────────────────────────
     /// Create a new community.
     CommunityCreate { name: String, description: String },
     /// Join a community via governance key or invite code.
@@ -82,7 +147,7 @@ pub enum DaemonRequest {
     /// Transfer community ownership.
     CommunityTransferOwnership { governance_key: String, new_owner_pseudonym: String },
 
-    // ── Channels ──────────────────────────────────────────────────
+    // ── Channels ─────────────────────────────────────────────────
     /// List channels in a community.
     ChannelList { community: String },
     /// Create a channel.
@@ -123,25 +188,25 @@ pub enum DaemonRequest {
     /// Delete a message.
     MessageDelete { community: String, channel: String, message_id: String },
 
-    // ── DMs ───────────────────────────────────────────────────────
-    /// Send a direct message.
+    // ── DMs ──────────────────────────────────────────────────────
+    /// Send a direct message. `peer_key` is Ed25519 hex (64 chars).
     DmSend { peer_key: String, body: String },
-    /// Send a DM typing indicator.
+    /// Send a DM typing indicator. `peer_key` is Ed25519 hex (64 chars).
     DmTyping { peer_key: String, typing: bool },
     /// List DM inbox.
     DmInbox { limit: u32 },
-    /// Load DM thread history.
+    /// Load DM thread history. `peer_key` is Ed25519 hex (64 chars).
     DmThread { peer_key: String, limit: u32 },
+    /// Start a new DM conversation with a friend.
+    DmStart { peer_key: String, pseudonym: String, is_group: bool },
+    /// Accept a pending DM invite.
+    DmAccept { record_key: String },
 
-    // ── Subscriptions ─────────────────────────────────────────────
-    /// Subscribe to events matching filters.
-    Subscribe { filters: Vec<SubscriptionFilter> },
-    /// Unsubscribe from events matching filters.
-    Unsubscribe { filters: Vec<SubscriptionFilter> },
+    // ── Read State ───────────────────────────────────────────────
     /// Mark a context as read.
     MarkRead { context: ReadContext },
 
-    // ── Keys / MEK ───────────────────────────────────────────────
+    // ── Keys / MEK ──────────────────────────────────────────────
     /// List cached MEKs for a community.
     MekList { community: String },
     /// Rotate MEK for a channel.
@@ -151,7 +216,7 @@ pub enum DaemonRequest {
     /// Replenish prekeys and publish to profile DHT.
     PrekeyReplenish,
 
-    // ── Presence ──────────────────────────────────────────────────
+    // ── Presence ─────────────────────────────────────────────────
     /// Set presence status (online, away, busy, invisible).
     PresenceSet { status: String, message: Option<String> },
     /// Set game presence info.
@@ -164,7 +229,7 @@ pub enum DaemonRequest {
     /// Clear game presence.
     GamePresenceClear,
 
-    // ── Roles ─────────────────────────────────────────────────────
+    // ── Roles ────────────────────────────────────────────────────
     /// List all roles in a community.
     RoleList { community: String },
     /// Create a role.
@@ -190,7 +255,7 @@ pub enum DaemonRequest {
     /// Remove a role from a member.
     RoleUnassign { community: String, member_pseudonym: String, role_id: u32 },
 
-    // ── Moderation ────────────────────────────────────────────────
+    // ── Moderation ───────────────────────────────────────────────
     /// Kick a member.
     Kick { community: String, target_pseudonym: String },
     /// Ban a member.
@@ -207,7 +272,7 @@ pub enum DaemonRequest {
     /// List all active bans.
     BanList { community: String },
 
-    // ── Invites ───────────────────────────────────────────────────
+    // ── Invites ──────────────────────────────────────────────────
     /// Create a community invite.
     InviteCreate { community: String, max_uses: u32, expires_seconds: Option<u64> },
     /// List active invites.
@@ -215,7 +280,7 @@ pub enum DaemonRequest {
     /// Revoke an invite.
     InviteRevoke { community: String, invite_code: String },
 
-    // ── Social ────────────────────────────────────────────────────
+    // ── Social ───────────────────────────────────────────────────
     /// Add a reaction.
     ReactionAdd { community: String, channel: String, message_id: String, emoji: String },
     /// Remove a reaction.
@@ -284,7 +349,7 @@ pub enum DaemonRequest {
         channel_id: String, messages: Vec<Vec<u8>>,
     },
 
-    // ── Voice ─────────────────────────────────────────────────────
+    // ── Voice ────────────────────────────────────────────────────
     /// Join a voice channel.
     VoiceJoin { community: String, channel: String, muted: bool, deafened: bool },
     /// Leave the current voice session.
@@ -294,73 +359,89 @@ pub enum DaemonRequest {
     /// Toggle self-deafen.
     VoiceDeafen { deafened: bool },
 
-    // ── Bulk Transfer ─────────────────────────────────────────────
-    /// Initiate a bulk transfer.
-    BulkTransferStart {
-        transfer_id: String,
-        total_size: u64,
-        media_type: String,
-        digest: String,
-        direction: String,
-    },
-    /// Signal completion of a bulk transfer.
-    BulkTransferComplete { transfer_id: String, digest: String, bytes_transferred: u64 },
-    /// Cancel an in-progress bulk transfer.
-    BulkTransferCancel { transfer_id: String, reason: String },
-    /// Query transfer progress.
-    BulkTransferStatus { transfer_id: String },
-
-    // ── Network / Node ────────────────────────────────────────────
-    /// Get detailed network status.
-    NetworkStatus,
-    /// Get peer snapshot.
-    NetworkPeers,
-
-    // ── Agent Management ──────────────────────────────────────────
-    /// Register as a named agent.
-    AgentRegister { name: String, agent_type: AgentType, capabilities: Vec<String> },
-    /// Revoke an agent's registration.
-    AgentRevoke { name: String },
-    /// Reload authorization policy from disk.
-    PolicyReload,
-
-    // ── Event Journal ─────────────────────────────────────────────
-    /// Resume event delivery from a cursor position.
-    EventResume { last_seen_seq: Option<u64> },
+    // ── Social List Queries ──────────────────────────────────────
+    /// List pinned messages in a community.
+    PinList { community: String },
+    /// List community events.
+    EventList { community: String },
+    /// List community threads.
+    ThreadList { community: String },
+    /// List reactions on messages in a community.
+    ReactionList { community: String },
+    /// Read the audit log for a community.
+    AuditLog { community: String, limit: u32 },
+    /// Query messages belonging to a specific thread.
+    ThreadHistory { thread_id: String, limit: u32 },
+    /// Get the onboarding config for a community.
+    OnboardingConfigGet { community: String },
+    /// Set the onboarding config for a community (operator only).
+    OnboardingConfigSet { community: String, config: String },
+    /// Get the welcome screen for a community.
+    WelcomeScreenGet { community: String },
+    /// Set the welcome screen for a community (operator only).
+    WelcomeScreenSet { community: String, screen: String },
 }
 
-// ── Debug impl — redacts secrets, shows body lengths ────────────────────
+// ── Convenience constructors ────────────────────────────────────────
+
+impl DaemonRequest {
+    /// Serialize to bytes via postcard.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_allocvec(self)
+    }
+
+    /// Deserialize from bytes via postcard.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
+        postcard::from_bytes(bytes)
+    }
+}
+
+// ── Debug impls — redact secrets, show body lengths ────────────────
 
 impl std::fmt::Debug for DaemonRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unlock { .. } => f.debug_struct("Unlock")
-                .field("passphrase", &"***REDACTED***").finish(),
-            Self::IdentityExportEncrypted { .. } => f.debug_struct("IdentityExportEncrypted")
-                .field("passphrase", &"***REDACTED***").finish(),
-            Self::IdentityImportEncrypted { data, .. } => f.debug_struct("IdentityImportEncrypted")
-                .field("passphrase", &"***REDACTED***").field("data_len", &data.len()).finish(),
+            Self::Lifecycle(l) => write!(f, "Lifecycle({l:?})"),
+            Self::Chat(c) => write!(f, "Chat({c:?})"),
+        }
+    }
+}
 
-            Self::ChannelSend { community, channel, body, reply_to, client_msg_id } =>
-                f.debug_struct("ChannelSend")
-                    .field("community", community).field("channel", channel)
-                    .field("body_len", &body.len()).field("reply_to", reply_to)
-                    .field("client_msg_id", client_msg_id).finish(),
-            Self::DmSend { peer_key, body } => f.debug_struct("DmSend")
-                .field("peer_key", peer_key).field("body_len", &body.len()).finish(),
-            Self::SystemAnnounce { community, body } => f.debug_struct("SystemAnnounce")
-                .field("community", community).field("body_len", &body.len()).finish(),
-            Self::MessageEdit { community, channel, message_id, new_body } =>
-                f.debug_struct("MessageEdit")
-                    .field("community", community).field("channel", channel)
-                    .field("message_id", message_id).field("body_len", &new_body.len()).finish(),
-            Self::IdentityImport { data } => f.debug_struct("IdentityImport")
-                .field("data_len", &data.len()).finish(),
-
-            // Everything else — derive-style, no redaction needed.
+impl std::fmt::Debug for LifecycleRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unlock { .. } => f.debug_struct("Unlock").field("passphrase", &"***REDACTED***").finish(),
             Self::Lock => write!(f, "Lock"),
             Self::Status => write!(f, "Status"),
             Self::Shutdown => write!(f, "Shutdown"),
+            Self::NetworkStatus => write!(f, "NetworkStatus"),
+            Self::NetworkPeers => write!(f, "NetworkPeers"),
+            Self::AgentRegister { name, agent_type, capabilities } => f.debug_struct("AgentRegister").field("name", name).field("agent_type", agent_type).field("capabilities", capabilities).finish(),
+            Self::AgentRevoke { name } => f.debug_struct("AgentRevoke").field("name", name).finish(),
+            Self::PolicyReload => write!(f, "PolicyReload"),
+            Self::BulkTransferStart { transfer_id, total_size, media_type, digest, direction } => f.debug_struct("BulkTransferStart").field("transfer_id", transfer_id).field("total_size", total_size).field("media_type", media_type).field("digest", digest).field("direction", direction).finish(),
+            Self::BulkTransferComplete { transfer_id, digest, bytes_transferred } => f.debug_struct("BulkTransferComplete").field("transfer_id", transfer_id).field("digest", digest).field("bytes_transferred", bytes_transferred).finish(),
+            Self::BulkTransferCancel { transfer_id, reason } => f.debug_struct("BulkTransferCancel").field("transfer_id", transfer_id).field("reason", reason).finish(),
+            Self::BulkTransferStatus { transfer_id } => f.debug_struct("BulkTransferStatus").field("transfer_id", transfer_id).finish(),
+            Self::EventResume { last_seen_seq } => f.debug_struct("EventResume").field("last_seen_seq", last_seen_seq).finish(),
+            Self::Subscribe { filters } => f.debug_struct("Subscribe").field("filter_count", &filters.len()).finish(),
+            Self::Unsubscribe { filters } => f.debug_struct("Unsubscribe").field("filter_count", &filters.len()).finish(),
+        }
+    }
+}
+
+impl std::fmt::Debug for ChatRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IdentityExportEncrypted { .. } => f.debug_struct("IdentityExportEncrypted").field("passphrase", &"***REDACTED***").finish(),
+            Self::IdentityImportEncrypted { data, .. } => f.debug_struct("IdentityImportEncrypted").field("passphrase", &"***REDACTED***").field("data_len", &data.len()).finish(),
+            Self::ChannelSend { community, channel, body, reply_to, client_msg_id } =>
+                f.debug_struct("ChannelSend").field("community", community).field("channel", channel).field("body_len", &body.len()).field("reply_to", reply_to).field("client_msg_id", client_msg_id).finish(),
+            Self::DmSend { peer_key, body } => f.debug_struct("DmSend").field("peer_key", peer_key).field("body_len", &body.len()).finish(),
+            Self::SystemAnnounce { community, body } => f.debug_struct("SystemAnnounce").field("community", community).field("body_len", &body.len()).finish(),
+            Self::MessageEdit { community, channel, message_id, new_body } =>
+                f.debug_struct("MessageEdit").field("community", community).field("channel", channel).field("message_id", message_id).field("body_len", &new_body.len()).finish(),
+            Self::IdentityImport { data } => f.debug_struct("IdentityImport").field("data_len", &data.len()).finish(),
             Self::IdentityCreate { display_name } => f.debug_struct("IdentityCreate").field("display_name", display_name).finish(),
             Self::IdentityShow => write!(f, "IdentityShow"),
             Self::IdentityExport => write!(f, "IdentityExport"),
@@ -392,8 +473,8 @@ impl std::fmt::Debug for DaemonRequest {
             Self::DmTyping { peer_key, typing } => f.debug_struct("DmTyping").field("peer_key", peer_key).field("typing", typing).finish(),
             Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
             Self::DmThread { peer_key, limit } => f.debug_struct("DmThread").field("peer_key", peer_key).field("limit", limit).finish(),
-            Self::Subscribe { filters } => f.debug_struct("Subscribe").field("filter_count", &filters.len()).finish(),
-            Self::Unsubscribe { filters } => f.debug_struct("Unsubscribe").field("filter_count", &filters.len()).finish(),
+            Self::DmStart { peer_key, pseudonym, is_group } => f.debug_struct("DmStart").field("peer_key", peer_key).field("pseudonym", pseudonym).field("is_group", is_group).finish(),
+            Self::DmAccept { record_key } => f.debug_struct("DmAccept").field("record_key", record_key).finish(),
             Self::MarkRead { context } => f.debug_struct("MarkRead").field("context", context).finish(),
             Self::MekList { community } => f.debug_struct("MekList").field("community", community).finish(),
             Self::MekRotate { community, channel } => f.debug_struct("MekRotate").field("community", community).field("channel", channel).finish(),
@@ -441,31 +522,16 @@ impl std::fmt::Debug for DaemonRequest {
             Self::VoiceLeave => write!(f, "VoiceLeave"),
             Self::VoiceMute { muted } => f.debug_struct("VoiceMute").field("muted", muted).finish(),
             Self::VoiceDeafen { deafened } => f.debug_struct("VoiceDeafen").field("deafened", deafened).finish(),
-            Self::BulkTransferStart { transfer_id, total_size, media_type, digest, direction } => f.debug_struct("BulkTransferStart").field("transfer_id", transfer_id).field("total_size", total_size).field("media_type", media_type).field("digest", digest).field("direction", direction).finish(),
-            Self::BulkTransferComplete { transfer_id, digest, bytes_transferred } => f.debug_struct("BulkTransferComplete").field("transfer_id", transfer_id).field("digest", digest).field("bytes_transferred", bytes_transferred).finish(),
-            Self::BulkTransferCancel { transfer_id, reason } => f.debug_struct("BulkTransferCancel").field("transfer_id", transfer_id).field("reason", reason).finish(),
-            Self::BulkTransferStatus { transfer_id } => f.debug_struct("BulkTransferStatus").field("transfer_id", transfer_id).finish(),
-            Self::NetworkStatus => write!(f, "NetworkStatus"),
-            Self::NetworkPeers => write!(f, "NetworkPeers"),
-            Self::AgentRegister { name, agent_type, capabilities } => f.debug_struct("AgentRegister").field("name", name).field("agent_type", agent_type).field("capabilities", capabilities).finish(),
-            Self::AgentRevoke { name } => f.debug_struct("AgentRevoke").field("name", name).finish(),
-            Self::PolicyReload => write!(f, "PolicyReload"),
-            Self::EventResume { last_seen_seq } => f.debug_struct("EventResume").field("last_seen_seq", last_seen_seq).finish(),
+            Self::PinList { community } => f.debug_struct("PinList").field("community", community).finish(),
+            Self::EventList { community } => f.debug_struct("EventList").field("community", community).finish(),
+            Self::ThreadList { community } => f.debug_struct("ThreadList").field("community", community).finish(),
+            Self::ReactionList { community } => f.debug_struct("ReactionList").field("community", community).finish(),
+            Self::AuditLog { community, limit } => f.debug_struct("AuditLog").field("community", community).field("limit", limit).finish(),
+            Self::ThreadHistory { thread_id, limit } => f.debug_struct("ThreadHistory").field("thread_id", thread_id).field("limit", limit).finish(),
+            Self::OnboardingConfigGet { community } => f.debug_struct("OnboardingConfigGet").field("community", community).finish(),
+            Self::OnboardingConfigSet { community, .. } => f.debug_struct("OnboardingConfigSet").field("community", community).finish(),
+            Self::WelcomeScreenGet { community } => f.debug_struct("WelcomeScreenGet").field("community", community).finish(),
+            Self::WelcomeScreenSet { community, .. } => f.debug_struct("WelcomeScreenSet").field("community", community).finish(),
         }
-    }
-}
-
-impl DaemonRequest {
-    /// Serialize to bytes via postcard.
-    ///
-    /// SSOT for the request wire format. All concrete types — no
-    /// `serde_json::Value`, so postcard works without constraint.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
-        postcard::to_allocvec(self)
-    }
-
-    /// Deserialize from bytes via postcard.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
-        postcard::from_bytes(bytes)
     }
 }

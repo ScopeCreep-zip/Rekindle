@@ -23,14 +23,16 @@ impl VaultStore {
         sequence: u64,
         message_id: &str,
         mek_generation: u64,
+        reply_to_sequence: Option<u64>,
+        thread_id: Option<&str>,
     ) -> StorageResult<()> {
         let ct = self.encrypt_entry(body.as_bytes())?;
         let conn = self.conn();
         conn.execute(
             "INSERT OR IGNORE INTO channel_messages
                (community_id, channel_id, author_pseudonym, author_display_name,
-                body, timestamp, sequence, message_id, mek_generation)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                body, timestamp, sequence, message_id, mek_generation, reply_to_sequence, thread_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 community_id,
                 channel_id,
@@ -41,6 +43,8 @@ impl VaultStore {
                 i64::try_from(sequence).unwrap_or(i64::MAX),
                 message_id,
                 i64::try_from(mek_generation).unwrap_or(i64::MAX),
+                reply_to_sequence.map(|s| i64::try_from(s).unwrap_or(i64::MAX)),
+                thread_id,
             ],
         )?;
         Ok(())
@@ -56,7 +60,7 @@ impl VaultStore {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT author_pseudonym, author_display_name, body, timestamp,
-                    sequence, message_id, mek_generation
+                    sequence, message_id, mek_generation, reply_to_sequence, thread_id
              FROM channel_messages
              WHERE community_id = ?1 AND channel_id = ?2
              ORDER BY timestamp DESC LIMIT ?3",
@@ -73,11 +77,13 @@ impl VaultStore {
                         row.get::<_, i64>(4)?,
                         row.get::<_, String>(5)?,
                         row.get::<_, i64>(6)?,
+                        row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
                     ))
                 },
             )?
             .filter_map(Result::ok)
-            .filter_map(|(ap, adn, ct, ts, seq, mid, mg)| {
+            .filter_map(|(ap, adn, ct, ts, seq, mid, mg, rts, tid)| {
                 let body = String::from_utf8(self.decrypt_entry(&ct).ok()?).ok()?;
                 Some(ChannelRecord {
                     author_pseudonym: ap,
@@ -87,6 +93,59 @@ impl VaultStore {
                     sequence: u64::try_from(seq).unwrap_or(0),
                     message_id: mid,
                     mek_generation: u64::try_from(mg).unwrap_or(0),
+                    reply_to_sequence: rts.and_then(|v| u64::try_from(v).ok()),
+                    thread_id: tid,
+                })
+            })
+            .collect();
+        rows.reverse();
+        Ok(rows)
+    }
+
+    /// Query messages belonging to a specific thread, oldest first.
+    pub fn query_thread_messages(
+        &self,
+        thread_id: &str,
+        limit: u32,
+    ) -> StorageResult<Vec<ChannelRecord>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT author_pseudonym, author_display_name, body, timestamp,
+                    sequence, message_id, mek_generation, reply_to_sequence, thread_id
+             FROM channel_messages
+             WHERE thread_id = ?1
+             ORDER BY timestamp DESC LIMIT ?2",
+        )?;
+        let mut rows: Vec<ChannelRecord> = stmt
+            .query_map(
+                params![thread_id, i64::from(limit)],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                    ))
+                },
+            )?
+            .filter_map(Result::ok)
+            .filter_map(|(ap, adn, ct, ts, seq, mid, mg, rts, tid)| {
+                let body = String::from_utf8(self.decrypt_entry(&ct).ok()?).ok()?;
+                Some(ChannelRecord {
+                    author_pseudonym: ap,
+                    author_display_name: adn,
+                    body,
+                    timestamp: u64::try_from(ts).unwrap_or(0),
+                    sequence: u64::try_from(seq).unwrap_or(0),
+                    message_id: mid,
+                    mek_generation: u64::try_from(mg).unwrap_or(0),
+                    reply_to_sequence: rts.and_then(|v| u64::try_from(v).ok()),
+                    thread_id: tid,
                 })
             })
             .collect();

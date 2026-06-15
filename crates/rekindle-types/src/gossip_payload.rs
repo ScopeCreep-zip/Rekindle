@@ -14,15 +14,17 @@ pub struct SignedGossipEnvelope {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GossipPayload {
-    MessageNotification {
+    /// Channel message with encrypted content — the fast path.
+    /// Receivers MEK-decrypt the ciphertext to get the plaintext body.
+    ChannelMessage {
         channel_id: String,
         message_id: String,
-        author_pseudonym: String,
-        subkey_index: u32,
-        lamport_ts: u64,
+        ciphertext: Vec<u8>,
+        mek_generation: u64,
         sequence: u64,
-        content_hash: String,
         timestamp: u64,
+        reply_to: Option<u64>,
+        thread_id: Option<String>,
     },
     PresenceUpdate {
         pseudonym_key: String,
@@ -58,7 +60,18 @@ pub enum ControlPayload {
     MessageDeleted { channel_id: String, message_id: String },
     MekRotated { channel_id: Option<String>, new_generation: u64, rotator_pseudonym: Option<String> },
     RequestMek { channel_id: String, needed_generation: u64, requester_pseudonym: String },
-    MekTransfer { community_id: String, channel_id: Option<String>, generation: u64, sender_pseudonym: String, wrapped_mek: Vec<u8> },
+    MekTransfer {
+        community_id: String,
+        channel_id: Option<String>,
+        generation: u64,
+        /// Ed25519 pseudonym hex — attribution only, NOT for ECDH.
+        sender_pseudonym: String,
+        wrapped_mek: Vec<u8>,
+        /// X25519 DH public key of the sender. Used by the recipient
+        /// to ECDH-unwrap the wrapped_mek. `None` on legacy payloads.
+        #[serde(default)]
+        sender_x25519_pub: Option<rekindle_identity::DhKey>,
+    },
     MemberRolesChanged { pseudonym_key: String, role_ids: Vec<u32> },
     OnboardingComplete { pseudonym_key: String, role_ids: Vec<u32> },
     ChannelOverwriteChanged { channel_id: String },
@@ -141,14 +154,13 @@ use crate::subscription_events::{
 impl GossipPayload {
     pub fn into_event(self, community: &str, sender: &str) -> SubscriptionEvent {
         let c = || community.to_string();
-        let s = || sender.to_string();
         match self {
-            Self::MessageNotification { channel_id, message_id, sequence, timestamp, .. } =>
-                SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-                    community: c(), channel: channel_id, message_id,
-                    sender_pseudonym: s(), sequence, timestamp,
-                    body: None, reply_to_sequence: None, is_self: false, client_msg_id: None,
-                }),
+            Self::ChannelMessage { .. } => {
+                // ChannelMessage is intercepted and MEK-decrypted in
+                // community/mod.rs handle_gossip() BEFORE into_event is called.
+                // If this arm executes, the interception was bypassed.
+                unreachable!("ChannelMessage must be intercepted in handle_gossip for MEK decryption")
+            }
             Self::TypingIndicator { channel_id, pseudonym_key } =>
                 SubscriptionEvent::Typing(TypingEvent::Started {
                     context: TypingContext::Channel { community: c(), channel: channel_id },
@@ -200,7 +212,7 @@ impl ControlPayload {
                 SubscriptionEvent::Crypto(CryptoEvent::MekRotated { community: c(), channel: channel_id, generation: new_generation, rotator_pseudonym }),
             Self::RequestMek { channel_id, needed_generation, requester_pseudonym } =>
                 SubscriptionEvent::Crypto(CryptoEvent::MekRequested { community: c(), channel: channel_id, needed_generation, requester_pseudonym }),
-            Self::MekTransfer { community_id, channel_id, generation, sender_pseudonym, .. } =>
+            Self::MekTransfer { community_id, channel_id, generation, sender_pseudonym, wrapped_mek: _, sender_x25519_pub: _ } =>
                 SubscriptionEvent::Crypto(CryptoEvent::MekTransferred { community: community_id, channel: channel_id, generation, sender_pseudonym }),
             Self::MemberRolesChanged { pseudonym_key, role_ids } =>
                 SubscriptionEvent::Membership(MembershipEvent::RolesChanged { community: c(), pseudonym: pseudonym_key, role_ids }),
@@ -235,7 +247,7 @@ impl ControlPayload {
             Self::ThreadArchived { thread_id, archived } =>
                 SubscriptionEvent::Social(SocialEvent::ThreadArchiveChanged { community: c(), thread_id, archived }),
             Self::GameServerAdded { server } =>
-                SubscriptionEvent::Social(SocialEvent::GameServerAdded { community: c(), server_id: server.id, game_id: server.game_id, label: server.label }),
+                SubscriptionEvent::Social(SocialEvent::GameServerAdded { community: c(), server_id: server.id, game_id: server.game_id, label: server.label, address: server.address, added_by: server.added_by }),
             Self::GameServerRemoved { server_id } =>
                 SubscriptionEvent::Social(SocialEvent::GameServerRemoved { community: c(), server_id }),
             Self::GovernanceUpdated { subkey_index, lamport_ts, .. } =>

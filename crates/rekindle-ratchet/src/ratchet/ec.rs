@@ -9,6 +9,7 @@
 //! - Cremers 2023 promotion guard: sessions decrypted from cold storage must
 //!   complete a receipt-ack before promotion to active
 
+use tracing::debug;
 use zeroize::Zeroizing;
 
 use crate::crypto::{aead, dh, kdf};
@@ -98,49 +99,59 @@ pub(crate) fn try_decrypt_header_at(
 ///
 /// Used by both `decrypt_he` (standalone EC) and `ec_decrypt_split`
 /// (Triple Ratchet) to avoid code duplication.
-pub(crate) fn perform_dh_ratchet(
+pub fn perform_dh_ratchet(
     state: &mut DoubleRatchetState,
     their_dh_pub: &[u8; 32],
     skipped: &dyn SkippedKeyCallback,
 ) -> Result<(), RatchetError> {
+    debug!(
+        n_send = state.n_send,
+        n_recv = state.n_recv,
+        pn = state.pn,
+        "ec::perform_dh_ratchet: entering"
+    );
+
     // Skip remaining keys on old receiving chain
-    if let (Some(ckr), Some(hkr)) = (&state.ckr, &state.hkr) {
-        let mut ck = ckr.clone();
+    {
+        let mut ck = state.ckr.clone();
         while state.n_recv < state.pn && state.n_recv < MAX_SKIP_PER_CHAIN {
             let (next, skip_mk) = kdf::kdf_ck(&ck);
-            skipped.store_skipped(hkr, state.n_recv, &skip_mk)?;
+            skipped.store_skipped(&state.hkr, state.n_recv, &skip_mk)?;
             ck = next;
             state.n_recv += 1;
         }
     }
 
     // Promote NHK → HK, reset counters
-    state.hks = Some(state.nhks.clone());
-    state.hkr = Some(state.nhkr.clone());
+    state.hks = state.nhks.clone();
+    state.hkr = state.nhkr.clone();
     state.pn = state.n_send;
     state.n_send = 0;
     state.n_recv = 0;
-    state.dhr_pub = Some(*their_dh_pub);
+    state.dhr_pub = *their_dh_pub;
 
-    // Generate new DH keypair
-    let (new_seed, new_pub) = dh::generate_ratchet_keypair()?;
-    let our_key = dh::reusable_from_seed(&new_seed)?;
-
-    // DH → receiving chain
-    let dh_out_recv = dh::ratchet_agree(&our_key, their_dh_pub)?;
+    // DH → receiving chain using EXISTING key (Signal DR HE §4 step 7)
+    let existing_key = dh::reusable_from_seed(&state.dhs_priv)?;
+    let dh_out_recv = dh::ratchet_agree(&existing_key, their_dh_pub)?;
     let (new_rk, new_ckr, new_nhkr) = kdf::kdf_rk_he(&state.rk, &dh_out_recv)?;
 
-    // DH → sending chain
-    let dh_out_send = dh::ratchet_agree(&our_key, their_dh_pub)?;
+    // Generate new DH keypair AFTER CKr (Signal DR HE §4 step 8)
+    let (new_seed, new_pub) = dh::generate_ratchet_keypair()?;
+    let new_key = dh::reusable_from_seed(&new_seed)?;
+
+    // DH → sending chain using NEW key (Signal DR HE §4 step 9)
+    let dh_out_send = dh::ratchet_agree(&new_key, their_dh_pub)?;
     let (new_rk2, new_cks, new_nhks) = kdf::kdf_rk_he(&new_rk, &dh_out_send)?;
 
     state.rk = new_rk2;
-    state.ckr = Some(new_ckr);
-    state.cks = Some(new_cks);
+    state.ckr = new_ckr;
+    state.cks = new_cks;
     state.nhkr = new_nhkr;
     state.nhks = new_nhks;
-    state.dhs_priv = Some(new_seed);
+    state.dhs_priv = new_seed;
     state.dhs_pub = new_pub;
+
+    debug!("ec::perform_dh_ratchet: complete");
 
     Ok(())
 }
@@ -154,16 +165,7 @@ pub(crate) fn skip_receiving_keys(
     target_n: u32,
     skipped: &dyn SkippedKeyCallback,
 ) -> Result<Zeroizing<[u8; 32]>, RatchetError> {
-    let ckr = state
-        .ckr
-        .as_ref()
-        .ok_or_else(|| RatchetError::SessionCorrupt("no receiving chain key".into()))?;
-    let hkr = state
-        .hkr
-        .as_ref()
-        .ok_or_else(|| RatchetError::SessionCorrupt("no receiving header key".into()))?;
-
-    let mut ck = ckr.clone();
+    let mut ck = state.ckr.clone();
     while state.n_recv < target_n {
         if state.n_recv >= MAX_SKIP_PER_CHAIN {
             return Err(RatchetError::DrSkipLimit {
@@ -171,14 +173,14 @@ pub(crate) fn skip_receiving_keys(
             });
         }
         let (next, skip_mk) = kdf::kdf_ck(&ck);
-        skipped.store_skipped(hkr, state.n_recv, &skip_mk)?;
+        skipped.store_skipped(&state.hkr, state.n_recv, &skip_mk)?;
         ck = next;
         state.n_recv += 1;
     }
 
     // Derive message key for the target counter
     let (next_ck, mk) = kdf::kdf_ck(&ck);
-    state.ckr = Some(next_ck);
+    state.ckr = next_ck;
     state.n_recv += 1;
 
     Ok(mk)
@@ -193,15 +195,14 @@ pub fn encrypt_he(
     state: &mut DoubleRatchetState,
     plaintext: &[u8],
 ) -> Result<EncryptedMessage, RatchetError> {
-    let cks = state.cks.as_ref().ok_or_else(|| {
-        RatchetError::SessionCorrupt("no sending chain key".into())
-    })?;
-    let hks = state.hks.as_ref().ok_or_else(|| {
-        RatchetError::SessionCorrupt("no sending header key".into())
-    })?;
+    debug!(
+        n_send = state.n_send,
+        plaintext_len = plaintext.len(),
+        "ec::encrypt_he: entering"
+    );
 
-    let (next_ck, mk) = kdf::kdf_ck(cks);
-    state.cks = Some(next_ck);
+    let (next_ck, mk) = kdf::kdf_ck(&state.cks);
+    state.cks = next_ck;
 
     let header = MessageHeader {
         dh_pub: state.dhs_pub,
@@ -209,7 +210,7 @@ pub fn encrypt_he(
         n: state.n_send,
     };
     let header_bytes = header.to_bytes();
-    let hk_key = aead::build_key(hks)?;
+    let hk_key = aead::build_key(&state.hks)?;
     let mut enc_header = header_bytes.to_vec();
     aead::seal(&hk_key, state.n_send, &[], &mut enc_header)?;
 
@@ -226,4 +227,63 @@ pub fn encrypt_he(
         encrypted_header: enc_header,
         ciphertext,
     })
+}
+
+/// Decrypt a message encrypted by `encrypt_he`. Counterpart to `encrypt_he`.
+///
+/// Performs header decrypt, DH ratchet if needed, chain advance, and
+/// body AEAD with the raw EC message key — no hybrid KDF layer.
+///
+/// Used by the Responder to verify the PQXDH-INIT proof message during
+/// session establishment. Regular DM messages go through `triple::decrypt`
+/// which applies `derive_message_key` (hybrid KDF) on top.
+pub fn decrypt_he(
+    state: &mut DoubleRatchetState,
+    encrypted_header: &[u8],
+    ciphertext: &[u8],
+    skipped: &dyn SkippedKeyCallback,
+) -> Result<Vec<u8>, RatchetError> {
+    let header_tag_len = HEADER_LEN + aead::TAG_LEN;
+    if encrypted_header.len() != header_tag_len {
+        return Err(RatchetError::DrHeaderDecrypt);
+    }
+
+    // Try HKr at n_recv, then NHKr scanning
+    let mut dh_ratchet_needed = false;
+    let header = if let Some(h) = try_decrypt_header_at(&state.hkr, state.n_recv, encrypted_header) {
+        h
+    } else {
+        let h = scan_nhkr(state, encrypted_header)
+            .ok_or(RatchetError::DrHeaderDecrypt)?;
+        dh_ratchet_needed = true;
+        h
+    };
+
+    if dh_ratchet_needed {
+        perform_dh_ratchet(state, &header.dh_pub, skipped)?;
+    }
+
+    let mk = skip_receiving_keys(state, header.n, skipped)?;
+
+    // Raw AEAD — no hybrid KDF. Matches encrypt_he's seal.
+    let mk_key = aead::build_key(&mk)?;
+    let mut body = ciphertext.to_vec();
+    let plaintext = aead::open(&mk_key, header.n, encrypted_header, &mut body)?;
+
+    Ok(plaintext.to_vec())
+}
+
+/// Scan NHKr for a matching header counter (used by decrypt_he).
+fn scan_nhkr(
+    state: &DoubleRatchetState,
+    encrypted_header: &[u8],
+) -> Option<MessageHeader> {
+    for counter in 0..MAX_SKIP_PER_CHAIN {
+        if let Some(h) = try_decrypt_header_at(&state.nhkr, counter, encrypted_header) {
+            if h.n == counter {
+                return Some(h);
+            }
+        }
+    }
+    None
 }

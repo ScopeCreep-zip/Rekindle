@@ -26,7 +26,7 @@ pub struct IdentitySettingsView {
     active_watches: usize,
     community_count: usize,
     friend_count: usize,
-    signing_key_loaded: bool,
+    identity_loaded: bool,
     expanded: [bool; 5],
     loaded: bool,
     use_unicode: bool,
@@ -45,7 +45,7 @@ impl IdentitySettingsView {
             public_key: String::new(), display_name: String::new(),
             route_allocated: false, route_age_secs: None, attachment: "unknown".into(),
             active_watches: 0, community_count: 0, friend_count: 0,
-            signing_key_loaded: false, expanded: [false; 5], loaded: false, use_unicode,
+            identity_loaded: false, expanded: [false; 5], loaded: false, use_unicode,
             profile_dht_key: String::new(), mailbox_dht_key: String::new(),
             friend_list_dht_key: String::new(), friend_inbox_key: String::new(),
         }
@@ -60,8 +60,8 @@ impl IdentitySettingsView {
         self.active_watches = snapshot.active_watches;
         self.community_count = snapshot.community_count;
         self.friend_count = snapshot.friend_count;
-        self.signing_key_loaded = snapshot.checks.iter().any(|c| {
-            c.id == "crypto.signing_key" && c.status == rekindle_types::display::CheckStatus::Pass
+        self.identity_loaded = snapshot.checks.iter().any(|c| {
+            c.id == "crypto.identity" && c.status == rekindle_types::display::CheckStatus::Pass
         });
         self.loaded = true;
     }
@@ -100,7 +100,7 @@ impl IdentitySettingsView {
                         items.push(kv_item("    Friend Inbox", &fi));
                     }
                     1 => { // Security
-                        let key_status = if self.signing_key_loaded { "loaded (unlocked)" } else { "not loaded (locked)" };
+                        let key_status = if self.identity_loaded { "loaded (unlocked)" } else { "not loaded (locked)" };
                         items.push(kv_item("    Signing Key", key_status));
                         items.push(kv_item("    Keyring", "OS keyring + disk fallback"));
                     }
@@ -226,7 +226,7 @@ impl View for IdentitySettingsView {
         }
     }
 
-    fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
+    fn on_command_result(&mut self, result: CommandResult) -> Result<Option<Action>> {
         match result {
             CommandResult::StatusLoaded { ref snapshot } => { self.load_from_snapshot(snapshot); }
             CommandResult::IdentityLoaded {
@@ -245,16 +245,16 @@ impl View for IdentitySettingsView {
             }
             _ => {}
         }
-        Ok(())
+        Ok(None)
     }
 
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<Action>> {
         if let rekindle_types::subscription_events::SubscriptionEvent::Network(
             rekindle_types::subscription_events::NetworkEvent::AttachmentChanged { is_attached, .. }
         ) = event {
             self.attachment = if *is_attached { "attached".into() } else { "detached".into() };
         }
-        Ok(())
+        Ok(None)
     }
 
     fn focus_ring(&mut self) -> &mut FocusRing { &mut self.focus }

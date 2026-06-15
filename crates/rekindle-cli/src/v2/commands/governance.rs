@@ -1,6 +1,6 @@
 //! Governance commands: roles, moderation, invites.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{ChatRequest, DaemonRequest};
 
 use crate::v2::cli::{RoleCmd, ModerateCmd, InviteCmd};
 use crate::v2::helpers;
@@ -11,7 +11,7 @@ use crate::v2::prelude::DaemonClient;
 pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         RoleCmd::List { community } => {
-            let value = client.request_ok(DaemonRequest::RoleList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::RoleList { community: community.clone() })).await?;
             format::print_structured(&value, mode)
         }
         RoleCmd::Create { community, name, permissions, color, position } => {
@@ -19,26 +19,26 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
             let col = color.as_deref().map(helpers::parse_color).transpose()?.unwrap_or(0);
             #[allow(clippy::cast_possible_wrap)]
             let pos = position.map_or(0, |p| p as i32);
-            let value = client.request_ok(DaemonRequest::RoleCreate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::RoleCreate {
                 community: community.clone(),
                 name: name.clone(),
                 permissions: perms,
                 color: col,
                 position: pos,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         RoleCmd::Update { community, role_id, name, permissions, color } => {
             let rid = helpers::parse_u32(role_id)?;
             let perms = permissions.as_deref().map(helpers::parse_permissions).transpose()?;
             let col = color.as_deref().map(helpers::parse_color).transpose()?;
-            let value = client.request_ok(DaemonRequest::RoleUpdate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::RoleUpdate {
                 community: community.clone(),
                 role_id: rid,
                 name: name.clone(),
                 permissions: perms,
                 color: col,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         RoleCmd::Delete { community, role_id, yes } => {
@@ -47,28 +47,28 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
                 if !confirmed { return format::print_text("Cancelled."); }
             }
             let rid = helpers::parse_u32(role_id)?;
-            let value = client.request_ok(DaemonRequest::RoleDelete {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::RoleDelete {
                 community: community.clone(),
                 role_id: rid,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         RoleCmd::Assign { community, member, role_id } => {
             let rid = helpers::parse_u32(role_id)?;
-            let value = client.request_ok(DaemonRequest::RoleAssign {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::RoleAssign {
                 community: community.clone(),
                 member_pseudonym: member.clone(),
                 role_id: rid,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         RoleCmd::Unassign { community, member, role_id } => {
             let rid = helpers::parse_u32(role_id)?;
-            let value = client.request_ok(DaemonRequest::RoleUnassign {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::RoleUnassign {
                 community: community.clone(),
                 member_pseudonym: member.clone(),
                 role_id: rid,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
     }
@@ -77,43 +77,43 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
 pub async fn dispatch_moderate(cmd: &ModerateCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         ModerateCmd::Kick { community, member, .. } => {
-            let value = client.request_ok(DaemonRequest::Kick {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::Kick {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
-            }).await?;
+            })).await?;
             helpers::audit_log("kick", member, "ok");
             format::print_structured(&value, mode)
         }
         ModerateCmd::Ban { community, member, reason } => {
-            let value = client.request_ok(DaemonRequest::Ban {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::Ban {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
                 reason: reason.clone(),
-            }).await?;
+            })).await?;
             helpers::audit_log("ban", member, "ok");
             format::print_structured(&value, mode)
         }
         ModerateCmd::Unban { community, member } => {
-            let value = client.request_ok(DaemonRequest::Unban {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::Unban {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
-            }).await?;
+            })).await?;
             helpers::audit_log("unban", member, "ok");
             format::print_structured(&value, mode)
         }
         ModerateCmd::Timeout { community, member, duration, reason } => {
             let secs = helpers::parse_duration_secs(duration)?;
-            let value = client.request_ok(DaemonRequest::Timeout {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::Timeout {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
                 duration_seconds: secs,
                 reason: reason.clone(),
-            }).await?;
+            })).await?;
             helpers::audit_log("timeout", member, "ok");
             format::print_structured(&value, mode)
         }
         ModerateCmd::Bans { community } => {
-            let value = client.request_ok(DaemonRequest::BanList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::BanList { community: community.clone() })).await?;
             format::print_structured(&value, mode)
         }
     }
@@ -123,22 +123,22 @@ pub async fn dispatch_invite(cmd: &InviteCmd, client: &DaemonClient, mode: Outpu
     match cmd {
         InviteCmd::Create { community, max_uses, expires } => {
             let exp_secs = expires.as_deref().map(helpers::parse_duration_secs).transpose()?;
-            let value = client.request_ok(DaemonRequest::InviteCreate {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::InviteCreate {
                 community: community.clone(),
                 max_uses: max_uses.unwrap_or(0),
                 expires_seconds: exp_secs,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         InviteCmd::List { community } => {
-            let value = client.request_ok(DaemonRequest::InviteList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::InviteList { community: community.clone() })).await?;
             format::print_structured(&value, mode)
         }
         InviteCmd::Revoke { community, invite_code } => {
-            let value = client.request_ok(DaemonRequest::InviteRevoke {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::InviteRevoke {
                 community: community.clone(),
                 invite_code: invite_code.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
     }

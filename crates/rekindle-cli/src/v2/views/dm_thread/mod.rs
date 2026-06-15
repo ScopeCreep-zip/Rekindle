@@ -58,10 +58,10 @@ impl ViewQuery for DmThreadView {
 impl View for DmThreadView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> anyhow::Result<()> { render::draw(self, frame, area, theme); Ok(()) }
     fn update(&mut self, action: Action) -> anyhow::Result<Option<Action>> { Ok(input::handle_update(self, &action)) }
-    fn on_command_result(&mut self, result: CommandResult) -> anyhow::Result<()> { events::handle_command_result(self, result); Ok(()) }
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> anyhow::Result<()> {
+    fn on_command_result(&mut self, result: CommandResult) -> anyhow::Result<Option<Action>> { events::handle_command_result(self, result); Ok(None) }
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> anyhow::Result<Option<Action>> {
         events::handle_subscription_event(self, event);
-        Ok(())
+        Ok(None)
     }
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> { input::handle_focused_key(self, key) }
     fn handle_click(&mut self, column: u16, row: u16) -> Option<Action> { input::handle_click(self, column, row) }

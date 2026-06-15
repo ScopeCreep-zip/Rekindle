@@ -190,6 +190,10 @@ pub enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Read JSONL DaemonRequests from stdin over one IPC connection.
+    /// Each line is a postcard-hex-encoded DaemonRequest. Responses
+    /// are printed as JSONL to stdout. Single handshake, N requests.
+    Batch,
     /// Generate shell completions.
     Completions {
         #[arg(value_enum)]

@@ -8,6 +8,9 @@ use rekindle_transport::WatchToken;
 #[derive(Debug, Clone)]
 pub enum WatchKind {
     DmLog { peer_key: String },
+    /// SMPL-based DM record (1:1 or group). The handler reads changed
+    /// subkeys and calls `dm::handle_dm_subkey_change`.
+    DmSmpl { record_key: String },
     ChannelLog { community: String, channel_id: String, member: String },
     FriendInbox,
     GovernanceManifest { community: String },

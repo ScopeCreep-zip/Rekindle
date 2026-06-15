@@ -1,6 +1,6 @@
 //! DM commands: send, inbox, read, watch, typing.
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{ChatRequest, DaemonRequest};
 
 use crate::v2::cli::DmCmd;
 use crate::v2::helpers;
@@ -11,17 +11,17 @@ use crate::v2::prelude::DaemonClient;
 pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         DmCmd::Send { friend, message, .. } => {
-            let value = client.request_ok(DaemonRequest::DmSend {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmSend {
                 peer_key: friend.clone(),
                 body: message.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         DmCmd::Inbox { limit, since, .. } => {
             #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(DaemonRequest::DmInbox {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmInbox {
                 limit: *limit as u32,
-            }).await?;
+            })).await?;
             if let Some(ref since_str) = since {
                 let since_ms = helpers::parse_since_timestamp(since_str)?;
                 let filtered = filter_dm_threads_since(&value, since_ms);
@@ -30,22 +30,35 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             format::print_structured(&value, mode)
         }
         DmCmd::Read { conversation_id, limit, .. } => {
-            // Uses the new DmThread DaemonRequest for efficient single-conversation load
             #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(DaemonRequest::DmThread {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmThread {
                 peer_key: conversation_id.clone(),
                 limit: *limit as u32,
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         DmCmd::Watch { .. } => {
             anyhow::bail!("dm watch: event receiver unavailable — is another streaming command already running?")
         }
         DmCmd::Typing { friend, typing } => {
-            let value = client.request_ok(DaemonRequest::DmTyping {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmTyping {
                 peer_key: friend.clone(),
                 typing: *typing,
-            }).await?;
+            })).await?;
+            format::print_structured(&value, mode)
+        }
+        DmCmd::Start { peer, pseudonym } => {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmStart {
+                peer_key: peer.clone(),
+                pseudonym: pseudonym.clone(),
+                is_group: false,
+            })).await?;
+            format::print_structured(&value, mode)
+        }
+        DmCmd::Accept { record_key } => {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::DmAccept {
+                record_key: record_key.clone(),
+            })).await?;
             format::print_structured(&value, mode)
         }
     }

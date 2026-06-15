@@ -14,9 +14,13 @@ pub mod dashboard;
 pub mod dm_inbox;
 pub mod dm_thread;
 pub mod doctor;
+pub mod events;
 pub mod file_preview;
 pub mod friend_list;
 pub mod identity_settings;
+pub mod invite;
+pub mod moderation;
+pub mod onboarding;
 pub mod voice_session;
 
 use anyhow::Result;
@@ -40,6 +44,10 @@ pub enum ViewKind {
     FriendList,
     Doctor,
     CommunityInfo { community: String },
+    Moderation { community: String },
+    Invite { community: String },
+    Events { community: String },
+    Onboarding { community: String },
     FilePreview { path: String, line: Option<usize> },
 }
 
@@ -57,9 +65,9 @@ pub trait ViewQuery {
 pub trait View: ViewQuery {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()>;
     fn update(&mut self, action: Action) -> Result<Option<Action>>;
-    fn on_command_result(&mut self, result: CommandResult) -> Result<()>;
-    fn on_subscription_event(&mut self, _event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> { Ok(()) }
-    fn tick(&mut self) -> Result<()> { Ok(()) }
+    fn on_command_result(&mut self, result: CommandResult) -> Result<Option<Action>>;
+    fn on_subscription_event(&mut self, _event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<Action>> { Ok(None) }
+    fn tick(&mut self) -> Result<Option<Action>> { Ok(None) }
     fn handle_focused_key(&mut self, _key: KeyEvent) -> Option<Action> { None }
     fn handle_click(&mut self, _column: u16, _row: u16) -> Option<Action> { None }
     fn focus_ring(&mut self) -> &mut FocusRing;
@@ -77,6 +85,10 @@ pub struct ViewRegistry {
     friend_list: Option<friend_list::FriendListView>,
     doctor_view: Option<doctor::DoctorView>,
     community_info: Option<community_info::CommunityInfoView>,
+    moderation: Option<moderation::ModerationView>,
+    invite: Option<invite::InviteView>,
+    events_view: Option<events::EventCalendarView>,
+    onboarding_view: Option<onboarding::OnboardingWizardView>,
     file_preview: Option<file_preview::FilePreviewView>,
 }
 
@@ -87,7 +99,7 @@ impl ViewRegistry {
             dashboard: dashboard::DashboardView::new(use_unicode),
             identity_settings: None, channel_watch: None, dm_inbox: None,
             dm_thread: None, voice_session: None, friend_list: None,
-            doctor_view: None, community_info: None, file_preview: None,
+            doctor_view: None, community_info: None, moderation: None, invite: None, events_view: None, onboarding_view: None, file_preview: None,
         }
     }
 
@@ -132,6 +144,22 @@ impl ViewRegistry {
                 let needs = self.community_info.as_ref().is_none_or(|v| v.community() != community);
                 if needs { self.community_info = Some(community_info::CommunityInfoView::new(community.clone())); }
             }
+            ViewKind::Moderation { community } => {
+                let needs = self.moderation.as_ref().is_none_or(|v| v.community() != community);
+                if needs { self.moderation = Some(moderation::ModerationView::new(community.clone())); }
+            }
+            ViewKind::Invite { community } => {
+                let needs = self.invite.as_ref().is_none_or(|v| v.community() != community);
+                if needs { self.invite = Some(invite::InviteView::new(community.clone())); }
+            }
+            ViewKind::Events { community } => {
+                let needs = self.events_view.as_ref().is_none_or(|v| v.community() != community);
+                if needs { self.events_view = Some(events::EventCalendarView::new(community.clone())); }
+            }
+            ViewKind::Onboarding { community } => {
+                let needs = self.onboarding_view.as_ref().is_none_or(|v| v.community() != community);
+                if needs { self.onboarding_view = Some(onboarding::OnboardingWizardView::new(community.clone())); }
+            }
             ViewKind::FilePreview { path, line } => {
                 let needs = self.file_preview.as_ref().is_none_or(|v| v.file_path() != path);
                 if needs { self.file_preview = Some(file_preview::FilePreviewView::new(path.clone(), *line)); }
@@ -142,17 +170,22 @@ impl ViewRegistry {
 
     pub fn dashboard_mut(&mut self) -> &mut dashboard::DashboardView { &mut self.dashboard }
 
-    pub fn forward_event_to_all(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
-        self.dashboard.on_subscription_event(event)?;
-        if let Some(ref mut v) = self.identity_settings { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.channel_watch { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.dm_inbox { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.dm_thread { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.voice_session { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.friend_list { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.doctor_view { v.on_subscription_event(event)?; }
-        if let Some(ref mut v) = self.community_info { v.on_subscription_event(event)?; }
-        Ok(())
+    pub fn forward_event_to_all(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Vec<Action> {
+        let mut actions = Vec::new();
+        if let Ok(Some(a)) = self.dashboard.on_subscription_event(event) { actions.push(a); }
+        if let Some(ref mut v) = self.identity_settings { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.channel_watch { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.dm_inbox { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.dm_thread { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.voice_session { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.friend_list { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.doctor_view { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.community_info { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.moderation { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.invite { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.events_view { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        if let Some(ref mut v) = self.onboarding_view { if let Ok(Some(a)) = v.on_subscription_event(event) { actions.push(a); } }
+        actions
     }
 
     pub fn current_ref(&self) -> &dyn ViewQuery {
@@ -166,6 +199,10 @@ impl ViewRegistry {
             ViewKind::FriendList => self.friend_list.as_ref().expect("transitioned"),
             ViewKind::Doctor => self.doctor_view.as_ref().expect("transitioned"),
             ViewKind::CommunityInfo { .. } => self.community_info.as_ref().expect("transitioned"),
+            ViewKind::Moderation { .. } => self.moderation.as_ref().expect("transitioned"),
+            ViewKind::Invite { .. } => self.invite.as_ref().expect("transitioned"),
+            ViewKind::Events { .. } => self.events_view.as_ref().expect("transitioned"),
+            ViewKind::Onboarding { .. } => self.onboarding_view.as_ref().expect("transitioned"),
             ViewKind::FilePreview { .. } => self.file_preview.as_ref().expect("transitioned"),
         }
     }
@@ -181,6 +218,10 @@ impl ViewRegistry {
             ViewKind::FriendList => self.friend_list.as_mut().expect("transitioned"),
             ViewKind::Doctor => self.doctor_view.as_mut().expect("transitioned"),
             ViewKind::CommunityInfo { .. } => self.community_info.as_mut().expect("transitioned"),
+            ViewKind::Moderation { .. } => self.moderation.as_mut().expect("transitioned"),
+            ViewKind::Invite { .. } => self.invite.as_mut().expect("transitioned"),
+            ViewKind::Events { .. } => self.events_view.as_mut().expect("transitioned"),
+            ViewKind::Onboarding { .. } => self.onboarding_view.as_mut().expect("transitioned"),
             ViewKind::FilePreview { .. } => self.file_preview.as_mut().expect("transitioned"),
         }
     }

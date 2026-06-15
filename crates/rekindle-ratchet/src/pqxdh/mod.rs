@@ -21,6 +21,7 @@ pub mod bundle;
 pub mod verify;
 
 use aws_lc_rs::hkdf;
+use tracing::{debug, info};
 use zeroize::Zeroizing;
 
 use crate::crypto::{dh, kem};
@@ -116,8 +117,22 @@ pub fn initiate(
         bundle.spk,
     )?;
 
-    // Produce the first DR-encrypted message (proves SK possession)
-    let first_msg = crate::ratchet::ec::encrypt_he(&mut ec_state, b"PQXDH-INIT")?;
+    // Produce the first DR-encrypted message (proves SK possession +
+    // identity binding). Payload = "PQXDH-INIT" || sender_ed25519 ||
+    // recipient_ed25519. Prevents unknown key-share attacks.
+    let mut proof = Vec::with_capacity(74);
+    proof.extend_from_slice(b"PQXDH-INIT");
+    proof.extend_from_slice(ik_a_ed25519_pub);
+    proof.extend_from_slice(&bundle.ik_ed25519);
+    debug!(
+        proof_len = proof.len(),
+        "pqxdh::initiate: about to encrypt_he(PQXDH-INIT + identity)"
+    );
+    let first_msg = crate::ratchet::ec::encrypt_he(&mut ec_state, &proof)?;
+    debug!(
+        n_send = ec_state.n_send,
+        "pqxdh::initiate: PQXDH-INIT encrypted"
+    );
 
     let ik_a_x25519_pub: [u8; 32] = ik_a_dh
         .compute_public_key()
@@ -135,6 +150,8 @@ pub fn initiate(
         pqpk_is_last_resort: is_last_resort,
         opk_b_id: bundle.opk_id,
         kem_ct: kem_ct.to_vec(),
+        initiator_ratchet_dh_pub: dr_pub,
+        initial_encrypted_header: first_msg.encrypted_header,
         initial_ciphertext: first_msg.ciphertext,
     };
 
@@ -197,6 +214,8 @@ pub fn respond(
 
     let sk = derive_session_key(&ikm)?;
     ikm.fill(0);
+
+    info!("pqxdh::respond: session key derived — responder ready");
 
     Ok(PqxdhResponderResult { session_key: sk })
 }

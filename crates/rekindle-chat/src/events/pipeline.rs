@@ -11,7 +11,7 @@
 //! 4. `event_tx.send` — broadcast to all IPC subscribers
 //!
 //! Two entry points:
-//! - `EventRouter::on_message` for transport-originated events
+//! - `run_inbound_loop` (router.rs) for transport-originated events
 //! - `ChatService::emit_local` for locally-originated events
 //!
 //! Both call `pipeline.process(event)`. Same path. Same dedup. Same
@@ -33,7 +33,7 @@ const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
 /// The sole event emission path for the entire platform.
 ///
-/// Shared by `EventRouter` (inbound) and `ChatService` (local).
+/// Shared by `run_inbound_loop` (inbound) and `ChatService` (local).
 /// Holds the reactive state, dedup cache, and broadcast channel.
 pub struct EventPipeline {
     dedup: Arc<RwLock<EventDedup>>,
@@ -55,32 +55,24 @@ impl EventPipeline {
     ///
     /// This is the ONLY way events reach the IPC bus. No exceptions.
     pub fn process(&self, event: SubscriptionEvent) {
-        // Step 1: Apply state side-effects (unread, typing, presence, voice).
-        // Returns additional events to emit (e.g., UnreadChanged).
+        let cat = format!("{:?}", event.category());
+        tracing::info!(event_type = %cat, "pipeline: processing event");
+
         let extra_events = {
             let mut state = self.state.write();
             state_effects::apply(&mut state, &event)
         };
-        // State lock released here before dedup + send.
 
-        // Step 2: Dedup — suppress if this exact event was already emitted.
-        // Dedup operates on semantic content hash, not identity — the same
-        // logical event arriving via watch, gossip, AND poll is suppressed
-        // to a single emission.
         {
             let mut dedup = self.dedup.write();
             if dedup.check(&event) {
-                // New event — emit to all subscribers.
-                if let Err(e) = self.event_tx.send(event) {
-                    tracing::trace!(
-                        "event emission: no active subscribers ({:?})",
-                        e.0
-                    );
+                match self.event_tx.send(event) {
+                    Ok(n) => tracing::info!(event_type = %cat, receivers = n, "pipeline: event EMITTED"),
+                    Err(e) => tracing::warn!(event_type = %cat, "pipeline: event emission FAILED — no subscribers: {:?}", e.0),
                 }
+            } else {
+                tracing::debug!(event_type = %cat, "pipeline: event DEDUPED");
             }
-            // Duplicate — silently suppressed. This is correct behavior,
-            // not an error. The same event was already delivered via a
-            // faster tier.
         }
         // Dedup lock released here.
 
@@ -124,3 +116,4 @@ impl EventPipeline {
         self.dedup.write().evict_expired();
     }
 }
+

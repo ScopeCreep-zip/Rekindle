@@ -139,6 +139,34 @@ impl MessageList {
         }
     }
 
+    /// Remove all failed messages from the list. Called when user presses
+    /// 'x' on a failed message or from a "clear failed" action.
+    pub fn clear_failed_messages(&mut self) {
+        let before = self.messages.len();
+        self.messages.retain(|r| r.msg.delivery_status != rekindle_types::display::DeliveryStatus::Failed);
+        if self.messages.len() < before {
+            if let Some(sel) = self.list_state.selected() {
+                if sel >= self.len() && !self.is_empty() {
+                    self.list_state.select(Some(self.len() - 1));
+                }
+            }
+            self.generation += 1;
+        }
+    }
+
+    /// Get the body of a failed message for retry. Returns None if the
+    /// selected message is not failed.
+    pub fn retry_failed_body(&self) -> Option<String> {
+        let idx = self.list_state.selected()?;
+        let r = self.messages.get(idx)?;
+        if r.msg.delivery_status == rekindle_types::display::DeliveryStatus::Failed {
+            Some(r.msg.body.clone())
+        } else {
+            None
+        }
+    }
+
+
     pub fn scroll_up(&mut self) {
         self.auto_scroll = false;
         let i = self.list_state.selected().unwrap_or(self.len().saturating_sub(1));

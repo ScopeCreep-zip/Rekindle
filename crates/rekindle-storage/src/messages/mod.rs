@@ -7,6 +7,7 @@ pub mod channel;
 /// A single DM message record returned by queries.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DmRecord {
+    pub sender_key: String,
     pub sender_name: String,
     pub body: String,
     pub timestamp: u64,
@@ -24,4 +25,6 @@ pub struct ChannelRecord {
     pub sequence: u64,
     pub message_id: String,
     pub mek_generation: u64,
+    pub reply_to_sequence: Option<u64>,
+    pub thread_id: Option<String>,
 }

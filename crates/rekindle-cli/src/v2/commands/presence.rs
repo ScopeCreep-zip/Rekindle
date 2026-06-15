@@ -1,6 +1,6 @@
 //! Presence commands: set status, game presence, clear game, watch (streaming).
 
-use crate::v2::prelude::DaemonRequest;
+use crate::v2::prelude::{ChatRequest, DaemonRequest};
 
 use crate::v2::cli::PresenceCmd;
 use crate::v2::output::format;
@@ -10,23 +10,23 @@ use crate::v2::prelude::DaemonClient;
 pub async fn dispatch(cmd: &PresenceCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         PresenceCmd::Set { status, message, .. } => {
-            let value = client.request_ok(DaemonRequest::PresenceSet {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::PresenceSet {
                 status: status.clone(),
                 message: message.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         PresenceCmd::Game { game_name, game_id, elapsed_seconds, server_address } => {
-            let value = client.request_ok(DaemonRequest::GamePresenceSet {
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::GamePresenceSet {
                 game_name: game_name.clone(),
                 game_id: *game_id,
                 elapsed_seconds: *elapsed_seconds,
                 server_address: server_address.clone(),
-            }).await?;
+            })).await?;
             format::print_structured(&value, mode)
         }
         PresenceCmd::GameClear => {
-            let value = client.request_ok(DaemonRequest::GamePresenceClear).await?;
+            let value = client.request_ok(DaemonRequest::Chat(ChatRequest::GamePresenceClear)).await?;
             format::print_structured(&value, mode)
         }
         PresenceCmd::Watch { .. } => {

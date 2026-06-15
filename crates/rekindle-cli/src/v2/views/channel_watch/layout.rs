@@ -46,6 +46,18 @@ impl View for ChannelWatchView {
             ]).areas(center_area);
             self.render_channel_pane(frame, channel_half);
             self.render_split_dm_pane(frame, dm_half);
+        } else if self.thread_panel.visible {
+            let [channel_part, thread_part] = Layout::horizontal([
+                Constraint::Percentage(55), Constraint::Percentage(45),
+            ]).areas(center_area);
+            self.render_channel_pane(frame, channel_part);
+            self.thread_panel.draw(frame, thread_part, false);
+        } else if self.pins_panel.visible {
+            let [channel_part, pins_part] = Layout::horizontal([
+                Constraint::Percentage(65), Constraint::Percentage(35),
+            ]).areas(center_area);
+            self.render_channel_pane(frame, channel_part);
+            self.pins_panel.draw(frame, pins_part);
         } else {
             self.render_channel_pane(frame, center_area);
         }
@@ -56,6 +68,9 @@ impl View for ChannelWatchView {
             self.click_rects.insert(FocusId::PeerList, h_areas[col]);
         }
 
+        // Emoji picker overlay (renders on top of everything when visible)
+        self.emoji_picker.draw(frame, area);
+
         Ok(())
     }
 
@@ -63,20 +78,21 @@ impl View for ChannelWatchView {
         Ok(super::input::handle_update(self, action))
     }
 
-    fn on_command_result(&mut self, result: crate::v2::tui::action::CommandResult) -> Result<()> {
+    fn on_command_result(&mut self, result: crate::v2::tui::action::CommandResult) -> Result<Option<crate::v2::tui::action::Action>> {
         super::events::handle_command_result(self, result);
-        Ok(())
+        Ok(None)
     }
 
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<crate::v2::tui::action::Action>> {
         super::events::handle_subscription_event(self, event);
-        Ok(())
+        Ok(None)
     }
 
-    fn tick(&mut self) -> Result<()> {
+    fn tick(&mut self) -> Result<Option<crate::v2::tui::action::Action>> {
         self.expire_typing_indicators();
         self.pending_mek_requests.clear();
-        Ok(())
+        self.transfer_rail.gc_completed();
+        Ok(None)
     }
 
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<crate::v2::tui::action::Action> {
@@ -103,9 +119,17 @@ impl crate::v2::views::ViewQuery for ChannelWatchView {
 impl ChannelWatchView {
     fn render_channel_pane(&mut self, frame: &mut Frame, area: Rect) {
         let typing_height = u16::from(self.typing_display().is_some());
-        let [msg_area, typing_area, input_area] = Layout::vertical([
-            Constraint::Fill(1), Constraint::Length(typing_height), Constraint::Length(3),
+        let transfer_height = if self.transfer_rail.visible() { self.transfer_rail.height() } else { 0 };
+        let [msg_area, transfer_area, typing_area, input_area] = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(transfer_height),
+            Constraint::Length(typing_height),
+            Constraint::Length(3),
         ]).areas(area);
+
+        if transfer_height > 0 {
+            self.transfer_rail.draw(frame, transfer_area);
+        }
 
         self.message_list.set_focused(self.focus.is_focused(FocusId::MessageList));
         self.message_list.draw(frame, msg_area);

@@ -15,6 +15,7 @@ impl VaultStore {
     pub fn store_received_dm(
         &self,
         peer_key: &str,
+        sender_key: &str,
         sender_name: &str,
         body: &str,
         timestamp: u64,
@@ -25,9 +26,9 @@ impl VaultStore {
         let conn = self.conn();
         conn.execute(
             "INSERT OR IGNORE INTO dm_received
-               (peer_key, sender_name, body, timestamp, sequence, message_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![peer_key, sender_name, ct, i64::try_from(timestamp).unwrap_or(i64::MAX), i64::try_from(sequence).unwrap_or(i64::MAX), message_id],
+               (peer_key, sender_key, sender_name, body, timestamp, sequence, message_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![peer_key, sender_key, sender_name, ct, i64::try_from(timestamp).unwrap_or(i64::MAX), i64::try_from(sequence).unwrap_or(i64::MAX), message_id],
         )?;
         Ok(())
     }
@@ -36,22 +37,24 @@ impl VaultStore {
     pub fn query_received_dm(&self, peer_key: &str, limit: u32) -> StorageResult<Vec<DmRecord>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT sender_name, body, timestamp, message_id FROM dm_received
+            "SELECT sender_key, sender_name, body, timestamp, message_id FROM dm_received
              WHERE peer_key = ?1 ORDER BY timestamp DESC LIMIT ?2",
         )?;
         let mut rows: Vec<DmRecord> = stmt
             .query_map(params![peer_key, i64::from(limit)], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Vec<u8>>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })?
             .filter_map(Result::ok)
-            .filter_map(|(name, ct, ts, mid)| {
+            .filter_map(|(sk, name, ct, ts, mid)| {
                 let body = String::from_utf8(self.decrypt_entry(&ct).ok()?).ok()?;
                 Some(DmRecord {
+                    sender_key: sk.unwrap_or_default(),
                     sender_name: name,
                     body,
                     timestamp: u64::try_from(ts).unwrap_or(0),

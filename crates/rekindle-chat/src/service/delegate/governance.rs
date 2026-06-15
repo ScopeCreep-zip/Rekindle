@@ -99,8 +99,22 @@ impl ChatService {
 
     pub async fn list_channels(
         &self, community: &str,
-    ) -> Result<Vec<rekindle_types::dht_types::ChannelEntry>, ChatError> {
-        self.community.read_channels(community).await
+    ) -> Result<Vec<ChannelWithUnread>, ChatError> {
+        let gov_key = {
+            let meta = self.session_meta.read();
+            meta.resolve_community(community)
+                .map(|(_, m)| m.governance_key.clone())
+                .unwrap_or_else(|| community.to_string())
+        };
+        let channels = self.community.read_channels(&gov_key).await?;
+        let unread_state = self.pipeline.state().read();
+        Ok(channels.into_iter().map(|ch| {
+            let unread = unread_state.unread.channels
+                .get(&(gov_key.clone(), ch.id.clone()))
+                .copied()
+                .unwrap_or(0);
+            ChannelWithUnread { channel: ch, unread_count: unread }
+        }).collect())
     }
 
     // ── Invites ────────────────────────────────────────────────────
@@ -123,4 +137,12 @@ impl ChatService {
     ) -> Result<(), ChatError> {
         self.community.revoke_invite(community, invite_code).await
     }
+}
+
+/// Channel entry enriched with unread count from subscription state.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ChannelWithUnread {
+    #[serde(flatten)]
+    pub channel: rekindle_types::dht_types::ChannelEntry,
+    pub unread_count: u32,
 }

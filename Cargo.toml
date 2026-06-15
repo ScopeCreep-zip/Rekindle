@@ -34,6 +34,7 @@ members = [
     "crates/rekindle-transport-buff",
     "crates/rekindle-keys",
     "crates/rekindle-client",
+    "crates/rekindle-identity",
 ]
 
 [workspace.dependencies]

@@ -147,7 +147,7 @@ impl DashboardView {
             Line::from(vec![
                 Span::raw("  "),
                 Span::styled(&c.name, Style::new().bold()),
-                Span::styled(format!("  {} members  {} channels", c.member_count, c.channel_count), theme.style("dim")),
+                Span::styled(if c.is_operator { "  [operator]" } else { "" }, theme.style("dim")),
             ])
         }).collect();
 
@@ -262,14 +262,14 @@ impl View for DashboardView {
         Ok(super::input::handle_update(self, &action))
     }
 
-    fn on_command_result(&mut self, result: crate::v2::tui::action::CommandResult) -> Result<()> {
+    fn on_command_result(&mut self, result: crate::v2::tui::action::CommandResult) -> Result<Option<crate::v2::tui::action::Action>> {
         super::events::handle_command_result(self, result);
-        Ok(())
+        Ok(None)
     }
 
-    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<Option<crate::v2::tui::action::Action>> {
         super::events::handle_subscription_event(self, event);
-        Ok(())
+        Ok(None)
     }
 
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<crate::v2::tui::action::Action> {

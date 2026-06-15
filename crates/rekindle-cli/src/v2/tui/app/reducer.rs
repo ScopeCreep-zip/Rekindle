@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::v2::prelude::{DaemonRequest, ReadContext};
+use crate::v2::prelude::{ChatRequest, DaemonRequest, ReadContext};
 
 use super::super::action::{Action, CommandResult, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
@@ -25,7 +25,9 @@ impl App {
             Action::Tick => {
                 self.notifications.tick();
                 self.loading_spinner.tick();
-                let _ = self.nav.current_view_mut().tick();
+                if let Ok(Some(a)) = self.nav.current_view_mut().tick() {
+                    let _ = self.action_tx.send(a);
+                }
                 if let Some(deadline) = self.clipboard_clear_at {
                     if std::time::Instant::now() >= deadline {
                         if let Some(ref mut cb) = self.clipboard { let _ = cb.set_text(""); }
@@ -41,14 +43,18 @@ impl App {
             }
             Action::Back => { self.nav.back(self.theme.use_unicode()); }
             Action::Resize(w, h) => {
-                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::Resize(w, h)) {
+                    let _ = self.action_tx.send(a);
+                }
                 tui.draw(|frame| self.draw(frame))?;
             }
             Action::FocusNext => self.nav.current_view_mut().focus_ring().next(),
             Action::FocusPrev => self.nav.current_view_mut().focus_ring().prev(),
             action @ (Action::EnterInputMode | Action::ReplyToSelected | Action::EditSelected) => {
                 self.nav.enter_input_mode();
-                let _ = self.nav.current_view_mut().update(action);
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(action) {
+                    let _ = self.action_tx.send(a);
+                }
             }
             Action::ExitInputMode => {
                 self.nav.exit_input_mode();
@@ -63,7 +69,13 @@ impl App {
             }
             Action::ToggleHelp => self.nav.toggle_help(),
             Action::Refresh => {
-                let _ = self.nav.current_view_mut().update(Action::Refresh);
+                // If the current view is a channel watch with pins panel visible, load pins
+                if let ViewKind::ChannelWatch { ref community, .. } = *self.nav.current_view_kind() {
+                    self.load_pins(community);
+                }
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::Refresh) {
+                    let _ = self.action_tx.send(a);
+                }
                 // Trigger fff file tree rescan (picks up new/deleted files since last scan)
                 if let Some(ref search) = self.search {
                     if let Err(e) = search.rescan() {
@@ -73,7 +85,9 @@ impl App {
             }
             Action::ToggleSidebar => {
                 self.nav.toggle_sidebar();
-                let _ = self.nav.current_view_mut().update(Action::ToggleSidebar);
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::ToggleSidebar) {
+                    let _ = self.action_tx.send(a);
+                }
             }
             Action::OpenSearch(mode) => {
                 let items = self.build_search_items(mode);
@@ -112,9 +126,9 @@ impl App {
                 let ch = channel.clone();
                 tokio::spawn(async move {
                     let _ = client.subscribe_scoped(&gov).await;
-                    let _ = client.request_ok(DaemonRequest::MarkRead {
+                    let _ = client.request_ok(DaemonRequest::Chat(ChatRequest::MarkRead {
                         context: ReadContext::Channel { community: gov, channel: ch },
-                    }).await;
+                    })).await;
                 });
             }
             Action::ShowDmInbox => {
@@ -127,9 +141,9 @@ impl App {
                 let client = Arc::clone(&self.client);
                 let pk = peer_key;
                 tokio::spawn(async move {
-                    let _ = client.request_ok(DaemonRequest::MarkRead {
+                    let _ = client.request_ok(DaemonRequest::Chat(ChatRequest::MarkRead {
                         context: ReadContext::Dm { peer: pk },
-                    }).await;
+                    })).await;
                 });
             }
             Action::ShowFriendList => {
@@ -147,13 +161,48 @@ impl App {
                 self.nav.navigate(ViewKind::CommunityInfo { community: community.clone() }, self.theme.use_unicode());
                 self.load_community_info(&community);
             }
+            Action::OpenThread { ref thread_id, ref thread_name } => {
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::OpenThread {
+                    thread_id: thread_id.clone(), thread_name: thread_name.clone(),
+                }) {
+                    let _ = self.action_tx.send(a);
+                }
+                self.load_thread_messages(thread_id);
+            }
+            Action::CloseThread => {
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::CloseThread) {
+                    let _ = self.action_tx.send(a);
+                }
+            }
+            Action::ShowModeration { community } => {
+                self.nav.navigate(ViewKind::Moderation { community: community.clone() }, self.theme.use_unicode());
+                self.load_moderation_data(&community);
+            }
+            Action::ShowInvites { community } => {
+                self.nav.navigate(ViewKind::Invite { community: community.clone() }, self.theme.use_unicode());
+                self.load_invites(&community);
+            }
+            Action::ShowEvents { community } => {
+                self.nav.navigate(ViewKind::Events { community: community.clone() }, self.theme.use_unicode());
+                self.load_events(&community);
+            }
+            Action::ShowOnboarding { community } => {
+                self.nav.navigate(ViewKind::Onboarding { community: community.clone() }, self.theme.use_unicode());
+                self.load_onboarding(&community);
+            }
 
             // ── Split pane DM ────────────────────────────────
             Action::OpenSplitDm { peer_key } => {
-                let _ = self.nav.current_view_mut().update(Action::OpenSplitDm { peer_key: peer_key.clone() });
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::OpenSplitDm { peer_key: peer_key.clone() }) {
+                    let _ = self.action_tx.send(a);
+                }
                 self.load_dm_thread(&peer_key);
             }
-            Action::CloseSplitDm => { let _ = self.nav.current_view_mut().update(Action::CloseSplitDm); }
+            Action::CloseSplitDm => {
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::CloseSplitDm) {
+                    let _ = self.action_tx.send(a);
+                }
+            }
 
             // ── Overlays ─────────────────────────────────────
             Action::OpenOverlay(kind) => self.nav.open_overlay(kind),
@@ -182,8 +231,16 @@ impl App {
                     self.confirm.show("Leave voice channel?", "You will be disconnected.");
                 }
             }
-            Action::ToggleMute => { let _ = self.nav.current_view_mut().update(Action::ToggleMute); }
-            Action::ToggleDeafen => { let _ = self.nav.current_view_mut().update(Action::ToggleDeafen); }
+            Action::ToggleMute => {
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::ToggleMute) {
+                    let _ = self.action_tx.send(a);
+                }
+            }
+            Action::ToggleDeafen => {
+                if let Ok(Some(a)) = self.nav.current_view_mut().update(Action::ToggleDeafen) {
+                    let _ = self.action_tx.send(a);
+                }
+            }
 
             // ── Friend operations ────────────────────────────
             Action::AcceptFriendRequest(id) => self.spawn_accept_friend(id),
@@ -207,6 +264,85 @@ impl App {
                     let name = self.community_name(community).to_string();
                     self.pending_confirm_action = Some(Action::LeaveCommunity { community: community.clone() });
                     self.confirm.show(format!("Leave '{name}'?"), "You will lose access to all channels.");
+                }
+            }
+
+            // ── Reaction + Pin operations ────────────────
+            Action::AddReaction { ref community, ref channel, ref message_id, ref emoji } => {
+                self.spawn_add_reaction(community.clone(), channel.clone(), message_id.clone(), emoji.clone());
+            }
+            Action::RemoveReaction { ref community, ref channel, ref message_id, ref emoji } => {
+                self.spawn_remove_reaction(community.clone(), channel.clone(), message_id.clone(), emoji.clone());
+            }
+            Action::UnpinMessage { ref community, ref channel, ref message_id } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_unpin_message(community.clone(), channel.clone(), message_id.clone());
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show("Unpin this message?", "The message will no longer appear in the pins panel.");
+                }
+            }
+
+            // ── Moderation operations ────────────────────
+            Action::KickMember { ref community, ref pseudonym, ref display_name } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_kick_member(community.clone(), pseudonym.clone());
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show(format!("Kick {display_name}?"), "They will be removed from the community but can rejoin.");
+                }
+            }
+            Action::BanMember { ref community, ref pseudonym, ref display_name } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_ban_member(community.clone(), pseudonym.clone());
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show(format!("Ban {display_name}?"), "They will be permanently banned and all channel keys rekeyed.");
+                }
+            }
+            Action::UnbanMember { ref community, ref pseudonym } => {
+                self.spawn_unban_member(community.clone(), pseudonym.clone());
+            }
+            Action::TimeoutMember { ref community, ref pseudonym, ref display_name, duration_secs } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_timeout_member(community.clone(), pseudonym.clone(), duration_secs);
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show(format!("Timeout {display_name} for {duration_secs}s?"), "They will be unable to send messages for the duration.");
+                }
+            }
+            Action::ApproveMember { ref community, ref pseudonym, ref display_name } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_approve_member(community.clone(), pseudonym.clone());
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show(format!("Approve {display_name}?"), "They will gain full community access and receive channel MEKs.");
+                }
+            }
+            Action::RejectMember { ref community, ref pseudonym, ref display_name } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_reject_member(community.clone(), pseudonym.clone());
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show(format!("Reject {display_name}?"), "Their join request will be removed.");
+                }
+            }
+            Action::CreateInvite { ref community, max_uses, ref expires_seconds } => {
+                self.spawn_create_invite(community.clone(), max_uses, *expires_seconds);
+            }
+            Action::RevokeInvite { ref community, ref invite_code } => {
+                if self.pending_confirm_action.is_some() {
+                    self.spawn_revoke_invite(community.clone(), invite_code.clone());
+                    self.pending_confirm_action = None;
+                } else {
+                    self.pending_confirm_action = Some(action.clone());
+                    self.confirm.show(format!("Revoke invite {}?", helpers::abbreviate_key(invite_code)), "The invite code will no longer work.");
                 }
             }
 
@@ -243,6 +379,9 @@ impl App {
             }
             Action::SendDmTyping { peer_key } => {
                 self.spawn_dm_typing(peer_key);
+            }
+            Action::LoadDmThread { peer_key } => {
+                self.load_dm_thread(&peer_key);
             }
 
             // ── Patch operations ──────────────────────────────
@@ -367,11 +506,11 @@ impl App {
                 let community_clone = community.clone();
                 let channel_clone = channel.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = client.request_ok(DaemonRequest::MekRequest {
+                    if let Err(e) = client.request_ok(DaemonRequest::Chat(ChatRequest::MekRequest {
                         community: community_clone,
                         channel: channel_clone,
                         generation: 0,
-                    }).await {
+                    })).await {
                         let _ = tx.send(Action::CommandFailed {
                             context: "MEK request".into(),
                             error: e.to_string(),
@@ -448,7 +587,9 @@ impl App {
                     }
                     _ => {}
                 }
-                let _ = self.nav.current_view_mut().on_command_result(*result);
+                if let Ok(Some(chained)) = self.nav.current_view_mut().on_command_result(*result) {
+                    let _ = self.action_tx.send(chained);
+                }
             }
             Action::CommandFailed { context, error } => {
                 self.notifications.push(format!("{context}: {error}"), ToastLevel::Error);
@@ -456,12 +597,82 @@ impl App {
 
             // ── Subscription events ──────────────────────────
             Action::SubscriptionEvent(ref event) => {
-                if let rekindle_types::subscription_events::SubscriptionEvent::Network(
-                    rekindle_types::subscription_events::NetworkEvent::AttachmentChanged { is_attached, .. }
-                ) = event.as_ref() {
-                    self.node_was_connected = *is_attached;
+                use rekindle_types::subscription_events::*;
+                match event.as_ref() {
+                    SubscriptionEvent::Network(NetworkEvent::AttachmentChanged { is_attached, .. }) => {
+                        self.node_was_connected = *is_attached;
+                    }
+                    SubscriptionEvent::System(SystemEvent::IdentityCreated { public_key }) => {
+                        self.notifications.push(
+                            format!("Identity created: {}…", &public_key[..12.min(public_key.len())]),
+                            ToastLevel::Success,
+                        );
+                    }
+                    SubscriptionEvent::System(SystemEvent::IdentityRotated { new_public_key }) => {
+                        self.notifications.push(
+                            format!("Identity rotated: {}…", &new_public_key[..12.min(new_public_key.len())]),
+                            ToastLevel::Info,
+                        );
+                    }
+                    SubscriptionEvent::Membership(MembershipEvent::Created { community, .. }) => {
+                        self.notifications.push(format!("Community created: {community}"), ToastLevel::Success);
+                    }
+                    SubscriptionEvent::Membership(MembershipEvent::CommunityJoined { community, .. }) => {
+                        self.notifications.push(format!("Joined community: {community}"), ToastLevel::Success);
+                    }
+                    SubscriptionEvent::Membership(MembershipEvent::CommunityLeft { community, .. }) => {
+                        self.notifications.push(format!("Left community: {community}"), ToastLevel::Info);
+                    }
+                    SubscriptionEvent::Friend(FriendEvent::RequestSent { target_profile_key, .. }) => {
+                        self.notifications.push(
+                            format!("Friend request sent to {}…", &target_profile_key[..12.min(target_profile_key.len())]),
+                            ToastLevel::Success,
+                        );
+                    }
+                    SubscriptionEvent::Friend(FriendEvent::Accepted { peer_key, .. }) => {
+                        self.notifications.push(
+                            format!("Friend accepted: {}…", &peer_key[..12.min(peer_key.len())]),
+                            ToastLevel::Success,
+                        );
+                    }
+                    SubscriptionEvent::Friend(FriendEvent::RequestReceived { display_name, .. }) => {
+                        self.notifications.push(format!("Friend request from {display_name}"), ToastLevel::Info);
+                    }
+                    // All other events: no reducer-level state mutation needed.
+                    // The primary event handler (events.rs) already produced toasts
+                    // and forwarded to views. The reducer only handles state mutations
+                    // that affect App fields (node_was_connected, cached_identity, etc).
+                    SubscriptionEvent::Friend(
+                        FriendEvent::Rejected { .. }
+                        | FriendEvent::Removed { .. }
+                        | FriendEvent::RequestAcknowledged { .. }
+                        | FriendEvent::RemoveAcknowledged { .. }
+                        | FriendEvent::ProfileKeyRotated { .. }
+                    )
+                    | SubscriptionEvent::Membership(_)
+                    | SubscriptionEvent::Crypto(_)
+                    | SubscriptionEvent::Voice(_)
+                    | SubscriptionEvent::Governance(_)
+                    | SubscriptionEvent::Social(_)
+                    | SubscriptionEvent::Network(
+                        NetworkEvent::LocalRoutesDied { .. }
+                        | NetworkEvent::RemoteRoutesDied { .. }
+                        | NetworkEvent::WatchRenewed { .. }
+                        | NetworkEvent::WatchReestablished { .. }
+                        | NetworkEvent::WatchFailed { .. }
+                        | NetworkEvent::ValueChanged { .. }
+                    )
+                    | SubscriptionEvent::System(_)
+                    | SubscriptionEvent::ChannelMessage(_)
+                    | SubscriptionEvent::Typing(_)
+                    | SubscriptionEvent::Presence(_)
+                    | SubscriptionEvent::Dm(_)
+                    | SubscriptionEvent::UnreadChanged { .. }
+                    | SubscriptionEvent::BulkTransferProgress { .. } => {}
                 }
-                self.nav.forward_event_to_all_views(event);
+                for a in self.nav.forward_event_to_all_views(event) {
+                    let _ = self.action_tx.send(a);
+                }
             }
 
             // ── Fallthrough ──────────────────────────────────

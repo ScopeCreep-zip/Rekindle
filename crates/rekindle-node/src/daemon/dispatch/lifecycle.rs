@@ -174,9 +174,9 @@ pub(crate) async fn handle_unlock(
         }
     };
 
-    // Step 8: Start transport (Veilid attach)
-    let transport_node = match TransportNode::start(transport_config).await {
-        Ok(n) => Arc::new(n),
+    // Step 8: Start transport (Veilid attach) — returns (node, inbound_rx)
+    let (transport_node, inbound_rx) = match TransportNode::start(transport_config).await {
+        Ok(pair) => (Arc::new(pair.0), pair.1),
         Err(e) => {
             ctx.lifecycle.transition(DaemonState::Locked);
             return DaemonResponse::error_with_remediation(
@@ -208,8 +208,8 @@ pub(crate) async fn handle_unlock(
         }
     };
 
-    // Step 11: Install TransportCallback + resume
-    transport_node.set_callback(chat.callback());
+    // Step 11: Start inbound event reader (replaces set_callback)
+    chat.start_inbound_loop(inbound_rx);
 
     if let Err(e) = chat.resume().await {
         if is_fresh {
@@ -268,14 +268,21 @@ pub(crate) async fn handle_unlock(
 }
 
 /// Spawn all periodic background tasks.
+///
+/// Tasks use `continue` (not `break`) when `is_operational()` is false.
+/// On fresh nodes, the identity doesn't exist yet at spawn time — `break`
+/// would kill the task permanently. `continue` keeps the loop alive so
+/// the task activates once `rekindle init` creates the identity.
 fn spawn_background_tasks(chat: &Arc<ChatService>) {
+    tracing::info!("spawning background tasks");
+
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if !c.is_operational() { break; }
+            if !c.is_operational() { continue; }
             c.trigger_inbox_scan();
         }
     });
@@ -286,7 +293,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if !c.is_operational() { break; }
+            if !c.is_operational() { continue; }
             let _ = c.heartbeat().await;
         }
     });
@@ -297,7 +304,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if !c.is_operational() { break; }
+            if !c.is_operational() { continue; }
             c.collect_expired_typers();
         }
     });
@@ -308,7 +315,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if !c.is_operational() { break; }
+            if !c.is_operational() { continue; }
             c.evict_expired_dedup();
         }
     });
@@ -319,7 +326,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if !c.is_operational() { break; }
+            if !c.is_operational() { continue; }
             let _ = c.sweep_expired_skipped_keys();
         }
     });
@@ -330,8 +337,102 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if !c.is_operational() { break; }
+            if !c.is_operational() { continue; }
             let _ = c.flush_session_meta_if_dirty();
+        }
+    });
+
+    // Join inbox scan — periodic fallback for unreliable DHT watch notifications.
+    tracing::info!("spawning join inbox scan background task (30s interval)");
+    let c = Arc::clone(chat);
+    tokio::spawn(async move {
+        tracing::info!("join inbox scan task started");
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if !c.is_operational() { continue; }
+            let processed = c.scan_join_inboxes().await;
+            if processed > 0 {
+                tracing::info!(processed, "periodic inbox scan: new members approved");
+            }
+        }
+    });
+
+    // Mesh populate — re-reads member registries from DHT, discovers routes,
+    // populates gossip meshes. First tick fires immediately (not after 90s)
+    // so messages sent in the first 90s have mesh peers to deliver to.
+    let c = Arc::clone(chat);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(90));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Do NOT skip the first tick — first populate must happen immediately.
+        loop {
+            interval.tick().await;
+            if !c.is_operational() { continue; }
+            let mesh = c.refresh_community_routes().await;
+            if mesh > 0 {
+                tracing::debug!(mesh_peers = mesh, "mesh populate cycle complete");
+            }
+        }
+    });
+
+    // Slow-path channel message catch-up — reads DhtLog sentinel (subkey 0)
+    // per member per channel to discover messages missed by gossip.
+    // Interval scales with community count: max(60s, communities × 6s).
+    // At 10 communities: 60s. At 100 communities: 600s (10 min).
+    // Sentinel read is O(1) per member per channel — only scans message
+    // subkeys when new messages exist.
+    let c = Arc::clone(chat);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if !c.is_operational() { continue; }
+
+            // Adaptive interval based on community count
+            let community_count = c.community_count();
+            let next_secs = 60u64.max(community_count as u64 * 6);
+            interval.reset_after(Duration::from_secs(next_secs));
+
+            let caught = c.catch_up_channel_messages().await;
+            if caught > 0 {
+                tracing::info!(caught, interval_secs = next_secs, "slow-path catch-up: new messages discovered");
+            }
+        }
+    });
+
+    // DM SMPL catch-up — re-establish failed watches and read undelivered
+    // DM messages from SMPL records. 30s interval matches the inbox scan
+    // cadence. First tick fires immediately so messages sent during the
+    // watch-failure window are caught on the first cycle.
+    let c = Arc::clone(chat);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if !c.is_operational() { continue; }
+            let caught = c.catch_up_dm_messages().await;
+            if caught > 0 {
+                tracing::info!(caught, "dm catch-up: messages delivered via poll fallback");
+            }
+        }
+    });
+
+    // MEK auto-rotation
+    let c = Arc::clone(chat);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if !c.is_operational() { continue; }
+            let rotated = c.check_mek_rotation().await;
+            if rotated > 0 {
+                tracing::info!(rotated, "MEK auto-rotation cycle complete");
+            }
         }
     });
 }
@@ -356,7 +457,7 @@ pub(crate) fn handle_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> Dae
     let snapshot = StatusSnapshot {
         state: state.as_str().to_string(),
         has_identity: chat.as_ref().is_some_and(|c| c.session_identity().is_some()),
-        identity_public_key: chat.as_ref().and_then(|c| c.session_identity().map(|id| id.public_key_hex.clone())),
+        identity_public_key: chat.as_ref().and_then(|c| c.session_identity().map(|id| id.public_key.to_hex())),
         identity_display_name: chat.as_ref().and_then(|c| c.session_identity().map(|id| id.display_name.clone())),
         attachment: chat.as_ref().map_or("unknown".into(), |c| c.io().transport().attachment_state().to_string()),
         is_attached: chat.as_ref().is_some_and(|c| c.io().transport().is_attached()),
@@ -441,21 +542,16 @@ fn build_checks(
 
         checks.push(Check::pass("node.uptime", "node", fmt_uptime(chat.io().transport().uptime_secs())));
 
-        checks.push(if chat.io().is_signing_key_loaded() {
-            Check::pass("crypto.signing_key", "crypto", "loaded")
+        checks.push(if chat.io().is_identity_loaded() {
+            Check::pass("crypto.identity", "crypto", "loaded")
         } else {
-            Check::warn("crypto.signing_key", "crypto", "not loaded")
-                .with_description("signing key not in memory — daemon is locked")
+            Check::warn("crypto.identity", "crypto", "not loaded")
+                .with_description("identity not in memory — daemon is locked")
         });
 
         if let Some(identity) = chat.session_identity() {
             checks.push(Check::pass("identity.initialized", "identity", "yes"));
-            let pk = &identity.public_key_hex;
-            let pk_short = if pk.len() > 16 {
-                format!("{}...{}", &pk[..8], &pk[pk.len() - 4..])
-            } else {
-                pk.clone()
-            };
+            let pk_short = identity.public_key.display_short();
             checks.push(Check::pass("identity.public_key", "identity", pk_short));
             checks.push(Check::pass("identity.display_name", "identity", &identity.display_name));
         } else {

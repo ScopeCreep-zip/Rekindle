@@ -66,6 +66,9 @@ pub mod derivation_tags {
 
     /// Community member slot seed.
     pub const SLOT_SEED: &str = "rekindle identity slot-seed v1";
+
+    /// SMPL slot keypair from shared slot_seed + slot index.
+    pub const SLOT_KEYPAIR: &str = "rekindle identity slot-keypair v1";
 }
 
 #[cfg(test)]
@@ -92,6 +95,7 @@ mod tests {
             LOCATOR_SIGN,
             DISPLAY_NAME_SIGN,
             SLOT_SEED,
+            SLOT_KEYPAIR,
         ];
         let mut seen = std::collections::HashSet::new();
         for tag in &tags {
@@ -120,6 +124,7 @@ mod tests {
             LOCATOR_SIGN,
             DISPLAY_NAME_SIGN,
             SLOT_SEED,
+            SLOT_KEYPAIR,
         ];
         for tag in &tags {
             assert!(
@@ -144,7 +149,7 @@ mod tests {
             DEVICE_SIGN, ROTATION_SIGN, REVOCATION_SIGN, DEATH_SIGN,
             LINKAGE_ROOT_SIGN, LINKAGE_PSEUDONYM_SIGN,
             GRANT_SIGN, PREKEY_BINDING_SIGN, LOCATOR_SIGN,
-            DISPLAY_NAME_SIGN, SLOT_SEED,
+            DISPLAY_NAME_SIGN, SLOT_SEED, SLOT_KEYPAIR,
         ];
         for tag in &tags {
             assert!(!tag.is_empty(), "empty tag");

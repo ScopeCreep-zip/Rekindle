@@ -1,7 +1,7 @@
 //! Send a friend request — create DhtLog, sign entry, write to inbox,
 //! verify propagation, send direct notification.
 
-use rekindle_ratchet::crypto::sign;
+use rekindle_identity::signing::{DOMAIN_OT, DOMAIN_LR};
 use rekindle_storage::keys::labels;
 use rekindle_types::dht_types::{
     FriendRequestEntry, FriendRequestStatus, PROFILE_SUBKEY_FRIEND_INBOX_KEY,
@@ -39,15 +39,26 @@ impl FriendshipService {
     ) -> Result<FriendRequestSent, ChatError> {
         let identity = self.require_identity()?;
 
+        // Idempotent: if already sent a pending request to this target, return existing.
+        {
+            let meta = self.session_meta.read();
+            if let Some(dm_log_key) = meta.pending_outbound_logs.get(target_profile_key) {
+                return Ok(FriendRequestSent {
+                    dm_log_key: dm_log_key.clone(),
+                    target: target_profile_key.to_string(),
+                });
+            }
+        }
+
         // Step 1: Read target's friend inbox key + keypair from their profile
-        self.io.open_record(target_profile_key, None).await?;
+        let target_profile = self.io.open_record(target_profile_key, None).await?;
 
         let inbox_key_data = self.io
-            .read_record(target_profile_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY, true)
+            .read_record(&target_profile, PROFILE_SUBKEY_FRIEND_INBOX_KEY, true)
             .await?
             .ok_or(ChatError::InboxNotAvailable)?;
         let inbox_keypair_data = self.io
-            .read_record(target_profile_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR, true)
+            .read_record(&target_profile, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR, true)
             .await?
             .ok_or(ChatError::InboxNotAvailable)?;
 
@@ -60,14 +71,16 @@ impl FriendshipService {
         let inbox_kp_bytes = hex::decode(&inbox_keypair_hex)
             .map_err(|e| ChatError::Internal(format!("inbox keypair hex: {e}")))?;
 
-        // Step 2: Generate PQXDH PreKeyBundle
-        let signing_seed = self.io.require_signing_key()?;
-        let kp = sign::keypair_from_seed(&signing_seed)?;
-        let ed_pub = sign::public_key_bytes(&kp);
+        // Discover and cache the target's route blob for direct messaging.
+        // This populates the peer registry so send_peer_notification works.
+        self.io.discover_peer_route(target_profile_key, target_profile_key, None).await?;
 
-        // X25519 identity DH key — derived deterministically from identity seed,
-        // NOT random. Same seed always produces the same X25519 keypair.
-        let x25519_seed = self.io.x25519_seed()?;
+        // Step 2: Generate PQXDH PreKeyBundle using identity crate
+        let kp = self.io.signing_keypair()?;
+        let ed_pub = kp.public_key_bytes();
+
+        // X25519 identity DH key — derived deterministically from identity seed
+        let x25519_seed = self.io.x25519_identity_seed()?;
         let x25519_key = rekindle_ratchet::crypto::dh::reusable_from_seed(&x25519_seed)?;
         let x25519_pub_raw = x25519_key.compute_public_key()
             .map_err(|_| ChatError::Internal("x25519 pubkey derive failed".into()))?;
@@ -76,17 +89,17 @@ impl FriendshipService {
 
         // Signed prekey (X25519)
         let (spk_seed, spk_pub) = rekindle_ratchet::crypto::dh::generate_ratchet_keypair()?;
-        let spk_sig = sign::sign_ec_prekey(&kp, &spk_pub);
+        let spk_sig = kp.sign_ec_prekey(&spk_pub);
         let spk_id = 1u64;
 
         // ML-KEM-768 one-time PQ prekey
         let pq_material = rekindle_ratchet::crypto::kem::keygen()?;
-        let pqpk_ot_sig = sign::sign_pq_prekey(&kp, sign::DOMAIN_OT, &pq_material.ek_bytes);
+        let pqpk_ot_sig = kp.sign_pq_prekey(DOMAIN_OT, &pq_material.ek_bytes);
         let pqpk_ot_id = 1u64;
 
         // ML-KEM-768 last-resort PQ prekey
         let pq_lr_material = rekindle_ratchet::crypto::kem::keygen()?;
-        let pqpk_lr_sig = sign::sign_pq_prekey(&kp, sign::DOMAIN_LR, &pq_lr_material.ek_bytes);
+        let pqpk_lr_sig = kp.sign_pq_prekey(DOMAIN_LR, &pq_lr_material.ek_bytes);
 
         let bundle = rekindle_ratchet::pqxdh::bundle::PreKeyBundle {
             ik_ed25519: ed_pub,
@@ -107,32 +120,31 @@ impl FriendshipService {
         let prekey_bytes = serde_json::to_vec(&bundle)
             .map_err(|e| ChatError::Serialization(format!("prekey bundle: {e}")))?;
 
-        // Step 2b: Persist prekey private material to vault for PQXDH
-        // completion across restarts. Without these, acceptance discovery
-        // cannot complete the responder side of the handshake.
-        let target_short = &target_profile_key[..12.min(target_profile_key.len())];
+        // Persist prekey private material to vault for PQXDH completion
+        // across restarts. Label keyed by profile DHT key (VLD0: stripped).
         self.vault.store_key(
-            &labels::target_signed_prekey(target_short),
+            &labels::target_signed_prekey(target_profile_key),
             spk_seed.as_ref(),
         )?;
         self.vault.store_key(
-            &labels::target_pq_prekey(target_short),
+            &labels::target_pq_prekey(target_profile_key),
             pq_material.dk_bytes.as_ref(),
         )?;
         self.vault.store_key(
-            &labels::target_pq_last_resort(target_short),
+            &labels::target_pq_last_resort(target_profile_key),
             pq_lr_material.dk_bytes.as_ref(),
         )?;
 
         // Step 3: Create outbound DhtLog (we write our DMs here, peer reads)
-        let (dm_log_key, dm_log_keypair) = self.io
+        let (dm_log_record, dm_log_keypair) = self.io
             .create_record(RecordSchema::SingleWriter { subkey_count: 1 })
             .await?;
+        let dm_log_key = dm_log_record.key().to_string();
         let dm_log_keypair_hex = hex::encode(&dm_log_keypair);
 
         // Step 4: Build + sign FriendRequestEntry
         let mut entry = FriendRequestEntry {
-            sender_public_key: identity.public_key_hex.clone(),
+            sender_public_key: identity.public_key,
             display_name: identity.display_name.clone(),
             message: message.to_string(),
             profile_dht_key: identity.profile_dht_key.clone(),
@@ -149,16 +161,16 @@ impl FriendshipService {
         };
 
         let content = entry.signature_content();
-        let sig = sign::sign_ec_prekey(&kp, &content);
+        let sig = kp.sign_ec_prekey(&content);
         entry.signature_hex = hex::encode(sig);
 
         // Step 5: Write to target's inbox with read-back verification
-        let subkey = blake3_hash_mod(&identity.public_key_hex, target_profile_key, 32);
+        let subkey = blake3_hash_mod(&identity.public_key.to_hex(), target_profile_key, 32);
 
-        self.io.open_record(&inbox_key, Some(&inbox_kp_bytes)).await?;
+        let inbox_record = self.io.open_record(&inbox_key, Some(&inbox_kp_bytes)).await?;
 
         let existing = self.io
-            .read_record(&inbox_key, subkey, true)
+            .read_record(&inbox_record, subkey, true)
             .await?
             .unwrap_or_default();
 
@@ -173,26 +185,24 @@ impl FriendshipService {
         let bytes = serde_json::to_vec(&entries)
             .map_err(|e| ChatError::Serialization(format!("inbox entry: {e}")))?;
 
-        // Write with Confirm::Verified — PlatformIO reads back and verifies
-        // the entry is present. If a concurrent writer overwrote our entry,
-        // PlatformIO returns a write conflict error.
         let receipt = self.io
-            .write_record(&inbox_key, subkey, &bytes, Some(&inbox_kp_bytes), Confirm::Verified)
+            .write_record(&inbox_record, subkey, &bytes, Some(&inbox_kp_bytes), Confirm::Propagated)
             .await?;
 
-        if receipt.verified {
+        let target_short = &target_profile_key[..12.min(target_profile_key.len())];
+        if receipt.remote_holders > 0 {
             tracing::info!(
                 target = target_short,
+                remote_holders = receipt.remote_holders,
                 elapsed_ms = receipt.elapsed.as_millis(),
-                "friend request write verified — propagated to network"
+                "friend request propagated — confirmed by remote nodes"
             );
         } else {
             tracing::warn!(
                 target = target_short,
                 elapsed_ms = receipt.elapsed.as_millis(),
-                "friend request write verification FAILED — target may experience \
-                 delay discovering this request. The request is NOT lost — it will \
-                 be retried on the next inbox scan cycle."
+                "friend request written but propagation unconfirmed — \
+                 target may experience delay discovering this request"
             );
         }
 

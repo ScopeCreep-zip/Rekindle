@@ -23,6 +23,7 @@ pub mod unlock;
 pub mod session_meta;
 pub mod platform;
 pub mod audit;
+pub mod dm;
 
 pub use error::{StorageError, StorageResult};
 pub use vault::VaultStore;

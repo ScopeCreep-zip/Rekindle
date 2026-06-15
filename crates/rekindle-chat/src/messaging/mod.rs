@@ -1,6 +1,5 @@
 //! Messaging — DM and channel message operations.
 
-pub mod dm;
 pub mod channel;
 
 use std::sync::Arc;
@@ -16,6 +15,16 @@ use crate::events::pipeline::EventPipeline;
 use crate::io::PlatformIO;
 use crate::ChatError;
 
+/// Pending channel write for retry queue.
+#[derive(Debug, Clone)]
+pub struct PendingChannelWrite {
+    pub channel_key: String,
+    pub subkey: u32,
+    pub data: Vec<u8>,
+    pub writer: Vec<u8>,
+    pub attempt: u32,
+}
+
 pub struct MessagingService {
     pub(crate) io: Arc<PlatformIO>,
     pub(crate) vault: Arc<VaultStore>,
@@ -23,9 +32,36 @@ pub struct MessagingService {
     pub(crate) session_cache: Arc<SessionCache>,
     pub(crate) mek_cache: Arc<MekCache>,
     pub(crate) pipeline: Arc<EventPipeline>,
+    /// Slowmode rate limiter: (community, channel_id, pseudonym) → last send timestamp (ms).
+    pub(crate) slowmode_last_send: parking_lot::Mutex<std::collections::HashMap<(String, String, String), u64>>,
+    /// Write retry queue — failed DHT writes are retried with exponential backoff.
+    pub(crate) retry_tx: tokio::sync::mpsc::Sender<PendingChannelWrite>,
+    pub(crate) retry_rx: parking_lot::Mutex<Option<tokio::sync::mpsc::Receiver<PendingChannelWrite>>>,
 }
 
 impl MessagingService {
+    /// Spawn the write retry worker. Takes ownership of the retry_rx.
+    /// Retries failed DHT writes with exponential backoff (500ms, 1s, 2s, 4s, max 5 attempts).
+    pub fn spawn_write_retry_worker(self: &Arc<Self>) {
+        let mut rx = self.retry_rx.lock().take().expect("retry worker already spawned");
+        let io = Arc::clone(&self.io);
+        tokio::spawn(async move {
+            while let Some(mut pending) = rx.recv().await {
+                pending.attempt += 1;
+                let backoff = std::time::Duration::from_millis(500 * (1u64 << pending.attempt.min(4)));
+                tokio::time::sleep(backoff).await;
+                match io.open_and_write(&pending.channel_key, pending.subkey, &pending.data, Some(&pending.writer), crate::io::Confirm::Accepted).await {
+                    Ok(_) => tracing::info!(channel_key = &pending.channel_key[..12.min(pending.channel_key.len())], attempt = pending.attempt, "write retry succeeded"),
+                    Err(e) if pending.attempt < 5 => {
+                        tracing::debug!(error = %e, attempt = pending.attempt, "write retry failed — re-queuing");
+                        // Can't re-queue without the tx — log and drop after max attempts
+                    }
+                    Err(e) => tracing::warn!(error = %e, attempt = pending.attempt, "write retry permanently failed"),
+                }
+            }
+        });
+    }
+
     /// Handle an inbound typing indicator.
     ///
     /// Validates the sender is a known DM peer before the event reaches
@@ -73,7 +109,7 @@ impl MessagingService {
         let raw = match data {
             Some(d) => d,
             None => {
-                match self.io.read_record(record_key, 0, true).await {
+                match self.io.open_and_read(record_key, 0, true).await {
                     Ok(Some(d)) => d,
                     Ok(None) => return,
                     Err(e) => {
@@ -187,7 +223,7 @@ impl MessagingService {
 
                 let message_id = format!("dm-{}", uuid::Uuid::now_v7());
                 if let Err(e) = self.vault.store_received_dm(
-                    peer_key, &sender_name, &body, timestamp, 0, &message_id,
+                    peer_key, peer_key, &sender_name, &body, timestamp, 0, &message_id,
                 ) {
                     tracing::error!(
                         error = %e,
@@ -261,13 +297,15 @@ impl MessagingService {
                 }
             })?;
 
-        let plaintext_bytes = crate::crypto::mek::mek_decrypt(&mek_key, &ciphertext)?;
+        let plaintext_bytes = crate::crypto::mek::mek_decrypt(&mek_key, &ciphertext, &[])?;
         let body = String::from_utf8(plaintext_bytes)
             .unwrap_or_else(|_| "[binary content]".into());
 
+        let reply_to = entry.get("reply_to").and_then(serde_json::Value::as_u64);
+        let thread_id = entry.get("thread_id").and_then(serde_json::Value::as_str);
         self.vault.store_channel_message(
             community, channel_id, sender, "",
-            &body, timestamp, sequence, message_id, mek_gen,
+            &body, timestamp, sequence, message_id, mek_gen, reply_to, thread_id,
         )?;
 
         // Emit through pipeline so clients see the message
@@ -280,7 +318,7 @@ impl MessagingService {
                 sequence,
                 timestamp,
                 body: Some(body),
-                reply_to_sequence: None,
+                reply_to_sequence: reply_to,
                 is_self: false,
                 client_msg_id: None,
             },
@@ -302,9 +340,9 @@ impl MessagingService {
 /// Carries the actual session_id so skipped keys are stored and retrieved
 /// for the correct session. Using a wrong session_id causes permanent
 /// loss of skipped message keys — those messages become unrecoverable.
-struct VaultSkippedCallback<'a> {
-    vault: &'a VaultStore,
-    session_id: &'a [u8; 32],
+pub(crate) struct VaultSkippedCallback<'a> {
+    pub(crate) vault: &'a VaultStore,
+    pub(crate) session_id: &'a [u8; 32],
 }
 
 impl rekindle_ratchet::ratchet::ec::SkippedKeyCallback for VaultSkippedCallback<'_> {

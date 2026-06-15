@@ -12,14 +12,23 @@ pub fn handle_update(view: &mut DmInboxView, action: &Action) -> Option<Action> 
         Action::ScrollDown(_) if view.focus.is_focused(FocusId::DmList) => {
             let max = view.threads.len().saturating_sub(1);
             let i = view.thread_list_state.selected().unwrap_or(0);
-            view.thread_list_state.select(Some((i + 1).min(max)));
+            let new_i = (i + 1).min(max);
+            view.thread_list_state.select(Some(new_i));
+            if new_i != i {
+                return maybe_load_selected_thread(view);
+            }
         }
         Action::ScrollUp(_) if view.focus.is_focused(FocusId::DmList) => {
             let i = view.thread_list_state.selected().unwrap_or(0);
-            view.thread_list_state.select(Some(i.saturating_sub(1)));
+            let new_i = i.saturating_sub(1);
+            view.thread_list_state.select(Some(new_i));
+            if new_i != i {
+                return maybe_load_selected_thread(view);
+            }
         }
         Action::Select if view.focus.is_focused(FocusId::DmList) => {
             view.focus.set(FocusId::MessageList);
+            return maybe_load_selected_thread(view);
         }
         Action::InputSubmit => {
             let text = view.input_box.content();
@@ -41,6 +50,22 @@ pub fn handle_update(view: &mut DmInboxView, action: &Action) -> Option<Action> 
         _ => {}
     }
     None
+}
+
+/// If the selected thread has no messages loaded, return LoadDmThread.
+/// If messages are already present (from prior load or real-time events),
+/// return None — no redundant load.
+fn maybe_load_selected_thread(view: &mut DmInboxView) -> Option<Action> {
+    let thread = view.thread_list_state.selected()
+        .and_then(|i| view.threads.get(i))?;
+    if thread.messages.is_empty()
+        && view.loading_peer.as_deref() != Some(&thread.peer_key)
+    {
+        view.loading_peer = Some(thread.peer_key.clone());
+        Some(Action::LoadDmThread { peer_key: thread.peer_key.clone() })
+    } else {
+        None
+    }
 }
 
 pub fn handle_focused_key(view: &mut DmInboxView, key: crossterm::event::KeyEvent) -> Option<Action> {

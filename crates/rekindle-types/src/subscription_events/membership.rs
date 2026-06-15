@@ -9,6 +9,25 @@ use serde::{Deserialize, Serialize};
 /// Membership lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MembershipEvent {
+    /// We created a community (dispatch-emitted for subscriber visibility).
+    /// Triggered by: dispatch after successful `create_community()`.
+    Created {
+        community: String,
+        governance_key: String,
+    },
+    /// We joined a community (dispatch-emitted for subscriber visibility).
+    /// Triggered by: dispatch after successful `join_community()`.
+    CommunityJoined {
+        community: String,
+        governance_key: String,
+        slot_index: u32,
+    },
+    /// We left a community (dispatch-emitted for subscriber visibility).
+    /// Triggered by: dispatch after successful `leave_community()`.
+    CommunityLeft {
+        community: String,
+        governance_key: String,
+    },
     /// A join request was submitted (operator sees this).
     /// Triggered by: gossip `ControlPayload::MemberJoinRequest`.
     JoinRequested {

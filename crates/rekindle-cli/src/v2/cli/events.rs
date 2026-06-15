@@ -143,4 +143,24 @@ pub enum SocialCmd {
         #[arg(long)]
         server_id: String,
     },
+    /// List pinned messages in a community.
+    Pins {
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+    /// List community events.
+    Events {
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+    /// List community threads.
+    Threads {
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+    /// List reactions on messages in a community.
+    Reactions {
+        #[arg(long, short = 'c')]
+        community: String,
+    },
 }

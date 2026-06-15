@@ -4,6 +4,10 @@
 //! every service shares, and `Arc<EventPipeline>` which all inbound
 //! and local events flow through before reaching IPC clients.
 //!
+//! Inbound data arrives via `mpsc::Receiver<InboundEvent>` from the
+//! transport layer. Call `start_inbound_loop()` after construction
+//! to spawn the reader. No TransportCallback trait. No set_callback().
+//!
 //! Method groups are split into submodules for maintainability:
 //! - `resume.rs` — DHT record reopening, route publishing, watch setup
 //! - `state.rs` — read-only state queries (unread, typing, presence, voice)
@@ -14,14 +18,17 @@ mod resume;
 mod state;
 mod delegate;
 mod background;
+mod dm_runtime;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use std::collections::HashMap;
+
 use parking_lot::RwLock;
 use zeroize::Zeroizing;
-use rekindle_types::transport::Transport;
+use rekindle_types::transport::{Transport, InboundEvent};
 use rekindle_types::subscription_events::SubscriptionEvent;
 use rekindle_storage::VaultStore;
 use rekindle_types::session_types::SessionMeta;
@@ -29,7 +36,6 @@ use rekindle_types::session_types::SessionMeta;
 use crate::crypto::sessions::SessionCache;
 use crate::crypto::mek::MekCache;
 use crate::events::registry::WatchRegistry;
-use crate::events::router::EventRouter;
 use crate::events::pipeline::EventPipeline;
 use crate::events::dedup::EventDedup;
 use crate::events::state::SubscriptionState;
@@ -51,7 +57,6 @@ pub struct ChatService {
     pub(crate) mek_cache: Arc<MekCache>,
     pub(crate) watches: Arc<WatchRegistry>,
     pub(crate) pipeline: Arc<EventPipeline>,
-    pub(crate) event_router: Arc<EventRouter>,
     pub(crate) friendship: Arc<FriendshipService>,
     pub(crate) messaging: Arc<MessagingService>,
     pub(crate) community: Arc<CommunityService>,
@@ -62,6 +67,7 @@ pub struct ChatService {
     session_path: PathBuf,
     session_mac_key: Zeroizing<[u8; 32]>,
     session_dirty: AtomicBool,
+    pub(crate) dm_deps: Arc<dyn crate::dm::DmDeps>,
 }
 
 impl ChatService {
@@ -88,9 +94,6 @@ impl ChatService {
         let state = Arc::new(RwLock::new(SubscriptionState::default()));
         let pipeline = Arc::new(EventPipeline::new(dedup, state));
 
-        // Spawn the inbox scan coordinator first — FriendshipService needs
-        // a clone of its trigger sender so the event router can trigger
-        // scans without holding a reference to the coordinator.
         let inbox_scan = InboxScanCoordinator::spawn(
             Arc::clone(&io),
             Arc::clone(&vault),
@@ -109,6 +112,7 @@ impl ChatService {
             inbox_trigger: inbox_scan.trigger_sender(),
         });
 
+        let (retry_tx, retry_rx) = tokio::sync::mpsc::channel(256);
         let messaging = Arc::new(MessagingService {
             io: Arc::clone(&io),
             vault: Arc::clone(&vault),
@@ -116,6 +120,9 @@ impl ChatService {
             session_cache: Arc::clone(&session_cache),
             mek_cache: Arc::clone(&mek_cache),
             pipeline: Arc::clone(&pipeline),
+            slowmode_last_send: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            retry_tx,
+            retry_rx: parking_lot::Mutex::new(Some(retry_rx)),
         });
 
         let community = Arc::new(CommunityService {
@@ -143,18 +150,19 @@ impl ChatService {
             Arc::clone(&mek_cache),
         );
 
-        let event_router = Arc::new(EventRouter::new(
-            Arc::clone(&watches),
-            Arc::clone(&pipeline),
-            Arc::clone(&friendship),
-            Arc::clone(&messaging),
-            Arc::clone(&community),
-        ));
+        let dm_deps: Arc<dyn crate::dm::DmDeps> = Arc::new(dm_runtime::ChatDmRuntime {
+            io: Arc::clone(&io),
+            vault: Arc::clone(&vault),
+            session_cache: Arc::clone(&session_cache),
+            session_meta: Arc::clone(&session_meta),
+            pipeline: Arc::clone(&pipeline),
+            mek_chains: RwLock::new(HashMap::new()),
+        });
 
         Ok(Self {
             io, vault, session_meta, session_cache, mek_cache,
-            watches, pipeline, event_router,
-            friendship, messaging, community, identity, presence, voice,
+            watches, pipeline,
+            friendship, messaging, community, identity, presence, voice, dm_deps,
             inbox_scan: Some(inbox_scan),
             session_path,
             session_mac_key: Zeroizing::new(session_mac_key),
@@ -162,34 +170,41 @@ impl ChatService {
         })
     }
 
-    pub fn callback(&self) -> Arc<dyn rekindle_types::transport::TransportCallback> {
-        Arc::clone(&self.event_router) as Arc<dyn rekindle_types::transport::TransportCallback>
+    /// Spawn the inbound event reader loop. Reads InboundEvent from the
+    /// transport's mpsc channel and dispatches to services.
+    ///
+    /// Replaces the old `transport.set_callback(Arc::new(EventRouter))` pattern.
+    /// No trait object, no lazy installation, no RwLock.
+    pub fn start_inbound_loop(&self, rx: tokio::sync::mpsc::Receiver<InboundEvent>) {
+        let watches = Arc::clone(&self.watches);
+        let pipeline = Arc::clone(&self.pipeline);
+        let friendship = Arc::clone(&self.friendship);
+        let messaging = Arc::clone(&self.messaging);
+        let community = Arc::clone(&self.community);
+        let dm_deps = Arc::clone(&self.dm_deps);
+        tokio::spawn(crate::events::router::run_inbound_loop(
+            rx, watches, pipeline, friendship, messaging, community, dm_deps,
+        ));
     }
 
-    pub fn io(&self) -> &Arc<PlatformIO> {
-        &self.io
-    }
+    pub fn io(&self) -> &Arc<PlatformIO> { &self.io }
 
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<SubscriptionEvent> {
         self.pipeline.subscribe()
     }
 
-    /// Emit a locally-originated event through the pipeline.
     pub fn emit_local(&self, event: SubscriptionEvent) {
         self.pipeline.process(event);
     }
 
-    /// Whether the platform is operational (signing key loaded + transport attached).
     pub fn is_operational(&self) -> bool {
-        self.io.is_signing_key_loaded() && self.io.is_attached()
+        self.io.is_identity_loaded() && self.io.is_attached()
     }
 
-    /// Access the pipeline's broadcast sender for IPC event wiring.
     pub fn pipeline_sender(&self) -> &tokio::sync::broadcast::Sender<SubscriptionEvent> {
         self.pipeline.sender()
     }
 
-    /// Trigger an inbox scan (non-blocking). Coalesced by 30s cooldown.
     pub fn trigger_inbox_scan(&self) {
         if let Some(ref scan) = self.inbox_scan {
             scan.trigger();

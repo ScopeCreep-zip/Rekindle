@@ -7,6 +7,7 @@
 pub mod skipped;
 
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 /// Session direction: who initiated the PQXDH handshake.
@@ -42,23 +43,27 @@ pub enum VerificationMethod {
     OutOfBandChannel,
 }
 
-/// Header-encrypted Double Ratchet state.
+/// Header-encrypted Double Ratchet state (Olm model).
+///
+/// Both chain keys and header keys initialized at session creation.
+/// No Option fields — the type system prevents "no sending chain key"
+/// errors by construction. Both sides can send immediately after init.
 #[derive(Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct DoubleRatchetState {
     /// Our current DH ratchet private key (X25519 scalar, 32 bytes).
-    pub dhs_priv: Option<Zeroizing<[u8; 32]>>,
+    pub dhs_priv: Zeroizing<[u8; 32]>,
     /// Our current DH ratchet public key.
     #[zeroize(skip)]
     pub dhs_pub: [u8; 32],
-    /// Remote DH ratchet public key. None for responder before first receive.
+    /// Remote DH ratchet public key. Always known after init.
     #[zeroize(skip)]
-    pub dhr_pub: Option<[u8; 32]>,
+    pub dhr_pub: [u8; 32],
     /// Root key.
     pub rk: Zeroizing<[u8; 32]>,
-    /// Sending chain key. None until first DH step after PQXDH.
-    pub cks: Option<Zeroizing<[u8; 32]>>,
-    /// Receiving chain key. None until first inbound message.
-    pub ckr: Option<Zeroizing<[u8; 32]>>,
+    /// Sending chain key. Always initialized at session creation.
+    pub cks: Zeroizing<[u8; 32]>,
+    /// Receiving chain key. Always initialized at session creation.
+    pub ckr: Zeroizing<[u8; 32]>,
     /// Sending counter.
     #[zeroize(skip)]
     pub n_send: u32,
@@ -70,9 +75,9 @@ pub struct DoubleRatchetState {
     pub pn: u32,
     // ── Header encryption keys ──────────────────────────────────
     /// Current sending header key.
-    pub hks: Option<Zeroizing<[u8; 32]>>,
+    pub hks: Zeroizing<[u8; 32]>,
     /// Current receiving header key.
-    pub hkr: Option<Zeroizing<[u8; 32]>>,
+    pub hkr: Zeroizing<[u8; 32]>,
     /// Next sending header key.
     pub nhks: Zeroizing<[u8; 32]>,
     /// Next receiving header key.
@@ -180,6 +185,11 @@ pub struct TripleRatchetSession {
     pub trust_level: TrustLevel,
     /// Unix timestamp of last send or receive.
     pub last_active: i64,
+    /// Unix timestamp of last successful decrypt. 0 if never decrypted.
+    /// Used for session selection (prefer most-recently-decrypted) and
+    /// wedge detection (was working → now failing = wedged).
+    #[serde(default)]
+    pub last_decrypted_at: i64,
     /// Unix timestamp of session creation.
     pub created_at: i64,
 }
@@ -195,11 +205,14 @@ impl Drop for TripleRatchetSession {
 // ── Initialization ─────────────────────────────────────────────────
 
 impl DoubleRatchetState {
-    /// Initialize the initiator's DR state from the PQXDH session key.
+    /// Initialize the Initiator's DR state (Olm model).
     ///
-    /// The initiator (Alice) knows the responder's signed prekey (SPK_B)
-    /// from the bundle. She sets `dhr_pub = Some(spk_b)` and performs an
-    /// immediate DH ratchet step to derive her sending chain.
+    /// Three KDFs from commutative DH:
+    ///   KDF1: chain_a (Initiator sends) + hk_a (Initiator header encrypt)
+    ///   KDF2: chain_b (Initiator receives) + hk_b (Initiator header decrypt)
+    ///   KDF3: nhk_a + nhk_b (next header keys, distinct from current)
+    ///
+    /// Responder swaps: cks↔ckr, hks↔hkr, nhks↔nhkr.
     pub fn init_initiator(
         sk: &Zeroizing<[u8; 32]>,
         our_dh_seed: Zeroizing<[u8; 32]>,
@@ -208,63 +221,66 @@ impl DoubleRatchetState {
     ) -> Result<Self, crate::error::RatchetError> {
         use crate::crypto::{dh, kdf};
 
-        // DH ratchet step: our initial key × their SPK → root + sending chain + header keys
         let our_key = dh::reusable_from_seed(&our_dh_seed)?;
         let dh_out = dh::ratchet_agree(&our_key, &their_spk)?;
-        let (rk, cks, nhks) = kdf::kdf_rk_he(sk, &dh_out)?;
+        let (rk, chain_a, hk_a) = kdf::kdf_rk_he(sk, &dh_out)?;
+        let (rk2, chain_b, hk_b) = kdf::kdf_rk_he(&rk, &dh_out)?;
+        let (rk3, nhk_a, nhk_b) = kdf::kdf_rk_he(&rk2, &dh_out)?;
 
-        // Second DH step for initial header keys
-        let (rk2, _ckr_unused, nhkr) = kdf::kdf_rk_he(&rk, &dh_out)?;
-
-        Ok(Self {
-            dhs_priv: Some(our_dh_seed),
+        let state = Self {
+            dhs_priv: our_dh_seed,
             dhs_pub: our_dh_pub,
-            dhr_pub: Some(their_spk),
-            rk: rk2,
-            cks: Some(cks),
-            ckr: None,
+            dhr_pub: their_spk,
+            rk: rk3,
+            cks: chain_a,
+            ckr: chain_b,
             n_send: 0,
             n_recv: 0,
             pn: 0,
-            hks: None,
-            hkr: None,
-            nhks,
-            nhkr,
-        })
+            hks: hk_a,
+            hkr: hk_b,
+            nhks: nhk_a,
+            nhkr: nhk_b,
+        };
+        debug!("DR::init_initiator: Olm model — both chains initialized");
+        Ok(state)
     }
 
-    /// Initialize the responder's DR state from the PQXDH session key.
+    /// Initialize the Responder's DR state (Olm model).
     ///
-    /// The responder (Bob) does NOT know Alice's ephemeral DH public key
-    /// at init time — he discovers it from the first inbound message header.
-    /// `dhr_pub` is `None`, `cks` is `None` (can't send until DH ratchet).
+    /// Same three KDFs as Initiator (commutative DH produces same outputs).
+    /// Swapped assignment: Responder sends on chain_b, receives on chain_a.
     pub fn init_responder(
         sk: Zeroizing<[u8; 32]>,
         our_spk_seed: Zeroizing<[u8; 32]>,
         our_spk_pub: [u8; 32],
+        their_ratchet_dh_pub: [u8; 32],
     ) -> Result<Self, crate::error::RatchetError> {
-        use crate::crypto::kdf;
+        use crate::crypto::{dh, kdf};
 
-        // Derive initial header keys from SK (no DH step yet — waiting for Alice's first message)
-        let zero_dh = Zeroizing::new([0u8; 32]);
-        let (_rk_unused, _ck_unused, nhks) = kdf::kdf_rk_he(&sk, &zero_dh)?;
-        let (_rk_unused2, _ck_unused2, nhkr) = kdf::kdf_rk_he(&sk, &zero_dh)?;
+        let our_key = dh::reusable_from_seed(&our_spk_seed)?;
+        let dh_out = dh::ratchet_agree(&our_key, &their_ratchet_dh_pub)?;
+        let (rk, chain_a, hk_a) = kdf::kdf_rk_he(&sk, &dh_out)?;
+        let (rk2, chain_b, hk_b) = kdf::kdf_rk_he(&rk, &dh_out)?;
+        let (rk3, nhk_a, nhk_b) = kdf::kdf_rk_he(&rk2, &dh_out)?;
 
-        Ok(Self {
-            dhs_priv: Some(our_spk_seed),
+        let state = Self {
+            dhs_priv: our_spk_seed,
             dhs_pub: our_spk_pub,
-            dhr_pub: None,
-            rk: sk,
-            cks: None,
-            ckr: None,
+            dhr_pub: their_ratchet_dh_pub,
+            rk: rk3,
+            cks: chain_b,               // SWAPPED: Responder sends on chain_b
+            ckr: chain_a,               // SWAPPED: Responder receives on chain_a
             n_send: 0,
             n_recv: 0,
             pn: 0,
-            hks: None,
-            hkr: None,
-            nhks,
-            nhkr,
-        })
+            hks: hk_b,                  // SWAPPED: encrypts headers with hk_b
+            hkr: hk_a,                  // SWAPPED: decrypts headers with hk_a
+            nhks: nhk_b,               // SWAPPED
+            nhkr: nhk_a,               // SWAPPED
+        };
+        debug!("DR::init_responder: Olm model — both chains initialized, can send immediately");
+        Ok(state)
     }
 }
 
@@ -291,6 +307,7 @@ impl TripleRatchetSession {
             spqr_epoch: 0,
             trust_level,
             last_active: now,
+            last_decrypted_at: 0,
             created_at: now,
         }
     }
