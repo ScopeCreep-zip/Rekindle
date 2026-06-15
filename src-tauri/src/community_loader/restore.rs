@@ -7,10 +7,11 @@
 //! (deterministic from `identity_secret` + `community_id`) and loads
 //! the MEK from Stronghold if stored.
 //!
-//! For **hosted** (owned) communities where the MEK is missing from
-//! Stronghold (e.g. communities created before MEK persistence was
-//! added), a fresh MEK is regenerated and immediately persisted so
-//! subsequent restarts succeed.
+//! When the MEK is missing from Stronghold (vault loss), this does NOT
+//! mint a replacement — minting forks the community key. The slot is left
+//! absent and re-acquired from a peer by the architecture §7.3 login
+//! catch-up in `login_runtime::spawn_dht_publish` (owner mints a
+//! superseding key only as a last resort if no peer responds).
 
 use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
@@ -23,21 +24,18 @@ pub fn restore_community_pseudonyms_and_meks(
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
     use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 
-    // Collect community IDs and whether we own them (have dht_owner_keypair)
-    let community_info: Vec<(String, bool)> = {
+    // Collect community IDs. Ownership for the recovery decision is
+    // determined later (registry_owner_keypair) by the login catch-up, not here.
+    let community_info: Vec<String> = {
         let communities = state.communities.read();
-        communities
-            .values()
-            .map(|c| (c.id.clone(), c.dht_owner_keypair.is_some()))
-            .collect()
+        communities.values().map(|c| c.id.clone()).collect()
     };
 
     let mut pseudonym_updates: Vec<(String, String)> = Vec::new();
     let mut mek_updates: Vec<(String, MediaEncryptionKey)> = Vec::new();
     let mut channel_mek_updates: Vec<(String, String, MediaEncryptionKey)> = Vec::new();
-    let mut regenerated_community_ids: Vec<String> = Vec::new();
 
-    for (community_id, is_owner) in &community_info {
+    for community_id in &community_info {
         // Derive pseudonym
         let signing_key = derive_community_pseudonym(secret_key, community_id);
         let pseudonym_hex = hex::encode(signing_key.verifying_key().as_bytes());
@@ -48,20 +46,20 @@ pub fn restore_community_pseudonyms_and_meks(
         if let Some(ref ks) = *keystore {
             if let Some(mek) = crate::keystore::load_mek(ks, community_id) {
                 mek_updates.push((community_id.clone(), mek));
-            } else if *is_owner {
-                tracing::warn!(
-                    community = %community_id,
-                    "MEK missing from Stronghold for owned community — regenerating"
-                );
-                let mek = MediaEncryptionKey::generate(1);
-                crate::keystore::persist_mek(ks, community_id, &mek);
-                mek_updates.push((community_id.clone(), mek));
-                regenerated_community_ids.push(community_id.clone());
             } else {
+                // MEK missing from Stronghold (vault loss). Do NOT mint a fresh
+                // key here — that forks the community (peers hold the canonical
+                // key; a local mint diverges and the convergence rule can't
+                // reconcile two untagged same-generation keys). Leave the slot
+                // ABSENT; the architecture §7.3 login catch-up in
+                // `login_runtime::spawn_dht_publish` re-acquires the canonical
+                // key from an online peer, and (owner-only) mints a SUPERSEDING
+                // key as a last resort if no peer can serve it. `c.mek_generation`
+                // is left untouched so it remains the acquisition target.
                 tracing::warn!(
                     community = %community_id,
-                    "MEK missing from Stronghold for joined community — \
-                     will be delivered when connecting to an online member"
+                    "MEK missing from Stronghold — will be re-acquired from a peer \
+                     on login (owner mints a superseding key only if none responds)"
                 );
             }
         }
@@ -91,7 +89,7 @@ pub fn restore_community_pseudonyms_and_meks(
     {
         let keystore = keystore_handle.lock();
         if let Some(ref ks) = *keystore {
-            for (community_id, _) in &community_info {
+            for community_id in &community_info {
                 if let Some(kp) = crate::keystore::load_slot_keypair(ks, community_id) {
                     slot_keypair_updates.push((community_id.clone(), kp));
                 }
@@ -113,12 +111,6 @@ pub fn restore_community_pseudonyms_and_meks(
                 if c.my_pseudonym_key.is_none() {
                     c.my_pseudonym_key = Some(pseudonym_hex);
                 }
-            }
-        }
-
-        for community_id in &regenerated_community_ids {
-            if let Some(c) = communities.get_mut(community_id) {
-                c.mek_generation = 1;
             }
         }
 

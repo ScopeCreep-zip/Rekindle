@@ -233,6 +233,56 @@ pub(super) async fn spawn_dht_publish(
         tracing::info!(
             "route allocated — triggered immediate presence re-write for all communities"
         );
+
+        // Architecture §7.3 login catch-up: re-acquire any community MEK that is
+        // ABSENT or BEHIND the governance generation, rather than waiting for
+        // incidental incoming traffic to trigger acquisition. Joiners request
+        // the current key from the deterministic responder; owners go through
+        // recovery (re-acquire, then mint a superseding key only if no peer
+        // serves it). Fires only when behind/absent, so a normal login is a
+        // no-op. `c.mek_generation` is the authoritative target (restored from
+        // SQLite before this runs and never clobbered).
+        let keystore = tauri::Manager::try_state::<crate::keystore::KeystoreHandle>(&app_handle)
+            .map(|s| s.inner().clone());
+        let behind: Vec<(String, String, bool)> = {
+            let communities = state.communities.read();
+            let cache = state.mek_cache.lock();
+            communities
+                .values()
+                .filter_map(|c| {
+                    let cached_gen = cache.get(&c.id).map(
+                        rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
+                    );
+                    let is_behind = cached_gen.is_none_or(|g| g < c.mek_generation);
+                    if !is_behind {
+                        return None;
+                    }
+                    c.my_pseudonym_key
+                        .clone()
+                        .map(|p| (c.id.clone(), p, c.registry_owner_keypair.is_some()))
+                })
+                .collect()
+        };
+        for (cid, pseudonym, is_owner) in behind {
+            if is_owner {
+                if let Some(ref ks) = keystore {
+                    services::community::mek_rotation::spawn_community_mek_recovery(
+                        state.clone(),
+                        cid,
+                        pseudonym,
+                        ks.clone(),
+                    );
+                }
+            } else {
+                services::community::mek_rotation::spawn_mek_request_with_retry(
+                    state.clone(),
+                    cid,
+                    String::new(),
+                    0,
+                    pseudonym,
+                );
+            }
+        }
     }
 
     // Create or open mailbox DHT record

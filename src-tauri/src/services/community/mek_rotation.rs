@@ -85,6 +85,82 @@ pub fn spawn_mek_request_with_retry(
     });
 }
 
+/// Decide whether a community-MEK recovery should fall back to a last-resort
+/// local mint. Mint ONLY when we are the owner AND nothing landed during the
+/// re-acquire window (the slot started empty and is still empty — no peer
+/// served the canonical key). A non-owner never mints; an owner that did
+/// receive a key (slot now populated) keeps the canonical one.
+#[must_use]
+pub fn should_last_resort_mint(initial: Option<u64>, current: Option<u64>, is_owner: bool) -> bool {
+    is_owner && initial.is_none() && current.is_none()
+}
+
+/// Community-MEK recovery after vault loss (architecture §7.3): re-acquire the
+/// canonical key from an online peer via `RequestMEK`; only if no peer serves
+/// it within the cascade window AND we are the owner, mint a SUPERSEDING key
+/// (`rotate_mek_local` mints at `mek_generation + 1` and broadcasts), so a peer
+/// that appears later converges FORWARD via Max-Register instead of forking.
+/// Never mints a colliding same-generation key.
+pub fn spawn_community_mek_recovery(
+    state: Arc<AppState>,
+    community_id: String,
+    requester_pseudonym: String,
+    keystore: crate::keystore::KeystoreHandle,
+) {
+    tokio::spawn(async move {
+        // Snapshot before requesting so we can tell whether anything landed.
+        let initial =
+            crate::state_helpers::channel_media_mek(&state, &community_id, "").map(|(_, g)| g);
+
+        // Prefer re-acquisition: ask the deterministic responder for the
+        // current community MEK (empty channel + generation 0 = "send current").
+        spawn_mek_request_with_retry(
+            Arc::clone(&state),
+            community_id.clone(),
+            String::new(),
+            0,
+            requester_pseudonym,
+        );
+
+        // Wait out the full cascade budget (lock-step with the requester's
+        // MAX_CASCADES × 5s) plus slack for the reply to apply.
+        let max_cascades = u64::try_from(rekindle_mek_rotation::MAX_CASCADES).unwrap_or(3);
+        let window = std::time::Duration::from_millis(max_cascades * 5_000 + 3_000);
+        tokio::time::sleep(window).await;
+
+        let current =
+            crate::state_helpers::channel_media_mek(&state, &community_id, "").map(|(_, g)| g);
+        let is_owner = {
+            let communities = state.communities.read();
+            communities
+                .get(&community_id)
+                .is_some_and(|c| c.registry_owner_keypair.is_some())
+        };
+        if !should_last_resort_mint(initial, current, is_owner) {
+            return;
+        }
+
+        tracing::warn!(
+            community = %community_id,
+            "no peer served the community MEK within the re-acquire window — \
+             minting a superseding key (last resort)"
+        );
+        if let Err(e) = crate::services::community_mek_local_rotate::rotate_mek_local(
+            &state,
+            &community_id,
+            &keystore,
+        )
+        .await
+        {
+            tracing::warn!(
+                community = %community_id,
+                error = %e,
+                "last-resort community MEK mint failed"
+            );
+        }
+    });
+}
+
 /// Phase 23.D.10 — facade around `rekindle_mek_rotation::handle_incoming_mek_transfer`.
 /// Constructs a `MekAdapter` per call and delegates.
 pub fn handle_incoming_mek_transfer(
@@ -109,4 +185,36 @@ pub fn handle_incoming_mek_transfer(
         wrapped_mek,
     )
     .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_last_resort_mint;
+
+    #[test]
+    fn owner_mints_only_when_nothing_landed() {
+        // Owner, slot still empty after the window → mint (no peer served it).
+        assert!(should_last_resort_mint(None, None, true));
+    }
+
+    #[test]
+    fn peer_served_key_blocks_mint() {
+        // A peer served the canonical key during the window → keep it, no mint.
+        assert!(!should_last_resort_mint(None, Some(1), true));
+        assert!(!should_last_resort_mint(None, Some(7), true));
+    }
+
+    #[test]
+    fn non_owner_never_mints() {
+        assert!(!should_last_resort_mint(None, None, false));
+        assert!(!should_last_resort_mint(None, Some(3), false));
+    }
+
+    #[test]
+    fn nonempty_initial_never_mints() {
+        // Defensive: recovery only runs on an absent slot; if we somehow had a
+        // key to begin with, never mint a competing one.
+        assert!(!should_last_resort_mint(Some(2), None, true));
+        assert!(!should_last_resort_mint(Some(2), Some(2), true));
+    }
 }
