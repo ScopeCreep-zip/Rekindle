@@ -1,18 +1,17 @@
 //! Search overlay rendering — centered modal with input and results.
 
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use super::state::SearchOverlay;
+use crate::v2::tui::state::search::{SearchMode, SearchState};
 use crate::v2::helpers::sanitize_for_display;
-use crate::v2::tui::action::SearchMode;
 use crate::v2::tui::theme::ThemeManager;
 
-impl SearchOverlay {
-    pub fn render(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
+impl SearchState {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager, list_state: &mut ListState) {
         if !self.visible { return; }
 
         let popup = centered_rect(area, area.width.saturating_sub(8), area.height.saturating_sub(4));
@@ -46,16 +45,43 @@ impl SearchOverlay {
             return;
         }
 
-        let items: Vec<ListItem<'_>> = self.filtered_indices.iter().map(|&idx| {
+        let query_len = self.query_byte_len();
+        let items: Vec<ListItem<'_>> = self.filtered_indices.iter().enumerate().map(|(fi, &idx)| {
             let item = &self.items[idx];
             let label = sanitize_for_display(&item.label);
             let detail = if item.detail.is_empty() { String::new() }
             else { format!("  ({})", sanitize_for_display(&item.detail)) };
 
-            ListItem::new(Line::from(vec![
-                Span::raw(format!("  {label}")),
-                Span::styled(detail, Style::new().dim()),
-            ]))
+            let match_positions = self.match_positions.get(fi);
+            let label_spans = if let Some(positions) = match_positions {
+                if positions.is_empty() || query_len == 0 {
+                    vec![Span::raw(format!("  {label}"))]
+                } else {
+                    let mut spans = vec![Span::raw("  ".to_string())];
+                    let mut last_end = 0;
+                    for &start in positions {
+                        if start > last_end && start <= label.len() {
+                            spans.push(Span::raw(label[last_end..start].to_string()));
+                        }
+                        let end = (start + query_len).min(label.len());
+                        spans.push(Span::styled(
+                            label[start..end].to_string(),
+                            Style::new().fg(theme.color("accent.primary")).add_modifier(Modifier::BOLD),
+                        ));
+                        last_end = end;
+                    }
+                    if last_end < label.len() {
+                        spans.push(Span::raw(label[last_end..].to_string()));
+                    }
+                    spans
+                }
+            } else {
+                vec![Span::raw(format!("  {label}"))]
+            };
+
+            let mut all_spans = label_spans;
+            all_spans.push(Span::styled(detail, Style::new().dim()));
+            ListItem::new(Line::from(all_spans))
         }).collect();
 
         let count_label = format!(" {}/{} ", self.filtered_indices.len(), self.items.len());
@@ -63,7 +89,7 @@ impl SearchOverlay {
             .highlight_style(Style::new().reversed())
             .block(Block::default().title(count_label));
 
-        frame.render_stateful_widget(list, results_area, &mut self.list_state);
+        frame.render_stateful_widget(list, results_area, list_state);
     }
 }
 

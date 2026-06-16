@@ -1,5 +1,7 @@
 //! Message input box — tui-textarea wrapper with modes, limits, and styling.
 
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -7,30 +9,41 @@ use ratatui::text::Span;
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
-use super::Component;
-use super::super::action::{Action, ToastLevel};
-
 const MAX_MESSAGE_LENGTH: usize = 2000;
 
-/// Typing indicator rate limit — minimum interval between auto-send.
-const TYPING_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3);
+/// Minimum interval between typing indicator emissions.
+const TYPING_COOLDOWN: Duration = Duration::from_secs(3);
 
-/// Input mode — determines block title and submit behavior.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Determines block title and submit behavior.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InputMode {
     Compose,
     Reply { message_id: String, author: String },
     Edit { message_id: String },
 }
 
-/// Message input box component.
+/// Result of `handle_key`. The caller decides what to do with each variant.
+pub enum InputBoxResult {
+    /// Key was consumed, no action needed.
+    None,
+    /// User pressed Enter with non-empty, within-limit text. Text extracted.
+    Submit(String),
+    /// User pressed Esc in Compose mode.
+    ExitInputMode,
+    /// A character was typed and the typing cooldown has elapsed.
+    TypingActivity,
+    /// Message exceeds MAX_MESSAGE_LENGTH. Carries the formatted warning.
+    OverLimit(String),
+}
+
+/// Message input box with ratatui-textarea, mode tracking, and typing cooldown.
+#[derive(Debug)]
 pub struct InputBox {
     textarea: ratatui_textarea::TextArea<'static>,
-    is_focused: bool,
     mode: InputMode,
     placeholder: &'static str,
-    /// Last time a typing indicator was emitted. Rate-limited to TYPING_COOLDOWN.
-    last_typing_sent: Option<std::time::Instant>,
+    /// Rate-limited typing indicator emission.
+    last_typing_sent: Option<Instant>,
 }
 
 impl InputBox {
@@ -42,14 +55,15 @@ impl InputBox {
 
         Self {
             textarea,
-            is_focused: false,
             mode: InputMode::Compose,
             placeholder: "Type a message... (i to focus, Enter to send)",
             last_typing_sent: None,
         }
     }
 
-    pub fn content(&self) -> String { self.textarea.lines().join("\n") }
+    pub fn content(&self) -> String {
+        self.textarea.lines().join("\n")
+    }
 
     pub fn content_len(&self) -> usize {
         self.textarea.lines().iter().map(String::len).sum::<usize>()
@@ -62,20 +76,27 @@ impl InputBox {
         self.mode = InputMode::Compose;
     }
 
-    pub fn set_mode(&mut self, mode: InputMode) { self.mode = mode; }
-    pub fn mode(&self) -> &InputMode { &self.mode }
-    pub fn is_over_limit(&self) -> bool { self.content_len() > MAX_MESSAGE_LENGTH }
+    pub fn set_mode(&mut self, mode: InputMode) {
+        self.mode = mode;
+    }
 
-    /// Insert text at the current cursor position.
-    /// Used by file reference insertion (Ctrl+P → select file → insert path).
+    pub fn mode(&self) -> &InputMode {
+        &self.mode
+    }
+
+    #[must_use]
+    pub fn is_over_limit(&self) -> bool {
+        self.content_len() > MAX_MESSAGE_LENGTH
+    }
+
     pub fn insert_text(&mut self, text: &str) {
         self.textarea.insert_str(text);
     }
 
-    /// Check whether a typing indicator should be emitted (rate-limited to 3s).
-    /// Returns true if cooldown has elapsed or never sent. Resets the timer.
-    pub fn should_emit_typing(&mut self) -> bool {
-        let now = std::time::Instant::now();
+    /// Returns true if the typing cooldown (3s) has elapsed since the last
+    /// emission. Resets the timer on true.
+    #[must_use]
+    pub fn should_emit_typing(&mut self, now: Instant) -> bool {
         let should = self.last_typing_sent
             .is_none_or(|last| now.duration_since(last) >= TYPING_COOLDOWN);
         if should {
@@ -84,74 +105,65 @@ impl InputBox {
         should
     }
 
-    fn title(&self) -> String {
-        match &self.mode {
-            InputMode::Compose => {
-                let len = self.content_len();
-                if len > 0 { format!(" Compose ({len}/{MAX_MESSAGE_LENGTH}) ") }
-                else { " Compose ".into() }
-            }
-            InputMode::Reply { author, .. } => format!(" Reply to {author} "),
-            InputMode::Edit { .. } => " Edit message ".into(),
-        }
-    }
-}
-
-impl Component for InputBox {
-    fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
-        if !self.is_focused { return None; }
-
+    pub fn handle_key(&mut self, key: KeyEvent) -> InputBoxResult {
         match key.code {
             KeyCode::Esc => {
                 if self.mode != InputMode::Compose {
                     self.mode = InputMode::Compose;
-                    return None;
+                    return InputBoxResult::None;
                 }
-                Some(Action::ExitInputMode)
+                InputBoxResult::ExitInputMode
             }
             KeyCode::Enter if key.modifiers.is_empty() => {
                 let text = self.content();
-                if text.trim().is_empty() { return None; }
-                if self.is_over_limit() {
-                    return Some(Action::ShowToast {
-                        message: format!("Message too long ({} chars, max {MAX_MESSAGE_LENGTH})", self.content_len()),
-                        level: ToastLevel::Warning,
-                    });
+                if text.trim().is_empty() {
+                    return InputBoxResult::None;
                 }
-                Some(Action::InputSubmit)
+                if self.is_over_limit() {
+                    return InputBoxResult::OverLimit(format!(
+                        "Message too long ({} chars, max {MAX_MESSAGE_LENGTH})",
+                        self.content_len(),
+                    ));
+                }
+                InputBoxResult::Submit(text)
             }
             KeyCode::Enter => {
                 self.textarea.input(key);
-                None
+                InputBoxResult::None
             }
             KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.textarea.undo();
-                None
+                InputBoxResult::None
             }
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.textarea.redo();
-                None
+                InputBoxResult::None
             }
             _ => {
                 if matches!(key.code, KeyCode::Char(_))
                     && self.content_len() >= MAX_MESSAGE_LENGTH
                     && !key.modifiers.contains(KeyModifiers::CONTROL)
                 {
-                    return None;
+                    return InputBoxResult::None;
                 }
+                let is_char = matches!(key.code, KeyCode::Char(_));
                 self.textarea.input(key);
-                None
+                if is_char {
+                    InputBoxResult::TypingActivity
+                } else {
+                    InputBoxResult::None
+                }
             }
         }
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let border_style = if self.is_focused { Style::new() } else { Style::new().dim() };
+    pub fn draw(&self, frame: &mut Frame, area: Rect, focused: bool) {
+        let border_style = if focused { Style::new() } else { Style::new().dim() };
         let block = Block::bordered().title(self.title()).border_style(border_style);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        if self.textarea.lines().iter().all(String::is_empty) && !self.is_focused {
+        if self.textarea.lines().iter().all(String::is_empty) && !focused {
             frame.render_widget(
                 Paragraph::new(Span::styled(self.placeholder, Style::new().dim().italic())),
                 inner,
@@ -162,8 +174,10 @@ impl Component for InputBox {
 
         if self.is_over_limit() {
             let warning = Paragraph::new(format!(
-                " {}/{MAX_MESSAGE_LENGTH} — too long! ", self.content_len()
-            )).style(Style::new().bold());
+                " {}/{MAX_MESSAGE_LENGTH} — too long! ",
+                self.content_len(),
+            ))
+            .style(Style::new().bold());
             let warning_area = Rect {
                 x: area.x + 1,
                 y: area.bottom().saturating_sub(1),
@@ -172,8 +186,26 @@ impl Component for InputBox {
             };
             frame.render_widget(warning, warning_area);
         }
-
     }
 
-    fn set_focused(&mut self, focused: bool) { self.is_focused = focused; }
+    fn title(&self) -> String {
+        match &self.mode {
+            InputMode::Compose => {
+                let len = self.content_len();
+                if len > 0 {
+                    format!(" Compose ({len}/{MAX_MESSAGE_LENGTH}) ")
+                } else {
+                    " Compose ".into()
+                }
+            }
+            InputMode::Reply { author, .. } => format!(" Reply to {author} "),
+            InputMode::Edit { .. } => " Edit message ".into(),
+        }
+    }
+}
+
+impl Default for InputBox {
+    fn default() -> Self {
+        Self::new()
+    }
 }

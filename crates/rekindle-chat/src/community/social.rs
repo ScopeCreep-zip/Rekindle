@@ -462,6 +462,7 @@ impl CommunityService {
     pub async fn thread_message(
         &self,
         governance_key: &str,
+        channel_id: &str,
         thread_id: &str,
         ciphertext: Vec<u8>,
         mek_generation: u64,
@@ -473,6 +474,7 @@ impl CommunityService {
         self.io.broadcast_gossip_dedup(governance_key, GossipPayload::Control(
             ControlPayload::ThreadMessage {
                 thread_id: thread_id.into(),
+                channel_id: channel_id.into(),
                 message_id: message_id.clone(),
                 sender_pseudonym: sender,
                 ciphertext,
@@ -483,6 +485,26 @@ impl CommunityService {
         )).await?;
 
         Ok(message_id)
+    }
+
+    /// Send a plaintext message to a thread. MEK-encrypts using the parent channel's key,
+    /// then delegates to the existing gossip broadcast path.
+    pub async fn send_thread_message(
+        &self,
+        governance_key: &str,
+        channel_id: &str,
+        thread_id: &str,
+        body: &str,
+    ) -> Result<String, ChatError> {
+        let (mek_key, mek_generation) = self.mek_cache
+            .current(governance_key, channel_id)
+            .ok_or_else(|| ChatError::MekNotCached {
+                community: governance_key.into(),
+                channel: channel_id.into(),
+            })?;
+
+        let ciphertext = crate::crypto::mek::mek_encrypt(&mek_key, body.as_bytes(), &[])?;
+        self.thread_message(governance_key, channel_id, thread_id, ciphertext, mek_generation, None).await
     }
 
     /// Archive or unarchive a thread.

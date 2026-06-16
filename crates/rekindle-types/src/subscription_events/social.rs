@@ -60,6 +60,8 @@ pub enum SocialEvent {
         message_id: String,
         sender_pseudonym: String,
         timestamp: u64,
+        /// Decrypted plaintext. None if MEK unavailable — client renders "(encrypted)".
+        body: Option<String>,
     },
     /// A thread was archived or unarchived.
     /// Triggered by: gossip `ControlPayload::ThreadArchived`.

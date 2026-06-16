@@ -60,9 +60,24 @@ impl ChatService {
             let meta = self.session_meta.read();
             meta.dm_smpl_peers.get(peer_key)
                 .map(|p| p.record_key.clone())
-                .ok_or_else(|| ChatError::NotFriends { peer_key: peer_key.into() })?
+                .ok_or_else(|| {
+                    tracing::warn!(
+                        peer = &peer_key[..12.min(peer_key.len())],
+                        peer_count = meta.dm_smpl_peers.len(),
+                        "dm_thread: peer_key NOT FOUND in dm_smpl_peers"
+                    );
+                    ChatError::NotFriends { peer_key: peer_key.into() }
+                })?
         };
-        Ok(self.dm_deps.store().dm_load_messages(&record_key, limit).map_err(DmError::from)?)
+        let messages = self.dm_deps.store().dm_load_messages(&record_key, limit).map_err(DmError::from)?;
+        tracing::info!(
+            peer = &peer_key[..12.min(peer_key.len())],
+            record_key = &record_key[..16.min(record_key.len())],
+            message_count = messages.len(),
+            limit,
+            "dm_thread: query complete"
+        );
+        Ok(messages)
     }
 
     pub fn dm_inbox(

@@ -313,8 +313,15 @@ pub enum ChatRequest {
     },
     /// Post a message to a thread.
     ThreadMessage {
-        community: String, thread_id: String, ciphertext: Vec<u8>,
+        community: String, channel_id: String, thread_id: String, ciphertext: Vec<u8>,
         mek_generation: u64, reply_to_id: Option<String>,
+    },
+    /// Send a plaintext message to a thread. The daemon MEK-encrypts using the channel's current key.
+    ThreadSend {
+        community: String,
+        channel: String,
+        thread_id: String,
+        body: String,
     },
     /// Archive or unarchive a thread.
     ThreadArchive { community: String, thread_id: String, archived: bool },
@@ -507,7 +514,8 @@ impl std::fmt::Debug for ChatRequest {
             Self::EventRsvp { community, event_id, status } => f.debug_struct("EventRsvp").field("community", community).field("event_id", event_id).field("status", status).finish(),
             Self::EventRemind { community, event_id, title, minutes_until } => f.debug_struct("EventRemind").field("community", community).field("event_id", event_id).field("title", title).field("minutes_until", minutes_until).finish(),
             Self::ThreadCreate { community, channel, title, .. } => f.debug_struct("ThreadCreate").field("community", community).field("channel", channel).field("title", title).finish(),
-            Self::ThreadMessage { community, thread_id, mek_generation, .. } => f.debug_struct("ThreadMessage").field("community", community).field("thread_id", thread_id).field("mek_generation", mek_generation).finish(),
+            Self::ThreadMessage { community, channel_id, thread_id, mek_generation, .. } => f.debug_struct("ThreadMessage").field("community", community).field("channel_id", channel_id).field("thread_id", thread_id).field("mek_generation", mek_generation).finish(),
+            Self::ThreadSend { community, thread_id, body, .. } => f.debug_struct("ThreadSend").field("community", community).field("thread_id", thread_id).field("body_len", &body.len()).finish(),
             Self::ThreadArchive { community, thread_id, archived } => f.debug_struct("ThreadArchive").field("community", community).field("thread_id", thread_id).field("archived", archived).finish(),
             Self::GameServerAdd { community, game_id, label, address } => f.debug_struct("GameServerAdd").field("community", community).field("game_id", game_id).field("label", label).field("address", address).finish(),
             Self::GameServerRemove { community, server_id } => f.debug_struct("GameServerRemove").field("community", community).field("server_id", server_id).finish(),

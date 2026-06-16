@@ -7,4 +7,4 @@
 //!
 //! Usage: `use crate::v2::prelude::*;`
 
-pub use rekindle_client::{AgentType, ChatRequest, DaemonClient, DaemonRequest, LifecycleRequest, ReadContext};
+pub use rekindle_client::{AgentType, ChatRequest, DaemonClient, DaemonRequest, LifecycleRequest};

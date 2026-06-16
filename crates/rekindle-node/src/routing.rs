@@ -87,6 +87,11 @@ impl FrameRouter for DaemonRouter {
         // Subscribe/Unsubscribe: server-side, synchronous
         match &request {
             DaemonRequest::Lifecycle(LifecycleRequest::Subscribe { filters }) => {
+                tracing::info!(
+                    conn_id = info.conn_id,
+                    filter_count = filters.len(),
+                    "routing: Subscribe registered"
+                );
                 self.subs.subscribe(
                     info.conn_id,
                     self.handle.clone(),

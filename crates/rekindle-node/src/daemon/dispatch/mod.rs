@@ -621,8 +621,27 @@ async fn dispatch_chat(
             map_result(chat.event_reminder(&community, &event_id, &title, minutes_until).await),
         ChatRequest::ThreadCreate { community, channel, parent_message_id, title, auto_archive_seconds } =>
             map_result(chat.create_thread(&community, &channel, &parent_message_id, &title, auto_archive_seconds).await),
-        ChatRequest::ThreadMessage { community, thread_id, ciphertext, mek_generation, reply_to_id } =>
-            map_result(chat.thread_message(&community, &thread_id, ciphertext, mek_generation, reply_to_id.as_deref()).await),
+        ChatRequest::ThreadMessage { community, channel_id, thread_id, ciphertext, mek_generation, reply_to_id } =>
+            map_result(chat.thread_message(&community, &channel_id, &thread_id, ciphertext, mek_generation, reply_to_id.as_deref()).await),
+        ChatRequest::ThreadSend { community, channel, thread_id, body } => {
+            let result = chat.send_thread_message(&community, &channel, &thread_id, &body).await;
+            if let Ok(ref msg_id) = result {
+                chat.emit_local(rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::ThreadMessagePosted {
+                        community: community.clone(),
+                        thread_id: thread_id.clone(),
+                        message_id: msg_id.clone(),
+                        sender_pseudonym: String::new(),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                        body: Some(body.clone()),
+                    },
+                ));
+            }
+            map_result(result)
+        }
         ChatRequest::ThreadArchive { community, thread_id, archived } =>
             map_result(chat.archive_thread(&community, &thread_id, archived).await),
         ChatRequest::GameServerAdd { community, game_id, label, address } =>

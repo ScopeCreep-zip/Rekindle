@@ -81,6 +81,11 @@ impl DmStore for VaultStore {
     fn dm_load_messages(
         &self, record_key: &str, limit: u32,
     ) -> Result<Vec<DmMessageRecord>, DmStoreError> {
+        tracing::debug!(
+            record_key = &record_key[..16.min(record_key.len())],
+            limit,
+            "dm_load_messages: querying vault"
+        );
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT sender_pseudonym, body, timestamp_secs, sequence,
@@ -134,6 +139,12 @@ impl DmStore for VaultStore {
         })
         .collect();
         rows.reverse(); // oldest first for UI scrollback
+        tracing::info!(
+            record_key = &record_key[..16.min(record_key.len())],
+            result_count = rows.len(),
+            limit,
+            "dm_load_messages: query returned"
+        );
         Ok(rows)
     }
 

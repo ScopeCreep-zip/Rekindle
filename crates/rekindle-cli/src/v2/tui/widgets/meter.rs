@@ -1,6 +1,6 @@
 //! Gradient meter — horizontal bar with per-cell gradient coloring.
 //!
-//! Uses ■ (U+25A0 BLACK SQUARE) for filled cells, dim ■ for unfilled.
+//! Uses █ (U+2588 FULL BLOCK) for filled cells, ░ (U+2591 LIGHT SHADE) for unfilled.
 //! Each filled cell gets a color from the gradient based on its position.
 //! Optionally inverts the gradient direction (right-to-left).
 
@@ -21,6 +21,8 @@ pub struct GradientMeter<'a> {
     pub bg_color: ratatui::style::Color,
     /// Whether to invert the gradient direction.
     pub invert: bool,
+    /// Use unicode block characters. Falls back to ASCII #/- on simple terminals.
+    pub unicode: bool,
 }
 
 impl Widget for &GradientMeter<'_> {
@@ -41,9 +43,11 @@ impl Widget for &GradientMeter<'_> {
                 } else {
                     i as usize * 100 / area.width as usize
                 };
-                cell.set_symbol("■").set_fg(self.gradient.at(pct));
+                let sym = if self.unicode { "\u{2588}" } else { "#" };
+                cell.set_symbol(sym).set_fg(self.gradient.at(pct));
             } else {
-                cell.set_symbol("■").set_style(Style::new().fg(self.bg_color));
+                let sym = if self.unicode { "\u{2591}" } else { "-" };
+                cell.set_symbol(sym).set_style(Style::new().fg(self.bg_color));
             }
         }
     }
@@ -54,22 +58,33 @@ impl Widget for &GradientMeter<'_> {
 /// For widgets that render meters frequently at the same width (e.g.,
 /// process list with 200 rows each showing a CPU meter), caching
 /// eliminates redundant gradient lookups.
+#[derive(Debug)]
 pub struct CachedMeter {
     width: u16,
     gradient: Gradient,
     bg_color: ratatui::style::Color,
+    unicode: bool,
     cache: Vec<Option<Vec<(char, ratatui::style::Color)>>>,
 }
 
 impl CachedMeter {
     /// Create a new cached meter with the given width and gradient.
-    pub fn new(width: u16, gradient: Gradient, bg_color: ratatui::style::Color) -> Self {
+    pub fn new(width: u16, gradient: Gradient, bg_color: ratatui::style::Color, unicode: bool) -> Self {
         Self {
             width,
             gradient,
             bg_color,
+            unicode,
             cache: vec![None; 101],
         }
+    }
+
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn unicode(&self) -> bool {
+        self.unicode
     }
 
     /// Get the pre-computed cell data for a given percentage.
@@ -78,6 +93,7 @@ impl CachedMeter {
         let width = self.width;
         let gradient = &self.gradient;
         let bg = self.bg_color;
+        let unicode = self.unicode;
         self.cache[idx].get_or_insert_with(|| {
             #[allow(clippy::cast_possible_truncation)]
             let fill_width = (u32::from(width) * u32::from(value) / 100) as u16;
@@ -85,9 +101,9 @@ impl CachedMeter {
                 .map(|i| {
                     if i < fill_width {
                         let pct = i as usize * 100 / width as usize;
-                        ('■', gradient.at(pct))
+                        (if unicode { '\u{2588}' } else { '#' }, gradient.at(pct))
                     } else {
-                        ('■', bg)
+                        (if unicode { '\u{2591}' } else { '-' }, bg)
                     }
                 })
                 .collect()
@@ -120,12 +136,13 @@ mod tests {
             gradient: &gradient,
             bg_color: Color::DarkGray,
             invert: false,
+            unicode: true,
         };
         let area = Rect::new(0, 0, 10, 1);
         let mut buf = Buffer::empty(area);
         (&meter).render(area, &mut buf);
         for x in 0..10 {
-            assert_eq!(buf[(x, 0)].symbol(), "■");
+            assert_eq!(buf[(x, 0)].symbol(), "\u{2591}");
             assert_eq!(buf[(x, 0)].fg, Color::DarkGray);
         }
     }
@@ -138,12 +155,13 @@ mod tests {
             gradient: &gradient,
             bg_color: Color::DarkGray,
             invert: false,
+            unicode: true,
         };
         let area = Rect::new(0, 0, 10, 1);
         let mut buf = Buffer::empty(area);
         (&meter).render(area, &mut buf);
         for x in 0..10 {
-            assert_eq!(buf[(x, 0)].symbol(), "■");
+            assert_eq!(buf[(x, 0)].symbol(), "\u{2588}");
             assert_ne!(buf[(x, 0)].fg, Color::DarkGray);
         }
     }
@@ -156,6 +174,7 @@ mod tests {
             gradient: &gradient,
             bg_color: Color::DarkGray,
             invert: false,
+            unicode: true,
         };
         let area = Rect::new(0, 0, 10, 1);
         let mut buf = Buffer::empty(area);
@@ -168,7 +187,7 @@ mod tests {
     #[test]
     fn cached_meter_consistency() {
         let gradient = Gradient::two_color((0, 0, 0), (255, 255, 255));
-        let mut cached = CachedMeter::new(10, gradient, Color::DarkGray);
+        let mut cached = CachedMeter::new(10, gradient, Color::DarkGray, true);
         let first = cached.get(50).to_vec();
         let second = cached.get(50).to_vec();
         assert_eq!(first, second);

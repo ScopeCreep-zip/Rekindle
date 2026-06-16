@@ -95,13 +95,24 @@ impl SubscriptionRegistry {
         });
 
         let conns = self.conns.read();
+        let mut delivered = 0u32;
+        let mut dropped = 0u32;
         for sub in conns.values() {
             if sub.filters.iter().any(|f| f.matches(event)) {
-                let _ = sub.handle.outbound_tx.try_send(OutboundFrame::Datagram {
+                match sub.handle.outbound_tx.try_send(OutboundFrame::Datagram {
                     kind: DatagramKind::Publish,
                     payload: publish.clone(),
-                });
+                }) {
+                    Ok(()) => delivered += 1,
+                    Err(_) => dropped += 1,
+                }
             }
+        }
+        if delivered > 0 || dropped > 0 {
+            tracing::info!(
+                total_conns = conns.len(), delivered, dropped,
+                "subscription: fan_out complete"
+            );
         }
     }
 

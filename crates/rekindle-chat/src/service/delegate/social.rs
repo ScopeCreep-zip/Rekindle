@@ -53,9 +53,15 @@ impl ChatService {
     }
 
     pub async fn thread_message(
-        &self, gov: &str, thread_id: &str, ciphertext: Vec<u8>, mek_gen: u64, reply_to: Option<&str>,
+        &self, gov: &str, channel_id: &str, thread_id: &str, ciphertext: Vec<u8>, mek_gen: u64, reply_to: Option<&str>,
     ) -> Result<String, ChatError> {
-        self.community.thread_message(gov, thread_id, ciphertext, mek_gen, reply_to).await
+        self.community.thread_message(gov, channel_id, thread_id, ciphertext, mek_gen, reply_to).await
+    }
+
+    pub async fn send_thread_message(
+        &self, gov: &str, channel: &str, thread_id: &str, body: &str,
+    ) -> Result<String, ChatError> {
+        self.community.send_thread_message(gov, channel, thread_id, body).await
     }
 
     pub async fn archive_thread(&self, gov: &str, thread_id: &str, archived: bool) -> Result<(), ChatError> {

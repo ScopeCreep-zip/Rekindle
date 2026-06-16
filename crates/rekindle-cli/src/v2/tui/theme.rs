@@ -148,7 +148,7 @@ impl ThemeManager {
     }
 
     /// Create a styled span.
-    pub fn span<'a>(&self, style_name: &str, content: &'a str) -> Span<'a> {
+    pub fn span(&self, style_name: &str, content: &str) -> Span<'static> {
         Span::styled(content.to_string(), self.style(style_name))
     }
 

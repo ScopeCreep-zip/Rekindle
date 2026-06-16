@@ -1,116 +1,121 @@
-//! Friend list input — scroll, accept/reject requests, open DM.
+//! Friend list input — scroll, accept/reject, open DM.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 
-use super::FriendListView;
-use crate::v2::tui::action::Action;
+use crate::v2::tui::effects::Effect;
+use crate::v2::tui::events::TerminalEvent;
+use crate::v2::tui::state::confirm::PendingConfirmAction;
+use crate::v2::tui::state::navigation::{OverlayState, ViewKind};
+use crate::v2::tui::state::render_caches::RenderCaches;
+use crate::v2::tui::state::TuiState;
 
-pub fn handle_update(view: &mut FriendListView, action: &Action) -> Option<Action> {
-    match action {
-        Action::ScrollDown(_) => {
-            let max = build_visual_count(view).saturating_sub(1);
-            let i = view.list_state.selected().unwrap_or(0);
-            view.list_state.select(Some((i + 1).min(max)));
-        }
-        Action::ScrollUp(_) => {
-            let i = view.list_state.selected().unwrap_or(0);
-            view.list_state.select(Some(i.saturating_sub(1)));
-        }
-        Action::ScrollToTop => { view.list_state.select(Some(0)); }
-        Action::ScrollToBottom => {
-            let max = build_visual_count(view).saturating_sub(1);
-            view.list_state.select(Some(max));
-        }
-        _ => {}
-    }
-    None
-}
+pub fn handle(
+    event: &TerminalEvent,
+    state: &mut TuiState,
+    _caches: &mut RenderCaches,
+) -> Vec<Effect> {
+    let TerminalEvent::Key(key) = event else { return vec![]; };
 
-pub fn handle_focused_key(view: &mut FriendListView, key: KeyEvent) -> Option<Action> {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            let max = build_visual_count(view).saturating_sub(1);
-            let i = view.list_state.selected().unwrap_or(0);
-            view.list_state.select(Some((i + 1).min(max)));
-            None
+            move_selection(state, 1);
+            vec![]
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            let i = view.list_state.selected().unwrap_or(0);
-            view.list_state.select(Some(i.saturating_sub(1)));
-            None
+            move_selection(state, -1);
+            vec![]
         }
-        KeyCode::Enter => {
-            let visual_idx = view.list_state.selected()?;
-            let friend_idx = visual_to_friend_index(&view.friends, visual_idx)?;
-            let friend = view.friends.get(friend_idx)?;
-            Some(Action::ShowDmThread { peer_key: friend.public_key.clone() })
+        KeyCode::Char('h') => {
+            state.nav.pop_view();
+            vec![]
+        }
+        KeyCode::Char('l') | KeyCode::Enter => {
+            if let Some(ref pk) = state.session.friend_selected_key {
+                if state.friends.friends.iter().any(|f| f.public_key == *pk) {
+                    return vec![Effect::Navigate(ViewKind::DmThread { peer_key: pk.clone() })];
+                }
+            }
+            vec![]
         }
         KeyCode::Char('a') => {
-            let visual_idx = view.list_state.selected()?;
-            let pending_idx = visual_to_pending_index(&view.friends, &view.pending_requests, visual_idx)?;
-            let request = view.pending_requests.get(pending_idx)?;
-            Some(Action::AcceptFriendRequest(request.public_key.clone()))
+            if let Some(req) = selected_pending(state) {
+                let (_, effect) = state.in_flight.track_request(
+                    crate::v2::tui::state::in_flight::RequestKind::Send,
+                    rekindle_types::daemon::DaemonRequest::Chat(
+                        rekindle_types::daemon::ChatRequest::FriendAccept { public_key: req },
+                    ),
+                    state.now,
+                );
+                return vec![effect];
+            }
+            vec![]
         }
         KeyCode::Char('r') => {
-            let visual_idx = view.list_state.selected()?;
-            let pending_idx = visual_to_pending_index(&view.friends, &view.pending_requests, visual_idx)?;
-            let request = view.pending_requests.get(pending_idx)?;
-            Some(Action::RejectFriendRequest(request.public_key.clone()))
+            if let Some(req) = selected_pending(state) {
+                let (_, effect) = state.in_flight.track_request(
+                    crate::v2::tui::state::in_flight::RequestKind::Send,
+                    rekindle_types::daemon::DaemonRequest::Chat(
+                        rekindle_types::daemon::ChatRequest::FriendReject { public_key: req },
+                    ),
+                    state.now,
+                );
+                return vec![effect];
+            }
+            vec![]
         }
-        _ => None,
+        KeyCode::Home => {
+            if let Some(first) = state.friends.friends.first() {
+                state.session.friend_selected_key = Some(first.public_key.clone());
+            }
+            vec![]
+        }
+        KeyCode::End => {
+            if let Some(last) = state.friends.friends.last() {
+                state.session.friend_selected_key = Some(last.public_key.clone());
+            }
+            vec![]
+        }
+        KeyCode::Char('X') => {
+            if let Some(ref pk) = state.session.friend_selected_key {
+                if let Some(friend) = state.friends.friends.iter().find(|f| f.public_key == *pk) {
+                    state.nav.confirm.show(
+                        format!("Remove {}?", friend.display_name),
+                        "They will be removed from your friend list.",
+                        PendingConfirmAction::RemoveFriend {
+                            peer_key: pk.clone(),
+                        },
+                    );
+                    state.nav.overlay = Some(OverlayState::Confirm);
+                }
+            }
+            vec![]
+        }
+        _ => vec![],
     }
 }
 
-fn build_visual_count(view: &FriendListView) -> usize {
-    let mut count = 0;
-    let mut current_status: Option<&str> = None;
-    for friend in &view.friends {
-        if current_status != Some(friend.status.as_str()) {
-            current_status = Some(friend.status.as_str());
-            count += 1;
-        }
-        count += 1;
+fn move_selection(state: &mut TuiState, delta: i32) {
+    let friends = &state.friends.friends;
+    if friends.is_empty() {
+        return;
     }
-    if !view.pending_requests.is_empty() {
-        count += 2 + view.pending_requests.len();
+    let current = state.session.friend_selected_key.as_deref()
+        .and_then(|pk| friends.iter().position(|f| f.public_key == pk))
+        .unwrap_or(0);
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+    let new = if delta > 0 {
+        (current + delta as usize).min(friends.len() - 1)
+    } else {
+        current.saturating_sub((-delta) as usize)
+    };
+    if let Some(f) = friends.get(new) {
+        state.session.friend_selected_key = Some(f.public_key.clone());
     }
-    count
 }
 
-fn visual_to_friend_index(friends: &[rekindle_types::display::FriendDisplay], visual_idx: usize) -> Option<usize> {
-    let mut current_status: Option<&str> = None;
-    let mut visual = 0usize;
-    for (friend_count, friend) in friends.iter().enumerate() {
-        if current_status != Some(friend.status.as_str()) {
-            current_status = Some(friend.status.as_str());
-            if visual == visual_idx { return None; }
-            visual += 1;
-        }
-        if visual == visual_idx { return Some(friend_count); }
-        visual += 1;
-    }
-    None
-}
-
-fn visual_to_pending_index(
-    friends: &[rekindle_types::display::FriendDisplay],
-    pending: &[super::PendingRequestDisplay],
-    visual_idx: usize,
-) -> Option<usize> {
-    let mut visual = 0usize;
-    let mut current_status: Option<&str> = None;
-    for friend in friends {
-        if current_status != Some(friend.status.as_str()) {
-            current_status = Some(friend.status.as_str());
-            visual += 1;
-        }
-        visual += 1;
-    }
-    if pending.is_empty() { return None; }
-    visual += 2;
-    for (i, _) in pending.iter().enumerate() {
-        if visual == visual_idx { return Some(i); }
-        visual += 1;
-    }
-    None
+fn selected_pending(state: &TuiState) -> Option<String> {
+    let pk = state.session.friend_selected_key.as_deref()?;
+    state.friends.pending_requests.iter()
+        .find(|r| r.public_key == pk)
+        .map(|r| r.public_key.clone())
 }

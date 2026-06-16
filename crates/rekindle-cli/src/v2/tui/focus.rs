@@ -20,6 +20,8 @@ pub enum FocusId {
     SplitDmMessages,
     /// Split-pane DM input box (right side of channel watch).
     SplitDmInput,
+    /// Thread panel in channel watch.
+    ThreadPanel,
     /// Dashboard: identity panel (top-left).
     DashIdentity,
     /// Dashboard: node status panel (top-right).
@@ -84,15 +86,6 @@ impl FocusRing {
         }
     }
 
-    /// Number of focusable components.
-    pub fn len(&self) -> usize {
-        self.slots.len()
-    }
-
-    /// Whether the ring is empty (should never be true after construction).
-    pub fn is_empty(&self) -> bool {
-        self.slots.is_empty()
-    }
 }
 
 #[cfg(test)]

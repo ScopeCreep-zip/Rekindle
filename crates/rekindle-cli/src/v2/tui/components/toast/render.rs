@@ -5,11 +5,10 @@ use ratatui::style::Style;
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
-use super::state::NotificationStack;
-use crate::v2::tui::action::ToastLevel;
+use crate::v2::tui::state::ephemeral::{ToastLevel, ToastStack};
 use crate::v2::tui::theme::ThemeManager;
 
-impl NotificationStack {
+impl ToastStack {
     pub fn render(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
         for (i, toast) in self.toasts.iter().enumerate() {
             let width = 40u16.min(area.width.saturating_sub(4));

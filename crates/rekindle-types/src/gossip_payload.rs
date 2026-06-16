@@ -85,7 +85,7 @@ pub enum ControlPayload {
     EventRsvpChanged { event_id: String, pseudonym_key: String, status: String },
     EventReminder { event_id: String, title: String, minutes_until_start: u32 },
     ThreadCreated { thread: ThreadInfo },
-    ThreadMessage { thread_id: String, message_id: String, sender_pseudonym: String, ciphertext: Vec<u8>, mek_generation: u64, timestamp: u64, reply_to_id: Option<String> },
+    ThreadMessage { thread_id: String, channel_id: String, message_id: String, sender_pseudonym: String, ciphertext: Vec<u8>, mek_generation: u64, timestamp: u64, reply_to_id: Option<String> },
     ThreadArchived { thread_id: String, archived: bool },
     GameServerAdded { server: GameServerInfo },
     GameServerRemoved { server_id: String },
@@ -243,7 +243,7 @@ impl ControlPayload {
             Self::ThreadCreated { thread } =>
                 SubscriptionEvent::Social(SocialEvent::ThreadCreated { community: c(), channel: thread.channel_id, thread_id: thread.id, thread_name: thread.name, creator_pseudonym: thread.creator_pseudonym }),
             Self::ThreadMessage { thread_id, message_id, sender_pseudonym, timestamp, .. } =>
-                SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted { community: c(), thread_id, message_id, sender_pseudonym, timestamp }),
+                SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted { community: c(), thread_id, message_id, sender_pseudonym, timestamp, body: None }),
             Self::ThreadArchived { thread_id, archived } =>
                 SubscriptionEvent::Social(SocialEvent::ThreadArchiveChanged { community: c(), thread_id, archived }),
             Self::GameServerAdded { server } =>

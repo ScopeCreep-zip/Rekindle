@@ -5,7 +5,7 @@ use crossterm::event::KeyEvent;
 use super::context::KeymapContext;
 use super::map::map_action;
 use super::parse::{parse_combo, matches_key, KeyPattern};
-use super::super::action::Action;
+use super::map::KeymapAction;
 
 /// The embedded keymap JSON — compiled into the binary.
 const KEYMAP_JSON: &str = include_str!("../../../../keymap/default.keymap.json");
@@ -64,7 +64,7 @@ impl KeymapStore {
 
     /// Classify a key event into an Action, given the current context.
     /// First match wins. Returns None if no binding matches.
-    pub fn classify(&self, key: KeyEvent, context: KeymapContext) -> Option<Action> {
+    pub fn classify(&self, key: KeyEvent, context: KeymapContext) -> Option<KeymapAction> {
         for binding in &self.bindings {
             if !binding.dispatch || !binding.contexts.contains(&context) {
                 continue;
@@ -124,14 +124,14 @@ mod tests {
     fn classify_q_quits() {
         let store = KeymapStore::load().unwrap();
         let action = store.classify(key(KeyCode::Char('q'), KeyModifiers::NONE), KeymapContext::Default);
-        assert!(matches!(action, Some(Action::Quit)));
+        assert!(matches!(action, Some(KeymapAction::Quit)));
     }
 
     #[test]
     fn classify_ctrl_c_quits() {
         let store = KeymapStore::load().unwrap();
         let action = store.classify(key(KeyCode::Char('c'), KeyModifiers::CONTROL), KeymapContext::Default);
-        assert!(matches!(action, Some(Action::Quit)));
+        assert!(matches!(action, Some(KeymapAction::Quit)));
     }
 
     #[test]
@@ -139,7 +139,7 @@ mod tests {
         let store = KeymapStore::load().unwrap();
         assert!(matches!(
             store.classify(key(KeyCode::Char('q'), KeyModifiers::NONE), KeymapContext::Default),
-            Some(Action::Quit)
+            Some(KeymapAction::Quit)
         ));
         assert!(store.classify(key(KeyCode::Char('q'), KeyModifiers::NONE), KeymapContext::Input).is_none());
     }
@@ -148,14 +148,14 @@ mod tests {
     fn classify_esc_in_input_exits() {
         let store = KeymapStore::load().unwrap();
         let action = store.classify(key(KeyCode::Esc, KeyModifiers::NONE), KeymapContext::Input);
-        assert!(matches!(action, Some(Action::ExitInputMode)));
+        assert!(matches!(action, Some(KeymapAction::ExitInputMode)));
     }
 
     #[test]
     fn classify_enter_in_input_submits() {
         let store = KeymapStore::load().unwrap();
         let action = store.classify(key(KeyCode::Enter, KeyModifiers::NONE), KeymapContext::Input);
-        assert!(matches!(action, Some(Action::InputSubmit)));
+        assert!(matches!(action, Some(KeymapAction::InputSubmit)));
     }
 
     #[test]
@@ -170,6 +170,27 @@ mod tests {
         let store = KeymapStore::load().unwrap();
         let line = store.hint_line(KeymapContext::Default);
         assert!(line.contains("Quit"));
+    }
+
+    #[test]
+    fn classify_d_shows_doctor() {
+        let store = KeymapStore::load().unwrap();
+        let action = store.classify(key(KeyCode::Char('D'), KeyModifiers::SHIFT), KeymapContext::Default);
+        assert!(matches!(action, Some(KeymapAction::ShowDoctor)));
+    }
+
+    #[test]
+    fn classify_i_shows_identity() {
+        let store = KeymapStore::load().unwrap();
+        let action = store.classify(key(KeyCode::Char('I'), KeyModifiers::SHIFT), KeymapContext::Default);
+        assert!(matches!(action, Some(KeymapAction::ShowIdentitySettings)));
+    }
+
+    #[test]
+    fn classify_z_toggles_timezone() {
+        let store = KeymapStore::load().unwrap();
+        let action = store.classify(key(KeyCode::Char('Z'), KeyModifiers::SHIFT), KeymapContext::Default);
+        assert!(matches!(action, Some(KeymapAction::ToggleTimezone)));
     }
 
     #[test]

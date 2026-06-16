@@ -85,11 +85,12 @@ pub async fn dispatch(cmd: &SocialCmd, client: &DaemonClient, mode: OutputMode) 
             })).await?;
             format::print_structured(&value, mode)
         }
-        SocialCmd::ThreadMessage { community, thread_id, ciphertext, mek_generation, reply_to_id } => {
+        SocialCmd::ThreadMessage { community, channel_id, thread_id, ciphertext, mek_generation, reply_to_id } => {
             let ct_bytes = hex::decode(ciphertext)
                 .map_err(|e| anyhow::anyhow!("invalid hex ciphertext: {e}"))?;
             let value = client.request_ok(DaemonRequest::Chat(ChatRequest::ThreadMessage {
                 community: community.clone(),
+                channel_id: channel_id.clone(),
                 thread_id: thread_id.clone(),
                 ciphertext: ct_bytes,
                 mek_generation: *mek_generation,

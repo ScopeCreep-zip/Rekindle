@@ -15,6 +15,16 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Common interface for message types that support author+timestamp grouping.
+/// Eliminates type conversion between DM and channel message types for
+/// the grouping algorithm.
+pub trait Groupable {
+    /// Unique identifier for the message author within the conversation scope.
+    fn author_id(&self) -> &str;
+    /// Milliseconds since Unix epoch.
+    fn message_timestamp(&self) -> u64;
+}
+
 // ── Community ───────────────────────────────────────────────────────────
 
 /// Overview of a joined community for list display.
@@ -129,6 +139,15 @@ pub struct DecryptedMessageDisplay {
     pub thread_id: Option<String>,
 }
 
+impl Groupable for DecryptedMessageDisplay {
+    fn author_id(&self) -> &str {
+        &self.author_pseudonym
+    }
+    fn message_timestamp(&self) -> u64 {
+        self.timestamp
+    }
+}
+
 fn default_delivery_status() -> DeliveryStatus {
     DeliveryStatus::Confirmed
 }
@@ -204,6 +223,15 @@ pub struct DmMessageDisplay {
     pub is_self: bool,
     #[serde(default)]
     pub sequence: u64,
+}
+
+impl Groupable for DmMessageDisplay {
+    fn author_id(&self) -> &str {
+        &self.sender_key
+    }
+    fn message_timestamp(&self) -> u64 {
+        self.timestamp
+    }
 }
 
 // ── Pending Friend Requests ─────────────────────────────────────────────

@@ -6,10 +6,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
-use super::state::ConfirmDialogState;
+use crate::v2::tui::state::confirm::ConfirmState;
 use crate::v2::tui::theme::ThemeManager;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmDialogState, theme: &ThemeManager) {
+pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState, theme: &ThemeManager) {
     if !state.visible { return; }
 
     let popup_width = 52u16.min(area.width.saturating_sub(4));

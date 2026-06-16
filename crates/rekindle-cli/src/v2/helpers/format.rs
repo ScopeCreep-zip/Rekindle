@@ -3,6 +3,44 @@
 use std::path::Path;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+
+/// Client-side timezone display preference. The daemon sends epoch milliseconds.
+/// Each client decides how to render them. This enum controls the CLI TUI's choice.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub enum TimezoneMode {
+    /// Use the OS system timezone via `chrono::Local`. Inherits from `TZ` env var
+    /// or `/etc/localtime` on Unix, `GetTimeZoneInformation` on Windows.
+    /// Re-evaluated on every call — if the OS timezone changes mid-session,
+    /// the next render picks it up.
+    #[default]
+    Local,
+    /// Always UTC regardless of OS timezone.
+    Utc,
+}
+
+impl TimezoneMode {
+    /// Toggle between Local and UTC.
+    pub fn toggle(&mut self) {
+        *self = match self {
+            Self::Local => Self::Utc,
+            Self::Utc => Self::Local,
+        };
+    }
+
+    /// Short abbreviation for display in the status bar.
+    /// Local mode returns the OS timezone abbreviation (e.g., "PDT", "JST", "CET").
+    /// UTC mode returns "UTC".
+    pub fn abbreviation(&self) -> String {
+        match self {
+            Self::Local => {
+                chrono::Local::now().format("%Z").to_string()
+            }
+            Self::Utc => "UTC".to_string(),
+        }
+    }
+}
+
 /// "just now", "4m ago", "2h 13m ago", "3d 5h ago"
 pub fn format_duration_ago(duration: Duration) -> String {
     let secs = duration.as_secs();
@@ -27,23 +65,64 @@ pub fn format_duration_ago(duration: Duration) -> String {
     if rem_hours > 0 { format!("{days}d {rem_hours}h ago") } else { format!("{days}d ago") }
 }
 
-/// "2026-05-09 14:31:00"
-pub fn format_timestamp(epoch_ms: u64) -> String {
-    use chrono::{Local, TimeZone};
+/// "2026-05-09 14:31:00" in the specified timezone.
+pub fn format_timestamp(epoch_ms: u64, tz: &TimezoneMode) -> String {
     #[allow(clippy::cast_possible_wrap)]
-    match Local.timestamp_millis_opt(epoch_ms as i64).single() {
-        Some(t) => t.format("%Y-%m-%d %H:%M:%S").to_string(),
-        None => format!("{epoch_ms}ms"),
+    let ms = epoch_ms as i64;
+    match tz {
+        TimezoneMode::Local => {
+            use chrono::{Local, TimeZone};
+            match Local.timestamp_millis_opt(ms).single() {
+                Some(t) => t.format("%Y-%m-%d %H:%M:%S").to_string(),
+                None => format!("{epoch_ms}ms"),
+            }
+        }
+        TimezoneMode::Utc => {
+            match chrono::DateTime::from_timestamp_millis(ms) {
+                Some(t) => t.format("%Y-%m-%d %H:%M:%S").to_string(),
+                None => format!("{epoch_ms}ms"),
+            }
+        }
     }
 }
 
-/// "14:31"
-pub fn format_time_short(epoch_ms: u64) -> String {
-    use chrono::{Local, TimeZone};
+/// "14:31" in the specified timezone.
+pub fn format_time_short(epoch_ms: u64, tz: &TimezoneMode) -> String {
     #[allow(clippy::cast_possible_wrap)]
-    match Local.timestamp_millis_opt(epoch_ms as i64).single() {
-        Some(t) => t.format("%H:%M").to_string(),
-        None => "??:??".to_string(),
+    let ms = epoch_ms as i64;
+    match tz {
+        TimezoneMode::Local => {
+            use chrono::{Local, TimeZone};
+            match Local.timestamp_millis_opt(ms).single() {
+                Some(t) => t.format("%H:%M").to_string(),
+                None => "??:??".to_string(),
+            }
+        }
+        TimezoneMode::Utc => {
+            match chrono::DateTime::from_timestamp_millis(ms) {
+                Some(t) => t.format("%H:%M").to_string(),
+                None => "??:??".to_string(),
+            }
+        }
+    }
+}
+
+/// "2025-06-15" in the specified timezone. Used for date separators.
+pub fn format_day(epoch_ms: u64, tz: &TimezoneMode) -> String {
+    #[allow(clippy::cast_possible_wrap)]
+    let ms = epoch_ms as i64;
+    match tz {
+        TimezoneMode::Local => {
+            use chrono::{Local, TimeZone};
+            Local.timestamp_millis_opt(ms).single()
+                .map(|t| t.format("%Y-%m-%d").to_string())
+                .unwrap_or_default()
+        }
+        TimezoneMode::Utc => {
+            chrono::DateTime::from_timestamp_millis(ms)
+                .map(|t| t.format("%Y-%m-%d").to_string())
+                .unwrap_or_default()
+        }
     }
 }
 
@@ -141,5 +220,34 @@ mod tests {
         assert_eq!(format_uptime(754), "12m 34s");
         assert_eq!(format_uptime(18720), "5h 12m");
         assert_eq!(format_uptime(277200), "3d 5h");
+    }
+
+    #[test]
+    fn timezone_toggle() {
+        let mut tz = TimezoneMode::Local;
+        tz.toggle();
+        assert_eq!(tz, TimezoneMode::Utc);
+        tz.toggle();
+        assert_eq!(tz, TimezoneMode::Local);
+    }
+
+    #[test]
+    fn utc_time_format() {
+        // 2025-01-01 00:00:00 UTC = 1735689600000ms
+        let ms = 1_735_689_600_000u64;
+        assert_eq!(format_time_short(ms, &TimezoneMode::Utc), "00:00");
+        assert!(format_timestamp(ms, &TimezoneMode::Utc).starts_with("2025-01-01"));
+        assert_eq!(format_day(ms, &TimezoneMode::Utc), "2025-01-01");
+    }
+
+    #[test]
+    fn utc_abbreviation() {
+        assert_eq!(TimezoneMode::Utc.abbreviation(), "UTC");
+    }
+
+    #[test]
+    fn local_abbreviation_nonempty() {
+        // System timezone abbreviation should never be empty
+        assert!(!TimezoneMode::Local.abbreviation().is_empty());
     }
 }

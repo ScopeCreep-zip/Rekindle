@@ -5,16 +5,22 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use super::state::TabBarState;
+use crate::v2::tui::state::tab_bar::TabBarState;
 use crate::v2::tui::components::unread_badge;
 use crate::v2::tui::theme::ThemeManager;
 
 /// Render the tab bar.
-pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &ThemeManager) {
-    state.click_regions.clear();
-    if state.tabs.is_empty() {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    state: &TabBarState,
+    click_regions: &mut Vec<(u16, u16, usize)>,
+    theme: &ThemeManager,
+) {
+    click_regions.clear();
+    if state.tabs().is_empty() {
         frame.render_widget(
-            Paragraph::new(Span::styled(" rekindle", theme.style("title"))),
+            Paragraph::new(theme.span("title", " rekindle")),
             area,
         );
         return;
@@ -25,18 +31,24 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &Th
     let max_width = area.width;
 
     if state.scroll_offset() > 0 {
-        spans.push(Span::styled("◀ ", theme.style("dim")));
+        spans.push(theme.span("dim", "◀ "));
         used_width += 2;
     }
 
-    let mut visible_end = state.tabs.len();
+    let tab_count = state.tabs().len();
+    let selected = state.selected();
+    let skip = state.scroll_offset();
+    let tab_snapshot: Vec<(String, u32)> = state.tabs().iter()
+        .map(|t| (t.label.clone(), t.unread))
+        .collect();
+    let mut visible_end = tab_count;
 
-    for (i, tab) in state.tabs.iter().enumerate().skip(state.scroll_offset()) {
-        let is_selected = i == state.selected;
+    for (i, (label, unread)) in tab_snapshot.iter().enumerate().skip(skip) {
+        let is_selected = i == selected;
 
-        let badge = unread_badge::unread_span(tab.unread, theme);
-        let badge_text = unread_badge::format_unread(tab.unread);
-        let label_text = format!(" {} ", tab.label);
+        let badge = unread_badge::unread_span(*unread, theme);
+        let badge_text = unread_badge::format_unread(*unread);
+        let label_text = format!(" {} ", label);
         #[allow(clippy::cast_possible_truncation)]
         let total_width = label_text.len() as u16 + badge_text.len() as u16;
 
@@ -46,7 +58,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &Th
         }
 
         let tab_start_x = area.x + used_width;
-        state.click_regions.push((tab_start_x, tab_start_x + total_width, i));
+        click_regions.push((tab_start_x, tab_start_x + total_width, i));
 
         let style = if is_selected {
             theme.mode_normal_style()
@@ -55,15 +67,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &Th
         };
 
         spans.push(Span::styled(label_text, style));
-        if tab.unread > 0 {
+        if *unread > 0 {
             spans.push(badge);
         }
         spans.push(Span::raw("│"));
         used_width += total_width + 1;
     }
 
-    if visible_end < state.tabs.len() {
-        spans.push(Span::styled(" ▶", theme.style("dim")));
+    if visible_end < tab_count {
+        spans.push(theme.span("dim", " ▶"));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

@@ -72,6 +72,63 @@ pub(crate) async fn dispatch_verified_gossip(
         );
     }
 
+    // ── ThreadMessage: MEK-decrypt before event emission ──────────
+    if let GossipPayload::Control(ControlPayload::ThreadMessage {
+        ref thread_id, ref channel_id, ref message_id, ref ciphertext,
+        mek_generation, timestamp, ref sender_pseudonym, ..
+    }) = payload {
+        info!(
+            community = &community[..12.min(community.len())],
+            thread_id = &thread_id[..12.min(thread_id.len())],
+            channel_id = &channel_id[..12.min(channel_id.len())],
+            mek_generation,
+            ciphertext_len = ciphertext.len(),
+            "gossip_dispatch: ThreadMessage received — attempting MEK decrypt"
+        );
+
+        let body = match mek_cache.get_generation(community, channel_id, mek_generation) {
+            Some(mek_key) => {
+                match crate::crypto::mek::mek_decrypt(&mek_key, ciphertext, &[]) {
+                    Ok(plaintext) => {
+                        trace!(
+                            thread_id = &thread_id[..12.min(thread_id.len())],
+                            plaintext_len = plaintext.len(),
+                            "gossip: ThreadMessage decrypted"
+                        );
+                        Some(String::from_utf8(plaintext).unwrap_or_else(|_| "[binary]".into()))
+                    }
+                    Err(e) => {
+                        warn!(
+                            thread_id = &thread_id[..12.min(thread_id.len())],
+                            mek_generation, error = %e,
+                            "gossip: ThreadMessage MEK decrypt failed"
+                        );
+                        None
+                    }
+                }
+            }
+            None => {
+                debug!(
+                    thread_id = &thread_id[..12.min(thread_id.len())],
+                    mek_generation,
+                    "gossip: ThreadMessage MEK not cached — thread body unavailable"
+                );
+                None
+            }
+        };
+
+        return Some(SubscriptionEvent::Social(
+            rekindle_types::subscription_events::SocialEvent::ThreadMessagePosted {
+                community: community.to_string(),
+                thread_id: thread_id.clone(),
+                message_id: message_id.clone(),
+                sender_pseudonym: sender_pseudonym.clone(),
+                timestamp,
+                body,
+            },
+        ));
+    }
+
     // ── Control payload side-effects ───────────────────────────────
     if let GossipPayload::Control(ref ctrl) = payload {
         handle_control_side_effects(session_meta, envelope, ctrl);

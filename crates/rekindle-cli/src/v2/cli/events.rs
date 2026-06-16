@@ -107,6 +107,8 @@ pub enum SocialCmd {
         #[arg(long, short = 'c')]
         community: String,
         #[arg(long)]
+        channel_id: String,
+        #[arg(long)]
         thread_id: String,
         /// Pre-encrypted ciphertext (hex-encoded).
         #[arg(long)]

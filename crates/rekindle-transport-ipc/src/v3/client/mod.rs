@@ -124,7 +124,12 @@ impl FrameRouter for ClientRouter {
     }
 
     fn on_publish(&self, info: &ConnectionInfo, subscription_id: uuid::Uuid, topic_hash: &[u8; 32], event_seq: u32, payload: &[u8]) {
-        let _ = self.inbound_tx.try_send(InboundFrame {
+        tracing::info!(
+            conn_id = info.conn_id,
+            payload_len = payload.len(),
+            "ClientRouter::on_publish — pushing to inbound_tx"
+        );
+        match self.inbound_tx.try_send(InboundFrame {
             lane: crate::v3::wire::lane::Lane::Control,
             class: FrameClass::Datagram as u8, kind: DatagramKind::Publish as u8,
             payload: payload.to_vec(),
@@ -141,7 +146,10 @@ impl FrameRouter for ClientRouter {
             transfer_id: None,
             stream_id: None,
             chunk_index: None,
-        });
+        }) {
+            Ok(()) => tracing::debug!("on_publish: inbound_tx send OK"),
+            Err(e) => tracing::error!("on_publish: inbound_tx send FAILED — {e}"),
+        }
     }
 
     fn on_reply(&self, info: &ConnectionInfo, reply_message_id: uuid::Uuid, correlation_id: uuid::Uuid, status_phase: u32, payload: &[u8]) {

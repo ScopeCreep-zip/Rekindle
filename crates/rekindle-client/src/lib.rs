@@ -99,27 +99,36 @@ impl DaemonClient {
         let (tx, rx) = mpsc::channel(4096);
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            debug!("event mux task started");
+            info!("event mux task started");
+            let mut event_count: u64 = 0;
             loop {
                 let frame = match client.recv().await {
                     Some(f) => f,
                     None => break,
                 };
+                debug!(
+                    class = frame.class, kind = frame.kind,
+                    payload_len = frame.payload.len(),
+                    "event mux: frame received"
+                );
                 if frame.kind == DatagramKind::Publish as u8 {
+                    info!(payload_len = frame.payload.len(), "event mux: PUBLISH frame — deserializing");
                     match SubscriptionEvent::from_bytes(&frame.payload) {
                         Ok(event) => {
+                            event_count += 1;
+                            info!(event_count, category = ?event.category(), "event mux: SubscriptionEvent deserialized — sending to bridge");
                             if tx.send(event).await.is_err() {
-                                debug!("event mux: consumer dropped — exiting");
+                                warn!("event mux: consumer dropped — exiting");
                                 break;
                             }
                         }
                         Err(e) => {
-                            warn!(error = %e, "event mux: SubscriptionEvent deserialization failed");
+                            warn!(error = %e, payload_len = frame.payload.len(), "event mux: SubscriptionEvent deserialization FAILED");
                         }
                     }
                 }
             }
-            debug!("event mux task exiting — connection closed");
+            info!(total_events = event_count, "event mux task exiting — connection closed");
         });
         Some(rx)
     }
@@ -267,7 +276,8 @@ fn request_timeout(request: &DaemonRequest) -> Duration {
             | ChatRequest::CommunityPendingMembers { .. }
             | ChatRequest::ChannelList { .. }
             | ChatRequest::ChannelCreate { .. }
-            | ChatRequest::ChannelDelete { .. } => LONG_TIMEOUT,
+            | ChatRequest::ChannelDelete { .. }
+            | ChatRequest::ThreadSend { .. } => LONG_TIMEOUT,
             // Local operations — no network I/O
             ChatRequest::IdentityShow
             | ChatRequest::IdentityExport

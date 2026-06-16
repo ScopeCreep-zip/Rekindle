@@ -373,6 +373,14 @@ pub async fn run(
             }
 
             ControlAction::ClientOutbound(frame) => {
+                tracing::debug!(
+                    kind = %match &frame {
+                        OutboundFrame::Channel { kind, .. } => format!("Channel({kind:?})"),
+                        OutboundFrame::Datagram { kind, .. } => format!("Datagram({kind:?})"),
+                        _ => "other".into(),
+                    },
+                    "control_loop: ClientOutbound"
+                );
                 if let OutboundFrame::Channel { kind: ChannelKind::Goodbye, .. } = &frame {
                     if !ctx.local_goodbye_sent() {
                         let _ = ctx.session_state_mut().apply(SessionEvent::GoodbyeSent);

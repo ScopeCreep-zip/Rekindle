@@ -24,6 +24,7 @@ pub struct StatusBarState {
     pub node_attached: bool,
     pub peer_count: usize,
     pub hints: String,
+    pub timezone_label: String,
 }
 
 /// Render the status bar.
@@ -37,7 +38,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &The
     let breadcrumb = if state.breadcrumb.is_empty() {
         Span::raw("")
     } else {
-        Span::styled(format!(" {} ", state.breadcrumb), theme.style("dim"))
+        let breadcrumb_text = format!(" {} ", state.breadcrumb);
+        theme.span("dim", &breadcrumb_text)
     };
 
     let typing = if state.typing_context.is_empty() {
@@ -55,16 +57,22 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &The
     } else {
         format!(" {node_glyph} offline ")
     };
-    let node_span = Span::styled(node_text, theme.style("dim"));
+    let node_span = theme.span("dim", &node_text);
 
-    let separator = Span::raw(" │ ");
+    let separator = Span::raw(" \u{2502} ");
 
-    let hints = Span::styled(format!(" {} ", state.hints), theme.style("dim"));
+    let tz_text = format!(" {} ", state.timezone_label);
+    let tz_span = theme.span("dim", &tz_text);
+
+    let hints_text = format!(" {} ", state.hints);
+    let hints = theme.span("dim", &hints_text);
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             mode_badge, breadcrumb, typing,
-            separator.clone(), node_span, separator, hints,
+            separator.clone(), node_span,
+            separator.clone(), tz_span,
+            separator, hints,
         ])),
         area,
     );

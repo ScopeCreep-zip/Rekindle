@@ -1,13 +1,13 @@
 //! Terminal lifecycle wrapper.
 //!
 //! Wraps ratatui's DefaultTerminal with an async event task that
-//! multiplexes terminal events, tick/render timers into a single
-//! Event channel. Multiple TUI instances can run in separate tmux
-//! panes simultaneously — each owns its own terminal handle and
-//! event loop.
+//! forwards terminal input events into an Event channel. Timer events
+//! (tick, render) are NOT sent — they are owned by the machine loop's
+//! own tokio::time::Interval select arms. This prevents biased select
+//! starvation where 34 timer events/second on the unbounded channel
+//! would prevent daemon_rx from ever being polled.
 
 use std::ops::{Deref, DerefMut};
-use std::time::Duration;
 
 use crossterm::event::{Event as CrosstermEvent, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
@@ -50,34 +50,24 @@ impl Tui {
         let task = Self::spawn_event_task(
             event_tx,
             cancellation_token.clone(),
-            config.tick_rate,
-            config.frame_rate,
         );
 
         Ok(Self { terminal, task, cancellation_token, event_rx })
     }
 
-    /// Spawn the event loop task — multiplexes 4 sources via tokio::select!
+    /// Spawn the event loop task — forwards terminal input events only.
+    /// Tick and render timers are owned by the machine loop's select arms,
+    /// NOT by this task. This prevents select starvation.
     fn spawn_event_task(
         tx: UnboundedSender<Event>,
         token: CancellationToken,
-        tick_rate: f64,
-        frame_rate: f64,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let mut tick_interval =
-                tokio::time::interval(Duration::from_secs_f64(1.0 / tick_rate));
-            let mut render_interval =
-                tokio::time::interval(Duration::from_secs_f64(1.0 / frame_rate));
             let mut reader = EventStream::new();
-
-            let _ = tx.send(Event::Init);
 
             loop {
                 let event = tokio::select! {
                     () = token.cancelled() => break,
-                    _ = tick_interval.tick() => Event::Tick,
-                    _ = render_interval.tick() => Event::Render,
                     Some(Ok(evt)) = reader.next().fuse() => {
                         match evt {
                             CrosstermEvent::Key(k) if k.kind == KeyEventKind::Press => Event::Key(k),

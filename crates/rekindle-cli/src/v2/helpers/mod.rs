@@ -14,8 +14,8 @@ mod validate;
 
 pub use audit::audit_log;
 pub use format::{
-    abbreviate_key, dir_size, format_bytes, format_duration_ago, format_time_short,
-    format_timestamp, format_uptime,
+    abbreviate_key, dir_size, format_bytes, format_day, format_duration_ago, format_time_short,
+    format_timestamp, format_uptime, TimezoneMode,
 };
 pub use parse::{
     parse_color, parse_duration_secs, parse_permissions, parse_since_timestamp, parse_u32,

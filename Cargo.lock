@@ -7950,6 +7950,7 @@ dependencies = [
  "futures-util",
  "git2",
  "hex",
+ "indexmap 2.14.0",
  "insta",
  "keyring",
  "nucleo",

@@ -6,4 +6,5 @@ mod parse;
 mod store;
 
 pub use context::KeymapContext;
+pub use map::KeymapAction;
 pub use store::KeymapStore;
