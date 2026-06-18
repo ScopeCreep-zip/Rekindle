@@ -105,7 +105,7 @@ undocumented-unsafe-blocks = "deny"      # every unsafe block needs // SAFETY: c
 print-stdout = "warn"                    # prefer tracing over println!
 print-stderr = "warn"                    # prefer tracing over eprintln!
 
-# Local patch for violin plot axis range fix — will move to git fork for PR.
+# Violin plot axis range fix — awaiting upstream merge.
 # See: bheisler/criterion.rs src/plot/{gnuplot_backend,plotters_backend}/summary.rs
 [patch.crates-io]
-criterion = { path = "../../bheisler/criterion.rs" }
+criterion = { git = "https://github.com/usrbinkat/criterion.rs", branch = "fix/violin-plot-range-and-clippy-lints" }
