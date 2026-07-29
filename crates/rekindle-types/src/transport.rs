@@ -348,7 +348,7 @@ pub trait Transport: Send + Sync + 'static {
     /// Delete a local copy of a DHT record. Record must be closed first.
     /// Does not delete from the network -- stops local republishing.
     async fn delete_record(&self, key: &str) -> TransportResult<()> {
-        Err(TransportError::Internal("delete_record not implemented".into()))
+        Err(TransportError::Internal(format!("delete_record not implemented for {key}")))
     }
 
     // ── Route management ───────────────────────────────────

@@ -88,7 +88,7 @@ pub async fn publish_to_profile(
         node, profile_key,
         crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
         route_blob.to_vec(), None,
-    ).await
+    ).await.map(|_| ())
 }
 
 /// Publish a route blob to the personal mailbox DHT record (subkey 0).
@@ -96,7 +96,7 @@ pub async fn publish_to_mailbox(
     node: &TransportNode, mailbox_key: &str, route_blob: &[u8],
 ) -> Result<()> {
     debug!(mailbox_key, blob_bytes = route_blob.len(), "route: publishing to mailbox");
-    super::dht_writes::set(node, mailbox_key, 0, route_blob.to_vec(), None).await
+    super::dht_writes::set(node, mailbox_key, 0, route_blob.to_vec(), None).await.map(|_| ())
 }
 
 /// Publish a community route blob to the community mailbox (subkey 0).
@@ -104,7 +104,7 @@ pub async fn publish_to_community_mailbox(
     node: &TransportNode, community_mailbox_key: &str, route_blob: &[u8],
 ) -> Result<()> {
     debug!(community_mailbox_key, blob_bytes = route_blob.len(), "route: publishing to community mailbox");
-    super::dht_writes::set(node, community_mailbox_key, 0, route_blob.to_vec(), None).await
+    super::dht_writes::set(node, community_mailbox_key, 0, route_blob.to_vec(), None).await.map(|_| ())
 }
 
 // ── Refresh ────────────────────────────────────────────────────────────
