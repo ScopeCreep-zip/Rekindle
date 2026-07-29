@@ -345,6 +345,12 @@ pub trait Transport: Send + Sync + 'static {
     ) -> TransportResult<InspectResult>;
     async fn close_record(&self, record: OpenRecord) -> TransportResult<()>;
 
+    /// Delete a local copy of a DHT record. Record must be closed first.
+    /// Does not delete from the network -- stops local republishing.
+    async fn delete_record(&self, key: &str) -> TransportResult<()> {
+        Err(TransportError::Internal("delete_record not implemented".into()))
+    }
+
     // ── Route management ───────────────────────────────────
     async fn allocate_route(&self) -> TransportResult<(String, Vec<u8>)>;
     fn route_blob(&self) -> Option<Vec<u8>>;

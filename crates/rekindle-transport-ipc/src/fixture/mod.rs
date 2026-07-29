@@ -16,13 +16,13 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::v3::client::{IpcClient, ReplyPayload, RequestReplyError};
-use crate::v3::crypto::noise::generate_keypair;
-use crate::v3::router::{MockRouter, ReplyRouter};
-use crate::v3::server::{ConnectionHandle, IpcServer};
-use crate::v3::session::handshake::HandshakeConfig;
-use crate::v3::wire::capability::CapabilityBits;
-use crate::v3::wire::clearance::Clearance;
+use crate::v4::client::{IpcClient, ReplyPayload, RequestReplyError};
+use crate::v4::crypto::noise::generate_keypair;
+use crate::v4::router::{MockRouter, ReplyRouter};
+use crate::v4::server::{ConnectionHandle, IpcServer};
+use crate::v4::session::handshake::HandshakeConfig;
+use crate::v4::wire::capability::CapabilityBits;
+use crate::v4::wire::clearance::Clearance;
 
 /// A connected server+client pair with full lifecycle ownership.
 ///
@@ -196,15 +196,22 @@ impl IpcFixture {
         BoundServer { router: shared_router, cancel, _task: task }
     }
 
+    /// Access the first connection's StreamingSender (for server→client streaming).
+    #[cfg(target_os = "linux")]
+    pub fn streaming_sender(&self) -> Option<crate::v4::streaming::send::StreamingSender> {
+        self.conn_handle.lock().as_ref()
+            .and_then(|h| h.streaming_sender.clone())
+    }
+
     /// Access the first connection's BulkSender (for server→client bench).
-    pub fn bulk_sender(&self) -> crate::v3::bulk::send::BulkSender {
+    pub fn bulk_sender(&self) -> crate::v4::bulk::send::BulkSender {
         self.conn_handle.lock().as_ref()
             .expect("conn_handle not populated — connect a client first")
             .bulk_sender.clone()
     }
 
     /// Access the first connection's outbound_tx (for server→client datagram bench).
-    pub fn outbound_tx(&self) -> tokio::sync::mpsc::Sender<crate::v3::context::OutboundFrame> {
+    pub fn outbound_tx(&self) -> tokio::sync::mpsc::Sender<crate::v4::wire::outbound::OutboundFrame> {
         self.conn_handle.lock().as_ref()
             .expect("conn_handle not populated — connect a client first")
             .outbound_tx.clone()
@@ -227,9 +234,9 @@ impl IpcFixture {
     pub fn session_id(&self) -> uuid::Uuid { self.client().session_id() }
     pub fn agreed_clearance(&self) -> Clearance { self.client().agreed_clearance() }
     pub fn active_capabilities(&self) -> CapabilityBits { self.client().active_capabilities() }
-    pub fn phase(&self) -> crate::v3::client::ClientPhase { self.client().phase() }
+    pub fn phase(&self) -> crate::v4::client::ClientPhase { self.client().phase() }
 
-    pub async fn send_request(&self, payload: &[u8], ack_timeout: Duration) -> Result<crate::v3::client::SendDelivered, crate::v3::client::SendError> {
+    pub async fn send_request(&self, payload: &[u8], ack_timeout: Duration) -> Result<crate::v4::client::SendDelivered, crate::v4::client::SendError> {
         self.client().send_request(payload, ack_timeout).await
     }
 
@@ -237,15 +244,15 @@ impl IpcFixture {
         self.client().request_reply(payload, timeout).await
     }
 
-    pub async fn send_notify(&self, payload: &[u8]) -> Result<(), crate::v3::client::ClientError> {
+    pub async fn send_notify(&self, payload: &[u8]) -> Result<(), crate::v4::client::ClientError> {
         self.client().send_notify(payload).await
     }
 
-    pub async fn send_bulk(&self, stream_id: u8, payload: &[u8], ack_timeout: Duration) -> Result<crate::v3::client::BulkDelivered, crate::v3::client::BulkError> {
+    pub async fn send_bulk(&self, stream_id: u8, payload: &[u8], ack_timeout: Duration) -> Result<crate::v4::client::BulkDelivered, crate::v4::client::BulkError> {
         self.client().send_bulk(stream_id, payload, ack_timeout).await
     }
 
-    pub async fn rotate_keys(&self, timeout: Duration) -> Result<(), crate::v3::client::BulkError> {
+    pub async fn rotate_keys(&self, timeout: Duration) -> Result<(), crate::v4::client::BulkError> {
         self.client().rotate_keys(timeout).await
     }
 
@@ -253,11 +260,11 @@ impl IpcFixture {
         self.client().cancel_bulk(stream_id).await;
     }
 
-    pub async fn recv(&self) -> Option<crate::v3::client::InboundFrame> {
+    pub async fn recv(&self) -> Option<crate::v4::client::InboundFrame> {
         self.client().recv().await
     }
 
-    pub async fn recv_bulk_chunk(&self) -> Option<crate::v3::client::BulkChunk> {
+    pub async fn recv_bulk_chunk(&self) -> Option<crate::v4::client::BulkChunk> {
         self.client().recv_bulk_chunk().await
     }
 
@@ -269,7 +276,7 @@ impl IpcFixture {
         self.client().cancel_recv_bulk(stream_id);
     }
 
-    pub async fn send_raw_outbound(&self, frame: crate::v3::context::OutboundFrame) -> Result<(), crate::v3::client::ClientError> {
+    pub async fn send_raw_outbound(&self, frame: crate::v4::wire::outbound::OutboundFrame) -> Result<(), crate::v4::client::ClientError> {
         self.client().send_raw_outbound(frame).await
     }
 }
@@ -299,7 +306,9 @@ impl Drop for BoundServer {
 /// The single handshake config used by all tests and benches.
 pub fn handshake_config() -> HandshakeConfig {
     HandshakeConfig::new(
-        CapabilityBits::MANDATORY_V1 | CapabilityBits::AEAD_AEGIS128L,
+        CapabilityBits::MANDATORY_V1
+            | CapabilityBits::AEAD_AEGIS128L
+            | CapabilityBits::SHARED_ARENA,
         Clearance::Internal,
     )
 }

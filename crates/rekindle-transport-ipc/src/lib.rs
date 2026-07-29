@@ -6,6 +6,7 @@
 //! read/write tasks, and parallel rayon-dispatched bulk data plane.
 
 pub mod v3;
+pub mod v4;
 pub mod calibrate;
 
 pub mod fixture;

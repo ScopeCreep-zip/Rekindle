@@ -59,7 +59,7 @@ impl<'a> ChannelLogOps<'a> {
             .map_err(|e| TransportError::SerializationFailed {
                 reason: format!("channel message: {e}"),
             })?;
-        record::set(self.rc, key, slot_index, bytes, Some(writer)).await
+        record::set(self.rc, key, slot_index, bytes, Some(writer)).await.map(|_| ())
     }
 
     /// Open a channel record for reading.
@@ -75,7 +75,7 @@ impl<'a> ChannelLogOps<'a> {
     /// Watch all subkeys of a channel record.
     pub async fn watch(&self, key: &str, subkey_count: u32) -> Result<bool> {
         let subkeys: Vec<u32> = (0..subkey_count).collect();
-        record::watch(self.rc, key, &subkeys).await
+        record::watch(self.rc, key, &subkeys, None, None).await
     }
 
     /// Close the channel record.

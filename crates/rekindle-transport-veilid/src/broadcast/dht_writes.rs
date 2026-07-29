@@ -99,17 +99,47 @@ pub async fn get(
 }
 
 /// Write raw bytes to a specific subkey.
+///
+/// Returns `None` on success. Returns `Some(data)` if the network has a
+/// newer value (stale write -- caller's data was not applied).
 pub async fn set(
     node: &TransportNode, record_key: &str, subkey: u32,
     data: Vec<u8>, writer: Option<veilid_core::KeyPair>,
-) -> Result<()> {
+) -> Result<Option<Vec<u8>>> {
     let data_len = data.len();
     debug!(record_key, subkey, bytes = data_len, has_writer = writer.is_some(), "dht: set");
     let dht = node.dht()?;
     let result = dht::record::set(dht.routing_context(), record_key, subkey, data, writer).await;
     match &result {
-        Ok(()) => info!(record_key, subkey, bytes = data_len, "dht: set complete"),
+        Ok(None) => info!(record_key, subkey, bytes = data_len, "dht: set complete"),
+        Ok(Some(conflict)) => warn!(record_key, subkey, bytes = data_len, conflict_bytes = conflict.len(), "dht: set stale -- network has newer value"),
         Err(e) => warn!(record_key, subkey, bytes = data_len, error = %e, "dht: set failed"),
+    }
+    result
+}
+
+/// Read a subkey value with full metadata (seq, writer).
+pub async fn get_full(
+    node: &TransportNode, record_key: &str, subkey: u32, force_refresh: bool,
+) -> Result<Option<veilid_core::ValueData>> {
+    debug!(record_key, subkey, force_refresh, "dht: get_full");
+    let dht = node.dht()?;
+    let result = dht::record::get_full(dht.routing_context(), record_key, subkey, force_refresh).await;
+    match &result {
+        Ok(Some(vd)) => debug!(record_key, subkey, seq = vd.seq().to_option().unwrap_or(0), bytes = vd.data().len(), "dht: get_full returned data"),
+        Ok(None) => debug!(record_key, subkey, "dht: get_full returned None"),
+        Err(e) => warn!(record_key, subkey, error = %e, "dht: get_full failed"),
+    }
+    result
+}
+
+/// Delete a local copy of a DHT record. Record must be closed first.
+pub async fn delete(node: &TransportNode, record_key: &str) -> Result<()> {
+    info!(record_key, "dht: delete");
+    let dht = node.dht()?;
+    let result = dht::record::delete(dht.routing_context(), record_key).await;
+    if let Err(ref e) = result {
+        warn!(record_key, error = %e, "dht: delete failed");
     }
     result
 }
@@ -117,12 +147,17 @@ pub async fn set(
 // ── Watch ──────────────────────────────────────────────────────────────
 
 /// Set a DHT watch on specific subkeys of a record.
+///
+/// `expiration`: `None` for no expiration, `Some(timestamp)` for auto-cancel.
+/// `count`: `None` for unlimited notifications, `Some(n)` for at most n.
 pub async fn watch(
     node: &TransportNode, record_key: &str, subkeys: &[u32],
+    expiration: Option<veilid_core::Timestamp>,
+    count: Option<u32>,
 ) -> Result<bool> {
     debug!(record_key, subkey_count = subkeys.len(), "dht: watch");
     let dht = node.dht()?;
-    let result = dht::record::watch(dht.routing_context(), record_key, subkeys).await;
+    let result = dht::record::watch(dht.routing_context(), record_key, subkeys, expiration, count).await;
     match &result {
         Ok(true) => info!(record_key, subkey_count = subkeys.len(), "dht: watch active"),
         Ok(false) => warn!(record_key, "dht: watch declined by Veilid"),
@@ -134,12 +169,16 @@ pub async fn watch(
 // ── Inspect ────────────────────────────────────────────────────────────
 
 /// Inspect a record to get sequence numbers without fetching data.
+///
+/// `scope` controls the comparison: SyncGet (am I behind?), SyncSet
+/// (is the network behind me?), UpdateGet, UpdateSet, or Local.
 pub async fn inspect(
     node: &TransportNode, record_key: &str, subkeys: Option<&[u32]>,
+    scope: veilid_core::DHTReportScope,
 ) -> Result<veilid_core::DHTRecordReport> {
     debug!(record_key, "dht: inspect");
     let dht = node.dht()?;
-    let result = dht::record::inspect(dht.routing_context(), record_key, subkeys).await;
+    let result = dht::record::inspect(dht.routing_context(), record_key, subkeys, scope).await;
     if let Err(ref e) = result {
         warn!(record_key, error = %e, "dht: inspect failed");
     }
@@ -160,7 +199,11 @@ pub async fn set_and_verify(
     writer: Option<veilid_core::KeyPair>,
     deadline_secs: u64,
 ) -> Result<bool> {
-    set(node, record_key, subkey, data, writer).await?;
+    let conflict = set(node, record_key, subkey, data, writer).await?;
+    if conflict.is_some() {
+        warn!(record_key, subkey, "set_and_verify: stale write detected -- network has newer value");
+        return Ok(false);
+    }
 
     let deadline = std::time::Duration::from_secs(deadline_secs);
     let start = std::time::Instant::now();

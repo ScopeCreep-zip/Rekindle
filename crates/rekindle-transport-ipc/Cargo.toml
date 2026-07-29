@@ -49,7 +49,7 @@ tempfile    = "3"
 criterion   = { version = "0.7", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.7"
+io-uring = { git = "https://github.com/usrbinkat/io-uring", rev = "82eac08" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
@@ -72,5 +72,11 @@ required-features = ["bench-harness"]
 [[bench]]
 name = "v3_calibrated_floors"
 path = "benches/v3/calibrated_floors.rs"
+harness = false
+required-features = ["bench-harness"]
+
+[[bench]]
+name = "v4_streaming"
+path = "benches/v4/streaming.rs"
 harness = false
 required-features = ["bench-harness"]

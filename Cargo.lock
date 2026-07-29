@@ -1888,6 +1888,7 @@ dependencies = [
 [[package]]
 name = "criterion"
 version = "0.7.0"
+source = "git+https://github.com/usrbinkat/criterion.rs?branch=fix%2Fviolin-plot-range-and-clippy-lints#6c9b20a6c75ea4342aa66b582224627c71c5de06"
 dependencies = [
  "anes",
  "cast",
@@ -1919,6 +1920,7 @@ dependencies = [
 [[package]]
 name = "criterion-plot"
 version = "0.7.0"
+source = "git+https://github.com/usrbinkat/criterion.rs?branch=fix%2Fviolin-plot-range-and-clippy-lints#6c9b20a6c75ea4342aa66b582224627c71c5de06"
 dependencies = [
  "cast",
  "itertools 0.13.0",
@@ -4698,8 +4700,7 @@ dependencies = [
 [[package]]
 name = "io-uring"
 version = "0.7.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d09b98f7eace8982db770e4408e7470b028ce513ac28fecdc6bf4c30fe92b62"
+source = "git+https://github.com/usrbinkat/io-uring?rev=82eac08#82eac087ad9e5c6212bcc7b37d1571344c44a10e"
 dependencies = [
  "bitflags 2.11.1",
  "cfg-if 1.0.4",

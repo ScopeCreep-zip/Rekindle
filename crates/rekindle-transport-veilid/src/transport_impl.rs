@@ -98,7 +98,7 @@ impl Transport for VeilidTransport {
     async fn write_record(&self, record: &OpenRecord, subkey: u32, data: &[u8], writer: Option<&[u8]>) -> TransportResult<()> {
         let key = record.key();
         let kp = writer.map(node::deserialize_keypair).transpose().map_err(TransportError::from)?;
-        dht_writes::set(&self.node, key, subkey, data.to_vec(), kp).await.map_err(TransportError::from)
+        dht_writes::set(&self.node, key, subkey, data.to_vec(), kp).await.map(|_| ()).map_err(TransportError::from)
     }
 
     async fn read_record(&self, record: &OpenRecord, subkey: u32, force_refresh: bool) -> TransportResult<Option<Vec<u8>>> {
@@ -108,7 +108,7 @@ impl Transport for VeilidTransport {
 
     async fn watch_record(&self, record: &OpenRecord, subkeys: &[u32]) -> TransportResult<WatchToken> {
         let key = record.key();
-        let active = dht_writes::watch(&self.node, key, subkeys).await.map_err(TransportError::from)?;
+        let active = dht_writes::watch(&self.node, key, subkeys, None, None).await.map_err(TransportError::from)?;
         if !active { return Err(TransportError::Internal(format!("watch declined for {}…", &key[..12.min(key.len())]))); }
         let token_id = self.watch_counter.fetch_add(1, Ordering::Relaxed);
         self.watch_registry.write().insert(token_id, (key.to_string(), subkeys.to_vec()));
@@ -122,7 +122,7 @@ impl Transport for VeilidTransport {
 
     async fn inspect_record(&self, record: &OpenRecord, subkeys: &[u32]) -> TransportResult<rekindle_types::transport::InspectResult> {
         let key = record.key();
-        let report = dht_writes::inspect(&self.node, key, Some(subkeys)).await.map_err(TransportError::from)?;
+        let report = dht_writes::inspect(&self.node, key, Some(subkeys), veilid_core::DHTReportScope::UpdateGet).await.map_err(TransportError::from)?;
         Ok(rekindle_types::transport::InspectResult {
             local_seqs: report.local_seqs().iter().map(veilid_core::ValueSeqNum::to_option).collect(),
             network_seqs: report.network_seqs().iter().map(veilid_core::ValueSeqNum::to_option).collect(),
@@ -132,6 +132,10 @@ impl Transport for VeilidTransport {
     async fn close_record(&self, record: OpenRecord) -> TransportResult<()> {
         let key = record.key();
         dht_writes::close(&self.node, key).await.map_err(TransportError::from)
+    }
+
+    async fn delete_record(&self, key: &str) -> TransportResult<()> {
+        dht_writes::delete(&self.node, key).await.map_err(TransportError::from)
     }
 
     async fn allocate_route(&self) -> TransportResult<(String, Vec<u8>)> {

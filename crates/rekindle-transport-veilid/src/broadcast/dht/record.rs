@@ -146,6 +146,16 @@ pub async fn close(rc: &RoutingContext, key: &str) -> Result<()> {
     Ok(())
 }
 
+/// Delete a local copy of a DHT record. Does not delete from the network.
+/// The record must be closed first. Stops local republishing of this record.
+pub async fn delete(rc: &RoutingContext, key: &str) -> Result<()> {
+    let rk = parse_key(key)?;
+    rc.delete_dht_record(rk)
+        .await
+        .map_err(|e| TransportError::DhtError { reason: format!("delete: {e}") })?;
+    Ok(())
+}
+
 /// Read a subkey value. Returns `None` if not yet set.
 pub async fn get(
     rc: &RoutingContext,
@@ -161,14 +171,37 @@ pub async fn get(
     Ok(value.map(|v| v.data().to_vec()))
 }
 
+/// Read a subkey value with full metadata (sequence number, writer key).
+///
+/// Unlike `get` which returns raw bytes, this returns the complete
+/// `ValueData` including `seq()` (monotonic sequence number) and
+/// `writer()` (public key of the last writer). Use this when you need
+/// conflict detection or provenance tracking.
+pub async fn get_full(
+    rc: &RoutingContext,
+    key: &str,
+    subkey: u32,
+    force_refresh: bool,
+) -> Result<Option<veilid_core::ValueData>> {
+    let rk = parse_key(key)?;
+    rc.get_dht_value(rk, subkey, force_refresh)
+        .await
+        .map_err(|e| TransportError::DhtError { reason: format!("get_full: {e}") })
+}
+
 /// Write a subkey value. Optionally specify an explicit writer keypair.
+///
+/// Returns `None` if the write succeeded. Returns `Some(data)` if the
+/// network has a newer value (stale write -- the caller's data was not
+/// applied). Callers that do not need conflict detection can discard
+/// the return with `.map(|_| ())`.
 pub async fn set(
     rc: &RoutingContext,
     key: &str,
     subkey: u32,
     data: Vec<u8>,
     writer: Option<KeyPair>,
-) -> Result<()> {
+) -> Result<Option<Vec<u8>>> {
     let rk = parse_key(key)?;
 
     if data.len() > 32_768 {
@@ -184,37 +217,52 @@ pub async fn set(
         ..Default::default()
     });
 
-    rc.set_dht_value(rk, subkey, data, options)
+    let conflict = rc.set_dht_value(rk, subkey, data, options)
         .await
         .map_err(|e| TransportError::DhtError { reason: format!("set: {e}") })?;
 
-    Ok(())
+    Ok(conflict.map(|vd| vd.data().to_vec()))
 }
 
 /// Watch specific subkeys for changes.
 ///
 /// Returns `true` if the watch is active, `false` if cancelled/failed.
-pub async fn watch(rc: &RoutingContext, key: &str, subkeys: &[u32]) -> Result<bool> {
+///
+/// `expiration`: `None` for no expiration, `Some(timestamp)` for auto-cancel.
+/// `count`: `None` for unlimited notifications, `Some(n)` for at most n.
+pub async fn watch(
+    rc: &RoutingContext,
+    key: &str,
+    subkeys: &[u32],
+    expiration: Option<veilid_core::Timestamp>,
+    count: Option<u32>,
+) -> Result<bool> {
     let rk = parse_key(key)?;
     let range: ValueSubkeyRangeSet = subkeys.iter().copied().collect();
 
-    rc.watch_dht_values(rk, Some(range), None, None)
+    rc.watch_dht_values(rk, Some(range), expiration, count)
         .await
         .map_err(|e| TransportError::DhtError { reason: format!("watch: {e}") })
 }
 
 /// Inspect a record to get sequence numbers without fetching data.
 ///
-/// Returns a vec of `(subkey, local_seq, network_seq)` for changed subkeys.
+/// `scope` controls what comparison is performed:
+/// - `Local`: local cache only
+/// - `SyncGet`: am I behind the network? (GetValue fanout)
+/// - `SyncSet`: is the network behind me? (SetValue fanout)
+/// - `UpdateGet`: like SyncGet but accepts newer values from network
+/// - `UpdateSet`: like SyncSet but simulates a SetValue with seq+1
 pub async fn inspect(
     rc: &RoutingContext,
     key: &str,
     subkeys: Option<&[u32]>,
+    scope: veilid_core::DHTReportScope,
 ) -> Result<veilid_core::DHTRecordReport> {
     let rk = parse_key(key)?;
     let range = subkeys.map(|s| s.iter().copied().collect::<ValueSubkeyRangeSet>());
 
-    rc.inspect_dht_record(rk, range, veilid_core::DHTReportScope::UpdateGet)
+    rc.inspect_dht_record(rk, range, scope)
         .await
         .map_err(|e| TransportError::DhtError { reason: format!("inspect: {e}") })
 }

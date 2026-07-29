@@ -569,6 +569,66 @@ impl<T> ReorderRing<T> {
         slot.state.load(Ordering::Acquire) == FILLED
     }
 
+    /// Check if the slot for `seq` is FILLED with the correct sequence.
+    /// Non-destructive — does not drain or advance the cursor.
+    /// Returns false if seq is outside the current window.
+    ///
+    /// # Safety contract (usage, not `unsafe`)
+    ///
+    /// Same single-writer contract as `drain_contiguous` — only the
+    /// consumer thread should call this for consistent results.
+    #[inline]
+    pub fn is_filled(&self, seq: u64) -> bool {
+        let base = self.window_base.load(Ordering::Acquire) as u64;
+        let Some(distance) = seq.checked_sub(base) else {
+            return false;
+        };
+        if distance >= self.window() as u64 {
+            return false;
+        }
+        let idx = (seq & self.mask) as usize;
+        debug_assert!(idx < self.slots.len());
+        // SAFETY: idx < slots.len() guaranteed by mask.
+        let slot = unsafe { self.slots.get_unchecked(idx) };
+        if slot.state.load(Ordering::Acquire) != FILLED {
+            return false;
+        }
+        // SAFETY: FILLED state + Acquire load establishes happens-before.
+        let slot_seq = slot.seq.with(|ptr| unsafe { ptr::read(ptr) });
+        slot_seq == seq
+    }
+
+    /// Return the contiguous range of missing seqs starting at `next_deliver`.
+    /// Scans forward from `next_deliver` until it finds a FILLED slot or
+    /// reaches the window boundary. Returns `None` if no items are buffered
+    /// or if `next_deliver` is ready (no gap).
+    ///
+    /// The returned range is `(gap_start, gap_end)` inclusive — every seq
+    /// in `[gap_start, gap_end]` is missing from the ring.
+    ///
+    /// # Safety contract (usage, not `unsafe`)
+    ///
+    /// Same single-writer contract as `drain_contiguous`.
+    pub fn gap_range(&self) -> Option<(u64, u64)> {
+        if self.stored_count() == 0 {
+            return None;
+        }
+        let start = self.next_deliver.get();
+        if self.is_filled(start) {
+            return None;
+        }
+        let mut end = start;
+        let window = self.window() as u64;
+        for offset in 1..window {
+            let seq = start + offset;
+            if self.is_filled(seq) {
+                return Some((start, end));
+            }
+            end = seq;
+        }
+        Some((start, end))
+    }
+
     /// Whether any items are currently stored in the ring (FILLED state).
     ///
     /// O(1) via the `stored_count` counter (the mac80211 `stored_mpdu_num`
@@ -1198,6 +1258,84 @@ mod tests {
         let mut delivered = Vec::new();
         ring.drain_contiguous(|seq, val| delivered.push((seq, val)));
         assert_eq!(delivered, vec![(0, 999)], "producer's item must not be orphaned");
+    }
+
+    #[test]
+    fn is_filled_returns_true_for_published_seq() {
+        let ring = ReorderRing::new(8);
+        ring.publish(0, 'a').unwrap();
+        ring.publish(2, 'c').unwrap();
+        assert!(ring.is_filled(0));
+        assert!(!ring.is_filled(1));
+        assert!(ring.is_filled(2));
+        assert!(!ring.is_filled(3));
+    }
+
+    #[test]
+    fn is_filled_returns_false_after_drain() {
+        let ring = ReorderRing::new(8);
+        ring.publish(0, 'a').unwrap();
+        assert!(ring.is_filled(0));
+        ring.drain_contiguous(|_, _| {});
+        assert!(!ring.is_filled(0)); // drained — slot reset to EMPTY
+    }
+
+    #[test]
+    fn is_filled_returns_false_outside_window() {
+        let ring = ReorderRing::<u64>::new(4);
+        ring.publish(0, 10).unwrap();
+        assert!(!ring.is_filled(4));   // above window
+        assert!(!ring.is_filled(100)); // way above
+    }
+
+    #[test]
+    fn gap_range_returns_none_when_empty() {
+        let ring = ReorderRing::<u64>::new(8);
+        assert_eq!(ring.gap_range(), None);
+    }
+
+    #[test]
+    fn gap_range_returns_none_when_next_is_ready() {
+        let ring = ReorderRing::new(8);
+        ring.publish(0, 'a').unwrap();
+        ring.publish(1, 'b').unwrap();
+        assert_eq!(ring.gap_range(), None);
+    }
+
+    #[test]
+    fn gap_range_returns_single_missing() {
+        let ring = ReorderRing::new(8);
+        ring.publish(1, 'b').unwrap();
+        assert_eq!(ring.gap_range(), Some((0, 0)));
+    }
+
+    #[test]
+    fn gap_range_returns_contiguous_range() {
+        let ring = ReorderRing::new(8);
+        ring.publish(3, 'd').unwrap();
+        assert_eq!(ring.gap_range(), Some((0, 2)));
+    }
+
+    #[test]
+    fn gap_range_after_partial_drain() {
+        let ring = ReorderRing::new(8);
+        ring.publish(0, 'a').unwrap();
+        ring.publish(1, 'b').unwrap();
+        ring.publish(4, 'e').unwrap();
+        ring.drain_contiguous(|_, _| {});
+        // next_deliver=2, gap at 2,3, filled at 4
+        assert_eq!(ring.gap_range(), Some((2, 3)));
+    }
+
+    #[test]
+    fn gap_range_single_item_gap_of_one() {
+        let ring = ReorderRing::new(8);
+        ring.publish(1, 10u64).unwrap();
+        // gap is just seq 0
+        assert_eq!(ring.gap_range(), Some((0, 0)));
+        // fill the gap
+        ring.publish(0, 0).unwrap();
+        assert_eq!(ring.gap_range(), None);
     }
 
     #[test]
