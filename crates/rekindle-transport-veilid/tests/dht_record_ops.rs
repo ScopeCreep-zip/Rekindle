@@ -46,6 +46,8 @@ fn test_config() -> VeilidConfig {
         table_store: VeilidConfigTableStore {
             directory: test_storage_dir(&instance, "table_store"),
             delete: true,
+            wipe_on_invalid_device_encryption_key: true,
+            max_value_size_mb: 10,
         },
         block_store: VeilidConfigBlockStore {
             directory: test_storage_dir(&instance, "block_store"),
