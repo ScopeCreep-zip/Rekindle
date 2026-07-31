@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rekindle_route::contexts::RouteContextSpec;
 use serde::{Deserialize, Serialize};
-use veilid_core::{RoutingContext, SafetySelection, Sequencing, Target, VeilidAPI};
+use veilid_core::{RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, Target, VeilidAPI};
 
 use crate::codec::EncodedFrame;
 use crate::error::VoiceError;
@@ -102,7 +102,7 @@ impl VoiceTransport {
             .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
             .with_safety(match spec.kind {
                 rekindle_route::contexts::RouteContextKind::Voice => {
-                    SafetySelection::Unsafe(Sequencing::NoPreference)
+                    SafetySelection::Unsafe(Sequencing::PreferUnordered)
                 }
                 rekindle_route::contexts::RouteContextKind::Safe => {
                     SafetySelection::Unsafe(Sequencing::PreferOrdered)

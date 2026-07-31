@@ -16,7 +16,7 @@ rekindle-utils = { path = "../rekindle-utils" }
 rekindle-transport-buff = { path = "../rekindle-transport-buff", features = ["tokio", "seen-set"] }
 
 # Veilid — the ONLY crate in the workspace that imports this
-veilid-core = { version = "0.5.2", default-features = true }
+veilid-core = { version = "0.5", default-features = true }
 
 # Async
 tokio = { workspace = true }

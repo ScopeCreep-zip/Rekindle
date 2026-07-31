@@ -18,7 +18,7 @@ rekindle-types = { path = "../rekindle-types" }
 aws-lc-rs = { version = "1.16", features = ["aws-lc-sys"] }
 blake3 = "1"
 zeroize = { version = "1", features = ["derive", "alloc", "serde"] }
-rusqlite = { version = "0.37", features = ["bundled-sqlcipher"] }
+rusqlite = { version = "0.39", features = ["bundled-sqlcipher"] }
 argon2 = "0.5"
 serde = { workspace = true }
 serde_json = { workspace = true }

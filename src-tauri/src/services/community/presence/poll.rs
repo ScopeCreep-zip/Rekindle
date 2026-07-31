@@ -657,7 +657,7 @@ async fn compute_history_ranges(
     };
     let cid = community_id.to_string();
 
-    let result: Result<Vec<(String, u64, u64)>, tokio_rusqlite::Error> = pool
+    let result: Result<Vec<(String, u64, u64)>, crate::db::DbError<rusqlite::Error>> = pool
         .call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT conversation_id, MIN(lamport_ts), MAX(lamport_ts) \

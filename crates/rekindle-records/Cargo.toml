@@ -7,7 +7,7 @@ license = "MIT"
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
-veilid-core = "0.5.2"
+veilid-core = "0.5"
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }

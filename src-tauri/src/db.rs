@@ -1,18 +1,82 @@
+use std::fmt;
+use std::sync::Arc;
+
 use rusqlite::Connection;
 
-/// Async database handle backed by a dedicated background thread.
+/// Error type for async DB operations, replacing `tokio_rusqlite::Error`.
 ///
-/// [`tokio_rusqlite::Connection`] wraps a single [`rusqlite::Connection`] on a
-/// background thread and exposes an async `call()` API.  It is Clone + Send
-/// + Sync, so Tauri's `State<'_, DbPool>` works out of the box.
-pub type DbPool = tokio_rusqlite::Connection;
+/// Two failure modes: the closure returned an application error, or the
+/// background task panicked / was cancelled.
+#[derive(Debug)]
+pub enum DbError<E> {
+    /// The closure returned `Err(e)`.
+    Rusqlite(E),
+    /// `spawn_blocking` panicked or was cancelled.
+    Internal(String),
+}
+
+impl<E: fmt::Display> fmt::Display for DbError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rusqlite(e) => write!(f, "{e}"),
+            Self::Internal(msg) => write!(f, "internal db error: {msg}"),
+        }
+    }
+}
+
+impl<E: fmt::Debug + fmt::Display> std::error::Error for DbError<E> {}
+
+impl<E> From<E> for DbError<E> {
+    fn from(e: E) -> Self {
+        Self::Rusqlite(e)
+    }
+}
+
+/// Async database handle backed by `tokio::task::spawn_blocking`.
+///
+/// Wraps a single `rusqlite::Connection` behind `Arc<std::sync::Mutex>` and
+/// exposes an async `call()` API identical to the former `tokio_rusqlite`
+/// dependency. Clone + Send + Sync, so `tauri::State<'_, DbPool>` works.
+#[derive(Clone)]
+pub struct DbPool {
+    conn: Arc<std::sync::Mutex<Connection>>,
+}
+
+impl DbPool {
+    /// Wrap a synchronous connection into an async pool handle.
+    pub fn new(conn: Connection) -> Self {
+        Self {
+            conn: Arc::new(std::sync::Mutex::new(conn)),
+        }
+    }
+
+    /// Run a closure on the connection via `spawn_blocking`.
+    ///
+    /// The closure receives `&mut Connection` (matching the old
+    /// `tokio_rusqlite` signature).
+    pub async fn call<F, T>(&self, f: F) -> Result<T, DbError<rusqlite::Error>>
+    where
+        F: FnOnce(&mut Connection) -> Result<T, rusqlite::Error> + Send + 'static,
+        T: Send + 'static,
+    {
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = conn
+                .lock()
+                .map_err(|e| DbError::Internal(format!("mutex poisoned: {e}")))?;
+            f(&mut guard).map_err(DbError::Rusqlite)
+        })
+        .await
+        .map_err(|e| DbError::Internal(format!("spawn_blocking join: {e}")))?
+    }
+}
 
 /// Bump this every time `001_init.sql` changes.  On mismatch the entire
-/// database is wiped and recreated from the schema — safe because the app
+/// database is wiped and recreated from the schema -- safe because the app
 /// is not live yet and identity keys live in Stronghold, not `SQLite`.
 const SCHEMA_VERSION: i64 = 66;
 
-/// Result of opening the database — includes a flag indicating whether the
+/// Result of opening the database -- includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).
 pub struct DbOpenResult {
     pub pool: DbPool,
@@ -26,8 +90,8 @@ pub struct DbOpenResult {
 /// migration.  Returns a `DbOpenResult` with the pool and a reset flag.
 ///
 /// The raw `rusqlite::Connection` is created and configured synchronously
-/// (PRAGMAs, schema check), then wrapped in `tokio_rusqlite::Connection`
-/// which spawns a dedicated background thread for all future DB access.
+/// (PRAGMAs, schema check), then wrapped in `DbPool` which uses
+/// `spawn_blocking` for all future DB access.
 pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
     let conn =
         Connection::open(db_path).map_err(|e| format!("failed to connect to database: {e}"))?;
@@ -40,7 +104,7 @@ pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
     conn.execute_batch("PRAGMA foreign_keys=ON;")
         .map_err(|e| format!("failed to enable foreign keys: {e}"))?;
 
-    // Check schema version — wipe and recreate if stale.
+    // Check schema version -- wipe and recreate if stale.
     let current: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap_or(0);
@@ -52,7 +116,7 @@ pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
             tracing::info!(
                 old = current,
                 new = SCHEMA_VERSION,
-                "schema version mismatch — recreating database"
+                "schema version mismatch -- recreating database"
             );
         }
         drop_all_tables(&conn)?;
@@ -62,16 +126,16 @@ pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
             .map_err(|e| format!("failed to set schema version: {e}"))?;
     }
 
-    // Wrap configured connection — spawns the background thread.
+    // Wrap configured connection.
     Ok(DbOpenResult {
-        pool: tokio_rusqlite::Connection::from(conn),
+        pool: DbPool::new(conn),
         schema_reset,
     })
 }
 
 /// Drop every user table so the schema can be cleanly re-applied.
 ///
-/// Virtual tables (FTS5) must be dropped before regular tables — they own
+/// Virtual tables (FTS5) must be dropped before regular tables -- they own
 /// shadow tables (`<name>_data`, `<name>_idx`, etc.) which SQLite refuses
 /// to drop directly. We identify them via `sql LIKE 'CREATE VIRTUAL%'`
 /// and skip rows whose `sql` is NULL (shadow tables).

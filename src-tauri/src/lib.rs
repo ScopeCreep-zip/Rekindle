@@ -497,8 +497,7 @@ pub fn run() {
                         tracing::warn!("graceful shutdown timed out after 5s — forcing exit");
                     }
                     // Checkpoint WAL to prevent Windows NTFS file lock issues.
-                    // tokio_rusqlite::Connection drops gracefully after this.
-                    let _: Result<(), tokio_rusqlite::Error<rusqlite::Error>> = pool
+                    let _ = pool
                         .call(|conn| {
                             conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
                             Ok(())

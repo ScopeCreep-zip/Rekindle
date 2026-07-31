@@ -18,7 +18,7 @@ cpal = "0.15"
 dasp_sample = "0.11"
 nnnoiseless = "0.5"
 aec3 = "0.1"
-veilid-core = { version = "0.5.2", features = ["footgun"] }
+veilid-core = { version = "0.5", default-features = true }
 bincode = "1"
 ed25519-dalek = "2"
 rekindle-route = { path = "../rekindle-route" }

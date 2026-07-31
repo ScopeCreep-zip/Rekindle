@@ -59,8 +59,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 parking_lot = { workspace = true }
-rusqlite = { version = "0.37", features = ["bundled"] }
-tokio-rusqlite = "0.7"
+rusqlite = { version = "0.39", features = ["bundled"] }
 argon2 = "0.5"
 iota_stronghold = "2.1"
 zeroize = "1"
@@ -72,7 +71,7 @@ base64 = "0.22"
 rand = "0.8"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
-veilid-core = { version = "0.5.2", default-features = true }
+veilid-core = { version = "0.5", default-features = true }
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
 # Architecture §28.4 device pairing — QR-code rendering for the
 # pairing flow. SVG output keeps the frontend dep-free (it just

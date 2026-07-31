@@ -10,5 +10,5 @@ workspace = true
 [dependencies]
 tokio = { workspace = true }
 tracing = { workspace = true }
-veilid-core = { version = "0.5.2", default-features = true }
+veilid-core = { version = "0.5", default-features = true }
 
