@@ -210,22 +210,37 @@ test suite, and a manual two-node attach/DHT/messaging smoke run.
 
 This is where the architecture actually gets smaller.
 
-### 2.1 Re-enable UPnP
+### 2.1 UPnP — make it configurable, then A/B it. Do not just delete.
 
-Delete `network.upnp = false` and its ~18-line justification comment
-from **both** startup paths:
-`crates/rekindle-protocol/src/node.rs:92-110` and
-`crates/rekindle-transport/src/broadcast/node.rs:78-96`. 0.5.4
-"Fixed UPNP support".
+An earlier draft called this the cheapest win in the plan. It isn't.
+See gap-audit §1.1 for the full trace; the short version:
 
-Make it a config field defaulting to `true` rather than a hardcoded
-constant — the upgraded branch already models this
-(`crates/rekindle-types/src/config.rs:148,256`), and a field gives us
-an escape hatch if a user's gateway misbehaves.
+- The specific panic our comment cites is real in 0.5.3
+  (`native/mod.rs:750`) and **gone in 0.5.7** (now `let-else` +
+  `bail!`).
+- But the mechanism the comment describes — restart re-entering
+  startup with unchanged interfaces — **cannot be reproduced from the
+  code in either version**, because every startup builds a fresh
+  `Network` with a fresh `NetworkInterfaces`, whose first `refresh()`
+  always reports a change. So we never actually established what UPnP
+  was breaking.
+- **0.5.7 still sets `network_needs_restart = true` when the IGD tick
+  fails**, and the attachment manager still detaches and re-attaches
+  in response. The churn path is intact.
 
-**Verify, don't assume:** the failure mode we were dodging is a
-*panic that strands the node detached*. Test on a network with a
-hostile/absent IGD gateway and confirm the node stays attached.
+So: convert `network.upnp = false` from a hardcoded constant into a
+config field in **both** startup paths
+(`crates/rekindle-protocol/src/node.rs:110`,
+`crates/rekindle-transport/src/broadcast/node.rs:95`), and replace the
+~18-line comment with a pointer to gap-audit §1.1 rather than
+restating a mechanism that doesn't hold.
+
+**Default it to `false` — unchanged behaviour — and flip it under
+measurement.** The win (direct inbound instead of VICE relay fallback)
+is real, but the thing to watch is attachment-flap rate on a hostile or
+absent IGD gateway, which is plausibly what was observed originally.
+Also note `require_inbound_relay` now implicitly disables UPnP in
+0.5.7, so the two settings interact.
 
 ### 2.2 Unify the two node-startup paths
 
@@ -409,9 +424,9 @@ stronger.
 
 | Phase | Blocking? | Risk | Payoff |
 |---|---|---|---|
-| 0 — rusqlite 0.39 | **Yes, hard blocker** | **Highest** — SQLCipher vault | None on its own |
-| 1 — the bump | Yes | Low — 3 call sites + 1 classification | Security fixes (audit §1.7) |
-| 2 — delete workarounds | No | Low-medium — verify UPnP panic is gone | Direct inbound reachability; one config path instead of two |
+| 0 — rusqlite 0.39 | **Yes, hard blocker** | Low — SQLCipher amalgamation is byte-identical, tests green | None on its own |
+| 1 — the bump | Yes | Low — 1 line, plus the `AttachmentState` fix | Security fixes (audit §1.7) |
+| 2 — workarounds | No | Medium — UPnP is an A/B, not a deletion | One config path instead of two; *maybe* direct inbound |
 | 3 — backpressure | No | Low | Four guessed numbers → one real ceiling |
 | 4 — retune policy | No | Medium — behaviour change | Above-target routing; less self-managed churn |
 | 5 — HPKE | No | Medium — wire format | Retires bespoke crypto |

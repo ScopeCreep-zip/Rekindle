@@ -23,7 +23,7 @@ corroborates two of the findings below.
 
 ## 1. Gaps that upstream closes
 
-### 1.1 UPnP is disabled to dodge a panic — fixed in 0.5.4
+### 1.1 UPnP is disabled to dodge a panic — partly closed, and our diagnosis doesn't hold
 
 We currently ship with automatic port mapping off:
 
@@ -39,13 +39,69 @@ unchanged — exactly the UPnP-restart case. The node is left
 permanently detached. Our comment notes it was "fixed only on
 unreleased git main".
 
-0.5.4 shipped that fix: **"Fixed UPNP support"**.
+0.5.4's changelog says **"Fixed UPNP support"**, and an earlier draft of
+this audit took that at face value and called re-enabling UPnP the
+cheapest win available. **Reading both versions' sources does not
+support that.** Revised findings:
 
-**What it buys us:** the workaround degrades every NAT'd user to
-inbound relays via VICE. Re-enabling UPnP restores direct inbound
-reachability — lower latency, fewer hops, and less load on the relay
-pool we depend on. Corroboration: on the upgraded branch, `upnp`
-defaults back to `true` (`crates/rekindle-types/src/config.rs:256`).
+**What our comment gets right.** 0.5.3
+`network_manager/native/mod.rs:750` is verbatim
+`refresh_network_state().await?.unwrap_or_log()`. The tick gate it
+cites is real too — `native/tasks/mod.rs:140` is `if upnp {
+self.upnp_task.tick().await?; }` — so with `upnp = false` the task
+genuinely never runs. And `refresh_network_state` does return
+`Ok(None)` whenever interfaces are unchanged, in both versions.
+
+**What I could not substantiate: that the panic is reachable the way
+the comment describes.** The claim is that a UPnP-triggered restart
+re-enters startup with unchanged interfaces. But every startup path in
+*both* versions builds a **fresh** `Network`/`NativeNetwork` owning a
+fresh `NetworkInterfaces` (0.5.3 `network_manager/mod.rs:457`; 0.5.7
+`mod.rs:371`), and `NetworkInterfaces::refresh()` returns `true` on a
+fresh instance — its map starts empty, so the first refresh always
+registers as a change (veilid-tools `network_interfaces/mod.rs:543`).
+On top of that, 0.5.3's `internal_startup` early-returns `Success` when
+`components.is_some()`, so `startup_internal` is not re-entered on the
+same object either. The "interfaces unchanged at startup" precondition
+does not arise on a restart.
+
+So something was observed — the comment is far too specific to be
+invented — but the recorded mechanism does not survive reading the
+code, which means **we do not actually know what UPnP was breaking.**
+
+**What 0.5.7 genuinely changes:**
+
+- That specific panic is gone: the site is now a `let-else` with
+  `bail!` (`network/native/mod.rs:1125`). If `None` ever does arrive,
+  startup errors instead of panicking.
+- `igd_manager` became an `Option`, constructed only when
+  `config.network.upnp && !config.network.privacy.require_inbound_relay`
+  (`network/native/mod.rs:727`), with the task early-returning when
+  absent. Note the new implication: **`require_inbound_relay` now
+  silently disables UPnP.** (In 0.5.3 `IGDManager::new` was always
+  constructed, but it is inert — empty maps, no probes — and the tick
+  was gated, so this is tidiness, not a behaviour fix for us.)
+- **The restart trigger is NOT removed.** 0.5.7's `upnp_task_routine`
+  still does `inner.network_needs_restart = true` when
+  `igd_manager.tick()` fails, and the attachment manager still responds
+  by transitioning to `Detaching` and re-attaching
+  (`attachment_manager/mod.rs:450`). A flaky IGD gateway can still
+  drive repeated detach/re-attach cycles.
+- A `last_network_state().unwrap_or_log()` still exists at
+  `network/native/mod.rs:129`.
+
+**Revised recommendation:** re-enabling UPnP is an **empirical A/B, not
+a safe deletion**. The upside is real (direct inbound instead of VICE
+relay fallback), and the panic that motivated the workaround is gone.
+But the restart-on-IGD-failure loop is intact, so the failure mode to
+watch for is detach/re-attach churn on a hostile or absent gateway —
+which, given we never established what was actually breaking, is
+exactly what may have been observed. Test it with attachment-flap
+monitoring; keep the flag so it can be turned back off.
+
+The upgraded branch does default `upnp` to `true`
+(`crates/rekindle-types/src/config.rs:256`), but that is one branch's
+choice, not evidence it was validated.
 
 ### 1.2 Route allocation flapping — substantially improved in 0.5.4/0.5.7
 
@@ -282,10 +338,12 @@ Upgrade to 0.5.7, in this order:
    signature validation in particular, given how much of our model
    rides `ValueChange`. Go to 0.5.7, not 0.5.4, because of the 0.5.5
    bootstrap regression.
-2. **Re-enable UPnP** (§1.1) and delete the workaround comment.
-   Cheapest real win in the list.
-3. **Adopt `max_concurrent_operations`** (§1.4) and classify
-   `TransactionNotFound` (§1.6). Small, mechanical.
+2. **Adopt `max_concurrent_operations`** (§1.4) and classify
+   `TransactionNotFound` (§1.6). Small, mechanical — and now the
+   cheapest real wins, since UPnP turned out not to be one.
+3. **Make UPnP configurable, defaulted off, and A/B it** (§1.1).
+   The panic is gone but the restart-on-IGD-failure loop is not, and
+   we never established what was actually breaking. Not a deletion.
 4. **Re-test 3-hop inbound routes** (§1.2) now that route testing no
    longer exhausts the relay pool.
 5. **Defer the HPKE migration** (§1.3) — real cleanup, but it is a
