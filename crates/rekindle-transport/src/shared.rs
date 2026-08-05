@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn attachment_state_round_trip() {
-        for raw in 0..=7u8 {
+        for raw in 0..=8u8 {
             let state = AttachmentState::from_u8(raw);
             assert_eq!(state as u8, raw);
         }
@@ -164,6 +164,50 @@ mod tests {
             AttachmentState::from_veilid_string("garbage"),
             AttachmentState::Detached
         );
+    }
+
+    /// Every attached state veilid-core can actually emit must map to an
+    /// attached state on our side.
+    ///
+    /// `from_veilid_string` fails closed to `Detached`, so an upstream
+    /// rename or a new variant does not break the build — it silently
+    /// reports a healthy node as detached. veilid-core 0.5.4 did both at
+    /// once (added `attached_fair`, renamed `FullyAttached` ->
+    /// `AttachedFull`) and the changelog mentioned neither. This walks
+    /// upstream's own enum so the next one fails here instead.
+    #[test]
+    fn every_veilid_attachment_string_is_understood() {
+        use veilid_core::AttachmentState as Upstream;
+
+        for upstream in [
+            Upstream::Detached,
+            Upstream::Attaching,
+            Upstream::AttachedWeak,
+            Upstream::AttachedFair,
+            Upstream::AttachedGood,
+            Upstream::AttachedStrong,
+            Upstream::AttachedFull,
+            Upstream::Detaching,
+        ] {
+            let rendered = upstream.to_string();
+            let ours = AttachmentState::from_veilid_string(&rendered);
+
+            assert_eq!(
+                ours.is_attached(),
+                upstream.is_attached(),
+                "{rendered:?} parsed to {ours:?}, whose is_attached() \
+                 disagrees with veilid-core"
+            );
+
+            if !matches!(upstream, Upstream::Detached) {
+                assert_ne!(
+                    ours,
+                    AttachmentState::Detached,
+                    "{rendered:?} fell through to the fail-closed Detached \
+                     arm — add it to from_veilid_string"
+                );
+            }
+        }
     }
 
     #[test]

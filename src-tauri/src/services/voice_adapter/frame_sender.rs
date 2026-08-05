@@ -46,7 +46,7 @@ impl VeilidVoiceFrameSender {
                 preferred_route: None,
                 hop_count: ANONYMITY_HOP_FLOOR as usize,
                 stability: Stability::LowLatency,
-                sequencing: Sequencing::NoPreference,
+                sequencing: Sequencing::PreferUnordered,
             }))
             .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
     }

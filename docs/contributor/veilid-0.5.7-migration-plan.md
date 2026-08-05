@@ -57,7 +57,32 @@ Both feature flags we rely on (`bundled`,
 `bundled-sqlcipher-vendored-openssl`) exist on rusqlite 0.39 —
 confirmed against the crates.io feature list.
 
-### Two decisions to get right here
+### Verified: this is low risk, not high
+
+An earlier draft called `rekindle-vault` the riskiest item here, on the
+theory that a rusqlite major bump might shift the SQLCipher page format
+or KDF defaults under the identity keystore. **That is not the case.**
+Checked rather than assumed:
+
+- **The bundled SQLCipher is byte-identical.** libsqlite3-sys 0.36 and
+  0.37 vendor the same amalgamation — SQLCipher 4.10.0 / SQLite 3.50.4,
+  matching SHA-256 (`de78ef08…`) on `sqlcipher/sqlite3.c`. There is no
+  format change to migrate across.
+- **Our key path doesn't touch the KDF anyway.**
+  `crates/rekindle-vault/src/store.rs:37` passes a raw hex key
+  (`PRAGMA key = x'…'`), which bypasses SQLCipher's PBKDF2 entirely, and
+  `cipher_page_size` is pinned explicitly at line 39 rather than
+  inherited from defaults.
+- **It builds and passes.** `cargo test -p rekindle-vault` on rusqlite
+  0.39: 6/6 green, including `reopen_same_passphrase_decrypts` and
+  `wrong_passphrase_rejected`. No API breakage in our usage.
+
+So no pre-upgrade vault file is needed as a test input — identical
+engine plus raw-key plus pinned page size means existing vaults open
+unchanged. Keep the round-trip test in the PR as a regression guard,
+not as a gate.
+
+### One decision to get right here
 
 **`rekindle-asql` stays.** Its docstring says it was vendored because
 upstream `tokio-rusqlite` is unmaintained and hard-pins rusqlite 0.37,
@@ -74,18 +99,18 @@ branch already restructuring crates. On ours it is a rewrite of
 working, tested code (`crates/rekindle-asql/src/tests.rs`, 281 lines)
 for no benefit — don't copy it.
 
-**`rekindle-vault` is the risk.** It is the SQLCipher identity
-keystore, and it is the only crate using
-`bundled-sqlcipher-vendored-openssl`. A rusqlite major bump touching
-the encrypted vault needs an explicit open/read/write round-trip
-against an **existing, pre-upgrade vault file** — not just a
-green test suite against freshly-created ones. If the SQLCipher page
-format or KDF defaults shifted, that test is the only thing that
-catches it before a user's identity is unreadable.
+**Exit criteria — the first two are already met.** With the six pins at
+0.39 and the veilid spec relaxed to `"0.5"`,
+`cargo update -p veilid-core --precise 0.5.7` resolves cleanly:
+veilid-core 0.5.7, and a single `libsqlite3-sys 0.37.0` / `rusqlite
+0.39.0` in the graph. `rekindle-vault` builds and its tests pass.
+Remaining: full workspace build and test suite.
 
-**Exit criteria:** `cargo update -p veilid-core --precise 0.5.7
---dry-run` resolves; workspace builds; vault round-trip on a
-pre-upgrade file passes.
+**One note from the resolve:** it pulls in a second `x25519-dalek`
+(3.0.0 alongside our 2.0.1). Harmless — no `links` conflict, just
+binary size — but it means Veilid's KEM types and our PQXDH types are
+built against different versions of the same crate and won't interop
+directly. Relevant only if Phase 5 happens.
 
 ---
 
@@ -108,14 +133,46 @@ Mechanical once Phase 0 lands.
    branch sets all three:
    `crates/rekindle-transport-veilid/src/broadcast/node.rs:104,128`).
    Verify rather than assume, but budget nothing here.
-4. **`AttachmentState` — leave it alone.** Upstream dropped
-   `OverAttached`; we own our own enum
-   (`crates/rekindle-types/src/notification.rs:28`) and parse from
-   strings, so nothing breaks at compile time. The u8 discriminants
-   are load-bearing in atomics
-   (`crates/rekindle-transport/src/shared.rs`), so **do not
-   renumber**. Keep the variant, mark it unreachable-from-upstream in
-   a comment.
+4. **`AttachmentState` — a silent runtime break, now fixed.** An
+   earlier draft of this plan said "leave it alone, the `OverAttached`
+   arm just goes dead." That was wrong, and reading 0.5.7's source
+   rather than its changelog is what caught it.
+
+   Upstream's enum
+   (`veilid_api/types/veilid_state.rs`) did two things the changelog
+   never mentions: it **added `AttachedFair`** and **renamed
+   `FullyAttached` → `AttachedFull`**. `Display` emits snake_case, so
+   0.5.7 now sends us `attached_fair` and `attached_full`.
+
+   Our parser (`from_veilid_string`) had no arm for either, and its
+   `_ => Detached` fail-closed default meant **two of the six attached
+   states silently reported as `Detached`** — with a green build,
+   because we parse strings rather than matching the upstream type.
+
+   Blast radius was limited but real: `dispatch.rs:80` takes the
+   `is_attached` bool from *Veilid's* own `is_attached()`, so network
+   gating stayed correct; what broke was our own
+   `SharedState::attachment_state()` and every CLI/TUI status surface
+   reading it, which would show "Detached" on a healthy fair-signal
+   node.
+
+   **The fix is append-only, and that constraint is not obvious.**
+   The type doc called the discriminants "a stable ABI contract", but
+   the actual IPC codec is **postcard**
+   (`crates/rekindle-node/src/ipc/framing.rs:30`), which encodes a
+   fieldless enum by **declaration index**, not by the `repr(u8)`
+   value. So inserting `AttachedFair` in its natural position between
+   `AttachedWeak` and `AttachedGood` would silently reinterpret every
+   later variant on a version-skewed daemon/CLI socket. It is appended
+   at `= 8` instead, `OverAttached` is retained purely to hold
+   `Detaching`'s index, and the now-meaningless derived `Ord` is
+   superseded by an explicit `strength()` method.
+
+   A regression test
+   (`shared::tests::every_veilid_attachment_string_is_understood`)
+   walks upstream's own enum and asserts every variant round-trips
+   without hitting the fail-closed arm, so the next upstream rename
+   fails the build instead of shipping.
 5. **Classify `TransactionNotFound`.** New `VeilidAPIError` variant.
    Our classifier (`crates/rekindle-protocol/src/dht/mod.rs:41-52`)
    matches `KeyNotFound | TryAgain | Timeout | NoConnection` as
@@ -128,8 +185,24 @@ Mechanical once Phase 0 lands.
    enabled — but fix the stale comments at
    `broadcast/node.rs:827` and `frame_sender.rs:41`).
 
-**Exit criteria:** workspace builds, full test suite green, a manual
-two-node attach/DHT/messaging smoke run.
+**Status — phases 0 and 1 are done and verified in this branch.**
+`cargo check -p rekindle-protocol -p rekindle-transport -p rekindle-node
+-p rekindle-cli --all-targets` passes on veilid-core 0.5.7, and
+`rekindle-types` + `rekindle-transport` + `rekindle-vault` tests are
+green (54 / 111 / 6). Across four Veilid-facing crates the entire
+compile-time surface of this upgrade was **one line** — the
+`Sequencing` rename. Everything else was either a no-op (config) or
+invisible to the compiler (`AttachmentState`).
+
+**Still unverified:** `src-tauri` and the full workspace. Not a Veilid
+problem — this container lacks the GTK system libraries `gdk-sys`
+needs (`libgtk-3-dev`, and the 24.04 apt pool is missing several
+`libgdk-pixbuf`/`mesa` debs). Two of the three `Sequencing` sites live
+in `src-tauri` and are edited but uncompiled. Build it on a dev machine
+or in the Nix shell before merging.
+
+**Remaining exit criteria:** `src-tauri` + full workspace build, full
+test suite, and a manual two-node attach/DHT/messaging smoke run.
 
 ---
 

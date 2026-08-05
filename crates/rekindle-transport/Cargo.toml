@@ -19,7 +19,7 @@ rekindle-calls = { path = "../rekindle-calls" }
 rekindle-route = { path = "../rekindle-route" }
 
 # Veilid — the ONLY crate in the workspace that imports this
-veilid-core = { version = "0.5.3", default-features = true }
+veilid-core = { version = "0.5", default-features = true }
 
 # Async
 tokio = { workspace = true }

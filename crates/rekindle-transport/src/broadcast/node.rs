@@ -841,7 +841,7 @@ pub(crate) fn build_routing_context(
 
 pub(crate) fn map_sequencing(pref: SequencingPreference) -> Sequencing {
     match pref {
-        SequencingPreference::NoPreference => Sequencing::NoPreference,
+        SequencingPreference::NoPreference => Sequencing::PreferUnordered,
         SequencingPreference::PreferOrdered => Sequencing::PreferOrdered,
         SequencingPreference::EnsureOrdered => Sequencing::EnsureOrdered,
     }

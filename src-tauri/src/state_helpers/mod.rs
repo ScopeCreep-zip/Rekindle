@@ -77,7 +77,7 @@ pub(super) fn safe_routing_context_from(
                 sequencing: if spec.ordered {
                     veilid_core::Sequencing::PreferOrdered
                 } else {
-                    veilid_core::Sequencing::NoPreference
+                    veilid_core::Sequencing::PreferUnordered
                 },
             },
         ))
