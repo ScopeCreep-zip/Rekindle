@@ -360,10 +360,15 @@ identical across Tauri host and daemon); upstream's is *mechanism*.
 Re-measure heal frequency post-upgrade and relax the constants to
 match.
 
-Same for the relay circuit breaker
-(`crates/rekindle-route/src/relay.rs:27-28`, 3 failures / 60 s), which
-now overlaps `FlapDetector` — keep it (it encodes §14.5 observed peer
-reliability) and re-tune.
+**Correction:** an earlier draft said the relay circuit breaker
+(`crates/rekindle-route/src/relay.rs:27-28`) "overlaps `FlapDetector`".
+Reading `veilid-tools/src/flap_detector.rs`, it does not — that is a
+decaying-penalty accumulator over an observed value, with no half-open
+state, while ours is a send-path routing decision encoding §14.5
+observed peer reliability. Keep the circuit breaker. `FlapDetector` is
+however a genuine upgrade over `HealGate`'s fixed 10 s cooldown. See
+[`veilid-provided-vs-home-rolled.md`](./veilid-provided-vs-home-rolled.md)
+§4.
 
 ### 4.3 Use the richer attachment signal
 
@@ -417,6 +422,21 @@ HPKE for VLD0 and NONE only; VLD1 (ML-DSA / ML-KEM) is declared but
 unimplemented, so our PQXDH
 (`crates/rekindle-crypto/src/signal/pqxdh/`) remains strictly
 stronger.
+
+**Two prerequisites, both established after this plan was first
+written** — see
+[`veilid-provided-vs-home-rolled.md`](./veilid-provided-vs-home-rolled.md):
+
+- **Keys carry over.** Upstream's Ed25519→X25519 bridge is
+  byte-identical to our `pseudonym_to_x25519` (verified by running both
+  derivations, §1.1 there). This is an envelope migration, not a
+  re-key.
+- **`wrap_mek`/`unwrap_mek` are currently forked across
+  `rekindle-transport` and `rekindle-crypto`** with the same HKDF
+  label (§2 there). Collapse that fork *first* — otherwise the risky
+  part gets done twice. And note `CryptoSystem` is only reachable from
+  a running node, so this also forces the architecture-rule B2
+  decision (§3 there).
 
 ---
 
