@@ -1,5 +1,14 @@
 # What we hand-roll that veilid-core already provides
 
+> **Superseded in part.** This document was written without accounting
+> for the bring-your-own-protocol goal (SimpleX / Matrix / atproto
+> alongside Veilid). Under BYOP, §3's suggestion to adopt
+> `CryptoSystem`, §4's `FlapDetector` note, and §5's "collapse toward
+> `rekindle-transport`" are all **wrong** — see
+> [`veilid-upgrade-under-byop.md`](./veilid-upgrade-under-byop.md) §4.
+> The factual findings (§1 byte-identical bridge, §2 the in-tree fork,
+> §3's constraint that `CryptoSystem` needs a live node) all stand.
+
 Companion to [`veilid-0.5.7-gap-audit.md`](./veilid-0.5.7-gap-audit.md)
 and [`veilid-0.5.7-migration-plan.md`](./veilid-0.5.7-migration-plan.md).
 
@@ -182,15 +191,21 @@ improvement gated on an architecture decision, not a free swap.
 
 ## 5. Recommended order
 
-1. **Collapse the in-tree crypto fork (§2).** No Veilid decision
-   required, and it halves the risk of everything below.
-2. **Decide B2 for group crypto (§3).** Either group crypto moves
-   inside the Veilid boundary or it stays deliberately hand-rolled —
-   both are defensible; drifting is not.
-3. **Then HPKE (§1.2)**, on one implementation, with a versioned
-   envelope. Keys carry over (§1.1), so this is an envelope migration,
-   not a re-key.
-4. **Leave §1.3 and the vault alone** unless a specific call site is
-   already inside the boundary.
+**Revised — see [`veilid-upgrade-under-byop.md`](./veilid-upgrade-under-byop.md) §6.**
 
-Do not adopt `CryptoSystem` in any path that must work before attach.
+1. **Collapse the in-tree crypto fork (§2)** — but **downward, into
+   `rekindle-crypto`**, deleting the `rekindle-transport` copy. That
+   copy imports no `veilid_core` at all and `rekindle-transport`
+   already depends on `rekindle-crypto`, so this is a pure deletion.
+   (This document originally said to collapse the other way. That was
+   wrong: it would home group crypto inside the Veilid boundary, where
+   a second transport could not reach it.)
+2. **Then HPKE (§1.2)** — via the standard `hpke` crate **directly from
+   `rekindle-crypto`**, not via `CryptoSystem`. Veilid itself is just a
+   consumer of that crate, so we get the same RFC 9180 construction
+   with no node dependency. Keys carry over (§1.1), so this is an
+   envelope migration, not a re-key.
+3. **Leave §1.3 and the vault alone.**
+
+Do not adopt `CryptoSystem` anywhere: it needs a live Veilid node, so
+it breaks both pre-attach code paths and any non-Veilid transport.
