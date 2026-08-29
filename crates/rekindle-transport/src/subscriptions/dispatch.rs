@@ -81,6 +81,18 @@ async fn dispatch_update<H: InboundHandler>(
             let pir = attachment.public_internet_ready;
             let att_state = AttachmentState::from_veilid_string(&state_str);
             shared.set_attachment(att_state, attached, pir);
+            // 0.5.7's richer attachment signal — recorded so readiness
+            // checks and status surfaces can use real peer counts instead
+            // of inferring health from the attachment enum alone.
+            shared.set_network_health(
+                attachment.reliable_peer_count.as_u64(),
+                attachment.live_peer_count.as_u64(),
+                attachment.estimated_network_size.as_u64(),
+                attachment
+                    .median_latency
+                    .map(|d| d.as_u64())
+                    .unwrap_or_default(),
+            );
             handler
                 .on_event(TransportEvent::AttachmentChanged {
                     state: state_str,

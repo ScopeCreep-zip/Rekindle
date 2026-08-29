@@ -40,6 +40,10 @@ pub async fn initialize_node(
         attachment_state: "detached".to_string(),
         is_attached: false,
         public_internet_ready: false,
+        reliable_peer_count: 0,
+        live_peer_count: 0,
+        estimated_network_size: 0,
+        median_latency_us: 0,
         api: api.clone(),
         routing_context: routing_context.clone(),
         route_blob: None,
@@ -67,6 +71,8 @@ pub async fn initialize_node(
         heal_gate: rekindle_route::lifecycle::HealGate::new(
             rekindle_route::lifecycle::HEAL_COOLDOWN,
         ),
+        heal_attempts_admitted: 0,
+        heal_attempts_suppressed: 0,
     });
 
     // W16.9b — adopt the running VeilidAPI into a TransportNode in

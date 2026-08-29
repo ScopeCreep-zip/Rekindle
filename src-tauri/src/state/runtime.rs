@@ -17,6 +17,14 @@ pub struct NodeHandle {
     pub is_attached: bool,
     /// Whether the public internet is ready for DHT operations.
     pub public_internet_ready: bool,
+    /// Reliable peers in the routing table (0.5.7 attachment signal).
+    pub reliable_peer_count: u64,
+    /// Live peers (reliable + unreliable + newly added) in the routing table.
+    pub live_peer_count: u64,
+    /// Smoothed estimate of total reachable network size.
+    pub estimated_network_size: u64,
+    /// Median p75 latency across reliable peers, in microseconds (0 = no samples).
+    pub median_latency_us: u64,
     /// Veilid API handle (needed for shutdown, route import, etc.).
     pub api: veilid_core::VeilidAPI,
     /// Veilid routing context (needed for `app_message`, DHT ops).
@@ -207,4 +215,9 @@ pub struct RoutingManagerHandle {
     /// Flap debounce for dead-route heals (routes are event-driven —
     /// no rotation cadence to track).
     pub heal_gate: rekindle_route::lifecycle::HealGate,
+    /// Dead-route heal attempts admitted by the gate (A8 telemetry —
+    /// baseline for retuning the route-heal timers post-0.5.7).
+    pub heal_attempts_admitted: u64,
+    /// Dead-route heal attempts suppressed by the cooldown.
+    pub heal_attempts_suppressed: u64,
 }

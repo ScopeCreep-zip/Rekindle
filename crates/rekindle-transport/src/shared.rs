@@ -10,7 +10,7 @@
 //! uses a `parking_lot::RwLock` which is only write-locked when adding or
 //! cleaning up subscribers — never in the hot path of reading state.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -38,6 +38,20 @@ pub struct SharedState {
     is_attached: AtomicBool,
     /// Whether the public internet is reachable.
     public_internet_ready: AtomicBool,
+    /// Reliable peers in the routing table (0.5.7 attachment signal).
+    reliable_peer_count: AtomicU64,
+    /// Live peers — reliable, unreliable, and newly added (0.5.7).
+    live_peer_count: AtomicU64,
+    /// Smoothed estimate of total reachable network size (0.5.7).
+    estimated_network_size: AtomicU64,
+    /// Median p75 latency across reliable peers, in microseconds
+    /// (0 = no samples yet).
+    median_latency_us: AtomicU64,
+    /// Dead-route heal attempts admitted by the `HealGate` (A8 telemetry —
+    /// baseline for retuning the route-heal timers post-0.5.7).
+    heal_attempts_admitted: AtomicU64,
+    /// Dead-route heal attempts suppressed by the cooldown.
+    heal_attempts_suppressed: AtomicU64,
     /// Timestamp when the node was started.
     started_at: Instant,
     /// Broadcast subscribers. Each subscriber gets a clone of every notification.
@@ -52,6 +66,12 @@ impl SharedState {
             attachment: AtomicU8::new(AttachmentState::Detached as u8),
             is_attached: AtomicBool::new(false),
             public_internet_ready: AtomicBool::new(false),
+            reliable_peer_count: AtomicU64::new(0),
+            live_peer_count: AtomicU64::new(0),
+            estimated_network_size: AtomicU64::new(0),
+            median_latency_us: AtomicU64::new(0),
+            heal_attempts_admitted: AtomicU64::new(0),
+            heal_attempts_suppressed: AtomicU64::new(0),
             started_at: Instant::now(),
             subscribers: RwLock::new(Vec::new()),
         })
@@ -72,6 +92,39 @@ impl SharedState {
             is_attached: attached,
             public_internet_ready: pir,
         });
+    }
+
+    /// Record the richer 0.5.7 attachment health signal (peer counts,
+    /// network-size estimate, median latency). Called by the dispatch
+    /// loop alongside [`set_attachment`](Self::set_attachment); readiness
+    /// checks and status surfaces read these instead of inferring health
+    /// from the 8-value attachment enum alone.
+    pub fn set_network_health(
+        &self,
+        reliable_peers: u64,
+        live_peers: u64,
+        estimated_network_size: u64,
+        median_latency_us: u64,
+    ) {
+        self.reliable_peer_count
+            .store(reliable_peers, Ordering::Release);
+        self.live_peer_count.store(live_peers, Ordering::Release);
+        self.estimated_network_size
+            .store(estimated_network_size, Ordering::Release);
+        self.median_latency_us
+            .store(median_latency_us, Ordering::Release);
+    }
+
+    /// Count one dead-route heal decision (A8 telemetry). `admitted` is
+    /// the `HealGate::try_begin` result: `true` = heal ran, `false` =
+    /// suppressed by the cooldown. The admitted/suppressed ratio is the
+    /// baseline the route-heal timers get retuned against post-0.5.7.
+    pub fn count_heal_attempt(&self, admitted: bool) {
+        if admitted {
+            self.heal_attempts_admitted.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.heal_attempts_suppressed.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Broadcast a notification to all subscribers.
@@ -99,6 +152,35 @@ impl SharedState {
     /// Whether the public internet is reachable via the node.
     pub fn public_internet_ready(&self) -> bool {
         self.public_internet_ready.load(Ordering::Acquire)
+    }
+
+    /// Reliable peers in the routing table (lock-free atomic read).
+    pub fn reliable_peer_count(&self) -> u64 {
+        self.reliable_peer_count.load(Ordering::Acquire)
+    }
+
+    /// Live peers (reliable + unreliable + newly added) in the routing table.
+    pub fn live_peer_count(&self) -> u64 {
+        self.live_peer_count.load(Ordering::Acquire)
+    }
+
+    /// Smoothed estimate of total reachable network size.
+    pub fn estimated_network_size(&self) -> u64 {
+        self.estimated_network_size.load(Ordering::Acquire)
+    }
+
+    /// Median p75 latency across reliable peers in microseconds
+    /// (0 = no samples yet).
+    pub fn median_latency_us(&self) -> u64 {
+        self.median_latency_us.load(Ordering::Acquire)
+    }
+
+    /// Heal-gate decisions so far: `(admitted, suppressed)` (A8 telemetry).
+    pub fn heal_attempt_counts(&self) -> (u64, u64) {
+        (
+            self.heal_attempts_admitted.load(Ordering::Relaxed),
+            self.heal_attempts_suppressed.load(Ordering::Relaxed),
+        )
     }
 
     /// Time elapsed since the node was started.

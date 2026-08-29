@@ -228,9 +228,25 @@ pub fn handle_attachment(
             node.attachment_state = state_str;
             node.is_attached = attached;
             node.public_internet_ready = public_internet_ready;
+            // 0.5.7's richer attachment signal — real peer counts and
+            // latency instead of inferring health from the enum alone.
+            node.reliable_peer_count = attachment.reliable_peer_count.as_u64();
+            node.live_peer_count = attachment.live_peer_count.as_u64();
+            node.estimated_network_size = attachment.estimated_network_size.as_u64();
+            node.median_latency_us = attachment
+                .median_latency
+                .map(|d| d.as_u64())
+                .unwrap_or_default();
         }
     }
-    let _ = state.network_ready_tx.send(public_internet_ready);
+    // Network readiness = the routing domain is up AND the routing table
+    // holds at least one live peer. `public_internet_ready` in practice
+    // implies bootstrap contact, so this rarely differs — but when it
+    // does (domain flagged ready before any peer entry lands), DHT and
+    // route work issued in that window fails with transient KeyNotFound,
+    // which is exactly what `wait_for_network_ready` exists to prevent.
+    let ready = public_internet_ready && attachment.live_peer_count.as_u64() >= 1;
+    let _ = state.network_ready_tx.send(ready);
 
     super::emit_network_status(app_handle, state);
 
@@ -296,7 +312,15 @@ pub async fn handle_route_change(
             match *rm {
                 Some(ref mut handle) => {
                     handle.manager.forget_private_route();
-                    handle.heal_gate.try_begin(Instant::now())
+                    let admitted = handle.heal_gate.try_begin(Instant::now());
+                    // A8 telemetry: admitted/suppressed ratio is the
+                    // baseline for retuning HEAL_COOLDOWN post-0.5.7.
+                    if admitted {
+                        handle.heal_attempts_admitted += 1;
+                    } else {
+                        handle.heal_attempts_suppressed += 1;
+                    }
+                    admitted
                 }
                 None => false,
             }

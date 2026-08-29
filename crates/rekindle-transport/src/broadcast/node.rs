@@ -1067,7 +1067,12 @@ async fn run_route_authority_loop(
                     tracing::debug!("dead route(s) while detached — heal deferred to watchdog");
                     continue;
                 }
-                if !heal_gate.try_begin(std::time::Instant::now()) {
+                let admitted = heal_gate.try_begin(std::time::Instant::now());
+                // A8 telemetry: admitted/suppressed ratio is the baseline
+                // for retuning HEAL_COOLDOWN post-0.5.7 (upstream now
+                // damps relay-switch route churn itself).
+                shared.count_heal_attempt(admitted);
+                if !admitted {
                     tracing::debug!("dead-route heal within cooldown — watchdog backstops");
                     continue;
                 }

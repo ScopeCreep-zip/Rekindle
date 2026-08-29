@@ -1,8 +1,54 @@
 //! Inspect loop policy helpers.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 pub const INSPECT_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Process-wide miss-rate telemetry for the inspect catch-up path (A8).
+///
+/// The 60s `inspect_dht_record` poll is the backstop for missed watch
+/// notifications ("message X isn't showing up"). 0.5.4 made watches
+/// transaction-aware, which should make misses rarer — but
+/// `INSPECT_INTERVAL` must only be relaxed against a MEASURED miss
+/// rate, not optimism. Every inspection records whether it surfaced
+/// subkey changes the watch path had not already delivered.
+#[derive(Debug, Default)]
+pub struct InspectTelemetry {
+    /// Inspections where local sequences already matched the network
+    /// (the poll was redundant — watches delivered everything).
+    clean: AtomicU64,
+    /// Inspections that surfaced changed subkeys (the watch path missed
+    /// them; the poll earned its keep).
+    missed: AtomicU64,
+}
+
+/// The process-wide [`InspectTelemetry`] instance. All inspect-path
+/// callers (the 60s loop and on-demand background sync) record here.
+pub static INSPECT_TELEMETRY: InspectTelemetry = InspectTelemetry {
+    clean: AtomicU64::new(0),
+    missed: AtomicU64::new(0),
+};
+
+impl InspectTelemetry {
+    /// Record one inspection outcome. `surfaced_changes` = the report
+    /// showed network sequences ahead of local (a watch miss).
+    pub fn record(&self, surfaced_changes: bool) {
+        if surfaced_changes {
+            self.missed.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.clean.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Totals so far: `(clean, missed)`.
+    pub fn counts(&self) -> (u64, u64) {
+        (
+            self.clean.load(Ordering::Relaxed),
+            self.missed.load(Ordering::Relaxed),
+        )
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct InspectLoop {
@@ -32,6 +78,17 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::InspectLoop;
+
+    #[test]
+    fn telemetry_counts_clean_and_missed() {
+        // Use a local instance, not the global static, so the test is
+        // isolated from other callers in the process.
+        let t = super::InspectTelemetry::default();
+        t.record(false);
+        t.record(true);
+        t.record(true);
+        assert_eq!(t.counts(), (1, 2));
+    }
 
     #[test]
     fn runs_every_sixty_seconds() {

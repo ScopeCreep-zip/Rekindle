@@ -70,9 +70,20 @@ pub(crate) async fn inspect_record(
         changed_subkeys_from_sequences(&local_sequences, &network_sequences)
     };
 
+    // A8 telemetry: how often does the poll surface something the watch
+    // path had not already delivered? INSPECT_INTERVAL is only relaxed
+    // against this measured miss rate (see rekindle_sync::inspect).
+    rekindle_sync::inspect::INSPECT_TELEMETRY.record(!changed_subkeys.is_empty());
+
     if changed_subkeys.is_empty() {
         return Ok(());
     }
+    tracing::debug!(
+        community = %community_id,
+        record_key = %record_key,
+        subkeys = changed_subkeys.len(),
+        "inspect surfaced changes the watch path missed"
+    );
 
     let pool = state_helpers::app_handle(state)
         .and_then(|app| {
@@ -123,8 +134,16 @@ pub fn start_inspect_loop(state: Arc<AppState>, community_id: String) {
         let mut interval = tokio::time::interval(INSPECT_INTERVAL);
         interval.tick().await;
 
+        let mut ticks: u64 = 0;
         loop {
             interval.tick().await;
+            ticks += 1;
+            // Periodic miss-rate summary (A8): the number that decides
+            // whether INSPECT_INTERVAL can be relaxed post-0.5.7.
+            if ticks % 10 == 0 {
+                let (clean, missed) = rekindle_sync::inspect::INSPECT_TELEMETRY.counts();
+                tracing::debug!(clean, missed, "inspect catch-up telemetry");
+            }
 
             // W-1 #16 — re-attempt watches on any tracked record whose
             // previous watch died (Veilid renew_watch returned false,

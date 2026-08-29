@@ -131,12 +131,15 @@ async fn allocate_route_with_retry(
 
 /// Wait for public internet readiness, allocate a private route, then publish
 /// profile and friend list to DHT.
-/// Wait (bounded) for Veilid `public_internet_ready` via the network-ready
-/// watch channel. Returns `true` once ready, `false` on timeout or channel
-/// close. DHT record/route opens issued before readiness are unreliable on a
-/// freshly-attached node (sparse routing table → transient `KeyNotFound`), so
-/// callers gate their startup DHT work on this. (`AppState.network_ready_rx`
-/// is fed by the attachment handler in `services::veilid::network`.)
+/// Wait (bounded) for network readiness via the network-ready watch
+/// channel. Returns `true` once ready, `false` on timeout or channel
+/// close. Readiness is `public_internet_ready` AND at least one live peer
+/// in the routing table (0.5.7's richer attachment signal) — DHT
+/// record/route opens issued before that are unreliable on a
+/// freshly-attached node (sparse routing table → transient `KeyNotFound`),
+/// so callers gate their startup DHT work on this.
+/// (`AppState.network_ready_rx` is fed by the attachment handler in
+/// `services::veilid::network`.)
 pub(super) async fn wait_for_network_ready(
     mut rx: tokio::sync::watch::Receiver<bool>,
     timeout_secs: u64,
