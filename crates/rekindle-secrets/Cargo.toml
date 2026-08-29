@@ -13,6 +13,11 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
+# RFC 9180 HPKE for MEK wrapping v2 — the same crate veilid-core uses
+# (already in the dependency graph transitively). X25519-DHKEM +
+# HKDF-SHA256 + ChaCha20Poly1305, Auth mode (static-static, preserving
+# v1's implicit sender authentication).
+hpke = { version = "0.14", default-features = false, features = ["alloc", "getrandom", "x25519", "hkdfsha2", "chacha"] }
 zeroize = { version = "1", features = ["derive"] }
 rand = { workspace = true }
 libcrux-ml-kem = { workspace = true }

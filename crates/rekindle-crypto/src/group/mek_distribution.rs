@@ -46,11 +46,30 @@ pub fn wrap_mek(
         .map_err(map_err)
 }
 
-/// Unwrap (decrypt) MEK wire bytes received from a peer.
+/// Wrap MEK wire bytes via RFC 9180 HPKE (v2 format, `0x02`-prefixed).
+///
+/// Senders flip from [`wrap_mek`] to this once every deployed reader
+/// carries the dual-read [`unwrap_mek`] — see
+/// `rekindle_secrets::mek` module docs for the rollout contract.
+pub fn hpke_wrap_mek(
+    sender_signing_key: &SigningKey,
+    recipient_ed25519_public: &[u8; 32],
+    mek_wire_bytes: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    rekindle_secrets::mek::hpke_wrap_mek(
+        sender_signing_key,
+        recipient_ed25519_public,
+        mek_wire_bytes,
+    )
+    .map_err(map_err)
+}
+
+/// Unwrap (decrypt) MEK wire bytes received from a peer. Reads BOTH
+/// wire formats — legacy `[nonce || ct+tag]` and HPKE
+/// `[0x02 || enc || ct+tag]` (see `rekindle_secrets::mek`).
 ///
 /// - `recipient_signing_key`: Our pseudonym Ed25519 signing key.
 /// - `sender_ed25519_public`: The wrapping peer's pseudonym Ed25519 public key bytes.
-/// - `wrapped_mek`: The encrypted MEK (`[12-byte nonce || ciphertext+tag]`).
 ///
 /// Returns: The decrypted MEK wire bytes (40 bytes).
 pub fn unwrap_mek(

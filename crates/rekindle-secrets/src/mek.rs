@@ -1,10 +1,31 @@
-//! MEK (Media Encryption Key) wrapping via X25519 ECDH + HKDF + AES-256-GCM.
+//! MEK (Media Encryption Key) wrapping for peer-to-peer distribution.
 //!
-//! Used for peer-to-peer MEK distribution. The sender (deterministic rotator)
-//! wraps the MEK for each recipient using their pseudonym public key.
-//! No coordinator involved — any peer can wrap/unwrap.
+//! The sender (deterministic rotator) wraps the MEK for each recipient
+//! using their pseudonym public key. No coordinator involved — any peer
+//! can wrap/unwrap.
 //!
-//! Wire format: `[12-byte nonce || ciphertext + 16-byte tag]` (68 bytes for 40-byte MEK).
+//! Two wire formats, distinguished by the leading byte:
+//!
+//! - **v1 (legacy, no version byte)**: hand-rolled X25519 static-static
+//!   ECDH → HKDF-SHA256 (`rekindle-mek-wrap-v1`) → AES-256-GCM.
+//!   `[12-byte nonce || ciphertext + 16-byte tag]` (68 bytes for the
+//!   40-byte MEK wire input).
+//! - **v2 (`0x02` prefix)**: RFC 9180 HPKE, DHKEM-X25519 + HKDF-SHA256 +
+//!   ChaCha20Poly1305, **Auth mode** — the static-static shape of v1,
+//!   standardized. Auth (not Base) is deliberate: v1's ECDH implicitly
+//!   authenticated the sender, and Base mode would silently drop that
+//!   property. Info label `rekindle-mek/1` (deliberately NOT Veilid's
+//!   `veilid-hpke/1` — MEK wrapping is Rekindle↔Rekindle only, and our
+//!   wire format must not be coupled to Veilid's domain separation).
+//!   `[0x02 || enc(32) || ciphertext + 16-byte tag]`.
+//!
+//! **Rollout**: [`unwrap_mek`] reads BOTH formats (see its docs for the
+//! version-byte/nonce-collision handling). [`wrap_mek`] still emits v1;
+//! senders flip to [`hpke_wrap_mek`] once every deployed reader carries
+//! this dual-read version. The Ed25519→X25519 bridge is byte-identical
+//! to Veilid's VLD0 derivation (verified in
+//! `docs/contributor/veilid-provided-vs-home-rolled.md` §1.1), so the
+//! same pseudonym keys serve both formats — no re-keying.
 
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -73,14 +94,134 @@ pub fn wrap_mek(
     Ok(output)
 }
 
-/// Unwrap (decrypt) MEK wire bytes received from a peer.
+/// Version byte prefixing HPKE-wrapped (v2) MEK blobs.
+pub const HPKE_MEK_VERSION: u8 = 0x02;
+
+/// HPKE info label for MEK wrapping (v2). Deliberately Rekindle-owned —
+/// never Veilid's `veilid-hpke/1` (see module docs).
+const HPKE_MEK_INFO: &[u8] = b"rekindle-mek/1";
+
+type HpkeKem = hpke::kem::X25519HkdfSha256;
+type HpkeKdf = hpke::kdf::HkdfSha256;
+type HpkeAead = hpke::aead::ChaCha20Poly1305;
+
+/// Convert our Ed25519-derived X25519 keys into the hpke crate's types.
+fn hpke_keys(
+    our_signing_key: &SigningKey,
+    their_ed25519_public: &[u8; 32],
+) -> Result<
+    (
+        <HpkeKem as hpke::Kem>::PrivateKey,
+        <HpkeKem as hpke::Kem>::PublicKey,
+        <HpkeKem as hpke::Kem>::PublicKey,
+    ),
+    CryptoError,
+> {
+    use hpke::Deserializable;
+    let our_x25519 = pseudonym_to_x25519(our_signing_key);
+    let our_sk = <HpkeKem as hpke::Kem>::PrivateKey::from_bytes(&our_x25519.to_bytes())
+        .map_err(|e| CryptoError::InvalidKey(format!("own X25519 key: {e}")))?;
+    let our_pk = <HpkeKem as hpke::Kem>::sk_to_pk(&our_sk);
+
+    let their_verifying = VerifyingKey::from_bytes(their_ed25519_public)
+        .map_err(|e| CryptoError::InvalidKey(format!("invalid peer Ed25519 key: {e}")))?;
+    let their_pk = <HpkeKem as hpke::Kem>::PublicKey::from_bytes(
+        &their_verifying.to_montgomery().to_bytes(),
+    )
+    .map_err(|e| CryptoError::InvalidKey(format!("peer X25519 key: {e}")))?;
+
+    Ok((our_sk, our_pk, their_pk))
+}
+
+/// Wrap MEK wire bytes for a recipient via RFC 9180 HPKE (v2 format).
+///
+/// Same parameters and semantics as [`wrap_mek`]; output is
+/// `[0x02 || enc(32) || ciphertext+tag]`. Senders switch to this once
+/// every deployed reader understands the dual-read [`unwrap_mek`].
+pub fn hpke_wrap_mek(
+    sender_signing_key: &SigningKey,
+    recipient_ed25519_public: &[u8; 32],
+    mek_wire_bytes: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    use hpke::Serializable;
+    let (our_sk, our_pk, their_pk) = hpke_keys(sender_signing_key, recipient_ed25519_public)?;
+
+    let (enc, ciphertext) = hpke::single_shot_seal::<HpkeAead, HpkeKdf, HpkeKem>(
+        &hpke::OpModeS::Auth((our_sk, our_pk)),
+        &their_pk,
+        HPKE_MEK_INFO,
+        mek_wire_bytes,
+        b"",
+    )
+    .map_err(|e| CryptoError::Encryption(format!("HPKE seal: {e}")))?;
+
+    let enc_bytes = enc.to_bytes();
+    let mut output = Vec::with_capacity(1 + enc_bytes.len() + ciphertext.len());
+    output.push(HPKE_MEK_VERSION);
+    output.extend_from_slice(&enc_bytes);
+    output.extend_from_slice(&ciphertext);
+    Ok(output)
+}
+
+/// Open an HPKE-wrapped (v2) MEK blob. Expects the `0x02` version byte.
+pub fn hpke_open_mek(
+    recipient_signing_key: &SigningKey,
+    sender_ed25519_public: &[u8; 32],
+    wrapped_mek: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    use hpke::Deserializable;
+    // 1 version + 32 enc + 16 tag minimum
+    if wrapped_mek.len() < 49 || wrapped_mek[0] != HPKE_MEK_VERSION {
+        return Err(CryptoError::Decryption("not an HPKE-wrapped MEK".into()));
+    }
+    let (our_sk, _our_pk, their_pk) = hpke_keys(recipient_signing_key, sender_ed25519_public)?;
+
+    let enc = <HpkeKem as hpke::Kem>::EncappedKey::from_bytes(&wrapped_mek[1..33])
+        .map_err(|e| CryptoError::Decryption(format!("HPKE encapped key: {e}")))?;
+
+    hpke::single_shot_open::<HpkeAead, HpkeKdf, HpkeKem>(
+        &hpke::OpModeR::Auth(their_pk),
+        &our_sk,
+        &enc,
+        HPKE_MEK_INFO,
+        &wrapped_mek[33..],
+        b"",
+    )
+    .map_err(|e| CryptoError::Decryption(format!("HPKE open: {e}")))
+}
+
+/// Unwrap (decrypt) MEK wire bytes received from a peer — reads BOTH
+/// wire formats.
+///
+/// A `0x02` leading byte selects the HPKE (v2) path first. Because v1
+/// blobs start with a random nonce, 1-in-256 of them ALSO lead with
+/// `0x02`; the v2 attempt then fails authentication (AEAD — a misparse
+/// cannot false-succeed) and the blob falls through to the v1 path, so
+/// legacy blobs always decrypt regardless of their nonce.
 ///
 /// - `recipient_signing_key`: Our Ed25519 pseudonym signing key.
 /// - `sender_ed25519_public`: The wrapping peer's Ed25519 public key bytes.
-/// - `wrapped_mek`: The encrypted MEK `[12-byte nonce || ciphertext + tag]`.
 ///
 /// Returns: The decrypted MEK wire bytes (40 bytes).
 pub fn unwrap_mek(
+    recipient_signing_key: &SigningKey,
+    sender_ed25519_public: &[u8; 32],
+    wrapped_mek: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    if wrapped_mek.first() == Some(&HPKE_MEK_VERSION) {
+        if let Ok(plaintext) =
+            hpke_open_mek(recipient_signing_key, sender_ed25519_public, wrapped_mek)
+        {
+            return Ok(plaintext);
+        }
+        // Fall through: presumably a v1 blob whose nonce starts 0x02.
+    }
+    unwrap_mek_v1(recipient_signing_key, sender_ed25519_public, wrapped_mek)
+}
+
+/// The legacy (v1) unwrap path: X25519 ECDH → HKDF → AES-256-GCM over
+/// `[12-byte nonce || ciphertext + tag]`.
+fn unwrap_mek_v1(
     recipient_signing_key: &SigningKey,
     sender_ed25519_public: &[u8; 32],
     wrapped_mek: &[u8],
@@ -194,6 +335,98 @@ mod tests {
         let sender = derive_community_pseudonym(&[1u8; 32], "c");
         let recipient = derive_community_pseudonym(&[2u8; 32], "c");
         assert!(unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &[0u8; 11],).is_err());
+    }
+
+    #[test]
+    fn hpke_wrap_open_roundtrip() {
+        let sender = derive_community_pseudonym(&[1u8; 32], "c");
+        let recipient = derive_community_pseudonym(&[2u8; 32], "c");
+        let mek = MediaEncryptionKey::generate(7);
+        let wire = mek.to_wire_bytes();
+
+        let wrapped =
+            hpke_wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
+        assert_eq!(wrapped[0], HPKE_MEK_VERSION);
+        // 1 version + 32 enc + 40 plaintext + 16 tag = 89
+        assert_eq!(wrapped.len(), 89);
+
+        let opened =
+            hpke_open_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
+        assert_eq!(opened, wire);
+    }
+
+    #[test]
+    fn hpke_blob_opens_through_dual_read_unwrap() {
+        let sender = derive_community_pseudonym(&[1u8; 32], "c");
+        let recipient = derive_community_pseudonym(&[2u8; 32], "c");
+        let mek = MediaEncryptionKey::generate(9);
+        let wire = mek.to_wire_bytes();
+
+        let wrapped =
+            hpke_wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
+        let opened =
+            unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
+        assert_eq!(opened, wire);
+    }
+
+    #[test]
+    fn hpke_auth_mode_rejects_wrong_sender() {
+        // Auth mode preserves v1's sender authentication: opening with
+        // the wrong claimed sender must fail.
+        let sender = derive_community_pseudonym(&[1u8; 32], "c");
+        let fake_sender = derive_community_pseudonym(&[9u8; 32], "c");
+        let recipient = derive_community_pseudonym(&[2u8; 32], "c");
+        let mek = MediaEncryptionKey::generate(1);
+
+        let wrapped = hpke_wrap_mek(
+            &sender,
+            &recipient.verifying_key().to_bytes(),
+            &mek.to_wire_bytes(),
+        )
+        .unwrap();
+        assert!(
+            hpke_open_mek(&recipient, &fake_sender.verifying_key().to_bytes(), &wrapped).is_err()
+        );
+    }
+
+    #[test]
+    fn hpke_tampered_ciphertext_rejected() {
+        let sender = derive_community_pseudonym(&[1u8; 32], "c");
+        let recipient = derive_community_pseudonym(&[2u8; 32], "c");
+        let mek = MediaEncryptionKey::generate(1);
+
+        let mut wrapped = hpke_wrap_mek(
+            &sender,
+            &recipient.verifying_key().to_bytes(),
+            &mek.to_wire_bytes(),
+        )
+        .unwrap();
+        let last = wrapped.len() - 1;
+        wrapped[last] ^= 0xFF;
+        assert!(hpke_open_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).is_err());
+    }
+
+    #[test]
+    fn v1_blob_with_version_colliding_nonce_still_opens() {
+        // A legacy v1 blob whose random nonce happens to start with the
+        // v2 version byte must fall through the failed HPKE attempt and
+        // decrypt via the v1 path. Expected ~1 collision per 256 wraps.
+        let sender = derive_community_pseudonym(&[1u8; 32], "c");
+        let recipient = derive_community_pseudonym(&[2u8; 32], "c");
+        let mek = MediaEncryptionKey::generate(3);
+        let wire = mek.to_wire_bytes();
+
+        for _ in 0..10_000 {
+            let wrapped =
+                wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
+            if wrapped[0] == HPKE_MEK_VERSION {
+                let opened =
+                    unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
+                assert_eq!(opened, wire);
+                return;
+            }
+        }
+        panic!("no 0x02-leading v1 nonce in 10k wraps — statistically broken RNG");
     }
 
     #[test]
