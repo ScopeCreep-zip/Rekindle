@@ -91,14 +91,15 @@ pub const REGISTRY_RESERVED_AUDIT: u32 = 7;
 pub const REGISTRY_RESERVED_8: u32 = 8;
 pub const REGISTRY_RESERVED_9: u32 = 9;
 pub const REGISTRY_RESERVED_10: u32 = 10;
-pub const REGISTRY_OWNER_SUBKEY_COUNT: u16 = 11;
-pub const REGISTRY_MEMBER_SUBKEY_COUNT: u16 = 1;
-pub const REGISTRY_TOTAL_SUBKEY_COUNT: u16 = 256;
-
 /// Maximum member slots per registry segment.
-/// 256 total - 11 owner subkeys = 245 member presence slots.
-pub const REGISTRY_MAX_MEMBERS: u32 = 245;
-pub const SLOTS_PER_SEGMENT: u32 = 245;
+///
+/// Re-exported from the desktop track so both agree by construction.
+/// This was locally defined as 245 ("256 total - 11 owner subkeys"),
+/// the v1.0 derivation — under `o_cnt: 0` there are no owner subkeys
+/// and the value is 255, which is what every record is actually built
+/// with.
+pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
+pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
 
 /// Channel SMPL record constants.
 pub const CHANNEL_OWNER_SUBKEY_COUNT: u16 = 0;

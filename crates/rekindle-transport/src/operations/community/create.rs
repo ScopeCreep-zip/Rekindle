@@ -82,13 +82,21 @@ pub async fn create_community(
     info!(route = route_id, "community route published to mailbox");
 
     // Step 4: Create member registry (typed business logic)
-    let (registry_key, registry_keypair) =
-        dht.registry()
-            .create()
-            .await
-            .map_err(|e| TransportError::CommunityCreationFailed {
-                reason: format!("member registry: {e}"),
-            })?;
+    //
+    // v2.0 universal schema: one shared 32-byte seed derives all 255
+    // slot keypairs, and the record is smpl(o_cnt:0) so no writer is
+    // privileged. The seed travels to joiners via JoinAccepted's
+    // wrapped_slot_seed — without it a member cannot derive their slot
+    // keypair and so cannot write presence at all, which is why the
+    // creator must persist it (returned in CommunityCreated below).
+    let slot_seed: [u8; 32] = rand::random();
+    let (registry_key, registry_keypair) = dht
+        .registry()
+        .create_segment(&slot_seed)
+        .await
+        .map_err(|e| TransportError::CommunityCreationFailed {
+            reason: format!("member registry: {e}"),
+        })?;
     let registry_keypair_bytes = registry_keypair
         .map(|kp| crate::operations::identity::serialize_keypair(&kp))
         .unwrap_or_default();
@@ -289,5 +297,6 @@ pub async fn create_community(
         our_pseudonym_key,
         our_slot_index: 0,
         mek_generation: 1,
+        slot_seed,
     })
 }

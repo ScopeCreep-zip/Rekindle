@@ -1,23 +1,38 @@
 //! Member registry SMPL record operations.
 //!
-//! The member registry is a SMPL schema record where:
-//! - Owner controls subkeys 0-1 (member index + MEK vault)
-//! - Each member gets 1 subkey for their presence data
-//! - Member subkeys start at offset 2 (REGISTRY_OWNER_SUBKEY_COUNT)
+//! v2.0 layout (`DHTSchema::smpl(0, members)`): the record has NO owner
+//! subkeys — every subkey is a member slot addressed by its raw slot
+//! index, and all 255 slot keypairs derive from one shared seed. This
+//! matches how the desktop track builds the same records
+//! (`rekindle_protocol::dht::schema::community_smpl_schema`) and how
+//! `rekindle-presence` writes into them.
+//!
+//! This module used to hold the v1.0 layout: an 11-subkey owner block,
+//! a `member_subkey()` that offset every slot past it, a DFLT(256)
+//! creator-owned `create()`, and presence accessors built on the
+//! offset. Records made that way are unreadable by everything else in
+//! the system — slot N landed on subkey N+11 — so the offset, the
+//! DFLT path and the unreachable presence accessors are gone, and
+//! creation now goes through [`RegistryOps::create_segment`].
+//!
+//! **Known remaining v1.0 assumption.** The member index (subkey 0),
+//! MEK vault (subkey 1) and moderation queue (subkey 5) accessors below
+//! still address fixed low subkeys. Under `o_cnt: 0` those belong to
+//! members 0, 1 and 5, so writes need that member's key and will not
+//! succeed. Their v2.0 homes already exist — the member index is
+//! derivable from the governance CRDT (`rekindle-governance`), MEK
+//! distribution is peer-to-peer (`rekindle-mek-rotation`), and
+//! moderation is a `GovernanceEntry` — so porting the ~50 call sites in
+//! `rekindle-node` and `rekindle-transport::operations` onto them is
+//! the remaining step.
 
 use veilid_core::{DHTSchemaSMPLMember, KeyPair, RoutingContext};
 
 use super::record;
 use crate::error::{Result, TransportError};
 use crate::payload::dht_types::{
-    MekVaultEntry, MemberPresence, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX,
-    REGISTRY_MEMBER_SUBKEY_COUNT, REGISTRY_OWNER_SUBKEY_COUNT, SLOTS_PER_SEGMENT,
+    MekVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX, SLOTS_PER_SEGMENT,
 };
-
-/// Calculate the DHT subkey index for a member given their slot index.
-pub fn member_subkey(slot_index: u32) -> u32 {
-    u32::from(REGISTRY_OWNER_SUBKEY_COUNT) + slot_index
-}
 
 /// Operations on a community member registry.
 pub struct RegistryOps<'a> {
@@ -29,61 +44,28 @@ impl<'a> RegistryOps<'a> {
         Self { rc }
     }
 
-    /// Create a new registry with full subkey allocation.
+    /// Create a member registry under the v2.0 universal schema:
+    /// `DHTSchema::smpl(0, members)` with one subkey per slot, all 255
+    /// slot keypairs derived from `seed`.
     ///
-    /// DFLT(256): subkeys 0-10 are owner infrastructure (member index,
-    /// MEK vault, policy, schema version, ops log, moderation queue,
-    /// reserved). Subkeys 11-255 are per-member presence slots (245 max).
-    pub async fn create(&self) -> Result<(String, Option<KeyPair>)> {
-        let (key, keypair) = record::create_dflt(
-            self.rc,
-            crate::payload::dht_types::REGISTRY_TOTAL_SUBKEY_COUNT,
-            None,
-        )
-        .await?;
-
-        self.write_member_index(&key, &[]).await?;
-        self.write_mek_vault(&key, &[]).await?;
-
-        tracing::info!(key = %key, "member registry created");
-        Ok((key, keypair))
-    }
-
-    /// Create a SMPL registry with pre-allocated member slots.
-    pub async fn create_with_members(
-        &self,
-        members: Vec<DHTSchemaSMPLMember>,
-        initial_index: &[MemberSummary],
-    ) -> Result<(String, Option<KeyPair>)> {
-        let (key, keypair) =
-            record::create_smpl(self.rc, REGISTRY_OWNER_SUBKEY_COUNT, members).await?;
-
-        self.write_member_index(&key, initial_index).await?;
-        self.write_mek_vault(&key, &[]).await?;
-
-        tracing::info!(key = %key, members = initial_index.len(), "SMPL registry created");
-        Ok((key, keypair))
-    }
-
-    /// Create a pre-allocated registry segment with 255 derived SMPL slots.
+    /// `o_cnt` is 0 deliberately. With any owner subkeys the creation
+    /// keypair also counts as a writer
+    /// (`DHTSchemaSMPL::validate` does `writer_count += 1` when
+    /// `o_cnt > 0`), which is exactly the privileged writer flat
+    /// governance exists to remove. Slot N is subkey N — no offset.
     pub async fn create_segment(&self, seed: &[u8; 32]) -> Result<(String, Option<KeyPair>)> {
         let mut members = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
-        for i in 0..SLOTS_PER_SEGMENT {
-            let signing_key = derive_slot_keypair(seed, i)?;
+        for slot in 0..SLOTS_PER_SEGMENT {
+            let signing_key = derive_slot_keypair(seed, slot)?;
             let pub_bytes = signing_key.verifying_key().to_bytes();
             members.push(DHTSchemaSMPLMember {
                 m_key: veilid_core::BareMemberId::new(&pub_bytes),
-                m_cnt: REGISTRY_MEMBER_SUBKEY_COUNT,
+                m_cnt: 1,
             });
         }
 
-        let (key, keypair) =
-            record::create_smpl(self.rc, REGISTRY_OWNER_SUBKEY_COUNT, members).await?;
-
-        self.write_member_index(&key, &[]).await?;
-        self.write_mek_vault(&key, &[]).await?;
-
-        tracing::info!(key = %key, slots = SLOTS_PER_SEGMENT, "registry segment created");
+        let (key, keypair) = record::create_smpl(self.rc, 0, members).await?;
+        tracing::info!(key = %key, slots = SLOTS_PER_SEGMENT, "member registry created (o_cnt:0)");
         Ok((key, keypair))
     }
 
@@ -170,54 +152,6 @@ impl<'a> RegistryOps<'a> {
             None,
         )
         .await
-    }
-
-    // ── Member presence (member subkeys) ─────────────────────────
-
-    pub async fn read_presence(
-        &self,
-        key: &str,
-        slot_index: u32,
-        force_refresh: bool,
-    ) -> Result<Option<MemberPresence>> {
-        let subkey = member_subkey(slot_index);
-        match record::get(self.rc, key, subkey, force_refresh).await? {
-            Some(data) => {
-                let presence: MemberPresence = serde_json::from_slice(&data).map_err(|e| {
-                    TransportError::DeserializationFailed {
-                        type_id: 0,
-                        reason: format!("presence: {e}"),
-                    }
-                })?;
-                Ok(Some(presence))
-            }
-            None => Ok(None),
-        }
-    }
-
-    pub async fn write_presence(
-        &self,
-        key: &str,
-        slot_index: u32,
-        presence: &MemberPresence,
-        writer: KeyPair,
-    ) -> Result<()> {
-        let subkey = member_subkey(slot_index);
-        let bytes =
-            serde_json::to_vec(presence).map_err(|e| TransportError::SerializationFailed {
-                reason: format!("presence: {e}"),
-            })?;
-        record::set(self.rc, key, subkey, bytes, Some(writer)).await
-    }
-
-    // ── Watch ────────────────────────────────────────────────────
-
-    pub async fn watch_presence(&self, key: &str, member_count: u32) -> Result<bool> {
-        let subkeys: Vec<u32> = (0..member_count).map(member_subkey).collect();
-        if subkeys.is_empty() {
-            return Ok(true);
-        }
-        record::watch(self.rc, key, &subkeys).await
     }
 
     // ── Open / Close ─────────────────────────────────────────────

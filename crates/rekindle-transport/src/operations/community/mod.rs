@@ -35,6 +35,10 @@ pub struct CommunityCreated {
     pub our_pseudonym_key: String,
     pub our_slot_index: u32,
     pub mek_generation: u64,
+    /// Shared seed that derives all 255 registry slot keypairs. The
+    /// creator must persist this and hand it to joiners — a member
+    /// without it cannot write presence.
+    pub slot_seed: [u8; 32],
 }
 
 /// Returned by `submit_join_request` — metadata needed for approval await + completion.

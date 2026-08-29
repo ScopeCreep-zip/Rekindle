@@ -75,7 +75,10 @@ pub(crate) async fn handle_create(
                 slot_index: 0,
                 registry_key: result.registry_key.clone(),
                 community_name: name.clone(),
-                slot_seed: None,
+                // The creator must keep the seed: it derives every slot
+                // keypair in the registry, so without it neither we nor
+                // any joiner we admit can write presence.
+                slot_seed: Some(result.slot_seed),
                 channel_record_keys: std::collections::HashMap::new(),
                 community_mailbox_key: result.community_mailbox_key.clone(),
                 join_inbox_key: result.join_inbox_key.clone(),
