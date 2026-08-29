@@ -7807,6 +7807,10 @@ dependencies = [
 [[package]]
 name = "rekindle-utils"
 version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "rekindle-vault"

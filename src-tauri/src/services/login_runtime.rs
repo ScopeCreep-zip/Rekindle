@@ -90,54 +90,43 @@ pub fn start_background_services(
     );
 }
 
-/// Allocate a Veilid private route with retry.
+/// Allocate a Veilid private route with retry, then store it on state and
+/// notify the frontend.
 ///
-/// Route allocation can fail transiently after the network becomes ready because
-/// peerinfo may not have been published yet. We retry up to `max_attempts` times
-/// with a 3-second delay between attempts.
+/// Route allocation can fail transiently after the network becomes ready
+/// because peerinfo may not have been published yet. The retry itself is
+/// `services::veilid::network::new_private_route_with_retry` — the one
+/// route-allocation retry for the Tauri host; this wrapper adds the
+/// login-path bookkeeping (routing manager + node handle + status emit).
 async fn allocate_route_with_retry(
     app_handle: &tauri::AppHandle,
     state: &SharedState,
     max_attempts: u32,
 ) -> Option<Vec<u8>> {
-    for attempt in 1..=max_attempts {
-        let api = crate::state_helpers::veilid_api(state)?;
+    let route_blob =
+        services::veilid::new_private_route_with_retry(state, max_attempts).await?;
 
-        match api.new_private_route().await {
-            Ok(route_blob) => {
-                // Store on routing manager
-                {
-                    let mut rm = state.routing_manager.write();
-                    if let Some(ref mut handle) = *rm {
-                        handle.manager.set_allocated_route(
-                            route_blob.route_id.clone(),
-                            route_blob.blob.clone(),
-                        );
-                    }
-                }
-                // Store on node handle
-                if let Some(ref mut nh) = *state.node.write() {
-                    nh.route_blob = Some(route_blob.blob.clone());
-                }
-                // Notify the frontend immediately about the new route
-                services::veilid::emit_network_status(app_handle, state);
-                tracing::info!(
-                    attempt,
-                    blob_len = route_blob.blob.len(),
-                    route_count = route_blob.blob.first().copied().unwrap_or(0),
-                    "private route allocated"
-                );
-                return Some(route_blob.blob);
-            }
-            Err(e) => {
-                tracing::warn!(attempt, max_attempts, error = %e, "route allocation attempt failed");
-                if attempt < max_attempts {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                }
-            }
+    // Store on routing manager
+    {
+        let mut rm = state.routing_manager.write();
+        if let Some(ref mut handle) = *rm {
+            handle
+                .manager
+                .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
         }
     }
-    None
+    // Store on node handle
+    if let Some(ref mut nh) = *state.node.write() {
+        nh.route_blob = Some(route_blob.blob.clone());
+    }
+    // Notify the frontend immediately about the new route
+    services::veilid::emit_network_status(app_handle, state);
+    tracing::info!(
+        blob_len = route_blob.blob.len(),
+        route_count = route_blob.blob.first().copied().unwrap_or(0),
+        "private route allocated"
+    );
+    Some(route_blob.blob)
 }
 
 /// Wait for public internet readiness, allocate a private route, then publish

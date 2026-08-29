@@ -26,7 +26,7 @@ sha2 = "0.10"
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils" }
+rekindle-utils = { path = "../rekindle-utils", features = ["retry"] }
 rand = "0.8"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 veilid-core = { version = "0.5", default-features = true }

@@ -342,34 +342,54 @@ pub async fn handle_route_change(
     }
 }
 
-/// Attempt `api.new_private_route()` up to `attempts` times with a fixed
-/// delay. Mirrors `login_runtime::allocate_route_with_retry` — peerinfo /
-/// relay readiness can lag a route death by a few seconds, so one transient
-/// failure must not leave the node permanently routeless.
-async fn new_private_route_with_retry(
-    api: &veilid_core::VeilidAPI,
-    attempts: u32,
-) -> Option<veilid_core::RouteBlob> {
-    for attempt in 1..=attempts {
-        match api.new_private_route().await {
-            Ok(rb) => return Some(rb),
-            Err(e) => {
-                tracing::warn!(attempt, attempts, error = %e, "private route allocation attempt failed");
-                if attempt < attempts {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                }
-            }
+/// Route-allocation failure — distinguishes "Veilid rejected the
+/// allocation" (transient: peerinfo / relay readiness can lag a route
+/// death or network-ready signal by seconds) from "the API handle is
+/// gone" (hard: logout/shutdown mid-retry — do not keep trying).
+enum RouteAllocError {
+    ApiGone,
+    Veilid(veilid_core::VeilidAPIError),
+}
+
+impl std::fmt::Display for RouteAllocError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ApiGone => write!(f, "veilid API no longer available"),
+            Self::Veilid(e) => write!(f, "{e}"),
         }
     }
-    None
+}
+
+/// Attempt `api.new_private_route()` up to `attempts` times with a fixed
+/// 3-second delay — THE private-route allocation retry for the Tauri host
+/// (login startup and dead-route healing both come through here). The API
+/// handle is re-fetched from state on every attempt so a logout mid-retry
+/// aborts instead of spinning. Built on [`rekindle_utils::retry`] — the
+/// one retry loop shared across the workspace.
+pub(crate) async fn new_private_route_with_retry(
+    state: &Arc<AppState>,
+    attempts: u32,
+) -> Option<veilid_core::RouteBlob> {
+    rekindle_utils::retry::retry_with_backoff(
+        rekindle_utils::retry::RetryPolicy::fixed(attempts, std::time::Duration::from_secs(3)),
+        "private-route-allocate",
+        |e| matches!(e, RouteAllocError::Veilid(_)),
+        || async {
+            let api = state_helpers::veilid_api(state).ok_or(RouteAllocError::ApiGone)?;
+            api.new_private_route()
+                .await
+                .map_err(RouteAllocError::Veilid)
+        },
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(attempts, error = %e, "private route allocation failed");
+    })
+    .ok()
 }
 
 pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
-    let Some(api) = state_helpers::veilid_api(state) else {
-        return;
-    };
-
-    let Some(route_blob) = new_private_route_with_retry(&api, 5).await else {
+    let Some(route_blob) = new_private_route_with_retry(state, 5).await else {
         tracing::warn!(
             "dead-route recovery: all allocation attempts failed; refresh-loop backstop will retry"
         );

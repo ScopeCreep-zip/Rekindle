@@ -126,45 +126,35 @@ fn is_transient_open_error(e: &veilid_core::VeilidAPIError) -> bool {
 ///
 /// DHT records created on one Veilid node take time to propagate to the
 /// network nodes that another node queries. This retry handles the
-/// propagation delay transparently so callers don't need per-site retry logic.
-///
-/// Hard errors fail immediately (no retry).
+/// propagation delay transparently so callers don't need per-site retry
+/// logic. Hard errors fail immediately (no retry). Built on
+/// [`rekindle_utils::retry`] — the one retry loop shared across the
+/// workspace.
 async fn open_with_retry(
     rc: &RoutingContext,
     rk: &veilid_core::RecordKey,
     writer: Option<KeyPair>,
     key_str: &str,
 ) -> Result<()> {
-    let mut backoff = std::time::Duration::from_millis(OPEN_INITIAL_BACKOFF_MS);
-    let ceiling = std::time::Duration::from_millis(OPEN_MAX_BACKOFF_MS);
+    let policy = rekindle_utils::retry::RetryPolicy::exponential(
+        OPEN_MAX_ATTEMPTS,
+        std::time::Duration::from_millis(OPEN_INITIAL_BACKOFF_MS),
+        std::time::Duration::from_millis(OPEN_MAX_BACKOFF_MS),
+    );
+    let mode = if writer.is_some() {
+        "writable"
+    } else {
+        "readonly"
+    };
 
-    for attempt in 1..=OPEN_MAX_ATTEMPTS {
-        match rc.open_dht_record(rk.clone(), writer.clone()).await {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                if is_transient_open_error(&e) && attempt < OPEN_MAX_ATTEMPTS {
-                    tracing::debug!(
-                        key = key_str,
-                        attempt,
-                        backoff_ms = backoff.as_millis(),
-                        "DHT record not yet propagated, retrying"
-                    );
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(ceiling);
-                    continue;
-                }
-                let mode = if writer.is_some() {
-                    "writable"
-                } else {
-                    "readonly"
-                };
-                return Err(TransportError::DhtError {
-                    reason: format!("open {mode}: {e}"),
-                });
-            }
-        }
-    }
-    unreachable!()
+    rekindle_utils::retry::retry_with_backoff(policy, key_str, is_transient_open_error, || {
+        let writer = writer.clone();
+        async move { rc.open_dht_record(rk.clone(), writer).await.map(|_| ()) }
+    })
+    .await
+    .map_err(|e: veilid_core::VeilidAPIError| TransportError::DhtError {
+        reason: format!("open {mode}: {e}"),
+    })
 }
 
 /// Close a record.

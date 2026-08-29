@@ -18,6 +18,7 @@ mod lifecycle;
 mod network;
 
 pub(crate) use lifecycle::route_watchdog_loop;
+pub(crate) use network::new_private_route_with_retry;
 pub use lifecycle::{
     emit_network_status, initialize_node, logout_cleanup, shutdown_app, start_dispatch_loop,
 };

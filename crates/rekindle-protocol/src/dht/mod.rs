@@ -64,39 +64,24 @@ pub(crate) fn classify_dht_open_error(
 /// Success and HARD errors return immediately; after the budget is exhausted
 /// the last unreachable error is returned so the caller can treat the record
 /// as genuinely gone (and recreate). `delay = Duration::ZERO` disables
-/// sleeping (tests). Mirrors `allocate_route_with_retry`.
+/// sleeping (tests). Thin wrapper over [`rekindle_utils::retry`] — the one
+/// retry loop shared across the workspace.
 pub async fn retry_on_unreachable<T, F, Fut>(
     attempts: u32,
     delay: std::time::Duration,
-    mut op: F,
+    op: F,
 ) -> Result<T, ProtocolError>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, ProtocolError>>,
 {
-    let attempts = attempts.max(1);
-    for attempt in 1..=attempts {
-        match op().await {
-            Ok(v) => return Ok(v),
-            Err(e @ ProtocolError::DhtRecordUnreachable(_)) => {
-                if attempt == attempts {
-                    return Err(e);
-                }
-                tracing::debug!(
-                    attempt,
-                    attempts,
-                    error = %e,
-                    "DHT record unreachable — retrying open before giving up"
-                );
-                if !delay.is_zero() {
-                    tokio::time::sleep(delay).await;
-                }
-            }
-            // Hard error (e.g. not-writable / parse) — retrying won't help.
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!("loop returns on the final attempt")
+    rekindle_utils::retry::retry_with_backoff(
+        rekindle_utils::retry::RetryPolicy::fixed(attempts, delay),
+        "dht-open",
+        |e| matches!(e, ProtocolError::DhtRecordUnreachable(_)),
+        op,
+    )
+    .await
 }
 
 pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolError> {

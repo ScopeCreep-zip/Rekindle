@@ -4,7 +4,19 @@ version = "0.1.0"
 edition = "2021"
 description = "Shared utility functions for Rekindle workspace crates"
 
+[features]
+# The retry helper needs an async runtime and logging; everything else in
+# this crate is std-only. Consumers that want `rekindle_utils::retry`
+# opt in so the default build stays dependency-free.
+retry = ["dep:tokio", "dep:tracing"]
+
+[dependencies]
+# Zero external dependencies by default — only used by the `retry` feature.
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+
 [lints]
 workspace = true
-
-# Zero external dependencies — only uses std
