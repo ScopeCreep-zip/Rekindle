@@ -7,27 +7,21 @@ use serde::{Deserialize, Serialize};
 
 // ── Profile record (DFLT, 10 subkeys) ───────────────────────────────
 
-pub const PROFILE_SUBKEY_DISPLAY_NAME: u32 = 0;
-pub const PROFILE_SUBKEY_STATUS_MESSAGE: u32 = 1;
-pub const PROFILE_SUBKEY_STATUS: u32 = 2;
-pub const PROFILE_SUBKEY_AVATAR: u32 = 3;
-pub const PROFILE_SUBKEY_GAME_INFO: u32 = 4;
-pub const PROFILE_SUBKEY_PREKEY_BUNDLE: u32 = 5;
-pub const PROFILE_SUBKEY_ROUTE_BLOB: u32 = 6;
-pub const PROFILE_SUBKEY_METADATA: u32 = 7;
-/// Friend request inbox key — the DHT key of this user's friend inbox
-/// record. Published so anyone can discover where to send requests.
-pub const PROFILE_SUBKEY_FRIEND_INBOX_KEY: u32 = 8;
-/// Hex-encoded keypair for the friend inbox. Published so anyone can
-/// open the inbox for writing to submit friend requests.
-pub const PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR: u32 = 9;
-pub const PROFILE_SUBKEY_COUNT: u32 = 10;
-
-/// Status byte encoding for profile subkey 2.
-pub const STATUS_ONLINE: u8 = 0;
-pub const STATUS_AWAY: u8 = 1;
-pub const STATUS_BUSY: u8 = 2;
-pub const STATUS_OFFLINE: u8 = 3;
+// The profile layout lives in `rekindle_types::dht_layout::profile` —
+// the desktop track indexes the same records, and keeping a private copy
+// here is how the two ended up disagreeing about subkey 8 (relay pool
+// vs friend-inbox key). These are aliases so existing call sites keep
+// reading naturally.
+pub use rekindle_types::dht_layout::profile::{
+    AVATAR as PROFILE_SUBKEY_AVATAR, DISPLAY_NAME as PROFILE_SUBKEY_DISPLAY_NAME,
+    FRIEND_INBOX_KEY as PROFILE_SUBKEY_FRIEND_INBOX_KEY,
+    FRIEND_INBOX_KEYPAIR as PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
+    GAME_INFO as PROFILE_SUBKEY_GAME_INFO, METADATA as PROFILE_SUBKEY_METADATA,
+    PREKEY_BUNDLE as PROFILE_SUBKEY_PREKEY_BUNDLE, ROUTE_BLOB as PROFILE_SUBKEY_ROUTE_BLOB,
+    STATUS as PROFILE_SUBKEY_STATUS, STATUS_AWAY, STATUS_BUSY,
+    STATUS_MESSAGE as PROFILE_SUBKEY_STATUS_MESSAGE, STATUS_OFFLINE, STATUS_ONLINE,
+    SUBKEY_COUNT as PROFILE_SUBKEY_COUNT,
+};
 pub const STATUS_INVISIBLE: u8 = 4;
 
 /// Number of subkeys in the friend inbox DHT record (DFLT).

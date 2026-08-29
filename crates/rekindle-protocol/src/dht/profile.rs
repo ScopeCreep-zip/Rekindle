@@ -1,21 +1,18 @@
 use crate::dht::DHTManager;
 use crate::error::ProtocolError;
 
-// Subkey constants for user profile DHT record.
-pub const SUBKEY_DISPLAY_NAME: u32 = 0;
-pub const SUBKEY_STATUS_MESSAGE: u32 = 1;
-pub const SUBKEY_STATUS: u32 = 2;
-pub const SUBKEY_AVATAR: u32 = 3;
-pub const SUBKEY_GAME_INFO: u32 = 4;
-pub const SUBKEY_PREKEY_BUNDLE: u32 = 5;
-pub const SUBKEY_ROUTE_BLOB: u32 = 6;
-pub const SUBKEY_METADATA: u32 = 7;
-/// Strand Relay pool (architecture §13.2 step 3-4): JSON-encoded
-/// `Vec<Vec<u8>>` of opaque relay route blobs from friends, padded with
-/// dummies for size privacy.
-pub const SUBKEY_RELAY_POOL: u32 = 8;
-
-pub const PROFILE_SUBKEY_COUNT: u32 = 9;
+// Subkey constants for the user profile DHT record.
+//
+// The layout itself lives in `rekindle_types::dht_layout::profile` —
+// the daemon track indexes the same records, and keeping a private copy
+// here is how the two ended up disagreeing about subkey 8. These are
+// aliases so existing call sites keep reading naturally.
+pub use rekindle_types::dht_layout::profile::{
+    AVATAR as SUBKEY_AVATAR, DISPLAY_NAME as SUBKEY_DISPLAY_NAME, GAME_INFO as SUBKEY_GAME_INFO,
+    METADATA as SUBKEY_METADATA, PREKEY_BUNDLE as SUBKEY_PREKEY_BUNDLE,
+    RELAY_POOL as SUBKEY_RELAY_POOL, ROUTE_BLOB as SUBKEY_ROUTE_BLOB, STATUS as SUBKEY_STATUS,
+    STATUS_MESSAGE as SUBKEY_STATUS_MESSAGE, SUBKEY_COUNT as PROFILE_SUBKEY_COUNT,
+};
 
 /// Create a new profile DHT record and initialize subkeys.
 ///

@@ -7,10 +7,18 @@ use rusqlite::Connection;
 /// + Sync, so Tauri's `State<'_, DbPool>` works out of the box.
 pub type DbPool = tokio_rusqlite::Connection;
 
-/// Bump this every time `001_init.sql` changes.  On mismatch the entire
-/// database is wiped and recreated from the schema — safe because the app
-/// is not live yet and identity keys live in Stronghold, not `SQLite`.
-const SCHEMA_VERSION: i64 = 72;
+/// Bump this every time `001_init.sql` changes, or when a DHT record
+/// layout is renumbered — the reset also wipes Veilid storage, so stale
+/// records written under the old layout cannot be read back with the
+/// new indices.  On mismatch the entire database is wiped and recreated
+/// from the schema — safe because the app is not live yet and identity
+/// keys live in Stronghold, not `SQLite`.
+///
+/// 73: profile DHT record renumbered. The two tracks had disagreed about
+/// subkey 8 (Strand Relay pool vs friend-inbox key); the friend-inbox
+/// pair moved to 9/10 and the record now allocates 11 subkeys. See
+/// `rekindle_types::dht_layout::profile`.
+const SCHEMA_VERSION: i64 = 73;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

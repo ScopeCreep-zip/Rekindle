@@ -11,6 +11,7 @@ pub mod attachment;
 pub mod channel;
 pub mod config;
 pub mod cross_device_sync;
+pub mod dht_layout;
 pub mod display;
 pub mod error;
 pub mod event;
