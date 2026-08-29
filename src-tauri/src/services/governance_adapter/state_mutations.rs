@@ -244,3 +244,25 @@ pub(super) fn spawn_text_mek_rotation_for_ban_impl(
         }
     });
 }
+
+pub(super) fn register_governance_overflow_keys_impl(
+    adapter: &GovernanceAdapter,
+    community_id: &str,
+    keys: &[String],
+) {
+    if keys.is_empty() {
+        return;
+    }
+    {
+        let mut communities = adapter.state.communities.write();
+        if let Some(c) = communities.get_mut(community_id) {
+            let inventory = &mut c.open_community_records.governance_overflow_keys;
+            for key in keys {
+                if !inventory.contains(key) {
+                    inventory.push(key.clone());
+                }
+            }
+        }
+    }
+    state_helpers::track_open_records(&adapter.state, keys);
+}

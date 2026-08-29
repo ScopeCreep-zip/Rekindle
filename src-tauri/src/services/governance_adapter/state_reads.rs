@@ -1,7 +1,9 @@
 //! Phase 23.D.4 — non-trivial state-read helpers extracted from
 //! `deps_impl.rs` so the trait impl stays under the 500-LoC cap.
 
-use rekindle_governance_runtime::{CommunityMembership, MekSnapshot, OnlineMemberSnapshot};
+use rekindle_governance_runtime::{
+    ChannelMekSnapshot, CommunityMembership, MekSnapshot, OnlineMemberSnapshot,
+};
 use tauri::Manager;
 
 use super::GovernanceAdapter;
@@ -79,4 +81,68 @@ pub(super) fn load_historical_channel_mek_impl(
         generation: mek.generation(),
         key_bytes: *mek.as_bytes(),
     })
+}
+
+pub(super) fn open_record_keys_impl(
+    adapter: &GovernanceAdapter,
+    community_id: &str,
+) -> Vec<String> {
+    let communities = adapter.state.communities.read();
+    communities
+        .get(community_id)
+        .map(|cs| {
+            cs.open_community_records
+                .channel_keys
+                .iter()
+                .cloned()
+                .chain(cs.open_community_records.registry_key.iter().cloned())
+                .chain(cs.open_community_records.governance_key.iter().cloned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(super) fn channel_meks_all_impl(
+    adapter: &GovernanceAdapter,
+    community_id: &str,
+) -> Vec<ChannelMekSnapshot> {
+    adapter
+        .state
+        .channel_mek_cache
+        .lock()
+        .iter()
+        .filter(|((cid, _), _)| cid == community_id)
+        .map(|((_, ch), mek)| ChannelMekSnapshot {
+            channel_id: ch.clone(),
+            mek: MekSnapshot {
+                generation: mek.generation(),
+                key_bytes: *mek.as_bytes(),
+            },
+        })
+        .collect()
+}
+
+pub(super) fn list_my_active_invite_secret_keys_impl(adapter: &GovernanceAdapter) -> Vec<String> {
+    let now = rekindle_utils::timestamp_secs();
+    let communities = adapter.state.communities.read();
+    let mut keys = Vec::new();
+    for c in communities.values() {
+        let (Some(my_pk_hex), Some(gov)) = (&c.my_pseudonym_key, &c.governance_state) else {
+            continue;
+        };
+        for invite in gov.invites.values() {
+            // Only invites we authored are in our local record store, so
+            // re-opening them is an instant local-store hit (→ rehydrate).
+            if hex::encode(invite.creator_pseudonym.0) != *my_pk_hex {
+                continue;
+            }
+            if invite.expires_at.is_some_and(|exp| exp <= now) {
+                continue;
+            }
+            if !invite.secrets_record_key.is_empty() {
+                keys.push(invite.secrets_record_key.clone());
+            }
+        }
+    }
+    keys
 }

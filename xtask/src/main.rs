@@ -5,7 +5,7 @@
 //!
 //!     cargo xtask check                Run the full guardrail bundle.
 //!     cargo xtask check-boundaries     Crate-import tier boundaries.
-//!     cargo xtask check-file-sizes     File-size thresholds.
+//!     cargo xtask check-file-sizes     600-line ceiling, unconditional.
 //!     cargo xtask check-allow-reasons  Every `#[allow(...)]` has reason="…".
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
@@ -49,7 +49,7 @@ enum Command {
     Check,
     /// Verify crate-import tier boundaries (rekindle-secrets sole crypto, etc).
     CheckBoundaries,
-    /// Verify the 600-line file-size ceiling (allowlist burn-down).
+    /// Verify the unconditional 600-line file-size ceiling.
     CheckFileSizes,
     /// Verify every `#[allow(...)]` has a `reason = "…"` argument.
     CheckAllowReasons,
@@ -243,49 +243,15 @@ fn dep_present(toml: &str, dep: &str) -> bool {
 // ────────────────────────────────────────────────────────────────
 // check-file-sizes
 // ────────────────────────────────────────────────────────────────
-//
-// Soft thresholds — emit warnings; CI gate decides whether to fail.
-// Tighter limits will land once the existing oversized files are split.
-/// One ceiling for every source file, Rust and frontend alike.
-/// Files over it fail the gate unless grandfathered in
-/// `xtask/file-size-allowlist.txt` (the burn-down list) — and even
-/// allowlisted files fail if they GROW past their recorded size.
+
+/// One ceiling for every source file, Rust and frontend alike. Any
+/// file over it fails the gate — no allowlist, no escape hatch. A
+/// deliberate future exception would require editing this check in a
+/// reviewed PR, which is exactly the friction an exception deserves.
 const MAX_LINES: usize = 600;
 
-/// Parse `xtask/file-size-allowlist.txt`: one `<lines> <path>` per
-/// line, `#` comments. `lines` is the file's size when it was
-/// grandfathered — growing past it fails the gate.
-fn load_size_allowlist(root: &Path) -> Result<BTreeMap<String, usize>> {
-    let path = root.join("xtask/file-size-allowlist.txt");
-    let mut map = BTreeMap::new();
-    if !path.exists() {
-        return Ok(map);
-    }
-    for (lineno, line) in std::fs::read_to_string(&path)?.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let (count, file) = line.split_once(char::is_whitespace).ok_or_else(|| {
-            anyhow!(
-                "file-size-allowlist.txt:{}: expected '<lines> <path>'",
-                lineno + 1
-            )
-        })?;
-        let count: usize = count
-            .parse()
-            .with_context(|| format!("file-size-allowlist.txt:{}: bad line count", lineno + 1))?;
-        map.insert(file.trim().to_string(), count);
-    }
-    Ok(map)
-}
-
 fn check_file_sizes(root: &Path) -> Result<()> {
-    let allowlist = load_size_allowlist(root)?;
-    let mut new_offenders = 0usize;
-    let mut grown = 0usize;
-    let mut burn_down = 0usize;
-    let mut seen_over: Vec<String> = Vec::new();
+    let mut offenders = 0usize;
 
     for (subdir, ext) in [
         ("src", &["ts", "tsx"][..]),
@@ -320,40 +286,15 @@ fn check_file_sizes(root: &Path) -> Result<()> {
                 .unwrap_or(path)
                 .display()
                 .to_string();
-            seen_over.push(rel.clone());
-            match allowlist.get(&rel) {
-                None => {
-                    println!("  ✗ {rel} ({lines} lines, ceiling {MAX_LINES}) — NEW offender");
-                    new_offenders += 1;
-                }
-                Some(&grandfathered) if lines > grandfathered => {
-                    println!("  ✗ {rel} ({lines} lines, grandfathered at {grandfathered}) — GREW");
-                    grown += 1;
-                }
-                Some(_) => {
-                    println!("  ⚠ {rel} ({lines} lines) — on the burn-down list");
-                    burn_down += 1;
-                }
-            }
+            println!("  ✗ {rel} ({lines} lines, ceiling {MAX_LINES})");
+            offenders += 1;
         }
     }
 
-    // Allowlist hygiene: entries whose files dropped under the ceiling
-    // (or vanished) should be deleted so the burn-down shrinks.
-    for path in allowlist.keys() {
-        if !seen_over.contains(path) {
-            println!("  ✓ {path} is under the ceiling — remove it from file-size-allowlist.txt");
-        }
-    }
-
-    if burn_down > 0 {
-        println!("\n{burn_down} grandfathered file(s) still over {MAX_LINES} lines (burn-down).");
-    }
-    if new_offenders + grown > 0 {
+    if offenders > 0 {
         return Err(anyhow!(
-            "{new_offenders} new file(s) over {MAX_LINES} lines, {grown} grandfathered file(s) grew.\n\
-             Split the file along a module seam (see docs/contributor/architecture-rules.md),\n\
-             or — only for a deliberate, reviewed exception — update xtask/file-size-allowlist.txt."
+            "{offenders} file(s) over {MAX_LINES} lines.\n\
+             Split the file along a module seam (see docs/contributor/architecture-rules.md)."
         ));
     }
     Ok(())

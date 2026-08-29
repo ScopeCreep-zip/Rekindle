@@ -64,19 +64,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn open_record_keys(&self, community_id: &str) -> Vec<String> {
-        let communities = self.state.communities.read();
-        communities
-            .get(community_id)
-            .map(|cs| {
-                cs.open_community_records
-                    .channel_keys
-                    .iter()
-                    .cloned()
-                    .chain(cs.open_community_records.registry_key.iter().cloned())
-                    .chain(cs.open_community_records.governance_key.iter().cloned())
-                    .collect()
-            })
-            .unwrap_or_default()
+        state_reads::open_record_keys_impl(self, community_id)
     }
 
     // ---------- Community state (mutation) ----------
@@ -201,19 +189,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn channel_meks_all(&self, community_id: &str) -> Vec<ChannelMekSnapshot> {
-        self.state
-            .channel_mek_cache
-            .lock()
-            .iter()
-            .filter(|((cid, _), _)| cid == community_id)
-            .map(|((_, ch), mek)| ChannelMekSnapshot {
-                channel_id: ch.clone(),
-                mek: MekSnapshot {
-                    generation: mek.generation(),
-                    key_bytes: *mek.as_bytes(),
-                },
-            })
-            .collect()
+        state_reads::channel_meks_all_impl(self, community_id)
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {
@@ -481,28 +457,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
-        let now = rekindle_utils::timestamp_secs();
-        let communities = self.state.communities.read();
-        let mut keys = Vec::new();
-        for c in communities.values() {
-            let (Some(my_pk_hex), Some(gov)) = (&c.my_pseudonym_key, &c.governance_state) else {
-                continue;
-            };
-            for invite in gov.invites.values() {
-                // Only invites we authored are in our local record store, so
-                // re-opening them is an instant local-store hit (→ rehydrate).
-                if hex::encode(invite.creator_pseudonym.0) != *my_pk_hex {
-                    continue;
-                }
-                if invite.expires_at.is_some_and(|exp| exp <= now) {
-                    continue;
-                }
-                if !invite.secrets_record_key.is_empty() {
-                    keys.push(invite.secrets_record_key.clone());
-                }
-            }
-        }
-        keys
+        state_reads::list_my_active_invite_secret_keys_impl(self)
     }
 
     fn track_open_dht_records(&self, keys: &[String]) {
@@ -510,21 +465,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]) {
-        if keys.is_empty() {
-            return;
-        }
-        {
-            let mut communities = self.state.communities.write();
-            if let Some(c) = communities.get_mut(community_id) {
-                let inventory = &mut c.open_community_records.governance_overflow_keys;
-                for key in keys {
-                    if !inventory.contains(key) {
-                        inventory.push(key.clone());
-                    }
-                }
-            }
-        }
-        state_helpers::track_open_records(&self.state, keys);
+        state_mutations::register_governance_overflow_keys_impl(self, community_id, keys);
     }
 
     fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String> {

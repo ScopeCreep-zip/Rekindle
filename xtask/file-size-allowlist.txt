@@ -1,7 +1,0 @@
-# File-size burn-down list — grandfathered files over the 600-line ceiling.
-# Format: <lines-when-grandfathered> <path>. A file that GROWS past its
-# recorded size fails 'cargo xtask check-file-sizes'; one that drops under
-# 600 lines should have its entry deleted. Goal: this file reaches zero
-# entries. Split seams for the big ones: see the consolidation plan
-# (docs/contributor/architecture-rules.md + C2/C3 tables).
-632 src-tauri/src/services/governance_adapter/deps_impl.rs

@@ -86,16 +86,19 @@ Daemon / CLI track:
 | B16 | All on-disk secret material goes through `rekindle-vault` via the `src-tauri/src/keystore/` adapters. No direct file I/O on secret bytes from any other crate. | Code review + `cargo xtask check-boundaries` | Active |
 | B17 | The literal text `app.emit(` appears in `src-tauri/` **only** inside `event_dispatch.rs`. Every Rust → Frontend emit goes through `event_dispatch::emit_live` or `emit_journaled`. | CI grep gauntlet | Active |
 
-### Backend file-size soft cap
+### Backend file-size ceiling
 
-| Surface | Soft threshold | Hard cap (warns louder) |
-|---------|----------------|-------------------------|
-| Any single Rust file | **1 500 lines** | 3 000 lines |
+| Surface | Hard ceiling |
+|---------|--------------|
+| Any single Rust file | **600 lines** |
 
-Five files currently exceed 1 800 lines (the largest is `auth.rs` at
-2 487 lines); they are tracked for splitting under
-[`../roadmap.md`](../roadmap.md). New oversized files added in a PR
-will surface in the file-size CI job.
+The ceiling is unconditional — `cargo xtask check-file-sizes` (run in
+CI via `cargo xtask check`) fails on **any** file over 600 lines, with
+no allowlist or escape hatch. Split along a module seam instead
+(directory split with `mod.rs` re-exports, tests to a sibling
+`tests.rs`, or newtype-payload conversion for large wire enums). A
+deliberate future exception would require editing the check in
+`xtask/src/main.rs` in a reviewed PR.
 
 ---
 
@@ -140,17 +143,16 @@ will surface in the file-size CI job.
 | F15 | New `innerHTML` exceptions require a `// SAFETY (XSS):` block + audit table entry in [`../security/frontend-rendering.md`](../security/frontend-rendering.md) | Code review + Semgrep | Active |
 | F16 | Peer-rendered content (markdown bodies, link previews, custom emoji names, etc.) goes through DOMPurify | Code review + Playwright XSS suite (`e2e/security/xss.spec.ts`) | Active for shipped paths; gate doc at [`../security/frontend-rendering.md`](../security/frontend-rendering.md) |
 
-### Frontend file-size soft cap
+### Frontend file-size ceiling
 
-| Surface | Soft threshold | Hard cap |
-|---------|----------------|----------|
-| Any single `.ts` or `.tsx` file | **500 lines** | 1 000 lines |
+| Surface | Hard ceiling |
+|---------|--------------|
+| Any single `.ts` or `.tsx` file | **600 lines** |
 
-Three files currently exceed 500 lines and one
-(`src/handlers/community.handlers.ts` at 2 756 lines) far exceeds the
-hard cap; they are tracked for splitting. The file-size CI job
-warns on existing files and will be promoted to error once the
-sweep is complete.
+Same unconditional gate as the backend: `cargo xtask check-file-sizes`
+fails on any `src/**` TypeScript file over 600 lines, no allowlist.
+Split into sibling modules (ctx-object factories for hooks, extracted
+type/constant modules) rather than growing a file past the ceiling.
 
 ---
 
