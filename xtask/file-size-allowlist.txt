@@ -1,0 +1,49 @@
+# File-size burn-down list — grandfathered files over the 600-line ceiling.
+# Format: <lines-when-grandfathered> <path>. A file that GROWS past its
+# recorded size fails 'cargo xtask check-file-sizes'; one that drops under
+# 600 lines should have its entry deleted. Goal: this file reaches zero
+# entries. Split seams for the big ones: see the consolidation plan
+# (docs/contributor/architecture-rules.md + C2/C3 tables).
+740 crates/rekindle-calls/src/signaling/tests.rs
+1367 crates/rekindle-calls/src/state_machine.rs
+649 crates/rekindle-channel/src/expressions.rs
+621 crates/rekindle-channel/src/threads.rs
+745 crates/rekindle-cli/src/helpers.rs
+654 crates/rekindle-crypto/src/signal/session.rs
+773 crates/rekindle-dm/src/store/sqlite.rs
+1065 crates/rekindle-events/src/dedup.rs
+734 crates/rekindle-governance-runtime/src/overflow.rs
+800 crates/rekindle-governance/src/compact.rs
+1295 crates/rekindle-governance/src/validate.rs
+872 crates/rekindle-node/src/daemon/community_rpc.rs
+705 crates/rekindle-node/src/daemon/dispatch/community.rs
+634 crates/rekindle-node/src/daemon/dispatch/mod.rs
+904 crates/rekindle-node/src/daemon/governance_rpc.rs
+809 crates/rekindle-node/src/ipc/protocol.rs
+728 crates/rekindle-node/src/ipc/server.rs
+1262 crates/rekindle-protocol/src/capnp_codec.rs
+788 crates/rekindle-protocol/src/capnp_envelope/sub_types.rs
+716 crates/rekindle-protocol/src/dht/community/channel_record.rs
+1175 crates/rekindle-protocol/src/dht/community/envelope.rs
+718 crates/rekindle-protocol/src/dht/mod.rs
+1063 crates/rekindle-protocol/src/messaging/envelope.rs
+1177 crates/rekindle-transport/src/broadcast/node.rs
+1161 crates/rekindle-transport/src/operations/calls.rs
+1014 crates/rekindle-transport/src/operations/community.rs
+988 crates/rekindle-transport/src/payload/gossip.rs
+717 crates/rekindle-transport/src/query.rs
+672 crates/rekindle-transport/src/subscriptions/mod.rs
+694 crates/rekindle-types/src/governance.rs
+742 crates/rekindle-video-capture/src/pipeline.rs
+765 crates/rekindle-video/src/fragment.rs
+702 crates/rekindle-video/src/pacer.rs
+680 crates/rekindle-video/src/reassembler.rs
+901 crates/rekindle-video/src/receive.rs
+726 crates/rekindle-voice/src/signaling/presence.rs
+632 src-tauri/src/channels/community_channel/mod.rs
+733 src-tauri/src/services/community/video_session.rs
+632 src-tauri/src/services/governance_adapter/deps_impl.rs
+603 src-tauri/src/services/voice_adapter/deps_impl.rs
+606 src-tauri/src/services/voice_signaling_adapter.rs
+1050 src/components/voice/video_call/useVideoCallPanel.ts
+718 src/components/voice/video_call/video_sender.ts

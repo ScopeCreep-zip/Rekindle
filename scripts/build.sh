@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Rekindle — Build wrapper (macOS/Linux)
 # Usage: bash scripts/build.sh
+#
+# NOTE: the Konductor Nix flake is the CANONICAL dev environment —
+#   nix develop .#frontend
+# provides every dependency below with pinned versions. This script is
+# the NON-NIX FALLBACK (contributors without nix, CI images); when the
+# two disagree, the flake wins. Keep dependency changes in sync with it.
 set -euo pipefail
 
 GREEN='\033[0;32m'

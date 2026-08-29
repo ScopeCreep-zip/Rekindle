@@ -128,11 +128,10 @@ const BUG_TEXT: &str = "bug in tokio-rusqlite, please report";
 
 #[derive(Debug)]
 /// Represents the errors specific for this library.
-// The `Error(E)` variant repeats the enum name — `enum_variant_names` flags it,
-// but it is part of the vendored `tokio_rusqlite` public API (consumers and the
-// `From<rusqlite::Error>` impl below depend on it), so it can't be renamed.
-// Scoped to this item, not the crate.
-#[allow(clippy::enum_variant_names)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "the `Error(E)` variant repeats the enum name, but it is part of the vendored `tokio_rusqlite` public API (consumers and the `From<rusqlite::Error>` impl below depend on it), so it can't be renamed — scoped to this item, not the crate"
+)]
 #[non_exhaustive]
 pub enum Error<E = rusqlite::Error> {
     /// The connection to the SQLite has been closed and cannot be queried any more.

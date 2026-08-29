@@ -1,0 +1,21 @@
+# Composite action: the one pnpm/Node toolchain setup for every job
+# that touches the frontend. ci.yml (build/test) and lint.yml
+# (biome/stylelint/knip) previously each carried their own copy of this
+# block; version bumps now happen in exactly one place.
+name: Setup pnpm
+description: Install pnpm 9 + Node 22 with pnpm caching and run a frozen-lockfile install.
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 9
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: "pnpm"
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash

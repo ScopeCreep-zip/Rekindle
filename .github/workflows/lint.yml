@@ -18,7 +18,7 @@ name: Lint
 
 on:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
   pull_request:
     branches: [main, "codex/**"]
   workflow_dispatch:
@@ -40,16 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "pnpm"
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-pnpm
 
       # The package.json devDependencies for biome / stylelint / knip
       # are pending; once they land the next steps just work. Until
@@ -66,6 +57,24 @@ jobs:
       - name: knip — unused exports / files
         if: ${{ hashFiles('node_modules/.bin/knip') != '' }}
         run: pnpm exec knip
+
+  # ──────────────────────────────────────────────────────────────────
+  # xtask guardrails — tier boundaries, file-size ceiling (600 lines +
+  # burn-down allowlist), allow-reason hygiene. Pure Rust, no GTK.
+  # ──────────────────────────────────────────────────────────────────
+  xtask:
+    name: Guardrails (cargo xtask check)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: xtask
+
+      - run: cargo xtask check
 
   # ──────────────────────────────────────────────────────────────────
   # TOML — taplo format-check.

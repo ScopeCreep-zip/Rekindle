@@ -1,5 +1,10 @@
 # Rekindle — Windows developer setup
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+#
+# NOTE: the Konductor Nix flake is the CANONICAL dev environment
+# (nix develop .#frontend) where nix is available. This script is the
+# NON-NIX FALLBACK; when the two disagree, the flake wins. Keep
+# dependency changes in sync with it.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
