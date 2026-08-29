@@ -17,7 +17,9 @@
 
 use std::collections::VecDeque;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::envelope::{
+    CommunityEnvelope, ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
+};
 
 /// Saturation cap on whole frames awaiting release (~2 s at 15 fps).
 pub const MAX_QUEUED_FRAMES: usize = 30;
@@ -58,8 +60,8 @@ pub const PER_FRAGMENT_OVERHEAD_BYTES: usize = 1_400;
 fn envelope_wire_cost(envelope: &CommunityEnvelope) -> usize {
     match envelope {
         CommunityEnvelope::Control(
-            ControlPayload::VideoFragment { payload, .. }
-            | ControlPayload::VideoParityFragment { payload, .. },
+            ControlPayload::VideoFragment(VideoFragmentPayload { payload, .. })
+            | ControlPayload::VideoParityFragment(VideoParityFragmentPayload { payload, .. }),
         ) => payload.len() + PER_FRAGMENT_OVERHEAD_BYTES,
         _ => 0,
     }
@@ -71,7 +73,10 @@ fn envelope_wire_cost(envelope: &CommunityEnvelope) -> usize {
 /// of the payload share but not the numerator.
 fn envelope_data_payload_bytes(envelope: &CommunityEnvelope) -> usize {
     match envelope {
-        CommunityEnvelope::Control(ControlPayload::VideoFragment { payload, .. }) => payload.len(),
+        CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
+            payload,
+            ..
+        })) => payload.len(),
         _ => 0,
     }
 }

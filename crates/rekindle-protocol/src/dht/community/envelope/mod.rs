@@ -1,0 +1,145 @@
+//! Wire envelope format for all community P2P traffic.
+//!
+//! Replaces the request/response model (`CommunityRequest`/`CommunityResponse`/`CommunityBroadcast`)
+//! with unidirectional envelopes sent via `app_message` (fire-and-forget).
+
+use serde::{Deserialize, Serialize};
+
+mod control;
+mod payloads;
+mod sign;
+
+pub use control::ControlPayload;
+pub use payloads::{
+    MekTransferAckPayload, MekTransferPayload, VideoFragmentPayload, VideoParityFragmentPayload,
+};
+pub use sign::{sign_envelope, verify_envelope};
+
+/// Sent via `app_message` (fire-and-forget) -- NOT `app_call` (request/response).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum CommunityEnvelope {
+    /// Gossip notification that a new message exists in a channel SMPL record.
+    ///
+    /// Chiral Network model: gossip carries the notification (cargo manifest),
+    /// not the cargo (ciphertext). Recipients fetch the actual MEK-encrypted
+    /// content from the sender's SMPL subkey via `get_dht_value`.
+    ///
+    /// This ensures ciphertext exists only on DHT storage nodes (5 replicas),
+    /// not across the entire gossip fan-out graph (50-100+ relay nodes).
+    MessageNotification {
+        channel_id: String,
+        message_id: String,
+        author_pseudonym: String,
+        /// Sender's SMPL subkey index — where to fetch the ciphertext.
+        subkey_index: u32,
+        /// Lamport logical timestamp for causal ordering.
+        lamport_ts: u64,
+        /// Per-sender, per-channel sequence number for gap detection.
+        sequence: u64,
+        /// blake3 hash of the MEK-encrypted ciphertext, for integrity
+        /// verification after DHT fetch. Ensures the fetched value matches
+        /// what the sender wrote.
+        content_hash: String,
+        timestamp: u64,
+    },
+    /// A control operation (channel/role/invite/event management, moderation, etc.).
+    Control(ControlPayload),
+    /// Presence update from a member.
+    PresenceUpdate {
+        pseudonym_key: String,
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        game_info: Option<PresenceGameInfo>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        route_blob: Option<Vec<u8>>,
+    },
+    /// Typing indicator (ephemeral, not stored).
+    TypingIndicator {
+        channel_id: String,
+        pseudonym_key: String,
+    },
+    /// Watch Relay (architecture §14.3 / §11.7): a member with an active
+    /// Veilid `watch_dht_values` slot relays a `ValueChange` notification
+    /// to peers via gossip, so members without watch slots still learn
+    /// when a record's subkey changes. The receiver is expected to
+    /// `get_dht_value` to fetch the new value (we deliberately do NOT
+    /// carry ciphertext over gossip — same Chiral Network principle as
+    /// `MessageNotification`).
+    WatchRelay {
+        /// Hex-encoded Veilid record key whose subkey changed.
+        record_key: String,
+        /// Subkey index that changed.
+        subkey: u32,
+        /// blake3 hash of the new value (integrity check after fetch).
+        content_hash: String,
+        /// Sender's pseudonym (for permission/audit).
+        observer_pseudonym: String,
+    },
+}
+
+/// Game information for community presence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceGameInfo {
+    pub game_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_address: Option<String>,
+}
+
+/// A participant entry in a voice roster broadcast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceRosterEntry {
+    pub pseudonym_key: String,
+    pub route_blob: Vec<u8>,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub deafened: bool,
+    /// Display name as known to the roster broadcaster — identity
+    /// rides the handshake (SimpleX `x.grp.mem.info` pattern) so the
+    /// roster UI never depends on registry-scan timing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+/// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519 signature.
+///
+/// Signature is computed over `envelope_bytes` using the sender's pseudonym
+/// signing key (derived via `rekindle_crypto::group::pseudonym::derive_community_pseudonym()`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedEnvelope {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub envelope_bytes: Vec<u8>,
+    /// Ed25519 signature over `envelope_bytes`.
+    pub signature: Vec<u8>,
+    /// Hop TTL for gossip forwarding. Starts at 5, decremented on each forward.
+    /// When 0, process locally but don't forward.
+    #[serde(default = "default_ttl")]
+    pub ttl: u8,
+}
+
+fn default_ttl() -> u8 {
+    5
+}
+
+/// A single onboarding answer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingAnswer {
+    pub question_id: String,
+    pub selected_options: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod wire_tests;

@@ -14,7 +14,9 @@
 //! receivers know to spin up a decoder; that tiny control envelope is
 //! still sent IMMEDIATELY (it must precede the first fragment).
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::envelope::{
+    CommunityEnvelope, ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
+};
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::video::Codec;
 
@@ -208,7 +210,7 @@ impl SendCtx<'_> {
         let envelopes: Vec<CommunityEnvelope> = fragments
             .into_iter()
             .map(|fragment| {
-                CommunityEnvelope::Control(ControlPayload::VideoFragment {
+                CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
                     channel_id: self.channel_id.to_string(),
                     stream_id: fragment.stream_id,
                     frame_seq: fragment.frame_seq,
@@ -220,7 +222,7 @@ impl SendCtx<'_> {
                     mek_generation: fragment.mek_generation,
                     payload: fragment.payload,
                     signature: fragment.signature,
-                })
+                }))
             })
             .collect();
         tracing::debug!(
@@ -259,19 +261,21 @@ impl SendCtx<'_> {
         let mut envelopes: Vec<CommunityEnvelope> =
             Vec::with_capacity(usize::try_from(total).unwrap_or(0));
         for fragment in fec.data {
-            envelopes.push(CommunityEnvelope::Control(ControlPayload::VideoFragment {
-                channel_id: self.channel_id.to_string(),
-                stream_id: fragment.stream_id,
-                frame_seq: fragment.frame_seq,
-                frag_index: fragment.frag_index,
-                frag_total: fragment.frag_total,
-                keyframe: fragment.keyframe,
-                codec: fragment.codec,
-                timestamp: fragment.timestamp,
-                mek_generation: fragment.mek_generation,
-                payload: fragment.payload,
-                signature: fragment.signature,
-            }));
+            envelopes.push(CommunityEnvelope::Control(ControlPayload::VideoFragment(
+                VideoFragmentPayload {
+                    channel_id: self.channel_id.to_string(),
+                    stream_id: fragment.stream_id,
+                    frame_seq: fragment.frame_seq,
+                    frag_index: fragment.frag_index,
+                    frag_total: fragment.frag_total,
+                    keyframe: fragment.keyframe,
+                    codec: fragment.codec,
+                    timestamp: fragment.timestamp,
+                    mek_generation: fragment.mek_generation,
+                    payload: fragment.payload,
+                    signature: fragment.signature,
+                },
+            )));
         }
         tracing::debug!(
             target: "rekindle_video::send",
@@ -284,7 +288,7 @@ impl SendCtx<'_> {
         );
         for fragment in fec.parity {
             envelopes.push(CommunityEnvelope::Control(
-                ControlPayload::VideoParityFragment {
+                ControlPayload::VideoParityFragment(VideoParityFragmentPayload {
                     channel_id: self.channel_id.to_string(),
                     stream_id: fragment.stream_id,
                     frame_seq: fragment.frame_seq,
@@ -297,7 +301,7 @@ impl SendCtx<'_> {
                     mek_generation: fragment.mek_generation,
                     payload: fragment.payload,
                     signature: fragment.signature,
-                },
+                }),
             ));
         }
         tracing::debug!(
@@ -519,7 +523,7 @@ mod tests {
         for env in &frame.envelopes {
             assert!(matches!(
                 env,
-                CommunityEnvelope::Control(ControlPayload::VideoFragment { .. })
+                CommunityEnvelope::Control(ControlPayload::VideoFragment(_))
             ));
         }
     }

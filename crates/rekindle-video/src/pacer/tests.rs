@@ -3,7 +3,7 @@ use crate::fragment::FRAGMENT_PAYLOAD_LIMIT;
 use proptest::prelude::*;
 
 fn fragment_envelope(payload_len: usize) -> CommunityEnvelope {
-    CommunityEnvelope::Control(ControlPayload::VideoFragment {
+    CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
         channel_id: "ch".into(),
         stream_id: [1; 16],
         frame_seq: 0,
@@ -15,24 +15,26 @@ fn fragment_envelope(payload_len: usize) -> CommunityEnvelope {
         mek_generation: 0,
         payload: vec![0; payload_len],
         signature: Vec::new(),
-    })
+    }))
 }
 
 fn parity_envelope(payload_len: usize) -> CommunityEnvelope {
-    CommunityEnvelope::Control(ControlPayload::VideoParityFragment {
-        channel_id: "ch".into(),
-        stream_id: [1; 16],
-        frame_seq: 0,
-        parity_index: 0,
-        parity_total: 1,
-        data_count: 1,
-        codec: rekindle_types::video::Codec::Vp9,
-        frame_len: 0,
-        timestamp: 0,
-        mek_generation: 0,
-        payload: vec![0; payload_len],
-        signature: Vec::new(),
-    })
+    CommunityEnvelope::Control(ControlPayload::VideoParityFragment(
+        VideoParityFragmentPayload {
+            channel_id: "ch".into(),
+            stream_id: [1; 16],
+            frame_seq: 0,
+            parity_index: 0,
+            parity_total: 1,
+            data_count: 1,
+            codec: rekindle_types::video::Codec::Vp9,
+            frame_len: 0,
+            timestamp: 0,
+            mek_generation: 0,
+            payload: vec![0; payload_len],
+            signature: Vec::new(),
+        },
+    ))
 }
 
 /// Keyframe with `data` data shards + `parity` parity shards, all
@@ -307,9 +309,9 @@ proptest! {
         let mut f = frame(7, true, frags, 5_000, 0);
         // Tag each fragment's frag_index so order is observable.
         for (i, env) in f.envelopes.iter_mut().enumerate() {
-            if let CommunityEnvelope::Control(ControlPayload::VideoFragment {
-                frag_index, ..
-            }) = env
+            if let CommunityEnvelope::Control(ControlPayload::VideoFragment(
+                VideoFragmentPayload { frag_index, .. },
+            )) = env
             {
                 *frag_index = u8::try_from(i).unwrap();
             }
@@ -319,9 +321,9 @@ proptest! {
         let mut t = 0;
         for _ in 0..1_000 {
             for (_, _, env) in p.poll(t) {
-                if let CommunityEnvelope::Control(ControlPayload::VideoFragment {
-                    frag_index, ..
-                }) = env
+                if let CommunityEnvelope::Control(ControlPayload::VideoFragment(
+                    VideoFragmentPayload { frag_index, .. },
+                )) = env
                 {
                     seen.push(frag_index);
                 }

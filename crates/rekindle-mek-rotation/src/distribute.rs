@@ -16,7 +16,9 @@
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_crypto::group::mek_distribution::wrap_mek;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::envelope::{
+    CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
+};
 use rekindle_types::id::PseudonymKey;
 
 use crate::deps::{MekDistributeDeps, RotationRecipient};
@@ -123,13 +125,13 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
             &new_mek.to_wire_bytes(),
         )
         .map_err(|e| MekRotationError::Crypto(format!("wrap MEK: {e}")))?;
-        let payload = CommunityEnvelope::Control(ControlPayload::MekTransfer {
+        let payload = CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
             community_id: community_id.to_string(),
             channel_id: channel_id.map(ToOwned::to_owned),
             generation,
             sender_pseudonym: my_pseudonym_hex.clone(),
             wrapped_mek: wrapped,
-        });
+        }));
         let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&payload)
             .map_err(|e| MekRotationError::Transport(format!("encode MEK transfer: {e}")))?;
 
@@ -183,12 +185,14 @@ fn inspect_reply(
         return;
     }
     match rekindle_protocol::capnp_envelope::try_decode_community_envelope(reply) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck {
-            generation: ack_gen,
-            channel_id: ack_channel,
-            requester_pseudonym,
-            ..
-        }))) => {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck(
+            MekTransferAckPayload {
+                generation: ack_gen,
+                channel_id: ack_channel,
+                requester_pseudonym,
+                ..
+            },
+        )))) => {
             if ack_gen != expected_generation {
                 tracing::warn!(
                     community = %community_id,

@@ -4,7 +4,9 @@ use super::super::len_u32;
 use super::{decode_control_payload, encode_control_payload};
 use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_envelope_capnp as cap;
-use crate::dht::community::envelope::ControlPayload;
+use crate::dht::community::envelope::{
+    ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
+};
 use crate::error::ProtocolError;
 use rekindle_types::video::{Codec, ScalabilityMode};
 
@@ -104,7 +106,7 @@ pub(super) fn write_video_fragment(
     mut p: cap::video_fragment_payload::Builder<'_>,
     payload: &ControlPayload,
 ) {
-    let ControlPayload::VideoFragment {
+    let ControlPayload::VideoFragment(VideoFragmentPayload {
         channel_id,
         stream_id,
         frame_seq,
@@ -116,7 +118,7 @@ pub(super) fn write_video_fragment(
         mek_generation,
         payload: data,
         signature,
-    } = payload
+    }) = payload
     else {
         unreachable!("write_video_fragment: variant mismatch")
     };
@@ -137,7 +139,7 @@ pub(super) fn write_video_parity_fragment(
     mut p: cap::video_parity_fragment_payload::Builder<'_>,
     payload: &ControlPayload,
 ) {
-    let ControlPayload::VideoParityFragment {
+    let ControlPayload::VideoParityFragment(VideoParityFragmentPayload {
         channel_id,
         stream_id,
         frame_seq,
@@ -150,7 +152,7 @@ pub(super) fn write_video_parity_fragment(
         mek_generation,
         payload: data,
         signature,
-    } = payload
+    }) = payload
     else {
         unreachable!("write_video_parity_fragment: variant mismatch")
     };
@@ -351,7 +353,7 @@ pub(super) fn read_video_fragment(
     let stream_id: [u8; 16] = stream_id_bytes
         .try_into()
         .map_err(|_| ProtocolError::Deserialization("stream_id must be 16 bytes".into()))?;
-    Ok(ControlPayload::VideoFragment {
+    Ok(ControlPayload::VideoFragment(VideoFragmentPayload {
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         stream_id,
         frame_seq: p.get_frame_seq(),
@@ -363,7 +365,7 @@ pub(super) fn read_video_fragment(
         mek_generation: p.get_mek_generation(),
         payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
-    })
+    }))
 }
 
 pub(super) fn read_video_parity_fragment(
@@ -373,20 +375,22 @@ pub(super) fn read_video_parity_fragment(
     let stream_id: [u8; 16] = stream_id_bytes
         .try_into()
         .map_err(|_| ProtocolError::Deserialization("stream_id must be 16 bytes".into()))?;
-    Ok(ControlPayload::VideoParityFragment {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        stream_id,
-        frame_seq: p.get_frame_seq(),
-        parity_index: p.get_parity_index(),
-        parity_total: p.get_parity_total(),
-        data_count: p.get_data_count(),
-        codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
-        frame_len: p.get_frame_len(),
-        timestamp: p.get_timestamp(),
-        mek_generation: p.get_mek_generation(),
-        payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
-        signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
-    })
+    Ok(ControlPayload::VideoParityFragment(
+        VideoParityFragmentPayload {
+            channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+            stream_id,
+            frame_seq: p.get_frame_seq(),
+            parity_index: p.get_parity_index(),
+            parity_total: p.get_parity_total(),
+            data_count: p.get_data_count(),
+            codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
+            frame_len: p.get_frame_len(),
+            timestamp: p.get_timestamp(),
+            mek_generation: p.get_mek_generation(),
+            payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
+            signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
+        },
+    ))
 }
 
 pub(super) fn read_frame_ack(

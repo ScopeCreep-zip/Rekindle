@@ -15,7 +15,9 @@
 //! gate is defense-in-depth against non-compliant or stale senders.
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::ControlPayload;
+use rekindle_protocol::dht::community::envelope::{
+    ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
+};
 
 use crate::deps::{VideoDeps, VideoEvent};
 use crate::reassembler::ReassembledFrame;
@@ -29,8 +31,8 @@ use crate::{VideoFragment, VideoParityFragment};
 #[must_use]
 pub fn video_payload_channel(payload: &ControlPayload) -> Option<&str> {
     match payload {
-        ControlPayload::VideoFragment { channel_id, .. }
-        | ControlPayload::VideoParityFragment { channel_id, .. }
+        ControlPayload::VideoFragment(VideoFragmentPayload { channel_id, .. })
+        | ControlPayload::VideoParityFragment(VideoParityFragmentPayload { channel_id, .. })
         | ControlPayload::FrameAck { channel_id, .. }
         | ControlPayload::KeyframeRequest { channel_id, .. }
         | ControlPayload::BandwidthEstimate { channel_id, .. }
@@ -69,7 +71,7 @@ pub fn handle_video_payload<D: VideoDeps>(
         return;
     }
     match payload {
-        ControlPayload::VideoFragment {
+        ControlPayload::VideoFragment(VideoFragmentPayload {
             channel_id: _,
             stream_id,
             frame_seq,
@@ -81,7 +83,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             mek_generation,
             payload,
             signature,
-        } => {
+        }) => {
             let payload_len = payload.len();
             tracing::debug!(
                 target: "rekindle_video::receive",
@@ -134,7 +136,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 );
             }
         }
-        ControlPayload::VideoParityFragment {
+        ControlPayload::VideoParityFragment(VideoParityFragmentPayload {
             channel_id: _,
             stream_id,
             frame_seq,
@@ -147,7 +149,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             mek_generation,
             payload,
             signature,
-        } => {
+        }) => {
             let payload_len = payload.len();
             tracing::debug!(
                 target: "rekindle_video::receive::parity",

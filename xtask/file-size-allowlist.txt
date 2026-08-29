@@ -4,5 +4,4 @@
 # 600 lines should have its entry deleted. Goal: this file reaches zero
 # entries. Split seams for the big ones: see the consolidation plan
 # (docs/contributor/architecture-rules.md + C2/C3 tables).
-1175 crates/rekindle-protocol/src/dht/community/envelope.rs
 632 src-tauri/src/services/governance_adapter/deps_impl.rs

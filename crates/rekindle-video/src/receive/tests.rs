@@ -38,7 +38,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
     };
     (
         sender_hex,
-        ControlPayload::VideoFragment {
+        ControlPayload::VideoFragment(VideoFragmentPayload {
             channel_id: "ch1".into(),
             stream_id: frag.stream_id,
             frame_seq: frag.frame_seq,
@@ -50,7 +50,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
             mek_generation: frag.mek_generation,
             payload: frag.payload,
             signature: frag.signature,
-        },
+        }),
     )
 }
 
@@ -133,7 +133,7 @@ fn mek_mismatch_fires_debounced_refresh_request() {
             &crate::fragment::fragment_signing_bytes(&frag),
         )
         .to_vec();
-        ControlPayload::VideoFragment {
+        ControlPayload::VideoFragment(VideoFragmentPayload {
             channel_id: "ch1".into(),
             stream_id: frag.stream_id,
             frame_seq: frag.frame_seq,
@@ -145,7 +145,7 @@ fn mek_mismatch_fires_debounced_refresh_request() {
             mek_generation: frag.mek_generation,
             payload: frag.payload,
             signature: frag.signature,
-        }
+        })
     };
 
     handle_video_payload(&deps, &reassembly, "c1", &sender_hex, make_payload(1), 0);
@@ -237,7 +237,7 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
         &reassembly,
         "c1",
         "peer1",
-        ControlPayload::VideoFragment {
+        ControlPayload::VideoFragment(VideoFragmentPayload {
             channel_id: "ch2".into(),
             stream_id: [9u8; 16],
             frame_seq: 1,
@@ -249,7 +249,7 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
             mek_generation: 0,
             payload: vec![0xAB; 64],
             signature: vec![0u8; 64],
-        },
+        }),
         0,
     );
     assert!(

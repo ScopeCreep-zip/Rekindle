@@ -2,7 +2,7 @@
 
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community_envelope_capnp as cap;
-use crate::dht::community::envelope::ControlPayload;
+use crate::dht::community::envelope::{ControlPayload, MekTransferAckPayload, MekTransferPayload};
 use crate::error::ProtocolError;
 
 pub(super) fn write_mek_rotated(
@@ -51,13 +51,13 @@ pub(super) fn write_mek_transfer(
     mut p: cap::mek_transfer_payload::Builder<'_>,
     payload: &ControlPayload,
 ) {
-    let ControlPayload::MekTransfer {
+    let ControlPayload::MekTransfer(MekTransferPayload {
         community_id,
         channel_id,
         generation,
         sender_pseudonym,
         wrapped_mek,
-    } = payload
+    }) = payload
     else {
         unreachable!("write_mek_transfer: variant mismatch")
     };
@@ -75,12 +75,12 @@ pub(super) fn write_mek_transfer_ack(
     mut p: cap::mek_transfer_ack_payload::Builder<'_>,
     payload: &ControlPayload,
 ) {
-    let ControlPayload::MekTransferAck {
+    let ControlPayload::MekTransferAck(MekTransferAckPayload {
         community_id,
         channel_id,
         generation,
         requester_pseudonym,
-    } = payload
+    }) = payload
     else {
         unreachable!("write_mek_transfer_ack: variant mismatch")
     };
@@ -183,7 +183,7 @@ pub(super) fn read_request_mek(
 pub(super) fn read_mek_transfer(
     p: cap::mek_transfer_payload::Reader<'_>,
 ) -> Result<ControlPayload, ProtocolError> {
-    Ok(ControlPayload::MekTransfer {
+    Ok(ControlPayload::MekTransfer(MekTransferPayload {
         community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
         channel_id: if p.get_has_channel_id() {
             Some(text_to_string(
@@ -195,13 +195,13 @@ pub(super) fn read_mek_transfer(
         generation: p.get_generation(),
         sender_pseudonym: text_to_string(p.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
         wrapped_mek: p.get_wrapped_mek().map_err(|e| capnp_err(&e))?.to_vec(),
-    })
+    }))
 }
 
 pub(super) fn read_mek_transfer_ack(
     p: cap::mek_transfer_ack_payload::Reader<'_>,
 ) -> Result<ControlPayload, ProtocolError> {
-    Ok(ControlPayload::MekTransferAck {
+    Ok(ControlPayload::MekTransferAck(MekTransferAckPayload {
         community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
         channel_id: if p.get_has_channel_id() {
             Some(text_to_string(
@@ -214,7 +214,7 @@ pub(super) fn read_mek_transfer_ack(
         requester_pseudonym: text_to_string(
             p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?,
         )?,
-    })
+    }))
 }
 
 pub(super) fn read_admin_keypair_grant(

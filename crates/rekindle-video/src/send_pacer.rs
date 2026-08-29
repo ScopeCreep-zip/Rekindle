@@ -125,13 +125,15 @@ pub async fn run_video_pacer<D: VideoDeps>(
 mod tests {
     use super::*;
     use crate::test_mock::MockDeps;
-    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+    use rekindle_protocol::dht::community::envelope::{
+        CommunityEnvelope, ControlPayload, VideoFragmentPayload,
+    };
 
     fn paced_frame(seq: u32, fragments: usize) -> PacedFrame {
         let sid = u8::try_from(seq).unwrap_or(0);
         let envelopes = (0..fragments)
             .map(|i| {
-                CommunityEnvelope::Control(ControlPayload::VideoFragment {
+                CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
                     channel_id: "ch1".into(),
                     stream_id: [sid; 16],
                     frame_seq: seq,
@@ -143,7 +145,7 @@ mod tests {
                     mek_generation: 0,
                     payload: vec![0; 4_000],
                     signature: Vec::new(),
-                })
+                }))
             })
             .collect();
         PacedFrame {
@@ -199,11 +201,13 @@ mod tests {
                 .sent
                 .iter()
                 .filter_map(|e| match e {
-                    CommunityEnvelope::Control(ControlPayload::VideoFragment {
-                        frame_seq,
-                        frag_index,
-                        ..
-                    }) => Some((*frame_seq, *frag_index)),
+                    CommunityEnvelope::Control(ControlPayload::VideoFragment(
+                        VideoFragmentPayload {
+                            frame_seq,
+                            frag_index,
+                            ..
+                        },
+                    )) => Some((*frame_seq, *frag_index)),
                     _ => None,
                 })
                 .collect();

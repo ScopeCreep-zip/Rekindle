@@ -9,7 +9,9 @@ use crate::services::{message_service, sync_service};
 use crate::state::AppState;
 use crate::state_helpers;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::envelope::{
+    CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
+};
 
 fn resolve_bootstrap_community_id(state: &Arc<AppState>, governance_key: &str) -> Option<String> {
     let communities = state.communities.read();
@@ -84,13 +86,13 @@ pub async fn handle_app_call(
                 b"ACK".to_vec()
             }
         }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
             community_id,
             channel_id,
             generation,
             sender_pseudonym,
             wrapped_mek,
-        }))) => {
+        })))) => {
             // P1.3 — reply with a Cap'n-Proto-encoded `MekTransferAck`
             // instead of a bare `b"ACK"`. Confirms BOTH (1) the unwrap
             // succeeded at the app layer (a network-layer success
@@ -117,12 +119,14 @@ pub async fn handle_app_call(
                             .and_then(|cs| cs.my_pseudonym_key.clone())
                             .unwrap_or_default()
                     };
-                    let ack = CommunityEnvelope::Control(ControlPayload::MekTransferAck {
-                        community_id: community_id.clone(),
-                        channel_id: channel_id.clone(),
-                        generation,
-                        requester_pseudonym,
-                    });
+                    let ack = CommunityEnvelope::Control(ControlPayload::MekTransferAck(
+                        MekTransferAckPayload {
+                            community_id: community_id.clone(),
+                            channel_id: channel_id.clone(),
+                            generation,
+                            requester_pseudonym,
+                        },
+                    ));
                     rekindle_protocol::capnp_envelope::encode_community_envelope(&ack)
                         .unwrap_or_else(|e| {
                             tracing::warn!(
