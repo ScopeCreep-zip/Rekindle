@@ -221,11 +221,13 @@ fn apply_outcome(
             );
         }
         RecomputeOutcome::EmitIncompatible { peers } => {
-            let event = CommunityEvent::VideoCodecIncompatible {
-                community_id: community_id.to_string(),
-                channel_id: channel_id.to_string(),
-                peers,
-            };
+            let event = CommunityEvent::VideoCodecIncompatible(
+                crate::channels::VideoCodecIncompatibleEvent {
+                    community_id: community_id.to_string(),
+                    channel_id: channel_id.to_string(),
+                    peers,
+                },
+            );
             crate::event_dispatch::emit_now(state, "community-event", &event);
         }
     }
@@ -292,11 +294,11 @@ fn emit_session_config(
     channel_id: &str,
     config: SessionVideoConfig,
 ) {
-    let event = CommunityEvent::VideoSessionConfig {
+    let event = CommunityEvent::VideoSessionConfig(crate::channels::VideoSessionConfigEvent {
         community_id: community_id.to_string(),
         channel_id: channel_id.to_string(),
         config,
-    };
+    });
     crate::event_dispatch::emit_now(state, "community-event", &event);
 }
 

@@ -1,11 +1,14 @@
-use rekindle_types::video::{Codec, ScalabilityMode};
-use rekindle_video::SessionVideoConfig;
 use serde::Serialize;
 
 mod dto;
+#[cfg(target_os = "linux")]
+pub use dto::NativeVideoErrorEvent;
 pub use dto::{
     ChannelsUpdatedCategoryDto, ChannelsUpdatedChannelDto, EventInfoDto, EventRsvpInfoDto,
-    GameServerInfoDto, RoleDto, ThreadInfoDto,
+    GameServerInfoDto, RoleDto, ThreadInfoDto, VideoBandwidthEstimateEvent,
+    VideoBitrateTargetEvent, VideoCodecIncompatibleEvent, VideoEnvelopeRejectedEvent,
+    VideoFrameAckEvent, VideoKeyframeRequestEvent, VideoMediaCapabilitiesEvent,
+    VideoSessionConfigEvent, VideoTopologyChangeEvent,
 };
 
 /// One voice-roster participant as shipped to the frontend.
@@ -164,134 +167,36 @@ pub enum CommunityEvent {
         expression_id: String,
         actor_pseudonym: String,
     },
-    /// Architecture §10.6 receiver acknowledgement — surfaces upstream
-    /// kbps so the encoder can adapt VP9 bitrate.
-    #[serde(rename_all = "camelCase")]
-    VideoFrameAck {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        stream_id: String,
-        last_frame_seq: u32,
-        kbps: u32,
-        loss_q8: u8,
-    },
-    /// Architecture §10.6 — receiver requests an I-frame.
-    #[serde(rename_all = "camelCase")]
-    VideoKeyframeRequest {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        stream_id: String,
-    },
-    /// Architecture §10.6 — receiver advertises measured bandwidth
-    /// outside of a frame round-trip.
-    #[serde(rename_all = "camelCase")]
-    VideoBandwidthEstimate {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        kbps: u32,
-        window_secs: u8,
-        loss_q8: u8,
-    },
-    /// Architecture §10.6 line 4084 — peer's capability advertisement,
-    /// direction-split into encode + decode codec lists (WebView
-    /// engines are asymmetric; see `rekindle_video::MediaCapabilities`).
-    /// Typed codec / scalability-mode lists let the frontend store
-    /// reconcile against the typed `Codec` / `ScalabilityMode` enums
-    /// without parsing strings.
-    #[serde(rename_all = "camelCase")]
-    VideoMediaCapabilities {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        max_pixel_count: u32,
-        max_fps: u8,
-        encode_codecs: Vec<Codec>,
-        decode_codecs: Vec<Codec>,
-        supports_optimize_for_latency: bool,
-        supported_scalability_modes: Vec<ScalabilityMode>,
-    },
-    /// Architecture §10.6 — backend-negotiated per-call video config.
-    /// Recomputed and re-emitted whenever room membership changes or a
-    /// peer reports new capabilities. Frontend reconciles encoder +
-    /// decoder by tearing down and reconfiguring with the new
-    /// constraints. Backend owns the policy — CLI/TUI frontends inherit
-    /// the same `SessionVideoConfig` payload without re-running any
-    /// negotiation themselves.
-    #[serde(rename_all = "camelCase")]
-    VideoSessionConfig {
-        community_id: String,
-        channel_id: String,
-        config: SessionVideoConfig,
-    },
-    /// Phase 3 — the negotiator found NO encoder codec every peer can
-    /// decode (`negotiate_session_config` returned `None` with a
-    /// non-empty local encode set). Emitted once per
-    /// compatible→incompatible transition (latched — membership churn
-    /// while incompatible does not re-emit). `peers` lists the
-    /// pseudonyms whose decode sets blocked every local encode codec.
-    /// Voice is unaffected; the frontend surfaces a toast.
-    #[serde(rename_all = "camelCase")]
-    VideoCodecIncompatible {
-        community_id: String,
-        channel_id: String,
-        peers: Vec<String>,
-    },
-    /// Phase 4 — backend bitrate policy output (AIMD over receiver
-    /// FrameAck/BandwidthEstimate feedback, audio reserve subtracted).
-    /// The frontend encoder follows this target; the pacer rate moves
-    /// with it on the backend.
-    #[serde(rename_all = "camelCase")]
-    VideoBitrateTarget {
-        community_id: String,
-        channel_id: String,
-        kbps: u32,
-    },
-    /// The Linux-native capture session died asynchronously (camera
-    /// unplugged, pipeline failure) — the panel reverts the camera
-    /// toggle and surfaces the message. Linux-only: only the native
-    /// GStreamer pipeline emits this, so the variant is gated to where
-    /// it can be constructed (the webview path on macOS/Windows
-    /// reports capture failures inline via `setError`, never through a
-    /// CommunityEvent). The frontend TS union keeps the variant
-    /// unconditionally — it simply never arrives off-Linux.
+    /// Architecture §10.6 receiver acknowledgement (see
+    /// [`VideoFrameAckEvent`]).
+    VideoFrameAck(VideoFrameAckEvent),
+    /// Architecture §10.6 — receiver requests an I-frame (see
+    /// [`VideoKeyframeRequestEvent`]).
+    VideoKeyframeRequest(VideoKeyframeRequestEvent),
+    /// Architecture §10.6 — receiver bandwidth advertisement (see
+    /// [`VideoBandwidthEstimateEvent`]).
+    VideoBandwidthEstimate(VideoBandwidthEstimateEvent),
+    /// Architecture §10.6 line 4084 — peer capability advertisement
+    /// (see [`VideoMediaCapabilitiesEvent`]).
+    VideoMediaCapabilities(VideoMediaCapabilitiesEvent),
+    /// Architecture §10.6 — backend-negotiated per-call video config
+    /// (see [`VideoSessionConfigEvent`]).
+    VideoSessionConfig(VideoSessionConfigEvent),
+    /// Phase 3 — no mutually-decodable encoder codec (see
+    /// [`VideoCodecIncompatibleEvent`]).
+    VideoCodecIncompatible(VideoCodecIncompatibleEvent),
+    /// Phase 4 — backend bitrate policy target (see
+    /// [`VideoBitrateTargetEvent`]).
+    VideoBitrateTarget(VideoBitrateTargetEvent),
+    /// Linux-native capture session died (see [`NativeVideoErrorEvent`]).
     #[cfg(target_os = "linux")]
-    #[serde(rename_all = "camelCase")]
-    NativeVideoError {
-        community_id: String,
-        channel_id: String,
-        message: String,
-    },
-    /// Phase F — a gossiped video envelope failed signature or shape
-    /// verification at the receive boundary. Surfaced to the UI so the
-    /// asymmetric-drop case (one peer rejects, the other doesn't) is
-    /// observable from frontend signals instead of grep.
-    ///
-    /// `communityId` / `senderPseudonym` may be the sentinel string
-    /// `"<unknown>"` when the envelope failed to deserialize before
-    /// those routing fields could be read.
-    #[serde(rename_all = "camelCase")]
-    VideoEnvelopeRejected {
-        community_id: String,
-        sender_pseudonym: String,
-        reason: String,
-    },
-    /// Architecture §10.6 + Phase 6 Week 22 — the active video relay
-    /// for a `(channel_id, stream_id)` changed. Frontend should
-    /// re-attach its decoder to the new relay's stream and discard any
-    /// partially-buffered frames from the old one.
-    #[serde(rename_all = "camelCase")]
-    VideoTopologyChange {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        stream_id: String,
-        relay_host_pseudonym: Option<String>,
-        reason: String,
-        lamport: u64,
-    },
+    NativeVideoError(NativeVideoErrorEvent),
+    /// Phase F — video envelope rejected at the receive boundary (see
+    /// [`VideoEnvelopeRejectedEvent`]).
+    VideoEnvelopeRejected(VideoEnvelopeRejectedEvent),
+    /// Architecture §10.6 + Phase 6 W22 — active relay changed (see
+    /// [`VideoTopologyChangeEvent`]).
+    VideoTopologyChange(VideoTopologyChangeEvent),
     /// Architecture §28.8 — sender pre-fetched OpenGraph metadata for
     /// a URL embedded in `message_id`.
     #[serde(rename_all = "camelCase")]
@@ -630,3 +535,6 @@ pub enum CommunityEvent {
         subkey_index: u32,
     },
 }
+
+#[cfg(test)]
+mod wire_tests;

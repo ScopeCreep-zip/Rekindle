@@ -124,3 +124,163 @@ impl From<&rekindle_protocol::dht::community::types::RoleEntryV2> for RoleDto {
         }
     }
 }
+
+// ── Video-cluster event payloads ────────────────────────────────────
+//
+// Payload structs for the `CommunityEvent` video variants (newtype
+// form). Wire-identical to the former inline struct variants under
+// `serde(tag = "type", content = "data")` — proven by the snapshot
+// tests in `wire_tests.rs`, which pass unchanged across the
+// conversion. The frontend TS contract (`src/ipc/channels.ts`) is
+// untouched.
+
+use rekindle_types::video::{Codec, ScalabilityMode};
+use rekindle_video::SessionVideoConfig;
+
+/// Architecture §10.6 receiver acknowledgement — surfaces upstream
+/// kbps so the encoder can adapt VP9 bitrate.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoFrameAckEvent {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub channel_id: String,
+    pub stream_id: String,
+    pub last_frame_seq: u32,
+    pub kbps: u32,
+    pub loss_q8: u8,
+}
+
+/// Architecture §10.6 — receiver requests an I-frame.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoKeyframeRequestEvent {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub channel_id: String,
+    pub stream_id: String,
+}
+
+/// Architecture §10.6 — receiver advertises measured bandwidth
+/// outside of a frame round-trip.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoBandwidthEstimateEvent {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub channel_id: String,
+    pub kbps: u32,
+    pub window_secs: u8,
+    pub loss_q8: u8,
+}
+
+/// Architecture §10.6 line 4084 — peer's capability advertisement,
+/// direction-split into encode + decode codec lists (WebView
+/// engines are asymmetric; see `rekindle_video::MediaCapabilities`).
+/// Typed codec / scalability-mode lists let the frontend store
+/// reconcile against the typed `Codec` / `ScalabilityMode` enums
+/// without parsing strings.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoMediaCapabilitiesEvent {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub channel_id: String,
+    pub max_pixel_count: u32,
+    pub max_fps: u8,
+    pub encode_codecs: Vec<Codec>,
+    pub decode_codecs: Vec<Codec>,
+    pub supports_optimize_for_latency: bool,
+    pub supported_scalability_modes: Vec<ScalabilityMode>,
+}
+
+/// Architecture §10.6 — backend-negotiated per-call video config.
+/// Recomputed and re-emitted whenever room membership changes or a
+/// peer reports new capabilities. Frontend reconciles encoder +
+/// decoder by tearing down and reconfiguring with the new
+/// constraints. Backend owns the policy — CLI/TUI frontends inherit
+/// the same `SessionVideoConfig` payload without re-running any
+/// negotiation themselves.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoSessionConfigEvent {
+    pub community_id: String,
+    pub channel_id: String,
+    pub config: SessionVideoConfig,
+}
+
+/// Phase 3 — the negotiator found NO encoder codec every peer can
+/// decode (`negotiate_session_config` returned `None` with a
+/// non-empty local encode set). Emitted once per
+/// compatible→incompatible transition (latched — membership churn
+/// while incompatible does not re-emit). `peers` lists the
+/// pseudonyms whose decode sets blocked every local encode codec.
+/// Voice is unaffected; the frontend surfaces a toast.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoCodecIncompatibleEvent {
+    pub community_id: String,
+    pub channel_id: String,
+    pub peers: Vec<String>,
+}
+
+/// Phase 4 — backend bitrate policy output (AIMD over receiver
+/// FrameAck/BandwidthEstimate feedback, audio reserve subtracted).
+/// The frontend encoder follows this target; the pacer rate moves
+/// with it on the backend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoBitrateTargetEvent {
+    pub community_id: String,
+    pub channel_id: String,
+    pub kbps: u32,
+}
+
+/// The Linux-native capture session died asynchronously (camera
+/// unplugged, pipeline failure) — the panel reverts the camera
+/// toggle and surfaces the message. Linux-only: only the native
+/// GStreamer pipeline emits this, so the type is gated to where it
+/// can be constructed (the webview path on macOS/Windows reports
+/// capture failures inline via `setError`, never through a
+/// CommunityEvent). The frontend TS union keeps the variant
+/// unconditionally — it simply never arrives off-Linux.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeVideoErrorEvent {
+    pub community_id: String,
+    pub channel_id: String,
+    pub message: String,
+}
+
+/// Phase F — a gossiped video envelope failed signature or shape
+/// verification at the receive boundary. Surfaced to the UI so the
+/// asymmetric-drop case (one peer rejects, the other doesn't) is
+/// observable from frontend signals instead of grep.
+///
+/// `communityId` / `senderPseudonym` may be the sentinel string
+/// `"<unknown>"` when the envelope failed to deserialize before
+/// those routing fields could be read.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoEnvelopeRejectedEvent {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub reason: String,
+}
+
+/// Architecture §10.6 + Phase 6 Week 22 — the active video relay
+/// for a `(channel_id, stream_id)` changed. Frontend should
+/// re-attach its decoder to the new relay's stream and discard any
+/// partially-buffered frames from the old one.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoTopologyChangeEvent {
+    pub community_id: String,
+    pub sender_pseudonym: String,
+    pub channel_id: String,
+    pub stream_id: String,
+    pub relay_host_pseudonym: Option<String>,
+    pub reason: String,
+    pub lamport: u64,
+}

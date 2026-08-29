@@ -243,14 +243,14 @@ impl VideoAdapter {
             loss_q8,
             "bitrate target updated"
         );
-        let event = CommunityEvent::VideoBitrateTarget {
+        let event = CommunityEvent::VideoBitrateTarget(crate::channels::VideoBitrateTargetEvent {
             community_id: community_id.to_string(),
             channel_id: channel_id.to_string(),
             // Media-domain rate — what the encoder should PRODUCE so
             // its output fits the wire budget after fragmentation
             // overhead + parity.
             kbps: encoder_kbps,
-        };
+        });
         crate::event_dispatch::emit_live(&self.app_handle, "community-event", &event);
     }
 }
@@ -313,7 +313,7 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             last_frame_seq,
             kbps,
             loss_q8,
-        } => CommunityEvent::VideoFrameAck {
+        } => CommunityEvent::VideoFrameAck(crate::channels::VideoFrameAckEvent {
             community_id,
             sender_pseudonym,
             channel_id,
@@ -321,18 +321,18 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             last_frame_seq,
             kbps,
             loss_q8,
-        },
+        }),
         VideoEvent::KeyframeRequest {
             community_id,
             sender_pseudonym,
             channel_id,
             stream_id,
-        } => CommunityEvent::VideoKeyframeRequest {
+        } => CommunityEvent::VideoKeyframeRequest(crate::channels::VideoKeyframeRequestEvent {
             community_id,
             sender_pseudonym,
             channel_id,
             stream_id: hex::encode(stream_id),
-        },
+        }),
         VideoEvent::BandwidthEstimate {
             community_id,
             sender_pseudonym,
@@ -340,14 +340,14 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             kbps,
             window_secs,
             loss_q8,
-        } => CommunityEvent::VideoBandwidthEstimate {
+        } => CommunityEvent::VideoBandwidthEstimate(crate::channels::VideoBandwidthEstimateEvent {
             community_id,
             sender_pseudonym,
             channel_id,
             kbps,
             window_secs,
             loss_q8,
-        },
+        }),
         VideoEvent::TopologyChange {
             community_id,
             sender_pseudonym,
@@ -356,7 +356,7 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             relay_host_pseudonym,
             reason,
             lamport,
-        } => CommunityEvent::VideoTopologyChange {
+        } => CommunityEvent::VideoTopologyChange(crate::channels::VideoTopologyChangeEvent {
             community_id,
             sender_pseudonym,
             channel_id,
@@ -364,7 +364,7 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             relay_host_pseudonym,
             reason,
             lamport,
-        },
+        }),
         VideoEvent::MediaCapabilities {
             community_id,
             sender_pseudonym,
@@ -375,7 +375,7 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             decode_codecs,
             supports_optimize_for_latency,
             supported_scalability_modes,
-        } => CommunityEvent::VideoMediaCapabilities {
+        } => CommunityEvent::VideoMediaCapabilities(crate::channels::VideoMediaCapabilitiesEvent {
             community_id,
             sender_pseudonym,
             channel_id,
@@ -385,7 +385,7 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             decode_codecs,
             supports_optimize_for_latency,
             supported_scalability_modes,
-        },
+        }),
         // Phase F — surface the asymmetric-drop case to the UI so
         // sender-side and receiver-side observers both see the same
         // verification failure. The frontend listens on
@@ -395,11 +395,11 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             community_id,
             sender_pseudonym,
             reason,
-        } => CommunityEvent::VideoEnvelopeRejected {
+        } => CommunityEvent::VideoEnvelopeRejected(crate::channels::VideoEnvelopeRejectedEvent {
             community_id,
             sender_pseudonym,
             reason,
-        },
+        }),
     }
 }
 

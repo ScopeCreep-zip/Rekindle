@@ -6,6 +6,13 @@ pub mod voice_channel;
 
 pub use chat_channel::ChatEvent;
 pub use community_channel::CommunityEvent;
+#[cfg(target_os = "linux")]
+pub use community_channel::NativeVideoErrorEvent;
+pub use community_channel::{
+    VideoBandwidthEstimateEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
+    VideoEnvelopeRejectedEvent, VideoFrameAckEvent, VideoKeyframeRequestEvent,
+    VideoMediaCapabilitiesEvent, VideoSessionConfigEvent, VideoTopologyChangeEvent,
+};
 pub use notification_channel::{NetworkStatusEvent, NotificationEvent};
 pub use presence_channel::PresenceEvent;
 pub use voice_channel::VoiceEvent;

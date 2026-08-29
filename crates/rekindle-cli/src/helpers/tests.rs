@@ -1,4 +1,3 @@
-
 use super::*;
 
 // ── Sanitization: ANSI injection ─────────────────────────────────

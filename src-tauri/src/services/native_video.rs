@@ -308,11 +308,13 @@ mod platform {
                         crate::event_dispatch::emit_live(
                             &pump_app,
                             "community-event",
-                            &crate::channels::CommunityEvent::NativeVideoError {
-                                community_id: pump_community.clone(),
-                                channel_id: pump_channel.clone(),
-                                message,
-                            },
+                            &crate::channels::CommunityEvent::NativeVideoError(
+                                crate::channels::NativeVideoErrorEvent {
+                                    community_id: pump_community.clone(),
+                                    channel_id: pump_channel.clone(),
+                                    message,
+                                },
+                            ),
                         );
                         break;
                     }
