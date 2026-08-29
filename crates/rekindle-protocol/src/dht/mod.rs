@@ -1,5 +1,4 @@
 pub mod account;
-pub mod channel;
 pub mod community;
 pub mod conversation;
 pub mod friends;

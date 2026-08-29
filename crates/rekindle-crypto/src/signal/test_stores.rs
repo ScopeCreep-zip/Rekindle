@@ -1,128 +1,18 @@
+//! Signal-session test support.
+//!
+//! The in-memory `IdentityKeyStore` / `PreKeyStore` implementations used
+//! here are the ones in `memory_stores`, not copies of them. This module
+//! previously re-declared both verbatim (~127 lines) alongside the real
+//! shared-store fixture and tests, so a fix to one copy silently missed
+//! the other.
+
 use std::collections::HashMap;
 
 use parking_lot::Mutex;
 
-use crate::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
+use super::memory_stores::{MemoryIdentityStore, MemoryPreKeyStore};
+use crate::signal::store::SessionStore;
 use crate::CryptoError;
-
-/// In-memory identity store for tests.
-pub struct MemoryIdentityStore {
-    identity_private: Vec<u8>,
-    identity_public: Vec<u8>,
-    registration_id: u32,
-    trusted: Mutex<HashMap<String, Vec<u8>>>,
-}
-
-impl MemoryIdentityStore {
-    pub fn new(identity_private: Vec<u8>, identity_public: Vec<u8>, registration_id: u32) -> Self {
-        Self {
-            identity_private,
-            identity_public,
-            registration_id,
-            trusted: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-impl IdentityKeyStore for MemoryIdentityStore {
-    fn get_identity_key_pair(&self) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
-        Ok((self.identity_private.clone(), self.identity_public.clone()))
-    }
-
-    fn get_local_registration_id(&self) -> Result<u32, CryptoError> {
-        Ok(self.registration_id)
-    }
-
-    fn is_trusted_identity(&self, address: &str, identity_key: &[u8]) -> Result<bool, CryptoError> {
-        let trusted = self.trusted.lock();
-        match trusted.get(address) {
-            Some(stored) => Ok(stored == identity_key),
-            None => Ok(true), // TOFU: trust on first use
-        }
-    }
-
-    fn save_identity(&self, address: &str, identity_key: &[u8]) -> Result<(), CryptoError> {
-        self.trusted
-            .lock()
-            .insert(address.to_string(), identity_key.to_vec());
-        Ok(())
-    }
-}
-
-/// In-memory prekey store for tests.
-pub struct MemoryPreKeyStore {
-    prekeys: Mutex<HashMap<u32, Vec<u8>>>,
-    signed_prekeys: Mutex<HashMap<u32, Vec<u8>>>,
-    pq_secrets: Mutex<HashMap<(u32, PqKeyKind), Vec<u8>>>,
-}
-
-impl MemoryPreKeyStore {
-    pub fn new() -> Self {
-        Self {
-            prekeys: Mutex::new(HashMap::new()),
-            signed_prekeys: Mutex::new(HashMap::new()),
-            pq_secrets: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-impl PreKeyStore for MemoryPreKeyStore {
-    fn load_prekey(&self, prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self.prekeys.lock().get(&prekey_id).cloned())
-    }
-
-    fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
-        self.prekeys.lock().insert(prekey_id, key_data.to_vec());
-        Ok(())
-    }
-
-    fn remove_prekey(&self, prekey_id: u32) -> Result<(), CryptoError> {
-        self.prekeys.lock().remove(&prekey_id);
-        Ok(())
-    }
-
-    fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self.signed_prekeys.lock().get(&signed_prekey_id).cloned())
-    }
-
-    fn store_signed_prekey(
-        &self,
-        signed_prekey_id: u32,
-        key_data: &[u8],
-    ) -> Result<(), CryptoError> {
-        self.signed_prekeys
-            .lock()
-            .insert(signed_prekey_id, key_data.to_vec());
-        Ok(())
-    }
-
-    fn load_pq_secret(
-        &self,
-        prekey_id: u32,
-        kind: PqKeyKind,
-    ) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self.pq_secrets.lock().get(&(prekey_id, kind)).cloned())
-    }
-
-    fn store_pq_secret(
-        &self,
-        prekey_id: u32,
-        kind: PqKeyKind,
-        key_data: &[u8],
-    ) -> Result<(), CryptoError> {
-        self.pq_secrets
-            .lock()
-            .insert((prekey_id, kind), key_data.to_vec());
-        Ok(())
-    }
-
-    fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<(), CryptoError> {
-        if kind == PqKeyKind::OneTime {
-            self.pq_secrets.lock().remove(&(prekey_id, kind));
-        }
-        Ok(())
-    }
-}
 
 /// A SessionStore backed by a shared HashMap, allowing test code to inspect stored data.
 struct SharedSessionStore(std::sync::Arc<Mutex<HashMap<String, Vec<u8>>>>);
