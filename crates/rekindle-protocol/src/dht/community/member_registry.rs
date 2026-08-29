@@ -21,9 +21,15 @@ use super::types::{MEKVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_ME
 
 /// Maximum member slots per registry segment.
 ///
-/// Veilid's `DHTSchemaSMPL` has `MAX_MEMBER_COUNT = 256` and `MAX_WRITER_COUNT = 256`.
-/// Since the owner counts as 1 writer, we can have at most 255 member writers
-/// (1 owner + 255 members = 256 total writers).
+/// Veilid's `DHTSchemaSMPL` has `MAX_MEMBER_COUNT = 256` and
+/// `MAX_WRITER_COUNT = 256`. Under the v2.0 `o_cnt: 0` schema the
+/// creation keypair owns no subkeys and is NOT counted as a writer
+/// (`DHTSchemaSMPL::validate()` only does `writer_count += 1` when
+/// `o_cnt > 0`), so 256 member slots would validate.
+///
+/// We allocate 255 anyway: the value sets Plate Gate segment
+/// boundaries, so changing it reshards existing communities. One extra
+/// slot is not worth a wire-visible migration.
 pub const SLOTS_PER_SEGMENT: u32 = 255;
 
 // ── Member index (owner subkey 0) ──
