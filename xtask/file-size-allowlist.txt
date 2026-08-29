@@ -4,16 +4,13 @@
 # 600 lines should have its entry deleted. Goal: this file reaches zero
 # entries. Split seams for the big ones: see the consolidation plan
 # (docs/contributor/architecture-rules.md + C2/C3 tables).
-740 crates/rekindle-calls/src/signaling/tests.rs
 1367 crates/rekindle-calls/src/state_machine.rs
 649 crates/rekindle-channel/src/expressions.rs
 621 crates/rekindle-channel/src/threads.rs
 745 crates/rekindle-cli/src/helpers.rs
 654 crates/rekindle-crypto/src/signal/session.rs
-773 crates/rekindle-dm/src/store/sqlite.rs
 1065 crates/rekindle-events/src/dedup.rs
 734 crates/rekindle-governance-runtime/src/overflow.rs
-800 crates/rekindle-governance/src/compact.rs
 1295 crates/rekindle-governance/src/validate.rs
 872 crates/rekindle-node/src/daemon/community_rpc.rs
 705 crates/rekindle-node/src/daemon/dispatch/community.rs
@@ -35,10 +32,7 @@
 672 crates/rekindle-transport/src/subscriptions/mod.rs
 694 crates/rekindle-types/src/governance.rs
 751 crates/rekindle-video-capture/src/pipeline.rs
-803 crates/rekindle-video/src/fragment.rs
-702 crates/rekindle-video/src/pacer.rs
 695 crates/rekindle-video/src/reassembler.rs
-901 crates/rekindle-video/src/receive.rs
 726 crates/rekindle-voice/src/signaling/presence.rs
 632 src-tauri/src/channels/community_channel/mod.rs
 733 src-tauri/src/services/community/video_session.rs
