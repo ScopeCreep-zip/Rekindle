@@ -1,6 +1,10 @@
 //! Expression uploads — emoji, stickers, soundboard sounds.
 
-use super::limits::*;
+use super::limits::{
+    normalize_tags, validate_emoji_bytes, validate_expression_name, validate_soundboard_bytes,
+    validate_sticker_bytes, MAX_ANIMATED_EMOJI_COUNT, MAX_SOUNDBOARD_COUNT,
+    MAX_STATIC_EMOJI_COUNT, MAX_STICKER_COUNT,
+};
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
 

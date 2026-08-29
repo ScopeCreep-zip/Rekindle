@@ -1,6 +1,9 @@
 //! Buffer hygiene and frame completion (including FEC recovery).
 
-use super::*;
+use super::{
+    reconstruct_frame, ReassembledFrame, ReassemblerError, StreamBuffer,
+    MAX_PENDING_FRAMES_PER_STREAM, STALE_FRAME_HORIZON_MS, STREAM_ID_LEN,
+};
 
 pub(super) fn evict_stale(buffer: &mut StreamBuffer, now_ms: u32) {
     buffer.frames.retain(|_, partial| {

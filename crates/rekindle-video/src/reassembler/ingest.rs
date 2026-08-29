@@ -2,7 +2,10 @@
 //! reassembler (see `mod.rs` for the types and eviction policy).
 
 use super::complete::{cap_pending, evict_stale, try_complete};
-use super::*;
+use super::{
+    PartialFrame, ReassembledFrame, Reassembler, ReassemblerError, VideoFragment,
+    VideoParityFragment, MAX_FRAGMENTS_PER_FRAME, STREAM_ID_LEN,
+};
 
 impl Reassembler {
     pub fn new() -> Self {
