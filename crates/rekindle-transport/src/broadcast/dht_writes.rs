@@ -191,7 +191,7 @@ pub async fn create_dht_log(node: &TransportNode) -> Result<(DhtLog, veilid_core
         Ok((log, _)) => info!(spine_key = %log.spine_key(), "dht: DhtLog created"),
         Err(e) => warn!(error = %e, "dht: DhtLog create failed"),
     }
-    result
+    result.map_err(Into::into)
 }
 
 /// Open a DhtLog for writing with the owner keypair.
@@ -206,7 +206,7 @@ pub async fn open_dht_log_write(
     if let Err(ref e) = result {
         warn!(spine_key, error = %e, "dht: DhtLog open_write failed");
     }
-    result
+    result.map_err(Into::into)
 }
 
 /// Open a DhtLog for reading only.
@@ -217,5 +217,5 @@ pub async fn open_dht_log_read(node: &TransportNode, spine_key: &str) -> Result<
     if let Err(ref e) = result {
         warn!(spine_key, error = %e, "dht: DhtLog open_read failed");
     }
-    result
+    result.map_err(Into::into)
 }

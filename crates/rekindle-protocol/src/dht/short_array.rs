@@ -320,3 +320,73 @@ fn find_free_slot(stride: u16, head: &ShortArrayHead) -> u16 {
     // But if it does, return stride (will be caught by DHT write failure).
     stride
 }
+
+#[cfg(test)]
+mod wire_tests {
+    use super::{find_free_slot, ShortArrayHead};
+    use serde::{Deserialize, Serialize};
+
+    /// `rekindle-transport`'s head struct, copied verbatim from
+    /// `broadcast/dht/account.rs` at commit 51e9815, immediately before
+    /// that duplicate was deleted in favour of this one.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct TransportShortArrayHead {
+        stride: u16,
+        slots: Vec<u16>,
+    }
+
+    #[test]
+    fn head_wire_matches_the_replaced_transport_engine() {
+        let mine = ShortArrayHead {
+            stride: 255,
+            slots: vec![0, 3, 7, 254],
+        };
+        let theirs = TransportShortArrayHead {
+            stride: 255,
+            slots: vec![0, 3, 7, 254],
+        };
+        assert_eq!(
+            serde_json::to_vec(&mine).unwrap(),
+            serde_json::to_vec(&theirs).unwrap(),
+            "segment head bytes diverged from the engine this one replaced"
+        );
+        assert_eq!(
+            serde_json::to_string(&mine).unwrap(),
+            r#"{"stride":255,"slots":[0,3,7,254]}"#
+        );
+    }
+
+    /// Slot order is the logical element order — it must survive a
+    /// round trip intact, not be normalised or sorted.
+    #[test]
+    fn transport_written_head_loads_with_slot_order_intact() {
+        let bytes = serde_json::to_vec(&TransportShortArrayHead {
+            stride: 255,
+            slots: vec![9, 1, 4],
+        })
+        .unwrap();
+        let read: ShortArrayHead = serde_json::from_slice(&bytes).expect("must load");
+        assert_eq!(read.slots, vec![9, 1, 4]);
+    }
+
+    /// Slot allocation drives which subkey an element lands on, so both
+    /// engines had to agree on it. They did — identical implementations.
+    #[test]
+    fn free_slot_picks_lowest_gap() {
+        let head = ShortArrayHead {
+            stride: 8,
+            slots: vec![0, 1, 3],
+        };
+        assert_eq!(find_free_slot(8, &head), 2, "must reuse the lowest gap");
+
+        let full = ShortArrayHead {
+            stride: 3,
+            slots: vec![0, 1, 2],
+        };
+        assert_eq!(
+            find_free_slot(3, &full),
+            3,
+            "a full array returns stride; callers check capacity first"
+        );
+    }
+}

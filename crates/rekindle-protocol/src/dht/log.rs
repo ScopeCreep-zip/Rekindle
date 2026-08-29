@@ -333,3 +333,64 @@ impl DHTLog {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod wire_tests {
+    use super::LogSpine;
+    use serde::{Deserialize, Serialize};
+
+    /// `rekindle-transport`'s spine struct, copied verbatim from
+    /// `broadcast/dht/channel_log.rs` as it stood at commit 51e9815,
+    /// immediately before that duplicate engine was deleted in favour of
+    /// this one.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct TransportLogSpine {
+        total_count: u64,
+        segment_capacity: u16,
+        segments: Vec<String>,
+    }
+
+    /// The merge is only safe if both engines wrote the same bytes: a
+    /// spine record written before it must still load after it. This
+    /// compares the real `LogSpine` — not a copy of it — so reordering
+    /// or renaming a field here fails the test.
+    #[test]
+    fn spine_wire_matches_the_replaced_transport_engine() {
+        let mine = LogSpine {
+            total_count: 511,
+            segment_capacity: 255,
+            segments: vec!["VLD0:aaaa".into(), "VLD0:bbbb".into()],
+        };
+        let theirs = TransportLogSpine {
+            total_count: 511,
+            segment_capacity: 255,
+            segments: vec!["VLD0:aaaa".into(), "VLD0:bbbb".into()],
+        };
+        assert_eq!(
+            serde_json::to_vec(&mine).unwrap(),
+            serde_json::to_vec(&theirs).unwrap(),
+            "spine bytes diverged from the engine this one replaced"
+        );
+        assert_eq!(
+            serde_json::to_string(&mine).unwrap(),
+            r#"{"total_count":511,"segment_capacity":255,"segments":["VLD0:aaaa","VLD0:bbbb"]}"#,
+            "spine field order is wire-visible; serde emits declaration order"
+        );
+    }
+
+    /// Decode direction: a spine written by the old engine must load
+    /// here, which is what a peer does with an existing record.
+    #[test]
+    fn transport_written_spine_loads() {
+        let bytes = serde_json::to_vec(&TransportLogSpine {
+            total_count: 1_000_000,
+            segment_capacity: 255,
+            segments: vec!["VLD0:zzzz".into()],
+        })
+        .unwrap();
+        let read: LogSpine = serde_json::from_slice(&bytes).expect("must load");
+        assert_eq!(read.total_count, 1_000_000);
+        assert_eq!(read.segment_capacity, 255);
+        assert_eq!(read.segments, vec!["VLD0:zzzz".to_string()]);
+    }
+}

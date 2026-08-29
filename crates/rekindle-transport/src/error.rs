@@ -231,5 +231,49 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
     }
 }
 
+/// Converts `rekindle-protocol` failures into their transport
+/// counterparts.
+///
+/// The two tracks share the low-level DHT primitives (`DHTShortArray`,
+/// `DHTLog`) rather than each carrying a copy, so this crate's `?`
+/// operator needs to lift `ProtocolError`. As with `CryptoError` above,
+/// each variant maps to its specific counterpart — `Internal` is
+/// reserved for genuine invariant violations, not used as a dumping
+/// ground.
+impl From<rekindle_protocol::error::ProtocolError> for TransportError {
+    fn from(e: rekindle_protocol::error::ProtocolError) -> Self {
+        use rekindle_protocol::error::ProtocolError as P;
+        match e {
+            P::DhtError(reason) => Self::DhtError { reason },
+            P::DhtRecordUnreachable(key) => Self::RecordNotOpen { key },
+            P::Serialization(reason) => Self::SerializationFailed { reason },
+            P::Deserialization(reason) => Self::DeserializationFailed {
+                // The protocol layer reports failures on already-framed
+                // bytes, so there is no payload type tag to carry.
+                type_id: 0,
+                reason,
+            },
+            // Both are "the node did not come up"; transport draws no
+            // distinction between failing to start and failing to attach.
+            P::AttachFailed(reason) | P::NodeStartup(reason) => Self::AttachFailed { reason },
+            P::NodeNotInitialized => Self::NotStarted,
+            P::PeerNotFound(peer) => Self::NoRoute { peer },
+            P::CryptoError(reason) => Self::DecryptionFailed { reason },
+            P::Verification(sender) => Self::SignatureVerificationFailed { sender },
+            P::UnknownVariant(reason) => Self::InvalidFrame { reason },
+            P::SendFailed(reason) => Self::SendFailed {
+                target: "<protocol>".into(),
+                reason,
+            },
+            // Routing, receive and network failures share no narrower
+            // transport variant; their Display already names the kind.
+            other @ (P::RoutingError(_) | P::ReceiveFailed(_) | P::Network(_)) => Self::DhtError {
+                reason: other.to_string(),
+            },
+            P::Internal(reason) => Self::Internal(reason),
+        }
+    }
+}
+
 /// Convenience alias used throughout this crate.
 pub type Result<T> = std::result::Result<T, TransportError>;
