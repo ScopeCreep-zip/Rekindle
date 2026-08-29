@@ -3,11 +3,11 @@ use veilid_core::{DHTSchema, RoutingContext, CRYPTO_KIND_VLD0};
 use super::parse_record_key;
 use crate::error::ProtocolError;
 
-/// Subkey index for the route blob in the mailbox DHT record.
-pub const MAILBOX_SUBKEY_ROUTE_BLOB: u32 = 0;
-
-/// Total subkey count for a mailbox record.
-pub const MAILBOX_SUBKEY_COUNT: u16 = 1;
+// Layout aliased from `rekindle_types::dht_layout::mailbox` — the
+// daemon track indexes the same record and had its own copy.
+pub use rekindle_types::dht_layout::mailbox::{
+    ROUTE_BLOB as MAILBOX_SUBKEY_ROUTE_BLOB, SUBKEY_COUNT as MAILBOX_SUBKEY_COUNT,
+};
 
 /// Create the mailbox DHT record using the identity keypair as owner.
 ///

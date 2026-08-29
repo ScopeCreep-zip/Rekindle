@@ -4,14 +4,12 @@
 //! Channel records use zero-owner SMPL: each member writes directly to the
 //! subkey matching their registry slot.
 
-/// No dedicated header subkey exists in v2.0 channel records.
-pub const CHANNEL_HEADER_SUBKEY: u32 = 0;
-
-/// Channel SMPL records use `o_cnt:0`; member slots start at subkey 0.
-pub const CHANNEL_OWNER_SUBKEY_COUNT: u16 = 0;
-
-/// Each member gets 1 subkey for message submission.
-pub const CHANNEL_MEMBER_SUBKEY_COUNT: u16 = 1;
+// Layout aliased from `rekindle_types::dht_layout::channel`, the one
+// home both tracks index these records through.
+pub use rekindle_types::dht_layout::channel::{
+    HEADER_SUBKEY as CHANNEL_HEADER_SUBKEY, MEMBER_SUBKEY_COUNT as CHANNEL_MEMBER_SUBKEY_COUNT,
+    OWNER_SUBKEY_COUNT as CHANNEL_OWNER_SUBKEY_COUNT,
+};
 
 mod codec;
 mod read;

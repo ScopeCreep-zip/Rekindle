@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-// ── Profile record (DFLT, 10 subkeys) ───────────────────────────────
+// ── Profile record ──────────────────────────────────────────────────
 
 // The profile layout lives in `rekindle_types::dht_layout::profile` —
 // the desktop track indexes the same records, and keeping a private copy
@@ -52,45 +52,32 @@ pub struct FriendList {
 
 // ── Mailbox record (DFLT, 1 subkey) ──────────────────────────────────
 
-pub const MAILBOX_SUBKEY_ROUTE_BLOB: u32 = 0;
-pub const MAILBOX_SUBKEY_COUNT: u16 = 1;
+// Mailbox / manifest / registry subkey layout.
+//
+// Declared once in `rekindle_types::dht_layout`; this crate previously
+// kept its own copy of each table. Eight v1.0 owner-block constants
+// (REGISTRY_POLICY, _SCHEMA_VERSION, _OPS_LOG and the five RESERVED_*)
+// went with the o_cnt:0 migration — they had no readers.
+pub use rekindle_types::dht_layout::channel::{
+    MEMBER_SUBKEY_COUNT as CHANNEL_MEMBER_SUBKEY_COUNT,
+    OWNER_SUBKEY_COUNT as CHANNEL_OWNER_SUBKEY_COUNT,
+};
+pub use rekindle_types::dht_layout::mailbox::{
+    ROUTE_BLOB as MAILBOX_SUBKEY_ROUTE_BLOB, SUBKEY_COUNT as MAILBOX_SUBKEY_COUNT,
+};
+pub use rekindle_types::dht_layout::manifest::{
+    AUDIT_LOG_KEY as MANIFEST_AUDIT_LOG_KEY, AUTOMOD as MANIFEST_AUTOMOD, BANS as MANIFEST_BANS,
+    CATEGORIES as MANIFEST_CATEGORIES, CHANNELS as MANIFEST_CHANNELS,
+    COORDINATOR as MANIFEST_COORDINATOR, INVITES as MANIFEST_INVITES,
+    METADATA as MANIFEST_METADATA, ONBOARDING as MANIFEST_ONBOARDING,
+    POLICIES as MANIFEST_POLICIES, REGISTRY_SPINE_V1 as MANIFEST_REGISTRY_SPINE,
+    ROLES as MANIFEST_ROLES, SUBKEY_COUNT as MANIFEST_SUBKEY_COUNT, WELCOME as MANIFEST_WELCOME,
+};
+pub use rekindle_types::dht_layout::registry::{
+    MEK_VAULT as REGISTRY_MEK_VAULT, MEMBER_INDEX as REGISTRY_MEMBER_INDEX,
+    MODERATION_QUEUE as REGISTRY_MODERATION_QUEUE,
+};
 
-// ── Community governance types ───────────────────────────────────────
-
-/// Manifest subkey layout (DFLT, 16 subkeys).
-pub const MANIFEST_METADATA: u32 = 0;
-pub const MANIFEST_CHANNELS: u32 = 1;
-pub const MANIFEST_CATEGORIES: u32 = 2;
-pub const MANIFEST_ROLES: u32 = 3;
-pub const MANIFEST_BANS: u32 = 4;
-pub const MANIFEST_COORDINATOR: u32 = 5;
-pub const MANIFEST_POLICIES: u32 = 6;
-pub const MANIFEST_INVITES: u32 = 7;
-pub const MANIFEST_AUTOMOD: u32 = 9;
-pub const MANIFEST_ONBOARDING: u32 = 10;
-pub const MANIFEST_WELCOME: u32 = 11;
-pub const MANIFEST_REGISTRY_SPINE: u32 = 12;
-pub const MANIFEST_AUDIT_LOG_KEY: u32 = 14;
-pub const MANIFEST_SUBKEY_COUNT: u32 = 16;
-
-/// Registry subkey layout.
-///
-/// Subkeys 0-10: owner-controlled infrastructure (index, vault, policy,
-/// metadata, operations, moderation, reserved for federation/audit/future).
-/// Subkeys 11-255: per-member presence slots (245 members per segment).
-///
-/// Total: 256 subkeys per registry record.
-pub const REGISTRY_MEMBER_INDEX: u32 = 0;
-pub const REGISTRY_MEK_VAULT: u32 = 1;
-pub const REGISTRY_POLICY: u32 = 2;
-pub const REGISTRY_SCHEMA_VERSION: u32 = 3;
-pub const REGISTRY_OPS_LOG: u32 = 4;
-pub const REGISTRY_MODERATION_QUEUE: u32 = 5;
-pub const REGISTRY_RESERVED_FEDERATION: u32 = 6;
-pub const REGISTRY_RESERVED_AUDIT: u32 = 7;
-pub const REGISTRY_RESERVED_8: u32 = 8;
-pub const REGISTRY_RESERVED_9: u32 = 9;
-pub const REGISTRY_RESERVED_10: u32 = 10;
 /// Maximum member slots per registry segment.
 ///
 /// Re-exported from the desktop track so both agree by construction.
@@ -100,10 +87,6 @@ pub const REGISTRY_RESERVED_10: u32 = 10;
 /// with.
 pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
 pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
-
-/// Channel SMPL record constants.
-pub const CHANNEL_OWNER_SUBKEY_COUNT: u16 = 0;
-pub const CHANNEL_MEMBER_SUBKEY_COUNT: u16 = 1;
 
 // ── Community metadata ──────────────────────────────────────────────
 
@@ -146,7 +129,7 @@ pub struct CommunityMetadata {
     /// Additional operators provide high-availability when the owner is offline.
     #[serde(default)]
     pub operator_pseudonyms: Vec<String>,
-    /// Maximum members per registry segment (default 245).
+    /// Maximum members per registry segment.
     #[serde(default = "default_max_members")]
     pub max_members: u32,
     /// Automatic MEK rotation interval in hours. 0 = manual only.
@@ -166,7 +149,10 @@ pub struct CommunityMetadata {
 }
 
 fn default_max_members() -> u32 {
-    245
+    // Was 245 — the v1.0 "256 subkeys minus an 11-subkey owner block"
+    // figure. Under o_cnt:0 there is no owner block, and every registry
+    // is actually built with 255 slots.
+    SLOTS_PER_SEGMENT
 }
 fn default_mek_rotation_hours() -> u32 {
     168

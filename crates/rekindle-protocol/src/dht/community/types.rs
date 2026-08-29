@@ -7,43 +7,23 @@ use serde::{Deserialize, Serialize};
 
 // ── Manifest subkey layout (DFLT, 16 subkeys, single owner = coordinator) ──
 
-/// Subkey 0: Community metadata (name, description, icon, policies).
-pub const MANIFEST_METADATA: u32 = 0;
-/// Subkey 1: Channel directory (list of all channels).
-pub const MANIFEST_CHANNELS: u32 = 1;
-/// Subkey 2: Category directory (channel groupings).
-pub const MANIFEST_CATEGORIES: u32 = 2;
-/// Subkey 3: Role definitions.
-pub const MANIFEST_ROLES: u32 = 3;
-/// Subkey 4: Ban list.
-pub const MANIFEST_BANS: u32 = 4;
-/// Subkey 5: Coordinator info (route blob, epoch, capabilities).
-pub const MANIFEST_COORDINATOR: u32 = 5;
-/// Subkey 6: Community policies (join rules, content moderation).
-pub const MANIFEST_POLICIES: u32 = 6;
-/// Subkey 7: Invite list.
-pub const MANIFEST_INVITES: u32 = 7;
-/// Subkey 8: Reserved.
-/// Subkey 9: AutoMod configuration.
-pub const MANIFEST_AUTOMOD: u32 = 9;
-/// Subkey 10: Onboarding configuration.
-pub const MANIFEST_ONBOARDING: u32 = 10;
-/// Subkey 11: Welcome screen.
-pub const MANIFEST_WELCOME: u32 = 11;
-/// Subkey 12: Reserved (was the v1 registry spine — v2 discovers
-/// segments via `SegmentAdded` governance entries).
-/// Subkey 13: Reserved.
-/// Subkey 14: Audit log DHT record key (pointer).
-pub const MANIFEST_AUDIT_LOG_KEY: u32 = 14;
-/// Total manifest subkey count.
-pub const MANIFEST_SUBKEY_COUNT: u32 = 16;
-
-// ── Member registry subkey layout (SMPL, multi-writer) ──
-
-/// Subkey 0: Member index (list of all member pseudonym keys + subkey assignments).
-pub const REGISTRY_MEMBER_INDEX: u32 = 0;
-/// Subkey 1: MEK vault (encrypted MEK copies for key distribution).
-pub const REGISTRY_MEK_VAULT: u32 = 1;
+// Manifest + registry subkey layout.
+//
+// Declared once in `rekindle_types::dht_layout` — the daemon track
+// indexes the same records and kept its own copy of this table, which
+// is how the profile and registry layouts drifted apart. Aliased here
+// so existing call sites are unchanged.
+pub use rekindle_types::dht_layout::manifest::{
+    AUDIT_LOG_KEY as MANIFEST_AUDIT_LOG_KEY, AUTOMOD as MANIFEST_AUTOMOD, BANS as MANIFEST_BANS,
+    CATEGORIES as MANIFEST_CATEGORIES, CHANNELS as MANIFEST_CHANNELS,
+    COORDINATOR as MANIFEST_COORDINATOR, INVITES as MANIFEST_INVITES,
+    METADATA as MANIFEST_METADATA, ONBOARDING as MANIFEST_ONBOARDING,
+    POLICIES as MANIFEST_POLICIES, ROLES as MANIFEST_ROLES, SUBKEY_COUNT as MANIFEST_SUBKEY_COUNT,
+    WELCOME as MANIFEST_WELCOME,
+};
+pub use rekindle_types::dht_layout::registry::{
+    MEK_VAULT as REGISTRY_MEK_VAULT, MEMBER_INDEX as REGISTRY_MEMBER_INDEX,
+};
 
 // ── Channel types ──
 
