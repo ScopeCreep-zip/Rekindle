@@ -1,6 +1,7 @@
 pub mod memory_stores;
 pub mod pqxdh;
 pub mod prekeys;
+pub mod ratchet;
 pub mod session;
 pub mod session_cache;
 pub mod store;

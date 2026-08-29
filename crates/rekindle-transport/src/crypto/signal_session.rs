@@ -1,21 +1,19 @@
-//! Signal Protocol session management — PQXDH + simplified Double Ratchet.
+//! Signal Protocol session management — PQXDH + shared Double Ratchet.
 //!
 //! Phase 3b of the decomposed-harvest plan replaced classical X3DH with
-//! PQXDH for the daemon-track Signal subsystem. Shares the same PQXDH
-//! handshake primitives as `rekindle-crypto::signal::pqxdh` via a direct
-//! crate dependency.
+//! PQXDH for the daemon-track Signal subsystem. The handshake primitives
+//! AND the Double Ratchet stepping both come from `rekindle-crypto`
+//! (`signal::pqxdh` and `signal::ratchet`) — this file used to carry its
+//! own copy of the ratchet, wire-compatible with the desktop track only
+//! by hand (and in fact diverged: different header, different key
+//! schedule). Cross-track compatibility now holds by construction.
 
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
-use hkdf::Hkdf;
 use rekindle_crypto::signal::pqxdh::{
     self, verify::pq_signing_payload, verify::spk_signing_payload,
 };
+use rekindle_crypto::signal::ratchet::{self, RatchetState};
 use rekindle_secrets::pq_keys::MlKemSecret;
-use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 
 use crate::crypto::prekeys::PreKeyBundle;
@@ -25,19 +23,9 @@ use crate::error::{Result, TransportError};
 /// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
 pub const PQ_LR_ID: u32 = 0;
 
-/// Metadata produced by initiator-side session establishment.
-pub struct SessionInitInfo {
-    /// The initiator's X25519 ephemeral public key.
-    pub ephemeral_public_key: Vec<u8>,
-    /// Which signed prekey was used.
-    pub signed_prekey_id: u32,
-    /// Which one-time prekey was consumed (if any).
-    pub one_time_prekey_id: Option<u32>,
-    /// PQXDH ML-KEM-768 ciphertext (1088 bytes).
-    pub ml_kem_ciphertext: Vec<u8>,
-    /// Which one-time PQ prekey was consumed (None = LastResort at PQ_LR_ID).
-    pub used_ot_pqpk_id: Option<u32>,
-}
+/// Re-exported from `rekindle-crypto` — the single definition shared by
+/// both tracks (the fields were already identical).
+pub use rekindle_crypto::signal::SessionInitInfo;
 
 /// Manages Signal Protocol sessions for 1:1 encrypted messaging.
 pub struct SignalSessionManager {
@@ -46,16 +34,9 @@ pub struct SignalSessionManager {
     sessions: Box<dyn SessionStore>,
 }
 
-/// Internal ratchet state.
-#[derive(Clone)]
-struct RatchetState {
-    root_key: [u8; 32],
-    sending_chain_key: [u8; 32],
-    receiving_chain_key: [u8; 32],
-    our_ratchet_secret: Vec<u8>,
-    their_ratchet_public: Vec<u8>,
-    send_counter: u64,
-    recv_counter: u64,
+/// Map a shared-core crypto error onto the transport error type.
+fn crypto_err(e: rekindle_crypto::error::CryptoError) -> TransportError {
+    TransportError::Internal(e.to_string())
 }
 
 impl SignalSessionManager {
@@ -89,30 +70,14 @@ impl SignalSessionManager {
         let hs = pqxdh::pqxdh_initiator(&our_ik_x25519, bundle, &their_ik_ed)
             .map_err(|e| TransportError::Internal(format!("PQXDH initiator: {e}")))?;
 
-        // Expand root_key into chain keys (mirror of rekindle-crypto).
-        let hk = Hkdf::<Sha256>::new(None, &*hs.root_key);
-        let mut okm = [0u8; 96];
-        hk.expand(b"ReKindlePQXDH", &mut okm)
-            .map_err(|e| TransportError::Internal(format!("HKDF expand: {e}")))?;
-        let mut root_key = [0u8; 32];
-        let mut sending_chain_key = [0u8; 32];
-        let mut receiving_chain_key = [0u8; 32];
-        root_key.copy_from_slice(&okm[..32]);
-        sending_chain_key.copy_from_slice(&okm[32..64]);
-        receiving_chain_key.copy_from_slice(&okm[64..96]);
-
-        let ratchet = RatchetState {
-            root_key,
-            sending_chain_key,
-            receiving_chain_key,
-            our_ratchet_secret: hs.ek_public.to_vec(),
-            their_ratchet_public: bundle.signed_prekey.clone(),
-            send_counter: 0,
-            recv_counter: 0,
-        };
-
+        // Seed the shared Double Ratchet core as initiator. `ek_secret`
+        // (not the public!) seeds our ratchet secret so the responder's
+        // first reply can complete the mirrored DH step.
+        let okm = ratchet::expand_pqxdh_root(&hs.root_key).map_err(crypto_err)?;
+        let session =
+            RatchetState::initiator(&okm, *hs.ek_secret, bundle.signed_prekey.clone());
         self.sessions
-            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
+            .store_session(peer_address, &session.serialize())?;
         self.identity
             .save_identity(peer_address, &bundle.identity_key)?;
 
@@ -194,30 +159,17 @@ impl SignalSessionManager {
             self.prekeys.remove_prekey(otpk_id)?;
         }
 
-        let hk = Hkdf::<Sha256>::new(None, &*root_key_z);
-        let mut okm = [0u8; 96];
-        hk.expand(b"ReKindlePQXDH", &mut okm)
-            .map_err(|e| TransportError::Internal(format!("HKDF expand: {e}")))?;
-        let mut root_key = [0u8; 32];
-        let mut sending_chain_key = [0u8; 32];
-        let mut receiving_chain_key = [0u8; 32];
-        root_key.copy_from_slice(&okm[..32]);
-        receiving_chain_key.copy_from_slice(&okm[32..64]);
-        sending_chain_key.copy_from_slice(&okm[64..96]);
-
-        let spk_bytes = our_spk_secret.to_bytes();
-        let ratchet = RatchetState {
-            root_key,
-            sending_chain_key,
-            receiving_chain_key,
-            our_ratchet_secret: spk_bytes.to_vec(),
-            their_ratchet_public: their_ephemeral_key.to_vec(),
-            send_counter: 0,
-            recv_counter: 0,
-        };
-
+        // Seed the shared Double Ratchet core as responder (chain
+        // assignment mirrors the initiator's). The SPK SECRET seeds our
+        // ratchet secret — the initiator's first message DHs against it.
+        let okm = ratchet::expand_pqxdh_root(&root_key_z).map_err(crypto_err)?;
+        let session = RatchetState::responder(
+            &okm,
+            our_spk_secret.to_bytes(),
+            their_ephemeral_key.to_vec(),
+        );
         self.sessions
-            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
+            .store_session(peer_address, &session.serialize())?;
         self.identity
             .save_identity(peer_address, their_identity_key)?;
         Ok(())
@@ -235,64 +187,10 @@ impl SignalSessionManager {
         let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
             TransportError::Internal(format!("no Signal session for {peer_address}"))
         })?;
-
-        let mut ratchet = deserialize_ratchet(&session_data)?;
-
-        // DH ratchet step: new ephemeral → DH with their ratchet public → new root + sending chain
-        let new_ratchet_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let new_ratchet_public = X25519Public::from(&new_ratchet_secret);
-
-        let their_ratchet = X25519Public::from(to_32(
-            &ratchet.their_ratchet_public,
-            "their ratchet public",
-        )?);
-        let dh_output = new_ratchet_secret.diffie_hellman(&their_ratchet);
-
-        // Derive new root key and sending chain key from DH output + old root key
-        let mut ratchet_ikm = Vec::with_capacity(64);
-        ratchet_ikm.extend_from_slice(&ratchet.root_key);
-        ratchet_ikm.extend_from_slice(dh_output.as_bytes());
-        let hk_ratchet = Hkdf::<Sha256>::new(None, &ratchet_ikm);
-        let mut new_root = [0u8; 32];
-        let mut new_sending_chain = [0u8; 32];
-        hkdf_expand(&hk_ratchet, b"ReKindleRootKey", &mut new_root)?;
-        hkdf_expand(&hk_ratchet, b"ReKindleChainRatchet", &mut new_sending_chain)?;
-
-        ratchet.root_key = new_root;
-        ratchet.sending_chain_key = new_sending_chain;
-        // Store the private key so decrypt can DH with the peer's next ratchet public
-        ratchet.our_ratchet_secret = new_ratchet_secret.to_bytes().to_vec();
-
-        // Derive message key from the new sending chain key
-        let hk = Hkdf::<Sha256>::new(None, &ratchet.sending_chain_key);
-        let mut message_key = [0u8; 32];
-        let mut next_chain_key = [0u8; 32];
-        hkdf_expand(&hk, b"ReKindleMsgKey", &mut message_key)?;
-        hkdf_expand(&hk, b"ReKindleChainKey", &mut next_chain_key)?;
-
-        ratchet.sending_chain_key = next_chain_key;
-        ratchet.send_counter += 1;
-
-        let cipher = Aes256Gcm::new_from_slice(&message_key)
-            .map_err(|e| TransportError::Internal(format!("AES init: {e}")))?;
-
-        let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[4..].copy_from_slice(&ratchet.send_counter.to_le_bytes());
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext)
-            .map_err(|e| TransportError::Internal(format!("AES encrypt: {e}")))?;
-
-        // Wire format: ratchet_public(32) || counter(8) || nonce(12) || ciphertext
-        let mut output = Vec::with_capacity(32 + 8 + 12 + ciphertext.len());
-        output.extend_from_slice(new_ratchet_public.as_bytes());
-        output.extend_from_slice(&ratchet.send_counter.to_le_bytes());
-        output.extend_from_slice(&nonce_bytes);
-        output.extend_from_slice(&ciphertext);
-
+        let mut session = RatchetState::deserialize(&session_data).map_err(crypto_err)?;
+        let output = session.encrypt_step(plaintext).map_err(crypto_err)?;
         self.sessions
-            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
+            .store_session(peer_address, &session.serialize())?;
         Ok(output)
     }
 
@@ -304,67 +202,13 @@ impl SignalSessionManager {
     ///
     /// Wire format: `[ratchet_public(32) || counter(8 LE) || nonce(12) || ciphertext+tag]`
     pub fn decrypt(&self, peer_address: &str, message: &[u8]) -> Result<Vec<u8>> {
-        // 32 ratchet_public + 8 counter + 12 nonce + at least 16 tag = 68 minimum
-        if message.len() < 52 {
-            return Err(TransportError::Internal("Signal message too short".into()));
-        }
-
         let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
             TransportError::Internal(format!("no Signal session for {peer_address}"))
         })?;
-
-        let mut ratchet = deserialize_ratchet(&session_data)?;
-
-        // Extract sender's new ratchet public key
-        let their_new_ratchet_pub = to_32(&message[..32], "sender ratchet public")?;
-        let nonce_bytes: [u8; 12] = message[40..52]
-            .try_into()
-            .map_err(|_| TransportError::Internal("invalid nonce".into()))?;
-        let ciphertext = &message[52..];
-
-        // DH ratchet step: DH(our_ratchet_secret, their_new_ratchet_public) → new root + receiving chain
-        let our_ratchet_secret =
-            StaticSecret::from(to_32(&ratchet.our_ratchet_secret, "our ratchet secret")?);
-        let their_ratchet = X25519Public::from(their_new_ratchet_pub);
-        let dh_output = our_ratchet_secret.diffie_hellman(&their_ratchet);
-
-        let mut ratchet_ikm = Vec::with_capacity(64);
-        ratchet_ikm.extend_from_slice(&ratchet.root_key);
-        ratchet_ikm.extend_from_slice(dh_output.as_bytes());
-        let hk_ratchet = Hkdf::<Sha256>::new(None, &ratchet_ikm);
-        let mut new_root = [0u8; 32];
-        let mut new_receiving_chain = [0u8; 32];
-        hkdf_expand(&hk_ratchet, b"ReKindleRootKey", &mut new_root)?;
-        hkdf_expand(
-            &hk_ratchet,
-            b"ReKindleChainRatchet",
-            &mut new_receiving_chain,
-        )?;
-
-        ratchet.root_key = new_root;
-        ratchet.receiving_chain_key = new_receiving_chain;
-        ratchet.their_ratchet_public = their_new_ratchet_pub.to_vec();
-
-        // Derive message key from the new receiving chain key
-        let hk = Hkdf::<Sha256>::new(None, &ratchet.receiving_chain_key);
-        let mut message_key = [0u8; 32];
-        let mut next_chain_key = [0u8; 32];
-        hkdf_expand(&hk, b"ReKindleMsgKey", &mut message_key)?;
-        hkdf_expand(&hk, b"ReKindleChainKey", &mut next_chain_key)?;
-
-        ratchet.receiving_chain_key = next_chain_key;
-        ratchet.recv_counter += 1;
-
-        let cipher = Aes256Gcm::new_from_slice(&message_key)
-            .map_err(|e| TransportError::Internal(format!("AES init: {e}")))?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| TransportError::Internal(format!("AES decrypt: {e}")))?;
-
+        let mut session = RatchetState::deserialize(&session_data).map_err(crypto_err)?;
+        let plaintext = session.decrypt_step(message).map_err(crypto_err)?;
         self.sessions
-            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
+            .store_session(peer_address, &session.serialize())?;
         Ok(plaintext)
     }
 
@@ -475,89 +319,6 @@ impl SignalSessionManager {
 fn to_32(data: &[u8], label: &str) -> Result<[u8; 32]> {
     data[..32].try_into().map_err(|_| {
         TransportError::Internal(format!("{label}: expected 32 bytes, got {}", data.len()))
-    })
-}
-
-fn hkdf_expand(hk: &Hkdf<Sha256>, info: &[u8], out: &mut [u8; 32]) -> Result<()> {
-    hk.expand(info, out)
-        .map_err(|e| TransportError::Internal(format!("HKDF expand: {e}")))
-}
-
-fn serialize_ratchet(state: &RatchetState) -> Vec<u8> {
-    let mut data = Vec::with_capacity(128);
-    data.extend_from_slice(&state.root_key);
-    data.extend_from_slice(&state.sending_chain_key);
-    data.extend_from_slice(&state.receiving_chain_key);
-    let our_len = u32::try_from(state.our_ratchet_secret.len()).unwrap_or(u32::MAX);
-    data.extend_from_slice(&our_len.to_le_bytes());
-    data.extend_from_slice(&state.our_ratchet_secret);
-    let their_len = u32::try_from(state.their_ratchet_public.len()).unwrap_or(u32::MAX);
-    data.extend_from_slice(&their_len.to_le_bytes());
-    data.extend_from_slice(&state.their_ratchet_public);
-    data.extend_from_slice(&state.send_counter.to_le_bytes());
-    data.extend_from_slice(&state.recv_counter.to_le_bytes());
-    data
-}
-
-fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState> {
-    if data.len() < 112 {
-        return Err(TransportError::Internal(
-            "invalid Signal session data".into(),
-        ));
-    }
-    let mut pos = 0;
-
-    let mut root_key = [0u8; 32];
-    root_key.copy_from_slice(&data[pos..pos + 32]);
-    pos += 32;
-
-    let mut sending_chain_key = [0u8; 32];
-    sending_chain_key.copy_from_slice(&data[pos..pos + 32]);
-    pos += 32;
-
-    let mut receiving_chain_key = [0u8; 32];
-    receiving_chain_key.copy_from_slice(&data[pos..pos + 32]);
-    pos += 32;
-
-    let our_len = u32::from_le_bytes(
-        data[pos..pos + 4]
-            .try_into()
-            .map_err(|_| TransportError::Internal("corrupt session".into()))?,
-    ) as usize;
-    pos += 4;
-    let our_ratchet_secret = data[pos..pos + our_len].to_vec();
-    pos += our_len;
-
-    let their_len = u32::from_le_bytes(
-        data[pos..pos + 4]
-            .try_into()
-            .map_err(|_| TransportError::Internal("corrupt session".into()))?,
-    ) as usize;
-    pos += 4;
-    let their_ratchet_public = data[pos..pos + their_len].to_vec();
-    pos += their_len;
-
-    let send_counter = u64::from_le_bytes(
-        data[pos..pos + 8]
-            .try_into()
-            .map_err(|_| TransportError::Internal("corrupt session".into()))?,
-    );
-    pos += 8;
-
-    let recv_counter = u64::from_le_bytes(
-        data[pos..pos + 8]
-            .try_into()
-            .map_err(|_| TransportError::Internal("corrupt session".into()))?,
-    );
-
-    Ok(RatchetState {
-        root_key,
-        sending_chain_key,
-        receiving_chain_key,
-        our_ratchet_secret,
-        their_ratchet_public,
-        send_counter,
-        recv_counter,
     })
 }
 
@@ -690,5 +451,136 @@ mod tests {
             Box::new(MemorySessionStore::new()),
         );
         assert!(mgr.encrypt("nobody", b"hello").is_err());
+    }
+
+    /// CROSS-TRACK INTEROP — the reason the shared ratchet core exists.
+    ///
+    /// Alice runs the daemon track's manager (this file); Bob runs the
+    /// desktop track's (`rekindle_crypto::signal::session`). Before the
+    /// ratchets were converged this could not work: the desktop wrote
+    /// `[counter || nonce || ct]` with a symmetric-only chain while the
+    /// daemon wrote `[ratchet_public || counter || nonce || ct]` with a
+    /// per-message DH step — a DM between the two tracks could not
+    /// decrypt. This test is the regression guard that keeps the tracks
+    /// on ONE wire format and ONE key schedule.
+    #[tokio::test]
+    async fn cross_track_session_interop() {
+        use rekindle_crypto::signal::memory_stores as desktop_stores;
+        use rekindle_crypto::signal::session::SignalSessionManager as DesktopManager;
+
+        let (alice_priv, alice_pub) = make_identity();
+        let (bob_priv, bob_pub) = make_identity();
+
+        // Alice: daemon-track manager (transport stores).
+        let alice = SignalSessionManager::new(
+            Box::new(MemoryIdentityStore::new(alice_priv, alice_pub.clone(), 1)),
+            Box::new(MemoryPreKeyStore::new()),
+            Box::new(MemorySessionStore::new()),
+        );
+        // Bob: desktop-track manager (rekindle-crypto stores).
+        let bob = DesktopManager::new(
+            Box::new(desktop_stores::MemoryIdentityStore::new(
+                bob_priv,
+                bob_pub.clone(),
+                2,
+            )),
+            Box::new(desktop_stores::MemoryPreKeyStore::new()),
+            Box::new(desktop_stores::MemorySessionStore::new()),
+        );
+
+        let alice_addr = hex::encode(&alice_pub);
+        let bob_addr = hex::encode(&bob_pub);
+
+        // Bob (desktop) publishes a bundle; Alice (daemon) initiates.
+        let bob_bundle = bob.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
+        let init = alice.establish_session(&bob_addr, &bob_bundle).unwrap();
+        bob.respond_to_session(
+            &alice_addr,
+            &alice_pub,
+            &init.ephemeral_public_key,
+            init.signed_prekey_id,
+            init.one_time_prekey_id,
+            &init.ml_kem_ciphertext,
+            init.used_ot_pqpk_id,
+        )
+        .unwrap();
+
+        // Daemon → desktop.
+        let wire = alice.encrypt(&bob_addr, b"hello from the daemon track").unwrap();
+        assert_eq!(
+            bob.decrypt(&alice_addr, &wire).await.unwrap(),
+            b"hello from the daemon track"
+        );
+
+        // Desktop → daemon.
+        let wire = bob
+            .encrypt(&alice_addr, b"hello from the desktop track")
+            .await
+            .unwrap();
+        assert_eq!(
+            alice.decrypt(&bob_addr, &wire).unwrap(),
+            b"hello from the desktop track"
+        );
+
+        // A short ping-pong to prove the DH ratchet stays in step
+        // across implementations, not just on the first exchange.
+        for i in 0..4u8 {
+            let m = vec![i; 32];
+            if i % 2 == 0 {
+                let w = alice.encrypt(&bob_addr, &m).unwrap();
+                assert_eq!(bob.decrypt(&alice_addr, &w).await.unwrap(), m);
+            } else {
+                let w = bob.encrypt(&alice_addr, &m).await.unwrap();
+                assert_eq!(alice.decrypt(&bob_addr, &w).unwrap(), m);
+            }
+        }
+    }
+
+    /// Responder-replies-first also works cross-track — this ordering
+    /// was broken in BOTH pre-convergence forks (each stored the
+    /// initiator's ephemeral PUBLIC key where the ratchet secret
+    /// belongs, so the initiator could never decrypt a first inbound).
+    #[tokio::test]
+    async fn cross_track_responder_sends_first() {
+        use rekindle_crypto::signal::memory_stores as desktop_stores;
+        use rekindle_crypto::signal::session::SignalSessionManager as DesktopManager;
+
+        let (alice_priv, alice_pub) = make_identity();
+        let (bob_priv, bob_pub) = make_identity();
+
+        let alice = SignalSessionManager::new(
+            Box::new(MemoryIdentityStore::new(alice_priv, alice_pub.clone(), 1)),
+            Box::new(MemoryPreKeyStore::new()),
+            Box::new(MemorySessionStore::new()),
+        );
+        let bob = DesktopManager::new(
+            Box::new(desktop_stores::MemoryIdentityStore::new(
+                bob_priv,
+                bob_pub.clone(),
+                2,
+            )),
+            Box::new(desktop_stores::MemoryPreKeyStore::new()),
+            Box::new(desktop_stores::MemorySessionStore::new()),
+        );
+
+        let alice_addr = hex::encode(&alice_pub);
+        let bob_addr = hex::encode(&bob_pub);
+
+        let bob_bundle = bob.generate_prekey_bundle(1, None, None).unwrap();
+        let init = alice.establish_session(&bob_addr, &bob_bundle).unwrap();
+        bob.respond_to_session(
+            &alice_addr,
+            &alice_pub,
+            &init.ephemeral_public_key,
+            init.signed_prekey_id,
+            init.one_time_prekey_id,
+            &init.ml_kem_ciphertext,
+            init.used_ot_pqpk_id,
+        )
+        .unwrap();
+
+        // Bob (the responder) speaks FIRST.
+        let wire = bob.encrypt(&alice_addr, b"responder first").await.unwrap();
+        assert_eq!(alice.decrypt(&bob_addr, &wire).unwrap(), b"responder first");
     }
 }

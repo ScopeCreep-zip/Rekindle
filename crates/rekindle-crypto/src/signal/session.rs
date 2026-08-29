@@ -6,14 +6,11 @@ use crate::signal::prekeys::PreKeyBundle;
 use crate::signal::session_cache::{SessionCache, SessionPersistence};
 use crate::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
-use hkdf::Hkdf;
 use rekindle_secrets::pq_keys::MlKemSecret;
-use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
-use zeroize::ZeroizeOnDrop;
+
+use crate::signal::ratchet::{self, RatchetState};
 
 /// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
 /// Singleton — one per identity at a time; rotates rarely.
@@ -76,32 +73,10 @@ impl SessionPersistence for SessionStoreAdapter {
     }
 }
 
-/// An established session's symmetric ratchet state. Architecture
-/// §32 line 4138 mandates `ZeroizeOnDrop` on every secret type — root,
-/// chain, and ratchet keys are scrubbed from memory when the state is
-/// dropped (session close / Drop on session-store eviction). The
-/// `their_ratchet_public` and counters are non-secret so they can be
-/// excluded from zeroize via `#[zeroize(skip)]`.
-#[derive(Clone, ZeroizeOnDrop)]
-struct RatchetState {
-    /// Root key — evolves with each DH ratchet step.
-    root_key: [u8; 32],
-    /// Sending chain key — evolves with each message sent.
-    sending_chain_key: [u8; 32],
-    /// Receiving chain key — evolves with each message received.
-    receiving_chain_key: [u8; 32],
-    /// Our current DH ratchet keypair (X25519).
-    our_ratchet_secret: Vec<u8>,
-    /// Their current DH ratchet public key.
-    #[zeroize(skip)]
-    their_ratchet_public: Vec<u8>,
-    /// Send message counter.
-    #[zeroize(skip)]
-    send_counter: u64,
-    /// Receive message counter.
-    #[zeroize(skip)]
-    recv_counter: u64,
-}
+// The ratchet state and stepping logic live in
+// [`crate::signal::ratchet`] — THE Double Ratchet core shared by every
+// track. This manager only owns session establishment (PQXDH) and the
+// store/cache plumbing around it.
 
 impl SignalSessionManager {
     /// Create a new session manager with the given storage backends.
@@ -175,33 +150,14 @@ impl SignalSessionManager {
         let hs = pqxdh::pqxdh_initiator(&our_ik_x25519, bundle, &their_ik_ed)
             .map_err(|e| CryptoError::SessionError(format!("PQXDH initiator: {e}")))?;
 
-        // 4. Expand the PQXDH root_key into sending + receiving chain
-        //    keys for the Double Ratchet. The expansion mirrors the
-        //    legacy X3DH HKDF split, just with PQXDH's root_key as the
-        //    starting material.
-        let hk = Hkdf::<Sha256>::new(None, &*hs.root_key);
-        let mut okm = [0u8; 96];
-        hk.expand(b"ReKindlePQXDH", &mut okm)
-            .map_err(|e| CryptoError::SessionError(format!("HKDF expand failed: {e}")))?;
-        let mut root_key = [0u8; 32];
-        let mut sending_chain_key = [0u8; 32];
-        let mut receiving_chain_key = [0u8; 32];
-        root_key.copy_from_slice(&okm[..32]);
-        sending_chain_key.copy_from_slice(&okm[32..64]);
-        receiving_chain_key.copy_from_slice(&okm[64..96]);
-
-        // 5. Persist the initial ratchet state.
-        let ratchet = RatchetState {
-            root_key,
-            sending_chain_key,
-            receiving_chain_key,
-            our_ratchet_secret: hs.ek_public.to_vec(),
-            their_ratchet_public: bundle.signed_prekey.clone(),
-            send_counter: 0,
-            recv_counter: 0,
-        };
-        let session_data = serialize_ratchet(&ratchet);
-        self.sessions.store_session(peer_address, &session_data)?;
+        // 4. Expand the PQXDH root_key and seed the shared Double
+        //    Ratchet core as initiator. `ek_secret` (not the public!)
+        //    seeds our ratchet secret so the responder's first reply
+        //    can complete the mirrored DH step.
+        let okm = ratchet::expand_pqxdh_root(&hs.root_key)?;
+        let ratchet = RatchetState::initiator(&okm, *hs.ek_secret, bundle.signed_prekey.clone());
+        self.sessions
+            .store_session(peer_address, &ratchet.serialize())?;
 
         // Trust their identity on first use (TOFU)
         self.identity
@@ -311,34 +267,18 @@ impl SignalSessionManager {
             self.prekeys.remove_prekey(otpk_id)?;
         }
 
-        // 8. Expand the root_key into chain keys.
-        let hk = Hkdf::<Sha256>::new(None, &*root_key_z);
-        let mut okm = [0u8; 96];
-        hk.expand(b"ReKindlePQXDH", &mut okm)
-            .map_err(|e| CryptoError::SessionError(format!("HKDF expand failed: {e}")))?;
-        let mut root_key = [0u8; 32];
-        let mut sending_chain_key = [0u8; 32];
-        let mut receiving_chain_key = [0u8; 32];
-        root_key.copy_from_slice(&okm[..32]);
-        // Responder swaps sending/receiving relative to initiator.
-        receiving_chain_key.copy_from_slice(&okm[32..64]);
-        sending_chain_key.copy_from_slice(&okm[64..96]);
-
-        let spk_bytes = our_spk_secret.to_bytes();
-        let ratchet = RatchetState {
-            root_key,
-            sending_chain_key,
-            receiving_chain_key,
-            our_ratchet_secret: X25519Public::from(&StaticSecret::from(spk_bytes))
-                .as_bytes()
-                .to_vec(),
-            their_ratchet_public: their_ephemeral_key.to_vec(),
-            send_counter: 0,
-            recv_counter: 0,
-        };
-
-        let session_data = serialize_ratchet(&ratchet);
-        self.sessions.store_session(peer_address, &session_data)?;
+        // 8. Expand the root_key and seed the shared Double Ratchet
+        //    core as responder (chain assignment mirrors the
+        //    initiator's). The SPK SECRET seeds our ratchet secret —
+        //    the initiator's first message DHs against SPK_B.
+        let okm = ratchet::expand_pqxdh_root(&root_key_z)?;
+        let ratchet = RatchetState::responder(
+            &okm,
+            our_spk_secret.to_bytes(),
+            their_ephemeral_key.to_vec(),
+        );
+        self.sessions
+            .store_session(peer_address, &ratchet.serialize())?;
 
         // Trust their identity on first use (TOFU)
         self.identity
@@ -380,7 +320,7 @@ impl SignalSessionManager {
         // Per-peer lock — held only across the in-process mutate. Other
         // peers' encrypts proceed concurrently on independent shards.
         let mut guard = arc.lock().await;
-        let mut ratchet = deserialize_ratchet(&guard)?;
+        let mut ratchet = RatchetState::deserialize(&guard)?;
         let (output, new_data) = Self::encrypt_mutate(&mut ratchet, plaintext)?;
         // Update cache snapshot AND persist to durable store. Persisting
         // under the per-peer lock guarantees the durable store's view
@@ -399,7 +339,7 @@ impl SignalSessionManager {
             .sessions
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
-        let mut ratchet = deserialize_ratchet(&session_data)?;
+        let mut ratchet = RatchetState::deserialize(&session_data)?;
         let (output, new_data) = Self::encrypt_mutate(&mut ratchet, plaintext)?;
         self.sessions.store_session(peer_address, &new_data)?;
         Ok(output)
@@ -408,44 +348,14 @@ impl SignalSessionManager {
     /// Pure mutate step shared by cache and non-cache paths. Returns
     /// `(wire_output, new_session_bytes)`. Caller is responsible for
     /// persisting `new_session_bytes` (under the per-peer lock when
-    /// the cache is in play).
+    /// the cache is in play). Stepping lives in the shared ratchet
+    /// core ([`crate::signal::ratchet`]).
     fn encrypt_mutate(
         ratchet: &mut RatchetState,
         plaintext: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
-        // Derive message key from sending chain key via HKDF
-        let hk = Hkdf::<Sha256>::new(None, &ratchet.sending_chain_key);
-        let mut message_key = [0u8; 32];
-        let mut next_chain_key = [0u8; 32];
-        hk.expand(b"ReKindleMsgKey", &mut message_key)
-            .map_err(|e| CryptoError::EncryptionError(format!("HKDF: {e}")))?;
-        hk.expand(b"ReKindleChainKey", &mut next_chain_key)
-            .map_err(|e| CryptoError::EncryptionError(format!("HKDF: {e}")))?;
-
-        // Advance sending chain
-        ratchet.sending_chain_key = next_chain_key;
-        ratchet.send_counter += 1;
-
-        // Encrypt with AES-256-GCM
-        let cipher = Aes256Gcm::new_from_slice(&message_key)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
-
-        let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[4..].copy_from_slice(&ratchet.send_counter.to_le_bytes());
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
-
-        // Prepend counter + nonce for the recipient
-        let mut output = Vec::with_capacity(8 + 12 + ciphertext.len());
-        output.extend_from_slice(&ratchet.send_counter.to_le_bytes());
-        output.extend_from_slice(&nonce_bytes);
-        output.extend_from_slice(&ciphertext);
-
-        let new_session_data = serialize_ratchet(ratchet);
-        Ok((output, new_session_data))
+        let output = ratchet.encrypt_step(plaintext)?;
+        Ok((output, ratchet.serialize()))
     }
 
     /// Decrypt a ciphertext message from a peer.
@@ -456,7 +366,7 @@ impl SignalSessionManager {
         peer_address: &str,
         message: &[u8],
     ) -> Result<Vec<u8>, CryptoError> {
-        if message.len() < 20 {
+        if message.len() < ratchet::HEADER_LEN {
             return Err(CryptoError::DecryptionError("message too short".into()));
         }
         if let Some(cache) = self.cache.as_ref() {
@@ -473,7 +383,7 @@ impl SignalSessionManager {
     ) -> Result<Vec<u8>, CryptoError> {
         let arc = cache.get_or_load(peer_address).await?;
         let mut guard = arc.lock().await;
-        let mut ratchet = deserialize_ratchet(&guard)?;
+        let mut ratchet = RatchetState::deserialize(&guard)?;
         let (plaintext, new_data) = Self::decrypt_mutate(&mut ratchet, message)?;
         guard.clone_from(&new_data);
         self.sessions.store_session(peer_address, &new_data)?;
@@ -489,7 +399,7 @@ impl SignalSessionManager {
             .sessions
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
-        let mut ratchet = deserialize_ratchet(&session_data)?;
+        let mut ratchet = RatchetState::deserialize(&session_data)?;
         let (plaintext, new_data) = Self::decrypt_mutate(&mut ratchet, message)?;
         self.sessions.store_session(peer_address, &new_data)?;
         Ok(plaintext)
@@ -499,41 +409,8 @@ impl SignalSessionManager {
         ratchet: &mut RatchetState,
         message: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
-        // Parse counter + nonce + ciphertext
-        let _counter = u64::from_le_bytes(
-            message[..8]
-                .try_into()
-                .map_err(|_| CryptoError::DecryptionError("invalid counter".into()))?,
-        );
-        let nonce_bytes: [u8; 12] = message[8..20]
-            .try_into()
-            .map_err(|_| CryptoError::DecryptionError("invalid nonce".into()))?;
-        let ciphertext = &message[20..];
-
-        // Derive message key from receiving chain key
-        let hk = Hkdf::<Sha256>::new(None, &ratchet.receiving_chain_key);
-        let mut message_key = [0u8; 32];
-        let mut next_chain_key = [0u8; 32];
-        hk.expand(b"ReKindleMsgKey", &mut message_key)
-            .map_err(|e| CryptoError::DecryptionError(format!("HKDF: {e}")))?;
-        hk.expand(b"ReKindleChainKey", &mut next_chain_key)
-            .map_err(|e| CryptoError::DecryptionError(format!("HKDF: {e}")))?;
-
-        // Advance receiving chain
-        ratchet.receiving_chain_key = next_chain_key;
-        ratchet.recv_counter += 1;
-
-        // Decrypt with AES-256-GCM
-        let cipher = Aes256Gcm::new_from_slice(&message_key)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
-
-        let new_session_data = serialize_ratchet(ratchet);
-        Ok((plaintext, new_session_data))
+        let plaintext = ratchet.decrypt_step(message)?;
+        Ok((plaintext, ratchet.serialize()))
     }
 
     /// Check if we have an established session with a peer.
@@ -775,84 +652,3 @@ impl SignalSessionManager {
     }
 }
 
-// Simple binary serialization for ratchet state.
-fn serialize_ratchet(state: &RatchetState) -> Vec<u8> {
-    let mut data = Vec::new();
-    data.extend_from_slice(&state.root_key);
-    data.extend_from_slice(&state.sending_chain_key);
-    data.extend_from_slice(&state.receiving_chain_key);
-    let our_len = u32::try_from(state.our_ratchet_secret.len())
-        .expect("ratchet secret length must fit in u32");
-    data.extend_from_slice(&our_len.to_le_bytes());
-    data.extend_from_slice(&state.our_ratchet_secret);
-    let their_len = u32::try_from(state.their_ratchet_public.len())
-        .expect("ratchet public length must fit in u32");
-    data.extend_from_slice(&their_len.to_le_bytes());
-    data.extend_from_slice(&state.their_ratchet_public);
-    data.extend_from_slice(&state.send_counter.to_le_bytes());
-    data.extend_from_slice(&state.recv_counter.to_le_bytes());
-    data
-}
-
-fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState, CryptoError> {
-    if data.len() < 112 {
-        return Err(CryptoError::SessionError("invalid session data".into()));
-    }
-
-    let mut pos = 0;
-
-    let mut root_key = [0u8; 32];
-    root_key.copy_from_slice(&data[pos..pos + 32]);
-    pos += 32;
-
-    let mut sending_chain_key = [0u8; 32];
-    sending_chain_key.copy_from_slice(&data[pos..pos + 32]);
-    pos += 32;
-
-    let mut receiving_chain_key = [0u8; 32];
-    receiving_chain_key.copy_from_slice(&data[pos..pos + 32]);
-    pos += 32;
-
-    let our_len = usize::try_from(u32::from_le_bytes(
-        data[pos..pos + 4]
-            .try_into()
-            .map_err(|_| CryptoError::SessionError("corrupt session".into()))?,
-    ))
-    .map_err(|_| CryptoError::SessionError("ratchet secret length overflow".into()))?;
-    pos += 4;
-    let our_ratchet_secret = data[pos..pos + our_len].to_vec();
-    pos += our_len;
-
-    let their_len = usize::try_from(u32::from_le_bytes(
-        data[pos..pos + 4]
-            .try_into()
-            .map_err(|_| CryptoError::SessionError("corrupt session".into()))?,
-    ))
-    .map_err(|_| CryptoError::SessionError("ratchet public length overflow".into()))?;
-    pos += 4;
-    let their_ratchet_public = data[pos..pos + their_len].to_vec();
-    pos += their_len;
-
-    let send_counter = u64::from_le_bytes(
-        data[pos..pos + 8]
-            .try_into()
-            .map_err(|_| CryptoError::SessionError("corrupt session".into()))?,
-    );
-    pos += 8;
-
-    let recv_counter = u64::from_le_bytes(
-        data[pos..pos + 8]
-            .try_into()
-            .map_err(|_| CryptoError::SessionError("corrupt session".into()))?,
-    );
-
-    Ok(RatchetState {
-        root_key,
-        sending_chain_key,
-        receiving_chain_key,
-        our_ratchet_secret,
-        their_ratchet_public,
-        send_counter,
-        recv_counter,
-    })
-}

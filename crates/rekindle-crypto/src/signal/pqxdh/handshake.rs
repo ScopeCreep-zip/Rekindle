@@ -27,6 +27,12 @@ pub struct InitiatorHandshake {
     /// Ephemeral X25519 public key (`EK_A`) the initiator used for
     /// DH2/DH3/DH4.
     pub ek_public: [u8; 32],
+    /// Ephemeral X25519 SECRET (`EK_A` private half). The Double Ratchet
+    /// initiator seeds `our_ratchet_secret` with this so the FIRST
+    /// inbound DH ratchet step (responder replies before we send again)
+    /// can complete — the responder's first message DHs its fresh
+    /// ephemeral against `EK_A`. Never transmitted.
+    pub ek_secret: Zeroizing<[u8; 32]>,
     /// ML-KEM ciphertext (1088 bytes) encapsulated to the responder's
     /// chosen PQ key. Responder decapsulates with the matching secret.
     pub ml_kem_ct: Vec<u8>,
@@ -112,6 +118,7 @@ pub fn pqxdh_initiator(
 
     Ok(InitiatorHandshake {
         ek_public: ek_pub.to_bytes(),
+        ek_secret: Zeroizing::new(ek.to_bytes()),
         ml_kem_ct: encap.ciphertext,
         used_ot_pqpk_id,
         used_ot_opk_id: bundle.one_time_prekey_id,
