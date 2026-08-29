@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { setupMocks, LOGIN_SUCCESS_HANDLER } from "../fixtures/mocks";
 
 // Deep-link payload tests.
 //
@@ -84,8 +85,19 @@ test.describe("Deep-link — hostile payloads", () => {
   for (const { name, url } of HOSTILE_PAYLOADS) {
     test(`${name}: ${url.slice(0, 50)}…`, async ({ page }) => {
       // Navigate to login first so the deep-link handler is registered.
+      // The IPC mocks must be installed too: without them the Tauri
+      // shim is absent and the app's own listeners throw
+      // "Cannot read properties of undefined (reading 'transformCallback')",
+      // which the fatal-error assertion below would blame on the payload.
       await page.goto("/login");
+      await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER);
       await page.waitForLoadState("networkidle");
+
+      // Baseline: this test is about what the *payload* causes, so
+      // discard anything logged while the page was booting.
+      await page.evaluate(() => {
+        (window as unknown as { __rekindleErrors: string[] }).__rekindleErrors.length = 0;
+      });
 
       // Trigger the deep-link handler. In dev mode we can't actually
       // fire a `rekindle://` URL — the OS handles that — but we can

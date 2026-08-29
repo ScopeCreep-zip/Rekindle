@@ -83,6 +83,27 @@ jobs:
         run: pnpm exec depcruise --config .dependency-cruiser.cjs src
 
   # ──────────────────────────────────────────────────────────────────
+  # Security regression suite — deep-link payload handling and DOM-XSS
+  # canaries (e2e/security/*.spec.ts). @playwright/test is a real
+  # devDependency, so this runs for real rather than being guarded.
+  # CSP tests skip themselves here (Vite serves no CSP); the declared
+  # policy is covered by src-tauri/tests/csp_policy.rs in the Rust job.
+  # ──────────────────────────────────────────────────────────────────
+  security:
+    name: Security suite (playwright)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Deep-link / XSS regression tests
+        run: pnpm test:security
+
+  # ──────────────────────────────────────────────────────────────────
   # xtask guardrails — tier boundaries, file-size ceiling (600 lines +
   # burn-down allowlist), allow-reason hygiene. Pure Rust, no GTK.
   # ──────────────────────────────────────────────────────────────────
