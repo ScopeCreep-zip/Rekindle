@@ -24,5 +24,3 @@
 726 crates/rekindle-voice/src/signaling/presence.rs
 632 src-tauri/src/channels/community_channel/mod.rs
 632 src-tauri/src/services/governance_adapter/deps_impl.rs
-1050 src/components/voice/video_call/useVideoCallPanel.ts
-718 src/components/voice/video_call/video_sender.ts

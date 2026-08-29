@@ -1,7 +1,9 @@
 // Architecture §10.6 — send-side of the interim video pipeline. Owns the
 // WebCodecs VideoEncoder, the canvas-capture pump loop, and the per-track
 // adaptive-bitrate state. Split out of VideoCallPanel so the orchestration
-// hook stays focused on UI lifecycle + the receiver path.
+// hook stays focused on UI lifecycle + the receiver path. Types/ladder
+// policy live in sender_types.ts; the pure negotiation/config helpers in
+// encoder_config.ts — this file is only the (heavily stateful) pump.
 //
 // Encoder lifecycle (Phase 2): the negotiated codec is cross-checked
 // against the local probe before EVERY configure (an unencodable codec
@@ -15,14 +17,9 @@
 // unlike requestAnimationFrame — keeps firing while the window is
 // occluded on macOS.
 import { commands } from "../../../ipc/commands";
-import type { Codec, MediaCapabilities, SessionVideoConfig } from "../../../ipc/commands";
+import type { Codec } from "../../../ipc/commands";
 import { localVideoCapabilities } from "../../../handlers/video.handlers";
 import {
-  dmPeerDecodeCodecsFor,
-  videoSessionConfigFor,
-} from "../../../stores/video.store";
-import {
-  KEYFRAME_INTERVAL_MS,
   KEYFRAME_MIN_INTERVAL_MS,
   LADDER_OVERSHOOT_RATIO,
   LADDER_UNDERSHOOT_RATIO,
@@ -30,103 +27,31 @@ import {
   LADDER_WINDOW_MS,
   bytesToBase64,
   randomStreamIdHex,
-  wireCodecToWebCodecsString,
 } from "./codec_utils";
+import {
+  buildEncoderConfig,
+  effectiveBitrate,
+  encoderConstraints,
+  pickEncoderCodec,
+  reportEncoderStatus,
+} from "./encoder_config";
+import {
+  FIRST_CHUNK_DEADLINE_MS,
+  LADDER,
+  RECREATE_COOLDOWN_MS,
+  freshTrack,
+} from "./sender_types";
+import type {
+  SenderRoute,
+  TrackLabel,
+  TrackState,
+  VideoSender,
+  VideoWithRVFC,
+} from "./sender_types";
 
-/** Fps/keyframe-cadence steps below the negotiated ceiling. Resolution
- *  NEVER changes mid-stream: a ladder move that reconfigured the
- *  encoder to new dimensions broke both receiving platforms' WebCodecs
- *  decoders on the in-band resolution switch (WebKitGTK stalled with
- *  no output and no error callback; WKWebView painted a black tile).
- *  Fps is floored near 7: under CBR, per-frame bytes = bitrate ÷ fps,
- *  so cutting fps below that point GROWS each frame instead of
- *  shedding bytes — the 2 fps depths of the previous ladder produced
- *  40 KB deltas / 160 KB keyframes (temporal prediction collapses at
- *  500 ms frame spacing) and froze the far end. Bytes are shed by the
- *  fps-coupled encoder bitrate (`effectiveBitrate`) following the AIMD
- *  target down, not by fps alone. Late joiners aren't stranded by the
- *  6 s cadence: the keyframe-request path (proven live) forces one on
- *  demand. */
-const LADDER: ReadonlyArray<{ fpsScale: number; kfIntervalMs: number }> = [
-  { fpsScale: 1, kfIntervalMs: KEYFRAME_INTERVAL_MS },
-  { fpsScale: 0.8, kfIntervalMs: KEYFRAME_INTERVAL_MS },
-  { fpsScale: 0.66, kfIntervalMs: 6000 },
-  { fpsScale: 0.5, kfIntervalMs: 6000 },
-];
-
-export type TrackLabel = "camera" | "screen";
-
-/** W11.4 — `community` routes encoded frames through gossip fan-out + MEK;
- *  `dm` routes 1:1 via Signal Double Ratchet. */
-export type SenderRoute =
-  | { mode: "community"; communityId: string; channelId: string }
-  | { mode: "dm"; peerId: string };
-
-/** How long the encoder may consume frames without producing a single
- *  chunk before the watchdog recreates it. */
-const FIRST_CHUNK_DEADLINE_MS = 2_000;
-/** Minimum spacing between automatic encoder recreations; a second
- *  failure inside the window is fatal (surfaced, camera stops). */
-const RECREATE_COOLDOWN_MS = 10_000;
-
-/** Pure encodability gate: the encoder must never be configured with a
- *  codec the local engine can't encode. `null` caps = probe hasn't
- *  reported — equally not configurable. */
-export function pickEncoderCodec(
-  local: MediaCapabilities | null,
-  negotiated: Codec,
-): { ok: boolean; reason?: string } {
-  if (!local) {
-    return { ok: false, reason: "local capabilities not probed yet" };
-  }
-  if (!local.encodeCodecs.includes(negotiated)) {
-    return {
-      ok: false,
-      reason: `negotiated codec ${negotiated} not locally encodable (have: ${
-        local.encodeCodecs.join(",") || "none"
-      })`,
-    };
-  }
-  return { ok: true };
-}
-
-/** WebKitGTK 2.52 may lack rVFC — feature-detected, rAF otherwise. */
-type VideoWithRVFC = HTMLVideoElement & {
-  requestVideoFrameCallback?: (cb: () => void) => number;
-  cancelVideoFrameCallback?: (handle: number) => void;
-};
-
-interface TrackState {
-  encoder: VideoEncoder | null;
-  streamId: string | null;
-  frameSeq: number;
-  lastKeyframeMs: number;
-  // Architecture §10.6 line 4081 — minimum reported downstream kbps across
-  // all current receivers; the next configure() caps output to this so the
-  // slowest peer keeps pace.
-  lowestReceiverKbps: number;
-  stop: (() => void) | null;
-}
-
-function freshTrack(): TrackState {
-  // 350 kbps start — what multi-hop Veilid routes realistically sustain
-  // for 480p15 alongside the reserved voice budget (Phase 4 budget.rs).
-  return { encoder: null, streamId: null, frameSeq: 0, lastKeyframeMs: 0, lowestReceiverKbps: 350, stop: null };
-}
-
-export interface VideoSender {
-  start(label: TrackLabel, stream: MediaStream): Promise<void>;
-  stop(label: TrackLabel): void;
-  /** Force the next encoded frame on the matching stream to be a keyframe. */
-  forceKeyframe(streamId: string): void;
-  /** Force a keyframe on EVERY active local stream — RFC 5104 FIR
-   *  semantics for "a new member entered the conference". */
-  forceKeyframeAll(): void;
-  /** Follow the backend bitrate policy's target (Phase 4 — assignment,
-   *  not a min-clamp: the backend already ran the AIMD + audio-reserve
-   *  math over receiver feedback). Applies to both tracks. */
-  setTargetKbps(kbps: number): void;
-}
+// Re-exported so existing `from "./video_sender"` imports keep working.
+export { pickEncoderCodec } from "./encoder_config";
+export type { SenderRoute, TrackLabel, VideoSender } from "./sender_types";
 
 export function createVideoSender(
   route: SenderRoute,
@@ -136,83 +61,6 @@ export function createVideoSender(
     camera: freshTrack(),
     screen: freshTrack(),
   };
-
-  /** Backend log sink for encoder lifecycle events — the WKWebView /
-   *  WebKitGTK divergence must be visible in `RUST_LOG` traces, not
-   *  only in a devtools console nobody has open. */
-  function reportEncoderStatus(codec: Codec, ok: boolean, detail: string): void {
-    void commands
-      .reportVideoEncoderStatus(
-        route.mode === "community" ? route.communityId : null,
-        route.mode === "dm" ? route.peerId : null,
-        codec,
-        ok,
-        detail,
-      )
-      .catch(() => {
-        // Logging side-channel only — never disturb the pipeline.
-      });
-  }
-
-  /** Phase 5 — first of OUR probed encode codecs the DM peer can
-   *  decode (their list rides CallInvite/CallAccept). An empty peer
-   *  list means "unknown" (pre-fetch race / pre-probe peer): the vp9
-   *  wire floor applies, but ONLY when we can actually encode it —
-   *  otherwise wait (`null`); the store write from the caps fetch
-   *  re-runs this via the pump. */
-  function pickDmEncoderCodec(peerId: string): Codec | null {
-    const local = localVideoCapabilities();
-    if (!local) return null;
-    const peerDecode = dmPeerDecodeCodecsFor(peerId);
-    if (!peerDecode || peerDecode.length === 0) {
-      return local.encodeCodecs.includes("vp9") ? "vp9" : null;
-    }
-    return local.encodeCodecs.find((c) => peerDecode.includes(c)) ?? null;
-  }
-
-  /** The negotiated encoder constraints, or `null` when no encodable
-   *  shape exists YET (community: config not in store — only possible
-   *  mid-call during renegotiation, the media-ready gate guarantees a
-   *  config before camera start; DM: caps/peer-list race). The pump
-   *  idles on `null` and picks up the store write on a later tick. */
-  function encoderConstraints(): SessionVideoConfig["encoder"] | null {
-    if (route.mode === "community") {
-      return videoSessionConfigFor(route.communityId, route.channelId)?.encoder ?? null;
-    }
-    const codec = pickDmEncoderCodec(route.peerId);
-    if (codec === null) return null;
-    return {
-      codec,
-      maxWidth: 854,
-      maxHeight: 480,
-      maxFps: 15,
-      scalabilityMode: "flat",
-    };
-  }
-
-  /** Build the WebCodecs config for `encoder.configure()`. `bitrate` is
-   *  rebound per-call because the adaptive loop varies it independently
-   *  of the negotiated capability shape. H.264 encodes Annex-B so
-   *  SPS/PPS ride the bitstream — receivers configure their decoder
-   *  codec-string-only, no avcC `description` plumbing. */
-  function buildEncoderConfig(
-    constraints: SessionVideoConfig["encoder"],
-    bitrate: number,
-    shape?: { width: number; height: number; fps: number },
-  ): VideoEncoderConfig {
-    const base: VideoEncoderConfig = {
-      codec: wireCodecToWebCodecsString(constraints.codec),
-      width: shape?.width ?? constraints.maxWidth,
-      height: shape?.height ?? constraints.maxHeight,
-      framerate: shape?.fps ?? constraints.maxFps,
-      bitrate,
-      latencyMode: "realtime",
-      ...(constraints.codec === "h264" ? { avc: { format: "annexb" as const } } : {}),
-    };
-    return constraints.scalabilityMode === "l1t2"
-      ? { ...base, scalabilityMode: "L1T2" }
-      : base;
-  }
 
   async function start(label: TrackLabel, stream: MediaStream): Promise<void> {
     const ts = tracks[label];
@@ -240,7 +88,7 @@ export function createVideoSender(
       console.error("capture <video> play failed:", e);
     });
 
-    let constraints = encoderConstraints();
+    let constraints = encoderConstraints(route);
     if (constraints === null) {
       // Community mode is media-ready-gated, so this only fires on a
       // DM pre-caps race or a config torn down mid-toggle. Hard error
@@ -250,7 +98,7 @@ export function createVideoSender(
     {
       const check = pickEncoderCodec(localVideoCapabilities(), constraints.codec);
       if (!check.ok) {
-        reportEncoderStatus(constraints.codec, false, `start: ${check.reason}`);
+        reportEncoderStatus(route, constraints.codec, false, `start: ${check.reason}`);
         throw new Error(`cannot start video: ${check.reason}`);
       }
     }
@@ -261,7 +109,7 @@ export function createVideoSender(
     // of the old codec keep their truthful tag.
     let currentCodec = constraints.codec;
 
-    // Output-measured ladder state (see codec_utils LADDER_* rationale):
+    // Output-measured ladder state (see sender_types LADDER rationale):
     // level indexes LADDER; bytes/windowStart accumulate real encoder
     // output between evaluations. Width/height stay at the negotiated
     // constraints for the stream's whole life (see LADDER comment).
@@ -278,18 +126,6 @@ export function createVideoSender(
       };
     };
     const ladderKfIntervalMs = (): number => LADDER[ladderLevel].kfIntervalMs;
-
-    /** Encoder bitrate coupled to the EFFECTIVE fps. Under CBR,
-     *  per-frame bytes = bitrate ÷ fps — handing the full AIMD target
-     *  to a low-fps stream concentrates the whole budget into a few
-     *  giant frames (live: 1200 kbps at 2 fps = 75 KB average frames,
-     *  ~190 KB keyframes via libvpx's 250% max-intra, each costing
-     *  seconds of pacer drain — the frozen-tile chain). Scaling by
-     *  fps/5 bounds a keyframe to ~½ s of pacer budget at any level;
-     *  at ≥5 fps the full target applies. Floor keeps the encoder out
-     *  of its degenerate sub-50 kbps range. */
-    const effectiveBitrate = (kbps: number, fps: number): number =>
-      Math.max(50_000, Math.round(kbps * 1000 * Math.min(1, fps / 5)));
 
     const captureCanvas = document.createElement("canvas");
     captureCanvas.width = constraints.maxWidth;
@@ -352,7 +188,7 @@ export function createVideoSender(
       const now = performance.now();
       if (lastRecreateAt !== 0 && now - lastRecreateAt < RECREATE_COOLDOWN_MS) {
         fatal = true;
-        reportEncoderStatus(currentCodec, false, `fatal after recreate: ${reason}`);
+        reportEncoderStatus(route, currentCodec, false, `fatal after recreate: ${reason}`);
         onError("Video encoder repeatedly failing — camera stopped");
         return;
       }
@@ -364,7 +200,13 @@ export function createVideoSender(
       }
       encoder = makeEncoder();
       try {
-        encoder.configure(buildEncoderConfig(constraints, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
+        encoder.configure(
+          buildEncoderConfig(
+            constraints,
+            effectiveBitrate(configuredKbps, appliedShape().fps),
+            appliedShape(),
+          ),
+        );
         currentCodec = constraints.codec;
         ts.lastKeyframeMs = 0; // force a keyframe so receivers re-sync
         framesFed = 0;
@@ -375,11 +217,11 @@ export function createVideoSender(
         ladderBytes = 0;
         ladderWindowStart = now;
         console.warn(`video encoder recreated (${reason})`);
-        reportEncoderStatus(currentCodec, true, `recreated: ${reason}`);
+        reportEncoderStatus(route, currentCodec, true, `recreated: ${reason}`);
       } catch (e) {
         fatal = true;
         const msg = e instanceof Error ? e.message : String(e);
-        reportEncoderStatus(constraints.codec, false, `reconfigure after recreate: ${msg}`);
+        reportEncoderStatus(route, constraints.codec, false, `reconfigure after recreate: ${msg}`);
         onError(`Encoder unrecoverable: ${msg}`);
       }
     };
@@ -388,14 +230,20 @@ export function createVideoSender(
     // locally encodable, but WebKit can still reject the full config
     // shape; surface that instead of letting startCamera die opaquely.
     try {
-      encoder.configure(buildEncoderConfig(constraints, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
+      encoder.configure(
+        buildEncoderConfig(
+          constraints,
+          effectiveBitrate(configuredKbps, appliedShape().fps),
+          appliedShape(),
+        ),
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      reportEncoderStatus(constraints.codec, false, `initial configure: ${msg}`);
+      reportEncoderStatus(route, constraints.codec, false, `initial configure: ${msg}`);
       onError(`Encoder configure failed: ${msg}`);
       throw e instanceof Error ? e : new Error(msg);
     }
-    reportEncoderStatus(currentCodec, true, "configured");
+    reportEncoderStatus(route, currentCodec, true, "configured");
 
     let frameIntervalMs = 1000 / appliedShape().fps;
     let lastEmittedAt = 0;
@@ -454,7 +302,7 @@ export function createVideoSender(
       // Phase C — pick up any negotiated-config change between frames.
       // `null` = renegotiation in flight (config torn down) — idle
       // without touching the running encoder; the next emit restores it.
-      const fresh = encoderConstraints();
+      const fresh = encoderConstraints(route);
       if (fresh === null) {
         scheduleNext();
         return;
@@ -473,7 +321,7 @@ export function createVideoSender(
           if (reportedUnencodable !== fresh.codec) {
             reportedUnencodable = fresh.codec;
             console.warn(`ignoring renegotiated config: ${check.reason}`);
-            reportEncoderStatus(fresh.codec, false, `renegotiation: ${check.reason}`);
+            reportEncoderStatus(route, fresh.codec, false, `renegotiation: ${check.reason}`);
           }
           scheduleNext();
           return;
@@ -494,7 +342,13 @@ export function createVideoSender(
         frameIntervalMs = 1000 / shape.fps;
         const reconfigure = (): void => {
           try {
-            encoder.configure(buildEncoderConfig(constraints!, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
+            encoder.configure(
+              buildEncoderConfig(
+                constraints!,
+                effectiveBitrate(configuredKbps, appliedShape().fps),
+                appliedShape(),
+              ),
+            );
             currentCodec = constraints!.codec;
             ts.lastKeyframeMs = performance.now();
             framesFed = 0;
@@ -533,7 +387,13 @@ export function createVideoSender(
         if (Math.abs(ts.lowestReceiverKbps - configuredKbps) / configuredKbps > 0.15) {
           configuredKbps = ts.lowestReceiverKbps;
           try {
-            encoder.configure(buildEncoderConfig(constraints!, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
+            encoder.configure(
+              buildEncoderConfig(
+                constraints!,
+                effectiveBitrate(configuredKbps, appliedShape().fps),
+                appliedShape(),
+              ),
+            );
             ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
           } catch (e) {
             console.error("encoder reconfigure failed:", e);
@@ -613,7 +473,11 @@ export function createVideoSender(
             frameIntervalMs = 1000 / shape.fps;
             try {
               encoder.configure(
-                buildEncoderConfig(constraints!, effectiveBitrate(configuredKbps, shape.fps), shape),
+                buildEncoderConfig(
+                  constraints!,
+                  effectiveBitrate(configuredKbps, shape.fps),
+                  shape,
+                ),
               );
               ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
             } catch (e) {
@@ -623,6 +487,7 @@ export function createVideoSender(
               return;
             }
             reportEncoderStatus(
+              route,
               currentCodec,
               true,
               `ladder ${ladderLevel}: ${shape.fps}fps kf=${ladderKfIntervalMs()}ms ` +
@@ -690,7 +555,10 @@ export function createVideoSender(
    *  request and starve the pacer with 30-100 KB intras.
    *  `lastKeyframeMs = 0` is the "emit on next tick" sentinel. */
   const forceIfDue = (ts: TrackState): void => {
-    if (ts.lastKeyframeMs !== 0 && performance.now() - ts.lastKeyframeMs < KEYFRAME_MIN_INTERVAL_MS) {
+    if (
+      ts.lastKeyframeMs !== 0 &&
+      performance.now() - ts.lastKeyframeMs < KEYFRAME_MIN_INTERVAL_MS
+    ) {
       return;
     }
     ts.lastKeyframeMs = 0;

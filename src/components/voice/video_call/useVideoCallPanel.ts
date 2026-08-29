@@ -2,29 +2,20 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Channel } from "@tauri-apps/api/core";
 import { commands } from "../../../ipc/commands";
 import type {
-  Codec,
   CommunityVideoFrameMsg,
   DmVideoFrameMsg,
-  NativePreviewFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
 import { subscribeCommunityEvents } from "../../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../handlers/video.handlers";
-import {
-  setDmPeerDecodeCodecs,
-  videoSessionConfigFor,
-} from "../../../stores/video.store";
-import {
-  ACK_INTERVAL_MS,
-  DEBUG_VIDEO_LATENCY,
-  KEYFRAME_REQUEST_MIN_INTERVAL_MS,
-  type RemoteStream,
-  decodeBase64ToBytes,
-  wireCodecToWebCodecsString,
-} from "./codec_utils";
-import { VideoPlayoutBuffer } from "./playout_buffer";
+import { setDmPeerDecodeCodecs, videoSessionConfigFor } from "../../../stores/video.store";
+import type { RemoteStream } from "./codec_utils";
+import { createCaptureController } from "./panel_capture";
+import type { PanelCtx, Ref } from "./panel_ctx";
+import { createDecodePipeline } from "./panel_decode";
+import { createPipToggle } from "./panel_pip";
 import { createVideoSender, type SenderRoute } from "./video_sender";
 
 /** W11.4 — `community` panel routes encoded frames through gossip
@@ -62,8 +53,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       : { mode: "dm", peerId: props.peerId };
   const sender = createVideoSender(route, setError);
 
-  let cameraStream: MediaStream | null = null;
-  let screenStream: MediaStream | null = null;
   // Reactive mirrors of the capture streams — the EGRESS effects below
   // attach/detach the sender from these, so local preview (capture)
   // and network send are independent lifecycles.
@@ -78,32 +67,23 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   let dmFrameChannel: Channel<DmVideoFrameMsg> | null = null;
   let communityFrameChannel: Channel<CommunityVideoFrameMsg> | null = null;
   /** Backend-native capture (Linux GStreamer) — capability-detected on
-   *  mount, never OS-sniffed. `nativeStreamId` non-null marks an active
-   *  native session: encode is GStreamer's (VP9 to peers), the self-view
-   *  is a direct getUserMedia preview, and keyframe FIR / bitrate events
-   *  route to the native encoder instead of the webview one. */
-  // Reactive so the call stage can decide the self-tile rendering
-  // (canvas vs <video>) from a STABLE per-session flag — capability is
-  // probed at mount, well before any camera toggle, so the stage never
-  // races a half-built tile.
+   *  mount, never OS-sniffed. `ctx.nativeStreamId` non-null marks an
+   *  active native session: encode is GStreamer's (VP9 to peers), the
+   *  self-view is a direct getUserMedia preview, and keyframe FIR /
+   *  bitrate events route to the native encoder instead of the webview
+   *  one. Reactive so the call stage can decide the self-tile rendering
+   *  (canvas vs <video>) from a STABLE per-session flag. */
   const [nativeCaptureAvailable, setNativeCaptureAvailable] = createSignal(false);
   /** This session captures natively (Linux GStreamer) — community mode
    *  only; DM stays on the webview path. Stable for the session. */
-  const nativeCapture = (): boolean =>
-    nativeCaptureAvailable() && props.mode === "community";
-  let nativeStreamId: string | null = null;
+  const nativeCapture = (): boolean => nativeCaptureAvailable() && props.mode === "community";
   /** Linux-native self-view: the backend capture pipeline tees a JPEG
    *  preview branch to us (single capture, no 2nd getUserMedia consumer,
    *  no loopback). Those stills paint to this canvas, which the
    *  self-camera tile mounts. Null on webview platforms (mac/Windows use
    *  a direct getUserMedia `<video>` instead). */
-  const [nativeSelfCanvas, setNativeSelfCanvas] = createSignal<HTMLCanvasElement | null>(
-    null,
-  );
-  let nativePreviewChannel: Channel<NativePreviewFrameMsg> | null = null;
-  // Drop a preview still if the previous createImageBitmap is still in
-  // flight — self-view is best-effort, never a backlog.
-  let nativePreviewDecoding = false;
+  const [nativeSelfCanvas, setNativeSelfCanvas] = createSignal<HTMLCanvasElement | null>(null);
+
   /** Single clock that paces every remote's playout buffer into its
    *  decoder — and emits the ~1 Hz acks the sender's bitrate policy
    *  feeds on. rAF when visible; a timer chain when hidden, because
@@ -124,10 +104,10 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   function schedulePlayout(): void {
     if (document.hidden) {
       playoutVia = "timer";
-      playoutHandle = window.setTimeout(playoutPump, 250);
+      playoutHandle = window.setTimeout(() => decode.playoutPump(), 250);
     } else {
       playoutVia = "raf";
-      playoutHandle = requestAnimationFrame(playoutPump);
+      playoutHandle = requestAnimationFrame(() => decode.playoutPump());
     }
   }
 
@@ -139,8 +119,38 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     schedulePlayout();
   }
 
-  const localCameraVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
-  const localScreenVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
+  const localCameraVideoRef: Ref<HTMLVideoElement | undefined> = { value: undefined };
+  const localScreenVideoRef: Ref<HTMLVideoElement | undefined> = { value: undefined };
+
+  // The extracted pipeline modules (panel_decode / panel_capture /
+  // panel_pip) are plain functions of this shared context — signals stay
+  // hook-created; effects and lifecycle registration never leave the
+  // hook (SolidJS owner scope).
+  const ctx: PanelCtx = {
+    props,
+    sender,
+    remotes,
+    setRemotes,
+    setError,
+    setCameraOn,
+    setScreenOn,
+    setCameraCapture,
+    setScreenCapture,
+    nativeCaptureAvailable,
+    setNativeCaptureAvailable,
+    setNativeSelfCanvas,
+    cameraStream: null,
+    screenStream: null,
+    nativeStreamId: null,
+    nativePreviewChannel: null,
+    nativePreviewDecoding: false,
+    localCameraVideoRef,
+    localScreenVideoRef,
+    schedulePlayout,
+  };
+  const decode = createDecodePipeline(ctx);
+  const capture = createCaptureController(ctx);
+  const togglePictureInPicture = createPipToggle(ctx);
 
   // The pipeline now lives in a headless host (CallPipelineHost) so the
   // call survives navigating between channels. The local-preview <video>
@@ -150,11 +160,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // video_sender.ts — so the preview element is purely cosmetic).
   function bindCameraVideo(el: HTMLVideoElement | null): void {
     localCameraVideoRef.value = el ?? undefined;
-    if (el) el.srcObject = cameraStream;
+    if (el) el.srcObject = ctx.cameraStream;
   }
   function bindScreenVideo(el: HTMLVideoElement | null): void {
     localScreenVideoRef.value = el ?? undefined;
-    if (el) el.srcObject = screenStream;
+    if (el) el.srcObject = ctx.screenStream;
   }
 
   // Architecture §10.6 / Phase 11 Tier 1 — receiver pipeline. Reassembled
@@ -215,7 +225,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           // active local stream so their tiles light up immediately
           // instead of waiting out the keyframe cadence.
           if (event.data.channelId === props.channelId) {
-            if (nativeStreamId) {
+            if (ctx.nativeStreamId) {
               void commands.forceNativeKeyframes();
             } else {
               sender.forceKeyframeAll();
@@ -227,16 +237,16 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           // reserve subtracted). The encoder just follows the target;
           // the raw ack events no longer steer it directly. The native
           // path follows the bitrate watch in the backend already.
-          if (event.data.channelId === props.channelId && !nativeStreamId) {
+          if (event.data.channelId === props.channelId && !ctx.nativeStreamId) {
             sender.setTargetKbps(event.data.kbps);
           }
         } else if (event.type === "nativeVideoError") {
           // The backend camera session died asynchronously (unplug,
           // pipeline failure) — revert the toggle and surface it.
           if (event.data.channelId === props.channelId) {
-            nativeStreamId = null;
+            ctx.nativeStreamId = null;
             void commands.unregisterNativePreviewChannel();
-            nativePreviewChannel = null;
+            ctx.nativePreviewChannel = null;
             setNativeSelfCanvas(null);
             setCameraOn(false);
             setError(`Camera stopped: ${event.data.message}`);
@@ -246,7 +256,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       if (!isE2E) {
         const ch = new Channel<CommunityVideoFrameMsg>();
         ch.onmessage = (msg) => {
-          ingestRemoteFrame(
+          decode.ingestRemoteFrame(
             msg.senderPseudonym,
             msg.streamId,
             msg.frameSeq,
@@ -262,7 +272,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     } else if (!isE2E) {
       const ch = new Channel<DmVideoFrameMsg>();
       ch.onmessage = (msg) => {
-        ingestRemoteFrame(
+        decode.ingestRemoteFrame(
           msg.peerPubkey,
           msg.streamIdHex,
           msg.frameSeq,
@@ -290,8 +300,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   });
 
   onCleanup(() => {
-    void stopCamera();
-    void stopScreen();
+    void capture.stopCamera();
+    void capture.stopScreen();
     document.removeEventListener("visibilitychange", onPlayoutVisibilityChange);
     cancelPlayout();
     unlistenCommunity?.then((unlisten) => unlisten());
@@ -310,559 +320,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     }
   });
 
-  // Per-stream count of delta frames dropped while waiting for a
-  // keyframe (decoder not yet created). Cleared when the keyframe
-  // arrives; drives the explicit keyframe-request escalation.
-  const keyframeWaitDrops = new Map<string, number>();
-
-  function ingestRemoteFrame(
-    sender_: string,
-    streamId: string,
-    frameSeq: number,
-    keyframe: boolean,
-    codec: Codec,
-    timestamp: number,
-    payloadB64: string,
-  ): void {
-    const data = decodeBase64ToBytes(payloadB64);
-    let remote = remotes().find((r) => r.streamId === streamId);
-    // Mid-call codec switch (RTP payload-type semantics): a tag change
-    // tears down the old decoder; the fresh one seeds from this frame
-    // if it's a keyframe, else from the next keyframe.
-    if (remote && remote.codec !== codec) {
-      console.warn(
-        `codec switch ${remote.codec} → ${codec} on stream ${streamId.slice(0, 8)} — decoder torn down`,
-      );
-      try {
-        remote.decoder.close();
-      } catch (e) {
-        console.error("decoder close on codec switch failed:", e);
-      }
-      setRemotes((prev) => prev.filter((r) => r.streamId !== streamId));
-      remote = undefined;
-    }
-    if (!remote) {
-      if (!keyframe) {
-        // Waiting for the first keyframe before instantiating a
-        // decoder. If we landed mid-GOP (joined while the sender was
-        // between keyframes, or the FIR-on-confirm envelope was lost),
-        // deltas pile up here — after 15 of them, explicitly request a
-        // keyframe so the tile lights up within ~1s instead of waiting
-        // out the sender's keyframe cadence.
-        const dropped = (keyframeWaitDrops.get(streamId) ?? 0) + 1;
-        keyframeWaitDrops.set(streamId, dropped);
-        if (dropped === 1 || dropped % 30 === 0) {
-          console.warn(
-            `dropping delta frames for unknown stream ${streamId.slice(0, 8)} — waiting for keyframe (${dropped} dropped)`,
-          );
-        }
-        // Every 15th dropped delta, not a one-shot at 15: the request
-        // envelope is fire-and-forget, so a single lost request used to
-        // freeze the tile until the sender's own keyframe cadence.
-        if (dropped % 15 === 0) {
-          requestKeyframeFor(streamId);
-        }
-        return;
-      }
-      keyframeWaitDrops.delete(streamId);
-      // Phase C — read the negotiated decoder TUNING from the
-      // backend-owned store when available (the codec itself comes
-      // from the per-frame tag, never the config). When the config
-      // hasn't been negotiated yet (late joiner, caps round-trip in
-      // flight) we DO NOT drop the keyframe — the old gate here turned
-      // that race into a permanently black tile (decoder never
-      // created, every later keyframe dropped too). Baseline fallbacks
-      // below cover both DM mode and the not-yet-negotiated community
-      // case.
-      const config =
-        props.mode === "community"
-          ? videoSessionConfigFor(props.communityId, props.channelId)
-          : undefined;
-      const decoderOptimizeForLatency =
-        config?.decoder.optimizeForLatency ?? false;
-      const encoderWidth = config?.encoder.maxWidth ?? 854;
-      const encoderHeight = config?.encoder.maxHeight ?? 480;
-      // The decoder follows the per-frame codec TAG, never the session
-      // config — the config constrains the local ENCODER only.
-      const webCodecsString = wireCodecToWebCodecsString(codec);
-
-      const canvas = document.createElement("canvas");
-      canvas.width = encoderWidth;
-      canvas.height = encoderHeight;
-      const ctx = canvas.getContext("2d");
-      remote = {
-        streamId,
-        senderPseudonym: sender_,
-        codec,
-        // Placeholder — installDecoder() below replaces it before the
-        // remote is appended; never decoded against.
-        decoder: undefined as unknown as VideoDecoder,
-        canvas,
-        ctx,
-        // Flipped true on a successful decoder.configure(); the playout
-        // pump skips decode until then.
-        ready: false,
-        buffer: new VideoPlayoutBuffer(),
-        lastAckAt: 0,
-        decodeStamps: [],
-        lastDecodeMs: 0,
-        lastDebugAt: 0,
-        lastDecoderRebuildAt: 0,
-        awaitKeyframe: false,
-      };
-      installDecoder(remote, webCodecsString, decoderOptimizeForLatency);
-      setRemotes((prev) => [...prev, remote!]);
-    }
-
-    // Reorder + jitter-absorb instead of decoding on arrival. The playout
-    // pump (started in onMount) releases due chunks in seq order and paints
-    // them on a steady clock — the fix for choppiness.
-    remote.buffer.push({
-      frameSeq,
-      keyframe,
-      timestamp,
-      data,
-      receivedAt: performance.now(),
-    });
-  }
-
-  /** Create + configure a WebCodecs decoder onto `r`. Called at stream
-   *  creation AND from `recoverDecoder` — a fatal WebCodecs decoder
-   *  error CLOSES the decoder permanently (field: one undecryptable
-   *  frame killed the remote feed for the whole session while 71
-   *  keyframe requests went to a corpse). The error callback therefore
-   *  rebuilds instead of only requesting a keyframe. */
-  function installDecoder(
-    r: RemoteStream,
-    webCodecsString: string,
-    optimizeForLatency: boolean,
-  ): void {
-    const decoder = new VideoDecoder({
-      output: (frame: VideoFrame) => {
-        const target = remotes().find((t) => t.streamId === r.streamId);
-        if (!target?.ctx) {
-          frame.close();
-          return;
-        }
-        if (DEBUG_VIDEO_LATENCY) {
-          // Pair this output with its decode() call to measure the decoder's
-          // internal latency (decode→paint), isolated from buffer delay.
-          const t0 = target.decodeStamps.shift();
-          if (t0 !== undefined) target.lastDecodeMs = performance.now() - t0;
-        }
-        target.ctx.drawImage(frame, 0, 0, target.canvas.width, target.canvas.height);
-        frame.close();
-      },
-      error: (e: Error) => {
-        if (props.mode === "community") {
-          void commands.reportVideoDecoderStatus(
-            props.communityId,
-            r.senderPseudonym,
-            r.streamId,
-            false,
-            `${e.message} [codec=${webCodecsString}]`,
-          );
-        }
-        recoverDecoder(r.streamId, webCodecsString, optimizeForLatency);
-      },
-    });
-    r.decoder = decoder;
-    try {
-      // optimizeForLatency is deliberately NOT set: WebKitGTK's
-      // WebCodecs low-latency decode path is buggy (Igalia: decoder
-      // not pinned to a single thread) and produces "Decode error" on
-      // otherwise-valid VP8/VP9 frames — the configure succeeds but the
-      // first decode throws, looping the decoder rebuild. Correctness
-      // over the ~1 frame of latency the hint would save. (`optimize
-      // ForLatency` is still threaded through for the error report and
-      // the recover path so the diagnostic stays honest.)
-      decoder.configure({
-        codec: webCodecsString,
-      });
-      r.ready = true;
-      if (props.mode === "community") {
-        void commands.reportVideoDecoderStatus(
-          props.communityId,
-          r.senderPseudonym,
-          r.streamId,
-          true,
-        );
-      }
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      r.ready = false;
-      if (props.mode === "community") {
-        void commands.reportVideoDecoderStatus(
-          props.communityId,
-          r.senderPseudonym,
-          r.streamId,
-          false,
-          errorMessage,
-        );
-      }
-    }
-  }
-
-  /** Rebuild a fatally-errored decoder (closed state is permanent in
-   *  WebCodecs), cooldown-guarded against error-loop thrash. The fresh
-   *  decoder must see a keyframe first — `awaitKeyframe` makes the
-   *  pump skip deltas until one decodes — and the sender is asked for
-   *  one immediately. */
-  const DECODER_REBUILD_COOLDOWN_MS = 3000;
-  function recoverDecoder(
-    streamId: string,
-    webCodecsString: string,
-    optimizeForLatency: boolean,
-  ): void {
-    const r = remotes().find((t) => t.streamId === streamId);
-    if (!r) return;
-    const now = performance.now();
-    if (now - r.lastDecoderRebuildAt < DECODER_REBUILD_COOLDOWN_MS) return;
-    r.lastDecoderRebuildAt = now;
-    r.ready = false;
-    try {
-      r.decoder.close();
-    } catch {
-      // Already closed by the fatal error — expected.
-    }
-    r.decodeStamps.length = 0;
-    r.awaitKeyframe = true;
-    installDecoder(r, webCodecsString, optimizeForLatency);
-    requestKeyframeFor(streamId);
-  }
-
-  /** Community-only: ask the sender to emit a keyframe so a decoder that lost
-   *  track (gap / decode error) can re-sync. DM relies on the periodic cadence.
-   *  Rate-limited per stream (1 Hz) — callers may invoke every pump tick while
-   *  desynced; persistence beats reliability over a fire-and-forget envelope. */
-  const keyframeRequestAt = new Map<string, number>();
-  function requestKeyframeFor(streamId: string): void {
-    if (props.mode !== "community") return;
-    const now = performance.now();
-    const last = keyframeRequestAt.get(streamId) ?? 0;
-    if (now - last < KEYFRAME_REQUEST_MIN_INTERVAL_MS) return;
-    keyframeRequestAt.set(streamId, now);
-    void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
-  }
-
-  /** Drives every remote's playout buffer: release due chunks in order,
-   *  decode them, recover gaps via keyframe request, and ack measured
-   *  kbps/loss (~1 Hz) so the sender's adaptive bitrate has real input. */
-  function playoutPump(): void {
-    const now = performance.now();
-    for (const r of remotes()) {
-      // Skip until the async decoder.configure() has landed (see ingest).
-      if (!r.ready) continue;
-      const { release, requestKeyframe } = r.buffer.popDue(now);
-      for (const f of release) {
-        // A rebuilt decoder must see a keyframe before any delta —
-        // feeding it one is itself a fatal error (rebuild loop).
-        if (r.awaitKeyframe) {
-          if (!f.keyframe) {
-            requestKeyframeFor(r.streamId);
-            continue;
-          }
-          r.awaitKeyframe = false;
-        }
-        try {
-          if (DEBUG_VIDEO_LATENCY) r.decodeStamps.push(performance.now());
-          r.decoder.decode(
-            new EncodedVideoChunk({
-              type: f.keyframe ? "key" : "delta",
-              timestamp: f.timestamp,
-              data: f.data,
-            }),
-          );
-        } catch (e) {
-          // decode() threw — no output callback will fire, so drop the stamp
-          // we just pushed to keep the FIFO aligned with real outputs.
-          if (DEBUG_VIDEO_LATENCY) r.decodeStamps.pop();
-          console.error("decode chunk failed:", e);
-          requestKeyframeFor(r.streamId);
-        }
-      }
-      if (requestKeyframe) requestKeyframeFor(r.streamId);
-      if (DEBUG_VIDEO_LATENCY && now - r.lastDebugAt >= 1000) {
-        r.lastDebugAt = now;
-        const s = r.buffer.debugStats();
-        console.debug(
-          `[video ${r.streamId.slice(0, 8)}] playoutDelay=${s.playoutDelayMs}ms ` +
-            `bufSize=${s.size} decodeQueue=${r.decoder.decodeQueueSize} ` +
-            `lastDecode=${Math.round(r.lastDecodeMs)}ms jitter=${s.jitterMs}ms`,
-        );
-      }
-      if (props.mode === "community" && now - r.lastAckAt >= ACK_INTERVAL_MS) {
-        r.lastAckAt = now;
-        const { kbps, lossQ8, lastFrameSeq } = r.buffer.takeStats(now);
-        void commands.sendVideoFrameAck(
-          props.communityId,
-          props.channelId,
-          r.streamId,
-          lastFrameSeq,
-          kbps,
-          lossQ8,
-        );
-      }
-    }
-    schedulePlayout();
-  }
-
-  /** Capture / display constraints come from the backend-negotiated
-   *  encoder config (Phase B / C). DM mode (no community context) uses
-   *  the baseline 480p@15 floor — the codec pick is the sender's
-   *  concern (see video_sender.ts pickDmEncoderCodec). */
-  function captureConstraints(): { width: number; height: number; frameRate: number } {
-    if (props.mode === "community") {
-      const config = videoSessionConfigFor(props.communityId, props.channelId);
-      if (config) {
-        return {
-          width: config.encoder.maxWidth,
-          height: config.encoder.maxHeight,
-          frameRate: config.encoder.maxFps,
-        };
-      }
-    }
-    return { width: 854, height: 480, frameRate: 15 };
-  }
-
-  /// Resolve the persisted camera selection against the LIVE device
-  /// list: exact deviceId first, then label (WebKit deviceIds are
-  /// origin/data-store salted and rotate across reinstalls — the
-  /// label is the stable key), else system default. Preferences are
-  /// read via IPC because Tauri windows are separate JS contexts —
-  /// the Settings WINDOW's store writes never reach this window's
-  /// `settingsState` (the old code read a copy that was always null,
-  /// so the saved selection silently never applied).
-  async function resolveSavedCamera(): Promise<string | undefined> {
-    try {
-      const prefs = await commands.getPreferences();
-      const savedId = prefs.videoDeviceId;
-      const savedLabel = prefs.videoDeviceLabel;
-      if (!savedId && !savedLabel) return undefined;
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter((d) => d.kind === "videoinput");
-      if (savedId && cams.some((d) => d.deviceId === savedId)) return savedId;
-      if (savedLabel) {
-        const byLabel = cams.find((d) => d.label === savedLabel);
-        if (byLabel) return byLabel.deviceId;
-      }
-      void commands.reportMediaCaptureError(
-        "camera-saved-device",
-        `saved camera not in device list (id=${savedId ?? "-"}, label=${savedLabel ?? "-"}) — using default`,
-      );
-    } catch {
-      // Preference read / enumeration unavailable — default camera.
-    }
-    return undefined;
-  }
-
-  async function startCamera(): Promise<void> {
-    setError(null);
-    // Backend-native capture path (capability-detected): the backend
-    // owns encode to peers (GStreamer VP9), and the self view is a
-    // direct getUserMedia preview (no webview encoder, no loopback).
-    // Re-query on a cold cache: a click racing the onMount probe must
-    // not fall back to the webview encoder on a native-capable box
-    // (the probe is OnceLock-cached backend-side — this is cheap).
-    if (!nativeCaptureAvailable() && props.mode === "community") {
-      setNativeCaptureAvailable(
-        await commands.nativeVideoCaptureAvailable().catch(() => false),
-      );
-    }
-    if (nativeCaptureAvailable() && props.mode === "community") {
-      // Self-view canvas + preview channel, registered BEFORE the native
-      // session starts so the first JPEG stills aren't dropped. The
-      // backend captures ONCE (v4l2src) and tees: VP9 to peers + JPEG
-      // stills here. No second getUserMedia consumer, no loopback.
-      const canvas = document.createElement("canvas");
-      canvas.width = 320;
-      canvas.height = 180;
-      const ctx = canvas.getContext("2d");
-      const ch = new Channel<NativePreviewFrameMsg>();
-      ch.onmessage = (msg) => {
-        if (!ctx || nativePreviewDecoding) return;
-        nativePreviewDecoding = true;
-        const bytes = decodeBase64ToBytes(msg.jpegB64);
-        const blob = new Blob([bytes as BlobPart], { type: "image/jpeg" });
-        void createImageBitmap(blob)
-          .then((bmp) => {
-            ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-            bmp.close();
-          })
-          .catch((e: unknown) => {
-            // A corrupt still just doesn't paint; the next is a fresh
-            // full JPEG (intra-only, no reference chain). Surface it so a
-            // persistent decode failure is visible in the terminal log.
-            const m = e instanceof Error ? e.message : String(e);
-            void commands.reportMediaCaptureError(
-              "camera-native-preview",
-              `self-view createImageBitmap failed: ${m}`,
-            );
-          })
-          .finally(() => {
-            nativePreviewDecoding = false;
-          });
-      };
-      nativePreviewChannel = ch;
-      void commands.registerNativePreviewChannel(ch);
-      setNativeSelfCanvas(canvas);
-      try {
-        const prefs = await commands.getPreferences();
-        nativeStreamId = await commands.startNativeVideo(
-          props.communityId,
-          props.channelId,
-          "camera",
-          prefs.videoDeviceLabel ?? null,
-        );
-        setCameraOn(true);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        nativeStreamId = null;
-        void commands.unregisterNativePreviewChannel();
-        nativePreviewChannel = null;
-        setNativeSelfCanvas(null);
-        setError(`Camera failed: ${msg}`);
-        void commands.reportMediaCaptureError("camera-native", msg);
-      }
-      return;
-    }
-    const { width, height, frameRate } = captureConstraints();
-    const open = (deviceId: string | undefined) =>
-      navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          width,
-          height,
-          frameRate,
-        },
-        audio: false,
-      });
-    try {
-      // Resolved persisted selection (id → label → default); the
-      // unpinned retry below stays as the safety net for a device
-      // that vanishes between resolution and open.
-      const savedId = await resolveSavedCamera();
-      let stream: MediaStream;
-      try {
-        stream = await open(savedId ?? undefined);
-      } catch (first) {
-        if (!savedId) throw first;
-        const firstMsg = first instanceof Error ? first.message : String(first);
-        void commands.reportMediaCaptureError(
-          "camera-saved-device",
-          `saved camera unavailable (${firstMsg}) — retrying default`,
-        );
-        stream = await open(undefined);
-        setError("Saved camera unavailable — using default camera");
-      }
-      // Capture hygiene (all platforms): the delivered camera mode can
-      // differ from the constraints above — drivers commonly hand back
-      // the full-native mode (noisy MJPEG, different aspect) and let
-      // the UA scale in software. Nudge the track toward the encode
-      // shape, then LOG what was actually delivered — every mismatch
-      // here turns into encoder entropy the bitrate budget pays for,
-      // and it was invisible until now.
-      const track = stream.getVideoTracks()[0];
-      if (track) {
-        try {
-          await track.applyConstraints({ width, height, frameRate });
-        } catch {
-          // Best-effort: a camera that can't hit the shape still works —
-          // the sender's aspect-correct draw absorbs the difference.
-        }
-        const s = track.getSettings();
-        void commands.reportMediaCaptureError(
-          "camera-settings",
-          `delivered ${s.width}x${s.height}@${s.frameRate ?? "?"}fps ` +
-            `(wanted ${width}x${height}@${frameRate})`,
-        );
-      }
-      cameraStream = stream;
-      setCameraCapture(stream);
-      if (localCameraVideoRef.value) {
-        localCameraVideoRef.value.srcObject = stream;
-      }
-      // Capture + local preview only — the egress effect attaches the
-      // sender when (and only when) the media-ready gate is open, so a
-      // solo member sees their own tile immediately and sending starts
-      // the moment a peer connects.
-      setCameraOn(true);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(`Camera failed: ${msg}`);
-      void commands.reportMediaCaptureError("camera", msg);
-      cameraStream?.getTracks().forEach((t) => t.stop());
-      cameraStream = null;
-      setCameraCapture(null);
-    }
-  }
-
-  async function stopCamera(): Promise<void> {
-    if (nativeStreamId !== null) {
-      nativeStreamId = null;
-      try {
-        await commands.stopNativeVideo();
-      } catch (e) {
-        console.error("stop_native_video failed:", e);
-      }
-      // Tear down the self-view preview channel + canvas.
-      void commands.unregisterNativePreviewChannel();
-      nativePreviewChannel = null;
-      setNativeSelfCanvas(null);
-      setCameraOn(false);
-      return;
-    }
-    sender.stop("camera");
-    cameraStream?.getTracks().forEach((t) => t.stop());
-    cameraStream = null;
-    setCameraCapture(null);
-    if (localCameraVideoRef.value) {
-      localCameraVideoRef.value.srcObject = null;
-    }
-    setCameraOn(false);
-  }
-
-  async function startScreen(): Promise<void> {
-    setError(null);
-    try {
-      const { frameRate } = captureConstraints();
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate },
-        audio: false,
-      });
-      screenStream = stream;
-      setScreenCapture(stream);
-      if (localScreenVideoRef.value) {
-        localScreenVideoRef.value.srcObject = stream;
-      }
-      // Auto-stop encoder when the user clicks "Stop sharing" in the
-      // browser's screen-share controls.
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
-        void stopScreen();
-      });
-      // Capture + preview only — sender attaches via the egress effect.
-      setScreenOn(true);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(`Screen share failed: ${msg}`);
-      void commands.reportMediaCaptureError("screen", msg);
-      screenStream?.getTracks().forEach((t) => t.stop());
-      screenStream = null;
-      setScreenCapture(null);
-    }
-  }
-
-  async function stopScreen(): Promise<void> {
-    sender.stop("screen");
-    screenStream?.getTracks().forEach((t) => t.stop());
-    screenStream = null;
-    setScreenCapture(null);
-    if (localScreenVideoRef.value) {
-      localScreenVideoRef.value.srcObject = null;
-    }
-    setScreenOn(false);
-  }
-
   // Phase C — when the backend re-negotiates the session config (a
   // weaker / stronger peer joined or left), tear down every remote
   // decoder so the next inbound keyframe rebuilds it against the new
@@ -871,7 +328,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // community config, so the effect short-circuits there.
   //
   // The first emit after a fresh subscription is part of the steady
-  // state (every effect runs once on creation). `previousConfigRef`
+  // state (every effect runs once on creation). `previousConfig`
   // skips that first run so we don't tear down a remote that never
   // existed.
   let previousConfig: SessionVideoConfig | undefined;
@@ -927,26 +384,26 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     const want = voiceState.cameraOn;
     if (want && !cameraRunning) {
       cameraRunning = true;
-      void startCamera().catch(() => {
+      void capture.startCamera().catch(() => {
         cameraRunning = false;
         setVoiceState("cameraOn", false);
       });
     } else if (!want && cameraRunning) {
       cameraRunning = false;
-      void stopCamera();
+      void capture.stopCamera();
     }
   });
   createEffect(() => {
     const want = voiceState.screenShareOn;
     if (want && !screenRunning) {
       screenRunning = true;
-      void startScreen().catch(() => {
+      void capture.startScreen().catch(() => {
         screenRunning = false;
         setVoiceState("screenShareOn", false);
       });
     } else if (!want && screenRunning) {
       screenRunning = false;
-      void stopScreen();
+      void capture.stopScreen();
     }
   });
   // EGRESS effects — attach/detach the sender pipeline. Detaching on
@@ -984,48 +441,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       sender.stop("screen");
     }
   });
-
-  // Wave 12 W12.7 — Picture-in-Picture. Prefers a remote tile (canvas
-  // bridged through a hidden <video> via canvas.captureStream); falls
-  // back to the local camera <video> if no remote is showing yet.
-  const pipBridgeVideo: { value: HTMLVideoElement | null } = { value: null };
-  async function togglePictureInPicture(): Promise<void> {
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-        return;
-      }
-      // PiP shows a remote peer (every entry in remotes() is a peer now
-      // — the self-view is a direct getUserMedia preview, not a stream).
-      const remote = remotes()[0];
-      if (remote && typeof (remote.canvas as HTMLCanvasElement).captureStream === "function") {
-        const stream = (remote.canvas as HTMLCanvasElement).captureStream(30);
-        if (!pipBridgeVideo.value) {
-          const v = document.createElement("video");
-          v.autoplay = true;
-          v.muted = true;
-          v.playsInline = true;
-          v.style.position = "fixed";
-          v.style.opacity = "0";
-          v.style.width = "1px";
-          v.style.height = "1px";
-          v.style.pointerEvents = "none";
-          document.body.appendChild(v);
-          pipBridgeVideo.value = v;
-        }
-        pipBridgeVideo.value.srcObject = stream;
-        await pipBridgeVideo.value.play().catch(() => {});
-        await pipBridgeVideo.value.requestPictureInPicture();
-        return;
-      }
-      const localVideo = localCameraVideoRef.value ?? localScreenVideoRef.value;
-      if (localVideo) {
-        await localVideo.requestPictureInPicture();
-      }
-    } catch (e) {
-      console.warn("Picture-in-Picture failed:", e);
-    }
-  }
 
   return {
     error,
