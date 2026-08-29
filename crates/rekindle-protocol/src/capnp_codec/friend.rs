@@ -1,4 +1,3 @@
-
 use super::{capnp_err, pack, text_or_none, text_to_string, unpack, ProtocolError};
 use crate::dht::friends::FriendEntry;
 use crate::friend_capnp;

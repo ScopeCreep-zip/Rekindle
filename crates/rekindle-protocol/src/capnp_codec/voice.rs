@@ -1,4 +1,3 @@
-
 use super::{capnp_err, not_in_schema, pack, text_to_string, unpack, ProtocolError};
 use crate::voice_capnp;
 

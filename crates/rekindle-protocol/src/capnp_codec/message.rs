@@ -1,4 +1,3 @@
-
 use super::{capnp_err, pack, text_to_string, unpack, ProtocolError};
 use crate::message_capnp;
 use crate::messaging::envelope::MessageEnvelope;

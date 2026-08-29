@@ -1,4 +1,3 @@
-
 use super::{bytes_or_empty, capnp_err, pack, read_profile, unpack, write_profile, ProtocolError};
 use crate::identity_capnp;
 

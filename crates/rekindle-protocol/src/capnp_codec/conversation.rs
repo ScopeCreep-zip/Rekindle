@@ -1,4 +1,3 @@
-
 use super::{
     bytes_or_empty, capnp_err, pack, read_profile, text_to_string, unpack, write_profile,
     ProtocolError,

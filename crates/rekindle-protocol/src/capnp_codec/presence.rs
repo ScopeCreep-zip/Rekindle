@@ -1,4 +1,3 @@
-
 use super::{capnp_err, pack, read_game_status, unpack, write_game_status, ProtocolError};
 use crate::messaging::envelope::GameInfo;
 use crate::presence_capnp;

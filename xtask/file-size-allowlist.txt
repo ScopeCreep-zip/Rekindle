@@ -13,10 +13,7 @@
 904 crates/rekindle-node/src/daemon/governance_rpc.rs
 809 crates/rekindle-node/src/ipc/protocol.rs
 728 crates/rekindle-node/src/ipc/server.rs
-788 crates/rekindle-protocol/src/capnp_envelope/sub_types.rs
 1175 crates/rekindle-protocol/src/dht/community/envelope.rs
-725 crates/rekindle-protocol/src/dht/mod.rs
-1063 crates/rekindle-protocol/src/messaging/envelope.rs
 1176 crates/rekindle-transport/src/broadcast/node.rs
 1161 crates/rekindle-transport/src/operations/calls.rs
 1014 crates/rekindle-transport/src/operations/community.rs
