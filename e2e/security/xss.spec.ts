@@ -71,16 +71,22 @@ test.describe("XSS — display names and profile fields", () => {
     test(`identity display_name does not execute: ${payload.slice(0, 40)}`, async ({
       page,
     }) => {
-      // Mock the login response with a malicious display_name.
+      // Mock the login response with a malicious displayName.
+      // Field names are camelCase to match the real IPC contract
+      // (`#[serde(rename_all = "camelCase")]`) — LoginWindow renders
+      // `id.displayName`, so a snake_case mock would render nothing and
+      // the assertion below would pass without exercising anything.
       await page.goto("/login");
-      await setupMocks(page, "login", {
-        ...LOGIN_SUCCESS_HANDLER,
-        get_identity: () => ({
-          display_name: payload,
-          public_key: "test-pk",
-        }),
-        list_identities: () => [
-          { display_name: payload, public_key: "test-pk" },
+      await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER, {
+        get_identity: { publicKey: "test-pk", displayName: payload },
+        list_identities: [
+          {
+            publicKey: "test-pk",
+            displayName: payload,
+            createdAt: 1000,
+            hasAvatar: false,
+            avatarBase64: null,
+          },
         ],
       });
 

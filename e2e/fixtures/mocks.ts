@@ -4,14 +4,22 @@ import type { Page } from "@playwright/test";
  * Set up Tauri IPC mocks in the browser page context.
  * Must be called after page.goto() since the mock functions are
  * injected by index.html when VITE_PLAYWRIGHT=true.
+ *
+ * `ipcHandler` is JS *source* (not a function) because it is compiled
+ * with `new Function` inside the page — closures cannot cross the
+ * page.evaluate boundary. To vary a few commands on top of a base
+ * handler, pass `overrides`: a plain command → response map, consulted
+ * before the base handler. Values must be JSON-serializable for the
+ * same reason; a thunk would not survive the crossing.
  */
 export async function setupMocks(
   page: Page,
   windowLabel: string,
   ipcHandler: string,
+  overrides?: Record<string, unknown>,
 ) {
   await page.evaluate(
-    ({ label, handler }) => {
+    ({ label, handler, cmdOverrides }) => {
       // Mock window labels so getCurrent() works
       (window as any).__mockWindows(label, "buddy-list", "login");
 
@@ -19,11 +27,17 @@ export async function setupMocks(
       const handlerFn = new Function("cmd", "args", handler);
       (window as any).__mockIPC(
         (cmd: string, args: Record<string, unknown>) => {
+          if (
+            cmdOverrides &&
+            Object.prototype.hasOwnProperty.call(cmdOverrides, cmd)
+          ) {
+            return cmdOverrides[cmd];
+          }
           return handlerFn(cmd, args);
         },
       );
     },
-    { label: windowLabel, handler: ipcHandler },
+    { label: windowLabel, handler: ipcHandler, cmdOverrides: overrides ?? null },
   );
 }
 

@@ -58,6 +58,30 @@ jobs:
         if: ${{ hashFiles('node_modules/.bin/knip') != '' }}
         run: pnpm exec knip
 
+      # Covers src/** and e2e/**. e2e/ sat outside every tsconfig until
+      # tsconfig.e2e.json existed, which is how a call-signature bug in
+      # e2e/security/xss.spec.ts survived.
+      - name: TypeScript — typecheck (src + e2e)
+        run: pnpm typecheck
+
+  # ──────────────────────────────────────────────────────────────────
+  # Frontend tier boundaries — .dependency-cruiser.cjs encodes the
+  # import rules in docs/contributor/architecture-rules.md §2. Its
+  # header claimed this job existed long before the job did; it now
+  # does, and activates as soon as the devDependency lands.
+  # ──────────────────────────────────────────────────────────────────
+  frontend-arch:
+    name: Frontend tiers (dependency-cruiser)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: dependency-cruiser — tier boundaries
+        if: ${{ hashFiles('node_modules/.bin/depcruise') != '' }}
+        run: pnpm exec depcruise --config .dependency-cruiser.cjs src
+
   # ──────────────────────────────────────────────────────────────────
   # xtask guardrails — tier boundaries, file-size ceiling (600 lines +
   # burn-down allowlist), allow-reason hygiene. Pure Rust, no GTK.

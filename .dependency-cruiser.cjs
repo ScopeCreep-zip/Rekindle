@@ -9,7 +9,12 @@
 //   pnpm exec depcruise --config .dependency-cruiser.cjs --output-type dot src \
 //     | dot -Tsvg > deps.svg
 //
-// CI gate: .github/workflows/lint.yml `frontend-arch` job.
+// CI gate: .github/workflows/lint.yml `frontend-arch` job. The step is
+// guarded on the dependency-cruiser binary being present, which it is
+// not yet — see docs/contributor/linting.md "Pending devDependencies".
+// Until that lands these rules document the boundary rather than
+// enforce it; biome's noRestrictedImports covers the Tauri-import
+// subset in the meantime.
 //
 // Tiers (lower may be imported by higher; never the reverse):
 //

@@ -7,7 +7,8 @@ import { defineConfig, devices } from "@playwright/test";
 //
 //   pnpm exec playwright test --config playwright.security.config.ts
 //
-// CI: `.github/workflows/lint.yml` runs this in the security job.
+// CI: `.github/workflows/lint.yml` runs this in the `security` job via
+// `pnpm test:security`.
 //
 // All security tests run against the mock-IPC project (no real Rust
 // backend) — the suite tests rendering behaviour, CSP, and deep-link

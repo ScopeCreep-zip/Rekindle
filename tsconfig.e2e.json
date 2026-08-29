@@ -1,0 +1,26 @@
+// Type-checks the Playwright suites and their fixtures.
+//
+// e2e/ was outside every tsconfig `include`, so nothing type-checked it.
+// That let e2e/security/xss.spec.ts call setupMocks() with an object
+// literal where the signature takes a string — a bug that made the
+// handler unusable and went unnoticed because the suite also never ran
+// in CI. Both gaps are closed: this config, and the `security` job in
+// lint.yml.
+//
+// Kept separate from tsconfig.json so `pnpm build` (tsc && vite build)
+// stays scoped to shipped app code; run via `pnpm typecheck`.
+//
+// Scope is e2e/** only. playwright.config.ts and
+// playwright.security.config.ts read `process.env`, which needs
+// @types/node — not a dependency of this project, and not worth adding
+// for two config files that Playwright itself executes on every run.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The app config narrows `types` to vite/client, which would hide
+    // Playwright's globals here.
+    "types": ["@playwright/test"],
+    "noEmit": true
+  },
+  "include": ["e2e/**/*.ts"]
+}
