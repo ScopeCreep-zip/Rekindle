@@ -71,6 +71,87 @@ pub struct TransportConfig {
     /// kwallet (containers, headless servers, CI).
     #[serde(default)]
     pub allow_insecure_protected_store: bool,
+
+    /// Veilid node startup tuning (UPnP, DHT concurrency, route hops,
+    /// protected-store mode). Shared by both node-startup tracks.
+    #[serde(default)]
+    pub veilid: VeilidStartupOptions,
+}
+
+/// Veilid node startup tuning knobs — the plain-data half of the shared
+/// `build_veilid_config()` builder (`rekindle-protocol`), used by both
+/// node-startup tracks (`RekindleNode` in the Tauri host,
+/// `TransportNode` in the daemon/CLI). Deliberately contains no
+/// `veilid_core` types so it can live at Tier 1.
+///
+/// Every default preserves pre-0.5.7-upgrade behavior; flipping any of
+/// these is gated on the live-measurement protocols in
+/// `docs/contributor/veilid-0.5.7-migration-plan.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VeilidStartupOptions {
+    /// Enable UPnP/IGD automatic port mapping.
+    ///
+    /// Default `false`. The 0.5.3-era panic that motivated disabling it is
+    /// gone in 0.5.7, but the restart-on-IGD-failure loop is not, and the
+    /// original failure was never conclusively diagnosed — see
+    /// `docs/contributor/veilid-0.5.7-gap-audit.md` §1.1. Flip only under
+    /// attachment-flap monitoring.
+    #[serde(default)]
+    pub upnp: bool,
+
+    /// Always use file-backed (insecure) storage for Veilid's
+    /// ProtectedStore instead of the OS keyring.
+    ///
+    /// Default `true`: keyring-manager 0.7.1 panicked on Linux
+    /// (blocking zbus inside our Tokio runtime). 0.5.7 resolves
+    /// keyring-manager 0.8.3, which is UNTESTED against that panic — see
+    /// migration-plan §2.3 for the retest protocol. Low stakes either
+    /// way: this store only guards Veilid's own node/route secrets; user
+    /// identity keys live in the SQLCipher vault.
+    #[serde(default = "default_true")]
+    pub always_use_insecure_storage: bool,
+
+    /// Allow falling back to insecure ProtectedStore storage when the OS
+    /// keyring is unavailable. Only meaningful once
+    /// `always_use_insecure_storage` is `false`.
+    #[serde(default)]
+    pub allow_insecure_fallback: bool,
+
+    /// Hops for inbound private routes
+    /// (`network.rpc.default_route_hop_count`).
+    ///
+    /// Default `1` (the Veilid default): compiled paths are
+    /// safety(3)+private(1) = 4 hops, at/above the architecture §8 3-hop
+    /// target. 3-hop inbound was tried and reverted pre-0.5.4 because
+    /// route round-trip testing exhausted the relay pool; 0.5.4's
+    /// "simplified route testing" removes that mechanism, so `3` is worth
+    /// re-testing — against the original failure symptoms (allocation
+    /// flap, empty presence blobs, voice rosters not forming).
+    #[serde(default = "default_route_hop_count")]
+    pub route_hop_count: u8,
+
+    /// Ceiling on concurrent DHT network operations in flight
+    /// (`network.dht.max_concurrent_operations`, added in veilid 0.5.4).
+    ///
+    /// Default `16` — upstream's own default. This is the global
+    /// backpressure ceiling; the per-subsystem semaphores
+    /// (`SCAN_PARALLELISM`, `OPEN_PARALLELISM`, …) remain as fairness
+    /// limits underneath it.
+    #[serde(default = "default_max_concurrent_dht_operations")]
+    pub max_concurrent_dht_operations: u32,
+}
+
+impl Default for VeilidStartupOptions {
+    fn default() -> Self {
+        Self {
+            upnp: false,
+            always_use_insecure_storage: true,
+            allow_insecure_fallback: false,
+            route_hop_count: default_route_hop_count(),
+            max_concurrent_dht_operations: default_max_concurrent_dht_operations(),
+        }
+    }
 }
 
 /// Per-data-class safety routing configuration.
@@ -205,12 +286,22 @@ impl Default for TransportConfig {
             dedup_cache_capacity: default_dedup_cache_capacity(),
             gossip_ttl: default_gossip_ttl(),
             allow_insecure_protected_store: false,
+            veilid: VeilidStartupOptions::default(),
         }
     }
 }
 
 fn default_namespace() -> String {
     "rekindle".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_route_hop_count() -> u8 {
+    1
+}
+fn default_max_concurrent_dht_operations() -> u32 {
+    16
 }
 fn default_rpc_timeout_ms() -> u64 {
     8_000

@@ -22,6 +22,10 @@ pub async fn initialize_node(
         storage_dir: storage_dir.to_string_lossy().into_owned(),
         app_namespace: "rekindle".into(),
         qualifier: "rekindle".into(),
+        // Defaults preserve pre-0.5.7 behavior (UPnP off, 1-hop inbound
+        // routes, file-backed ProtectedStore, DHT concurrency 16). Flip
+        // protocols: docs/contributor/veilid-0.5.7-migration-plan.md.
+        veilid: Default::default(),
     };
 
     let mut node = rekindle_protocol::RekindleNode::start(config)

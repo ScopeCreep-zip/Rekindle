@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::info;
-use veilid_core::{RoutingContext, VeilidAPI, VeilidConfig, VeilidUpdate};
+use veilid_core::{RoutingContext, VeilidAPI, VeilidUpdate};
 
 use crate::error::ProtocolError;
+use crate::veilid_config::{build_veilid_config, VeilidStartupOptions};
 
 /// Configuration for starting a Rekindle node.
 #[derive(Debug, Clone)]
@@ -15,6 +16,9 @@ pub struct NodeConfig {
     pub app_namespace: String,
     /// Qualifier passed to `VeilidConfig::new()` (e.g. "rekindle" or "rekindle-server").
     pub qualifier: String,
+    /// Veilid startup tuning (UPnP, DHT concurrency, route hops,
+    /// protected-store mode).
+    pub veilid: VeilidStartupOptions,
 }
 
 impl Default for NodeConfig {
@@ -23,6 +27,7 @@ impl Default for NodeConfig {
             storage_dir: "~/.rekindle".into(),
             app_namespace: "rekindle".into(),
             qualifier: "rekindle".into(),
+            veilid: VeilidStartupOptions::default(),
         }
     }
 }
@@ -56,58 +61,17 @@ impl RekindleNode {
             "starting rekindle node"
         );
 
-        // 1. Build VeilidConfig from our NodeConfig
-        //
-        // `network.rpc.default_route_hop_count` stays at the veilid
-        // default (1): inbound private routes are 1-hop, the Safe send
-        // side is 3-hop, so every compiled path is safety(3)+private(1)
-        // = 4 hops — at/above the architecture §8 "Compiled Route =
-        // Safety + Private" 3-hop target. Pinning inbound routes to 3
-        // hops was tried and reverted: `new_private_route()` round-trip
-        // TESTS each allocation, so 3-hop tripled the relays that must
-        // all answer (allocations flapped, presence rows published
-        // empty blobs) and put 6 hops under every voice frame — voice
-        // rosters stopped forming. Reply-path safety for inbound RPCs
-        // is handled by the one-cycle route-release grace instead.
-        let mut veilid_config = VeilidConfig::new(
-            &config.app_namespace,     // program_name
-            "com",                     // organization
-            &config.qualifier,         // qualifier
-            Some(&config.storage_dir), // storage_directory override
-            None,                      // config_directory (use default)
+        // 1. Build VeilidConfig via the shared builder — the single
+        // translation of tuning knobs into `VeilidConfig` for both
+        // node-startup tracks. Knob rationale (UPnP history, route-hop
+        // policy, ProtectedStore workaround) lives on
+        // `VeilidStartupOptions` and in `crate::veilid_config`.
+        let veilid_config = build_veilid_config(
+            &config.app_namespace,
+            &config.qualifier,
+            &config.storage_dir,
+            &config.veilid,
         );
-        // veilid-core 0.5.3's ProtectedStore::init reaches for the OS keyring
-        // (keyring-manager 0.7.1). On Linux that goes through
-        // secret-service's BLOCKING zbus D-Bus API, which does
-        // `Runtime::block_on` — and we call `api_startup().await` from inside
-        // our Tokio runtime, so it panics ("Cannot start a runtime from within
-        // a runtime"). `allow_insecure_fallback` does NOT help: `new_secure()`
-        // is called (and panics) before any fallback runs. We don't need
-        // veilid's keyring at all — it only protects veilid's own node/route
-        // secrets, which live in our `storage_dir`; our user identity keys are
-        // in the SQLCipher vault. So always use insecure (file) storage. This
-        // is a config value (cross-platform-uniform, no OS branching).
-        veilid_config.protected_store.always_use_insecure_storage = true;
-
-        // Disable UPnP/IGD automatic port mapping. This sidesteps a latent
-        // veilid-core panic (present in 0.5.2 AND 0.5.3, fixed only on
-        // unreleased git main): when `upnp_task` can't reach an IGD gateway it
-        // logs "upnp failed, restarting local network" and sets
-        // `network_needs_restart`, which detaches and re-runs
-        // `Network::startup_internal`. That second startup calls
-        // `refresh_network_state().await?.unwrap_or_log()`
-        // (native/mod.rs:750), but `refresh_network_state` returns `Ok(None)`
-        // whenever the interfaces are UNCHANGED — which is exactly the case for
-        // a UPnP-triggered restart — so the unwrap panics and the node is left
-        // permanently detached. With `upnp = false` the task is never ticked
-        // (`if upnp { upnp_task.tick() }`, native/tasks/mod.rs:140), so the
-        // trigger never fires. UPnP is only an inbound-reachability
-        // optimization: a NAT'd node without a mapped port falls back to
-        // inbound relays via VICE (Veilid developer book → NAT Traversal), so
-        // disabling it degrades gracefully to relay-based inbound rather than
-        // breaking connectivity. Cross-platform-uniform (the bug is in the
-        // native backend on all of Linux/macOS/Windows); no OS branching.
-        veilid_config.network.upnp = false;
 
         // 2. Create an mpsc channel for VeilidUpdate events
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);

@@ -6,6 +6,7 @@ pub mod messaging;
 pub mod node;
 pub mod peer;
 pub mod routing;
+pub mod veilid_config;
 
 pub use dht::log::DHTLog;
 pub use dht::short_array::DHTShortArray;

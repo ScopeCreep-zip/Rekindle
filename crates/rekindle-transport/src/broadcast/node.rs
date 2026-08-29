@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 use veilid_core::{
-    RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, VeilidAPI, VeilidConfig,
+    RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, VeilidAPI,
     VeilidUpdate,
 };
 
@@ -63,46 +63,24 @@ impl TransportNode {
     ) -> Result<Self> {
         info!(namespace = %config.namespace, "starting transport node");
 
-        let mut veilid_config = VeilidConfig::new(
+        // Build VeilidConfig via the shared builder — the single
+        // translation of tuning knobs into `VeilidConfig` for both
+        // node-startup tracks (`rekindle_protocol::veilid_config`). Knob
+        // rationale (UPnP history, route-hop policy, ProtectedStore
+        // workaround) lives on `VeilidStartupOptions`. The daemon's
+        // legacy top-level `allow_insecure_protected_store` flag maps
+        // onto the option of the same meaning.
+        let veilid_options = rekindle_types::config::VeilidStartupOptions {
+            allow_insecure_fallback: config.allow_insecure_protected_store
+                || config.veilid.allow_insecure_fallback,
+            ..config.veilid.clone()
+        };
+        let veilid_config = rekindle_protocol::veilid_config::build_veilid_config(
             &config.namespace,
-            "com",
             "rekindle",
-            Some(&config.storage_dir),
-            None,
+            &config.storage_dir,
+            &veilid_options,
         );
-        veilid_config.protected_store.allow_insecure_fallback =
-            config.allow_insecure_protected_store;
-        // veilid-core 0.5.3's ProtectedStore::init calls keyring-manager
-        // 0.7.1's `new_secure()` (Linux: secret-service's BLOCKING zbus D-Bus
-        // API → `Runtime::block_on`) BEFORE any fallback runs, so under our
-        // Tokio runtime it panics ("runtime within a runtime"). The daemon's
-        // own identity uses the OS keyring directly (the `keyring` crate);
-        // veilid's protected store only holds veilid node/route secrets, which
-        // are fine in `storage_dir`. Always use insecure (file) storage so
-        // `new_secure()` is never reached.
-        veilid_config.protected_store.always_use_insecure_storage = true;
-        // Disable UPnP/IGD port mapping to sidestep a latent veilid-core panic
-        // (0.5.2 + 0.5.3, fixed only on unreleased git main): a failed
-        // `upnp_task` sets `network_needs_restart`, which re-runs
-        // `Network::startup_internal`; that calls
-        // `refresh_network_state().await?.unwrap_or_log()` (native/mod.rs:750),
-        // and `refresh_network_state` returns `Ok(None)` when interfaces are
-        // unchanged (always true for a UPnP-triggered restart) → the unwrap
-        // panics and the node is stranded detached. `upnp = false` means the
-        // task never ticks, so the trigger never fires. UPnP is only an
-        // inbound-reachability optimization; without it a NAT'd node uses
-        // inbound relays via VICE, so connectivity degrades gracefully.
-        veilid_config.network.upnp = false;
-        // `network.rpc.default_route_hop_count` stays at the veilid
-        // default (1): compiled paths are safety(3)+private(1) = 4 hops,
-        // at/above the architecture §8 "Compiled Route = Safety +
-        // Private" 3-hop target. Pinning inbound routes to 3 hops was
-        // tried and reverted — `new_private_route()` round-trip TESTS
-        // each allocation, so 3-hop tripled the relays that must all
-        // answer (allocations flapped) and put 6 hops under every voice
-        // frame. Reply-path safety for inbound RPCs holds because
-        // routes are event-driven now: they stay alive until Veilid
-        // reports them dead, so replies compile against live routes.
 
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {

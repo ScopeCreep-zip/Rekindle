@@ -17,6 +17,11 @@ rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-calls = { path = "../rekindle-calls" }
 rekindle-route = { path = "../rekindle-route" }
+# Shared VeilidConfig builder (`veilid_config::build_veilid_config`) —
+# one translation of startup tuning into veilid_core::VeilidConfig for
+# both node-startup tracks. Unidirectional edge; rekindle-protocol must
+# never depend on rekindle-transport.
+rekindle-protocol = { path = "../rekindle-protocol" }
 
 # Veilid — the ONLY crate in the workspace that imports this
 veilid-core = { version = "0.5", default-features = true }

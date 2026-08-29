@@ -7778,6 +7778,7 @@ dependencies = [
  "rekindle-calls",
  "rekindle-crypto",
  "rekindle-events",
+ "rekindle-protocol",
  "rekindle-route",
  "rekindle-secrets",
  "rekindle-types",
