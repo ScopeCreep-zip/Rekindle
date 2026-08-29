@@ -40,8 +40,9 @@ mod recovery;
 mod util;
 
 /// Default ring duration matches arch §10.10 — 30 s window for both
-/// caller-side dialing and receiver-side incoming.
-pub const RING_DURATION_MS: u64 = 30_000;
+/// caller-side dialing and receiver-side incoming. Re-exported from
+/// rekindle-calls, which owns the state machine this paces.
+pub use rekindle_calls::signaling::outbound::RING_DURATION_MS;
 
 /// W16.5b — timeout for the `app_call` CallInvite handshake. Veilid's
 /// `network.rpc.timeout_ms` defaults to 5 s; through private routes

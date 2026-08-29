@@ -21,11 +21,10 @@ use crate::crypto::prekeys::PreKeyBundle;
 use crate::crypto::signal_store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 use crate::error::{Result, TransportError};
 
-/// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
-pub const PQ_LR_ID: u32 = 0;
-
-/// Re-exported from `rekindle-crypto` — the single definition shared by
-/// both tracks (the fields were already identical).
+/// Re-exported from `rekindle-crypto` — the single definitions shared
+/// by both tracks. `PQ_LR_ID` was previously redeclared here, two lines
+/// above the re-export that already established the pattern.
+pub use rekindle_crypto::signal::session::PQ_LR_ID;
 pub use rekindle_crypto::signal::SessionInitInfo;
 
 /// Manages Signal Protocol sessions for 1:1 encrypted messaging.

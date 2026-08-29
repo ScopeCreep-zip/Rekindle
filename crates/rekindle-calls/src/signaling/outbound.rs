@@ -16,7 +16,10 @@ use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-const RING_DURATION_MS: u64 = 30_000;
+/// Ring window (architecture §10.10) — 30 s for both caller-side
+/// dialing and receiver-side incoming. `pub` because rekindle-transport
+/// needs the same number; it previously kept its own copy.
+pub const RING_DURATION_MS: u64 = 30_000;
 
 /// W13.3 — start a 1:1 DM call. Inserts `CallState=Outgoing`, schedules
 /// the 30 s dialing timeout, fires `CallInvite` via app_message, emits

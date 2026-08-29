@@ -21,7 +21,9 @@ use crate::deps::{CommunityInsert, DiscoveredMember, GovernanceRuntimeDeps, MekS
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 
-const SLOTS_PER_SEGMENT: u32 = 255;
+// Slots per segment record — imported, not redeclared. See segments.rs.
+use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
+
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).

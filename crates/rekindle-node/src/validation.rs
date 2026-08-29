@@ -167,47 +167,60 @@ pub fn validate_channel_kind(kind: &str) -> Result<(), IpcResponse> {
 /// - Individual control characters (C0 set except \n and \t)
 /// - Full ANSI CSI sequences: ESC + '[' + params + final byte
 /// - Full ANSI OSC sequences: ESC + ']' + ... + ST
+///
+/// This prevents terminal escape injection from peer-controlled display
+/// names, message bodies, channel topics, etc. A partial strip (removing
+/// only the ESC byte) leaves broken `[31m` fragments that could confuse
+/// terminals or users. We strip the entire sequence.
 pub fn sanitize_for_display(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
 
     while let Some(c) = chars.next() {
         if c == '\x1b' {
+            // Start of an escape sequence — consume the entire sequence
             match chars.peek() {
                 Some('[') => {
-                    chars.next();
+                    // CSI sequence: ESC [ <params> <final byte>
+                    chars.next(); // consume '['
+                                  // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
+                                  // until we hit a final byte (0x40-0x7E) or run out of input
                     loop {
                         match chars.peek() {
                             Some(&fc) if ('\x40'..='\x7e').contains(&fc) => {
-                                chars.next();
+                                chars.next(); // consume final byte
                                 break;
                             }
                             Some(&fc) if ('\x20'..='\x3f').contains(&fc) => {
-                                chars.next();
+                                chars.next(); // consume parameter/intermediate byte
                             }
-                            _ => break,
+                            _ => break, // malformed sequence — stop consuming
                         }
                     }
                 }
                 Some(']') => {
-                    chars.next();
+                    // OSC sequence: ESC ] ... ST (ST = ESC \ or BEL)
+                    chars.next(); // consume ']'
                     loop {
                         match chars.next() {
-                            Some('\x07') | None => break,
+                            Some('\x07') | None => break, // BEL or EOF terminates OSC
                             Some('\x1b') => {
+                                // ESC \ terminates OSC
                                 if chars.peek() == Some(&'\\') {
                                     chars.next();
                                 }
                                 break;
                             }
-                            _ => {}
+                            _ => {} // consume OSC content
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    // Other escape — consume just the ESC
+                }
             }
         } else if c.is_control() && c != '\n' && c != '\t' {
-            // Strip C0 controls except newline and tab
+            // Strip other control characters (NUL, BEL, BS, etc.)
         } else {
             result.push(c);
         }

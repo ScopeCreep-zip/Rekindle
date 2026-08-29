@@ -87,73 +87,14 @@ pub fn storage_dir(override_path: Option<&Path>) -> anyhow::Result<PathBuf> {
 
 // ── Input Sanitization ──────────────────────────────────────────────────
 
-/// Strip control characters and ANSI escape sequences from untrusted text.
+/// Strip terminal escape sequences and control characters from
+/// peer-controlled text before rendering.
 ///
-/// Allows \n and \t (needed for message formatting). Strips:
-/// - Individual control characters (C0 set except \n and \t)
-/// - Full ANSI CSI sequences: ESC + '[' + params + final byte
-/// - Full ANSI OSC sequences: ESC + ']' + ... + ST
-///
-/// This prevents terminal escape injection from peer-controlled display
-/// names, message bodies, channel topics, etc. A partial strip (removing
-/// only the ESC byte) leaves broken `[31m` fragments that could confuse
-/// terminals or users. We strip the entire sequence.
-pub fn sanitize_for_display(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Start of an escape sequence — consume the entire sequence
-            match chars.peek() {
-                Some('[') => {
-                    // CSI sequence: ESC [ <params> <final byte>
-                    chars.next(); // consume '['
-                                  // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
-                                  // until we hit a final byte (0x40-0x7E) or run out of input
-                    loop {
-                        match chars.peek() {
-                            Some(&fc) if ('\x40'..='\x7e').contains(&fc) => {
-                                chars.next(); // consume final byte
-                                break;
-                            }
-                            Some(&fc) if ('\x20'..='\x3f').contains(&fc) => {
-                                chars.next(); // consume parameter/intermediate byte
-                            }
-                            _ => break, // malformed sequence — stop consuming
-                        }
-                    }
-                }
-                Some(']') => {
-                    // OSC sequence: ESC ] ... ST (ST = ESC \ or BEL)
-                    chars.next(); // consume ']'
-                    loop {
-                        match chars.next() {
-                            Some('\x07') | None => break, // BEL or EOF terminates OSC
-                            Some('\x1b') => {
-                                // ESC \ terminates OSC
-                                if chars.peek() == Some(&'\\') {
-                                    chars.next();
-                                }
-                                break;
-                            }
-                            _ => {} // consume OSC content
-                        }
-                    }
-                }
-                _ => {
-                    // Other escape — consume just the ESC
-                }
-            }
-        } else if c.is_control() && c != '\n' && c != '\t' {
-            // Strip other control characters (NUL, BEL, BS, etc.)
-        } else {
-            result.push(c);
-        }
-    }
-
-    result
-}
+/// Re-exported from `rekindle_node::validation`, which owns the single
+/// implementation — this crate carried a byte-identical copy (differing
+/// only in comments). The tests in `helpers/tests.rs` exercise it
+/// through this path.
+pub use rekindle_node::validation::sanitize_for_display;
 
 /// Validate a display name.
 ///
