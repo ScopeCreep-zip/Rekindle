@@ -43,6 +43,5 @@
 632 src-tauri/src/channels/community_channel/mod.rs
 733 src-tauri/src/services/community/video_session.rs
 632 src-tauri/src/services/governance_adapter/deps_impl.rs
-606 src-tauri/src/services/voice_signaling_adapter.rs
 1050 src/components/voice/video_call/useVideoCallPanel.ts
 718 src/components/voice/video_call/video_sender.ts

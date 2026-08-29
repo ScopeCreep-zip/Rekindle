@@ -27,7 +27,7 @@ impl GossipDeps for GossipAdapter {
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        *self.state.identity_secret.lock()
+        state_helpers::identity_secret(&self.state)
     }
 
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {
@@ -38,6 +38,11 @@ impl GossipDeps for GossipAdapter {
     }
 
     fn increment_lamport(&self, community_id: &str) {
+        // NOT a duplicate of `state_helpers::increment_lamport` despite
+        // the name: that helper advances the community CRDT clock
+        // (`CommunityState::lamport_counter`); this one advances the
+        // gossip-mesh clock (`community.gossip.lamport_counter`).
+        // Different clocks — do not "deduplicate" them onto one helper.
         let mut communities = self.state.communities.write();
         if let Some(community) = communities.get_mut(community_id) {
             if let Some(ref mut gossip) = community.gossip {

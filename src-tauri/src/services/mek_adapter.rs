@@ -334,7 +334,7 @@ impl MekDistributeDeps for MekAdapter {
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        *self.state.identity_secret.lock()
+        state_helpers::identity_secret(&self.state)
     }
 
     fn apply_received_mek_to_state(

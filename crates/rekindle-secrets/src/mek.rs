@@ -244,17 +244,8 @@ fn unwrap_mek_v1(
     let nonce = Nonce::from_slice(&wrapped_mek[..12]);
     cipher
         .decrypt(nonce, &wrapped_mek[12..])
-        .map_err(|e| CryptoError::Decryption(format!("AES-GCM decrypt: {e}")))?
-        .pipe(Ok)
+        .map_err(|e| CryptoError::Decryption(format!("AES-GCM decrypt: {e}")))
 }
-
-/// Extension trait for method chaining.
-trait Pipe: Sized {
-    fn pipe<R>(self, f: impl FnOnce(Self) -> R) -> R {
-        f(self)
-    }
-}
-impl<T> Pipe for T {}
 
 #[cfg(test)]
 mod tests {

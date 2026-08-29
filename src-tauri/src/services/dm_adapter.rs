@@ -114,17 +114,11 @@ impl DmAdapter {
 #[async_trait]
 impl DmDeps for DmAdapter {
     fn owner_key(&self) -> Result<String, DmError> {
-        let key = state_helpers::owner_key_or_default(&self.state);
-        if key.is_empty() {
-            Err(DmError::IdentityNotLoaded)
-        } else {
-            Ok(key)
-        }
+        state_helpers::current_owner_key(&self.state).map_err(|_| DmError::IdentityNotLoaded)
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], DmError> {
-        let guard = self.state.identity_secret.lock();
-        guard.as_ref().copied().ok_or(DmError::IdentityNotLoaded)
+        state_helpers::identity_secret(&self.state).ok_or(DmError::IdentityNotLoaded)
     }
 
     fn store(&self) -> Arc<dyn DmStore> {

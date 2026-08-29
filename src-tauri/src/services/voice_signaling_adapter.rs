@@ -65,10 +65,7 @@ pub fn handle_voice_signaling(
 #[async_trait]
 impl VoiceSignalingDeps for VoiceSignalingAdapter {
     fn my_pseudonym(&self, community_id: &str) -> Option<String> {
-        let communities = self.state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
+        state_helpers::my_pseudonym_key(&self.state, community_id)
     }
 
     fn our_route_blob(&self) -> Vec<u8> {
@@ -598,9 +595,6 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
-        let wrapped = tauri::async_runtime::spawn(async move {
-            let _ = handle.await;
-        });
-        self.state.background_handles.lock().push(wrapped);
+        state_helpers::register_background_handle(&self.state, handle);
     }
 }

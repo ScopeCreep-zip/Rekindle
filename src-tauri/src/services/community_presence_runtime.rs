@@ -49,13 +49,8 @@ pub fn send_channel_typing_inner(
     community_id: &str,
     channel_id: String,
 ) -> Result<(), String> {
-    let pseudonym_key = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .ok_or("no pseudonym key")?
-    };
+    let pseudonym_key =
+        state_helpers::my_pseudonym_key(state, community_id).ok_or("no pseudonym key")?;
 
     let envelope = CommunityEnvelope::TypingIndicator {
         channel_id,
@@ -73,13 +68,8 @@ pub async fn update_community_presence_inner(
     elapsed_seconds: Option<u32>,
     server_address: Option<String>,
 ) -> Result<(), String> {
-    let pseudonym_key = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .ok_or("no pseudonym key")?
-    };
+    let pseudonym_key =
+        state_helpers::my_pseudonym_key(state, &community_id).ok_or("no pseudonym key")?;
 
     let game_info =
         game_name.map(
@@ -190,12 +180,7 @@ pub async fn get_community_members_inner(
     pool: &DbPool,
     community_id: String,
 ) -> Result<Vec<MemberDto>, String> {
-    let my_pseudonym = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-    };
+    let my_pseudonym = state_helpers::my_pseudonym_key(state, &community_id);
     let my_status =
         state_helpers::identity_status(state).unwrap_or(crate::state::UserStatus::Online);
 

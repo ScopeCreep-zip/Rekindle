@@ -22,13 +22,7 @@ pub fn add_game_server_inner(
 ) -> Result<String, String> {
     require_permission(state, community_id, permissions::MANAGE_CHANNELS)?;
     let server_id = format!("gs_{}", hex::encode(random_nonce(8)));
-    let added_by = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
-    };
+    let added_by = state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default();
     let server = GameServerInfoDto {
         id: server_id.clone(),
         game_id,

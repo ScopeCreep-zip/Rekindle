@@ -28,7 +28,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        self.state.identity_secret.lock().as_ref().copied()
+        state_helpers::identity_secret(&self.state)
     }
 
     fn identity_display_name(&self) -> String {

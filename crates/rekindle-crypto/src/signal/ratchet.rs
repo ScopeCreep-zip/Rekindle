@@ -39,6 +39,7 @@ use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::bytes::to_32;
 use crate::error::CryptoError;
 
 /// Header bytes preceding the AEAD ciphertext: ratchet_public(32) +
@@ -342,12 +343,6 @@ fn chain_step(chain_key: &[u8; 32]) -> Result<([u8; 32], [u8; 32]), CryptoError>
     hk.expand(LABEL_CHAIN_KEY, &mut next_chain_key)
         .map_err(|e| CryptoError::SessionError(format!("HKDF: {e}")))?;
     Ok((message_key, next_chain_key))
-}
-
-fn to_32(bytes: &[u8], what: &str) -> Result<[u8; 32], CryptoError> {
-    bytes
-        .try_into()
-        .map_err(|_| CryptoError::InvalidKey(format!("{what} must be 32 bytes")))
 }
 
 #[cfg(test)]

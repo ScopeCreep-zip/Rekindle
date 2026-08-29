@@ -92,13 +92,7 @@ impl VideoDeps for VideoAdapter {
         // Exact-generation request from the undecryptable frame's wire
         // field (0 = "send me your current") — never a guess; the
         // responder can always satisfy it, so recovery converges.
-        let Some(my_pseudonym) = self
-            .state
-            .communities
-            .read()
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-        else {
+        let Some(my_pseudonym) = state_helpers::my_pseudonym_key(&self.state, community_id) else {
             return;
         };
         crate::services::community::mek_rotation::spawn_mek_request_with_retry(

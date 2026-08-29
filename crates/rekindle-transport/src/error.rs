@@ -150,6 +150,13 @@ pub enum TransportError {
     #[error("encryption failed: {reason}")]
     EncryptionFailed { reason: String },
 
+    /// A Signal Protocol operation in the shared crypto core failed —
+    /// PQXDH handshake, Double Ratchet step, or key-store access
+    /// (`rekindle_crypto::signal`). The reason carries the core's own
+    /// typed message (e.g. "invalid key material: …").
+    #[error("signal protocol error: {reason}")]
+    SignalProtocol { reason: String },
+
     // ── Serialization ────────────────────────────────────────────────
     /// Serialization of an outbound payload failed.
     #[error("serialization failed: {reason}")]
@@ -192,6 +199,36 @@ pub enum TransportError {
     /// An internal invariant was violated. Should never happen in production.
     #[error("internal error: {0}")]
     Internal(String),
+}
+
+/// Boundary conversion for the shared Signal core: the storage traits
+/// and Double Ratchet live in `rekindle-crypto` (one implementation for
+/// every track), and this crate's `?` operator converts their
+/// `CryptoError` here. Each variant maps to its specific transport
+/// counterpart — never a blanket stringify into `Internal`, which is
+/// reserved for genuine invariant violations.
+impl From<rekindle_crypto::error::CryptoError> for TransportError {
+    fn from(e: rekindle_crypto::error::CryptoError) -> Self {
+        use rekindle_crypto::error::CryptoError as C;
+        match e {
+            C::EncryptionError(reason) => Self::EncryptionFailed { reason },
+            C::DecryptionError(reason) => Self::DecryptionFailed { reason },
+            C::NoSession(peer) => Self::SignalSessionNotFound { peer },
+            // Handshake, ratchet, key-material, and key-store failures —
+            // the CryptoError Display already prefixes its own kind
+            // ("invalid key material: …", "prekey error: …", …).
+            other @ (C::KeyGeneration(_)
+            | C::SigningError(_)
+            | C::VerificationError(_)
+            | C::InvalidKey(_)
+            | C::SessionError(_)
+            | C::PreKeyError(_)
+            | C::StorageError(_)
+            | C::VaultLocked) => Self::SignalProtocol {
+                reason: other.to_string(),
+            },
+        }
+    }
 }
 
 /// Convenience alias used throughout this crate.

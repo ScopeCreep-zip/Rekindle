@@ -4,6 +4,15 @@ use std::sync::Arc;
 
 use crate::state::{AppState, IdentityState, UserStatus};
 
+/// The 32-byte identity secret, if an identity is loaded.
+///
+/// THE accessor for `state.identity_secret` — adapter `Deps` impls
+/// delegate here (wrapping in their own error type where their trait
+/// wants a `Result`) instead of each re-spelling the lock-and-copy.
+pub fn identity_secret(state: &Arc<AppState>) -> Option<[u8; 32]> {
+    *state.identity_secret.lock()
+}
+
 /// Current identity's public key, or error `"not logged in"`.
 pub fn current_owner_key(state: &Arc<AppState>) -> Result<String, String> {
     state

@@ -31,8 +31,8 @@ mod routes;
 pub use circuit_breaker::{is_circuit_open, reset_circuit_breaker, trip_circuit_breaker};
 pub use communities::{
     channel_media_mek, channel_media_mek_full, communities_with_governance_keys,
-    install_channel_mek, install_community_mek, previous_channel_mek, push_community_channel,
-    set_community_channels,
+    install_channel_mek, install_community_mek, my_pseudonym_key, previous_channel_mek,
+    push_community_channel, set_community_channels,
 };
 pub use dht_records::{
     collect_and_clear_community_records, store_dht_record, track_open_records, untrack_records,
@@ -48,14 +48,14 @@ pub use governance::{
 };
 pub use governance_persist::persist_governance_snapshot_to_sqlite;
 pub use identity::{
-    current_identity, current_owner_key, identity_display_name, identity_status,
+    current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,
     owner_key_or_default, pseudonym_credentials, voice_self_identity,
 };
 pub use node::{
     api_and_routing_context, app_handle, friend_list_dht_key, friend_list_owner_keypair,
-    is_attached, our_route_blob, profile_dht_info, require_routing_context,
-    require_safe_routing_context, routing_context, safe_api_and_routing_context,
-    safe_routing_context, veilid_api,
+    is_attached, our_route_blob, profile_dht_info, register_background_handle,
+    require_routing_context, require_safe_routing_context, routing_context,
+    safe_api_and_routing_context, safe_routing_context, veilid_api,
 };
 pub use routes::{
     cache_peer_route, cached_route_blob, evict_stale_peer_routes, friend_for_dht_key,

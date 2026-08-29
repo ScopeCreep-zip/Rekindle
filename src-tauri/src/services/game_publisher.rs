@@ -110,13 +110,8 @@ fn fan_out_community_presence(state: &SharedState, game_info: Option<&GameInfoSt
                 },
             );
 
-        let pseudonym_key = {
-            let communities = state.communities.read();
-            communities
-                .get(&community_id)
-                .and_then(|c| c.my_pseudonym_key.clone())
-                .unwrap_or_default()
-        };
+        let pseudonym_key =
+            state_helpers::my_pseudonym_key(state, &community_id).unwrap_or_default();
 
         // Fire-and-forget via gossip mesh — ephemeral presence, no durable relay needed.
         if let Err(e) = crate::services::community::send_to_mesh(

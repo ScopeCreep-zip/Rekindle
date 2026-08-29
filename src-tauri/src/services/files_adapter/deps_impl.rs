@@ -24,12 +24,7 @@ impl FilesDeps for FilesAdapter {
     // ── Identity ───────────────────────────────────────────────────
 
     fn owner_key(&self) -> Result<String, FilesError> {
-        let key = state_helpers::owner_key_or_default(&self.state);
-        if key.is_empty() {
-            Err(FilesError::IdentityNotLoaded)
-        } else {
-            Ok(key)
-        }
+        state_helpers::current_owner_key(&self.state).map_err(|_| FilesError::IdentityNotLoaded)
     }
 
     fn my_pseudonym(&self, community_id: &str) -> Result<String, FilesError> {

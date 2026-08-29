@@ -33,7 +33,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
     // ---------- Identity / credentials ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        self.state.identity_secret.lock().as_ref().copied()
+        state_helpers::identity_secret(&self.state)
     }
 
     fn owner_key(&self) -> Option<String> {
@@ -41,11 +41,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
     }
 
     fn my_pseudonym_hex(&self, community_id: &str) -> Option<String> {
-        self.state
-            .communities
-            .read()
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
+        state_helpers::my_pseudonym_key(&self.state, community_id)
     }
 
     fn my_role_ids(&self, community_id: &str) -> Vec<u32> {

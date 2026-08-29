@@ -24,12 +24,7 @@ use crate::state_helpers;
 #[async_trait]
 impl VoiceSessionDeps for VoiceAdapter {
     fn owner_key(&self) -> Result<String, VoiceError> {
-        let key = state_helpers::owner_key_or_default(&self.state);
-        if key.is_empty() {
-            Err(VoiceError::IdentityNotLoaded)
-        } else {
-            Ok(key)
-        }
+        state_helpers::current_owner_key(&self.state).map_err(|_| VoiceError::IdentityNotLoaded)
     }
 
     fn voice_self_identity(&self, community_id: Option<&str>) -> String {
@@ -37,8 +32,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], VoiceError> {
-        let guard = self.state.identity_secret.lock();
-        guard.as_ref().copied().ok_or(VoiceError::IdentityNotLoaded)
+        state_helpers::identity_secret(&self.state).ok_or(VoiceError::IdentityNotLoaded)
     }
 
     fn voice_engine_present(&self) -> bool {
@@ -216,10 +210,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
-        let wrapped = tauri::async_runtime::spawn(async move {
-            let _ = handle.await;
-        });
-        self.state.background_handles.lock().push(wrapped);
+        state_helpers::register_background_handle(&self.state, handle);
     }
 
     // ── Phase 14.l — session orchestration deps ─────────────────

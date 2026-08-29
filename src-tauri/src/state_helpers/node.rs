@@ -114,3 +114,16 @@ pub fn friend_list_owner_keypair(state: &Arc<AppState>) -> Option<veilid_core::K
 pub fn is_attached(state: &Arc<AppState>) -> bool {
     state.node.read().as_ref().is_some_and(|nh| nh.is_attached)
 }
+
+/// Track a tokio background task on `AppState.background_handles` so
+/// logout/shutdown can abort it. Wraps the tokio handle in a tauri
+/// runtime handle (the vec's element type).
+///
+/// THE implementation for the adapter `Deps` `register_background_handle`
+/// methods — delegate here instead of re-spelling the wrap-and-push.
+pub fn register_background_handle(state: &Arc<AppState>, handle: tokio::task::JoinHandle<()>) {
+    let wrapped = tauri::async_runtime::spawn(async move {
+        let _ = handle.await;
+    });
+    state.background_handles.lock().push(wrapped);
+}

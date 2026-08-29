@@ -27,12 +27,7 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], CallError> {
-        self.state
-            .identity_secret
-            .lock()
-            .as_ref()
-            .copied()
-            .ok_or(CallError::IdentityNotLoaded)
+        state_helpers::identity_secret(&self.state).ok_or(CallError::IdentityNotLoaded)
     }
 
     fn registry(&self) -> Arc<dyn CallRegistry> {
@@ -509,9 +504,6 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
-        let wrapped = tauri::async_runtime::spawn(async move {
-            let _ = handle.await;
-        });
-        self.state.background_handles.lock().push(wrapped);
+        state_helpers::register_background_handle(&self.state, handle);
     }
 }

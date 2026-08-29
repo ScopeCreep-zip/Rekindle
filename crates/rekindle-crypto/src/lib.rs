@@ -1,3 +1,4 @@
+pub mod bytes;
 pub mod dht_crypto;
 pub mod error;
 pub mod group;

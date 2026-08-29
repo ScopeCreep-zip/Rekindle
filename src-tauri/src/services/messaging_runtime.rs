@@ -222,13 +222,8 @@ pub async fn get_older_channel_messages_inner(
 ) -> Result<Vec<Message>, String> {
     require_permission(&state, &community_id, permissions::READ_HISTORY)?;
     let our_key = state_helpers::current_owner_key(&state).unwrap_or_default();
-    let my_pseudonym_key = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
-    };
+    let my_pseudonym_key =
+        state_helpers::my_pseudonym_key(&state, &community_id).unwrap_or_default();
 
     let channel_id_clone = channel_id.clone();
     let ok = our_key.clone();

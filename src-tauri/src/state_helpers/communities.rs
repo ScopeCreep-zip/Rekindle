@@ -28,6 +28,19 @@ pub fn push_community_channel(
     }
 }
 
+/// Our pseudonym public key (hex) in a community, if joined and primed.
+///
+/// THE accessor for the `communities.read().get(id).and_then(|c|
+/// c.my_pseudonym_key.clone())` pattern that was inlined across
+/// adapters and runtimes — delegate here instead of re-spelling it.
+pub fn my_pseudonym_key(state: &Arc<AppState>, community_id: &str) -> Option<String> {
+    state
+        .communities
+        .read()
+        .get(community_id)
+        .and_then(|c| c.my_pseudonym_key.clone())
+}
+
 /// Collect communities with governance record keys.
 pub fn communities_with_governance_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
     state
