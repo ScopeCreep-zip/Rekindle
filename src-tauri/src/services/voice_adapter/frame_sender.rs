@@ -38,7 +38,7 @@ impl VeilidVoiceFrameSender {
     /// Voice never uses `SafetySelection::Unsafe`: a vulnerable user's
     /// real node identity must not be exposed to a relay just to shave
     /// latency, and Unsafe routing is gated behind veilid-core's
-    /// `footgun` feature, which we never enable.
+    /// `footgun-nodeid-target` feature, which we never enable.
     fn build_voice_routing_context(api: &VeilidAPI) -> Result<RoutingContext, VoiceError> {
         api.routing_context()
             .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?

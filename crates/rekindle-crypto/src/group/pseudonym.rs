@@ -1,37 +1,15 @@
-use ed25519_dalek::SigningKey;
-use hkdf::Hkdf;
-use sha2::Sha256;
-use x25519_dalek::StaticSecret;
+//! Per-community pseudonym derivation — façade over `rekindle_secrets::derive`.
+//!
+//! The single implementation lives in `rekindle-secrets` (the Tier-2
+//! security boundary); this module re-exports it for the many
+//! `rekindle_crypto::group::pseudonym::*` call sites. It used to carry a
+//! wire-compatible copy of the same HKDF derivation, kept in sync by hand
+//! with the secrets and transport copies — the tests below stay as a
+//! regression guard that the derivation contract holds.
 
-/// Derive a unique, unlinkable Ed25519 keypair for a specific community.
-///
-/// Uses HKDF-SHA256 with a fixed salt to deterministically derive a pseudonym
-/// from the user's master secret and the community ID. This ensures:
-/// - Same user gets different pseudonyms in different communities
-/// - Pseudonym is reproducible from the same inputs (no storage needed)
-/// - No correlation between a user's pseudonyms across communities
-pub fn derive_community_pseudonym(master_secret: &[u8; 32], community_id: &str) -> SigningKey {
-    let hkdf = Hkdf::<Sha256>::new(Some(b"rekindle-community-pseudonym-v1"), master_secret);
-    let mut seed = [0u8; 32];
-    hkdf.expand(community_id.as_bytes(), &mut seed)
-        .expect("32-byte output is a valid HKDF-SHA256 length");
-    SigningKey::from_bytes(&seed)
-}
-
-/// Sign arbitrary bytes with a pseudonym signing key, returning the 64-byte signature.
-pub fn sign_with_pseudonym(signing_key: &SigningKey, data: &[u8]) -> [u8; 64] {
-    use ed25519_dalek::Signer;
-    signing_key.sign(data).to_bytes()
-}
-
-/// Convert a pseudonym Ed25519 signing key to an X25519 static secret.
-///
-/// Uses the SHA-512-expanded scalar (same convention as `Identity::to_x25519_secret()`)
-/// so that the derived X25519 public key matches the Edwards→Montgomery conversion
-/// of the Ed25519 public key.
-pub fn pseudonym_to_x25519(key: &SigningKey) -> StaticSecret {
-    StaticSecret::from(key.to_scalar_bytes())
-}
+pub use rekindle_secrets::derive::{
+    derive_community_pseudonym, pseudonym_to_x25519, sign_with_pseudonym,
+};
 
 #[cfg(test)]
 mod tests {
@@ -80,5 +58,14 @@ mod tests {
         let key = derive_community_pseudonym(&secret, "test_community");
         let _x25519_secret = pseudonym_to_x25519(&key);
         // Just verifying conversion doesn't panic
+    }
+
+    #[test]
+    fn sign_with_pseudonym_verifies() {
+        let key = derive_community_pseudonym(&[5u8; 32], "c");
+        let sig = sign_with_pseudonym(&key, b"payload");
+        let vk = VerifyingKey::from(&key);
+        let sig = ed25519_dalek::Signature::from_bytes(&sig);
+        assert!(vk.verify_strict(b"payload", &sig).is_ok());
     }
 }

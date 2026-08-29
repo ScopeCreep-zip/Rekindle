@@ -18,3 +18,7 @@ pub mod sync_key;
 // Re-export ed25519_dalek for callers that need SigningKey/VerifyingKey types
 // (e.g., slot_signing_to_veilid conversion in community create/join)
 pub use ed25519_dalek;
+
+// Re-export the error type this crate's public API returns, so consumers
+// can name and match on it without depending on `rekindle-types` themselves.
+pub use rekindle_types::error::CryptoError;

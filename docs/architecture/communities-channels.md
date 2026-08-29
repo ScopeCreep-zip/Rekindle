@@ -191,10 +191,15 @@ Discord-style speaker / audience model:
 ### Video and screen share
 
 `rekindle-video` (Tier 7) handles fragmentation and reassembly.
-Per the Veilid `app_message` 32 KiB cap, frames are chunked into
-≤ 28 KiB pieces with FEC-friendly indexing and per-stream bounded
-reassembly buffers. The codec (VP9 today) plugs in via a
-`VideoCodec` trait — the crate handles only on-the-wire framing.
+The binding transport constraint is not the 32 KiB `app_message`
+cap but veilid-tools' per-hop UDP segmentation: every envelope is
+split into 1,272-byte fire-and-forget datagrams with all-or-nothing
+reassembly and no retransmit, so large fragments rarely survive a
+multi-hop route. Frames are therefore chunked into ≤ 4 KiB pieces
+with Reed-Solomon parity and per-stream bounded reassembly buffers
+(rationale documented in `crates/rekindle-video/src/fragment.rs`).
+The codec (VP9 today) plugs in via a `VideoCodec` trait — the crate
+handles only on-the-wire framing.
 
 **Channel-scoped delivery.** Video media and its per-stream control
 traffic (fragments, parity, acks, keyframe requests, bandwidth

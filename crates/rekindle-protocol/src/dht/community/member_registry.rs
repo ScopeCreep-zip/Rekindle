@@ -80,21 +80,16 @@ pub async fn write_mek_vault(
 
 /// Derive a deterministic Ed25519 keypair for a SMPL member slot.
 ///
-/// Uses HKDF-SHA256(seed, "rekindle-slot-{index}") → 32 bytes → Ed25519 keypair.
+/// Delegates to `rekindle_secrets::derive::derive_slot_keypair` — the
+/// single implementation shared by every track
+/// (HKDF-SHA256(seed, "rekindle-slot-{index}") → 32 bytes → Ed25519).
 /// Any admin with the slot seed can derive keypairs for all 256 slots.
 pub fn derive_slot_keypair(
     seed: &[u8; 32],
     slot: u32,
 ) -> Result<ed25519_dalek::SigningKey, ProtocolError> {
-    use hkdf::Hkdf;
-    use sha2::Sha256;
-
-    let hk = Hkdf::<Sha256>::new(None, seed);
-    let info = format!("rekindle-slot-{slot}");
-    let mut okm = [0u8; 32];
-    hk.expand(info.as_bytes(), &mut okm)
-        .map_err(|_| ProtocolError::CryptoError("HKDF expand failed".into()))?;
-    Ok(ed25519_dalek::SigningKey::from_bytes(&okm))
+    rekindle_secrets::derive::derive_slot_keypair(seed, slot)
+        .map_err(|e| ProtocolError::CryptoError(e.to_string()))
 }
 
 /// Derive the Veilid `KeyPair` for a SMPL member slot.

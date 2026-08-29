@@ -137,10 +137,14 @@ Implemented. They use the gossip mesh (ephemeral, no DHT write).
 
 ### Why does video look low-resolution?
 
-Veilid's `app_message` primitive caps payloads at ~32 KB. Video
-frames must be chunked to fit, with FEC for loss tolerance. We
-currently target ~480p at 15 fps with ~800 kbps. Higher quality
-needs upstream work on `veilid-media`. See
+On a UDP hop, veilid-tools segments every envelope into 1,272-byte
+fire-and-forget datagrams with all-or-nothing reassembly and no
+retransmit — lose one datagram and the whole envelope is lost. Large
+fragments therefore rarely survive a multi-hop route, so video frames
+are chunked into ~4 KiB fragments with Reed-Solomon FEC for loss
+tolerance (see `crates/rekindle-video/src/fragment.rs`). We currently
+target ~480p at 15 fps with ~800 kbps. Higher quality needs upstream
+work on `veilid-media`. See
 [`../architecture/voice.md`](../architecture/voice.md) for context.
 
 ### Why isn't message X / file Y / message Z showing up?

@@ -824,8 +824,8 @@ pub(crate) fn build_routing_context(
     // Every path is a Veilid Safe route — sender hidden behind an
     // ephemeral route id, never the node's real identity. There is no
     // `Unsafe` branch: it leaks the sender to the first relay and is
-    // gated behind veilid-core's `footgun` feature, which we never
-    // enable. `hop_count` is floor-clamped to the anonymity floor so a
+    // gated behind veilid-core's `footgun-nodeid-target` feature, which
+    // we never enable. `hop_count` is floor-clamped to the anonymity floor so a
     // misconfigured profile can never route below 3-hop Tor-class.
     rc.with_safety(SafetySelection::Safe(SafetySpec {
         preferred_route: None,

@@ -34,7 +34,10 @@ pub const DEFAULT_DHT_OPEN_DELAY: std::time::Duration = std::time::Duration::fro
 /// errors. On a freshly-attached node with a sparse routing table the outbound
 /// fanout exhausts and the open returns `KeyNotFound` (or `TryAgain` /
 /// `Timeout` / `NoConnection`) even though the record still exists — see
-/// veilid-core `storage_manager/open_record.rs`. Those are mapped to
+/// veilid-core `storage_manager/open_record.rs`. `TransactionNotFound` (new
+/// in 0.5.4's transaction-aware watch/inspect) is likewise transient: the
+/// referenced DHT transaction expired or lost to a concurrent record open,
+/// and re-running the operation opens a fresh one. Those are mapped to
 /// `DhtRecordUnreachable` so callers retry instead of recreating; every other
 /// variant (e.g. `Generic` "not writable", `InvalidArgument`) is a hard
 /// `DhtError` where retrying/recreating is pointless or wrong.
@@ -44,7 +47,11 @@ pub(crate) fn classify_dht_open_error(
 ) -> ProtocolError {
     use veilid_core::VeilidAPIError as E;
     match e {
-        E::KeyNotFound { .. } | E::TryAgain { .. } | E::Timeout | E::NoConnection { .. } => {
+        E::KeyNotFound { .. }
+        | E::TryAgain { .. }
+        | E::Timeout
+        | E::NoConnection { .. }
+        | E::TransactionNotFound { .. } => {
             ProtocolError::DhtRecordUnreachable(format!("{context}: {e}"))
         }
         _ => ProtocolError::DhtError(format!("{context}: {e}")),
@@ -657,6 +664,11 @@ mod retry_tests {
             E::timeout(),
             E::try_again("busy"),
             E::no_connection("no route"),
+            // 0.5.4+: transaction expired / lost to a concurrent open —
+            // re-running the op opens a fresh transaction, so retryable.
+            E::TransactionNotFound {
+                message: "expired".into(),
+            },
         ] {
             assert!(
                 matches!(

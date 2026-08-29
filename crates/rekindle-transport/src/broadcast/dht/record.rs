@@ -104,13 +104,31 @@ pub async fn open_writable(rc: &RoutingContext, key: &str, writer: KeyPair) -> R
     open_with_retry(rc, &rk, Some(writer), key).await
 }
 
-/// Internal: open a DHT record with retry on `Key not found`.
+/// Whether a DHT-open failure is TRANSIENT — worth retrying because the
+/// record likely still exists and the failure is propagation/reachability.
+///
+/// `KeyNotFound`: the record was created on another node and has not yet
+/// propagated to the nodes this one queries. `TransactionNotFound`
+/// (0.5.4+, transaction-aware watch/inspect): the referenced DHT
+/// transaction expired or lost to a concurrent record open — re-running
+/// the operation opens a fresh one. Typed match, not string match, so an
+/// upstream message-wording change can't silently break classification.
+fn is_transient_open_error(e: &veilid_core::VeilidAPIError) -> bool {
+    use veilid_core::VeilidAPIError as E;
+    matches!(
+        e,
+        E::KeyNotFound { .. } | E::TransactionNotFound { .. }
+    )
+}
+
+/// Internal: open a DHT record with retry on transient open failures
+/// (see [`is_transient_open_error`]).
 ///
 /// DHT records created on one Veilid node take time to propagate to the
 /// network nodes that another node queries. This retry handles the
 /// propagation delay transparently so callers don't need per-site retry logic.
 ///
-/// Non-`Key not found` errors fail immediately (no retry).
+/// Hard errors fail immediately (no retry).
 async fn open_with_retry(
     rc: &RoutingContext,
     rk: &veilid_core::RecordKey,
@@ -124,8 +142,7 @@ async fn open_with_retry(
         match rc.open_dht_record(rk.clone(), writer.clone()).await {
             Ok(_) => return Ok(()),
             Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("Key not found") && attempt < OPEN_MAX_ATTEMPTS {
+                if is_transient_open_error(&e) && attempt < OPEN_MAX_ATTEMPTS {
                     tracing::debug!(
                         key = key_str,
                         attempt,
