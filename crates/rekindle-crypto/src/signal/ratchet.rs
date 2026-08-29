@@ -146,10 +146,8 @@ impl RatchetState {
         let new_ratchet_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let new_ratchet_public = X25519Public::from(&new_ratchet_secret);
 
-        let their_ratchet = X25519Public::from(to_32(
-            &self.their_ratchet_public,
-            "their ratchet public",
-        )?);
+        let their_ratchet =
+            X25519Public::from(to_32(&self.their_ratchet_public, "their ratchet public")?);
         let dh_output = new_ratchet_secret.diffie_hellman(&their_ratchet);
 
         let (new_root, new_sending_chain) = ratchet_root(&self.root_key, dh_output.as_bytes())?;
@@ -258,11 +256,10 @@ impl RatchetState {
         receiving_chain_key.copy_from_slice(&data[pos..pos + 32]);
         pos += 32;
 
-        let our_len =
-            usize::try_from(u32::from_le_bytes(
-                data[pos..pos + 4].try_into().map_err(|_| CORRUPT())?,
-            ))
-            .map_err(|_| CORRUPT())?;
+        let our_len = usize::try_from(u32::from_le_bytes(
+            data[pos..pos + 4].try_into().map_err(|_| CORRUPT())?,
+        ))
+        .map_err(|_| CORRUPT())?;
         pos += 4;
         if data.len() < pos + our_len + 4 {
             return Err(CORRUPT());
@@ -270,11 +267,10 @@ impl RatchetState {
         let our_ratchet_secret = data[pos..pos + our_len].to_vec();
         pos += our_len;
 
-        let their_len =
-            usize::try_from(u32::from_le_bytes(
-                data[pos..pos + 4].try_into().map_err(|_| CORRUPT())?,
-            ))
-            .map_err(|_| CORRUPT())?;
+        let their_len = usize::try_from(u32::from_le_bytes(
+            data[pos..pos + 4].try_into().map_err(|_| CORRUPT())?,
+        ))
+        .map_err(|_| CORRUPT())?;
         pos += 4;
         if data.len() < pos + their_len + 16 {
             return Err(CORRUPT());
@@ -282,9 +278,11 @@ impl RatchetState {
         let their_ratchet_public = data[pos..pos + their_len].to_vec();
         pos += their_len;
 
-        let send_counter = u64::from_le_bytes(data[pos..pos + 8].try_into().map_err(|_| CORRUPT())?);
+        let send_counter =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().map_err(|_| CORRUPT())?);
         pos += 8;
-        let recv_counter = u64::from_le_bytes(data[pos..pos + 8].try_into().map_err(|_| CORRUPT())?);
+        let recv_counter =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().map_err(|_| CORRUPT())?);
 
         Ok(Self {
             root_key,

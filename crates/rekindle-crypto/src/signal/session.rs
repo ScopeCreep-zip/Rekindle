@@ -39,8 +39,9 @@ pub struct SessionInitInfo {
 
 /// Manages Signal Protocol sessions for 1:1 encrypted messaging.
 ///
-/// Uses X3DH for session establishment and a simplified Double Ratchet
-/// for forward-secret message encryption.
+/// Uses PQXDH for session establishment and the shared Double Ratchet
+/// core ([`crate::signal::ratchet`]) for forward-secret message
+/// encryption — the same stepping and wire format as the daemon track.
 pub struct SignalSessionManager {
     identity: Box<dyn IdentityKeyStore>,
     prekeys: Box<dyn PreKeyStore>,
@@ -651,4 +652,3 @@ impl SignalSessionManager {
         })
     }
 }
-

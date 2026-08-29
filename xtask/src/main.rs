@@ -49,7 +49,7 @@ enum Command {
     Check,
     /// Verify crate-import tier boundaries (rekindle-secrets sole crypto, etc).
     CheckBoundaries,
-    /// Verify file-size thresholds (warn-only for now).
+    /// Verify the 600-line file-size ceiling (allowlist burn-down).
     CheckFileSizes,
     /// Verify every `#[allow(...)]` has a `reason = "…"` argument.
     CheckAllowReasons,
@@ -267,11 +267,14 @@ fn load_size_allowlist(root: &Path) -> Result<BTreeMap<String, usize>> {
             continue;
         }
         let (count, file) = line.split_once(char::is_whitespace).ok_or_else(|| {
-            anyhow!("file-size-allowlist.txt:{}: expected '<lines> <path>'", lineno + 1)
+            anyhow!(
+                "file-size-allowlist.txt:{}: expected '<lines> <path>'",
+                lineno + 1
+            )
         })?;
-        let count: usize = count.parse().with_context(|| {
-            format!("file-size-allowlist.txt:{}: bad line count", lineno + 1)
-        })?;
+        let count: usize = count
+            .parse()
+            .with_context(|| format!("file-size-allowlist.txt:{}: bad line count", lineno + 1))?;
         map.insert(file.trim().to_string(), count);
     }
     Ok(map)
@@ -324,9 +327,7 @@ fn check_file_sizes(root: &Path) -> Result<()> {
                     new_offenders += 1;
                 }
                 Some(&grandfathered) if lines > grandfathered => {
-                    println!(
-                        "  ✗ {rel} ({lines} lines, grandfathered at {grandfathered}) — GREW"
-                    );
+                    println!("  ✗ {rel} ({lines} lines, grandfathered at {grandfathered}) — GREW");
                     grown += 1;
                 }
                 Some(_) => {

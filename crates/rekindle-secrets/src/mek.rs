@@ -125,10 +125,9 @@ fn hpke_keys(
 
     let their_verifying = VerifyingKey::from_bytes(their_ed25519_public)
         .map_err(|e| CryptoError::InvalidKey(format!("invalid peer Ed25519 key: {e}")))?;
-    let their_pk = <HpkeKem as hpke::Kem>::PublicKey::from_bytes(
-        &their_verifying.to_montgomery().to_bytes(),
-    )
-    .map_err(|e| CryptoError::InvalidKey(format!("peer X25519 key: {e}")))?;
+    let their_pk =
+        <HpkeKem as hpke::Kem>::PublicKey::from_bytes(&their_verifying.to_montgomery().to_bytes())
+            .map_err(|e| CryptoError::InvalidKey(format!("peer X25519 key: {e}")))?;
 
     Ok((our_sk, our_pk, their_pk))
 }
@@ -344,8 +343,7 @@ mod tests {
         let mek = MediaEncryptionKey::generate(7);
         let wire = mek.to_wire_bytes();
 
-        let wrapped =
-            hpke_wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
+        let wrapped = hpke_wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
         assert_eq!(wrapped[0], HPKE_MEK_VERSION);
         // 1 version + 32 enc + 40 plaintext + 16 tag = 89
         assert_eq!(wrapped.len(), 89);
@@ -362,10 +360,8 @@ mod tests {
         let mek = MediaEncryptionKey::generate(9);
         let wire = mek.to_wire_bytes();
 
-        let wrapped =
-            hpke_wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
-        let opened =
-            unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
+        let wrapped = hpke_wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
+        let opened = unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
         assert_eq!(opened, wire);
     }
 
@@ -384,9 +380,12 @@ mod tests {
             &mek.to_wire_bytes(),
         )
         .unwrap();
-        assert!(
-            hpke_open_mek(&recipient, &fake_sender.verifying_key().to_bytes(), &wrapped).is_err()
-        );
+        assert!(hpke_open_mek(
+            &recipient,
+            &fake_sender.verifying_key().to_bytes(),
+            &wrapped
+        )
+        .is_err());
     }
 
     #[test]
@@ -417,8 +416,7 @@ mod tests {
         let wire = mek.to_wire_bytes();
 
         for _ in 0..10_000 {
-            let wrapped =
-                wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
+            let wrapped = wrap_mek(&sender, &recipient.verifying_key().to_bytes(), &wire).unwrap();
             if wrapped[0] == HPKE_MEK_VERSION {
                 let opened =
                     unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();

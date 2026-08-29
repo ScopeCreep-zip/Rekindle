@@ -103,8 +103,7 @@ async fn allocate_route_with_retry(
     state: &SharedState,
     max_attempts: u32,
 ) -> Option<Vec<u8>> {
-    let route_blob =
-        services::veilid::new_private_route_with_retry(state, max_attempts).await?;
+    let route_blob = services::veilid::new_private_route_with_retry(state, max_attempts).await?;
 
     // Store on routing manager
     {
@@ -242,9 +241,9 @@ pub(super) async fn spawn_dht_publish(
             communities
                 .values()
                 .filter_map(|c| {
-                    let cached_gen = cache.get(&c.id).map(
-                        rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
-                    );
+                    let cached_gen = cache
+                        .get(&c.id)
+                        .map(rekindle_crypto::group::media_key::MediaEncryptionKey::generation);
                     let is_behind = cached_gen.is_none_or(|g| g < c.mek_generation);
                     if !is_behind {
                         return None;

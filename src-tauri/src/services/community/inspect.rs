@@ -140,7 +140,7 @@ pub fn start_inspect_loop(state: Arc<AppState>, community_id: String) {
             ticks += 1;
             // Periodic miss-rate summary (A8): the number that decides
             // whether INSPECT_INTERVAL can be relaxed post-0.5.7.
-            if ticks % 10 == 0 {
+            if ticks.is_multiple_of(10) {
                 let (clean, missed) = rekindle_sync::inspect::INSPECT_TELEMETRY.counts();
                 tracing::debug!(clean, missed, "inspect catch-up telemetry");
             }

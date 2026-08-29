@@ -59,7 +59,15 @@ pub async fn start(
     track_label: &str,
     device_label: Option<String>,
 ) -> Result<String, String> {
-    platform::start(state, app, community_id, channel_id, track_label, device_label).await
+    platform::start(
+        state,
+        app,
+        community_id,
+        channel_id,
+        track_label,
+        device_label,
+    )
+    .await
 }
 
 /// Stop the active native session (no-op when none).

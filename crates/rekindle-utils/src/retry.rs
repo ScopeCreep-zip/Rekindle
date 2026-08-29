@@ -84,7 +84,7 @@ where
                     label,
                     attempt,
                     attempts,
-                    delay_ms = delay.as_millis() as u64,
+                    delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
                     error = %e,
                     "transient failure; retrying"
                 );
@@ -116,17 +116,22 @@ mod tests {
     #[tokio::test]
     async fn recovers_after_transient_failures() {
         let calls = Cell::new(0u32);
-        let res: Result<&str, String> = retry_with_backoff(ZERO, "t", |_| true, || {
-            let n = calls.get();
-            calls.set(n + 1);
-            async move {
-                if n < 2 {
-                    Err(format!("transient {n}"))
-                } else {
-                    Ok("done")
+        let res: Result<&str, String> = retry_with_backoff(
+            ZERO,
+            "t",
+            |_| true,
+            || {
+                let n = calls.get();
+                calls.set(n + 1);
+                async move {
+                    if n < 2 {
+                        Err(format!("transient {n}"))
+                    } else {
+                        Ok("done")
+                    }
                 }
-            }
-        })
+            },
+        )
         .await;
         assert_eq!(res.unwrap(), "done");
         assert_eq!(calls.get(), 3);
@@ -135,12 +140,16 @@ mod tests {
     #[tokio::test]
     async fn hard_error_short_circuits() {
         let calls = Cell::new(0u32);
-        let res: Result<(), String> =
-            retry_with_backoff(ZERO, "t", |e: &String| e.starts_with("soft"), || {
+        let res: Result<(), String> = retry_with_backoff(
+            ZERO,
+            "t",
+            |e: &String| e.starts_with("soft"),
+            || {
                 calls.set(calls.get() + 1);
                 async { Err("hard failure".to_string()) }
-            })
-            .await;
+            },
+        )
+        .await;
         assert_eq!(res.unwrap_err(), "hard failure");
         assert_eq!(calls.get(), 1, "hard error must not be retried");
     }
@@ -148,11 +157,16 @@ mod tests {
     #[tokio::test]
     async fn exhaustion_returns_last_transient_error() {
         let calls = Cell::new(0u32);
-        let res: Result<(), String> = retry_with_backoff(ZERO, "t", |_| true, || {
-            let n = calls.get();
-            calls.set(n + 1);
-            async move { Err(format!("transient {n}")) }
-        })
+        let res: Result<(), String> = retry_with_backoff(
+            ZERO,
+            "t",
+            |_| true,
+            || {
+                let n = calls.get();
+                calls.set(n + 1);
+                async move { Err(format!("transient {n}")) }
+            },
+        )
         .await;
         assert_eq!(res.unwrap_err(), "transient 4");
         assert_eq!(calls.get(), 5, "budget of 5 attempts fully spent");
@@ -161,12 +175,16 @@ mod tests {
     #[tokio::test]
     async fn zero_attempts_clamps_to_one() {
         let calls = Cell::new(0u32);
-        let res: Result<(), String> =
-            retry_with_backoff(RetryPolicy::fixed(0, Duration::ZERO), "t", |_| true, || {
+        let res: Result<(), String> = retry_with_backoff(
+            RetryPolicy::fixed(0, Duration::ZERO),
+            "t",
+            |_| true,
+            || {
                 calls.set(calls.get() + 1);
                 async { Err("nope".to_string()) }
-            })
-            .await;
+            },
+        )
+        .await;
         assert!(res.is_err());
         assert_eq!(calls.get(), 1);
     }
@@ -174,11 +192,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn exponential_backoff_doubles_and_clamps() {
         // 4 attempts: sleeps of 100ms, 200ms, 300ms(clamped) = 600ms total.
-        let policy = RetryPolicy::exponential(
-            4,
-            Duration::from_millis(100),
-            Duration::from_millis(300),
-        );
+        let policy =
+            RetryPolicy::exponential(4, Duration::from_millis(100), Duration::from_millis(300));
         let start = tokio::time::Instant::now();
         let res: Result<(), String> =
             retry_with_backoff(policy, "t", |_| true, || async { Err("t".to_string()) }).await;

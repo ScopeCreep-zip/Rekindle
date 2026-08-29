@@ -230,12 +230,7 @@ impl VoiceReceiveLoop {
                 Ok(plaintext) => packet.audio_data = plaintext,
                 Err(e) => {
                     tracing::trace!(error = %e, "voice MEK decrypt failed — dropping + requesting");
-                    self.note_mek_drop(
-                        &cid,
-                        &channel,
-                        "MEK decrypt failed",
-                        packet.mek_generation,
-                    );
+                    self.note_mek_drop(&cid, &channel, "MEK decrypt failed", packet.mek_generation);
                     return;
                 }
             }
@@ -347,25 +342,24 @@ impl VoiceReceiveLoop {
         let mut streams: Vec<(String, Vec<f32>)> = Vec::new();
 
         let frame_size = self.frame_size;
-        let decode_packet =
-            |participant: &mut ParticipantDecoder, packet: VoicePacket| {
-                let frame = EncodedFrame {
-                    data: packet.audio_data,
-                    timestamp: packet.timestamp,
-                    sequence: packet.sequence,
-                    mek_generation: packet.mek_generation,
-                };
-                match participant.codec.decode(&frame) {
-                    Ok(decoded) => decoded.samples,
-                    Err(e) => {
-                        tracing::trace!(error = %e, "decode failed — using PLC");
-                        participant
-                            .codec
-                            .decode_plc()
-                            .map_or_else(|_| vec![0.0; frame_size], |d| d.samples)
-                    }
-                }
+        let decode_packet = |participant: &mut ParticipantDecoder, packet: VoicePacket| {
+            let frame = EncodedFrame {
+                data: packet.audio_data,
+                timestamp: packet.timestamp,
+                sequence: packet.sequence,
+                mek_generation: packet.mek_generation,
             };
+            match participant.codec.decode(&frame) {
+                Ok(decoded) => decoded.samples,
+                Err(e) => {
+                    tracing::trace!(error = %e, "decode failed — using PLC");
+                    participant
+                        .codec
+                        .decode_plc()
+                        .map_or_else(|_| vec![0.0; frame_size], |d| d.samples)
+                }
+            }
+        };
 
         for (key, participant) in &mut self.participants {
             let decoded = match participant.jitter_buffer.pop() {

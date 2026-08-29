@@ -235,7 +235,7 @@ pub fn handle_attachment(
             node.estimated_network_size = attachment.estimated_network_size.as_u64();
             node.median_latency_us = attachment
                 .median_latency
-                .map(|d| d.as_u64())
+                .map(veilid_core::TimestampDuration::as_u64)
                 .unwrap_or_default();
         }
     }

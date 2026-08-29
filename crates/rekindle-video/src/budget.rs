@@ -112,7 +112,10 @@ mod tests {
         // backs off near the ceiling instead of pinning at it: 20/256 ≈
         // 8 % > the 5 % threshold → ×0.85.
         let next = target_from_feedback(580, 600, 20);
-        assert!(next < 580, "real loss must back off near the ceiling: {next}");
+        assert!(
+            next < 580,
+            "real loss must back off near the ceiling: {next}"
+        );
         assert_eq!(next, 493); // 580 × 0.85
     }
 
@@ -176,7 +179,10 @@ mod tests {
             let wire_feedback = wire_feedback_kbps(payload_goodput, share);
             t = target_from_feedback(t, wire_feedback, 0);
         }
-        assert_eq!(t, VIDEO_MAX_KBPS, "clean wire-domain loop must reach ceiling");
+        assert_eq!(
+            t, VIDEO_MAX_KBPS,
+            "clean wire-domain loop must reach ceiling"
+        );
     }
 
     #[test]
@@ -201,11 +207,17 @@ mod tests {
         }
         // Out-of-range shares clamp instead of zeroing/exploding.
         assert_eq!(encoder_target_kbps(1000, 0), encoder_target_kbps(1000, 256));
-        assert_eq!(wire_feedback_kbps(1000, 4096), wire_feedback_kbps(1000, 1024));
+        assert_eq!(
+            wire_feedback_kbps(1000, 4096),
+            wire_feedback_kbps(1000, 1024)
+        );
         // The stalled-ack guard survives the wire scaling: ~0 feedback
         // never decays a clean stream. (500 < the 600 ceiling so it's the
         // no-decay cap holding, not the clamp.)
-        assert_eq!(target_from_feedback(500, wire_feedback_kbps(1, 640), 0), 500);
+        assert_eq!(
+            target_from_feedback(500, wire_feedback_kbps(1, 640), 0),
+            500
+        );
     }
 
     #[test]

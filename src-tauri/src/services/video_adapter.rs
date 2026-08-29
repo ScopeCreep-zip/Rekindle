@@ -507,7 +507,11 @@ mod tests {
         let key = ("c".to_string(), "ch".to_string());
         let (next, _) = *state.video_bitrate_targets.lock().get(&key).unwrap();
         assert_eq!(next, 385, "wire-domain ramp must not freeze: {next}");
-        assert_eq!(*rate_rx.borrow(), 385, "pacer watch carries the WIRE target");
+        assert_eq!(
+            *rate_rx.borrow(),
+            385,
+            "pacer watch carries the WIRE target"
+        );
         assert!(
             emitted.is_none(),
             "10% drift is below the 15% emit hysteresis"

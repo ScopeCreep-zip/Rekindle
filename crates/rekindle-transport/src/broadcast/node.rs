@@ -9,8 +9,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 use veilid_core::{
-    RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, VeilidAPI,
-    VeilidUpdate,
+    RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, VeilidAPI, VeilidUpdate,
 };
 
 use crate::config::{

@@ -444,7 +444,10 @@ mod tests {
         assert_eq!(jb.pop().unwrap().sequence, 0);
         assert_eq!(jb.pop().unwrap().sequence, 1);
         assert!(jb.pop().is_none(), "seq 2 is lost");
-        assert!(jb.note_miss_and_maybe_jump().is_none(), "within jitter window");
+        assert!(
+            jb.note_miss_and_maybe_jump().is_none(),
+            "within jitter window"
+        );
         let jumped = jb.note_miss_and_maybe_jump().unwrap();
         assert_eq!(jumped.sequence, 3, "resumes from oldest buffered");
         assert_eq!(jb.pop().unwrap().sequence, 4, "stream continues in order");
@@ -498,7 +501,10 @@ mod tests {
         // adaptive floor makes the jump window 2 ticks, so the gap is
         // declared on the second noted miss.
         assert!(jb.pop().is_none());
-        assert!(jb.note_miss_and_maybe_jump().is_none(), "within jitter window");
+        assert!(
+            jb.note_miss_and_maybe_jump().is_none(),
+            "within jitter window"
+        );
         assert!(jb.note_miss_and_maybe_jump().is_some());
         let mut drained = 1;
         while jb.pop().is_some() {
@@ -508,7 +514,11 @@ mod tests {
         // 78 pushed after the gap; max_packets=50 bounds the buffer, so
         // pre-jump trims are expected — but everything still buffered
         // plays out instead of being discarded one-per-arrival forever.
-        assert_eq!(drained + overflow, 78, "every packet played or trimmed once");
+        assert_eq!(
+            drained + overflow,
+            78,
+            "every packet played or trimmed once"
+        );
         assert!(drained >= 50, "the surviving window drains fully");
     }
 

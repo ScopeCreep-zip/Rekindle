@@ -592,10 +592,7 @@ impl DHTManager {
     /// Returns the pubkeys whose routes died so the caller can clear
     /// any OTHER per-peer route caches it holds (the host's live
     /// `peer_route_cache` keeps its own copy of these blobs).
-    pub fn invalidate_dead_routes(
-        &mut self,
-        dead_routes: &[veilid_core::RouteId],
-    ) -> Vec<String> {
+    pub fn invalidate_dead_routes(&mut self, dead_routes: &[veilid_core::RouteId]) -> Vec<String> {
         let mut affected = Vec::new();
         for route_id in dead_routes {
             // Invalidate peer route cache entry
@@ -679,7 +676,9 @@ mod retry_tests {
                 calls.set(n + 1);
                 async move {
                     if n < 2 {
-                        Err(ProtocolError::DhtRecordUnreachable(format!("transient {n}")))
+                        Err(ProtocolError::DhtRecordUnreachable(format!(
+                            "transient {n}"
+                        )))
                     } else {
                         Ok("opened")
                     }
@@ -687,7 +686,11 @@ mod retry_tests {
             })
             .await;
         assert_eq!(res.unwrap(), "opened");
-        assert_eq!(calls.get(), 3, "failed twice, succeeded on the third attempt");
+        assert_eq!(
+            calls.get(),
+            3,
+            "failed twice, succeeded on the third attempt"
+        );
     }
 
     #[tokio::test]
@@ -713,6 +716,10 @@ mod retry_tests {
             })
             .await;
         assert!(matches!(res, Err(ProtocolError::DhtError(_))));
-        assert_eq!(calls.get(), 1, "a hard error must NOT be retried (no key churn delay)");
+        assert_eq!(
+            calls.get(),
+            1,
+            "a hard error must NOT be retried (no key churn delay)"
+        );
     }
 }

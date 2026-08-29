@@ -285,10 +285,7 @@ pub async fn report_video_encoder_status(
 /// normal dev runs, and a silent camera failure reads as "the camera
 /// just doesn't open".
 #[tauri::command]
-pub async fn report_media_capture_error(
-    stage: String,
-    message: String,
-) -> Result<(), String> {
+pub async fn report_media_capture_error(stage: String, message: String) -> Result<(), String> {
     // `*-settings` stages are diagnostics (e.g. the camera mode the
     // platform actually delivered vs the requested one), not failures.
     if stage.ends_with("-settings") {

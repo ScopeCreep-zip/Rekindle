@@ -136,4 +136,3 @@ pub async fn publish_to_community_mailbox(
         .update_community_route(community_mailbox_key, route_blob)
         .await
 }
-

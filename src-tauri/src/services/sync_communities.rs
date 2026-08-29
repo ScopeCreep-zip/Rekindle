@@ -70,15 +70,16 @@ pub(crate) async fn handle_community_record_change(
                     community_id: community.id.clone(),
                 });
             }
-            if let Some(found) = community
-                .channel_log_keys
-                .iter()
-                .find_map(|(channel_id, record_key)| {
-                    (record_key == dht_key).then(|| ChangedRecord::Channel {
-                        community_id: community.id.clone(),
-                        channel_id: channel_id.clone(),
+            if let Some(found) =
+                community
+                    .channel_log_keys
+                    .iter()
+                    .find_map(|(channel_id, record_key)| {
+                        (record_key == dht_key).then(|| ChangedRecord::Channel {
+                            community_id: community.id.clone(),
+                            channel_id: channel_id.clone(),
+                        })
                     })
-                })
             {
                 return Some(found);
             }

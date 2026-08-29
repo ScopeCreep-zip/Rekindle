@@ -334,12 +334,9 @@ impl VoiceSessionDeps for VoiceAdapter {
             // the §10.5 channel-media resolution (channel key, else
             // community key — stage channels resolve community by
             // construction).
-            let mek_present = crate::state_helpers::channel_media_mek(
-                &self.state,
-                community_id,
-                channel_id,
-            )
-            .is_some();
+            let mek_present =
+                crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
+                    .is_some();
             if !mek_present {
                 // Deterministic acquisition: fire the RequestMEK
                 // cascade NOW instead of waiting for the first

@@ -286,7 +286,11 @@ mod tests {
     fn legacy_wire_bytes_have_no_provenance() {
         let mek = MediaEncryptionKey::generate(7);
         let wire = mek.to_wire_bytes();
-        assert_eq!(wire.len(), 40, "untagged key stays 40 bytes (backward-compatible)");
+        assert_eq!(
+            wire.len(),
+            40,
+            "untagged key stays 40 bytes (backward-compatible)"
+        );
         let restored = MediaEncryptionKey::from_wire_bytes(&wire).unwrap();
         assert_eq!(restored.rotator_pseudonym(), None);
         assert_eq!(restored.election_rank(), None);

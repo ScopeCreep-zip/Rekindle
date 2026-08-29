@@ -152,9 +152,8 @@ pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
 /// `fragment_signing_bytes` but covers the FEC-specific fields; the
 /// codec byte sits after `data_count`.
 pub fn parity_signing_bytes(fragment: &VideoParityFragment) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(
-        STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 4 + 8 + fragment.payload.len(),
-    );
+    let mut buf =
+        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 4 + 8 + fragment.payload.len());
     buf.extend_from_slice(&fragment.stream_id);
     buf.extend_from_slice(&fragment.frame_seq.to_le_bytes());
     buf.push(fragment.parity_index);
@@ -436,7 +435,11 @@ mod tests {
 
     #[test]
     fn empty_frame_rejected() {
-        let err = fragment_frame(test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &[]).unwrap_err();
+        let err = fragment_frame(
+            test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0),
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(err, FragmentError::EmptyFrame);
     }
 
@@ -444,9 +447,11 @@ mod tests {
     fn exactly_max_fragments_succeeds() {
         // 255 full chunks — the u8 wire ceiling, must round-trip.
         let frame = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * MAX_FRAGMENTS_PER_FRAME];
-        let frags =
-            fragment_frame(test_shape([2u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame)
-                .unwrap();
+        let frags = fragment_frame(
+            test_shape([2u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0),
+            &frame,
+        )
+        .unwrap();
         assert_eq!(frags.len(), 255);
         assert_eq!(frags[254].frag_total, 255);
     }
@@ -456,15 +461,22 @@ mod tests {
         // Regression: 256 chunks passed the old `> 256` bound check and
         // panicked at the u8 conversion.
         let frame = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * MAX_FRAGMENTS_PER_FRAME + 1];
-        let err = fragment_frame(test_shape([2u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame)
-            .unwrap_err();
+        let err = fragment_frame(
+            test_shape([2u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0),
+            &frame,
+        )
+        .unwrap_err();
         assert_eq!(err, FragmentError::TooManyFragments(256));
     }
 
     #[test]
     fn small_frame_one_fragment() {
         let frame = vec![0xABu8; 1024];
-        let frags = fragment_frame(test_shape([1u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100), &frame).unwrap();
+        let frags = fragment_frame(
+            test_shape([1u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100),
+            &frame,
+        )
+        .unwrap();
         assert_eq!(frags.len(), 1);
         assert_eq!(frags[0].frame_seq, 7);
         assert!(frags[0].keyframe);
@@ -475,8 +487,11 @@ mod tests {
     #[test]
     fn large_frame_multiple_fragments() {
         let frame = vec![0x55u8; FRAGMENT_PAYLOAD_LIMIT * 3 + 100];
-        let frags =
-            fragment_frame(test_shape([2u8; STREAM_ID_LEN], 12, false, Codec::Vp9, 200), &frame).unwrap();
+        let frags = fragment_frame(
+            test_shape([2u8; STREAM_ID_LEN], 12, false, Codec::Vp9, 200),
+            &frame,
+        )
+        .unwrap();
         assert_eq!(frags.len(), 4);
         assert_eq!(frags[3].frag_index, 3);
         assert_eq!(frags[3].frag_total, 4);
@@ -488,9 +503,12 @@ mod tests {
     #[test]
     fn fec_encode_then_reconstruct_when_no_drops() {
         let frame = vec![0xAAu8; FRAGMENT_PAYLOAD_LIMIT * 3 + 100];
-        let frags =
-            fragment_frame_with_fec(test_shape([9u8; STREAM_ID_LEN], 42, true, Codec::Vp9, 500), &frame, 2)
-                .unwrap();
+        let frags = fragment_frame_with_fec(
+            test_shape([9u8; STREAM_ID_LEN], 42, true, Codec::Vp9, 500),
+            &frame,
+            2,
+        )
+        .unwrap();
         assert_eq!(frags.data.len(), 4);
         assert_eq!(frags.parity.len(), 2);
 
@@ -522,9 +540,12 @@ mod tests {
         let frame: Vec<u8> = (0..FRAGMENT_PAYLOAD_LIMIT * 3 + 7)
             .map(|i| u8::try_from(i & 0xff).unwrap())
             .collect();
-        let frags =
-            fragment_frame_with_fec(test_shape([3u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100), &frame, 2)
-                .unwrap();
+        let frags = fragment_frame_with_fec(
+            test_shape([3u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100),
+            &frame,
+            2,
+        )
+        .unwrap();
 
         // Drop frag_index 1 and 3.
         let received_data: Vec<(u8, Vec<u8>)> = frags
@@ -559,9 +580,12 @@ mod tests {
         let frame: Vec<u8> = (0..FRAGMENT_PAYLOAD_LIMIT * 2 + 33)
             .map(|i| u8::try_from(i & 0xff).unwrap())
             .collect();
-        let frags =
-            fragment_frame_with_fec(test_shape([1u8; STREAM_ID_LEN], 3, true, Codec::Vp9, 7), &frame, 1)
-                .unwrap();
+        let frags = fragment_frame_with_fec(
+            test_shape([1u8; STREAM_ID_LEN], 3, true, Codec::Vp9, 7),
+            &frame,
+            1,
+        )
+        .unwrap();
         let total: usize = frags.data.iter().map(|f| f.payload.len()).sum();
         assert_eq!(total, frame.len(), "data fragments must carry no padding");
         let mut concat = Vec::new();
@@ -580,9 +604,12 @@ mod tests {
         let frame: Vec<u8> = (0..FRAGMENT_PAYLOAD_LIMIT * 2 + 33)
             .map(|i| u8::try_from(i & 0xff).unwrap())
             .collect();
-        let frags =
-            fragment_frame_with_fec(test_shape([2u8; STREAM_ID_LEN], 4, true, Codec::Vp9, 9), &frame, 1)
-                .unwrap();
+        let frags = fragment_frame_with_fec(
+            test_shape([2u8; STREAM_ID_LEN], 4, true, Codec::Vp9, 9),
+            &frame,
+            1,
+        )
+        .unwrap();
         assert_eq!(frags.data.len(), 3);
         // Drop the FULL middle data shard (index 1); keep 0 and the
         // short last (index 2), plus parity.
@@ -613,9 +640,12 @@ mod tests {
         // 4 data + 2 parity. Drop 3 data + 1 parity. Only 2 shards
         // remain — below the 4-shard threshold for reconstruction.
         let frame = vec![0x77u8; FRAGMENT_PAYLOAD_LIMIT * 3 + 50];
-        let frags =
-            fragment_frame_with_fec(test_shape([4u8; STREAM_ID_LEN], 8, true, Codec::Vp9, 200), &frame, 2)
-                .unwrap();
+        let frags = fragment_frame_with_fec(
+            test_shape([4u8; STREAM_ID_LEN], 8, true, Codec::Vp9, 200),
+            &frame,
+            2,
+        )
+        .unwrap();
         let received_data: Vec<(u8, Vec<u8>)> = frags
             .data
             .iter()
@@ -645,8 +675,12 @@ mod tests {
     #[test]
     fn fec_zero_parity_rejected() {
         let frame = vec![0u8; 100];
-        let err = fragment_frame_with_fec(test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame, 0)
-            .unwrap_err();
+        let err = fragment_frame_with_fec(
+            test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0),
+            &frame,
+            0,
+        )
+        .unwrap_err();
         assert_eq!(err, FragmentError::ZeroParity);
     }
 
@@ -754,7 +788,11 @@ mod tests {
     #[test]
     fn rejects_frame_exceeding_max_fragments() {
         let frame = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * (MAX_FRAGMENTS_PER_FRAME + 1)];
-        let err = fragment_frame(test_shape([3u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame).unwrap_err();
+        let err = fragment_frame(
+            test_shape([3u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0),
+            &frame,
+        )
+        .unwrap_err();
         match err {
             FragmentError::TooManyFragments(n) => {
                 assert!(n > MAX_FRAGMENTS_PER_FRAME);

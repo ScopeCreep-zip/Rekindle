@@ -90,7 +90,7 @@ async fn dispatch_update<H: InboundHandler>(
                 attachment.estimated_network_size.as_u64(),
                 attachment
                     .median_latency
-                    .map(|d| d.as_u64())
+                    .map(veilid_core::TimestampDuration::as_u64)
                     .unwrap_or_default(),
             );
             handler

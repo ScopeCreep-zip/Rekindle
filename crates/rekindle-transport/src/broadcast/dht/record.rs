@@ -115,10 +115,7 @@ pub async fn open_writable(rc: &RoutingContext, key: &str, writer: KeyPair) -> R
 /// upstream message-wording change can't silently break classification.
 fn is_transient_open_error(e: &veilid_core::VeilidAPIError) -> bool {
     use veilid_core::VeilidAPIError as E;
-    matches!(
-        e,
-        E::KeyNotFound { .. } | E::TransactionNotFound { .. }
-    )
+    matches!(e, E::KeyNotFound { .. } | E::TransactionNotFound { .. })
 }
 
 /// Internal: open a DHT record with retry on transient open failures

@@ -177,7 +177,10 @@ impl AudioProcessor {
         ) {
             (true, Some(aec), Some(reference)) if !reference.is_empty() => {
                 let mut aec_output = vec![0.0f32; sub_frame_size];
-                match aec.0.process(input, Some(reference), false, &mut aec_output) {
+                match aec
+                    .0
+                    .process(input, Some(reference), false, &mut aec_output)
+                {
                     Ok(_metrics) => aec_output,
                     Err(e) => {
                         tracing::trace!(error = ?e, "AEC3 process failed — passing through");
@@ -348,10 +351,7 @@ mod tests {
         let mut last_peak = 0.0f32;
         for _ in 0..50 {
             let result = proc.process_capture(&frame, None);
-            last_peak = result
-                .samples
-                .iter()
-                .fold(0.0f32, |m, &s| m.max(s.abs()));
+            last_peak = result.samples.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
         }
         assert!(
             last_peak > raw_peak * 0.5,

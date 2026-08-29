@@ -155,7 +155,9 @@ impl NativeCaptureSession {
         let fps = i32::try_from(config.fps).unwrap_or(15);
         head_caps.set_property(
             "caps",
-            gst::Caps::builder("video/x-raw").field("format", "I420").build(),
+            gst::Caps::builder("video/x-raw")
+                .field("format", "I420")
+                .build(),
         );
         enc_caps.set_property(
             "caps",
@@ -207,7 +209,12 @@ impl NativeCaptureSession {
         ])
         .map_err(|e| CaptureError::Pipeline(format!("encode branch: {e}")))?;
         gst::Element::link_many([
-            &pv_queue, &pv_scale, &pv_rate, &pv_caps, &jpegenc, &pv_appsink_el,
+            &pv_queue,
+            &pv_scale,
+            &pv_rate,
+            &pv_caps,
+            &jpegenc,
+            &pv_appsink_el,
         ])
         .map_err(|e| CaptureError::Pipeline(format!("preview branch: {e}")))?;
         // Linking from the tee auto-requests a fresh src pad per branch.
@@ -626,8 +633,9 @@ mod tests {
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(256);
         let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-        let session = NativeCaptureSession::start(&test_config(300), frame_tx, preview_tx, error_tx)
-            .expect("videotestsrc pipeline starts");
+        let session =
+            NativeCaptureSession::start(&test_config(300), frame_tx, preview_tx, error_tx)
+                .expect("videotestsrc pipeline starts");
         let frames = drain_for(&mut frame_rx, Duration::from_millis(1_200));
         session.stop();
         assert!(frames.len() >= 5, "got {} frames", frames.len());
@@ -643,8 +651,9 @@ mod tests {
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(256);
         let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-        let session = NativeCaptureSession::start(&test_config(300), frame_tx, preview_tx, error_tx)
-            .expect("videotestsrc pipeline starts");
+        let session =
+            NativeCaptureSession::start(&test_config(300), frame_tx, preview_tx, error_tx)
+                .expect("videotestsrc pipeline starts");
         // Let the stream settle past its initial keyframe.
         let _ = drain_for(&mut frame_rx, Duration::from_millis(500));
         session.force_keyframe();
@@ -670,8 +679,9 @@ mod tests {
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(1024);
         let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-        let session = NativeCaptureSession::start(&test_config(600), frame_tx, preview_tx, error_tx)
-            .expect("videotestsrc pipeline starts");
+        let session =
+            NativeCaptureSession::start(&test_config(600), frame_tx, preview_tx, error_tx)
+                .expect("videotestsrc pipeline starts");
         let high: usize = drain_for(&mut frame_rx, Duration::from_millis(1_500))
             .iter()
             .map(|f| f.payload.len())
@@ -735,8 +745,7 @@ mod tests {
         let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let mut config = test_config(300);
         config.source_override = Some("no-such-element-exists".into());
-        let err =
-            NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx).unwrap_err();
+        let err = NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx).unwrap_err();
         assert!(matches!(err, CaptureError::Unavailable(_)), "{err}");
     }
 }

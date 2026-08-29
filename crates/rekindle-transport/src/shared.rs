@@ -123,7 +123,8 @@ impl SharedState {
         if admitted {
             self.heal_attempts_admitted.fetch_add(1, Ordering::Relaxed);
         } else {
-            self.heal_attempts_suppressed.fetch_add(1, Ordering::Relaxed);
+            self.heal_attempts_suppressed
+                .fetch_add(1, Ordering::Relaxed);
         }
     }
 

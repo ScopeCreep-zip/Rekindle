@@ -25,7 +25,7 @@ pub async fn initialize_node(
         // Defaults preserve pre-0.5.7 behavior (UPnP off, 1-hop inbound
         // routes, file-backed ProtectedStore, DHT concurrency 16). Flip
         // protocols: docs/contributor/veilid-0.5.7-migration-plan.md.
-        veilid: Default::default(),
+        veilid: rekindle_types::config::VeilidStartupOptions::default(),
     };
 
     let mut node = rekindle_protocol::RekindleNode::start(config)

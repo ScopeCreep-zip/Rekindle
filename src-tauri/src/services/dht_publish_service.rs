@@ -346,8 +346,7 @@ pub async fn publish_account(
                 rekindle_protocol::dht::DEFAULT_DHT_OPEN_ATTEMPTS,
                 rekindle_protocol::dht::DEFAULT_DHT_OPEN_DELAY,
                 || {
-                    let enc_key =
-                        rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
+                    let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
                     rekindle_protocol::dht::account::AccountRecord::open(
                         &routing_context,
                         existing_key,

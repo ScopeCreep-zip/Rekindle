@@ -40,10 +40,7 @@ pub async fn show_os_notification(
         let _ = &app;
         let mut notification = notify_rust::Notification::new();
         notification.summary(&title).body(&body).auto_icon();
-        notification
-            .show_async()
-            .await
-            .map_err(|e| e.to_string())?;
+        notification.show_async().await.map_err(|e| e.to_string())?;
     }
 
     #[cfg(any(target_os = "macos", windows))]

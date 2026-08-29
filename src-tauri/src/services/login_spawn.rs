@@ -67,11 +67,8 @@ pub(super) fn spawn_login_services(
             // open". On timeout, proceed best-effort anyway (the watch-retry +
             // keepalive recover residuals); don't skip hydration entirely, which
             // would leave communities unsynced on a slow network.
-            if !super::login_runtime::wait_for_network_ready(
-                bg_state.network_ready_rx.clone(),
-                60,
-            )
-            .await
+            if !super::login_runtime::wait_for_network_ready(bg_state.network_ready_rx.clone(), 60)
+                .await
             {
                 tracing::warn!(
                     "public internet not ready within 60s — running community DHT hydration best-effort"

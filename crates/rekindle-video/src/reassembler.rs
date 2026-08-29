@@ -590,8 +590,12 @@ mod tests {
         // Same invariant on the PARITY ingest path.
         let mut r = Reassembler::new();
         let frame = vec![0xEEu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 200];
-        let fec = fragment_frame_with_fec(test_shape([7u8; STREAM_ID_LEN], 5, true, Codec::Vp9, 0), &frame, 2)
-            .unwrap();
+        let fec = fragment_frame_with_fec(
+            test_shape([7u8; STREAM_ID_LEN], 5, true, Codec::Vp9, 0),
+            &frame,
+            2,
+        )
+        .unwrap();
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         let mut relabeled = fec.parity[0].clone();
         relabeled.codec = Codec::Vp8;
@@ -605,8 +609,12 @@ mod tests {
         // data[0], data[2], parity[0]. Reassembler should reconstruct.
         let mut r = Reassembler::new();
         let frame = vec![0xCDu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 200];
-        let fec = fragment_frame_with_fec(test_shape([5u8; STREAM_ID_LEN], 9, true, Codec::Vp9, 50), &frame, 2)
-            .unwrap();
+        let fec = fragment_frame_with_fec(
+            test_shape([5u8; STREAM_ID_LEN], 9, true, Codec::Vp9, 50),
+            &frame,
+            2,
+        )
+        .unwrap();
         assert_eq!(fec.data.len(), 3);
         assert_eq!(fec.parity.len(), 2);
 
@@ -631,9 +639,12 @@ mod tests {
         // `frame_len` (verified by the byte-for-byte match below).
         let mut r = Reassembler::new();
         let frame = vec![0xEEu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 13];
-        let fec =
-            fragment_frame_with_fec(test_shape([6u8; STREAM_ID_LEN], 11, true, Codec::Vp9, 99), &frame, 1)
-                .unwrap();
+        let fec = fragment_frame_with_fec(
+            test_shape([6u8; STREAM_ID_LEN], 11, true, Codec::Vp9, 99),
+            &frame,
+            1,
+        )
+        .unwrap();
         assert_eq!(fec.data.len(), 3);
         assert_eq!(fec.parity.len(), 1);
 
@@ -667,8 +678,12 @@ mod tests {
         // corrupting the AEAD ciphertext.
         let mut r = Reassembler::new();
         let frame = vec![0xCCu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 33];
-        let fec = fragment_frame_with_fec(test_shape([8u8; STREAM_ID_LEN], 12, true, Codec::Vp9, 1), &frame, 1)
-            .unwrap();
+        let fec = fragment_frame_with_fec(
+            test_shape([8u8; STREAM_ID_LEN], 12, true, Codec::Vp9, 1),
+            &frame,
+            1,
+        )
+        .unwrap();
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         assert!(r.ingest("alice", fec.data[1].clone(), 0).unwrap().is_none());
         let done = r.ingest("alice", fec.data[2].clone(), 0).unwrap();

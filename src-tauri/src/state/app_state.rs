@@ -404,8 +404,7 @@ impl AppState {
         &self,
         community_id: &str,
         channel_id: &str,
-    ) -> Option<std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>>
-    {
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>> {
         let ve = self.voice_engine.lock();
         let handle = ve.as_ref()?;
         if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {

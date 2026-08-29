@@ -40,11 +40,12 @@ pub fn mark_watch_inactive(state: &Arc<AppState>, record_key: &str) {
 fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static str, String)> {
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<(&'static str, String)> = Vec::new();
-    let mut push = |label: &'static str, key: String, seen: &mut std::collections::HashSet<String>| {
-        if !key.is_empty() && seen.insert(key.clone()) {
-            out.push((label, key));
-        }
-    };
+    let mut push =
+        |label: &'static str, key: String, seen: &mut std::collections::HashSet<String>| {
+            if !key.is_empty() && seen.insert(key.clone()) {
+                out.push((label, key));
+            }
+        };
     if let Some(ref gov_key) = community.open_community_records.governance_key {
         push("governance", gov_key.clone(), &mut seen);
     }

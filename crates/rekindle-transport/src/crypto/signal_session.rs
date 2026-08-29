@@ -35,7 +35,7 @@ pub struct SignalSessionManager {
 }
 
 /// Map a shared-core crypto error onto the transport error type.
-fn crypto_err(e: rekindle_crypto::error::CryptoError) -> TransportError {
+fn crypto_err(e: &rekindle_crypto::error::CryptoError) -> TransportError {
     TransportError::Internal(e.to_string())
 }
 
@@ -73,9 +73,8 @@ impl SignalSessionManager {
         // Seed the shared Double Ratchet core as initiator. `ek_secret`
         // (not the public!) seeds our ratchet secret so the responder's
         // first reply can complete the mirrored DH step.
-        let okm = ratchet::expand_pqxdh_root(&hs.root_key).map_err(crypto_err)?;
-        let session =
-            RatchetState::initiator(&okm, *hs.ek_secret, bundle.signed_prekey.clone());
+        let okm = ratchet::expand_pqxdh_root(&hs.root_key).map_err(|e| crypto_err(&e))?;
+        let session = RatchetState::initiator(&okm, *hs.ek_secret, bundle.signed_prekey.clone());
         self.sessions
             .store_session(peer_address, &session.serialize())?;
         self.identity
@@ -162,7 +161,7 @@ impl SignalSessionManager {
         // Seed the shared Double Ratchet core as responder (chain
         // assignment mirrors the initiator's). The SPK SECRET seeds our
         // ratchet secret — the initiator's first message DHs against it.
-        let okm = ratchet::expand_pqxdh_root(&root_key_z).map_err(crypto_err)?;
+        let okm = ratchet::expand_pqxdh_root(&root_key_z).map_err(|e| crypto_err(&e))?;
         let session = RatchetState::responder(
             &okm,
             our_spk_secret.to_bytes(),
@@ -187,8 +186,10 @@ impl SignalSessionManager {
         let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
             TransportError::Internal(format!("no Signal session for {peer_address}"))
         })?;
-        let mut session = RatchetState::deserialize(&session_data).map_err(crypto_err)?;
-        let output = session.encrypt_step(plaintext).map_err(crypto_err)?;
+        let mut session = RatchetState::deserialize(&session_data).map_err(|e| crypto_err(&e))?;
+        let output = session
+            .encrypt_step(plaintext)
+            .map_err(|e| crypto_err(&e))?;
         self.sessions
             .store_session(peer_address, &session.serialize())?;
         Ok(output)
@@ -205,8 +206,8 @@ impl SignalSessionManager {
         let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
             TransportError::Internal(format!("no Signal session for {peer_address}"))
         })?;
-        let mut session = RatchetState::deserialize(&session_data).map_err(crypto_err)?;
-        let plaintext = session.decrypt_step(message).map_err(crypto_err)?;
+        let mut session = RatchetState::deserialize(&session_data).map_err(|e| crypto_err(&e))?;
+        let plaintext = session.decrypt_step(message).map_err(|e| crypto_err(&e))?;
         self.sessions
             .store_session(peer_address, &session.serialize())?;
         Ok(plaintext)
@@ -506,7 +507,9 @@ mod tests {
         .unwrap();
 
         // Daemon → desktop.
-        let wire = alice.encrypt(&bob_addr, b"hello from the daemon track").unwrap();
+        let wire = alice
+            .encrypt(&bob_addr, b"hello from the daemon track")
+            .unwrap();
         assert_eq!(
             bob.decrypt(&alice_addr, &wire).await.unwrap(),
             b"hello from the daemon track"
