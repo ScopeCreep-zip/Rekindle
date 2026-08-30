@@ -14,7 +14,6 @@ use std::time::Instant;
 
 use veilid_core::RoutingContext;
 
-/// Parse a DHT record key string into a Veilid `RecordKey`.
 /// Default bounded-retry budget for opening an existing DHT record before
 /// concluding it is genuinely gone and recreating it. ≈45 s — long enough for
 /// a freshly-attached node's routing table to mature (the architecture's

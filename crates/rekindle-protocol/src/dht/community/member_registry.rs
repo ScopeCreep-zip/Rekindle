@@ -13,6 +13,11 @@
 //! `community_smpl_schema`); this module keeps the slot-keypair
 //! derivation and the index/MEK-vault accessors still consumed by the
 //! governance + MEK rotation adapters.
+//!
+//! The index and MEK-vault accessors below still address subkeys 0 and
+//! 1, which under `o_cnt:0` are member slots — there is no owner
+//! credential that can write them. They are v1.0 leftovers; see
+//! `.claude/plans/` for the migration.
 
 use crate::dht::DHTManager;
 use crate::error::ProtocolError;
@@ -32,7 +37,7 @@ use super::types::{MEKVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_ME
 /// slot is not worth a wire-visible migration.
 pub const SLOTS_PER_SEGMENT: u32 = 255;
 
-// ── Member index (owner subkey 0) ──
+// ── Member index (subkey 0 — see the v1.0 note in the module header) ──
 
 /// Read the member index from the registry.
 pub async fn read_member_index(
@@ -46,7 +51,7 @@ pub async fn read_member_index(
     }
 }
 
-/// Write the member index to the registry (requires registry_owner_keypair).
+/// Write the member index to the registry (subkey 0).
 pub async fn write_member_index(
     dht: &DHTManager,
     key: &str,
@@ -57,7 +62,7 @@ pub async fn write_member_index(
     dht.set_value(key, REGISTRY_MEMBER_INDEX, bytes).await
 }
 
-// ── MEK vault (owner subkey 1) ──
+// ── MEK vault (subkey 1 — see the v1.0 note in the module header) ──
 
 /// Read the MEK vault from the registry.
 pub async fn read_mek_vault(
@@ -71,7 +76,7 @@ pub async fn read_mek_vault(
     }
 }
 
-/// Write the MEK vault to the registry (requires registry_owner_keypair).
+/// Write the MEK vault to the registry (subkey 1).
 pub async fn write_mek_vault(
     dht: &DHTManager,
     key: &str,

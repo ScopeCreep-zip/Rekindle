@@ -5,9 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 
-// ── Manifest subkey layout (DFLT, 16 subkeys, single owner = coordinator) ──
-
-// Manifest + registry subkey layout.
+// ── Manifest + registry subkey layout ──
+//
+// The manifest is the v1.0 coordinator-owned governance record (DFLT,
+// 16 subkeys). v2.0 replaces it with an SMPL `o_cnt:0` governance
+// record — see the architecture doc's v1.0 -> v2.0 table — so this
+// table describes a record on its way out, not the target layout. The
+// indices stay pinned meanwhile because they are wire-visible.
 //
 // Declared once in `rekindle_types::dht_layout` — the daemon track
 // indexes the same records and kept its own copy of this table, which

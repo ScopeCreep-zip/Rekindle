@@ -58,6 +58,7 @@ where
     .await
 }
 
+/// Parse a DHT record key string into a Veilid `RecordKey`.
 pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolError> {
     key.parse()
         .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))

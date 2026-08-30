@@ -104,8 +104,9 @@ jobs:
         run: pnpm test:security
 
   # ──────────────────────────────────────────────────────────────────
-  # xtask guardrails — tier boundaries, file-size ceiling (600 lines +
-  # burn-down allowlist), allow-reason hygiene. Pure Rust, no GTK.
+  # xtask guardrails — tier boundaries, the unconditional 600-line
+  # file-size ceiling (the burn-down allowlist is gone; any file over the
+  # limit fails), allow-reason hygiene. Pure Rust, no GTK.
   # ──────────────────────────────────────────────────────────────────
   xtask:
     name: Guardrails (cargo xtask check)
