@@ -31,13 +31,12 @@ pub(super) fn channel_or_community_mek_impl(
     community_id: &str,
     channel_id: &str,
 ) -> Option<ChannelMek> {
-    let channel = adapter
-        .state
-        .channel_mek_cache
-        .lock()
-        .get(&(community_id.to_string(), channel_id.to_string()))
-        .map(map_mek);
-    channel.or_else(|| community_mek_impl(adapter, community_id))
+    // Same channel-then-community fallback as the media plane; one
+    // implementation in state_helpers rather than a second walk of both
+    // caches here.
+    crate::state_helpers::channel_media_mek_full(&adapter.state, community_id, channel_id)
+        .as_ref()
+        .map(map_mek)
 }
 
 pub(super) fn current_mek_generation_impl(

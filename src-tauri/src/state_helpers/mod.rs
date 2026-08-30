@@ -17,6 +17,7 @@
 //! - [`communities`] — community channel-list write helpers.
 //! - [`governance`] — v2.0 CRDT governance state read/write.
 //! - [`governance_persist`] — SQLite snapshot of merged governance.
+//! - [`voice`] — running voice-engine accessors.
 
 mod circuit_breaker;
 mod communities;
@@ -27,6 +28,7 @@ mod governance_persist;
 mod identity;
 mod node;
 mod routes;
+mod voice;
 
 pub use circuit_breaker::{is_circuit_open, reset_circuit_breaker, trip_circuit_breaker};
 pub use communities::{
@@ -61,6 +63,7 @@ pub use routes::{
     cache_peer_route, cached_route_blob, evict_stale_peer_routes, friend_for_dht_key,
     import_route_blob, invalidate_cached_peer_route, try_import_peer_route,
 };
+pub use voice::{set_voice_engine_deafened, set_voice_engine_muted, voice_engine_present};
 
 // ── Shared private helpers used across submodules ──────────────────────
 
@@ -84,13 +87,20 @@ pub(super) fn safe_routing_context_from(
         .ok()
 }
 
-pub(super) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
-    let bytes = hex::decode(hex_str).unwrap_or_else(|_| vec![0u8; 16]);
-    let mut arr = [0u8; 16];
-    for (i, b) in bytes.iter().take(16).enumerate() {
-        arr[i] = *b;
-    }
-    arr
+/// Decode a hex string into a 16-byte id, or all-zeros if it is not
+/// exactly 16 bytes of valid hex.
+///
+/// There were three copies of this. Two required an exact 16 bytes;
+/// this one decoded whatever it could and zero-padded the remainder, so
+/// a truncated id like `"deadbeef"` became
+/// `deadbeef00000000000000000000` here and `0…0` everywhere else — a
+/// half-real id that shares a prefix with a genuine one is worse than
+/// an obviously-invalid one, so the strict behaviour is what survives.
+pub(crate) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
+    hex::decode(hex_str)
+        .ok()
+        .and_then(|b| b.try_into().ok())
+        .unwrap_or([0u8; 16])
 }
 
 pub(super) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32 {

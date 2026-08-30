@@ -28,11 +28,7 @@ impl FilesDeps for FilesAdapter {
     }
 
     fn my_pseudonym(&self, community_id: &str) -> Result<String, FilesError> {
-        self.state
-            .communities
-            .read()
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
+        state_helpers::my_pseudonym_key(&self.state, community_id)
             .ok_or_else(|| FilesError::NotFound(format!("pseudonym for {community_id}")))
     }
 
@@ -91,20 +87,12 @@ impl FilesDeps for FilesAdapter {
         community_id: &str,
         channel_id: &str,
     ) -> Result<MediaEncryptionKey, FilesError> {
-        let cache = self.state.channel_mek_cache.lock();
-        if let Some(mek) = cache.get(&(community_id.to_string(), channel_id.to_string())) {
-            return Ok(mek.clone());
-        }
-        drop(cache);
-        self.state
-            .mek_cache
-            .lock()
-            .get(community_id)
-            .cloned()
-            .ok_or_else(|| FilesError::MekUnavailable {
+        state_helpers::channel_media_mek_full(&self.state, community_id, channel_id).ok_or_else(
+            || FilesError::MekUnavailable {
                 community: community_id.to_string(),
                 generation: 0,
-            })
+            },
+        )
     }
 
     fn historical_channel_mek(

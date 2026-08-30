@@ -36,23 +36,15 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn voice_engine_present(&self) -> bool {
-        self.state.voice_engine.lock().is_some()
+        crate::state_helpers::voice_engine_present(&self.state)
     }
 
     fn set_voice_engine_muted(&self, muted: bool) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.set_muted(muted);
-            handle.muted_flag.store(muted, Ordering::Relaxed);
-        }
+        crate::state_helpers::set_voice_engine_muted(&self.state, muted);
     }
 
     fn set_voice_engine_deafened(&self, deafened: bool) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.set_deafened(deafened);
-            handle.deafened_flag.store(deafened, Ordering::Relaxed);
-        }
+        crate::state_helpers::set_voice_engine_deafened(&self.state, deafened);
     }
 
     fn pre_stage_voice_channel(&self) {

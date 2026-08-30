@@ -19,11 +19,7 @@ use std::collections::HashMap;
 #[async_trait]
 impl GossipDeps for GossipAdapter {
     fn my_pseudonym_key(&self, community_id: &str) -> String {
-        let communities = self.state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
+        state_helpers::my_pseudonym_key(&self.state, community_id).unwrap_or_default()
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {

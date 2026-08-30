@@ -7,7 +7,6 @@
 //! (voice_join / voice_leave / stage_update / etc.) consume this trait
 //! via `Arc<dyn VoiceSignalingDeps>`.
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -182,19 +181,11 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn set_voice_engine_muted(&self, muted: bool) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.set_muted(muted);
-            handle.muted_flag.store(muted, Ordering::Relaxed);
-        }
+        crate::state_helpers::set_voice_engine_muted(&self.state, muted);
     }
 
     fn set_voice_engine_deafened(&self, deafened: bool) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.set_deafened(deafened);
-            handle.deafened_flag.store(deafened, Ordering::Relaxed);
-        }
+        crate::state_helpers::set_voice_engine_deafened(&self.state, deafened);
     }
 
     async fn rotate_voice_mek_for_membership(

@@ -336,13 +336,9 @@ pub(super) fn spawn_voice_loops_impl(
             speaker_ref_rx,
             community_id: voice_community_id.clone(),
             channel_id: voice_channel_id.clone(),
-            our_pseudonym: voice_community_id.as_deref().and_then(|cid| {
-                state
-                    .communities
-                    .read()
-                    .get(cid)
-                    .and_then(|c| c.my_pseudonym_key.clone())
-            }),
+            our_pseudonym: voice_community_id
+                .as_deref()
+                .and_then(|cid| crate::state_helpers::my_pseudonym_key(state, cid)),
         },
     ));
 

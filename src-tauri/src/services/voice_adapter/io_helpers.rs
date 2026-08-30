@@ -80,12 +80,7 @@ pub(super) fn log_voice_membership_impl(
     joined: bool,
 ) {
     let owner = state_helpers::owner_key_or_default(state);
-    let pseudo = state
-        .communities
-        .read()
-        .get(community_id)
-        .and_then(|c| c.my_pseudonym_key.clone())
-        .unwrap_or_default();
+    let pseudo = state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default();
     if joined {
         crate::services::community::analytics::log_voice_join(
             pool,

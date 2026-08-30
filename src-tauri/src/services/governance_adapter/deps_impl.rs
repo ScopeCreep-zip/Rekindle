@@ -348,14 +348,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     // ---------- DHT-hydration deps (Phase 23.C chiral split) ----------
 
     fn list_community_governance_targets(&self) -> Vec<(String, String)> {
-        let cs = self.state.communities.read();
-        cs.values()
-            .filter_map(|c| {
-                c.governance_key
-                    .as_ref()
-                    .map(|gk| (c.id.clone(), gk.clone()))
-            })
-            .collect()
+        state_helpers::communities_with_governance_keys(&self.state)
     }
 
     async fn apply_governance_rebuild_result(

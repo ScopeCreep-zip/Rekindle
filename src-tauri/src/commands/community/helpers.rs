@@ -1,11 +1,6 @@
 use crate::state::SharedState;
 
-pub(crate) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
-    hex::decode(hex_str)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-        .unwrap_or([0u8; 16])
-}
+pub(crate) use crate::state_helpers::hex_to_id_16;
 
 pub(crate) fn hex_to_pseudo_32(hex_str: &str) -> [u8; 32] {
     hex::decode(hex_str)

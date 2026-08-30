@@ -105,12 +105,7 @@ pub(super) fn segment_descriptors(
 // ---- Per-community read shortcuts used by community_deps.rs ----
 
 pub(super) fn my_pseudonym_for_community(state: &Arc<AppState>, community_id: &str) -> String {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .and_then(|c| c.my_pseudonym_key.clone())
-        .unwrap_or_default()
+    crate::state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default()
 }
 
 pub(super) fn channel_ids_for_community(state: &Arc<AppState>, community_id: &str) -> Vec<String> {
