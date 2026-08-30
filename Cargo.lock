@@ -7362,8 +7362,8 @@ name = "rekindle-codec"
 version = "0.1.0"
 dependencies = [
  "blake2 0.10.6",
+ "blake3",
  "hex",
- "indexmap 2.13.0",
  "rekindle-secrets",
  "rekindle-types",
  "serde",
@@ -7778,6 +7778,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rekindle-calls",
+ "rekindle-codec",
  "rekindle-crypto",
  "rekindle-events",
  "rekindle-protocol",

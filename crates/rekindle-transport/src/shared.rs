@@ -237,18 +237,6 @@ mod tests {
         assert_eq!(AttachmentState::from_u8(255), AttachmentState::Detached);
     }
 
-    #[test]
-    fn attachment_state_from_veilid_string() {
-        assert_eq!(
-            AttachmentState::from_veilid_string("FullyAttached"),
-            AttachmentState::FullyAttached
-        );
-        assert_eq!(
-            AttachmentState::from_veilid_string("garbage"),
-            AttachmentState::Detached
-        );
-    }
-
     /// Every attached state veilid-core can actually emit must map to an
     /// attached state on our side.
     ///
@@ -259,6 +247,11 @@ mod tests {
     /// `AttachedFull`) and the changelog mentioned neither. This walks
     /// upstream's own enum so the next one fails here instead.
     #[test]
+    /// Stays in this crate, not beside the enum in `rekindle-types`:
+    /// it walks `veilid_core`'s own enum, and Tier 1 must not depend on
+    /// veilid-core (rule B2). The two pure-logic tests that used to sit
+    /// here were verbatim copies of ones in
+    /// `rekindle_types::notification`, where the type actually lives.
     fn every_veilid_attachment_string_is_understood() {
         use veilid_core::AttachmentState as Upstream;
 
@@ -291,16 +284,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn is_attached_correct() {
-        assert!(!AttachmentState::Detached.is_attached());
-        assert!(!AttachmentState::Attaching.is_attached());
-        assert!(AttachmentState::AttachedWeak.is_attached());
-        assert!(AttachmentState::AttachedGood.is_attached());
-        assert!(AttachmentState::FullyAttached.is_attached());
-        assert!(!AttachmentState::Detaching.is_attached());
     }
 
     #[tokio::test]

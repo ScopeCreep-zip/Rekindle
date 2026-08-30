@@ -12,4 +12,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 blake2 = "0.10"
 hex = "0.4"
-indexmap = "2"
+blake3 = "1"

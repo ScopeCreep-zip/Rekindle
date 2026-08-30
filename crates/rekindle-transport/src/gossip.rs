@@ -10,50 +10,16 @@ use serde::{Deserialize, Serialize};
 
 // ── Dedup cache ──────────────────────────────────────────────────────
 
-/// Content-hash dedup cache with bounded capacity and LRU eviction.
+/// FIFO dedup cache — see [`rekindle_codec::dedup::DedupCache`].
 ///
-/// Each entry is keyed by `(community_id, sender, dedup_key)` to prevent
-/// cross-community collisions and cross-sender collisions.
-pub struct DedupCache {
-    entries: VecDeque<(String, String, String)>,
-    capacity: usize,
-}
-
-impl DedupCache {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            entries: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    /// Check if this message has been seen before. If not, insert it.
-    ///
-    /// Returns `true` if the message is a **duplicate** (already seen).
-    /// Returns `false` if the message is **new** (just inserted).
-    pub fn check_and_insert(&mut self, community_id: &str, sender: &str, dedup_key: &str) -> bool {
-        let entry = (
-            community_id.to_string(),
-            sender.to_string(),
-            dedup_key.to_string(),
-        );
-
-        if self.entries.iter().any(|e| *e == entry) {
-            return true;
-        }
-
-        if self.entries.len() >= self.capacity {
-            self.entries.pop_front();
-        }
-        self.entries.push_back(entry);
-        false
-    }
-
-    /// Clear all entries.
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
-}
+/// This crate carried a third copy of this cache that stored the owned
+/// `(community_id, sender, dedup_key)` tuple in a `VecDeque` and found
+/// duplicates with a linear scan — O(n) per gossip message on the
+/// dispatch hot path, allocating three Strings even on a hit. The shared
+/// implementation hashes the tuple to 8 bytes and probes a HashSet. The
+/// tests below are the transport-side contract and pass unchanged
+/// against it.
+pub use rekindle_codec::dedup::DedupCache;
 
 // ── Lamport clock ────────────────────────────────────────────────────
 

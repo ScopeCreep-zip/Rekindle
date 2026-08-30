@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 # Workspace
 rekindle-types = { path = "../rekindle-types" }
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-utils = { path = "../rekindle-utils", features = ["retry"] }
 rekindle-events = { path = "../rekindle-events" }
 rekindle-secrets = { path = "../rekindle-secrets" }
