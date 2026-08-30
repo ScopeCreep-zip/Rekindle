@@ -72,6 +72,16 @@ pub async fn send_message(
         reply_to: reply_to_sequence,
         lamport_ts: timestamp,
         message_id: Some(message_id.clone()),
+        // The daemon send path does not yet offer attachments, message
+        // flags or mentions. These serialize away to nothing
+        // (skip_serializing_if / default), so the bytes are unchanged
+        // from before this crate adopted the desktop track's fuller
+        // definition — but a message that DOES carry them now survives
+        // the round trip instead of being silently dropped.
+        attachment: None,
+        flags: 0,
+        mentioned_pseudonyms: Vec::new(),
+        mentioned_roles: Vec::new(),
     };
     let msg_bytes =
         serde_json::to_vec(&channel_msg).map_err(|e| TransportError::SerializationFailed {

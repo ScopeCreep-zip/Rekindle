@@ -365,19 +365,20 @@ pub struct EncryptedMekCopy {
 
 // ── Channel message record ──────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelMessage {
-    pub sequence: u64,
-    pub sender_pseudonym: String,
-    pub ciphertext: Vec<u8>,
-    pub mek_generation: u64,
-    pub timestamp: u64,
-    pub reply_to: Option<u64>,
-    #[serde(default)]
-    pub lamport_ts: u64,
-    pub message_id: Option<String>,
-}
+/// A message entry written to a channel record subkey.
+///
+/// Re-exported from the desktop track, which owns the definition. This
+/// crate declared a second one that diverged in two ways, both of which
+/// broke cross-track reads outright:
+///
+///   * `ciphertext` had no `#[serde(with = "base64_bytes")]`, so it
+///     serialized as a JSON number array where the desktop track writes
+///     a base64 string — a daemon-written message failed to parse there
+///     with `invalid type: sequence, expected a string`.
+///   * it lacked `attachment`, `flags`, `mentioned_pseudonyms` and
+///     `mentioned_roles`, silently dropping file offers, voice-message
+///     and @everyone/@here flags, and mention routing on any round trip.
+pub use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 
 // ── Friend inbox types (DHT-based async friend requests) ────────────
 
