@@ -108,27 +108,22 @@ pub struct VoiceRosterEntry {
     pub display_name: Option<String>,
 }
 
-/// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519 signature.
+/// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519
+/// signature, for SMPL/gossip payloads.
 ///
-/// Signature is computed over `envelope_bytes` using the sender's pseudonym
-/// signing key (derived via `rekindle_crypto::group::pseudonym::derive_community_pseudonym()`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedEnvelope {
-    pub community_id: String,
-    pub sender_pseudonym: String,
-    pub envelope_bytes: Vec<u8>,
-    /// Ed25519 signature over `envelope_bytes`.
-    pub signature: Vec<u8>,
-    /// Hop TTL for gossip forwarding. Starts at 5, decremented on each forward.
-    /// When 0, process locally but don't forward.
-    #[serde(default = "default_ttl")]
-    pub ttl: u8,
-}
-
-fn default_ttl() -> u8 {
-    5
-}
+/// Declared once, in `rekindle-codec` — the Tier 3 serialization crate
+/// whose own module doc already claims signed-envelope construction as
+/// its scope. This crate carried a field-identical twin (same five
+/// fields, same camelCase, same `ttl` default of 5), so gossip ended up
+/// importing both: `mesh_broadcast.rs` and `deps.rs` took this one,
+/// `broadcast.rs` took codec's. `wire_tests.rs` proved them
+/// byte-identical before they were folded together.
+///
+/// Not to be confused with the DM transport envelope
+/// (`rekindle-transport`'s `SignedPayload`); per
+/// `docs/contributor/dm-envelope-interop.md` that is a different job and
+/// converges separately.
+pub use rekindle_codec::envelope::SignedEnvelope;
 
 /// A single onboarding answer.
 #[derive(Debug, Clone, Serialize, Deserialize)]

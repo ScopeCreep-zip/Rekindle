@@ -7689,6 +7689,7 @@ dependencies = [
  "hkdf 0.12.4",
  "parking_lot 0.12.5",
  "rand 0.8.5",
+ "rekindle-codec",
  "rekindle-crypto",
  "rekindle-secrets",
  "rekindle-types",

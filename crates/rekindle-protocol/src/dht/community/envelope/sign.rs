@@ -1,8 +1,10 @@
 //! Signing and verification of community envelopes.
 
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey};
 
-use super::{default_ttl, SignedEnvelope};
+use rekindle_codec::envelope::DEFAULT_TTL;
+
+use super::SignedEnvelope;
 
 /// Create a signed envelope from a serialized envelope payload.
 ///
@@ -19,31 +21,16 @@ pub fn sign_envelope(
         sender_pseudonym: sender_pseudonym.to_string(),
         envelope_bytes: envelope_bytes.to_vec(),
         signature: signature.to_bytes().to_vec(),
-        ttl: default_ttl(),
+        ttl: DEFAULT_TTL,
     }
 }
 
 /// Verify the Ed25519 signature on a signed envelope.
 ///
-/// The `sender_pseudonym` field is the hex-encoded Ed25519 public key.
-/// Returns `Ok(())` if the signature is valid.
+/// Delegates to `rekindle_codec::envelope::verify_signed_envelope` —
+/// this crate carried a second copy of the same checks (hex-decode the
+/// pseudonym, require 32-byte key and 64-byte signature, Ed25519
+/// verify). The `String` error is kept because callers here match on it.
 pub fn verify_envelope(signed: &SignedEnvelope) -> Result<(), String> {
-    let pub_bytes =
-        hex::decode(&signed.sender_pseudonym).map_err(|e| format!("invalid pseudonym hex: {e}"))?;
-    let pub_array: [u8; 32] = pub_bytes
-        .try_into()
-        .map_err(|_| "pseudonym key must be 32 bytes".to_string())?;
-    let verifying_key =
-        VerifyingKey::from_bytes(&pub_array).map_err(|e| format!("invalid public key: {e}"))?;
-
-    let sig_array: [u8; 64] = signed
-        .signature
-        .clone()
-        .try_into()
-        .map_err(|_| "signature must be 64 bytes".to_string())?;
-    let signature = Signature::from_bytes(&sig_array);
-
-    verifying_key
-        .verify_strict(&signed.envelope_bytes, &signature)
-        .map_err(|e| format!("invalid envelope signature: {e}"))
+    rekindle_codec::envelope::verify_signed_envelope(signed).map_err(|e| e.to_string())
 }

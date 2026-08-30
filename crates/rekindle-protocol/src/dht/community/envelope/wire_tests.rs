@@ -7,7 +7,7 @@
 use rekindle_types::video::Codec;
 use serde_json::json;
 
-use super::{CommunityEnvelope, ControlPayload};
+use super::{CommunityEnvelope, ControlPayload, SignedEnvelope};
 use super::{
     MekTransferAckPayload, MekTransferPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
@@ -109,4 +109,59 @@ fn capnp_wire_identity() {
             "capnp bytes changed for {name}"
         );
     }
+}
+
+/// Plan 4.4 — `SignedEnvelope` was declared twice, here and in
+/// `rekindle-codec`, for the same job: signing SMPL/gossip payloads.
+/// (`docs/contributor/dm-envelope-interop.md` exempts this type from the
+/// *DM* envelope convergence — that is a different envelope — but says
+/// nothing about the two copies of this one.) Before folding them
+/// together, prove they are the same on the wire.
+#[test]
+fn signed_envelope_matches_the_codec_declaration() {
+    use rekindle_codec::envelope::SignedEnvelope as CodecSigned;
+
+    let mine = SignedEnvelope {
+        community_id: "c1".into(),
+        sender_pseudonym: "ab12".into(),
+        envelope_bytes: vec![1, 2, 3],
+        signature: vec![9; 4],
+        ttl: 5,
+    };
+    let theirs = CodecSigned {
+        community_id: "c1".into(),
+        sender_pseudonym: "ab12".into(),
+        envelope_bytes: vec![1, 2, 3],
+        signature: vec![9; 4],
+        ttl: 5,
+    };
+    assert_eq!(
+        serde_json::to_vec(&mine).unwrap(),
+        serde_json::to_vec(&theirs).unwrap(),
+        "the two SignedEnvelope declarations must agree byte for byte"
+    );
+
+    // Pin the shape: camelCase, and `ttl` present rather than skipped.
+    assert_eq!(
+        serde_json::to_string(&mine).unwrap(),
+        r#"{"communityId":"c1","senderPseudonym":"ab12","envelopeBytes":[1,2,3],"signature":[9,9,9,9],"ttl":5}"#
+    );
+
+    // Each must load the other's bytes — what a peer actually does.
+    let round: CodecSigned = serde_json::from_slice(&serde_json::to_vec(&mine).unwrap()).unwrap();
+    assert_eq!(round.community_id, "c1");
+    assert_eq!(round.ttl, 5);
+}
+
+/// Both default a missing `ttl` to 5. A mismatch here would silently
+/// change gossip hop limits for any envelope that omits the field.
+#[test]
+fn signed_envelope_ttl_default_agrees() {
+    use rekindle_codec::envelope::SignedEnvelope as CodecSigned;
+
+    let json = r#"{"communityId":"c1","senderPseudonym":"ab","envelopeBytes":[],"signature":[]}"#;
+    let mine: SignedEnvelope = serde_json::from_str(json).unwrap();
+    let theirs: CodecSigned = serde_json::from_str(json).unwrap();
+    assert_eq!(mine.ttl, 5);
+    assert_eq!(mine.ttl, theirs.ttl);
 }
