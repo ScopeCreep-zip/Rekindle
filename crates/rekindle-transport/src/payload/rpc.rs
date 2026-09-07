@@ -245,6 +245,23 @@ pub enum InboundCall {
     /// W16.5b — 1:1 call invite. Receiver replies synchronously with
     /// `CallResponse::CallRinging` via `app_call_reply`.
     CallInvite(CallInvitePayload),
+    /// A wrapped MEK delivered by the deterministic rotator after a
+    /// member departed (`communities-channels.md`, "Distribution
+    /// paths": *delivers the wrapped MEK to each member via `app_call`*).
+    ///
+    /// Unlike every other variant this one does **not** arrive framed
+    /// and signed — it is a bare Cap'n Proto `CommunityEnvelope`, the
+    /// format the desktop track sends. It is admitted without an
+    /// envelope signature because the payload authenticates its own
+    /// sender: `unwrap_mek` feeds the sender's pseudonym public key
+    /// into the ECDH, so only the real rotator can produce ciphertext
+    /// that decrypts. See `Caller::call_community_envelope`.
+    ///
+    /// Carries **protocol's** `MekTransferPayload`, not the
+    /// transport-local one above: that is the type on this wire, and
+    /// minting a fourth MEK-transfer struct to restate it is the
+    /// drift this branch exists to remove.
+    CommunityMekTransfer(rekindle_protocol::dht::community::envelope::MekTransferPayload),
 }
 
 /// Response from the handler to an inbound RPC.

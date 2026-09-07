@@ -162,6 +162,17 @@ async fn dispatch_app_call<H: InboundHandler>(
     let (type_id, payload) = match frame::decode(raw) {
         Ok(r) => r,
         Err(e) => {
+            // Not a transport frame. Before dropping it, check for the
+            // one unframed format we deliberately accept: a bare Cap'n
+            // Proto `CommunityEnvelope` carrying a wrapped MEK. That is
+            // what the desktop track's rotator sends
+            // (`services/veilid/network.rs`), and without this branch a
+            // desktop rotator could never deliver a rotated key to a
+            // daemon member — they would each NAK the other's format.
+            if let Some(transfer) = super::bare_envelope::decode_bare_mek_transfer(raw) {
+                dispatch_bare_mek_transfer(handler, api, call_id, transfer).await;
+                return;
+            }
             warn!(error = %e, "dropping app_call: frame decode failed");
             reply_nak(api, call_id).await;
             return;
@@ -225,6 +236,84 @@ async fn dispatch_app_call<H: InboundHandler>(
 
     if let Err(e) = api.app_call_reply(call_id, response_bytes).await {
         warn!(error = %e, "failed to send app_call reply");
+    }
+}
+
+/// Hand a bare MEK transfer to the handler and reply in the same
+/// dialect it arrived in.
+///
+/// The reply is a Cap'n Proto `MekTransferAck` rather than a serialized
+/// `CallResponse`, because the sender is a desktop rotator awaiting
+/// exactly that: `distribute_mek` inspects the reply for an ack whose
+/// generation matches what it sent. A `CallResponse` there reads as a
+/// delivery failure and makes the rotator log a mismatch on a transfer
+/// that actually succeeded.
+async fn dispatch_bare_mek_transfer<H: InboundHandler>(
+    handler: &Arc<H>,
+    api: &veilid_core::VeilidAPI,
+    call_id: veilid_core::OperationId,
+    transfer: rekindle_protocol::dht::community::envelope::MekTransferPayload,
+) {
+    use rekindle_protocol::dht::community::envelope::{
+        CommunityEnvelope, ControlPayload, MekTransferAckPayload,
+    };
+
+    let community_id = transfer.community_id.clone();
+    let channel_id = transfer.channel_id.clone();
+    let generation = transfer.generation;
+    // The sender is authenticated by the ECDH wrap, not by an envelope
+    // signature, so it is passed through as the claimed sender and the
+    // handler's unwrap is what actually decides.
+    let sender = transfer.sender_pseudonym.clone();
+
+    let response_bytes = match tokio::time::timeout(
+        APP_CALL_HANDLER_DEADLINE,
+        handler.on_call(
+            Some(sender.as_str()),
+            crate::payload::rpc::InboundCall::CommunityMekTransfer(transfer),
+        ),
+    )
+    .await
+    {
+        // `Ok(bytes)` carries our own pseudonym hex — the handler is the
+        // only layer that knows which pseudonym this community maps to,
+        // and the rotator traces it to confirm *who* acked.
+        Ok(crate::payload::rpc::CallResponse::Ok(requester)) => {
+            let ack =
+                CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
+                    community_id,
+                    channel_id,
+                    generation,
+                    requester_pseudonym: String::from_utf8_lossy(&requester).into_owned(),
+                }));
+            rekindle_protocol::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(|e| {
+                // The rotator is waiting on this reply. A bare NAK is a
+                // worse answer than nothing, but it at least resolves
+                // their `app_call` instead of leaving it to time out.
+                warn!(error = %e, "encoding MekTransferAck failed");
+                b"NAK".to_vec()
+            })
+        }
+        Ok(other) => {
+            warn!(
+                community = %community_id,
+                response = ?other,
+                "MEK transfer not accepted"
+            );
+            b"NAK".to_vec()
+        }
+        Err(_) => {
+            warn!(
+                community = %community_id,
+                deadline_secs = APP_CALL_HANDLER_DEADLINE.as_secs(),
+                "MEK transfer handler exceeded deadline — sending NAK"
+            );
+            b"NAK".to_vec()
+        }
+    };
+
+    if let Err(e) = api.app_call_reply(call_id, response_bytes).await {
+        warn!(error = %e, "failed to send MEK transfer reply");
     }
 }
 

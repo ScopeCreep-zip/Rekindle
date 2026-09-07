@@ -150,6 +150,15 @@ pub(crate) async fn handle_role_delete(
     }
 }
 
+/// Grant a role.
+///
+/// Writes a `RoleAssignment` governance entry, which every peer merges
+/// and validates. The previous path rewrote the *shared* registry
+/// member index — one member editing another's row in a record whose
+/// `o_cnt: 0` schema gives nobody a writer credential for it, and a
+/// second source of truth against the CRDT the desktop already used
+/// (`community_role_runtime.rs`). Two stores for one rule, and only one
+/// of them was v2.0.
 pub(crate) async fn handle_role_assign(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -160,17 +169,12 @@ pub(crate) async fn handle_role_assign(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::roles::assign_role(
-        &transport,
-        &membership.registry_key,
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
+    }
+    match rekindle_governance_runtime::roles::assign_role(
+        &adapter(ctx),
+        community,
         member_pseudonym,
         role_id,
     )
@@ -181,6 +185,7 @@ pub(crate) async fn handle_role_assign(
     }
 }
 
+/// Revoke a role. Same reasoning as [`handle_role_assign`].
 pub(crate) async fn handle_role_unassign(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -191,17 +196,12 @@ pub(crate) async fn handle_role_unassign(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::roles::unassign_role(
-        &transport,
-        &membership.registry_key,
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
+    }
+    match rekindle_governance_runtime::roles::unassign_role(
+        &adapter(ctx),
+        community,
         member_pseudonym,
         role_id,
     )

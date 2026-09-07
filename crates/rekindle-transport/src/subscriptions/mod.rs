@@ -20,6 +20,7 @@ pub mod events;
 // internal callers (and historical `subscriptions::state::SubscriptionState`
 // paths from elsewhere in the workspace) keep working unchanged.
 pub use rekindle_events::{dedup, state, state_effects};
+mod bare_envelope;
 pub mod dispatch;
 mod manager_ingress;
 mod manager_lifecycle;

@@ -288,4 +288,56 @@ impl Caller {
         );
         Ok(response)
     }
+
+    /// `app_call` a bare, unframed Cap'n Proto `CommunityEnvelope`.
+    ///
+    /// This is the one send path that deliberately skips
+    /// [`frame::encode`] and [`sign_payload`], because it is the format
+    /// the desktop track already speaks: `services/veilid/network.rs`
+    /// reads `call.message()` and hands it straight to
+    /// `try_decode_community_envelope`. A framed, signed payload is
+    /// unintelligible there, so a daemon rotator using `call` could
+    /// never deliver a MEK to a desktop member.
+    ///
+    /// **Why dropping the signature is safe *here specifically*.** The
+    /// only payload sent this way is a wrapped MEK, and
+    /// `rekindle_secrets::mek::unwrap_mek` takes the sender's pseudonym
+    /// public key as an ECDH input. Decryption therefore succeeds only
+    /// if the ciphertext was produced by the holder of that sender's
+    /// private key — the `sender_pseudonym` field is cryptographically
+    /// bound, not asserted. An envelope-layer signature would be
+    /// redundant with a property the payload already has.
+    ///
+    /// That reasoning does **not** generalise. Every other RPC carries
+    /// its authority in plaintext fields and must keep going through
+    /// `call`, which signs and verifies.
+    pub async fn call_community_envelope(
+        &self,
+        target: &PeerTarget,
+        envelope_bytes: Vec<u8>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>> {
+        let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
+        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+
+        let response = tokio::time::timeout(
+            timeout,
+            rc.app_call(Target::RouteId(target.route_id.clone()), envelope_bytes),
+        )
+        .await
+        .map_err(|_| TransportError::Timeout {
+            operation: "app_call(community-envelope)".to_string(),
+            duration_ms: timeout_ms,
+        })?
+        .map_err(|e| TransportError::SendFailed {
+            target: format!("{:?}", target.route_id),
+            reason: e.to_string(),
+        })?;
+
+        debug!(
+            response_len = response.len(),
+            "community-envelope RPC complete"
+        );
+        Ok(response)
+    }
 }

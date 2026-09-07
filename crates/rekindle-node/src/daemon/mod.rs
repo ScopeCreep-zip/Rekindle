@@ -20,6 +20,7 @@ pub mod friend_inbox;
 pub mod governance_adapter;
 pub mod governance_rpc;
 pub mod handler;
+pub mod mek_rotation;
 pub(crate) mod mek_wrap;
 
 pub use rekindle_lifecycle::{

@@ -399,14 +399,30 @@ impl DaemonGovernanceAdapter<'_> {
         tracing::debug!(community_id, "history catchup: covered by SMPL catchup");
     }
 
+    /// Queue the forward-secrecy rotation that a ban requires.
+    ///
+    /// A banned member still holds the current MEK, so the ban is only
+    /// half of the removal until the key changes. This used to trace a
+    /// line and return, which meant the daemon track never completed
+    /// that half.
+    ///
+    /// Fire-and-forget by contract: the ban entry has already been
+    /// written and must not be undone by a rotation failure, so a full
+    /// queue or a stopped worker is logged rather than propagated.
     pub(super) fn spawn_text_mek_rotation_for_ban_impl(
+        &self,
         community_id: &str,
         banned_pseudonym_hex: &str,
     ) {
-        tracing::info!(
-            community_id,
-            banned = %banned_pseudonym_hex,
-            "text MEK rotation requested for ban"
-        );
+        let request = crate::daemon::mek_rotation::MekRotationRequest {
+            community_id: community_id.to_string(),
+            departed_pseudonym_hex: banned_pseudonym_hex.to_string(),
+        };
+        if self.ctx.mek_rotation_tx.send(request).is_err() {
+            tracing::warn!(
+                community_id,
+                "MEK rotation worker is gone — ban did not rotate the key"
+            );
+        }
     }
 }

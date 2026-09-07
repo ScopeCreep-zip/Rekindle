@@ -18,7 +18,7 @@ use super::DaemonGovernanceAdapter;
 ///
 /// Not a valid channel id — channel ids are hex — so it cannot collide
 /// with a real channel's entry.
-const COMMUNITY_MEK_SLOT: &str = "__community__";
+pub(crate) const COMMUNITY_MEK_SLOT: &str = "__community__";
 
 fn to_snapshot(mek: &Mek) -> MekSnapshot {
     MekSnapshot {

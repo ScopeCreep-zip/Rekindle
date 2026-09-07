@@ -45,6 +45,8 @@ mod dht;
 mod events;
 mod lifecycle;
 mod mek;
+
+pub(crate) use mek::COMMUNITY_MEK_SLOT;
 mod roles;
 mod state_mutations;
 mod state_reads;

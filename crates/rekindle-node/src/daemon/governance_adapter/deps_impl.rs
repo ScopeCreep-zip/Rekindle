@@ -403,7 +403,7 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
     }
 
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str) {
-        Self::spawn_text_mek_rotation_for_ban_impl(community_id, banned_pseudonym_hex);
+        self.spawn_text_mek_rotation_for_ban_impl(community_id, banned_pseudonym_hex);
     }
 
     // ---------- Role mutations ----------

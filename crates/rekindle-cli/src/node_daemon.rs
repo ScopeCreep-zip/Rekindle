@@ -80,6 +80,12 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
 
     let pending_joins = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
 
+    // Departure-triggered MEK rotation. Both triggers (a moderation ban
+    // and an inbound leave notification) only need the sender; the
+    // worker is spawned below, once the `Arc<DaemonContext>` it needs
+    // exists.
+    let (mek_rotation_tx, mek_rotation_rx) = rekindle_node::daemon::mek_rotation::channel();
+
     let handler = Arc::new(DaemonHandler::new(
         Arc::clone(&transport_subscriptions),
         Arc::clone(&session_arc),
@@ -88,6 +94,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         Arc::clone(&signing_key_arc),
         Arc::clone(&transport_for_handler),
         Arc::clone(&pending_joins),
+        mek_rotation_tx.clone(),
     ));
 
     let transport = match rekindle_transport::TransportNode::start(
@@ -147,7 +154,16 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         broadcast_mgr: RwLock::new(None),
         event_watch_tx,
         pending_joins: Arc::clone(&pending_joins),
+        mek_rotation_tx,
     });
+
+    // The rotation worker owns an `Arc<DaemonContext>` — the reason the
+    // triggers queue instead of spawning. It waits out the cascade
+    // (tens of seconds) off the request path.
+    let mek_rotation_worker = tokio::spawn(rekindle_node::daemon::mek_rotation::run_worker(
+        Arc::clone(&daemon_ctx),
+        mek_rotation_rx,
+    ));
 
     // ── 7. Bind IPC socket and create bus server ──────────────────
     let socket_path = ipc::socket_path()?;
@@ -252,8 +268,14 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     drop(bus_server);
     subscriber_handle.abort();
     consumer_handle.abort();
+    // Aborted rather than drained: a rotation in flight is mid-cascade
+    // and may have tens of seconds left, and an unrotated key is the
+    // same outcome as a rotation nobody was online to receive — which
+    // the protocol already handles by rotating when someone returns.
+    mek_rotation_worker.abort();
     let _ = subscriber_handle.await;
     let _ = consumer_handle.await;
+    let _ = mek_rotation_worker.await;
 
     shutdown_transport(&daemon_ctx).await;
 

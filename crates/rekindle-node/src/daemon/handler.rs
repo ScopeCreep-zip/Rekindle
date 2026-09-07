@@ -47,6 +47,10 @@ pub struct DaemonHandler {
             >,
         >,
     >,
+    /// Queues departure-triggered MEK rotations. The leave
+    /// notification arrives here, and under v2.0 the only correct
+    /// response is to start the deterministic rotation.
+    pub(crate) mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
 }
 
 impl DaemonHandler {
@@ -65,6 +69,7 @@ impl DaemonHandler {
                 >,
             >,
         >,
+        mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
     ) -> Self {
         Self {
             subscriptions,
@@ -74,6 +79,7 @@ impl DaemonHandler {
             signing_key,
             transport,
             pending_joins,
+            mek_rotation_tx,
         }
     }
 
@@ -273,15 +279,7 @@ impl InboundHandler for DaemonHandler {
 
         match request {
             InboundCall::CommunityLeave(notif) => {
-                super::community_rpc::handle_leave(
-                    &notif,
-                    &session_arc,
-                    &signing_key_arc,
-                    &mek_cache,
-                    &transport_arc,
-                    &session_path,
-                )
-                .await
+                super::community_rpc::handle_leave(&notif, &session_arc, &self.mek_rotation_tx)
             }
             InboundCall::CommunityGovOp(op) => {
                 super::governance_rpc::handle_op(
@@ -294,6 +292,14 @@ impl InboundHandler for DaemonHandler {
                     &session_path,
                 )
                 .await
+            }
+            InboundCall::CommunityMekTransfer(transfer) => {
+                super::community_rpc::handle_mek_transfer(
+                    &transfer,
+                    &session_arc,
+                    &signing_key_arc,
+                    &mek_cache,
+                )
             }
             InboundCall::Sync(_) | InboundCall::Dm(_) => CallResponse::Ack,
             InboundCall::CallInvite(invite) => {

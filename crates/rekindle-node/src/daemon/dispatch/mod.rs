@@ -135,4 +135,13 @@ pub struct DaemonContext {
     /// cached CRDT `GovernanceState` and open-record tracking. Not
     /// persisted; see `daemon::community_runtime`.
     pub community_runtime: Arc<crate::daemon::community_runtime::CommunityRuntimeMap>,
+    /// Departure-triggered MEK rotations, queued for the worker that
+    /// owns the daemon's `Arc<DaemonContext>`.
+    ///
+    /// A channel rather than a direct call because rotation waits out
+    /// the cascade (tens of seconds) and must not hold an IPC handler
+    /// open, and because a detached task needs `'static` state that a
+    /// `&DaemonContext` handler cannot give it. See
+    /// `daemon::mek_rotation`.
+    pub mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
 }

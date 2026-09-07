@@ -126,8 +126,31 @@ acceptance), `rotate` (rotation entry points), `cache`
 (`ChannelMekCache` trait), `deps` (`MekDistributeDeps` trait composing
 I/O + persistence), `event` (`MekRotationEvent` to UI), `error`.
 
-Parameterised over `MekDistributeDeps` so the src-tauri shell supplies
-concrete AppState / DbPool / AppHandle / Veilid wiring.
+Parameterised over `MekDistributeDeps`, which **both** shells implement:
+src-tauri's `services/mek_adapter.rs` against AppState / DbPool /
+AppHandle, and the daemon's `daemon/mek_rotation/` against
+`DaemonContext`. The daemon adapter delegates identity, Lamport counter,
+membership and the online roster to its `GovernanceRuntimeDeps` adapter
+rather than reading `DaemonContext` twice.
+
+Two host-specific notes. The daemon queues rotations on a channel drained
+by one worker instead of spawning per trigger: rotation sleeps through
+the cascade levels, so it must not run inline, and detaching needs
+`'static` state that a `&DaemonContext` handler cannot supply.
+`voice_recipients` returns empty there — the daemon hosts no voice
+engine, a recorded capability gap rather than a stub.
+
+Delivery is `app_call` carrying a bare Cap'n Proto `CommunityEnvelope`
+(`Caller::call_community_envelope`), deliberately unframed and unsigned
+so both shells read the same bytes. That is safe for this payload alone:
+`unwrap_mek` takes the sender's pseudonym public key as an ECDH input, so
+the sender is authenticated by whether the ciphertext decrypts. The
+transport admits no other unframed variant — see
+`subscriptions/bare_envelope.rs`.
+
+`MekPersist` is implemented on both tracks but **no orchestrator in this
+crate calls `deps.persist()` yet**; the trait is wired at the edges and
+unused in the middle.
 
 ### rekindle-analytics
 

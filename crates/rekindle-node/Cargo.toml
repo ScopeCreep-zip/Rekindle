@@ -24,6 +24,12 @@ rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # boundary. No veilid_core types are named from this crate.
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+# Deterministic-rotator MEK rotation (communities-channels.md). The
+# daemon implements its `MekDistributeDeps` so a departure rotates the
+# key on this track too; before this it only logged the intent.
+rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
+# MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
+rekindle-crypto = { path = "../rekindle-crypto" }
 
 # Async runtime
 tokio = { workspace = true }

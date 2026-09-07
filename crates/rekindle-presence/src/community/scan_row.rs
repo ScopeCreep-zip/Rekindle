@@ -16,7 +16,12 @@ use crate::deps::OnlineMemberSnapshot;
 /// SMPL LOCAL subkeys per segment record (architecture §15.5).
 /// Adapters pump 0..SUBKEYS_PER_SEGMENT through `get_dht_value`
 /// when implementing `scan_segment_raw`.
-pub const SUBKEYS_PER_SEGMENT: u32 = 255;
+///
+/// Re-exported rather than redeclared: this is the same number as the
+/// registry's slot count by construction — one subkey per member slot —
+/// and two names for it is how the two drift. The duplicate-constant
+/// gate is keyed on the name, so it could never have caught this pair.
+pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as SUBKEYS_PER_SEGMENT;
 
 /// Outcome of one row's classification — either accepted (with the
 /// MemberPresence body, hex-pseudonym, and whether it should be

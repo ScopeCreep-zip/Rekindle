@@ -11,10 +11,7 @@ use rekindle_governance_runtime::deps::{
 
 use super::DaemonGovernanceAdapter;
 
-/// Member slots per registry segment — mirrors
-/// `rekindle_protocol::…::member_registry::SLOTS_PER_SEGMENT`, which
-/// this crate cannot reach. Pinned by that crate's `v1_layout_pin`.
-const SLOTS_PER_SEGMENT: u32 = 255;
+use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
 
 impl DaemonGovernanceAdapter<'_> {
     /// Ed25519 identity secret, or `None` while the daemon is locked.
