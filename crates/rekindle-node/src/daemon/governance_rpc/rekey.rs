@@ -5,37 +5,18 @@ use parking_lot::RwLock;
 
 use crate::daemon::community_rpc::get_signing_key;
 
-/// Rekey all channels in a community. Used after ban/leave for forward secrecy.
-pub(super) async fn rekey_all_channels(
-    dht: &rekindle_transport::DhtStore,
-    gov_key: &str,
-    registry_key: &str,
-    members: &[rekindle_transport::payload::dht_types::MemberSummary],
-    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
-    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
-) {
-    let channels = dht
-        .governance()
-        .read_channels(gov_key)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "DHT read failed, using empty");
-            Vec::new()
-        });
-    let channel_ids: Vec<String> = channels.iter().map(|ch| ch.id.clone()).collect();
-    rekey_channels(
-        dht,
-        gov_key,
-        registry_key,
-        &channel_ids,
-        members,
-        signing_key,
-        mek_cache,
-    )
-    .await;
-}
+// `rekey_all_channels` lived here: it rekeyed every channel after a
+// ban, distributing new MEKs through the registry's MEK vault. It was
+// reachable only from the coordinator Ban RPC, which v2.0 removed — the
+// daemon's own IPC ban never called it — so deleting it costs no
+// reachable behaviour, and the vault it wrote is itself being retired.
+//
+// The v2.0 replacement is `rekindle_mek_rotation::rotate_text_mek_for_departure`,
+// which distributes peer-to-peer. The daemon needs a `rekindle-mek-rotation`
+// Deps adapter to call it; until then the governance adapter's
+// `spawn_text_mek_rotation_for_ban` traces the gap rather than pretending
+// to rotate.
 
-/// Rekey specific channels: generate new MEKs, wrap for all members, write vault.
 pub(super) async fn rekey_channels(
     dht: &rekindle_transport::DhtStore,
     gov_key: &str,

@@ -392,30 +392,6 @@ fn spawn_event_consumer(
 /// matching operator community inbox and/or our friend inbox.
 async fn handle_value_changed(daemon_ctx: &Arc<DaemonContext>, record_key: &str) {
     // Check if this is a join inbox for an operator community
-    let governance_key = {
-        let guard = daemon_ctx.session.read();
-        guard.as_ref().and_then(|s| {
-            s.communities
-                .values()
-                .find(|m| {
-                    m.is_operator && !m.join_inbox_key.is_empty() && m.join_inbox_key == *record_key
-                })
-                .map(|m| m.governance_key.clone())
-        })
-    };
-    if let Some(gov_key) = governance_key {
-        tracing::info!(governance_key = %gov_key, "tier 3 poll triggered inbox processing");
-        rekindle_node::daemon::community_rpc::process_inbox(
-            &daemon_ctx.session,
-            &daemon_ctx.signing_key,
-            &daemon_ctx.mek_cache,
-            &daemon_ctx.transport,
-            &daemon_ctx.session_path,
-            &gov_key,
-        )
-        .await;
-    }
-
     // Check if this is our friend inbox
     let friend_inbox_key = {
         let guard = daemon_ctx.session.read();

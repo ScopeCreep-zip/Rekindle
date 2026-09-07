@@ -330,17 +330,6 @@ impl InboundHandler for DaemonHandler {
             sub_mgr.on_value_change(record_key, changed_subkeys, first_value);
         }
 
-        // Check if this is a join inbox for a community we operate.
-        let governance_key = {
-            let guard = self.session.read();
-            guard.as_ref().and_then(|s| {
-                s.communities
-                    .values()
-                    .find(|m| m.is_operator && m.join_inbox_key == record_key)
-                    .map(|m| m.governance_key.clone())
-            })
-        };
-
         // Check if this is our friend inbox.
         let is_friend_inbox = {
             let guard = self.session.read();
@@ -350,25 +339,9 @@ impl InboundHandler for DaemonHandler {
         };
 
         let session = Arc::clone(&self.session);
-        let signing_key = Arc::clone(&self.signing_key);
-        let mek_cache = Arc::clone(&self.mek_cache);
         let transport = Arc::clone(&self.transport);
         let session_path = self.session_path.clone();
         let record_key_owned = record_key.to_string();
-
-        // Process community join inbox
-        if let Some(gov_key) = governance_key {
-            info!(governance_key = %gov_key, "join inbox changed — processing");
-            super::community_rpc::process_inbox(
-                &session,
-                &signing_key,
-                &mek_cache,
-                &transport,
-                &session_path,
-                &gov_key,
-            )
-            .await;
-        }
 
         // Process friend inbox — scan for new requests and persist to session
         if is_friend_inbox {

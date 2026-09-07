@@ -113,99 +113,10 @@ pub async fn governance_op(
     Ok(response)
 }
 
-/// Convenience: send a Kick governance op.
-pub async fn governance_kick(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    target_pseudonym: &str,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::Kick {
-            target_pseudonym: target_pseudonym.into(),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: send a Ban governance op.
-pub async fn governance_ban(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    target_pseudonym: &str,
-    reason: Option<&str>,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::Ban {
-            target_pseudonym: target_pseudonym.into(),
-            reason: reason.map(String::from),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: send an Unban governance op.
-pub async fn governance_unban(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    target_pseudonym: &str,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::Unban {
-            target_pseudonym: target_pseudonym.into(),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: send a Timeout governance op.
-pub async fn governance_timeout(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    target_pseudonym: &str,
-    duration_secs: u64,
-    reason: Option<&str>,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::Timeout {
-            target_pseudonym: target_pseudonym.into(),
-            duration_seconds: duration_secs,
-            reason: reason.map(String::from),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
+// The Kick / Ban / Unban / Timeout senders lived here. They were
+// coordinator RPCs; moderation is now a governance entry written by the
+// moderator and validated by every reader
+// (`rekindle_governance_runtime::moderation`).
 
 /// Convenience: send a CreateChannel governance op.
 pub async fn governance_create_channel(

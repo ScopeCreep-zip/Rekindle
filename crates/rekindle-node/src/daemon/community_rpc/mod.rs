@@ -11,11 +11,8 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 
-mod inbox;
-mod inbox_stages;
 mod leave;
 
-pub use inbox::process_inbox;
 pub(crate) use leave::handle_leave;
 
 /// Maximum time the leave handler may run before returning.

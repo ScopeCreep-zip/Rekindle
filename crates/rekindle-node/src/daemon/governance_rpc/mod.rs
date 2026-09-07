@@ -107,22 +107,8 @@ async fn handle_op_inner(
     // operation explicitly (not `_`) so adding a `GovernanceOp` is a compile
     // error here — exhaustiveness is preserved at this dispatch point.
     match req.operation {
-        GovernanceOp::RegisterChannelRecord { .. }
-        | GovernanceOp::Ban { .. }
-        | GovernanceOp::Kick { .. }
-        | GovernanceOp::Unban { .. }
-        | GovernanceOp::Timeout { .. } => {
-            moderation::handle_op_group_a(
-                req.operation,
-                sender,
-                session,
-                signing_key,
-                mek_cache,
-                transport,
-                session_path,
-                gov_key,
-            )
-            .await
+        GovernanceOp::RegisterChannelRecord { .. } => {
+            moderation::handle_op_group_a(req.operation, session, transport, gov_key).await
         }
         GovernanceOp::CreateChannel { .. }
         | GovernanceOp::DeleteChannel { .. }

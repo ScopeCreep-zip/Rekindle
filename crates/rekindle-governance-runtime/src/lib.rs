@@ -36,6 +36,7 @@ pub mod join_flow;
 pub mod join_gate;
 pub mod join_stages;
 pub mod membership_events;
+pub mod moderation;
 pub mod origin;
 pub mod overflow;
 pub mod roles;

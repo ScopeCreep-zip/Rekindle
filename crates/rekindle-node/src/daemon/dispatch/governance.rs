@@ -214,7 +214,20 @@ pub(crate) async fn handle_role_unassign(
 
 // ── Moderation ──────────────────────────────────────────────────────────
 
-pub(crate) fn handle_kick(
+/// Build a governance adapter over this request's context.
+fn adapter(ctx: &DaemonContext) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
+    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
+}
+
+/// Remove a member without barring return.
+///
+/// Now writes a governance entry via the shared moderation module. It
+/// previously went through `transport::operations::moderation`, which
+/// maintained a **separate** bans/member list on a governance subkey
+/// rather than the CRDT — so a member banned from the daemon was not
+/// banned on the desktop, and vice versa. Two incompatible stores for
+/// one rule.
+pub(crate) async fn handle_kick(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -223,15 +236,13 @@ pub(crate) fn handle_kick(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let _membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::moderation::build_kick_payload(target) {
-        Ok(payload_bytes) => IpcResponse::ok(&serde_json::json!({
-            "kicked": target,
-            "gossip_payload_len": payload_bytes.len(),
-        })),
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
+    }
+    match rekindle_governance_runtime::moderation::kick_member(&adapter(ctx), community, target)
+        .await
+    {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "kicked": target })),
         Err(e) => IpcResponse::error(500, format!("kick failed: {e}")),
     }
 }
@@ -246,27 +257,18 @@ pub(crate) async fn handle_ban(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::moderation::ban_member(
-        &transport,
-        &membership.governance_key,
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
+    }
+    match rekindle_governance_runtime::moderation::ban_member(
+        &adapter(ctx),
+        community,
         target,
         reason,
-        &membership.pseudonym_key,
     )
     .await
     {
-        Ok(payload_bytes) => IpcResponse::ok(&serde_json::json!({
-            "banned": target,
-            "gossip_payload_len": payload_bytes.len(),
-        })),
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "banned": target, "reason": reason })),
         Err(e) => IpcResponse::error(500, format!("ban failed: {e}")),
     }
 }
@@ -280,27 +282,18 @@ pub(crate) async fn handle_unban(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::moderation::unban_member(
-        &transport,
-        &membership.governance_key,
-        target,
-    )
-    .await
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
+    }
+    match rekindle_governance_runtime::moderation::unban_member(&adapter(ctx), community, target)
+        .await
     {
-        Ok(_) => IpcResponse::ok(&serde_json::json!({ "unbanned": target })),
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "unbanned": target })),
         Err(e) => IpcResponse::error(500, format!("unban failed: {e}")),
     }
 }
 
-pub(crate) fn handle_timeout(
+pub(crate) async fn handle_timeout(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -311,25 +304,30 @@ pub(crate) fn handle_timeout(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let _membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::moderation::build_timeout_payload(
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
+    }
+    match rekindle_governance_runtime::moderation::timeout_member(
+        &adapter(ctx),
+        community,
         target,
         duration_seconds,
         reason,
-    ) {
-        Ok(payload_bytes) => IpcResponse::ok(&serde_json::json!({
-            "timed_out": target,
-            "duration_seconds": duration_seconds,
-            "gossip_payload_len": payload_bytes.len(),
-        })),
+    )
+    .await
+    {
+        Ok(()) => IpcResponse::ok(
+            &serde_json::json!({ "timedOut": target, "durationSeconds": duration_seconds }),
+        ),
         Err(e) => IpcResponse::error(500, format!("timeout failed: {e}")),
     }
 }
 
-pub(crate) async fn handle_ban_list(
+/// Current bans, read from merged CRDT state.
+///
+/// The old implementation read a bespoke bans list off a governance
+/// subkey, which no longer receives writes.
+pub(crate) fn handle_ban_list(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -337,26 +335,16 @@ pub(crate) async fn handle_ban_list(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    match rekindle_transport::operations::moderation::list_bans(
-        &transport,
-        &membership.governance_key,
-    )
-    .await
-    {
-        Ok(bans) => IpcResponse::ok(&bans),
-        Err(e) => IpcResponse::error(500, format!("ban list: {e}")),
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
     }
+    let bans: Vec<String> = ctx
+        .community_runtime
+        .governance_state(community)
+        .map(|s| s.bans.iter().map(|p| hex::encode(p.0)).collect())
+        .unwrap_or_default();
+    IpcResponse::ok(&serde_json::json!({ "bans": bans }))
 }
-
-// ── Invites ─────────────────────────────────────────────────────────────
 
 pub(crate) async fn handle_invite_create(
     ctx: &DaemonContext,

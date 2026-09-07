@@ -219,7 +219,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         IpcRequest::Kick {
             community,
             target_pseudonym,
-        } => governance::handle_kick(ctx, state, &community, &target_pseudonym),
+        } => governance::handle_kick(ctx, state, &community, &target_pseudonym).await,
         IpcRequest::Ban {
             community,
             target_pseudonym,
@@ -237,17 +237,18 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
             target_pseudonym,
             duration_seconds,
             reason,
-        } => governance::handle_timeout(
-            ctx,
-            state,
-            &community,
-            &target_pseudonym,
-            duration_seconds,
-            reason.as_deref(),
-        ),
-        IpcRequest::BanList { community } => {
-            governance::handle_ban_list(ctx, state, &community).await
+        } => {
+            governance::handle_timeout(
+                ctx,
+                state,
+                &community,
+                &target_pseudonym,
+                duration_seconds,
+                reason.as_deref(),
+            )
+            .await
         }
+        IpcRequest::BanList { community } => governance::handle_ban_list(ctx, state, &community),
         IpcRequest::InviteCreate {
             community,
             max_uses,

@@ -75,22 +75,14 @@ pub struct GovernanceRequest {
 /// Governance operations submitted by admins/moderators to the community owner's daemon.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GovernanceOp {
+    // Kick / Ban / Unban / Timeout used to be here as coordinator RPCs:
+    // a moderator asked the operator to mutate the member index and a
+    // bespoke bans list. v2.0 writes `BanEntry` / `TimeoutEntry` /
+    // `UnbanEntry` / `RemoveTimeoutEntry` governance entries instead —
+    // one CRDT both tracks merge, rather than two stores that disagreed
+    // about who was banned.
+
     // ── Moderation ──────────────────────────────────────────────
-    Kick {
-        target_pseudonym: String,
-    },
-    Ban {
-        target_pseudonym: String,
-        reason: Option<String>,
-    },
-    Unban {
-        target_pseudonym: String,
-    },
-    Timeout {
-        target_pseudonym: String,
-        duration_seconds: u64,
-        reason: Option<String>,
-    },
 
     // Join approval/rejection used to live here as coordinator RPCs: a
     // member asked the operator to assign them a registry slot. v2.0 has
