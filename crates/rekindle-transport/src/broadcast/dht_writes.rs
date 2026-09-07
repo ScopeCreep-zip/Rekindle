@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 use super::dht;
 use super::dht::channel_log::DhtLog;
 use super::node::TransportNode;
-use crate::error::Result;
+use crate::error::{Result, TransportError};
 
 // ── Record lifecycle ───────────────────────────────────────────────────
 
@@ -298,4 +298,107 @@ pub async fn open_dht_log_read(node: &TransportNode, spine_key: &str) -> Result<
         warn!(spine_key, error = %e, "dht: DhtLog open_read failed");
     }
     result.map_err(Into::into)
+}
+
+// ── String-typed surface for hosts that cannot import veilid_core ─────
+//
+// `docs/architecture/daemon-cli.md` makes it a hard rule that only
+// `rekindle-transport::broadcast/` and `subscriptions/` import
+// `veilid_core`; `rekindle-node` and `rekindle-cli` reach Veilid only
+// through this crate's public API. So the daemon cannot construct a
+// `KeyPair` or name a `RecordKey`, yet it has to drive the same DHT
+// operations as the Tauri host.
+//
+// `GovernanceRuntimeDeps` is built for exactly this: it exchanges every
+// Veilid value as an opaque `String` / `Vec<u8>` ("Schwarzschild
+// boundary — all Veilid types are exchanged as opaque String/Vec<u8>
+// here"). These wrappers do the parsing on this side of the boundary so
+// the daemon adapter can satisfy that trait without a veilid-core
+// dependency. The Tauri host does its own parsing because it already
+// holds a `RoutingContext` directly.
+
+/// Parse a writer keypair in `KeyPair` string form.
+fn parse_writer(s: &str) -> Result<veilid_core::KeyPair> {
+    s.parse::<veilid_core::KeyPair>()
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("invalid writer keypair: {e}"),
+        })
+}
+
+/// [`open_readonly`] / [`open_writable`] behind one string-typed call.
+pub async fn open_str(node: &TransportNode, record_key: &str, writer: Option<&str>) -> Result<()> {
+    match writer {
+        Some(w) => open_writable(node, record_key, parse_writer(w)?).await,
+        None => open_readonly(node, record_key).await,
+    }
+}
+
+/// [`set`] with the writer supplied as a string.
+///
+/// Returns the same compare-and-swap outcome: `Ok(None)` when the write
+/// landed, `Ok(Some(newer))` when it was superseded.
+pub async fn set_str(
+    node: &TransportNode,
+    record_key: &str,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<&str>,
+) -> Result<Option<Vec<u8>>> {
+    let writer = writer.map(parse_writer).transpose()?;
+    set(node, record_key, subkey, data, writer).await
+}
+
+/// [`create_dflt`] returning the owner keypair in string form.
+pub async fn create_dflt_str(
+    node: &TransportNode,
+    subkey_count: u16,
+    owner: Option<&str>,
+) -> Result<(String, Option<String>)> {
+    let owner = owner.map(parse_writer).transpose()?;
+    let (key, keypair) = create_dflt(node, subkey_count, owner).await?;
+    Ok((key, keypair.map(|kp| kp.to_string())))
+}
+
+/// Create the universal v2.0 community SMPL record from raw member
+/// public keys.
+///
+/// Always `o_cnt: 0` — the creation keypair owns no subkeys and is
+/// discarded after genesis (the Schwarzschild principle). The returned
+/// owner keypair is therefore `None` in practice; it is passed through
+/// rather than dropped so the caller sees what veilid actually reported.
+pub async fn create_smpl_str(
+    node: &TransportNode,
+    member_pubkeys: &[[u8; 32]],
+) -> Result<(String, Option<String>)> {
+    let members: Vec<veilid_core::DHTSchemaSMPLMember> = member_pubkeys
+        .iter()
+        .map(|pk| veilid_core::DHTSchemaSMPLMember {
+            m_key: veilid_core::BareMemberId::new(pk),
+            m_cnt: 1,
+        })
+        .collect();
+    let (key, keypair) = create_smpl(node, 0, members).await?;
+    Ok((key, keypair.map(|kp| kp.to_string())))
+}
+
+/// Derive a member slot's writer keypair from the shared slot seed,
+/// returned in string form.
+///
+/// Wraps `rekindle_protocol`'s derivation so the daemon does not need to
+/// depend on that crate purely to obtain a Veilid keypair it cannot name.
+pub fn derive_slot_keypair_str(seed: &[u8; 32], slot: u32) -> Result<String> {
+    rekindle_protocol::dht::community::member_registry::derive_slot_veilid_keypair(seed, slot)
+        .map(|kp| kp.to_string())
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("derive slot keypair: {e}"),
+        })
+}
+
+/// Convert an Ed25519 `(public, secret)` pair into writer-keypair string
+/// form, for `GovernanceRuntimeDeps::format_writer_keypair`.
+pub fn format_keypair_str(ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
+    let bare_pub = veilid_core::BarePublicKey::new(&ed_public);
+    let bare_secret = veilid_core::BareSecretKey::new(&ed_secret);
+    let pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
+    veilid_core::KeyPair::new_from_parts(pubkey, bare_secret).to_string()
 }

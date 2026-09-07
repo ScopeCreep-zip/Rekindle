@@ -17,6 +17,7 @@ pub mod community_runtime;
 pub mod dispatch;
 pub mod event_router;
 pub mod friend_inbox;
+pub mod governance_adapter;
 pub mod governance_rpc;
 pub mod handler;
 pub(crate) mod mek_wrap;

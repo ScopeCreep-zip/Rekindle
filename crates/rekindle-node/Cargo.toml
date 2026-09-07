@@ -16,6 +16,13 @@ rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 # Tier-6 CRDT state type for the daemon's cached governance merge.
 rekindle-governance = { path = "../rekindle-governance" }
+# The v2.0 governance lifecycle (origin, bootstrap, join, segments,
+# apply). This crate implements its `GovernanceRuntimeDeps` so the
+# daemon runs the same flat-SMPL governance as the Tauri host.
+rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
+# CommunityEnvelope only — the gossip payload type crossing the Deps
+# boundary. No veilid_core types are named from this crate.
+rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 
 # Async runtime
@@ -24,6 +31,7 @@ futures = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
+async-trait = "0.1"
 serde_json = { workspace = true }
 postcard = { version = "1", features = ["use-std"] }
 toml = "0.8"
