@@ -21,6 +21,8 @@ use rekindle_protocol::dht::community::envelope::{
 };
 use rekindle_types::id::PseudonymKey;
 
+use crate::pseudonym_hex::pseudonym_from_hex;
+
 use crate::deps::{MekDistributeDeps, RotationRecipient};
 use crate::election::cascade_delay;
 use crate::error::MekRotationError;
@@ -231,10 +233,4 @@ fn inspect_reply(
             "MEK transfer reply could not be decoded as community envelope"
         ),
     }
-}
-
-fn pseudonym_from_hex(hex_str: &str) -> Option<PseudonymKey> {
-    let bytes = hex::decode(hex_str).ok()?;
-    let array: [u8; 32] = bytes.try_into().ok()?;
-    Some(PseudonymKey(array))
 }

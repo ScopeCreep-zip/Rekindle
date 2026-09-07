@@ -13,7 +13,6 @@
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
 
 use crate::deps::MekDistributeDeps;
 use crate::distribute::distribute_mek;
@@ -21,15 +20,7 @@ use crate::election::{cascade_candidates, MAX_CASCADES};
 use crate::error::MekRotationError;
 use crate::{wait_for_rotation_slot, RotationRecipient};
 
-fn pseudonym_from_hex(hex: &str) -> Option<PseudonymKey> {
-    let bytes = hex::decode(hex).ok()?;
-    let arr: [u8; 32] = bytes.try_into().ok()?;
-    Some(PseudonymKey(arr))
-}
-
-fn pseudonym_hex(pseudonym: &PseudonymKey) -> String {
-    hex::encode(pseudonym.0)
-}
+use crate::pseudonym_hex::{pseudonym_from_hex, pseudonym_hex};
 
 pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     deps: &D,

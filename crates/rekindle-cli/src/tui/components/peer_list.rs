@@ -17,6 +17,7 @@ use ratatui::Frame;
 use super::Component;
 use crate::helpers;
 use crate::tui::action::Action;
+use crate::tui::presence_fmt::{capitalize_status, presence_indicator, presence_rank};
 
 /// A member entry for display.
 #[derive(Debug, Clone)]
@@ -159,71 +160,6 @@ impl Component for PeerList {
 
     fn set_focused(&mut self, focused: bool) {
         self.is_focused = focused;
-    }
-}
-
-/// Presence indicator: returns (glyph, text_label).
-/// Always provides both — color is applied by the caller via theme tokens.
-fn presence_indicator(status: &str, unicode: bool) -> (&'static str, &'static str) {
-    match status {
-        "online" => {
-            if unicode {
-                ("●", "[ONLINE]")
-            } else {
-                ("o", "[ONLINE]")
-            }
-        }
-        "away" => {
-            if unicode {
-                ("◐", "[AWAY]")
-            } else {
-                ("~", "[AWAY]")
-            }
-        }
-        "busy" => {
-            if unicode {
-                ("●", "[BUSY]")
-            } else {
-                ("-", "[BUSY]")
-            }
-        }
-        "offline" => {
-            if unicode {
-                ("○", "[OFFLINE]")
-            } else {
-                (".", "[OFFLINE]")
-            }
-        }
-        _ => {
-            if unicode {
-                ("◌", "[?]")
-            } else {
-                ("?", "[?]")
-            }
-        }
-    }
-}
-
-/// Sort rank for presence status — lower = higher priority.
-fn presence_rank(status: &str) -> u8 {
-    match status {
-        "online" => 0,
-        "away" => 1,
-        "busy" => 2,
-        "offline" => 3,
-        _ => 4,
-    }
-}
-
-/// Capitalize the first letter of a status string.
-fn capitalize_status(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => {
-            let upper: String = first.to_uppercase().collect();
-            format!("{upper}{}", chars.as_str())
-        }
     }
 }
 

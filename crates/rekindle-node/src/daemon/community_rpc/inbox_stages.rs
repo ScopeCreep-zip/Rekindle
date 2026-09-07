@@ -79,20 +79,7 @@ pub(super) async fn process_inbox_leaves(
             + 1;
         let new_mek = rekindle_transport::crypto::mek::Mek::generate(gen);
         let mek_wire = new_mek.to_wire_bytes();
-        let copies = members
-            .iter()
-            .filter_map(|m| {
-                let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
-                rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire)
-                    .ok()
-                    .map(
-                        |wrapped| rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                            target_pseudonym: m.pseudonym_key.clone(),
-                            encrypted_mek: wrapped,
-                        },
-                    )
-            })
-            .collect();
+        let copies = crate::daemon::mek_wrap::wrap_for_members(&ps, members, &mek_wire);
         new_vault.push(rekindle_transport::payload::dht_types::MekVaultEntry {
             channel_id: channel.id.clone(),
             generation: gen,

@@ -28,6 +28,9 @@ use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
+use crate::tui::presence_fmt::{
+    capitalize_status as capitalize_first, presence_indicator, presence_rank,
+};
 use crate::tui::theme::ThemeManager;
 
 /// Friend list view state.
@@ -264,36 +267,5 @@ impl View for FriendListView {
 
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
-    }
-}
-
-fn presence_indicator(status: &str, unicode: bool) -> (&'static str, &'static str) {
-    match status {
-        "online" => (if unicode { "●" } else { "o" }, "[ONLINE]"),
-        "away" => (if unicode { "◐" } else { "~" }, "[AWAY]"),
-        "busy" => (if unicode { "●" } else { "-" }, "[BUSY]"),
-        "offline" => (if unicode { "○" } else { "." }, "[OFFLINE]"),
-        _ => (if unicode { "◌" } else { "?" }, "[?]"),
-    }
-}
-
-fn presence_rank(status: &str) -> u8 {
-    match status {
-        "online" => 0,
-        "away" => 1,
-        "busy" => 2,
-        "offline" => 3,
-        _ => 4,
-    }
-}
-
-fn capitalize_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => {
-            let upper: String = first.to_uppercase().collect();
-            format!("{upper}{}", chars.as_str())
-        }
     }
 }

@@ -1,21 +1,6 @@
 use super::*;
 
-fn test_shape(
-    stream_id: [u8; STREAM_ID_LEN],
-    frame_seq: u32,
-    keyframe: bool,
-    codec: Codec,
-    timestamp: u32,
-) -> FrameShape {
-    FrameShape {
-        stream_id,
-        frame_seq,
-        keyframe,
-        codec,
-        timestamp,
-        mek_generation: 0,
-    }
-}
+use crate::test_mock::test_shape;
 
 #[test]
 fn empty_frame_rejected() {

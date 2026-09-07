@@ -1,24 +1,8 @@
 use super::*;
 
-use crate::fragment::FrameShape;
 use crate::fragment::{fragment_frame, fragment_frame_with_fec, FRAGMENT_PAYLOAD_LIMIT};
 
-fn test_shape(
-    stream_id: [u8; STREAM_ID_LEN],
-    frame_seq: u32,
-    keyframe: bool,
-    codec: Codec,
-    timestamp: u32,
-) -> FrameShape {
-    FrameShape {
-        stream_id,
-        frame_seq,
-        keyframe,
-        codec,
-        timestamp,
-        mek_generation: 0,
-    }
-}
+use crate::test_mock::test_shape;
 
 fn fragmented(frame_seq: u32, payload: &[u8], keyframe: bool) -> Vec<VideoFragment> {
     fragment_frame(

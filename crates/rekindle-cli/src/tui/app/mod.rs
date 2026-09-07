@@ -17,6 +17,10 @@ mod events;
 mod reducer;
 mod render;
 
+/// Centre a rect inside another — shared with the overlay components,
+/// which each carried a byte-identical copy.
+pub(crate) use render::centered_rect;
+
 use std::sync::Arc;
 
 use tokio::sync::mpsc;

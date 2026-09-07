@@ -27,7 +27,7 @@ const SYNC_POLL_SUBKEYS: &[u32] = &[2, 4, 6];
 /// references it explicitly; the bytes aren't processed (Signal
 /// sessions are established via the friend-accept flow, not from
 /// DHT prekey bundles during sync).
-const PREKEY_BUNDLE_SUBKEY: u32 = 5;
+const PREKEY_BUNDLE_SUBKEY: u32 = rekindle_types::dht_layout::profile::PREKEY_BUNDLE;
 
 /// Run a single friend-sync tick: iterate every friend with a DHT
 /// record, register the DHT key mapping, start a watch if one

@@ -36,27 +36,15 @@ use rekindle_voice::jitter::JitterBuffer;
 use rekindle_voice::mixer::AudioMixer;
 use rekindle_voice::transport::VoicePacket;
 
-const SAMPLE_RATE: u32 = 48_000;
+#[path = "../testsupport/synth.rs"]
+mod synth;
+use synth::synth_frame;
+
+use rekindle_voice::SAMPLE_RATE_HZ as SAMPLE_RATE;
 const CHANNELS: u16 = 1;
 /// 20ms frame at 48kHz mono = 960 samples (matches the production
 /// configuration in `voice_config_for_group_size`).
-const FRAME_SAMPLES: usize = 960;
-
-/// Generate a 20ms PCM frame of synthetic speech-like content (a
-/// 440 Hz sine wave). `i ≤ 960` and `SAMPLE_RATE = 48_000` both fit in
-/// `u16`, which converts to `f32` losslessly via `f32::from`, so no
-/// precision-loss cast is needed.
-fn synth_frame() -> Vec<f32> {
-    let two_pi_freq = 2.0 * std::f32::consts::PI * 440.0;
-    let sample_rate = f32::from(u16::try_from(SAMPLE_RATE).unwrap_or(u16::MAX));
-    let inv_sample_rate = 1.0_f32 / sample_rate;
-    (0..FRAME_SAMPLES)
-        .map(|i| {
-            let i = f32::from(u16::try_from(i).unwrap_or(u16::MAX));
-            (two_pi_freq * i * inv_sample_rate).sin() * 0.5
-        })
-        .collect()
-}
+use rekindle_voice::FRAME_SAMPLES_20MS as FRAME_SAMPLES;
 
 fn bench_opus_encode_20ms(c: &mut Criterion) {
     let mut codec = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");

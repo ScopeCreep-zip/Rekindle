@@ -5,6 +5,23 @@
 // async future.
 #![recursion_limit = "512"]
 
+/// Audio sample rate for the whole voice pipeline, in Hz.
+///
+/// Opus is defined at 48 kHz and every stage — capture, encode,
+/// jitter buffer, mix, playback — runs at this rate. It was written as
+/// a bare `48000` in seven places across this crate plus once each in
+/// the latency test and the latency bench, so "what rate does voice
+/// run at?" had nine answers that merely happened to agree.
+pub const SAMPLE_RATE_HZ: u32 = 48_000;
+
+/// Samples in one 20 ms frame at [`SAMPLE_RATE_HZ`], mono.
+///
+/// 20 ms is the Opus VoIP frame size the pipeline is built around.
+pub const FRAME_SAMPLES_20MS: usize = 960;
+
+/// Channel count for the voice pipeline. Mono throughout.
+pub const CHANNELS: u16 = 1;
+
 pub mod audio_processing;
 pub(crate) mod audio_thread;
 pub mod capture;
@@ -100,9 +117,9 @@ pub fn voice_config_for_group_size(n: usize) -> VoiceConfig {
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
-            sample_rate: 48000,
-            channels: 1,
-            frame_size: 960, // 20ms at 48kHz
+            sample_rate: SAMPLE_RATE_HZ,
+            channels: CHANNELS,
+            frame_size: FRAME_SAMPLES_20MS,
             // 40ms jitter buffer matches the industry VoIP defaults
             // (Mumble 20–50ms, Discord ~40ms, WebRTC ~50ms). The buffer
             // depth is independent of routing: voice rides a 3-hop

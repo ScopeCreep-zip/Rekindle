@@ -62,9 +62,9 @@ pub async fn run(params: McuParams) {
 
 impl McuLoop {
     fn new(params: McuParams) -> Option<Self> {
-        let sample_rate: u32 = 48000;
-        let channels: u16 = 1;
-        let frame_size: usize = 960;
+        let sample_rate: u32 = crate::SAMPLE_RATE_HZ;
+        let channels: u16 = crate::CHANNELS;
+        let frame_size: usize = crate::FRAME_SAMPLES_20MS;
 
         let encoder = match OpusCodec::new(sample_rate, channels, frame_size) {
             Ok(c) => c,

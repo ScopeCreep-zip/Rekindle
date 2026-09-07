@@ -49,8 +49,8 @@ pub struct AudioProcessor {
     is_speaking: bool,
 }
 
-const SAMPLE_RATE: usize = 48000;
-const CHANNELS: usize = 1;
+const SAMPLE_RATE: usize = crate::SAMPLE_RATE_HZ as usize;
+const CHANNELS: usize = crate::CHANNELS as usize;
 
 impl AudioProcessor {
     /// Create a new audio processor.

@@ -13,6 +13,7 @@ pub mod event;
 pub mod focus;
 pub mod keybinds;
 pub mod navigator;
+pub mod presence_fmt;
 pub mod terminal;
 pub mod theme;
 

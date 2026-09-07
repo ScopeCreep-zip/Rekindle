@@ -64,20 +64,8 @@ pub(super) async fn rekey_channels(
         let mek_wire = new_mek.to_wire_bytes();
 
         // Wrap for each remaining member
-        let copies: Vec<rekindle_transport::payload::dht_types::EncryptedMekCopy> = members
-            .iter()
-            .filter_map(|m| {
-                let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
-                rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire)
-                    .ok()
-                    .map(
-                        |wrapped| rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                            target_pseudonym: m.pseudonym_key.clone(),
-                            encrypted_mek: wrapped,
-                        },
-                    )
-            })
-            .collect();
+        let copies: Vec<rekindle_transport::payload::dht_types::EncryptedMekCopy> =
+            crate::daemon::mek_wrap::wrap_for_members(&ps, members, &mek_wire);
 
         new_vault_entries.push(rekindle_transport::payload::dht_types::MekVaultEntry {
             channel_id: channel_id.clone(),

@@ -32,9 +32,13 @@ use rekindle_voice::jitter::JitterBuffer;
 use rekindle_voice::mixer::AudioMixer;
 use rekindle_voice::transport::VoicePacket;
 
-const SAMPLE_RATE: u32 = 48_000;
+#[path = "../testsupport/synth.rs"]
+mod synth;
+use synth::synth_frame;
+
+use rekindle_voice::SAMPLE_RATE_HZ as SAMPLE_RATE;
 const CHANNELS: u16 = 1;
-const FRAME_SAMPLES: usize = 960;
+use rekindle_voice::FRAME_SAMPLES_20MS as FRAME_SAMPLES;
 
 /// Number of iterations per stage. 1000 keeps the test run fast (~1s
 /// total) while giving the P95 estimate enough samples to stabilise.
@@ -179,26 +183,4 @@ fn measure_pipeline_compute_p95() -> Duration {
     // P95 = 95th percentile. Integer arithmetic so no float precision
     // concerns at scale.
     samples[ITERATIONS * 95 / 100]
-}
-
-/// Generate a 20ms PCM frame of synthetic 440 Hz sine. Real speech has
-/// wildly varying spectral energy per frame; a sine is conservative —
-/// it gives Opus a stable target it can encode at low cost. Real-world
-/// latency is bounded by the codec's algorithmic delay (constant
-/// ~6.5ms at 48kHz VoIP), not by per-frame compute, so the synthetic
-/// source is fair for budget measurement.
-///
-/// `i ≤ 960` and `SAMPLE_RATE = 48_000` both fit in `u16`, which
-/// converts to `f32` losslessly via `f32::from`, so no precision-loss
-/// cast is needed.
-fn synth_frame() -> Vec<f32> {
-    let two_pi_freq = 2.0 * std::f32::consts::PI * 440.0;
-    let sample_rate = f32::from(u16::try_from(SAMPLE_RATE).unwrap_or(u16::MAX));
-    let inv_sample_rate = 1.0_f32 / sample_rate;
-    (0..FRAME_SAMPLES)
-        .map(|i| {
-            let i = f32::from(u16::try_from(i).unwrap_or(u16::MAX));
-            (two_pi_freq * i * inv_sample_rate).sin() * 0.5
-        })
-        .collect()
 }

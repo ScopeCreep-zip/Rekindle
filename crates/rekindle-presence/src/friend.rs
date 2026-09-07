@@ -17,11 +17,20 @@ pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 150 * 1000;
 
 /// Profile DHT subkey carrying the 1-byte status (legacy) or 9-byte
 /// `[status, timestamp_be]` payload.
-pub const PROFILE_STATUS_SUBKEY: u32 = 2;
+pub const PROFILE_STATUS_SUBKEY: u32 = rekindle_types::dht_layout::profile::STATUS;
 
 /// Subkeys we subscribe to on a friend's profile DHT record: status
 /// + game-info + route-blob.
-pub const FRIEND_WATCH_SUBKEYS: &[u32] = &[2, 4, 6];
+///
+/// These were written as a bare `&[2, 4, 6]`. Naming them means a
+/// renumbering of the profile record moves this watch set with it —
+/// the indices moved once already when the friend-inbox pair was
+/// relocated to make room for the Strand Relay pool.
+pub const FRIEND_WATCH_SUBKEYS: &[u32] = &[
+    rekindle_types::dht_layout::profile::STATUS,
+    rekindle_types::dht_layout::profile::GAME_INFO,
+    rekindle_types::dht_layout::profile::ROUTE_BLOB,
+];
 
 /// Parse the status byte from a payload. Accepts both the legacy
 /// 1-byte format `[status]` and the new 9-byte format

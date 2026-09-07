@@ -30,6 +30,7 @@ pub mod distribute;
 pub mod election;
 pub mod error;
 pub mod event;
+pub(crate) mod pseudonym_hex;
 pub mod receive;
 pub mod rotate;
 

@@ -107,3 +107,26 @@ impl VideoDeps for MockDeps {
         self.calls.lock().events.push(event);
     }
 }
+
+/// Build a `FrameShape` for tests, with `mek_generation: 0`.
+///
+/// `fragment/tests.rs` and `reassembler/tests.rs` each carried a
+/// byte-identical copy of this — a duplicate introduced when those two
+/// modules were split into sibling test files. One copy, in the module
+/// that already exists to hold crate-wide test fixtures.
+pub(crate) fn test_shape(
+    stream_id: [u8; crate::fragment::STREAM_ID_LEN],
+    frame_seq: u32,
+    keyframe: bool,
+    codec: rekindle_types::video::Codec,
+    timestamp: u32,
+) -> crate::fragment::FrameShape {
+    crate::fragment::FrameShape {
+        stream_id,
+        frame_seq,
+        keyframe,
+        codec,
+        timestamp,
+        mek_generation: 0,
+    }
+}

@@ -102,9 +102,9 @@ impl VoiceSendLoop {
             return None;
         };
 
-        let sample_rate: u32 = 48000;
-        let channels: u16 = 1;
-        let frame_size: usize = 960; // 20ms at 48kHz
+        let sample_rate: u32 = crate::SAMPLE_RATE_HZ;
+        let channels: u16 = crate::CHANNELS;
+        let frame_size: usize = crate::FRAME_SAMPLES_20MS;
 
         let codec = match OpusCodec::new(sample_rate, channels, frame_size) {
             Ok(c) => c,
