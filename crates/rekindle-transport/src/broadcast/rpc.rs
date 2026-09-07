@@ -475,52 +475,6 @@ pub async fn governance_register_channel_record(
     .await
 }
 
-/// Convenience: approve a join request via governance RPC.
-pub async fn governance_approve_join(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    target_pseudonym: &str,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::ApproveJoin {
-            target_pseudonym: target_pseudonym.into(),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: reject a join request via governance RPC.
-pub async fn governance_reject_join(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    target_pseudonym: &str,
-    reason: &str,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::RejectJoin {
-            target_pseudonym: target_pseudonym.into(),
-            reason: reason.into(),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
 // ── Sync ───────────────────────────────────────────────────────────────
 
 /// Send a sync request to an archiver node.

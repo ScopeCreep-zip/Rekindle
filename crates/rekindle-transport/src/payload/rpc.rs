@@ -92,14 +92,11 @@ pub enum GovernanceOp {
         reason: Option<String>,
     },
 
-    // ── Join queue management ───────────────────────────────────
-    ApproveJoin {
-        target_pseudonym: String,
-    },
-    RejectJoin {
-        target_pseudonym: String,
-        reason: String,
-    },
+    // Join approval/rejection used to live here as coordinator RPCs: a
+    // member asked the operator to assign them a registry slot. v2.0 has
+    // no coordinator — the approver writes a `MemberApproved` /
+    // `MemberRejected` governance entry and the joiner claims its own
+    // slot — so there is nothing to request.
 
     // ── Channel management ──────────────────────────────────────
     CreateChannel {

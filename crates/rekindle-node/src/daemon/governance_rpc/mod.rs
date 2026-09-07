@@ -124,20 +124,10 @@ async fn handle_op_inner(
             )
             .await
         }
-        GovernanceOp::ApproveJoin { .. }
-        | GovernanceOp::RejectJoin { .. }
-        | GovernanceOp::CreateChannel { .. }
+        GovernanceOp::CreateChannel { .. }
         | GovernanceOp::DeleteChannel { .. }
         | GovernanceOp::UpdateChannel { .. } => {
-            channels::handle_op_group_b(
-                req.operation,
-                session,
-                signing_key,
-                mek_cache,
-                transport,
-                gov_key,
-            )
-            .await
+            channels::handle_op_group_b(req.operation, session, transport, gov_key).await
         }
         GovernanceOp::CreateRole { .. }
         | GovernanceOp::UpdateRole { .. }
