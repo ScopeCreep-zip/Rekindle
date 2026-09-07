@@ -35,7 +35,9 @@ impl<'a> MailboxOps<'a> {
 
     /// Update our route blob in the mailbox.
     pub async fn update_route(&self, key: &str, route_blob: &[u8]) -> Result<()> {
-        record::set(self.rc, key, 0, route_blob.to_vec(), None).await
+        record::set(self.rc, key, 0, route_blob.to_vec(), None)
+            .await
+            .map(|_| ())
     }
 
     /// Read a peer's route blob from their mailbox.
@@ -60,7 +62,9 @@ impl<'a> MailboxOps<'a> {
 
     /// Update the community mailbox with a fresh route blob.
     pub async fn update_community_route(&self, mailbox_key: &str, route_blob: &[u8]) -> Result<()> {
-        record::set(self.rc, mailbox_key, 0, route_blob.to_vec(), None).await
+        record::set(self.rc, mailbox_key, 0, route_blob.to_vec(), None)
+            .await
+            .map(|_| ())
     }
 
     /// Read the community route blob (for joiners sending RPC).

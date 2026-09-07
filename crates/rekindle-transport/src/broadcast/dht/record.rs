@@ -189,7 +189,7 @@ pub async fn set(
     subkey: u32,
     data: Vec<u8>,
     writer: Option<KeyPair>,
-) -> Result<()> {
+) -> Result<Option<Vec<u8>>> {
     let rk = parse_key(key)?;
 
     if data.len() > 32_768 {
@@ -205,13 +205,23 @@ pub async fn set(
         ..Default::default()
     });
 
-    rc.set_dht_value(rk, subkey, data, options)
+    let outcome = rc
+        .set_dht_value(rk, subkey, data, options)
         .await
         .map_err(|e| TransportError::DhtError {
             reason: format!("set: {e}"),
         })?;
 
-    Ok(())
+    if outcome.is_some() {
+        // Veilid returns the newer value when our write lost to one
+        // already on the network. This used to be discarded with `?;`,
+        // which made every lost write look like a success — including
+        // the SMPL slot claim, where two joiners racing for one subkey
+        // would both believe they owned it. Surfaced so callers that
+        // care (compare-and-swap paths) can retry.
+        tracing::debug!(key, subkey, "dht: set superseded by a newer network value");
+    }
+    Ok(outcome.map(|v| v.data().to_vec()))
 }
 
 /// Watch specific subkeys for changes.
@@ -230,20 +240,38 @@ pub async fn watch(rc: &RoutingContext, key: &str, subkeys: &[u32]) -> Result<bo
 
 /// Inspect a record to get sequence numbers without fetching data.
 ///
-/// Returns a vec of `(subkey, local_seq, network_seq)` for changed subkeys.
+/// `scope` selects what the report reflects. `Local` answers from the
+/// node's own cache with no network traffic; `UpdateGet` consults the
+/// network and is what a slot claim must use before deciding a subkey
+/// is free. This used to hardcode `UpdateGet`, so a caller that only
+/// wanted the cached view still paid a full network round trip per
+/// record — and no caller could ask for the cheap one.
+pub async fn inspect_with_scope(
+    rc: &RoutingContext,
+    key: &str,
+    subkeys: Option<&[u32]>,
+    scope: veilid_core::DHTReportScope,
+) -> Result<veilid_core::DHTRecordReport> {
+    let rk = parse_key(key)?;
+    let range = subkeys.map(|s| s.iter().copied().collect::<ValueSubkeyRangeSet>());
+
+    rc.inspect_dht_record(rk, range, scope)
+        .await
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("inspect: {e}"),
+        })
+}
+
+/// Network-authoritative inspect (`DHTReportScope::UpdateGet`).
+///
+/// The historical default, kept so existing callers keep their
+/// semantics unchanged.
 pub async fn inspect(
     rc: &RoutingContext,
     key: &str,
     subkeys: Option<&[u32]>,
 ) -> Result<veilid_core::DHTRecordReport> {
-    let rk = parse_key(key)?;
-    let range = subkeys.map(|s| s.iter().copied().collect::<ValueSubkeyRangeSet>());
-
-    rc.inspect_dht_record(rk, range, veilid_core::DHTReportScope::UpdateGet)
-        .await
-        .map_err(|e| TransportError::DhtError {
-            reason: format!("inspect: {e}"),
-        })
+    inspect_with_scope(rc, key, subkeys, veilid_core::DHTReportScope::UpdateGet).await
 }
 
 /// Try to open an existing record writable, falling back to creating a new one.

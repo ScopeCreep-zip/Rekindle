@@ -439,7 +439,9 @@ async fn read_append_write(
     let bytes = serde_json::to_vec(&entries).map_err(|e| TransportError::SerializationFailed {
         reason: e.to_string(),
     })?;
-    crate::broadcast::dht_writes::set(node, inbox_key, subkey, bytes, None).await
+    crate::broadcast::dht_writes::set(node, inbox_key, subkey, bytes, None)
+        .await
+        .map(|_| ())
 }
 
 /// Verify our entry is present in the subkey after writing.

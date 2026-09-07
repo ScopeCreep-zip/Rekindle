@@ -58,7 +58,7 @@ async fn write_json_subkey<T: serde::Serialize>(
     let bytes = serde_json::to_vec(value).map_err(|e| TransportError::SerializationFailed {
         reason: format!("{label}: {e}"),
     })?;
-    record::set(rc, key, subkey, bytes, None).await
+    record::set(rc, key, subkey, bytes, None).await.map(|_| ())
 }
 
 /// Operations on a community governance manifest.

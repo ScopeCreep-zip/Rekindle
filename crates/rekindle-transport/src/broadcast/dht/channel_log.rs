@@ -57,7 +57,9 @@ impl<'a> ChannelLogOps<'a> {
             serde_json::to_vec(message).map_err(|e| TransportError::SerializationFailed {
                 reason: format!("channel message: {e}"),
             })?;
-        record::set(self.rc, key, slot_index, bytes, Some(writer)).await
+        record::set(self.rc, key, slot_index, bytes, Some(writer))
+            .await
+            .map(|_| ())
     }
 
     /// Open a channel record for reading.

@@ -120,13 +120,17 @@ pub async fn get(
 }
 
 /// Write raw bytes to a specific subkey.
+///
+/// Returns `Ok(None)` when the write landed, or `Ok(Some(newer))` when
+/// the network already held a newer value and ours was superseded —
+/// the compare-and-swap signal the SMPL slot claim needs.
 pub async fn set(
     node: &TransportNode,
     record_key: &str,
     subkey: u32,
     data: Vec<u8>,
     writer: Option<veilid_core::KeyPair>,
-) -> Result<()> {
+) -> Result<Option<Vec<u8>>> {
     let data_len = data.len();
     debug!(
         record_key,
@@ -138,7 +142,13 @@ pub async fn set(
     let dht = node.dht()?;
     let result = dht::record::set(dht.routing_context(), record_key, subkey, data, writer).await;
     match &result {
-        Ok(()) => info!(record_key, subkey, bytes = data_len, "dht: set complete"),
+        Ok(None) => info!(record_key, subkey, bytes = data_len, "dht: set complete"),
+        Ok(Some(_)) => info!(
+            record_key,
+            subkey,
+            bytes = data_len,
+            "dht: set superseded by newer network value"
+        ),
         Err(e) => warn!(record_key, subkey, bytes = data_len, error = %e, "dht: set failed"),
     }
     result
@@ -178,6 +188,76 @@ pub async fn inspect(
         warn!(record_key, error = %e, "dht: inspect failed");
     }
     result
+}
+
+/// Per-subkey sequence numbers from this node's **local** cache.
+///
+/// No network traffic. `ValueSeqNum::NONE` (an unwritten subkey) is
+/// reported as `0` — callers that must tell "absent" from "written at
+/// seq 0" want [`inspect_present_subkeys`] instead.
+pub async fn inspect_local_seqs(node: &TransportNode, record_key: &str) -> Result<Vec<u64>> {
+    let dht = node.dht()?;
+    let report = dht::record::inspect_with_scope(
+        dht.routing_context(),
+        record_key,
+        None,
+        veilid_core::DHTReportScope::Local,
+    )
+    .await?;
+    // `Local` scope populates `local_seqs`; `network_seqs` is empty.
+    Ok(seqs_as_u64(report.local_seqs()))
+}
+
+/// Per-subkey sequence numbers confirmed against the **network**.
+///
+/// What a slot claim must use: the local cache can show a subkey free
+/// when another member has already taken it.
+pub async fn inspect_network_seqs(node: &TransportNode, record_key: &str) -> Result<Vec<u64>> {
+    let dht = node.dht()?;
+    let report = dht::record::inspect_with_scope(
+        dht.routing_context(),
+        record_key,
+        None,
+        veilid_core::DHTReportScope::UpdateGet,
+    )
+    .await?;
+    Ok(seqs_as_u64(report.network_seqs()))
+}
+
+/// Indices of subkeys that currently hold a value, network-confirmed.
+///
+/// Preserves the "no value" vs "value at seq 0" distinction that
+/// [`inspect_network_seqs`] flattens, so a cold join can fetch only the
+/// occupied slots instead of 255 serial round trips.
+pub async fn inspect_present_subkeys(node: &TransportNode, record_key: &str) -> Result<Vec<u32>> {
+    let dht = node.dht()?;
+    let report = dht::record::inspect_with_scope(
+        dht.routing_context(),
+        record_key,
+        None,
+        veilid_core::DHTReportScope::UpdateGet,
+    )
+    .await?;
+    Ok(report
+        .network_seqs()
+        .iter()
+        .enumerate()
+        .filter(|(_, seq)| seq.is_some())
+        .map(|(i, _)| u32::try_from(i).unwrap_or(u32::MAX))
+        .collect())
+}
+
+/// Flatten sequence numbers to a dense `Vec<u64>`, mapping the
+/// never-written sentinel (`ValueSeqNum::NONE`, internally `None`) to 0.
+///
+/// `ValueSeqNum` is a newtype over `Option<u32>`, so this goes through
+/// `to_option()` rather than a numeric conversion — and the flattening
+/// is why [`inspect_present_subkeys`] exists for callers that need to
+/// tell "never written" from "written at seq 0".
+fn seqs_as_u64(seqs: &[veilid_core::ValueSeqNum]) -> Vec<u64> {
+    seqs.iter()
+        .map(|seq| seq.to_option().map_or(0, u64::from))
+        .collect()
 }
 
 // ── DhtLog (append-only log built on DHT records) ──────────────────────

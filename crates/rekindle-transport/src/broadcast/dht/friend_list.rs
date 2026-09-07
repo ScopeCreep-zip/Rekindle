@@ -107,6 +107,6 @@ impl<'a> FriendListOps<'a> {
                 reason: e.to_string(),
             }
         })?;
-        record::set(self.rc, key, 0, data, None).await
+        record::set(self.rc, key, 0, data, None).await.map(|_| ())
     }
 }

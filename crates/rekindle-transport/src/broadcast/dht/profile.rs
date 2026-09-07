@@ -131,7 +131,9 @@ impl<'a> ProfileOps<'a> {
 
     /// Update a specific subkey.
     pub async fn set_subkey(&self, key: &str, subkey: u32, data: Vec<u8>) -> Result<()> {
-        record::set(self.rc, key, subkey, data, None).await
+        record::set(self.rc, key, subkey, data, None)
+            .await
+            .map(|_| ())
     }
 
     /// Read a specific subkey.

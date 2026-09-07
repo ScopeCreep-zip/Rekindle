@@ -88,7 +88,9 @@ impl<'a> RegistryOps<'a> {
             serde_json::to_vec(members).map_err(|e| TransportError::SerializationFailed {
                 reason: format!("index: {e}"),
             })?;
-        record::set(self.rc, key, REGISTRY_MEMBER_INDEX, bytes, None).await
+        record::set(self.rc, key, REGISTRY_MEMBER_INDEX, bytes, None)
+            .await
+            .map(|_| ())
     }
 
     // ── MEK vault (owner subkey 1) ───────────────────────────────
@@ -109,7 +111,9 @@ impl<'a> RegistryOps<'a> {
         let bytes = serde_json::to_vec(vault).map_err(|e| TransportError::SerializationFailed {
             reason: format!("vault: {e}"),
         })?;
-        record::set(self.rc, key, REGISTRY_MEK_VAULT, bytes, None).await
+        record::set(self.rc, key, REGISTRY_MEK_VAULT, bytes, None)
+            .await
+            .map(|_| ())
     }
 
     // ── Moderation queue (owner subkey 5) ─────────────────────────
@@ -152,6 +156,7 @@ impl<'a> RegistryOps<'a> {
             None,
         )
         .await
+        .map(|_| ())
     }
 
     // ── Open / Close ─────────────────────────────────────────────

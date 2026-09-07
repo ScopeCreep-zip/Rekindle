@@ -101,6 +101,7 @@ pub async fn publish_to_profile(
         None,
     )
     .await
+    .map(|_| ())
 }
 
 /// Publish a route blob to the personal mailbox DHT record.
