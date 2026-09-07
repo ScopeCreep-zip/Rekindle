@@ -176,12 +176,25 @@ Transport-agnostic gossip mesh primitives. Pure logic — does not call
 `app_message` itself; the integration layer plumbs the broadcast
 helpers into Veilid. Modules: `broadcast` (generic broadcast helpers),
 `dedup` (`DedupCache` re-exported into `AppState`), `lamport` (clock
-arithmetic), `mesh` (`fanout_degree()` — adaptive D selection: ≤20 →
-N-1; 21–60 → 6; 61+ → 8), `rate_limit` (sender-side token bucket),
-`mesh_broadcast`, `peer_select`.
+arithmetic plus the `MAX_LAMPORT_DRIFT` cap), `mesh` (`fanout_degree()`
+— adaptive D selection: ≤20 → min(N, 6); 21–60 → 6; 61+ → 8),
+`rate_limit` (token bucket, 10 msg/s floor), `mesh_broadcast`,
+`peer_select`.
+
+**Fan-out and TTL are one setting, not two.** The epidemic-broadcast
+parameters are D as above *with* a 5-hop TTL (`rekindle-codec`'s
+`envelope::DEFAULT_TTL`): the dedup cache plus the hop budget are what
+let a sampled D still reach every member, so tuning either alone
+changes coverage. Both tracks import these — `rekindle-gossip` for the
+Tauri app, `rekindle-transport` for the daemon — rather than declaring
+their own, because a mesh mixes peers from both.
 
 Dependencies: `rekindle-types`, `rekindle-codec`, `rekindle-protocol`,
 `rekindle-crypto`, `async-trait`.
+
+Consumed by `rekindle-transport` (daemon track) as well as the Tauri
+host — the downward edge from the daemon's Veilid boundary into these
+Tier-5 primitives.
 
 ### rekindle-presence
 

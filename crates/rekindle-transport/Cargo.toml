@@ -18,6 +18,18 @@ rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-calls = { path = "../rekindle-calls" }
 rekindle-route = { path = "../rekindle-route" }
+# Tier-5 gossip primitives. rekindle-gossip is transport-agnostic pure
+# logic ("does not call app_message itself; the integration layer plumbs
+# the broadcast helpers into Veilid") and this crate is that integration
+# layer for the daemon track — a downward edge, matching the desktop
+# track's use of the same primitives. Without it this crate carried its
+# own fanout/Lamport/rate-limit copies, which had already drifted from
+# the epidemic-broadcast parameters both tracks must agree on.
+rekindle-gossip = { path = "../rekindle-gossip" }
+# Constant-time tag comparison for voice packet HMACs. Never
+# hand-rolled: a manual XOR/OR loop can be optimised back into an
+# early exit, which is the timing oracle it was meant to prevent.
+subtle = "2"
 # Shared VeilidConfig builder (`veilid_config::build_veilid_config`) —
 # one translation of startup tuning into veilid_core::VeilidConfig for
 # both node-startup tracks. Unidirectional edge; rekindle-protocol must

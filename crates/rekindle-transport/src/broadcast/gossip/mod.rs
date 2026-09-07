@@ -62,7 +62,14 @@ pub use voice::{
 pub type MeshMap = HashMap<String, GossipMesh>;
 
 /// Default TTL for gossip broadcasts.
-const DEFAULT_TTL: u8 = 3;
+///
+/// Re-exported from `rekindle-codec` rather than declared: this crate
+/// used to set 3 while the desktop track set 5, on the same mesh, for
+/// the same envelope type and the same `saturating_sub(1)` forwarding
+/// rule — so daemon-originated bans and messages simply reached fewer
+/// members. The architecture fixes TTL together with the fan-out
+/// degree; see `crate::gossip::fanout_degree`.
+pub(crate) use rekindle_codec::envelope::DEFAULT_TTL;
 
 /// Shortcut for broadcasting a ControlPayload wrapped in GossipPayload::Control.
 async fn control(

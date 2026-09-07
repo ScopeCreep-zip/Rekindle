@@ -4,6 +4,7 @@
 use tracing::debug;
 
 use super::{state_effects, watches, SubscriptionManager};
+use crate::gossip::GossipAdmission;
 use crate::payload::dm::DmPayload;
 use crate::payload::gossip::GossipPayload;
 
@@ -12,7 +13,8 @@ use super::events::{self, SubscriptionEvent};
 impl SubscriptionManager {
     /// Route a gossip payload. Called by the daemon's InboundHandler.
     ///
-    /// Pipeline: payload.into_event() → state_effects → dedup → emit
+    /// Pipeline: rate limit → Lamport merge → payload.into_event() →
+    /// state_effects → dedup → emit
     pub fn on_gossip(
         &self,
         community_id: &str,
@@ -26,6 +28,48 @@ impl SubscriptionManager {
             lamport = lamport_ts,
             "sub: on_gossip"
         );
+
+        // Receiver-side admission. These are the two halves of the mesh
+        // that were built but never consulted: `GossipMesh` has carried a
+        // `rate_limiter` and a `clock` since it was written and nothing
+        // called either, so the daemon had no flood protection (the
+        // desktop enforces it in `receiver_limits.rs`) and never advanced
+        // its Lamport clock from received traffic — its own sends were
+        // ordered against a clock that only ever counted itself.
+        //
+        // The guard is scoped so it drops before `process_event`, which
+        // re-enters the manager.
+        let admission = {
+            let mut meshes = self.meshes().write();
+            match meshes.get_mut(community_id) {
+                Some(mesh) => mesh.admit_gossip(sender_pseudonym, lamport_ts),
+                // Gossip can arrive before `ensure_mesh` has run for this
+                // community. Nothing to meter it against, and the
+                // signature was already verified upstream, so admit it.
+                None => GossipAdmission::Accept,
+            }
+        };
+        match admission {
+            GossipAdmission::Accept => {}
+            GossipAdmission::RateLimited => {
+                debug!(
+                    community = community_id,
+                    sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+                    "sub: gossip dropped — sender over rate floor"
+                );
+                return;
+            }
+            GossipAdmission::LamportDrift => {
+                debug!(
+                    community = community_id,
+                    sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+                    lamport = lamport_ts,
+                    "sub: gossip dropped — Lamport drift beyond cap"
+                );
+                return;
+            }
+        }
+
         let event = payload.into_event(community_id, sender_pseudonym);
         self.process_event(event);
     }
