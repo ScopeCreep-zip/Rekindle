@@ -2,19 +2,12 @@
 //! (`veilid_update_label`) and the route authority loop
 //! (`classify_dead_routes`).
 
-use veilid_core::VeilidUpdate;
-
-pub(super) fn veilid_update_label(update: &VeilidUpdate) -> &'static str {
-    match update {
-        VeilidUpdate::AppCall(_) => "AppCall",
-        VeilidUpdate::AppMessage(_) => "AppMessage",
-        VeilidUpdate::RouteChange(_) => "RouteChange",
-        VeilidUpdate::Attachment(_) => "Attachment",
-        VeilidUpdate::ValueChange(_) => "ValueChange",
-        VeilidUpdate::Shutdown => "Shutdown",
-        _ => "Other",
-    }
-}
+/// Human-readable `VeilidUpdate` variant name for logs.
+///
+/// Re-exported from `rekindle-protocol` rather than re-matched: the
+/// arms must track veilid's enum, and two copies drift the moment
+/// upstream adds a variant.
+pub(super) use rekindle_protocol::node::veilid_update_name as veilid_update_label;
 
 /// Pure classification of a dead-route batch against owned state:
 /// did the personal route die, and which community mailboxes lost

@@ -60,19 +60,6 @@ pub struct RoleSnapshotPatch {
     pub exclusion_group: ExclusionGroupEdit,
 }
 
-fn u32_to_role_id(role_id: u32) -> RoleId {
-    let mut buf = [0u8; 16];
-    buf[..4].copy_from_slice(&role_id.to_le_bytes());
-    RoleId(buf)
-}
-
-fn hex_to_pseudo_32(hex_str: &str) -> [u8; 32] {
-    hex::decode(hex_str)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-        .unwrap_or([0u8; 32])
-}
-
 pub async fn assign_role<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -84,8 +71,8 @@ pub async fn assign_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleAssignment {
-            target: PseudonymKey(hex_to_pseudo_32(pseudonym_key)),
-            role_id: u32_to_role_id(role_id),
+            target: PseudonymKey::from_hex_lossy(pseudonym_key),
+            role_id: RoleId::from_legacy_u32(role_id),
             lamport,
         },
     )
@@ -111,8 +98,8 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleUnassignment {
-            target: PseudonymKey(hex_to_pseudo_32(pseudonym_key)),
-            role_id: u32_to_role_id(role_id),
+            target: PseudonymKey::from_hex_lossy(pseudonym_key),
+            role_id: RoleId::from_legacy_u32(role_id),
             lamport,
         },
     )
@@ -161,7 +148,7 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleDefinition {
-            role_id: u32_to_role_id(role_id),
+            role_id: RoleId::from_legacy_u32(role_id),
             name: name.clone(),
             permissions,
             position: u32::try_from(next_position).unwrap_or(0),
@@ -211,7 +198,7 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleDefinition {
-            role_id: u32_to_role_id(role_id),
+            role_id: RoleId::from_legacy_u32(role_id),
             name: patch.name.clone().unwrap_or(current.name),
             permissions: patch.permissions.unwrap_or(current.permissions),
             position: u32::try_from(patch.position.unwrap_or(current.position)).unwrap_or(0),
@@ -238,7 +225,7 @@ pub async fn delete_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleArchived {
-            role_id: u32_to_role_id(role_id),
+            role_id: RoleId::from_legacy_u32(role_id),
             lamport,
         },
     )
@@ -292,13 +279,13 @@ mod tests {
 
     #[test]
     fn u32_to_role_id_round_trips_low_bytes() {
-        let r = u32_to_role_id(0x0102_0304);
+        let r = RoleId::from_legacy_u32(0x0102_0304);
         assert_eq!(r.0[0..4], [0x04, 0x03, 0x02, 0x01]);
         assert_eq!(r.0[4..], [0u8; 12]);
     }
 
     #[test]
     fn hex_to_pseudo_zero_on_bad_hex() {
-        assert_eq!(hex_to_pseudo_32("not hex"), [0u8; 32]);
+        assert_eq!(PseudonymKey::from_hex_lossy("not hex").0, [0u8; 32]);
     }
 }

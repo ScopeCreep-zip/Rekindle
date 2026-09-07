@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::db::DbPool;
 use crate::state::AppState;
 
+use super::hex_to_id_16;
 use super::node::app_handle;
-use super::{hex_to_id_16, role_id_to_legacy_u32};
 
 /// Get a clone of the cached CRDT governance state for a community.
 ///
@@ -51,7 +51,11 @@ pub fn set_governance_state(
                 if let Ok(arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) {
                     let pseudo = rekindle_types::id::PseudonymKey(arr);
                     if let Some(role_ids) = gov_state.role_assignments.get(&pseudo) {
-                        cs.my_role_ids = role_ids.iter().map(role_id_to_legacy_u32).collect();
+                        cs.my_role_ids = role_ids
+                            .iter()
+                            .copied()
+                            .map(rekindle_types::id::RoleId::to_legacy_u32)
+                            .collect();
                         cs.my_role_ids.sort_unstable();
                     }
                     is_creator = gov_state.creator.as_ref() == Some(&pseudo);
@@ -185,7 +189,7 @@ pub fn set_governance_state(
             .roles
             .iter()
             .map(|(rid, r)| RoleDefinition {
-                id: role_id_to_legacy_u32(rid),
+                id: rekindle_types::id::RoleId::to_legacy_u32(*rid),
                 name: r.name.clone(),
                 color: r.color,
                 permissions: r.permissions,

@@ -7,7 +7,6 @@ use crate::db_helpers::db_call;
 use crate::state::AppState;
 
 use super::identity::current_owner_key;
-use super::role_id_to_legacy_u32;
 
 /// Persist the current merged governance snapshot into SQLite for restart hydration.
 pub async fn persist_governance_snapshot_to_sqlite(
@@ -123,7 +122,7 @@ pub async fn persist_governance_snapshot_to_sqlite(
             .roles
             .iter()
             .map(|(role_id, role)| RoleRow {
-                role_id: i64::from(role_id_to_legacy_u32(role_id)),
+                role_id: i64::from(rekindle_types::id::RoleId::to_legacy_u32(*role_id)),
                 name: role.name.clone(),
                 color: i64::from(role.color),
                 permissions: role.permissions.cast_signed(),

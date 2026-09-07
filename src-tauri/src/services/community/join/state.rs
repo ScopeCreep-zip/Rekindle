@@ -4,8 +4,6 @@ use std::sync::Arc;
 use crate::state::{AppState, ChannelInfo, ChannelType, RoleDefinition};
 use crate::state_helpers;
 
-use super::helpers::role_id_to_legacy_u32;
-
 pub(super) fn join_status_label(state: &Arc<AppState>) -> &'static str {
     match state_helpers::identity_status(state).unwrap_or(crate::state::UserStatus::Online) {
         crate::state::UserStatus::Online => "online",
@@ -49,7 +47,7 @@ pub(super) fn build_roles(
         .roles
         .iter()
         .map(|(role_id, role)| RoleDefinition {
-            id: role_id_to_legacy_u32(role_id),
+            id: rekindle_types::id::RoleId::to_legacy_u32(*role_id),
             name: role.name.clone(),
             color: role.color,
             permissions: role.permissions,

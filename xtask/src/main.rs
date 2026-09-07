@@ -59,6 +59,8 @@ enum Command {
     CheckAllowReasons,
     /// Verify no constant name holds different values in different crates.
     CheckDuplicateConstants,
+    /// Verify no function body is duplicated across crates.
+    CheckDuplicateBodies,
     /// One-shot helper: add `reason = "TODO: justify"` to bare allows.
     RetrofitAllowReasons {
         /// Print what would change without writing files.
@@ -95,6 +97,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "duplicate-constants",
                     Box::new(|| check_duplicate_constants(&root)),
                 ),
+                (
+                    "duplicate-bodies",
+                    Box::new(|| check_duplicate_bodies(&root)),
+                ),
             ] {
                 println!("\n── xtask: {label}");
                 if let Err(e) = runner() {
@@ -113,6 +119,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckFileSizes => check_file_sizes(&root),
         Command::CheckAllowReasons => check_allow_reasons(&root),
         Command::CheckDuplicateConstants => check_duplicate_constants(&root),
+        Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::RetrofitAllowReasons { dry_run } => retrofit_allow_reasons(&root, *dry_run),
     }
 }
@@ -554,6 +561,217 @@ fn check_duplicate_constants(root: &Path) -> Result<()> {
              Converge them on one declaration and have the others import it.\n\
              If they are genuinely supposed to differ, add the name to\n\
              DUPLICATE_CONSTANT_EXCEPTIONS in xtask/src/main.rs with the reason."
+        ));
+    }
+    Ok(())
+}
+
+// ────────────────────────────────────────────────────────────────
+// check-duplicate-bodies
+// ────────────────────────────────────────────────────────────────
+//
+// Fails when two crates contain a function with a byte-identical body
+// (comments and whitespace normalised away). Names may differ — that is
+// the point: `u32_to_role_id` and `role_id_to_key` were the same
+// function under two names in two crates, and `veilid_update_name` /
+// `veilid_update_label` still are.
+//
+// This is the general form of what `check-duplicate-constants` catches
+// for values only. The manual dedup audit that produced most of this
+// branch missed several of these; a gate does not get tired.
+//
+// Bodies shorter than MIN_BODY_CHARS are ignored — one-line delegations
+// (`self.foo_impl(x)`) legitimately repeat across adapter impls and
+// would drown the signal. At the current threshold the workspace yields
+// eleven findings and zero false positives.
+
+/// Normalised body length below which a duplicate is not interesting.
+const MIN_BODY_CHARS: usize = 50;
+
+/// Duplicate bodies allowed for now, keyed by the exact set of
+/// `crate::function` sites, with the reason and the work that removes it.
+///
+/// **This list must only shrink.** An entry is a promise to converge,
+/// not an exemption. Keying on the full site set rather than a bare
+/// function name keeps it precise: exempting every `generate` in the
+/// workspace would be a hole, exempting exactly these two is a note.
+const DUPLICATE_BODY_EXCEPTIONS: &[(&[&str], &str)] = &[
+    (
+        &["rekindle-secrets::generate", "rekindle-transport::generate"],
+        "MEK codec, plan 4.2. Blocked on unifying two CryptoError \
+         taxonomies (7 vs 11 variants, 116 sites) — rekindle-crypto \
+         depends on rekindle-secrets, so the naive direction is circular.",
+    ),
+    (
+        &[
+            "rekindle-secrets::to_wire_bytes",
+            "rekindle-transport::to_wire_bytes",
+        ],
+        "MEK codec, plan 4.2 — same blocker.",
+    ),
+    (
+        &[
+            "rekindle-secrets::from_wire_bytes",
+            "rekindle-transport::from_wire_bytes",
+        ],
+        "MEK codec, plan 4.2 — same blocker.",
+    ),
+    (
+        &["rekindle (src-tauri)::as_ref", "rekindle-protocol::as_str"],
+        "Two ChannelType enums, not two functions: the bodies match \
+         because the types do. Converging is a Tier-1 type migration \
+         (same shape as the onboarding DTOs in Phase 1), not a helper \
+         hoist. Plan 4.9.",
+    ),
+    (
+        &[
+            "rekindle-governance-runtime::as_wire_str",
+            "rekindle-types::as_wire_str",
+        ],
+        "Three status enums with identical variants and identical wire \
+         mapping: rekindle-types::presence::SessionStatus (canonical), \
+         rekindle-governance-runtime::deps::UserStatusKind, and \
+         rekindle-presence::status::UserStatusKind. The runtime crate's \
+         doc claims it avoids depending on src-tauri's UserStatus — but \
+         the alternative is the Tier-1 enum it ALREADY depends on, so \
+         that justification does not hold. Converging changes a trait \
+         signature, hence plan 4.10 rather than a drive-by. This entry \
+         is not settled.",
+    ),
+];
+
+fn normalise_body(body: &str) -> String {
+    let no_comments: String = body
+        .lines()
+        .map(|l| match l.find("//") {
+            Some(i) => &l[..i],
+            None => l,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    no_comments.split_whitespace().collect()
+}
+
+/// Extract `(name, normalised_body)` for every free/`impl` function in a
+/// file, skipping anything after the first `#[cfg(test)]`.
+fn functions_in(src: &str) -> Vec<(String, String, usize)> {
+    let cut = src.find("#[cfg(test)]").unwrap_or(src.len());
+    let src = &src[..cut];
+    let bytes = src.as_bytes();
+    let mut out = Vec::new();
+    let mut search = 0usize;
+
+    while let Some(rel) = src[search..].find("fn ") {
+        let at = search + rel;
+        search = at + 3;
+        // Require a word boundary before `fn`.
+        if at > 0 && !matches!(bytes[at - 1], b' ' | b'\n' | b'\t') {
+            continue;
+        }
+        let rest = &src[at + 3..];
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(open) = src[at..].find('{') else {
+            continue;
+        };
+        let open = at + open;
+        let mut depth = 0usize;
+        let mut close = open;
+        for (i, c) in src[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = open + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if close <= open {
+            continue;
+        }
+        let body = normalise_body(&src[open + 1..close]);
+        if body.len() >= MIN_BODY_CHARS {
+            let line = src[..at].matches('\n').count() + 1;
+            out.push((name, body, line));
+        }
+        search = close;
+    }
+    out
+}
+
+fn check_duplicate_bodies(root: &Path) -> Result<()> {
+    let mut by_body: BTreeMap<String, Vec<(String, String, String, usize)>> = BTreeMap::new();
+
+    for subdir in ["crates", "src-tauri/src"] {
+        for path in walk_source_files(&root.join(subdir), &["rs"])? {
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            if rel.contains("/tests/") || rel.contains("/benches/") {
+                continue;
+            }
+            let Ok(src) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            for (name, body, line) in functions_in(&src) {
+                by_body
+                    .entry(body)
+                    .or_default()
+                    .push((crate_of(&rel), name, rel.clone(), line));
+            }
+        }
+    }
+
+    let mut offenders = 0usize;
+    for sites in by_body.values() {
+        let crates: std::collections::BTreeSet<&str> =
+            sites.iter().map(|(c, _, _, _)| c.as_str()).collect();
+        if crates.len() < 2 {
+            continue;
+        }
+        // Key on the exact set of `crate::function` sites, not a bare
+        // name: exempting every `generate` in the workspace would be a
+        // hole; exempting exactly these two sites is a note.
+        let mut key: Vec<String> = sites
+            .iter()
+            .map(|(c, n, _, _)| format!("{c}::{n}"))
+            .collect();
+        key.sort();
+        key.dedup();
+        if DUPLICATE_BODY_EXCEPTIONS.iter().any(|(allowed, _)| {
+            allowed.len() == key.len()
+                && allowed
+                    .iter()
+                    .zip(key.iter())
+                    .all(|(a, k)| *a == k.as_str())
+        }) {
+            continue;
+        }
+        println!("  ✗ identical body in {} crates", crates.len());
+        for (crate_name, name, rel, line) in sites {
+            println!("      {crate_name:28} {name:32} {rel}:{line}");
+        }
+        offenders += 1;
+    }
+
+    if offenders > 0 {
+        return Err(anyhow!(
+            "{offenders} function bod(ies) duplicated across crates.\n\
+             Hoist the shared one to a crate both can reach, or make the \
+             existing definition `pub` and import it.\n\
+             A \"must stay in sync with X\" comment is not a fix — that \
+             comment IS the defect."
         ));
     }
     Ok(())

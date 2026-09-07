@@ -20,25 +20,6 @@ use rekindle_types::id::RoleId;
 
 use super::DaemonGovernanceAdapter;
 
-/// `u32` role id → the CRDT's 16-byte `RoleId`.
-///
-/// Must stay byte-for-byte identical to `u32_to_role_id` in
-/// `rekindle-governance-runtime::roles` (private there): the trait
-/// speaks `u32` while `GovernanceState` keys by `RoleId`, and a
-/// different padding would look up a role that does not exist.
-fn role_id_to_key(role_id: u32) -> RoleId {
-    let mut buf = [0u8; 16];
-    buf[..4].copy_from_slice(&role_id.to_le_bytes());
-    RoleId(buf)
-}
-
-/// The inverse: recover the `u32` the trait uses from a stored key.
-fn key_to_role_id(key: &RoleId) -> u32 {
-    let mut four = [0u8; 4];
-    four.copy_from_slice(&key.0[..4]);
-    u32::from_le_bytes(four)
-}
-
 impl DaemonGovernanceAdapter {
     /// A role's current definition, read from the merged CRDT state.
     pub(super) fn role_current_definition_impl(
@@ -47,7 +28,7 @@ impl DaemonGovernanceAdapter {
         role_id: u32,
     ) -> Option<RoleSnapshotInsert> {
         let state = self.governance_state_impl(community_id)?;
-        let role = state.roles.get(&role_id_to_key(role_id))?;
+        let role = state.roles.get(&RoleId::from_legacy_u32(role_id))?;
         Some(RoleSnapshotInsert {
             role_id,
             name: role.name.clone(),
@@ -69,7 +50,12 @@ impl DaemonGovernanceAdapter {
         let Some(state) = self.governance_state_impl(community_id) else {
             return (Vec::new(), 0);
         };
-        let ids: Vec<u32> = state.roles.keys().map(key_to_role_id).collect();
+        let ids: Vec<u32> = state
+            .roles
+            .keys()
+            .copied()
+            .map(RoleId::to_legacy_u32)
+            .collect();
         let next_position = state
             .roles
             .values()

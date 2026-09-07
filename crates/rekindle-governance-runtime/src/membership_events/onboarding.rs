@@ -16,10 +16,6 @@ use crate::event::GovernanceRuntimeEvent;
 use crate::membership_events::deps::MembershipEventDeps;
 use crate::membership_events::roles_changed::process_member_roles_changed;
 
-fn role_id_to_legacy(role_id: &RoleId) -> u32 {
-    u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
-}
-
 /// Why an onboarding submission failed validation. Carries enough detail
 /// for the handler to log the same context the legacy per-check warnings
 /// did.
@@ -178,7 +174,7 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
         .governance_state(community_id)
         .and_then(|state| state.role_assignments.get(&sender_key).cloned())
         .map_or_else(Vec::new, |roles| {
-            roles.iter().map(role_id_to_legacy).collect()
+            roles.iter().copied().map(RoleId::to_legacy_u32).collect()
         });
 
     let is_self = deps

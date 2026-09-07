@@ -406,7 +406,7 @@ mod outgoing;
 
 /// Wire-string for [`CallKind`] used in [`TransportNotification`]
 /// payloads. "audio" / "video" matches the existing chat-event schema.
-fn kind_str(k: CallKind) -> &'static str {
+pub fn kind_str(k: CallKind) -> &'static str {
     match k {
         CallKind::Audio => "audio",
         CallKind::Video => "video",

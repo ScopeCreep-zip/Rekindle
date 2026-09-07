@@ -2,13 +2,6 @@ use crate::state::SharedState;
 
 pub(crate) use crate::state_helpers::hex_to_id_16;
 
-pub(crate) fn hex_to_pseudo_32(hex_str: &str) -> [u8; 32] {
-    hex::decode(hex_str)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-        .unwrap_or([0u8; 32])
-}
-
 pub(crate) fn u32_to_role_id(role_id: u32) -> rekindle_types::id::RoleId {
     let mut buf = [0u8; 16];
     buf[..4].copy_from_slice(&role_id.to_le_bytes());

@@ -18,7 +18,7 @@ use tauri::Manager;
 use crate::state::{AppState, CommunityState, GossipOverlay, OnlineMember};
 
 use super::bootstrap::{fetch_bootstrap_bundle, BootstrapBundle};
-use super::helpers::{role_id_to_legacy_u32, spawn_join_announcements};
+use super::helpers::spawn_join_announcements;
 use super::state::{build_channel_log_keys, build_channels, build_roles, join_status_label};
 
 struct InviteContext {
@@ -153,7 +153,7 @@ pub async fn join_community(
         .get(&identity.pseudo)
         .map_or_else(
             || vec![0],
-            |rids| rids.iter().map(role_id_to_legacy_u32).collect(),
+            |rids| rids.iter().map(|r| r.to_legacy_u32()).collect(),
         );
     let channel_log_keys = build_channel_log_keys(&snapshot.gov_state);
 

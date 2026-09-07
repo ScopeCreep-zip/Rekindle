@@ -4,10 +4,6 @@ use rekindle_secrets::derive;
 
 use crate::state::AppState;
 
-pub(crate) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32 {
-    u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
-}
-
 /// Assemble the durable roster (architecture §13.4) the join orchestrator
 /// persists into `community_members`: the joiner's own freshly-claimed row
 /// plus every member the cold-join registry scan discovered, each tagged with
@@ -33,7 +29,12 @@ pub(super) fn build_discovered_roster(
             .get(&presence.pseudonym_key)
             .map_or_else(
                 || vec![0],
-                |rids| rids.iter().map(role_id_to_legacy_u32).collect(),
+                |rids| {
+                    rids.iter()
+                        .copied()
+                        .map(rekindle_types::id::RoleId::to_legacy_u32)
+                        .collect()
+                },
             );
         roster.push(rekindle_governance_runtime::DiscoveredMember {
             segment_index: claimed.segment_index,

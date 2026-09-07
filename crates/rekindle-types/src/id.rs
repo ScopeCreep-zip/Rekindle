@@ -11,6 +11,32 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PseudonymKey(pub [u8; 32]);
 
+impl PseudonymKey {
+    /// Parse a 64-char hex pseudonym, falling back to all-zero on any
+    /// malformed input.
+    ///
+    /// Lossy by design and named so: the callers are wire-decode paths
+    /// where a bad pseudonym must not abort the batch — an all-zero key
+    /// matches no member, so the entry is dropped by reader validation
+    /// exactly as a forged one would be. Two crates had identical
+    /// private copies of this (`hex_to_pseudo_32`).
+    #[must_use]
+    pub fn from_hex_lossy(hex_str: &str) -> Self {
+        Self(
+            hex::decode(hex_str)
+                .ok()
+                .and_then(|b| b.try_into().ok())
+                .unwrap_or([0u8; 32]),
+        )
+    }
+
+    /// Lowercase hex form.
+    #[must_use]
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.0)
+    }
+}
+
 /// Index into a 255-slot SMPL record. Same index used across
 /// governance, registry, and all channel records for a given member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -31,6 +57,30 @@ pub struct MessageId(pub [u8; 16]);
 /// 16-byte UUID identifying a role definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RoleId(pub [u8; 16]);
+
+impl RoleId {
+    /// Widen a legacy `u32` role id into the 16-byte form.
+    ///
+    /// Role ids are `u32` at every API surface (IPC, the governance
+    /// runtime's `Deps`, the frontend) but 16 bytes in CRDT state. The
+    /// mapping is little-endian into the low four bytes, and it lives
+    /// here because three crates were each carrying their own copy —
+    /// `u32_to_role_id`, `role_id_to_key`, `role_id_to_legacy_u32` —
+    /// with a comment asking the next author to keep them identical. A
+    /// different padding silently looks up a role that does not exist.
+    #[must_use]
+    pub fn from_legacy_u32(role_id: u32) -> Self {
+        let mut buf = [0u8; 16];
+        buf[..4].copy_from_slice(&role_id.to_le_bytes());
+        Self(buf)
+    }
+
+    /// The inverse of [`Self::from_legacy_u32`].
+    #[must_use]
+    pub fn to_legacy_u32(self) -> u32 {
+        u32::from_le_bytes([self.0[0], self.0[1], self.0[2], self.0[3]])
+    }
+}
 
 /// 16-byte UUID identifying a category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

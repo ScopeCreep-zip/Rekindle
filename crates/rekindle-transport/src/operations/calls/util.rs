@@ -31,12 +31,9 @@ pub(super) fn classify_call_invite_error(e: &crate::error::TransportError) -> &'
     }
 }
 
-pub(super) fn kind_str(k: CallKind) -> &'static str {
-    match k {
-        CallKind::Audio => "audio",
-        CallKind::Video => "video",
-    }
-}
+/// Wire-string for [`CallKind`] — one spelling, owned by
+/// `rekindle-calls` alongside the state machine that defines the kind.
+pub(super) use rekindle_calls::state_machine::kind_str;
 
 pub(super) fn status_str(s: CallStatus) -> &'static str {
     match s {

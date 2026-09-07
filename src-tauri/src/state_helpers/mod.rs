@@ -102,7 +102,3 @@ pub(crate) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
         .and_then(|b| b.try_into().ok())
         .unwrap_or([0u8; 16])
 }
-
-pub(super) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32 {
-    u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
-}

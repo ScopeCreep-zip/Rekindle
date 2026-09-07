@@ -207,7 +207,7 @@ pub async fn timeout_member_inner(
     duration_seconds: u64,
     reason: Option<String>,
 ) -> Result<(), String> {
-    use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
+    use crate::commands::community::helpers::require_permission;
     use crate::db_helpers::db_call;
     use crate::state_helpers;
     use rekindle_types::permissions;
@@ -219,7 +219,7 @@ pub async fn timeout_member_inner(
         state,
         &community_id,
         rekindle_types::governance::GovernanceEntry::TimeoutEntry {
-            target: rekindle_types::id::PseudonymKey(hex_to_pseudo_32(&pseudonym_key)),
+            target: rekindle_types::id::PseudonymKey::from_hex_lossy(&pseudonym_key),
             duration_seconds,
             reason,
             started_at: rekindle_utils::timestamp_secs(),
@@ -248,7 +248,7 @@ pub async fn remove_timeout_inner(
     community_id: String,
     pseudonym_key: String,
 ) -> Result<(), String> {
-    use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
+    use crate::commands::community::helpers::require_permission;
     use crate::db_helpers::db_call;
     use crate::state_helpers;
     use rekindle_types::permissions;
@@ -260,7 +260,7 @@ pub async fn remove_timeout_inner(
         state,
         &community_id,
         rekindle_types::governance::GovernanceEntry::RemoveTimeoutEntry {
-            target: rekindle_types::id::PseudonymKey(hex_to_pseudo_32(&pseudonym_key)),
+            target: rekindle_types::id::PseudonymKey::from_hex_lossy(&pseudonym_key),
             lamport,
         },
     )
@@ -412,7 +412,7 @@ pub async fn ban_member_inner(
     community_id: String,
     pseudonym_key: String,
 ) -> Result<(), String> {
-    use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
+    use crate::commands::community::helpers::require_permission;
     use crate::state_helpers;
     use rekindle_types::permissions;
 
@@ -422,7 +422,7 @@ pub async fn ban_member_inner(
         state,
         &community_id,
         rekindle_types::governance::GovernanceEntry::BanEntry {
-            target: rekindle_types::id::PseudonymKey(hex_to_pseudo_32(&pseudonym_key)),
+            target: rekindle_types::id::PseudonymKey::from_hex_lossy(&pseudonym_key),
             reason: None,
             lamport,
         },
@@ -456,7 +456,7 @@ pub async fn unban_member_inner(
     community_id: String,
     pseudonym_key: String,
 ) -> Result<(), String> {
-    use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
+    use crate::commands::community::helpers::require_permission;
     use crate::state_helpers;
     use rekindle_types::permissions;
 
@@ -466,7 +466,7 @@ pub async fn unban_member_inner(
         state,
         &community_id,
         rekindle_types::governance::GovernanceEntry::UnbanEntry {
-            target: rekindle_types::id::PseudonymKey(hex_to_pseudo_32(&pseudonym_key)),
+            target: rekindle_types::id::PseudonymKey::from_hex_lossy(&pseudonym_key),
             lamport,
         },
     )
