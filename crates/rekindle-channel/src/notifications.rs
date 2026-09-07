@@ -153,10 +153,7 @@ pub fn parse_notification_level(level: &str) -> Result<NotificationLevel, String
     level.parse()
 }
 
-#[must_use]
-pub fn blake3_hex(bytes: &[u8]) -> String {
-    blake3::hash(bytes).to_hex().to_string()
-}
+pub use rekindle_utils::blake3_hex;
 
 /// Architecture §28.9 — verify the fetched channel-message ciphertext
 /// hashes to the announcement payload's `content_hash`. Caller passes

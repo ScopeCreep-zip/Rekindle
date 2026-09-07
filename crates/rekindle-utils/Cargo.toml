@@ -5,13 +5,20 @@ edition = "2021"
 description = "Shared utility functions for Rekindle workspace crates"
 
 [features]
-# The retry helper needs an async runtime and logging; everything else in
-# this crate is std-only. Consumers that want `rekindle_utils::retry`
-# opt in so the default build stays dependency-free.
+# The retry helper needs an async runtime and logging; the rest of this
+# crate needs neither. Consumers that want `rekindle_utils::retry` opt in
+# so the default build does not pull tokio.
 retry = ["dep:tokio", "dep:tracing"]
 
 [dependencies]
-# Zero external dependencies by default — only used by the `retry` feature.
+# blake3 is NOT optional, deliberately. `blake3_hex` is the single
+# spelling of the content hash that the channel track computes and the
+# sync track verifies; if reaching it required opting into a feature,
+# the next consumer that forgets the flag writes `blake3::hash(..)`
+# inline instead — which is how one hash grows three spellings. The
+# "minimise dependencies" instinct does not get applied to crypto.
+blake3 = "1"
+# Behind the `retry` feature only.
 tokio = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 

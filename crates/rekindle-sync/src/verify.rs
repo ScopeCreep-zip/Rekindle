@@ -11,10 +11,7 @@ pub fn verify_content_hash(ciphertext: &[u8], expected_hash: &str) -> bool {
     computed.to_hex().as_str() == expected_hash
 }
 
-/// Compute the blake3 hex hash of a byte slice.
-pub fn blake3_hex(data: &[u8]) -> String {
-    blake3::hash(data).to_hex().to_string()
-}
+pub use rekindle_utils::blake3_hex;
 
 #[cfg(test)]
 mod tests {

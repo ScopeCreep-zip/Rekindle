@@ -108,27 +108,27 @@ pub fn compute_packet_hmac(session_key: &VoiceSessionKey, packet_data: &[u8]) ->
 
 /// Verify a BLAKE3 HMAC on a voice packet using constant-time comparison.
 ///
-/// Uses XOR + OR accumulation to prevent timing side-channels. The comparison
-/// always examines all 16 bytes regardless of where a mismatch occurs.
+/// The tag is checked with [`subtle::ConstantTimeEq`], not a hand-written
+/// loop. This function's input is an attacker-supplied network packet
+/// arriving ~50 times a second, which is a usable timing oracle: a
+/// byte-at-a-time comparison lets a forger recover the tag by measuring
+/// how long rejection takes.
+///
+/// The previous implementation accumulated `acc |= a[i] ^ b[i]` by hand.
+/// That is the textbook shape, and it is still not sufficient — nothing
+/// in it stops the optimiser from rewriting the loop with an early exit,
+/// which silently reintroduces the oracle the code was written to close.
+/// `subtle` exists for exactly this: it puts optimisation barriers around
+/// the comparison so the constant-time property survives codegen. We do
+/// not hand-roll crypto primitives, including the small ones.
 pub fn verify_packet_hmac(
     session_key: &VoiceSessionKey,
     packet_data: &[u8],
     expected_hmac: &[u8; 16],
 ) -> bool {
+    use subtle::ConstantTimeEq as _;
     let computed = compute_packet_hmac(session_key, packet_data);
-    constant_time_eq(&computed, expected_hmac)
-}
-
-/// Constant-time comparison of two 16-byte arrays.
-///
-/// Examines all bytes regardless of mismatch position. Prevents timing
-/// oracle attacks that could recover the HMAC byte-by-byte.
-fn constant_time_eq(a: &[u8; 16], b: &[u8; 16]) -> bool {
-    let mut acc: u8 = 0;
-    for i in 0..16 {
-        acc |= a[i] ^ b[i];
-    }
-    acc == 0
+    computed.ct_eq(expected_hmac).into()
 }
 
 #[cfg(test)]
