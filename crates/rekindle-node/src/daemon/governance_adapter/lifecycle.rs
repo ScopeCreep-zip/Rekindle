@@ -14,7 +14,7 @@ use rekindle_types::id::PseudonymKey;
 
 use super::DaemonGovernanceAdapter;
 
-impl DaemonGovernanceAdapter {
+impl DaemonGovernanceAdapter<'_> {
     // ---------- Gossip ----------
 
     /// Broadcast a governance notification over the community's gossip

@@ -16,7 +16,7 @@ use super::DaemonGovernanceAdapter;
 /// this crate cannot reach. Pinned by that crate's `v1_layout_pin`.
 const SLOTS_PER_SEGMENT: u32 = 255;
 
-impl DaemonGovernanceAdapter {
+impl DaemonGovernanceAdapter<'_> {
     /// Ed25519 identity secret, or `None` while the daemon is locked.
     pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
         self.ctx.signing_key.read().as_ref().map(|k| *k.as_bytes())

@@ -27,7 +27,7 @@ fn to_snapshot(mek: &Mek) -> MekSnapshot {
     }
 }
 
-impl DaemonGovernanceAdapter {
+impl DaemonGovernanceAdapter<'_> {
     pub(super) fn community_mek_impl(&self, community_id: &str) -> Option<MekSnapshot> {
         self.ctx
             .mek_cache

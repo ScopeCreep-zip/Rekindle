@@ -17,7 +17,7 @@ use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
 use super::DaemonGovernanceAdapter;
 
-impl DaemonGovernanceAdapter {
+impl DaemonGovernanceAdapter<'_> {
     /// Translate and publish one runtime event.
     ///
     /// Events with no `SubscriptionEvent` counterpart are traced rather

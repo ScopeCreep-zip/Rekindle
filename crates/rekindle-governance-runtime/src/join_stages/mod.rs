@@ -49,6 +49,11 @@ pub struct GovernanceSnapshot {
 ///
 /// The generic `D: GovernanceRuntimeDeps` stays a function type param
 /// (not on the struct) so the adapter type never leaks into the cursor.
+/// Architecture §6.2 Step 9 — how many contended subkeys a joiner will
+/// step over within one segment before giving up on it. Five, per the
+/// spec; each attempt costs one CAS write plus one verifying read.
+const MAX_SLOT_CLAIM_ATTEMPTS: u32 = 5;
+
 pub struct SlotClaimCtx<'a> {
     /// Community identifier (used for segment expansion + mesh control).
     pub community_id: &'a str,
@@ -288,70 +293,114 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
         let present = deps
             .inspect_dht_record_present_subkeys(&candidate.registry_key)
             .await?;
-        let present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
-        let Some(local_subkey) = (0..255u32).find(|subkey| !present_set.contains(subkey)) else {
-            last_full_segment = Some(candidate.segment_index);
-            continue;
-        };
+        let mut present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
 
-        let global_slot = candidate.slot_range_start + local_subkey;
-        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot).map_err(|e| {
-            GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}"))
-        })?;
-        let slot_kp_str =
-            deps.format_writer_keypair(slot_kp.verifying_key().to_bytes(), slot_kp.to_bytes());
+        // Architecture §6.2 Step 9: "on conflict, retry next slot (max 5)".
+        //
+        // This loop is why that sentence exists. Our registry is a fixed
+        // 255-subkey array, so two joiners that both pick "the lowest
+        // free subkey" contend for the same index — a collision the
+        // design makes likely rather than exceptional. (Jami avoids the
+        // whole class structurally by storing membership as commit
+        // *messages* rather than numbered slots; SMPL gives us no such
+        // out.) Before this, the first conflict returned an error whose
+        // text told the *user* to retry.
+        //
+        // A contended subkey is added to the occupied set so the next
+        // attempt skips it rather than re-racing the same index.
+        let mut claimed_slot = None;
+        for _attempt in 0..MAX_SLOT_CLAIM_ATTEMPTS {
+            let Some(local_subkey) = (0..255u32).find(|subkey| !present_set.contains(subkey))
+            else {
+                last_full_segment = Some(candidate.segment_index);
+                break;
+            };
 
-        let mut presence = MemberPresence {
-            pseudonym_key: ctx.my_pseudo.clone(),
-            display_name: ctx.display_name.clone(),
-            status: ctx.join_status_label.into(),
-            route_blob: vec![],
-            last_heartbeat: rekindle_utils::timestamp_secs(),
-            ..Default::default()
-        };
-        let presence_sig =
-            derive::sign_with_pseudonym(ctx.pseudonym_signing, &presence.signing_bytes());
-        presence.signature = presence_sig.to_vec();
-        let presence_bytes = serde_json::to_vec(&presence).map_err(|e| {
-            GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}"))
-        })?;
-        let write_outcome = deps
-            .set_dht_value(
-                &candidate.registry_key,
-                local_subkey,
-                presence_bytes,
-                Some(slot_kp_str.clone()),
-            )
-            .await?;
-        if let Some(stale) = write_outcome {
-            return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
-        }
+            let global_slot = candidate.slot_range_start + local_subkey;
+            let slot_kp =
+                derive::derive_slot_keypair(slot_seed_bytes, global_slot).map_err(|e| {
+                    GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}"))
+                })?;
+            let slot_kp_str =
+                deps.format_writer_keypair(slot_kp.verifying_key().to_bytes(), slot_kp.to_bytes());
 
-        let verify_bytes = deps
-            .get_dht_value(&candidate.registry_key, local_subkey, true)
-            .await?
-            .ok_or(GovernanceRuntimeError::VerifyEmpty)?;
-        let written: MemberPresence = serde_json::from_slice(&verify_bytes).map_err(|e| {
-            GovernanceRuntimeError::Encoding(format!("slot read-back deserialization failed: {e}"))
-        })?;
-        if written.pseudonym_key != *ctx.my_pseudo {
-            return Err(GovernanceRuntimeError::Adapter(format!(
-                "Slot collision in segment {} — another member claimed this slot. Please retry.",
-                candidate.segment_index
-            )));
-        }
+            let mut presence = MemberPresence {
+                pseudonym_key: ctx.my_pseudo.clone(),
+                display_name: ctx.display_name.clone(),
+                status: ctx.join_status_label.into(),
+                route_blob: vec![],
+                last_heartbeat: rekindle_utils::timestamp_secs(),
+                ..Default::default()
+            };
+            let presence_sig =
+                derive::sign_with_pseudonym(ctx.pseudonym_signing, &presence.signing_bytes());
+            presence.signature = presence_sig.to_vec();
+            let presence_bytes = serde_json::to_vec(&presence).map_err(|e| {
+                GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}"))
+            })?;
 
-        return Ok(ClaimAttemptOutcome {
-            claimed: Some(ClaimedSlot {
+            // The compare-and-swap. `Some(_)` means the network already
+            // held a newer value for this subkey — someone beat us to it.
+            // This branch was unreachable until `record::set` stopped
+            // discarding veilid's return value, which is what made two
+            // joiners able to both believe they had claimed one slot.
+            let write_outcome = deps
+                .set_dht_value(
+                    &candidate.registry_key,
+                    local_subkey,
+                    presence_bytes,
+                    Some(slot_kp_str.clone()),
+                )
+                .await?;
+            if write_outcome.is_some() {
+                tracing::debug!(
+                    segment = candidate.segment_index,
+                    local_subkey,
+                    "slot claim lost the race — trying the next free subkey"
+                );
+                present_set.insert(local_subkey);
+                continue;
+            }
+
+            let verify_bytes = deps
+                .get_dht_value(&candidate.registry_key, local_subkey, true)
+                .await?
+                .ok_or(GovernanceRuntimeError::VerifyEmpty)?;
+            let written: MemberPresence = serde_json::from_slice(&verify_bytes).map_err(|e| {
+                GovernanceRuntimeError::Encoding(format!(
+                    "slot read-back deserialization failed: {e}"
+                ))
+            })?;
+            // Read-back mismatch is the same race seen a moment later:
+            // our write landed but was overwritten before we re-read.
+            // Treat it exactly like a CAS failure rather than aborting.
+            if written.pseudonym_key != *ctx.my_pseudo {
+                tracing::debug!(
+                    segment = candidate.segment_index,
+                    local_subkey,
+                    "slot read-back shows another member — trying the next free subkey"
+                );
+                present_set.insert(local_subkey);
+                continue;
+            }
+
+            claimed_slot = Some(ClaimedSlot {
                 registry_key: candidate.registry_key.clone(),
                 segment_index: candidate.segment_index,
                 local_subkey,
                 slot_keypair_str: slot_kp_str,
-                occupied_subkeys: present,
+                occupied_subkeys: present_set.iter().copied().collect(),
                 self_presence: written,
-            }),
-            last_full_segment,
-        });
+            });
+            break;
+        }
+
+        if let Some(claimed) = claimed_slot {
+            return Ok(ClaimAttemptOutcome {
+                claimed: Some(claimed),
+                last_full_segment,
+            });
+        }
     }
 
     Ok(ClaimAttemptOutcome {
@@ -530,35 +579,4 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn governance_snapshot_struct_fields_accessible() {
-        // Smoke check: GovernanceSnapshot can be constructed + read.
-        let snap = GovernanceSnapshot {
-            all_entries: Vec::new(),
-            gov_state: GovernanceState::default(),
-            name: "t".into(),
-            description: None,
-            overflow_keys: Vec::new(),
-        };
-        assert_eq!(snap.name, "t");
-        assert!(snap.all_entries.is_empty());
-        assert!(snap.overflow_keys.is_empty());
-    }
-
-    #[test]
-    fn claimed_slot_carries_keypair_string() {
-        let slot = ClaimedSlot {
-            registry_key: "rk".into(),
-            segment_index: 0,
-            local_subkey: 5,
-            slot_keypair_str: "kp".into(),
-            occupied_subkeys: vec![],
-            self_presence: MemberPresence::default(),
-        };
-        assert_eq!(slot.registry_key, "rk");
-        assert_eq!(slot.local_subkey, 5);
-    }
-}
+mod tests;

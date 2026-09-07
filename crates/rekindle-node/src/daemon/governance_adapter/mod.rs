@@ -60,12 +60,18 @@ pub(super) const SLOT_WATCH_WIDTH: u32 = 255;
 /// Adapter holding everything the trait methods need. One field, because
 /// `DaemonContext` already aggregates the transport, session, MEK cache,
 /// signing key and community runtime state.
-pub struct DaemonGovernanceAdapter {
-    pub(super) ctx: Arc<DaemonContext>,
+///
+/// Borrows rather than owning an `Arc`: dispatch runs as
+/// `dispatch(ctx: &DaemonContext, …)` and the daemon's single `Arc` never
+/// reaches a handler, so an owning adapter would mean threading `Arc`s
+/// through the whole request chain. This is a short-lived view over the
+/// context for one operation, which is what the lifetime says.
+pub struct DaemonGovernanceAdapter<'a> {
+    pub(super) ctx: &'a DaemonContext,
 }
 
-impl DaemonGovernanceAdapter {
-    pub fn new(ctx: Arc<DaemonContext>) -> Self {
+impl<'a> DaemonGovernanceAdapter<'a> {
+    pub fn new(ctx: &'a DaemonContext) -> Self {
         Self { ctx }
     }
 

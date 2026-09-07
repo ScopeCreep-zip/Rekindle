@@ -23,6 +23,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admission;
 pub mod apply;
 pub mod bootstrap;
 pub mod deps;

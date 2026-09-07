@@ -22,7 +22,7 @@ use rekindle_types::id::PseudonymKey;
 use super::DaemonGovernanceAdapter;
 
 #[async_trait]
-impl GovernanceRuntimeDeps for DaemonGovernanceAdapter {
+impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {

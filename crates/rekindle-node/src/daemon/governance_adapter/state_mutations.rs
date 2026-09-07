@@ -17,7 +17,7 @@ use rekindle_transport::session::CommunityMembership as SessionMembership;
 
 use super::DaemonGovernanceAdapter;
 
-impl DaemonGovernanceAdapter {
+impl DaemonGovernanceAdapter<'_> {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
         self.ctx
             .community_runtime

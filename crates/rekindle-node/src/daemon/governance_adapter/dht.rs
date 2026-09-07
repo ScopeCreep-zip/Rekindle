@@ -27,7 +27,7 @@ fn dht_err(context: &str, e: impl std::fmt::Display) -> GovernanceRuntimeError {
     GovernanceRuntimeError::Adapter(format!("{context}: {e}"))
 }
 
-impl DaemonGovernanceAdapter {
+impl DaemonGovernanceAdapter<'_> {
     /// Create the universal v2.0 community SMPL record.
     ///
     /// `o_cnt: 0` — the creation keypair owns no subkeys and is
