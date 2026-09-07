@@ -1,17 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import {
+  E2E_BACKEND_HEALTH_URL,
+  baseConfig,
+  viteDevServer,
+} from "./playwright.base.config";
+
 export default defineConfig({
+  ...baseConfig,
   testDir: "./e2e",
-  fullyParallel: false,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: 1,
-  reporter: process.env.CI ? "github" : "html",
-  use: {
-    baseURL: "http://localhost:1420",
-    trace: "on-first-retry",
-    screenshot: "only-on-failure",
-  },
   projects: [
     // Frontend-only tests with mocked IPC (fast, no Rust backend needed)
     {
@@ -27,22 +24,14 @@ export default defineConfig({
     },
   ],
   webServer: [
-    // Vite dev server — serves the SolidJS frontend
-    {
-      command: process.env.E2E
-        ? "VITE_E2E=true pnpm dev"
-        : "VITE_PLAYWRIGHT=true pnpm dev",
-      url: "http://localhost:1420",
-      reuseExistingServer: !process.env.CI,
-      timeout: 60_000,
-    },
+    viteDevServer(process.env.E2E ? "e2e" : "mock"),
     // E2E backend server — only started for the e2e project
     ...(process.env.E2E
       ? [
           {
             command:
               "cargo run -p rekindle --bin e2e-server --features e2e-server",
-            url: "http://127.0.0.1:3001/health",
+            url: E2E_BACKEND_HEALTH_URL,
             reuseExistingServer: !process.env.CI,
             timeout: 120_000,
           },

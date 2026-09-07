@@ -9,25 +9,17 @@
 # two disagree, the flake wins. Keep dependency changes in sync with it.
 set -euo pipefail
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
-info()  { echo -e "${GREEN}[+]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
-error() { echo -e "${RED}[x]${NC} $*"; exit 1; }
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 # ── Prerequisites ────────────────────────────────────────────────────
-command -v rustc  &>/dev/null || error "Rust not found — run: bash scripts/setup-$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/').sh"
-command -v node   &>/dev/null || error "Node.js not found — run the setup script first"
-command -v pnpm   &>/dev/null || error "pnpm not found — run: corepack enable"
-command -v capnp  &>/dev/null || error "Cap'n Proto compiler not found — run the setup script first"
-command -v cmake  &>/dev/null || error "CMake not found — run the setup script first"
+command -v rustc &>/dev/null || error "Rust not found — run: bash scripts/setup-$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/').sh"
+command -v node &>/dev/null || error "Node.js not found — run the setup script first"
+command -v pnpm &>/dev/null || error "pnpm not found — run: corepack enable"
+command -v capnp &>/dev/null || error "Cap'n Proto compiler not found — run the setup script first"
+command -v cmake &>/dev/null || error "CMake not found — run the setup script first"
 
 info "Rust:  $(rustc --version)"
 info "Node:  $(node --version)"
@@ -50,29 +42,37 @@ info "Building Rekindle..."
 pnpm tauri build
 
 # ── Report artifacts ─────────────────────────────────────────────────
+BUNDLE_DIR="src-tauri/target/release/bundle"
+
+# Print "  <Label>: <dir>/" then each matching file indented under it.
+#
+# Globbing rather than `ls | sed`: a bundle filename carrying a space (the
+# product name is configurable) would be split across two lines by `ls`, and
+# the pipeline's exit status was `sed`'s, so an unreadable bundle directory
+# still reported success. An unmatched glob stays literal, which `-e` filters.
+report_bundle() {
+    local label="$1" subdir="$2" ext="$3" file
+    [[ -d "$BUNDLE_DIR/$subdir" ]] || return 0
+    echo "  ${label}: $BUNDLE_DIR/$subdir/"
+    for file in "$BUNDLE_DIR/$subdir"/*."$ext"; do
+        [[ -e "$file" ]] || continue
+        echo "    $file"
+    done
+}
+
 echo ""
 info "Build complete! Artifacts:"
 case "$(uname -s)" in
     Darwin)
-        BUNDLE_DIR="src-tauri/target/release/bundle"
-        if [[ -d "$BUNDLE_DIR/dmg" ]]; then
-            echo "  DMG: $BUNDLE_DIR/dmg/"
-            ls "$BUNDLE_DIR/dmg/"*.dmg 2>/dev/null | sed 's/^/    /'
-        fi
+        report_bundle "DMG" dmg dmg
+        # .app is a bundle directory, not a file — name the folder itself.
         if [[ -d "$BUNDLE_DIR/macos" ]]; then
             echo "  App: $BUNDLE_DIR/macos/"
         fi
         ;;
     Linux)
-        BUNDLE_DIR="src-tauri/target/release/bundle"
-        if [[ -d "$BUNDLE_DIR/appimage" ]]; then
-            echo "  AppImage: $BUNDLE_DIR/appimage/"
-            ls "$BUNDLE_DIR/appimage/"*.AppImage 2>/dev/null | sed 's/^/    /'
-        fi
-        if [[ -d "$BUNDLE_DIR/deb" ]]; then
-            echo "  Deb: $BUNDLE_DIR/deb/"
-            ls "$BUNDLE_DIR/deb/"*.deb 2>/dev/null | sed 's/^/    /'
-        fi
+        report_bundle "AppImage" appimage AppImage
+        report_bundle "Deb" deb deb
         ;;
 esac
 echo ""

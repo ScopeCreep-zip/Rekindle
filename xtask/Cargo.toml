@@ -20,3 +20,13 @@ walkdir = "2"
 ignore = "0.4"
 serde = { version = "1", features = ["derive"] }
 toml_edit = "0.22"
+# `check-duplicate-constants` parses real Rust rather than pattern-matching
+# it. A line scanner cannot tell the `;` in `const K: [u8; 32] = …;` from
+# the one ending the statement, nor a `#[cfg(test)]` fixture from shipped
+# code — and getting that wrong in a CI gate means false failures. syn and
+# quote are already in the lockfile (every derive macro pulls them), so
+# this adds a dependency edge, not a crate. `span-locations` is
+# deliberately NOT enabled on proc-macro2: feature unification would turn
+# it on for every proc macro in the workspace build.
+syn = { version = "2", features = ["full", "parsing", "printing"] }
+quote = "1"

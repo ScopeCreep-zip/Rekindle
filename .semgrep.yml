@@ -197,32 +197,13 @@ custom_rules:
       include:
         - "src/**"
 
-  # ── Bare `#[allow(...)]` without `reason = "..."` ────────────────
-  - id: rekindle-no-bare-allow
-    languages: [rust]
-    severity: ERROR
-    pattern-either:
-      - pattern: |
-          #[allow($...LINTS)]
-      - pattern: |
-          #![allow($...LINTS)]
-    pattern-not-regex: 'reason\s*='
-    message: |
-      Every `#[allow(...)]` (and `#![allow(...)]`) must include a
-      `reason = "..."` argument explaining why the lint is being
-      silenced. Bare allows are forbidden — they hide AI-generated
-      shortcuts, dead-code helpers, and lazy escape hatches.
-
-      Quick fix:
-          #[allow(clippy::some_lint, reason = "specific justification")]
-
-      Better: prefer `#[expect(...)]` for transient suppressions —
-      the lint must actually fire or the expect itself errors.
-
-      One-shot retrofit for existing bare allows:
-          cargo xtask retrofit-allow-reasons
-
-      See docs/contributor/ai-assisted-contributions.md §2.
+  # The bare-`#[allow(...)]` rule lived here as well as in
+  # `cargo xtask check-allow-reasons`, and both hard-fail CI. Two
+  # implementations of one policy in two languages: xtask's is
+  # span-aware (it follows rustfmt's multi-line attribute layout),
+  # this one was a single `pattern-not-regex` that disagreed with it
+  # on exactly those attributes. xtask keeps the rule — it also owns
+  # the `cargo xtask retrofit-allow-reasons` fixer.
 
   # ── AI tells: placeholder / implement-this comments ──────────────
   - id: rekindle-no-ai-placeholder-comments

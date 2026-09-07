@@ -7633,6 +7633,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "postcard",
  "rand 0.8.5",
+ "rekindle-governance",
  "rekindle-lifecycle",
  "rekindle-transport",
  "rekindle-types",
@@ -7755,6 +7756,7 @@ dependencies = [
  "rekindle-protocol",
  "rekindle-records",
  "rekindle-types",
+ "rekindle-utils",
  "serde_json",
  "tokio",
  "tracing",
@@ -7782,6 +7784,7 @@ dependencies = [
  "rekindle-codec",
  "rekindle-crypto",
  "rekindle-events",
+ "rekindle-gossip",
  "rekindle-protocol",
  "rekindle-route",
  "rekindle-secrets",
@@ -7790,6 +7793,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "subtle",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -7813,6 +7817,7 @@ dependencies = [
 name = "rekindle-utils"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "tokio",
  "tracing",
 ]
@@ -11664,7 +11669,9 @@ dependencies = [
  "anyhow",
  "clap 4.5.60",
  "ignore",
+ "quote",
  "serde",
+ "syn 2.0.114",
  "toml_edit 0.22.27",
  "walkdir",
 ]

@@ -38,12 +38,16 @@ fi
 
 # Resolve the per-OS application-data root.
 case "$(uname -s)" in
-    Linux)  DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+    Linux) DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" ;;
     Darwin) DATA_HOME="$HOME/Library/Application Support" ;;
     *)
         echo "Unsupported OS: $(uname -s). This script supports Linux and macOS." >&2
         echo "On Windows, delete the 'table_store' and 'protected_store' folders" >&2
-        echo "under %APPDATA%\\${APP_ID}\\veilid (and \\server) by hand." >&2
+        # printf, not echo: the Windows path separators are backslashes, and
+        # `echo` is allowed to interpret those as escapes (it does under
+        # `sh`/dash and under bash's xpg_echo), which would mangle the very
+        # path this line is telling the user to go delete.
+        printf 'under %%APPDATA%%\\%s\\veilid (and \\server) by hand.\n' "$APP_ID" >&2
         exit 1
         ;;
 esac

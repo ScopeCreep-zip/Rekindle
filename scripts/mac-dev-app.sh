@@ -66,14 +66,14 @@ echo "→ building dev binary"
 #    configured on this machine.)
 echo "→ assembling $APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
-if [ -f "$APP_DIR/Contents/MacOS/rekindle" ] && \
-   ! cmp -s "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"; then
+if [ -f "$APP_DIR/Contents/MacOS/rekindle" ] \
+    && ! cmp -s "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"; then
     echo "→ binary changed — resetting stale TCC camera/mic grants (one new prompt)"
     tccutil reset Camera com.rekindle.app.dev >/dev/null 2>&1 || true
     tccutil reset Microphone com.rekindle.app.dev >/dev/null 2>&1 || true
 fi
 cp "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"
-cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
+cat >"$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -114,7 +114,7 @@ if pgrep -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle" >/dev/null; th
     sleep 1
 fi
 echo "→ launching Rekindle Dev.app (log: $APP_LOG)"
-: > "$APP_LOG"
+: >"$APP_LOG"
 open --stdout "$APP_LOG" --stderr "$APP_LOG" "$APP_DIR"
 echo "✓ running — Rust changes need a re-run of this script; frontend hot-reloads"
 echo "── live logs (Ctrl-C stops the tail, NOT the app) ──"

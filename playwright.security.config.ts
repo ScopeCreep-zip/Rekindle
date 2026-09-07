@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { baseConfig, viteDevServer } from "./playwright.base.config";
+
 // Playwright config for the security suite.
 //
 // Kept separate from `playwright.config.ts` so this can be run without
@@ -15,17 +17,8 @@ import { defineConfig, devices } from "@playwright/test";
 // handling, none of which need a live Veilid node.
 
 export default defineConfig({
+  ...baseConfig,
   testDir: "./e2e/security",
-  fullyParallel: false,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: 1,
-  reporter: process.env.CI ? "github" : "html",
-  use: {
-    baseURL: "http://localhost:1420",
-    trace: "on-first-retry",
-    screenshot: "only-on-failure",
-  },
   projects: [
     {
       name: "security",
@@ -33,12 +26,5 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    // Run the SolidJS frontend in Playwright-mock mode so security
-    // tests don't depend on a Veilid node.
-    command: "VITE_PLAYWRIGHT=true pnpm dev",
-    url: "http://localhost:1420",
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: viteDevServer("mock"),
 });

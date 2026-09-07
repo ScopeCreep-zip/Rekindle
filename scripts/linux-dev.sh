@@ -35,7 +35,7 @@ done
 sleep 1
 
 mkdir -p "${LOG%/*}"
-: > "$LOG"
+: >"$LOG"
 echo "→ live log: $LOG"
 echo "→ RUST_LOG: $RUST_LOG"
 cd "$ROOT"
