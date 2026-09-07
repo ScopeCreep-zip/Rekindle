@@ -268,7 +268,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         // ── Keys ─────────────────────────────────────────────────
         IpcRequest::MekList { community } => keys::handle_mek_list(ctx, state, &community),
         IpcRequest::MekRotate { community, channel } => {
-            keys::handle_mek_rotate(ctx, state, &community, &channel).await
+            keys::handle_mek_rotate(ctx, state, &community, &channel)
         }
         IpcRequest::MekRequest {
             community,

@@ -14,6 +14,16 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// from the schema — safe because the app is not live yet and identity
 /// keys live in Stronghold, not `SQLite`.
 ///
+/// 75: the registry MEK vault is gone from community creation, and the
+/// creator no longer writes itself into a shared member index. Both were
+/// owner-subkey writes that `o_cnt: 0` grants nobody a credential for,
+/// and `communities-channels.md` says the MEK is *never* written to DHT.
+/// A community created under the old flow therefore carries a vault and
+/// an index entry that new peers neither write nor read, while its
+/// genesis MEK sits on the DHT where it does not belong. Rotation is now
+/// peer-to-peer for both shells (`rekindle-mek-rotation`), delivered by
+/// `app_call` rather than published.
+///
 /// 74: admission governance entries. `GovernanceEntry` gained
 /// `JoinRequested`, `MemberApproved`, `MemberRejected` and
 /// `AdmissionPolicy` (Cap'n Proto union arms 34-37), so a peer on the
@@ -28,7 +38,7 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// subkey 8 (Strand Relay pool vs friend-inbox key); the friend-inbox
 /// pair moved to 9/10 and the record now allocates 11 subkeys. See
 /// `rekindle_types::dht_layout::profile`.
-const SCHEMA_VERSION: i64 = 74;
+const SCHEMA_VERSION: i64 = 75;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

@@ -1,7 +1,15 @@
-//! MEK lifecycle operations — rotate, request, wrap/unwrap, replenish prekeys.
+//! MEK lifecycle operations — request, wrap/unwrap, replenish prekeys.
 //!
-//! Typed reads/writes via `dht/registry.rs` and `dht/profile.rs`.
-//! Raw DHT I/O via `broadcast::dht_writes` for profile subkey writes.
+//! **Rotation is not here.** `rotate_mek` wrapped a fresh key for every
+//! member and published the copies into the registry's MEK vault
+//! subkey — a write `o_cnt: 0` gives nobody a credential for, of a key
+//! `communities-channels.md` says is *"**never** written to DHT"*.
+//! Rotation now goes through `rekindle-mek-rotation`, which delivers
+//! wrapped keys peer-to-peer by `app_call`: the deterministic rotator on
+//! departure, and `daemon::mek_rotation` for an operator request.
+//!
+//! Typed reads/writes via `dht/profile.rs`. Raw DHT I/O via
+//! `broadcast::dht_writes` for profile subkey writes.
 
 use std::sync::Arc;
 
@@ -11,102 +19,6 @@ use tracing::info;
 use crate::broadcast::node::TransportNode;
 use crate::crypto::mek::{Mek, MekCache};
 use crate::error::{Result, TransportError};
-use crate::payload::dht_types::MekVaultEntry;
-use crate::session::CommunityMembership;
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct MekRotated {
-    pub generation: u64,
-    pub copies_written: usize,
-}
-
-pub async fn rotate_mek(
-    node: &TransportNode,
-    membership: &CommunityMembership,
-    channel_id: &str,
-    mek_cache: &Arc<RwLock<MekCache>>,
-    signing_key_bytes: &[u8; 32],
-) -> Result<MekRotated> {
-    info!(channel = channel_id, community = %membership.community_name, "rotating MEK");
-    let dht = node.dht()?;
-
-    let current_gen = mek_cache
-        .read()
-        .current(&membership.governance_key, channel_id)
-        .map_or(0, Mek::generation);
-    let new_gen = current_gen + 1;
-    let new_mek = Mek::generate(new_gen);
-    let mek_wire = new_mek.to_wire_bytes();
-
-    let members = dht
-        .registry()
-        .read_member_index(&membership.registry_key)
-        .await?;
-    let our_pseudonym = crate::crypto::pseudonym::derive_community_pseudonym(
-        signing_key_bytes,
-        &membership.governance_key,
-    );
-    let mut copies = Vec::with_capacity(members.len());
-
-    for member in &members {
-        let pub_bytes = match hex::decode(&member.pseudonym_key) {
-            Ok(b) if b.len() == 32 => {
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&b);
-                arr
-            }
-            _ => {
-                tracing::warn!(pseudonym = %member.pseudonym_key, "skipping invalid pseudonym");
-                continue;
-            }
-        };
-        match crate::crypto::mek::wrap_mek(&our_pseudonym, &pub_bytes, &mek_wire) {
-            Ok(wrapped) => copies.push(crate::payload::dht_types::EncryptedMekCopy {
-                target_pseudonym: member.pseudonym_key.clone(),
-                encrypted_mek: wrapped,
-            }),
-            Err(e) => {
-                tracing::warn!(pseudonym = %member.pseudonym_key, error = %e, "MEK wrap failed");
-            }
-        }
-    }
-
-    let copies_written = copies.len();
-    let vault_entry = MekVaultEntry {
-        channel_id: channel_id.to_string(),
-        generation: new_gen,
-        rotator_pseudonym: membership.pseudonym_key.clone(),
-        copies,
-    };
-
-    let mut vault = dht
-        .registry()
-        .read_mek_vault(&membership.registry_key)
-        .await
-        .unwrap_or_default();
-    if let Some(existing) = vault.iter_mut().find(|e| e.channel_id == channel_id) {
-        *existing = vault_entry;
-    } else {
-        vault.push(vault_entry);
-    }
-    dht.registry()
-        .write_mek_vault(&membership.registry_key, &vault)
-        .await?;
-    mek_cache
-        .write()
-        .insert(&membership.governance_key, channel_id, new_mek);
-
-    info!(
-        channel = channel_id,
-        generation = new_gen,
-        copies = copies_written,
-        "MEK rotated"
-    );
-    Ok(MekRotated {
-        generation: new_gen,
-        copies_written,
-    })
-}
 
 pub fn build_mek_request_payload(
     channel_id: &str,

@@ -32,14 +32,26 @@ static REGISTRY_KEYPAIR_CACHE: std::sync::LazyLock<
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// Keyring label for a community's governance record owner keypair.
+pub(crate) fn governance_keypair_label(governance_key: &str) -> String {
+    format!(
+        "community-governance-{}",
+        &governance_key[..12.min(governance_key.len())]
+    )
+}
+
+/// Keyring label for a community's registry record owner keypair.
+///
+/// Deliberately adjacent to [`load_registry_keypair`], which reads the
+/// entry back: a mismatch between the two surfaces only as a registry
+/// that will not open writable, which is a long way from its cause.
+pub(crate) fn registry_keypair_label(registry_key: &str) -> String {
+    format!("registry-{}", &registry_key[..12.min(registry_key.len())])
+}
+
 /// Load registry keypair bytes, using module-level cache.
 pub(crate) async fn load_registry_keypair(registry_key: &str) -> Option<Vec<u8>> {
-    let short = if registry_key.len() > 12 {
-        &registry_key[..12]
-    } else {
-        registry_key
-    };
-    let label = format!("registry-{short}");
+    let label = registry_keypair_label(registry_key);
     {
         let cache = REGISTRY_KEYPAIR_CACHE.lock();
         if let Some(bytes) = cache.get(&label) {

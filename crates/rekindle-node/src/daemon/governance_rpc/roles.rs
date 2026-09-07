@@ -9,7 +9,6 @@ use rekindle_transport::payload::rpc::{CallResponse, GovernanceOp};
 
 use crate::daemon::community_rpc::{get_transport, require_operator_registry};
 
-use super::rekey::rekey_channels;
 use super::{ack, ensure_open, get_node, open_dht, reject, save};
 
 /// Group C governance ops: role management, MEK rotation, and ownership
@@ -19,8 +18,6 @@ use super::{ack, ensure_open, get_node, open_dht, reject, save};
 pub(super) async fn handle_op_group_c(
     operation: GovernanceOp,
     session: &RwLock<Option<rekindle_transport::Session>>,
-    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
-    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
     transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
     session_path: &std::path::Path,
     gov_key: &str,
@@ -92,83 +89,6 @@ pub(super) async fn handle_op_group_c(
                 Ok(()) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
-        }
-
-        GovernanceOp::AssignRole {
-            member_pseudonym,
-            role_id,
-        } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else {
-                return ack();
-            };
-            let Some(tn) = get_transport(transport) else {
-                return ack();
-            };
-            match rekindle_transport::operations::roles::assign_role(
-                &tn,
-                &registry_key,
-                &member_pseudonym,
-                role_id,
-            )
-            .await
-            {
-                Ok(()) => ack(),
-                Err(e) => reject(&e.to_string()),
-            }
-        }
-
-        GovernanceOp::UnassignRole {
-            member_pseudonym,
-            role_id,
-        } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else {
-                return ack();
-            };
-            let Some(tn) = get_transport(transport) else {
-                return ack();
-            };
-            match rekindle_transport::operations::roles::unassign_role(
-                &tn,
-                &registry_key,
-                &member_pseudonym,
-                role_id,
-            )
-            .await
-            {
-                Ok(()) => ack(),
-                Err(e) => reject(&e.to_string()),
-            }
-        }
-
-        // ── MEK rotation ────────────────────────────────��────────────
-        GovernanceOp::RotateMek { channel_id } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else {
-                return ack();
-            };
-            let Some(dht) = open_dht(transport) else {
-                return ack();
-            };
-            let members = dht
-                .registry()
-                .read_member_index(&registry_key)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "DHT read failed, using empty");
-                    Vec::new()
-                });
-            // Single-channel rekey: generate new MEK, wrap for all members, write vault
-            rekey_channels(
-                &dht,
-                gov_key,
-                &registry_key,
-                &[channel_id],
-                &members,
-                signing_key,
-                mek_cache,
-            )
-            .await;
-            save(session, session_path);
-            ack()
         }
 
         // ── Ownership transfer ───────────────────────────────────────

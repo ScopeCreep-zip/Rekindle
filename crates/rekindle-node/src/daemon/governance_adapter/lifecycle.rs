@@ -414,10 +414,10 @@ impl DaemonGovernanceAdapter<'_> {
         community_id: &str,
         banned_pseudonym_hex: &str,
     ) {
-        let request = crate::daemon::mek_rotation::MekRotationRequest {
-            community_id: community_id.to_string(),
-            departed_pseudonym_hex: banned_pseudonym_hex.to_string(),
-        };
+        let request = crate::daemon::mek_rotation::MekRotationRequest::departure(
+            community_id,
+            banned_pseudonym_hex,
+        );
         if self.ctx.mek_rotation_tx.send(request).is_err() {
             tracing::warn!(
                 community_id,

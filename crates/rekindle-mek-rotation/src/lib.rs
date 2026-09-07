@@ -43,4 +43,6 @@ pub use election::{
 pub use error::MekRotationError;
 pub use event::MekRotationEvent;
 pub use receive::{handle_incoming_mek_transfer, mek_cache_has_generation, unwrap_received_mek};
-pub use rotate::{rotate_text_mek_for_departure, rotate_voice_mek_for_membership};
+pub use rotate::{
+    rotate_mek_on_request, rotate_text_mek_for_departure, rotate_voice_mek_for_membership,
+};

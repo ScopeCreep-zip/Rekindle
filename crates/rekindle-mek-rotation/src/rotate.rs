@@ -178,3 +178,84 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
     )?;
     Ok(())
 }
+
+/// Replace a MEK because an operator asked, not because somebody left.
+///
+/// `channel_id` is `None` for the community-wide key and `Some(id)` for
+/// one channel's.
+///
+/// [`rotate_text_mek_for_departure`] cannot serve this: it elects a
+/// rotator from `blake3(departed || candidate)` and there is no departed
+/// member to seed that with. The request names *this* node, so it
+/// rotates and distributes directly, with no cascade wait.
+///
+/// Both shells drive this. The desktop's `rotate_mek_local` and the
+/// daemon's `governance_rpc::rekey` each did it their own way, and both
+/// did it by publishing wrapped copies into the registry's MEK vault
+/// subkey — a write `o_cnt: 0` grants nobody a credential for, of a key
+/// `communities-channels.md` says is *"**never** written to DHT"*. The
+/// desktop's even required a `registry_owner_keypair` and refused
+/// without one, which is the coordinator in miniature. Delivery here is
+/// per-recipient `app_call`, the same path a departure rotation uses.
+///
+/// Honest peers accept the resulting `MEKGenerationBump` because the
+/// CRDT treats it as a Max-Register from any non-banned writer.
+pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: Option<&str>,
+) -> Result<(), MekRotationError> {
+    // Resolved before any work: the bump entry has to name a real
+    // pseudonym, and a placeholder would merge as though an unrelated
+    // member had departed.
+    let me = deps
+        .my_pseudonym(community_id)
+        .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
+    let me_hex = pseudonym_hex(&me);
+
+    let cache_channel = channel_id.unwrap_or("");
+    let new_generation = deps.cache().current_generation(community_id, cache_channel) + 1;
+
+    // Provenance is what makes two admins rotating at the same
+    // generation converge: `convergence::incoming_wins_same_generation`
+    // breaks the tie on the lowest election rank, and every peer
+    // computes the same answer. Without it the two keys are
+    // indistinguishable and peers split into two decryptable halves.
+    // A manual rotation has no trigger member, so the rank is taken
+    // against a zero context — a stable per-minter tiebreak.
+    let rank = rekindle_secrets::rotator::election_hash(&[0u8; 32], &me.0);
+    let new_mek = MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank);
+
+    // Excluding nobody: everyone online is still a member.
+    let recipients = deps.online_recipients(community_id, None);
+    distribute_mek(deps, community_id, channel_id, &new_mek, &recipients).await?;
+
+    deps.apply_received_mek_to_state(community_id, channel_id, &new_mek);
+    deps.persist_received_mek(community_id, channel_id, &new_mek);
+
+    // Stamp the generation so peers that were offline during the
+    // distribution can tell their cached key is stale.
+    let lamport = deps.increment_lamport(community_id);
+    deps.write_governance_entry(
+        community_id,
+        GovernanceEntry::MEKGenerationBump {
+            generation: new_generation,
+            // No departure triggered this, so the field names the
+            // initiator rather than an uninvolved member who would
+            // otherwise look like they had left.
+            trigger_departed: me,
+            cascade_skipped: Vec::new(),
+            lamport,
+        },
+    )
+    .await?;
+
+    deps.send_to_mesh(
+        community_id,
+        &CommunityEnvelope::Control(ControlPayload::MEKRotated {
+            channel_id: channel_id.map(ToOwned::to_owned),
+            new_generation,
+            rotator_pseudonym: Some(me_hex),
+        }),
+    )
+}

@@ -3,11 +3,7 @@
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 
-use crate::daemon::dispatch::{state_error, DaemonContext};
-
-fn adapter(ctx: &DaemonContext) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
-    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
-}
+use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 
 /// Admit a pending member.
 ///

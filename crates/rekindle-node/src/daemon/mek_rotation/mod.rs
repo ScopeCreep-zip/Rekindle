@@ -39,13 +39,57 @@ use crate::daemon::dispatch::DaemonContext;
 
 pub use cache::{DaemonMekPersist, MekCacheAdapter};
 
-/// A departure that invalidates the current MEK.
+/// Why a MEK needs replacing.
+#[derive(Debug, Clone)]
+pub enum MekRotationKind {
+    /// A member left or was banned and still holds the current key.
+    /// Which peer rotates is decided by `blake3(departed || self)`, so
+    /// every recipient of the same departure queues this and exactly one
+    /// of them does the work.
+    Departure { departed_pseudonym_hex: String },
+    /// An operator asked for a specific channel's key to be replaced.
+    ///
+    /// No election: there is no departure to seed one with, and the
+    /// request names *this* node as the initiator. Honest peers accept
+    /// the resulting `MEKGenerationBump` because the CRDT treats it as a
+    /// Max-Register from any non-banned writer
+    /// (`rekindle_governance::validate`).
+    Manual { channel_id: String },
+}
+
+/// A reason to replace a community's MEK, queued for the worker.
 #[derive(Debug, Clone)]
 pub struct MekRotationRequest {
     /// Governance key of the affected community.
     pub community_id: String,
-    /// The member who left or was banned, hex-encoded pseudonym.
-    pub departed_pseudonym_hex: String,
+    pub kind: MekRotationKind,
+}
+
+impl MekRotationRequest {
+    /// A departure-triggered rotation.
+    #[must_use]
+    pub fn departure(
+        community_id: impl Into<String>,
+        departed_pseudonym_hex: impl Into<String>,
+    ) -> Self {
+        Self {
+            community_id: community_id.into(),
+            kind: MekRotationKind::Departure {
+                departed_pseudonym_hex: departed_pseudonym_hex.into(),
+            },
+        }
+    }
+
+    /// An operator-requested rotation of one channel.
+    #[must_use]
+    pub fn manual(community_id: impl Into<String>, channel_id: impl Into<String>) -> Self {
+        Self {
+            community_id: community_id.into(),
+            kind: MekRotationKind::Manual {
+                channel_id: channel_id.into(),
+            },
+        }
+    }
 }
 
 /// Handle used by triggers to ask for a rotation.
@@ -96,21 +140,35 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
     while let Some(request) = rx.recv().await {
         let adapter = DaemonMekAdapter::new(Arc::clone(&ctx));
         let short = &request.community_id[..16.min(request.community_id.len())];
-        match rekindle_mek_rotation::rotate_text_mek_for_departure(
-            &adapter,
-            &request.community_id,
-            &request.departed_pseudonym_hex,
-        )
-        .await
-        {
-            Ok(()) => tracing::debug!(community = %short, "departure rotation finished"),
+        let outcome = match &request.kind {
+            MekRotationKind::Departure {
+                departed_pseudonym_hex,
+            } => {
+                rekindle_mek_rotation::rotate_text_mek_for_departure(
+                    &adapter,
+                    &request.community_id,
+                    departed_pseudonym_hex,
+                )
+                .await
+            }
+            MekRotationKind::Manual { channel_id } => {
+                rekindle_mek_rotation::rotate_mek_on_request(
+                    &adapter,
+                    &request.community_id,
+                    Some(channel_id),
+                )
+                .await
+            }
+        };
+        match outcome {
+            Ok(()) => tracing::debug!(community = %short, "rotation finished"),
             // Not an error path in the common case: losing the cascade
             // to a better-ranked peer, or having no online recipients,
             // both end here and both are correct outcomes.
             Err(e) => tracing::debug!(
                 community = %short,
                 error = %e,
-                "departure rotation did not complete"
+                "rotation did not complete"
             ),
         }
     }

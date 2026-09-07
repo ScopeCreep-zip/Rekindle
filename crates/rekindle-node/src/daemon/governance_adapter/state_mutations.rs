@@ -17,6 +17,8 @@ use rekindle_transport::session::CommunityMembership as SessionMembership;
 
 use super::DaemonGovernanceAdapter;
 
+use crate::daemon::community_rpc::{governance_keypair_label, registry_keypair_label};
+
 impl DaemonGovernanceAdapter<'_> {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
         self.ctx
@@ -82,7 +84,10 @@ impl DaemonGovernanceAdapter<'_> {
             community_mailbox_key: String::new(),
             join_inbox_key: String::new(),
             is_operator: true,
-            governance_keypair_label: None,
+            governance_keypair_label: community
+                .dht_owner_keypair
+                .as_ref()
+                .map(|_| governance_keypair_label(&community.governance_key)),
             segment_index: Some(0),
             lamport_counter: community.lamport_counter,
             mek_generation: community.mek.generation,
@@ -100,6 +105,66 @@ impl DaemonGovernanceAdapter<'_> {
             .community_runtime
             .set_governance_state(&community.id, community.governance_state);
         self.insert_community_mek_impl(&community.id, &community.mek);
+
+        self.persist_origin_keypairs(
+            &community.governance_key,
+            &community.registry_key,
+            community.dht_owner_keypair,
+            community.registry_owner_keypair,
+        );
+    }
+
+    /// Store the record owner keypairs the origin flow produced.
+    ///
+    /// `o_cnt: 0` means these grant no *writer* slot — members write
+    /// their own subkeys with slot keypairs — but they are still the
+    /// record owner credentials, and the desktop shell persists them
+    /// (`state/community.rs`, `community_loader/`). The daemon adapter
+    /// used to drop them on the floor, which silently made the two
+    /// shells hold different amounts of a created community.
+    ///
+    /// Detached because `insert_community` is sync while the keyring is
+    /// async, and best-effort because the community is already created:
+    /// failing here must not undo a successful genesis. The encrypted
+    /// file backups are the recovery path when the OS keyring is lost to
+    /// a migration or container rebuild.
+    fn persist_origin_keypairs(
+        &self,
+        governance_key: &str,
+        registry_key: &str,
+        dht_owner_keypair: Option<String>,
+        registry_owner_keypair: Option<String>,
+    ) {
+        let signing_key = self.ctx.signing_key.read().as_ref().map(|k| *k.as_bytes());
+        let backup_dir = self
+            .ctx
+            .session_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .to_path_buf();
+        let gov_label = governance_keypair_label(governance_key);
+        let reg_label = registry_keypair_label(registry_key);
+
+        tokio::spawn(async move {
+            for (label, keypair, kind) in [
+                (gov_label, dht_owner_keypair, "governance"),
+                (reg_label, registry_owner_keypair, "registry"),
+            ] {
+                let Some(keypair) = keypair else { continue };
+                let bytes = keypair.as_bytes();
+                if let Err(e) = crate::state::keystore::store_keypair_bytes(&label, bytes).await {
+                    tracing::warn!(error = %e, kind, "owner keypair keyring store failed");
+                }
+                if let Some(key) = signing_key.as_ref() {
+                    let path = backup_dir.join(format!("{label}.enc"));
+                    if let Err(e) = crate::daemon::dispatch::community::write_encrypted_backup(
+                        &path, bytes, key,
+                    ) {
+                        tracing::warn!(error = %e, kind, "owner keypair backup failed — keyring is the only copy");
+                    }
+                }
+            }
+        });
     }
 
     pub(super) fn mark_open_channel_record_impl(&self, community_id: &str, record_key: String) {

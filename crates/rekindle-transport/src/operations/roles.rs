@@ -1,6 +1,12 @@
-//! Role management operations — list, create, update, delete, assign, unassign.
+//! Role definition operations (create / update / delete)
 //!
-//! Typed reads/writes via `dht/governance.rs` and `dht/registry.rs`.
+//! Assign / unassign are **not** here: granting a role once meant
+//! rewriting the target's row in the shared registry member index, which
+//! `o_cnt: 0` gives nobody a writer credential for. v2.0 writes
+//! `RoleAssignment` / `RoleUnassignment` governance entries via
+//! `rekindle_governance_runtime::roles`, which both shells now call.
+//!
+//! Typed reads/writes via `dht/governance.rs`.
 
 use tracing::info;
 
@@ -83,51 +89,5 @@ pub async fn delete_role(node: &TransportNode, governance_key: &str, role_id: u3
     }
     dht.governance().write_roles(governance_key, &roles).await?;
     info!(role_id, "role deleted");
-    Ok(())
-}
-
-pub async fn assign_role(
-    node: &TransportNode,
-    registry_key: &str,
-    member_pseudonym: &str,
-    role_id: u32,
-) -> Result<()> {
-    let dht = node.dht()?;
-    let mut members = dht.registry().read_member_index(registry_key).await?;
-    let member = members
-        .iter_mut()
-        .find(|m| m.pseudonym_key == member_pseudonym)
-        .ok_or_else(|| TransportError::DhtError {
-            reason: format!("member {member_pseudonym} not found"),
-        })?;
-    if !member.role_ids.contains(&role_id) {
-        member.role_ids.push(role_id);
-    }
-    dht.registry()
-        .write_member_index(registry_key, &members)
-        .await?;
-    info!(member = member_pseudonym, role_id, "role assigned");
-    Ok(())
-}
-
-pub async fn unassign_role(
-    node: &TransportNode,
-    registry_key: &str,
-    member_pseudonym: &str,
-    role_id: u32,
-) -> Result<()> {
-    let dht = node.dht()?;
-    let mut members = dht.registry().read_member_index(registry_key).await?;
-    let member = members
-        .iter_mut()
-        .find(|m| m.pseudonym_key == member_pseudonym)
-        .ok_or_else(|| TransportError::DhtError {
-            reason: format!("member {member_pseudonym} not found"),
-        })?;
-    member.role_ids.retain(|&id| id != role_id);
-    dht.registry()
-        .write_member_index(registry_key, &members)
-        .await?;
-    info!(member = member_pseudonym, role_id, "role unassigned");
     Ok(())
 }

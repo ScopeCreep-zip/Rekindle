@@ -20,7 +20,7 @@
 
 mod admin;
 mod channel;
-mod community;
+pub(crate) mod community;
 mod context;
 mod governance;
 mod identity;
@@ -57,6 +57,17 @@ pub struct PolicyConfig {
     pub require_signature_verification: bool,
     /// Maximum allowed gossip TTL.
     pub max_gossip_ttl: Option<u8>,
+}
+
+/// Build a governance adapter over this request's context.
+///
+/// One definition rather than one per dispatch module: the body is
+/// three tokens, which is exactly the size at which copies stop looking
+/// worth converging and start drifting.
+pub(crate) fn adapter(
+    ctx: &DaemonContext,
+) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
+    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
 }
 
 /// Shared daemon context accessible by all dispatch handlers.

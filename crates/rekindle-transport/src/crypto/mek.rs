@@ -191,6 +191,36 @@ impl MekCache {
         }
     }
 
+    /// Overwrite the key held at `mek`'s generation, inserting if absent.
+    ///
+    /// [`Self::insert`] deduplicates by generation and therefore drops a
+    /// *different* key arriving at a generation already held. That is the
+    /// right default — it makes re-delivery idempotent — but it makes the
+    /// same-generation split-brain unresolvable: two peers can mint
+    /// different bytes at one generation, and whichever arrived first
+    /// would stick, differently on every peer.
+    ///
+    /// Callers use this only after deciding the incoming key wins, via
+    /// `rekindle_mek_rotation::convergence::incoming_wins_same_generation`.
+    /// The decision is deliberately not made here: this type holds the
+    /// 40-byte base form and cannot see the election rank the comparison
+    /// needs.
+    pub fn replace_generation(&mut self, community_id: &str, channel_id: &str, mek: Mek) {
+        let key = (community_id.to_string(), channel_id.to_string());
+        let generations = self.entries.entry(key).or_default();
+        let gen = mek.generation;
+        if let Some(existing) = generations.iter_mut().find(|cm| cm.mek.generation == gen) {
+            existing.mek = mek;
+            existing.cached_at = Instant::now();
+            return;
+        }
+        generations.push(CachedMek {
+            mek,
+            cached_at: Instant::now(),
+        });
+        generations.sort_by_key(|cm| cm.mek.generation);
+    }
+
     /// Get the current (latest generation) MEK for a channel.
     pub fn current(&self, community_id: &str, channel_id: &str) -> Option<&Mek> {
         self.entries
@@ -266,3 +296,63 @@ impl Default for MekCache {
 
 /// Re-exported from `rekindle_types::display` — the SSOT definition.
 pub use rekindle_types::display::MekCacheEntrySnapshot;
+
+#[cfg(test)]
+mod cache_tests {
+    use super::{Mek, MekCache};
+
+    /// `insert` is idempotent by generation — the property every
+    /// re-delivery path relies on.
+    #[test]
+    fn insert_keeps_the_first_key_at_a_generation() {
+        let mut cache = MekCache::new();
+        cache.insert("c", "ch", Mek::from_bytes([1; 32], 3));
+        cache.insert("c", "ch", Mek::from_bytes([2; 32], 3));
+        assert_eq!(
+            cache.get_generation("c", "ch", 3).unwrap().as_bytes(),
+            &[1; 32]
+        );
+    }
+
+    /// …which is exactly why `replace_generation` exists. Without it a
+    /// same-generation split-brain resolves to "whoever arrived first",
+    /// which is a different answer on every peer.
+    #[test]
+    fn replace_generation_overwrites_at_the_same_generation() {
+        let mut cache = MekCache::new();
+        cache.insert("c", "ch", Mek::from_bytes([1; 32], 3));
+        cache.replace_generation("c", "ch", Mek::from_bytes([2; 32], 3));
+        assert_eq!(
+            cache.get_generation("c", "ch", 3).unwrap().as_bytes(),
+            &[2; 32]
+        );
+    }
+
+    /// It must also insert when the generation is absent, so callers do
+    /// not have to branch.
+    #[test]
+    fn replace_generation_inserts_when_absent() {
+        let mut cache = MekCache::new();
+        cache.replace_generation("c", "ch", Mek::from_bytes([7; 32], 9));
+        assert_eq!(cache.current("c", "ch").unwrap().generation(), 9);
+    }
+
+    /// Replacing must not disturb the retained older generations that
+    /// `get_generation` serves for late-arriving ciphertext.
+    #[test]
+    fn replace_generation_leaves_other_generations_intact() {
+        let mut cache = MekCache::new();
+        cache.insert("c", "ch", Mek::from_bytes([1; 32], 1));
+        cache.insert("c", "ch", Mek::from_bytes([2; 32], 2));
+        cache.replace_generation("c", "ch", Mek::from_bytes([9; 32], 2));
+        assert_eq!(
+            cache.get_generation("c", "ch", 1).unwrap().as_bytes(),
+            &[1; 32]
+        );
+        assert_eq!(
+            cache.get_generation("c", "ch", 2).unwrap().as_bytes(),
+            &[9; 32]
+        );
+        assert_eq!(cache.current("c", "ch").unwrap().generation(), 2);
+    }
+}

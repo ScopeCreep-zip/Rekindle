@@ -4,7 +4,7 @@ use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 use crate::validation;
 
-use super::{state_error, DaemonContext};
+use super::{adapter, state_error, DaemonContext};
 
 // ── Roles ───────────────────────────────────────────────────────────────
 
@@ -213,11 +213,6 @@ pub(crate) async fn handle_role_unassign(
 }
 
 // ── Moderation ──────────────────────────────────────────────────────────
-
-/// Build a governance adapter over this request's context.
-fn adapter(ctx: &DaemonContext) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
-    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
-}
 
 /// Remove a member without barring return.
 ///

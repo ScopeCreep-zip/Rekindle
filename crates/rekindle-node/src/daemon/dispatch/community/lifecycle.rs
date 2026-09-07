@@ -4,8 +4,9 @@ use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 use crate::validation;
 
-use super::ownership::write_encrypted_backup;
-use crate::daemon::dispatch::{state_error, DaemonContext};
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+
+use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 
 pub(crate) async fn handle_create(
     ctx: &DaemonContext,
@@ -33,169 +34,68 @@ pub(crate) async fn handle_create(
         }
     }
 
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let signing_key = match ctx.require_signing_key() {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    let session = match ctx.require_session(Clone::clone) {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
+    // v2.0 flat-SMPL creation. The previous path built the registry as
+    // a creator-owned record, published the genesis MEK into a registry
+    // MEK vault, and wrote the creator into a shared member index —
+    // three things `o_cnt: 0` has no writer for, and one
+    // (`communities-channels.md`: the MEK is "**never** written to
+    // DHT") that must not exist at all. `origin::create_community`
+    // creates the three SMPL records from a shared slot seed and keeps
+    // the MEK local, which is what the desktop shell has been doing via
+    // `services/community/create.rs`.
+    //
+    // Persistence, keypair storage and the genesis governance state all
+    // happen inside the flow via `Deps::insert_community`, so there is
+    // no membership to hand-assemble here any more.
+    let community_id =
+        match rekindle_governance_runtime::create_community(&adapter(ctx), &name).await {
+            Ok(id) => id,
+            Err(e) => return IpcResponse::error(500, format!("community create failed: {e}")),
+        };
 
-    let desc = if description.is_empty() {
-        None
-    } else {
-        Some(description)
-    };
-    match rekindle_transport::operations::community::create_community(
-        &transport,
-        &session,
-        &name,
-        desc,
-        &ctx.mek_cache,
-        &signing_key,
-    )
-    .await
-    {
-        Ok(result) => {
-            let gov_key_short = if result.governance_key.len() > 12 {
-                &result.governance_key[..12]
-            } else {
-                &result.governance_key
-            };
-            let membership = rekindle_transport::session::CommunityMembership {
-                governance_key: result.governance_key.clone(),
-                pseudonym_key: result.our_pseudonym_key.clone(),
-                display_name: session.identity.display_name.clone(),
-                role_ids: Vec::new(),
-                slot_index: 0,
-                registry_key: result.registry_key.clone(),
-                community_name: name.clone(),
-                // The creator must keep the seed: it derives every slot
-                // keypair in the registry, so without it neither we nor
-                // any joiner we admit can write presence.
-                slot_seed: Some(result.slot_seed),
-                channel_record_keys: std::collections::HashMap::new(),
-                community_mailbox_key: result.community_mailbox_key.clone(),
-                join_inbox_key: result.join_inbox_key.clone(),
-                is_operator: true,
-                governance_keypair_label: Some(format!("community-governance-{gov_key_short}")),
-                // The creator is definitionally in the genesis segment.
-                // `mek_generation` stays 0 here and is read from
-                // `MekCache` by the adapter — the create path does not
-                // report a generation, and inventing one would make the
-                // persisted value disagree with the cache that actually
-                // holds the key.
-                segment_index: Some(0),
-                lamport_counter: 0,
-                mek_generation: 0,
-            };
-            {
-                let mut guard = ctx.session.write();
-                if let Some(ref mut s) = *guard {
-                    s.join_community(membership);
-                }
-            }
-            if let Err(e) = ctx.save_session() {
-                return e;
-            }
-
-            // Store governance and registry keypairs. These MUST persist —
-            // without them, the community cannot process joins or govern.
-            if !result.governance_keypair_bytes.is_empty() {
-                if let Err(e) = crate::state::keystore::store_governance_keypair(
-                    gov_key_short,
-                    &result.governance_keypair_bytes,
-                )
-                .await
-                {
-                    return IpcResponse::error(
-                        500,
-                        format!(
-                            "community created but governance keypair storage failed: {e}. \
-                         The community will not function. Delete and recreate."
-                        ),
-                    );
-                }
-            }
-            if !result.registry_keypair_bytes.is_empty() {
-                let reg_key_short = if result.registry_key.len() > 12 {
-                    &result.registry_key[..12]
-                } else {
-                    &result.registry_key
-                };
-                if let Err(e) = crate::state::keystore::store_keypair_bytes(
-                    &format!("registry-{reg_key_short}"),
-                    &result.registry_keypair_bytes,
-                )
-                .await
-                {
-                    return IpcResponse::error(
-                        500,
-                        format!(
-                            "community created but registry keypair storage failed: {e}. \
-                         The community will not function. Delete and recreate."
-                        ),
-                    );
-                }
-            }
-
-            // Best-effort encrypted backup of governance + registry keypairs.
-            // Recovery path if the OS keyring is lost (migration, container rebuild).
-            // Encrypted with the signing key so only the identity owner can recover.
-            if let Some(ref sk_handle) = *ctx.signing_key.read() {
-                let backup_dir = ctx
-                    .session_path
-                    .parent()
-                    .unwrap_or(std::path::Path::new("."));
-                let gov_backup = backup_dir.join(format!("governance-backup-{gov_key_short}.enc"));
-                let reg_backup = backup_dir.join(format!(
-                    "registry-backup-{}.enc",
-                    if result.registry_key.len() > 12 {
-                        &result.registry_key[..12]
-                    } else {
-                        &result.registry_key
-                    }
-                ));
-                let key = sk_handle.as_bytes();
-                if let Err(e) =
-                    write_encrypted_backup(&gov_backup, &result.governance_keypair_bytes, key)
-                {
-                    tracing::warn!(error = %e, "governance keypair backup failed — keyring is the only copy");
-                }
-                if let Err(e) =
-                    write_encrypted_backup(&reg_backup, &result.registry_keypair_bytes, key)
-                {
-                    tracing::warn!(error = %e, "registry keypair backup failed — keyring is the only copy");
-                }
-            }
-
-            // Register gossip mesh for the new community (synchronous, no await needed).
-            // The join inbox Veilid-level watch was already established during create_community
-            // (transport layer). ValueChange events route through DaemonHandler::on_value_change
-            // which checks session.communities for join_inbox_key matches — no SubscriptionManager
-            // WatchRegistry registration needed.
-            {
-                let bcast_guard = ctx.broadcast_mgr.read();
-                if let Some(ref bcast_mgr) = *bcast_guard {
-                    bcast_mgr.register_mesh(&result.governance_key);
-                    tracing::info!(community = %name, "gossip mesh registered for new community");
-                }
-            }
-
-            IpcResponse::ok(&serde_json::json!({
-                "governance_key": result.governance_key,
-                "registry_key": result.registry_key,
-                "community_mailbox_key": result.community_mailbox_key,
-                "name": name,
-            }))
+    if !description.is_empty() {
+        // Description is metadata, not part of genesis. A failure here
+        // leaves a working community with no description rather than
+        // failing a creation that already succeeded.
+        if let Err(e) = rekindle_governance_runtime::apply::write_entry(
+            &adapter(ctx),
+            &community_id,
+            rekindle_types::governance::GovernanceEntry::CommunityMeta {
+                name: Some(name.clone()),
+                description: Some(description.to_string()),
+                icon_hash: None,
+                banner_hash: None,
+                lamport: adapter(ctx).increment_lamport(&community_id),
+            },
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "community created but description not written");
         }
-        Err(e) => IpcResponse::error(500, format!("community create failed: {e}")),
     }
+
+    let registry_key = ctx
+        .session
+        .read()
+        .as_ref()
+        .and_then(|s| s.community(&community_id))
+        .map(|m| m.registry_key.clone())
+        .unwrap_or_default();
+
+    // Register the gossip mesh for the new community.
+    {
+        let bcast_guard = ctx.broadcast_mgr.read();
+        if let Some(ref bcast_mgr) = *bcast_guard {
+            bcast_mgr.register_mesh(&community_id);
+            tracing::info!(community = %name, "gossip mesh registered for new community");
+        }
+    }
+
+    IpcResponse::ok(&serde_json::json!({
+        "governance_key": community_id,
+        "registry_key": registry_key,
+        "name": name,
+    }))
 }
 
 pub(crate) async fn handle_join(
@@ -227,7 +127,7 @@ pub(crate) async fn handle_join(
         Err(e) => return e,
     };
 
-    let adapter = crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx);
+    let adapter = adapter(ctx);
     let outcome = match rekindle_governance_runtime::join_flow::run_join_stages(
         &adapter,
         &link.governance_key,

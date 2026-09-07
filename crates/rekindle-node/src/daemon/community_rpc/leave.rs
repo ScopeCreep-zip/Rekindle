@@ -67,10 +67,10 @@ pub(crate) fn handle_leave(
         "member departed — queueing MEK rotation"
     );
 
-    let request = MekRotationRequest {
-        community_id: notif.governance_key.clone(),
-        departed_pseudonym_hex: notif.leaving_pseudonym_hex.clone(),
-    };
+    let request = MekRotationRequest::departure(
+        notif.governance_key.clone(),
+        notif.leaving_pseudonym_hex.clone(),
+    );
     if mek_rotation_tx.send(request).is_err() {
         tracing::warn!(
             community = %community_short,
@@ -152,7 +152,14 @@ mod tests {
 
         let queued = rx.try_recv().expect("a rotation should have been queued");
         assert_eq!(queued.community_id, GOV);
-        assert_eq!(queued.departed_pseudonym_hex, DEPARTED);
+        match queued.kind {
+            crate::daemon::mek_rotation::MekRotationKind::Departure {
+                departed_pseudonym_hex,
+            } => assert_eq!(departed_pseudonym_hex, DEPARTED),
+            other @ crate::daemon::mek_rotation::MekRotationKind::Manual { .. } => {
+                panic!("expected a departure rotation, got {other:?}")
+            }
+        }
         assert!(rx.try_recv().is_err(), "exactly one request");
     }
 

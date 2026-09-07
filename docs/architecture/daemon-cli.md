@@ -228,6 +228,15 @@ a variant forces a handler implementation in
 (e.g., `ChannelCreate`, `FriendAdd`) so the match arms are
 self-documenting.
 
+**`MEKRotate` answers `{ "queued": true, … }`, not a generation.** MEK
+distribution is a per-recipient `app_call` run by the rotation worker
+(`daemon::mek_rotation`), so a synchronous reply would either block the
+handler on the slowest peer or report a generation that had not reached
+anybody. Clients read the outcome from `CryptoEvent::MekRotated`, the
+same event a departure-triggered rotation emits. Any frontend that
+waited on the response for a generation number needs to subscribe
+instead.
+
 Variants containing secrets (`Unlock`, `IdentityCreate`) have custom
 `Debug` impls that redact sensitive fields.
 

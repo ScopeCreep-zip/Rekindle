@@ -82,7 +82,7 @@ pub(crate) async fn handle_transfer_ownership(
     }))
 }
 
-pub(super) fn write_encrypted_backup(
+pub(crate) fn write_encrypted_backup(
     path: &std::path::Path,
     data: &[u8],
     key: &[u8; 32],

@@ -13,7 +13,6 @@ use super::community_rpc::{open_registry_writable, HANDLER_DEADLINE};
 
 mod channels;
 mod moderation;
-mod rekey;
 mod roles;
 
 pub(super) fn get_node(
@@ -59,22 +58,12 @@ pub(crate) async fn handle_op(
     sender: Option<&str>,
     req: GovernanceRequest,
     session: &RwLock<Option<rekindle_transport::Session>>,
-    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
-    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
     transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
     session_path: &std::path::Path,
 ) -> CallResponse {
     if let Ok(response) = tokio::time::timeout(
         HANDLER_DEADLINE,
-        handle_op_inner(
-            sender,
-            req,
-            session,
-            signing_key,
-            mek_cache,
-            transport,
-            session_path,
-        ),
+        handle_op_inner(sender, req, session, transport, session_path),
     )
     .await
     {
@@ -89,8 +78,6 @@ async fn handle_op_inner(
     sender: Option<&str>,
     req: GovernanceRequest,
     session: &RwLock<Option<rekindle_transport::Session>>,
-    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
-    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
     transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
     session_path: &std::path::Path,
 ) -> CallResponse {
@@ -118,20 +105,8 @@ async fn handle_op_inner(
         GovernanceOp::CreateRole { .. }
         | GovernanceOp::UpdateRole { .. }
         | GovernanceOp::DeleteRole { .. }
-        | GovernanceOp::AssignRole { .. }
-        | GovernanceOp::UnassignRole { .. }
-        | GovernanceOp::RotateMek { .. }
         | GovernanceOp::TransferOwnership { .. } => {
-            roles::handle_op_group_c(
-                req.operation,
-                session,
-                signing_key,
-                mek_cache,
-                transport,
-                session_path,
-                gov_key,
-            )
-            .await
+            roles::handle_op_group_c(req.operation, session, transport, session_path, gov_key).await
         }
     }
 }

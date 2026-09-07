@@ -286,8 +286,6 @@ impl InboundHandler for DaemonHandler {
                     sender_ps.as_deref(),
                     op,
                     &session_arc,
-                    &signing_key_arc,
-                    &mek_cache,
                     &transport_arc,
                     &session_path,
                 )

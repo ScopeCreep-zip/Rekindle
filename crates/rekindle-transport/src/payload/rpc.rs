@@ -48,9 +48,11 @@ pub struct ChannelEntrySummary {
 
 /// Notification sent when a member leaves a community.
 ///
-/// Best-effort — the member's daemon sends this to the community route
-/// so the owner can clean up the member index and rotate MEKs for forward
-/// secrecy. If the owner is offline, cleanup happens on reconnection.
+/// Best-effort and addressed to peers, not to an owner: under v2.0 the
+/// leaver retires its own registry slot, so a recipient removes nobody.
+/// What the notification buys is speed — every recipient starts the
+/// deterministic MEK rotation immediately instead of waiting for the
+/// departed member's presence to go stale.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommunityLeaveNotification {
     pub governance_key: String,
@@ -121,19 +123,18 @@ pub enum GovernanceOp {
     DeleteRole {
         role_id: u32,
     },
-    AssignRole {
-        member_pseudonym: String,
-        role_id: u32,
-    },
-    UnassignRole {
-        member_pseudonym: String,
-        role_id: u32,
-    },
+    // AssignRole / UnassignRole used to be here as coordinator RPCs: a
+    // moderator asked the operator to edit the target's row in the
+    // shared member index. v2.0 writes `RoleAssignment` /
+    // `RoleUnassignment` governance entries, which every peer merges and
+    // validates — and under `o_cnt: 0` nobody holds a writer credential
+    // for the index anyway. Neither op had a sender left.
 
-    // ── MEK management ──────────────────────────────────────────
-    RotateMek {
-        channel_id: String,
-    },
+    // RotateMek used to be here: a member asked the operator to rekey a
+    // channel and publish copies to the registry MEK vault. v2.0 rotates
+    // on departure via the deterministic rotator
+    // (`rekindle-mek-rotation`) and delivers peer-to-peer, so there is
+    // no operator to ask and no vault to publish to.
 
     // ── Ownership ───────────────────────────────────────────────
     TransferOwnership {

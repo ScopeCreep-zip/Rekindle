@@ -17,7 +17,21 @@ pub(crate) fn handle_mek_list(
     IpcResponse::ok(&snapshot)
 }
 
-pub(crate) async fn handle_mek_rotate(
+/// Ask for a channel's MEK to be replaced.
+///
+/// Queued rather than performed inline, and reported as queued rather
+/// than as a generation: distribution is per-recipient `app_call` and
+/// runs on the rotation worker, so a synchronous answer would either
+/// block the IPC handler on the slowest peer or lie about what happened.
+/// Clients learn the outcome from `CryptoEvent::MekRotated`, the same
+/// event a departure-triggered rotation emits.
+///
+/// The previous implementation wrapped the new key for every member and
+/// published the copies into a registry MEK vault subkey. Two problems:
+/// `o_cnt: 0` gives nobody a writer credential for that subkey, and
+/// `communities-channels.md` says the MEK is *"**never** written to
+/// DHT"*.
+pub(crate) fn handle_mek_rotate(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -26,37 +40,20 @@ pub(crate) async fn handle_mek_rotate(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let signing_key = match ctx.require_signing_key() {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-
-    match rekindle_transport::operations::mek::rotate_mek(
-        &transport,
-        &membership,
-        channel,
-        &ctx.mek_cache,
-        &signing_key,
-    )
-    .await
-    {
-        Ok(result) => IpcResponse::ok(&serde_json::json!({
-            "rotated": true,
-            "community": community,
-            "channel": channel,
-            "generation": result.generation,
-            "copies_written": result.copies_written,
-        })),
-        Err(e) => IpcResponse::error(500, format!("mek rotate failed: {e}")),
+    if let Err(e) = ctx.resolve_community(community) {
+        return e;
     }
+
+    let request = crate::daemon::mek_rotation::MekRotationRequest::manual(community, channel);
+    if ctx.mek_rotation_tx.send(request).is_err() {
+        return IpcResponse::error(500, "MEK rotation worker is not running");
+    }
+
+    IpcResponse::ok(&serde_json::json!({
+        "queued": true,
+        "community": community,
+        "channel": channel,
+    }))
 }
 
 pub(crate) fn handle_mek_request(

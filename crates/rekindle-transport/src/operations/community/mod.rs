@@ -1,67 +1,29 @@
-//! Community lifecycle operations — create, join, leave.
+//! Community lifecycle operations — leave.
 //!
 //! Orchestration logic that composes:
 //! - `broadcast::dht_writes` for raw DHT primitives (create_dflt, set, open, close, watch)
 //! - `broadcast::route` for route allocation
 //! - `dht/*` typed modules for business logic reads/writes (governance, registry, mailbox)
 //!
-//! The join flow is split into three phases for event-driven completion:
-//! - `submit_join_request` — writes to inbox, returns immediately
-//! - `await_join_approval` — select! between registry poll (tier 3) and direct notification (tier 2)
-//! - `complete_join` — reads channels + MEKs after approval confirmed
+//! **Join is not here.** The three-phase coordinator join —
+//! `submit_join_request` wrote to an inbox, `await_join_approval` waited
+//! for an operator to assign a slot, `complete_join` read the registry
+//! MEK vault — was replaced by the self-sovereign
+//! `rekindle_governance_runtime::join_flow::run_join_stages`, which both
+//! shells now drive. It had no callers left. `inbox.rs`, the operator's
+//! side of that handshake, went with it.
 //!
-//! `join_community` is a convenience wrapper that calls all three sequentially.
+//! **Create is not here either**, for the same reason. The v1.0 flow
+//! built a creator-owned registry, published the genesis MEK into a
+//! registry MEK vault, and wrote the creator into a shared member index.
+//! `o_cnt: 0` gives nobody a writer for the latter two, and
+//! `communities-channels.md` says the MEK is *"**never** written to
+//! DHT"*. Both shells now call
+//! `rekindle_governance_runtime::origin::create_community`.
 
-use crate::payload::rpc::ChannelEntrySummary;
-
-mod create;
-mod inbox;
-mod join;
 mod leave;
 
-pub use create::create_community;
-pub use inbox::read_inbox_requests;
-pub use join::{await_join_approval, complete_join, join_community, submit_join_request};
 pub use leave::leave_community;
-
-pub struct CommunityCreated {
-    pub governance_key: String,
-    pub governance_keypair_bytes: Vec<u8>,
-    pub registry_key: String,
-    pub registry_keypair_bytes: Vec<u8>,
-    pub community_mailbox_key: String,
-    pub join_inbox_key: String,
-    pub default_channel_id: String,
-    pub our_pseudonym_key: String,
-    pub our_slot_index: u32,
-    pub mek_generation: u64,
-    /// Shared seed that derives all 255 registry slot keypairs. The
-    /// creator must persist this and hand it to joiners — a member
-    /// without it cannot write presence.
-    pub slot_seed: [u8; 32],
-}
-
-/// Returned by `submit_join_request` — metadata needed for approval await + completion.
-pub struct JoinRequestSubmitted {
-    pub community_name: String,
-    pub governance_key: String,
-    pub our_pseudonym_hex: String,
-    pub registry_key: String,
-    pub community_mailbox_key: String,
-}
-
-pub struct JoinResult {
-    pub community_name: String,
-    pub governance_key: String,
-    pub our_pseudonym_key: String,
-    pub display_name: String,
-    pub our_slot_index: u32,
-    pub registry_key: String,
-    pub community_mailbox_key: String,
-    pub channels: Vec<ChannelEntrySummary>,
-    pub meks_cached: usize,
-    pub slot_seed: [u8; 32],
-}
 
 pub struct LeaveResult {
     pub leave_payload_bytes: Vec<u8>,
@@ -69,8 +31,13 @@ pub struct LeaveResult {
 
 // ── Utilities ───────────────────────────────────────────────────────────
 
-/// Shared by the join and leave flows to pick a deterministic inbox
-/// subkey for a given pseudonym.
+/// Deterministic inbox subkey for a pseudonym.
+///
+/// Only the leave flow still uses it, to announce a departure in the
+/// join inbox. Nothing reads that inbox any more — the operator-side
+/// reader went with the coordinator join — so this write is on the list
+/// to be replaced by the leaver zeroing its own registry slot
+/// (`communities-governance.md` §"Leave and rejoin").
 fn pseudonym_to_inbox_subkey(pseudonym_hex: &str) -> u32 {
     let hash = blake3::hash(pseudonym_hex.as_bytes());
     let bytes = hash.as_bytes();
