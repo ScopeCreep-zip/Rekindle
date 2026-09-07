@@ -19,7 +19,8 @@ use super::expression::{
     write_attachment_pinned, write_expression_added, write_expression_removed,
 };
 use super::moderation::{
-    write_admin_delete, write_auto_mod_rule, write_ban_entry, write_remove_timeout_entry,
+    write_admin_delete, write_admission_policy, write_auto_mod_rule, write_ban_entry,
+    write_join_requested, write_member_approved, write_member_rejected, write_remove_timeout_entry,
     write_timeout_entry, write_unban_entry,
 };
 use super::onboarding::{write_onboarding_config, write_welcome_screen};
@@ -413,6 +414,32 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
         ),
         GovernanceEntry::UnbanEntry { target, lamport } => {
             write_unban_entry(b.reborrow().init_unban_entry(), target, *lamport);
+        }
+        GovernanceEntry::JoinRequested {
+            requester,
+            display_name,
+            lamport,
+        } => write_join_requested(
+            b.reborrow().init_join_requested(),
+            requester,
+            display_name,
+            *lamport,
+        ),
+        GovernanceEntry::MemberApproved { target, lamport } => {
+            write_member_approved(b.reborrow().init_member_approved(), target, *lamport);
+        }
+        GovernanceEntry::MemberRejected {
+            target,
+            reason,
+            lamport,
+        } => write_member_rejected(
+            b.reborrow().init_member_rejected(),
+            target,
+            reason.as_deref(),
+            *lamport,
+        ),
+        GovernanceEntry::AdmissionPolicy { mode, lamport } => {
+            write_admission_policy(b.reborrow().init_admission_policy(), *mode, *lamport);
         }
         GovernanceEntry::WelcomeScreen {
             description,

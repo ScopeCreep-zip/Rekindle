@@ -90,3 +90,70 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
         _ => unreachable!("apply_moderation: unexpected variant"),
     }
 }
+
+/// Admission CRDT: pending requests and the decisions that clear them.
+///
+/// `JoinRequested` is a Grow-Only Set insert; the two decision variants
+/// are an LWW-Flag per target that removes the pending entry. A decision
+/// is idempotent and order-independent — replaying it, or seeing it
+/// before the request it answers, converges to the same state, which is
+/// what the merge property tests require.
+pub(super) fn apply_admission(entry: &GovernanceEntry, state: &mut GovernanceState) {
+    match entry {
+        GovernanceEntry::JoinRequested {
+            requester,
+            display_name,
+            lamport,
+        } => {
+            // A decision already recorded at or after this request wins:
+            // otherwise a replayed request would resurrect a pending row
+            // for someone already approved or rejected.
+            if state.admitted.contains_key(requester) {
+                return;
+            }
+            let slot = state
+                .pending_members
+                .entry(requester.clone())
+                .or_insert_with(|| PendingMemberState {
+                    display_name: display_name.clone(),
+                    lamport: *lamport,
+                });
+            // Later request from the same pseudonym refreshes the name.
+            if *lamport >= slot.lamport {
+                slot.display_name = display_name.clone();
+                slot.lamport = *lamport;
+            }
+        }
+        GovernanceEntry::MemberApproved { target, lamport } => {
+            record_decision(state, target, true, *lamport);
+        }
+        GovernanceEntry::MemberRejected {
+            target, lamport, ..
+        } => {
+            record_decision(state, target, false, *lamport);
+        }
+        _ => {}
+    }
+}
+
+/// LWW-Flag per target: highest lamport wins, ties broken by leaving the
+/// existing decision in place (the merge already sorts by
+/// `(lamport, author)`, so the last writer at equal lamport is
+/// deterministic across peers).
+fn record_decision(
+    state: &mut GovernanceState,
+    target: &PseudonymKey,
+    approved: bool,
+    lamport: u64,
+) {
+    let supersedes = state
+        .admitted
+        .get(target)
+        .is_none_or(|existing| lamport >= existing.lamport);
+    if supersedes {
+        state
+            .admitted
+            .insert(target.clone(), AdmissionDecision { approved, lamport });
+        state.pending_members.remove(target);
+    }
+}

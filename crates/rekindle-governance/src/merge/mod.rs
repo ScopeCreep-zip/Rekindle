@@ -95,6 +95,13 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         | G::CategoryUpdated { .. }
         | G::PermissionOverwrite { .. }
         | G::ChannelSegmentLinked { .. } => apply_channels(entry, state),
+        G::JoinRequested { .. } | G::MemberApproved { .. } | G::MemberRejected { .. } => {
+            apply_admission(entry, state);
+        }
+        // `validate_write` already refused any write after the first,
+        // so reaching here means this is the creator's one-and-only
+        // policy entry.
+        G::AdmissionPolicy { mode, .. } => state.admission_mode = Some(*mode),
         G::CommunityMeta { .. }
         | G::CommunityNotificationDefault { .. }
         | G::MEKGenerationBump { .. }
@@ -140,6 +147,6 @@ use channels::apply_channels;
 use community::apply_community;
 use events::apply_events;
 use expression::apply_expression;
-use moderation::apply_moderation;
+use moderation::{apply_admission, apply_moderation};
 use onboarding::apply_onboarding;
 use roles::apply_roles;

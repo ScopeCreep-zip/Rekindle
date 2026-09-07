@@ -4,10 +4,10 @@ use super::super::sub_types::{
     channel_id_from_capnp, pseudonym_key_from_capnp, pseudonym_key_to_capnp, uuid16_from_capnp,
     uuid16_to_capnp,
 };
-use crate::capnp_codec::{capnp_err, text_to_string};
+use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::ProtocolError;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 pub(super) fn write_ban_entry(
@@ -167,4 +167,101 @@ pub(super) fn read_auto_mod_rule(
         action: text_to_string(p.get_action().map_err(|e| capnp_err(&e))?)?,
         lamport: p.get_lamport(),
     })
+}
+
+// ── Admission ────────────────────────────────────────────────────────
+
+pub(super) fn read_join_requested(
+    p: schema_pkg::join_requested_payload::Reader<'_>,
+) -> Result<GovernanceEntry, ProtocolError> {
+    Ok(GovernanceEntry::JoinRequested {
+        requester: pseudonym_key_from_capnp(p.get_requester().map_err(|e| capnp_err(&e))?)?,
+        display_name: text_to_string(p.get_display_name().map_err(|e| capnp_err(&e))?)?,
+        lamport: p.get_lamport(),
+    })
+}
+
+pub(super) fn read_member_approved(
+    p: schema_pkg::member_approved_payload::Reader<'_>,
+) -> Result<GovernanceEntry, ProtocolError> {
+    Ok(GovernanceEntry::MemberApproved {
+        target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
+        lamport: p.get_lamport(),
+    })
+}
+
+pub(super) fn read_member_rejected(
+    p: schema_pkg::member_rejected_payload::Reader<'_>,
+) -> Result<GovernanceEntry, ProtocolError> {
+    Ok(GovernanceEntry::MemberRejected {
+        target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
+        // `has_reason` rather than an empty-string sentinel, matching
+        // `BanEntry` — it keeps `Some("")` distinct from `None`.
+        reason: if p.get_has_reason() {
+            Some(text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?)
+        } else {
+            None
+        },
+        lamport: p.get_lamport(),
+    })
+}
+
+pub(super) fn read_admission_policy(
+    p: schema_pkg::admission_policy_payload::Reader<'_>,
+) -> Result<GovernanceEntry, ProtocolError> {
+    use schema_pkg::AdmissionMode as Wire;
+    Ok(GovernanceEntry::AdmissionPolicy {
+        mode: match p.get_mode().map_err(not_in_schema)? {
+            Wire::Open => AdmissionMode::Open,
+            Wire::ApprovalRequired => AdmissionMode::ApprovalRequired,
+        },
+        lamport: p.get_lamport(),
+    })
+}
+
+pub(super) fn write_join_requested(
+    mut p: schema_pkg::join_requested_payload::Builder<'_>,
+    requester: &PseudonymKey,
+    display_name: &str,
+    lamport: u64,
+) {
+    pseudonym_key_to_capnp(p.reborrow().init_requester(), requester);
+    p.set_display_name(display_name);
+    p.set_lamport(lamport);
+}
+
+pub(super) fn write_member_approved(
+    mut p: schema_pkg::member_approved_payload::Builder<'_>,
+    target: &PseudonymKey,
+    lamport: u64,
+) {
+    pseudonym_key_to_capnp(p.reborrow().init_target(), target);
+    p.set_lamport(lamport);
+}
+
+pub(super) fn write_member_rejected(
+    mut p: schema_pkg::member_rejected_payload::Builder<'_>,
+    target: &PseudonymKey,
+    reason: Option<&str>,
+    lamport: u64,
+) {
+    pseudonym_key_to_capnp(p.reborrow().init_target(), target);
+    p.set_has_reason(reason.is_some());
+    if let Some(r) = reason {
+        p.set_reason(r);
+    }
+    p.set_lamport(lamport);
+}
+
+pub(super) fn write_admission_policy(
+    mut p: schema_pkg::admission_policy_payload::Builder<'_>,
+    mode: AdmissionMode,
+    lamport: u64,
+) {
+    use schema_pkg::AdmissionMode as Wire;
+    p.set_mode(match mode {
+        AdmissionMode::Open => Wire::Open,
+        AdmissionMode::ApprovalRequired => Wire::ApprovalRequired,
+    });
+    p.set_lamport(lamport);
 }

@@ -14,6 +14,6 @@ mod payload;
 #[cfg(test)]
 mod tests;
 
-pub use entry::GovernanceEntry;
+pub use entry::{AdmissionMode, GovernanceEntry};
 pub use onboarding::{GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel};
 pub use payload::GovernanceSubkeyPayload;

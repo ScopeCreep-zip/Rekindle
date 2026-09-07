@@ -9,9 +9,9 @@
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{
-    ADMINISTRATOR, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, MANAGE_CHANNELS,
-    MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS, MANAGE_MESSAGES, MANAGE_ROLES,
-    MANAGE_THREADS, SEND_MESSAGES, TIMEOUT_MEMBERS,
+    ADMINISTRATOR, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, KICK_MEMBERS,
+    MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS, MANAGE_MESSAGES,
+    MANAGE_ROLES, MANAGE_THREADS, SEND_MESSAGES, TIMEOUT_MEMBERS,
 };
 
 use crate::permissions::compute_permissions;
@@ -33,6 +33,40 @@ pub fn validate_write(
     entry: &GovernanceEntry,
     state: &GovernanceState,
 ) -> bool {
+    // ── Structural invariants: checked BEFORE the creator bypass ──
+    //
+    // These are not permissions, so "the creator may do anything" does
+    // not apply. They are facts about a well-formed entry, and a merge
+    // that let the creator violate them would diverge from what other
+    // peers compute.
+    match entry {
+        // Self-authored only. If the creator could forge a request in
+        // someone else's name, "pending members" would stop meaning
+        // "people who asked".
+        GovernanceEntry::JoinRequested { requester, .. } if requester != writer => {
+            return false;
+        }
+        // Settable once. The creator is the only one who may set it at
+        // all, but not repeatedly — otherwise the mode is mutable after
+        // the fact and the immutability guarantee is empty.
+        GovernanceEntry::AdmissionPolicy { .. } if state.admission_mode.is_some() => {
+            return false;
+        }
+        // Invite caps are ceilings on the protocol, not a permission the
+        // creator outranks. `invite_quota`'s own doc claims "even a
+        // creator-bypass writer cannot smuggle a `max_uses = u32::MAX`
+        // entry past honest peers" — that was aspirational until this
+        // check moved above the bypass. A probe confirmed the creator
+        // could previously store `u32::MAX`, which is precisely the
+        // slot-exhaustion bound the admission design relies on.
+        GovernanceEntry::InviteCreated { max_uses, .. }
+            if !crate::invite_quota::check_max_uses_cap(*max_uses) =>
+        {
+            return false;
+        }
+        _ => {}
+    }
+
     // Creator always passes validation
     if state.creator.as_ref() == Some(writer) {
         return true;
@@ -46,6 +80,28 @@ pub fn validate_write(
     let perms = compute_permissions(writer, None, state, 0);
 
     match entry {
+        // Self-authored only: the requester must be the author, exactly
+        // as Matrix's knock sets `sender == state_key == the joiner`
+        // (unlike an invite, where they differ). Without this check one
+        // peer could fabricate join requests in another's name and fill
+        // every moderator's queue.
+        //
+        // Asking is not a permission — anyone reachable may ask.
+        GovernanceEntry::JoinRequested { requester, .. } => requester == writer,
+
+        // Admitting and removing a member are the same authority, so
+        // this reuses KICK_MEMBERS rather than minting a permission bit
+        // (which would be a wire-visible migration for no separation).
+        GovernanceEntry::MemberApproved { .. } | GovernanceEntry::MemberRejected { .. } => {
+            has(perms, KICK_MEMBERS)
+        }
+
+        // Only the creator sets the mode, and the settable-once half is
+        // enforced above (before the creator bypass). Reaching here means
+        // a non-creator tried, which never succeeds — so a
+        // MANAGE_COMMUNITY holder cannot open a private community.
+        GovernanceEntry::AdmissionPolicy { .. } => false,
+
         GovernanceEntry::ChannelCreated { .. }
         | GovernanceEntry::ChannelArchived { .. }
         | GovernanceEntry::ChannelUpdated { .. } => has(perms, MANAGE_CHANNELS),

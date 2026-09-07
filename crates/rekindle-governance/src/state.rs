@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rekindle_types::governance::{GuideStep, OnboardingQuestion, WelcomeChannel};
+use rekindle_types::governance::{AdmissionMode, GuideStep, OnboardingQuestion, WelcomeChannel};
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
 /// The merged governance state — produced by `merge::merge()`,
@@ -25,6 +25,34 @@ pub struct GovernanceState {
 
     /// Currently banned pseudonyms.
     pub bans: HashSet<PseudonymKey>,
+
+    /// Prospective members who wrote a `JoinRequested` and have not yet
+    /// been approved or rejected. Grow-Only Set, cleared per target by a
+    /// decision entry.
+    ///
+    /// Populated only under `AdmissionMode::ApprovalRequired`; under
+    /// `Open` a joiner claims a slot without asking, so this stays empty
+    /// and the approve/reject IPC commands are inert.
+    pub pending_members: HashMap<PseudonymKey, PendingMemberState>,
+
+    /// Recorded admission decisions, keyed by target. LWW per target.
+    ///
+    /// Kept after the pending row is cleared so a replayed or
+    /// out-of-order `JoinRequested` cannot resurrect a settled request —
+    /// the merge must converge regardless of delivery order.
+    pub admitted: HashMap<PseudonymKey, AdmissionDecision>,
+
+    /// Whether the community admits freely or by approval.
+    ///
+    /// `None` until the creator sets it, and settable exactly once — see
+    /// `validate_write`. That is the immutability guarantee: not "must be
+    /// the literal first entry" (a creator writes several genesis
+    /// entries, so only one could ever qualify), but "only the creator,
+    /// and only while unset". Same effect as Jami fixing the mode in the
+    /// initial commit, without depending on write ordering.
+    ///
+    /// Read through [`Self::effective_admission_mode`].
+    pub admission_mode: Option<AdmissionMode>,
 
     /// Currently timed-out members with expiry info.
     pub timeouts: HashMap<PseudonymKey, TimeoutState>,
@@ -142,6 +170,22 @@ pub struct RoleState {
     pub self_assignable: bool,
     /// Architecture §19.4 — see `GovernanceEntry::RoleDefinition`.
     pub exclusion_group: Option<String>,
+    pub lamport: u64,
+}
+
+/// The outcome of an admission decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdmissionDecision {
+    pub approved: bool,
+    pub lamport: u64,
+}
+
+/// A pending admission request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingMemberState {
+    /// Name the requester asked to be known by. Untrusted display data —
+    /// render it escaped, exactly like any other peer-supplied string.
+    pub display_name: String,
     pub lamport: u64,
 }
 
@@ -263,6 +307,14 @@ impl TimeoutState {
 }
 
 impl GovernanceState {
+    /// The admission mode in force. `Open` when the community never set
+    /// one — which is every community created before this existed, so
+    /// the default preserves current behaviour.
+    #[must_use]
+    pub fn effective_admission_mode(&self) -> AdmissionMode {
+        self.admission_mode.unwrap_or_default()
+    }
+
     /// Architecture §9.3 line 1946 — return the highest `RoleState.position`
     /// across all roles assigned to `member`. Higher position = higher rank
     /// (Discord convention). Members with no role assignments default to 0

@@ -35,7 +35,8 @@ pub(super) use dispatch_write::write_governance_entry;
 use events::{read_event_archived, read_event_created, read_thread_archived, read_thread_created};
 use expression::{read_attachment_pinned, read_expression_added, read_expression_removed};
 use moderation::{
-    read_admin_delete, read_auto_mod_rule, read_ban_entry, read_remove_timeout_entry,
+    read_admin_delete, read_admission_policy, read_auto_mod_rule, read_ban_entry,
+    read_join_requested, read_member_approved, read_member_rejected, read_remove_timeout_entry,
     read_timeout_entry, read_unban_entry,
 };
 use onboarding::{read_onboarding_config, read_welcome_screen};
@@ -74,6 +75,10 @@ pub(super) fn read_governance_entry(
         Which::RoleUnassignment(p) => read_role_unassignment(p.map_err(|e| capnp_err(&e))?),
         Which::BanEntry(p) => read_ban_entry(p.map_err(|e| capnp_err(&e))?),
         Which::UnbanEntry(p) => read_unban_entry(p.map_err(|e| capnp_err(&e))?),
+        Which::JoinRequested(p) => read_join_requested(p.map_err(|e| capnp_err(&e))?),
+        Which::MemberApproved(p) => read_member_approved(p.map_err(|e| capnp_err(&e))?),
+        Which::MemberRejected(p) => read_member_rejected(p.map_err(|e| capnp_err(&e))?),
+        Which::AdmissionPolicy(p) => read_admission_policy(p.map_err(|e| capnp_err(&e))?),
         Which::TimeoutEntry(p) => read_timeout_entry(p.map_err(|e| capnp_err(&e))?),
         Which::RemoveTimeoutEntry(p) => read_remove_timeout_entry(p.map_err(|e| capnp_err(&e))?),
         Which::CommunityMeta(p) => read_community_meta(p.map_err(|e| capnp_err(&e))?),
@@ -104,5 +109,75 @@ pub(super) fn read_governance_entry(
         Which::InviteRevoked(p) => read_invite_revoked(p.map_err(|e| capnp_err(&e))?),
         Which::AttachmentPinned(p) => read_attachment_pinned(p.map_err(|e| capnp_err(&e))?),
         Which::CommunityPolicy(p) => read_community_policy(p.map_err(|e| capnp_err(&e))?),
+    }
+}
+
+#[cfg(test)]
+mod admission_wire_tests {
+    //! Round-trips for the admission variants.
+    //!
+    //! These are not ceremony. `dispatch_write` routes variants through
+    //! two halves guarded by `unreachable!()`, so a variant that is
+    //! declared but not wired **compiles fine and panics at runtime**.
+    //! Only an actual encode→decode proves the wiring exists.
+
+    use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
+    use rekindle_types::id::PseudonymKey;
+
+    use super::{decode_governance_entry, encode_governance_entry};
+
+    fn pseudo(b: u8) -> PseudonymKey {
+        PseudonymKey([b; 32])
+    }
+
+    fn round_trip(entry: &GovernanceEntry) {
+        let decoded = decode_governance_entry(&encode_governance_entry(entry))
+            .expect("admission entry must decode");
+        assert_eq!(&decoded, entry);
+    }
+
+    #[test]
+    fn join_requested_round_trips() {
+        round_trip(&GovernanceEntry::JoinRequested {
+            requester: pseudo(1),
+            display_name: "ada".to_string(),
+            lamport: 7,
+        });
+    }
+
+    #[test]
+    fn member_approved_round_trips() {
+        round_trip(&GovernanceEntry::MemberApproved {
+            target: pseudo(2),
+            lamport: 8,
+        });
+    }
+
+    #[test]
+    fn member_rejected_round_trips_with_and_without_reason() {
+        round_trip(&GovernanceEntry::MemberRejected {
+            target: pseudo(3),
+            reason: Some("spam".to_string()),
+            lamport: 9,
+        });
+        // `None` must not come back as `Some("")` — that is why the wire
+        // carries an explicit `hasReason`, matching `BanEntry`.
+        round_trip(&GovernanceEntry::MemberRejected {
+            target: pseudo(3),
+            reason: None,
+            lamport: 10,
+        });
+    }
+
+    #[test]
+    fn admission_policy_round_trips_both_modes() {
+        round_trip(&GovernanceEntry::AdmissionPolicy {
+            mode: AdmissionMode::Open,
+            lamport: 1,
+        });
+        round_trip(&GovernanceEntry::AdmissionPolicy {
+            mode: AdmissionMode::ApprovalRequired,
+            lamport: 2,
+        });
     }
 }

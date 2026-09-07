@@ -171,6 +171,38 @@ struct UnbanEntryPayload @0xbdd4eb16e9bf1c2e {
     lamport              @1 :UInt64;
 }
 
+# ── Admission (join requests and decisions) ──────────────────────────
+
+# How a community admits members. Set once by the creator; see
+# GovernanceState::admission_mode.
+enum AdmissionMode {
+    open             @0;
+    approvalRequired @1;
+}
+
+struct JoinRequestedPayload {
+    requester            @0 :PseudonymKey;
+    displayName          @1 :Text;
+    lamport              @2 :UInt64;
+}
+
+struct MemberApprovedPayload {
+    target               @0 :PseudonymKey;
+    lamport              @1 :UInt64;
+}
+
+struct MemberRejectedPayload {
+    target               @0 :PseudonymKey;
+    hasReason            @1 :Bool;
+    reason               @2 :Text;
+    lamport              @3 :UInt64;
+}
+
+struct AdmissionPolicyPayload {
+    mode                 @0 :AdmissionMode;
+    lamport              @1 :UInt64;
+}
+
 struct TimeoutEntryPayload @0xbed4eb16e9bf1c2e {
     target               @0 :PseudonymKey;
     durationSeconds      @1 :UInt64;
@@ -455,5 +487,9 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         inviteRevoked                 @31 :InviteRevokedEntry;
         attachmentPinned              @32 :AttachmentPinnedEntry;
         communityPolicy               @33 :CommunityPolicyEntry;
+        joinRequested                 @34 :JoinRequestedPayload;
+        memberApproved                @35 :MemberApprovedPayload;
+        memberRejected                @36 :MemberRejectedPayload;
+        admissionPolicy               @37 :AdmissionPolicyPayload;
     }
 }

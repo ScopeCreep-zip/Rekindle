@@ -16,6 +16,25 @@ use super::onboarding::{GuideStep, OnboardingQuestion, WelcomeChannel};
 /// Permission enforcement is reader-side: each reader validates whether the
 /// writer had permission for the entry type based on the accumulated CRDT state.
 /// Invalid entries are silently excluded.
+/// How a community admits new members.
+///
+/// Two variants, not Jami's four: `ONE_TO_ONE` is our separate DM path
+/// (`rekindle-dm`), and `ADMIN_INVITES_ONLY` collapses into
+/// `ApprovalRequired` because `CREATE_INVITES` already gates who may
+/// issue an invite at all.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AdmissionMode {
+    /// Anyone holding a valid invite joins without review. The default
+    /// when a community has no `AdmissionPolicy` genesis entry, which is
+    /// every community created before this existed.
+    #[default]
+    Open,
+    /// A `JoinRequested` must be matched by `MemberApproved` from a
+    /// holder of `KICK_MEMBERS` before honest peers count the member.
+    ApprovalRequired,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GovernanceEntry {
@@ -108,6 +127,48 @@ pub enum GovernanceEntry {
 
     /// Unban a member. Must have higher lamport than the corresponding BanEntry.
     UnbanEntry { target: PseudonymKey, lamport: u64 },
+
+    /// A prospective member asking to be admitted.
+    ///
+    /// **Self-authored only** — `validate_write` requires
+    /// `author == requester`, mirroring Matrix's knock event where
+    /// `sender == state_key == the joiner` (unlike an invite, where they
+    /// differ). Requesting is not a permission: anyone reachable may ask.
+    /// CRDT: Grow-Only Set, cleared per target by an approve/reject.
+    JoinRequested {
+        requester: PseudonymKey,
+        display_name: String,
+        lamport: u64,
+    },
+
+    /// Admit a pending member. Requires `KICK_MEMBERS`.
+    ///
+    /// Records a decision; it does not grant access. Under SMPL every
+    /// slot-seed holder can write to their own subkey regardless, so
+    /// admission is enforced the way every other rule here is — each
+    /// reader validates and honest peers do not count an unapproved
+    /// member. Same mechanism as Jami, where a join commit missing its
+    /// `/invited` precondition is rejected by every peer.
+    /// CRDT: LWW-Flag per target.
+    MemberApproved { target: PseudonymKey, lamport: u64 },
+
+    /// Refuse a pending member. Requires `KICK_MEMBERS`.
+    /// CRDT: LWW-Flag per target, paired with `MemberApproved`.
+    MemberRejected {
+        target: PseudonymKey,
+        reason: Option<String>,
+        lamport: u64,
+    },
+
+    /// Whether the community admits members freely or by approval.
+    ///
+    /// **Honored only as the genesis entry.** A later one is ignored by
+    /// every honest peer, which is what makes the mode immutable — the
+    /// point of putting it here rather than on `CommunityPolicy`, whose
+    /// LWW semantics would let anyone holding `MANAGE_COMMUNITY`
+    /// silently flip a private community open. Jami fixes conversation
+    /// mode in the initial commit for the same reason.
+    AdmissionPolicy { mode: AdmissionMode, lamport: u64 },
 
     /// Timeout a member temporarily. Strips all permissions except view.
     TimeoutEntry {
@@ -445,6 +506,10 @@ impl GovernanceEntry {
             | Self::RoleUnassignment { lamport, .. }
             | Self::BanEntry { lamport, .. }
             | Self::UnbanEntry { lamport, .. }
+            | Self::JoinRequested { lamport, .. }
+            | Self::MemberApproved { lamport, .. }
+            | Self::MemberRejected { lamport, .. }
+            | Self::AdmissionPolicy { lamport, .. }
             | Self::TimeoutEntry { lamport, .. }
             | Self::RemoveTimeoutEntry { lamport, .. }
             | Self::CommunityMeta { lamport, .. }
