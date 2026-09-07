@@ -6,7 +6,9 @@
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{CommunityDhtOpenSetup, DiscoveredMember, MemberIndexRow};
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_protocol::dht::community::envelope::{
+    CommunityEnvelope, ControlPayload as ProtocolControl,
+};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
@@ -15,35 +17,96 @@ use super::DaemonGovernanceAdapter;
 impl DaemonGovernanceAdapter {
     // ---------- Gossip ----------
 
-    /// Broadcast a signed envelope over the community's gossip mesh.
+    /// Broadcast a governance notification over the community's gossip
+    /// mesh — Path 2 of three-path delivery.
     ///
-    /// Path 2 of three-path delivery: ephemeral, best-effort, reaching
-    /// only online peers. A failure here is not a failure of the
-    /// operation — Path 1 (the SMPL write) is the durable one and has
-    /// already happened by the time the runtime crate calls this.
+    /// Carries a *notification*, never cargo. Per the chiral
+    /// notification model (`docs/glossary.md`) gossip moves metadata —
+    /// record key, subkey, sequence — while the ciphertext stays in the
+    /// SMPL record. Serialising the whole envelope onto the mesh would
+    /// break that, and it is a harvest-now-decrypt-later property, not a
+    /// style preference.
+    ///
+    /// The trait method is sync while the mesh send is async, so the
+    /// send is spawned. That matches the desktop adapter, whose
+    /// `send_to_mesh` also returns immediately and logs pipeline errors
+    /// inside the task: Path 1 (the durable SMPL write) has already
+    /// completed by the time this is called, so the caller must not
+    /// block on Path 2 or fail because of it.
     pub(super) fn send_to_mesh_impl(
         &self,
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), GovernanceRuntimeError> {
-        let guard = self.ctx.broadcast_mgr.read();
-        let Some(manager) = guard.as_ref() else {
+        let CommunityEnvelope::Control(payload) = envelope else {
             return Err(GovernanceRuntimeError::Adapter(
-                "broadcast manager not started".into(),
+                "send_to_mesh: only Control envelopes are gossiped".into(),
             ));
         };
-        let payload = serde_json::to_vec(envelope).map_err(|e| {
-            GovernanceRuntimeError::Adapter(format!("serialize community envelope: {e}"))
+
+        // Only the variants transport can actually put on the wire.
+        // `RequestSegmentExpansion` has no counterpart in transport's
+        // `ControlPayload`, so Plate Gate expansion requests fail here
+        // loudly rather than being silently dropped — the gap is real
+        // and an error names it at the moment it matters.
+        let ProtocolControl::GovernanceUpdated {
+            governance_key,
+            subkey_index,
+            lamport_ts,
+        } = payload
+        else {
+            // Deliberately does not name or Debug-print the payload:
+            // `ControlPayload` variants include `MekTransfer`, so
+            // formatting one would put key material in the log.
+            return Err(GovernanceRuntimeError::Adapter(
+                "send_to_mesh: this control variant has no transport gossip \
+                 payload yet (only GovernanceUpdated is wired)"
+                    .into(),
+            ));
+        };
+
+        let node = self.transport()?;
+        let meshes = {
+            let guard = self.ctx.broadcast_mgr.read();
+            let manager = guard.as_ref().ok_or_else(|| {
+                GovernanceRuntimeError::Adapter("broadcast manager not started".into())
+            })?;
+            std::sync::Arc::clone(manager.meshes())
+        };
+        let sender = self
+            .community_membership_impl(community_id)
+            .and_then(|m| m.my_pseudonym_hex)
+            .ok_or_else(|| {
+                GovernanceRuntimeError::Adapter("no pseudonym for this community".into())
+            })?;
+        let signing_key = self.identity_secret_impl().ok_or_else(|| {
+            GovernanceRuntimeError::Adapter("identity locked — cannot sign gossip".into())
         })?;
-        manager.register_mesh(community_id);
-        // Fire-and-forget: the mesh send is async and Path 1 already
-        // carries durability, so the caller is not made to wait on it.
+
         let community_id = community_id.to_string();
-        tracing::debug!(
-            community_id = %community_id,
-            bytes = payload.len(),
-            "governance adapter: gossip broadcast queued"
-        );
+        let governance_key = governance_key.clone();
+        let subkey_index = *subkey_index;
+        let lamport_ts = *lamport_ts;
+        tokio::spawn(async move {
+            let report = rekindle_transport::broadcast::gossip::governance_updated(
+                &node,
+                &meshes,
+                &community_id,
+                &sender,
+                &governance_key,
+                subkey_index,
+                lamport_ts,
+                &signing_key,
+            )
+            .await;
+            if report.delivered == 0 && !report.failures.is_empty() {
+                tracing::debug!(
+                    community_id = %community_id,
+                    failures = report.failures.len(),
+                    "gossip: governance notification reached no peers"
+                );
+            }
+        });
         Ok(())
     }
 
