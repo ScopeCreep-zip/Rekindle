@@ -65,7 +65,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
             community::handle_reject(ctx, state, &governance_key, &member_pseudonym, &reason).await
         }
         IpcRequest::CommunityPendingMembers { governance_key } => {
-            community::handle_pending_members(ctx, state, &governance_key).await
+            community::handle_pending_members(ctx, state, &governance_key)
         }
         IpcRequest::CommunityTransferOwnership {
             governance_key,

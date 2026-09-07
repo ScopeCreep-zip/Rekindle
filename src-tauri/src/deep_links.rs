@@ -19,48 +19,33 @@ pub struct DeepLinkAction {
 /// Supported formats:
 ///   `rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}`
 pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
-    let url = url.trim();
-    // Parse: rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}
-    let rest = url
-        .strip_prefix("rekindle://invite/")
-        .or_else(|| url.strip_prefix("rekindle://community/"));
-    if let Some(rest) = rest {
-        let rest = rest.trim_end_matches('/');
-        // Expect: {governance_key}/{secrets_record_key}/{invite_code}
-        let mut it = rest.splitn(3, '/');
-        if let (Some(governance_key), Some(secrets_record_key), Some(invite_code)) =
-            (it.next(), it.next(), it.next())
-        {
-            if !governance_key.is_empty()
-                && !secrets_record_key.is_empty()
-                && !invite_code.is_empty()
-            {
-                let action = DeepLinkAction {
-                    action: "joinCommunity".into(),
-                    community_id: governance_key.to_string(),
-                    secrets_record_key: secrets_record_key.to_string(),
-                    invite_code: invite_code.to_string(),
-                };
+    // Parsing lives in `rekindle_types::invite::InviteLink` so every
+    // frontend accepts the same link — this file used to be the only
+    // place that understood the format, which left the CLI unable to act
+    // on a `rekindle://invite/...` URL its own IPC accepts.
+    let Some(link) = rekindle_types::invite::InviteLink::parse(url) else {
+        return;
+    };
+    let community_id = link.governance_key.clone();
+    let action = DeepLinkAction {
+        action: "joinCommunity".into(),
+        community_id: link.governance_key,
+        secrets_record_key: link.secrets_record_key,
+        invite_code: link.invite_code,
+    };
 
-                // Check if user is authenticated before emitting
-                let is_authed = app
-                    .try_state::<SharedState>()
-                    .is_some_and(|state| state.identity.read().is_some());
-
-                if is_authed {
-                    crate::event_dispatch::emit_live(app, "deep-link-action", &action);
-                } else {
-                    // Queue for replay after login
-                    if let Some(state) = app.try_state::<SharedState>() {
-                        *state.pending_deep_link.lock() = Some(action);
-                        tracing::info!(
-                            community = %governance_key,
-                            "deep link queued — will replay after login"
-                        );
-                    }
-                }
-            }
-        }
+    // Emit only when authenticated; otherwise queue for replay on login.
+    let is_authed = app
+        .try_state::<SharedState>()
+        .is_some_and(|state| state.identity.read().is_some());
+    if is_authed {
+        crate::event_dispatch::emit_live(app, "deep-link-action", &action);
+    } else if let Some(state) = app.try_state::<SharedState>() {
+        *state.pending_deep_link.lock() = Some(action);
+        tracing::info!(
+            community = %community_id,
+            "deep link queued — will replay after login"
+        );
     }
 }
 

@@ -67,3 +67,87 @@ mod tests {
         assert_eq!(back.channel_keys.len(), 1);
     }
 }
+
+// ── Invite deep link ─────────────────────────────────────────────────
+
+/// The three components an invite link carries.
+///
+/// Lives in Tier 1 because every frontend must be able to accept the
+/// same link: the parser previously existed only in `src-tauri`'s
+/// `deep_links.rs`, so a CLI or third-party TUI had no way to act on a
+/// `rekindle://invite/...` URL even though the daemon's `CommunityJoin`
+/// IPC takes one.
+///
+/// Format: `rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}`
+/// (`rekindle://community/...` is accepted as an alias.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InviteLink {
+    pub governance_key: String,
+    pub secrets_record_key: String,
+    pub invite_code: String,
+}
+
+impl InviteLink {
+    /// Parse an invite URL, or `None` if it is not one.
+    ///
+    /// Rejects a link with any empty component: a blank governance key
+    /// or code would otherwise reach the join flow and fail much later
+    /// with a confusing error.
+    #[must_use]
+    pub fn parse(url: &str) -> Option<Self> {
+        let url = url.trim();
+        let rest = url
+            .strip_prefix("rekindle://invite/")
+            .or_else(|| url.strip_prefix("rekindle://community/"))?
+            .trim_end_matches('/');
+
+        let mut parts = rest.splitn(3, '/');
+        let governance_key = parts.next()?;
+        let secrets_record_key = parts.next()?;
+        let invite_code = parts.next()?;
+        if governance_key.is_empty() || secrets_record_key.is_empty() || invite_code.is_empty() {
+            return None;
+        }
+        Some(Self {
+            governance_key: governance_key.to_string(),
+            secrets_record_key: secrets_record_key.to_string(),
+            invite_code: invite_code.to_string(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod invite_link_tests {
+    use super::InviteLink;
+
+    #[test]
+    fn parses_a_well_formed_link() {
+        let link = InviteLink::parse("rekindle://invite/VLD0:gov/VLD0:sec/code123").unwrap();
+        assert_eq!(link.governance_key, "VLD0:gov");
+        assert_eq!(link.secrets_record_key, "VLD0:sec");
+        assert_eq!(link.invite_code, "code123");
+    }
+
+    #[test]
+    fn accepts_the_community_alias_and_trailing_slash() {
+        let link = InviteLink::parse("rekindle://community/g/s/c/").unwrap();
+        assert_eq!(link.invite_code, "c");
+    }
+
+    #[test]
+    fn rejects_non_invite_urls_and_empty_components() {
+        assert!(InviteLink::parse("https://example.com").is_none());
+        assert!(InviteLink::parse("rekindle://invite/g/s").is_none());
+        assert!(InviteLink::parse("rekindle://invite//s/c").is_none());
+        assert!(InviteLink::parse("rekindle://invite/g//c").is_none());
+        assert!(InviteLink::parse("rekindle://invite/g/s/").is_none());
+    }
+
+    #[test]
+    fn an_invite_code_may_contain_slashes() {
+        // splitn(3) keeps the remainder intact — a base64url code can
+        // contain characters we must not truncate.
+        let link = InviteLink::parse("rekindle://invite/g/s/a/b/c").unwrap();
+        assert_eq!(link.invite_code, "a/b/c");
+    }
+}

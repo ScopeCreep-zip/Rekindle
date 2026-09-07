@@ -5,6 +5,25 @@ use crate::ipc::protocol::IpcResponse;
 
 use crate::daemon::dispatch::{state_error, DaemonContext};
 
+fn adapter(ctx: &DaemonContext) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
+    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
+}
+
+/// Admit a pending member.
+///
+/// Writes a `MemberApproved` governance entry and stops. It no longer
+/// reads the moderation queue, computes `max(subkey_index)+1`, or writes
+/// the member index — that was the coordinator. The member claims its
+/// own registry slot during join.
+///
+/// It also no longer wraps MEKs into the registry vault: the joiner gets
+/// the key from the invite, or by `RequestMek` gossip if the invite is
+/// stale (join step 10), both already implemented on this track.
+///
+/// This records a decision; it does not grant access. Every peer
+/// validates it independently — same as Jami, where a join commit
+/// missing its `/invited` precondition is rejected by every peer rather
+/// than blocked at the source.
 pub(crate) async fn handle_approve(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -14,115 +33,22 @@ pub(crate) async fn handle_approve(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(governance_key) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    if !membership.is_operator {
-        return IpcResponse::error(403, "not an operator for this community");
+    if let Err(e) = ctx.resolve_community(governance_key) {
+        return e;
     }
-
-    let signing_key = match ctx.require_signing_key() {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    let dht = match transport.dht() {
-        Ok(d) => d,
-        Err(e) => return IpcResponse::error(500, format!("DHT: {e}")),
-    };
-
-    // Read moderation queue
-    let mut queue = dht
-        .registry()
-        .read_moderation_queue(&membership.registry_key)
-        .await
-        .unwrap_or_default();
-    let Some(pending) = queue
-        .iter()
-        .find(|p| p.requester_pseudonym_hex == member_pseudonym)
-        .cloned()
-    else {
-        return IpcResponse::error(404, format!("no pending request from {member_pseudonym}"));
-    };
-
-    // Register member
-    let mut members = dht
-        .registry()
-        .read_member_index(&membership.registry_key)
-        .await
-        .unwrap_or_default();
-    let slot = members
-        .iter()
-        .map(|m| m.subkey_index)
-        .max()
-        .map_or(1, |m| m + 1)
-        .max(1);
-    members.push(rekindle_transport::payload::dht_types::MemberSummary {
-        pseudonym_key: member_pseudonym.to_string(),
-        display_name: pending.display_name,
-        role_ids: Vec::new(),
-        joined_at: rekindle_transport::timestamp_ms(),
-        subkey_index: slot,
-        onboarding_complete: true,
-        timeout_until: None,
-        profile_dht_key: Some(pending.profile_dht_key),
-        channel_records: std::collections::HashMap::new(),
-    });
-    if let Err(e) = dht
-        .registry()
-        .write_member_index(&membership.registry_key, &members)
-        .await
-    {
-        return IpcResponse::error(500, format!("member registration failed: {e}"));
-    }
-
-    // Remove from queue
-    queue.retain(|p| p.requester_pseudonym_hex != member_pseudonym);
-    let _ = dht
-        .registry()
-        .write_moderation_queue(&membership.registry_key, &queue)
-        .await;
-
-    // Wrap MEKs for the approved member
-    let channels = dht
-        .governance()
-        .read_channels(&membership.governance_key)
-        .await
-        .unwrap_or_default();
-    if let Ok(transfers) = rekindle_transport::operations::mek::wrap_meks_for_member(
-        &channels,
+    match rekindle_governance_runtime::admission::approve_member(
+        &adapter(ctx),
+        governance_key,
         member_pseudonym,
-        &signing_key,
-        &membership.governance_key,
-        &ctx.mek_cache,
-    ) {
-        let mut vault = dht
-            .registry()
-            .read_mek_vault(&membership.registry_key)
-            .await
-            .unwrap_or_default();
-        for t in &transfers {
-            if let Some(e) = vault.iter_mut().find(|e| e.channel_id == t.channel_id) {
-                e.copies
-                    .push(rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                        target_pseudonym: member_pseudonym.to_string(),
-                        encrypted_mek: t.wrapped_mek.clone(),
-                    });
-            }
-        }
-        let _ = dht
-            .registry()
-            .write_mek_vault(&membership.registry_key, &vault)
-            .await;
+    )
+    .await
+    {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "approved": member_pseudonym })),
+        Err(e) => IpcResponse::error(500, format!("approve failed: {e}")),
     }
-
-    IpcResponse::ok(&serde_json::json!({ "approved": member_pseudonym, "slot": slot }))
 }
 
+/// Refuse a pending member — writes `MemberRejected`.
 pub(crate) async fn handle_reject(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -133,38 +59,35 @@ pub(crate) async fn handle_reject(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(governance_key) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    if !membership.is_operator {
-        return IpcResponse::error(403, "not an operator for this community");
+    if let Err(e) = ctx.resolve_community(governance_key) {
+        return e;
     }
-
-    let dht = match transport.dht() {
-        Ok(d) => d,
-        Err(e) => return IpcResponse::error(500, format!("DHT: {e}")),
-    };
-
-    let mut queue = dht
-        .registry()
-        .read_moderation_queue(&membership.registry_key)
-        .await
-        .unwrap_or_default();
-    queue.retain(|p| p.requester_pseudonym_hex != member_pseudonym);
-    let _ = dht
-        .registry()
-        .write_moderation_queue(&membership.registry_key, &queue)
-        .await;
-
-    IpcResponse::ok(&serde_json::json!({ "rejected": member_pseudonym, "reason": reason }))
+    // Empty string from the CLI means "no reason given"; keep that
+    // distinct from an explicit empty reason on the wire.
+    let reason = (!reason.is_empty()).then_some(reason);
+    match rekindle_governance_runtime::admission::reject_member(
+        &adapter(ctx),
+        governance_key,
+        member_pseudonym,
+        reason,
+    )
+    .await
+    {
+        Ok(()) => {
+            IpcResponse::ok(&serde_json::json!({ "rejected": member_pseudonym, "reason": reason }))
+        }
+        Err(e) => IpcResponse::error(500, format!("reject failed: {e}")),
+    }
 }
 
-pub(crate) async fn handle_pending_members(
+/// Everyone awaiting a decision, read from merged governance state
+/// rather than registry subkey 5.
+///
+/// Under `AdmissionMode::Open` this is always empty — a joiner claims a
+/// slot without asking — so an empty list does not mean "nobody wants
+/// in". The mode is returned alongside so a frontend can tell the two
+/// apart.
+pub(crate) fn handle_pending_members(
     ctx: &DaemonContext,
     state: DaemonState,
     governance_key: &str,
@@ -172,24 +95,25 @@ pub(crate) async fn handle_pending_members(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(governance_key) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-
-    let dht = match transport.dht() {
-        Ok(d) => d,
-        Err(e) => return IpcResponse::error(500, format!("DHT: {e}")),
-    };
-
-    let queue = dht
-        .registry()
-        .read_moderation_queue(&membership.registry_key)
-        .await
-        .unwrap_or_default();
-    IpcResponse::ok(&queue)
+    if let Err(e) = ctx.resolve_community(governance_key) {
+        return e;
+    }
+    let adapter = adapter(ctx);
+    let pending: Vec<serde_json::Value> =
+        rekindle_governance_runtime::admission::pending_members(&adapter, governance_key)
+            .into_iter()
+            .map(|p| {
+                serde_json::json!({
+                    "pseudonymHex": p.pseudonym_hex,
+                    "displayName": p.display_name,
+                    "lamport": p.lamport,
+                })
+            })
+            .collect();
+    let mode =
+        match rekindle_governance_runtime::admission::admission_mode(&adapter, governance_key) {
+            rekindle_types::governance::AdmissionMode::Open => "open",
+            rekindle_types::governance::AdmissionMode::ApprovalRequired => "approvalRequired",
+        };
+    IpcResponse::ok(&serde_json::json!({ "mode": mode, "pending": pending }))
 }

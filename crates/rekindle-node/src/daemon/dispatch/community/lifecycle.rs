@@ -206,133 +206,87 @@ pub(crate) async fn handle_join(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Err(e) = validation::validate_key(invite, "invite/governance key") {
-        return e;
-    }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
+
+    // v2.0 self-sovereign join. The previous flow submitted a request to
+    // an inbox and waited for an operator to *assign* a slot, then
+    // derived its slot seed from its own identity key — which can never
+    // match the registry's member keys, since those come from the
+    // creator's shared seed. The seed rides in the invite, so a full
+    // invite link is now required rather than a bare governance key.
+    let Some(link) = rekindle_types::invite::InviteLink::parse(invite) else {
+        return IpcResponse::error(
+            400,
+            "join requires a full invite link \
+             (rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}) — \
+             a bare governance key no longer works: the slot seed it needs lives in the invite",
+        );
     };
-    let signing_key = match ctx.require_signing_key() {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    let session = match ctx.require_session(Clone::clone) {
-        Ok(s) => s,
+
+    let session_display_name = match ctx.require_session(|s| s.identity.display_name.clone()) {
+        Ok(n) => n,
         Err(e) => return e,
     };
 
-    // Phase 1: Submit join request to DHT inbox (non-blocking)
-    tracing::info!(
-        governance = invite,
-        "handle_join: phase 1 — submitting join request"
-    );
-    let submitted = match rekindle_transport::operations::community::submit_join_request(
-        &transport,
-        &session,
-        invite,
-        &session.identity.display_name,
-        &signing_key,
+    let adapter = crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx);
+    let outcome = match rekindle_governance_runtime::join_flow::run_join_stages(
+        &adapter,
+        &link.governance_key,
+        &link.invite_code,
+        Some(&link.secrets_record_key),
     )
     .await
     {
-        Ok(s) => {
-            tracing::info!(
-                community = %s.community_name, governance = %s.governance_key,
-                registry = %s.registry_key, pseudonym = %&s.our_pseudonym_hex[..16],
-                "handle_join: phase 1 complete — request submitted"
-            );
-            s
-        }
+        Ok(o) => o,
         Err(e) => return IpcResponse::error(500, format!("community join failed: {e}")),
     };
 
-    // Register a pending join oneshot for tier 2 (direct notification from operator)
-    let (notify_tx, notify_rx) = tokio::sync::oneshot::channel::<u32>();
-    ctx.pending_joins.lock().insert(
-        submitted.governance_key.clone(),
-        (notify_tx, std::time::Instant::now()),
-    );
-    tracing::info!(community = %submitted.community_name, "handle_join: phase 2 — awaiting approval (tier 2 + tier 3)");
-
-    // Phase 2: Await approval via tier 2 (direct) + tier 3 (poll)
-    let slot_index = match rekindle_transport::operations::community::await_join_approval(
-        &transport,
-        &submitted.registry_key,
-        &submitted.our_pseudonym_hex,
-        &submitted.community_name,
-        Some(notify_rx),
-        120,
-    )
-    .await
-    {
-        Ok(slot) => {
-            tracing::info!(community = %submitted.community_name, slot, "handle_join: phase 2 complete — approved");
-            slot
-        }
-        Err(e) => {
-            tracing::warn!(community = %submitted.community_name, error = %e, "handle_join: phase 2 failed");
-            ctx.pending_joins.lock().remove(&submitted.governance_key);
-            return IpcResponse::error(500, format!("community join failed: {e}"));
-        }
+    // The claim reports which segment it landed in, so unlike the old
+    // flow this is a fact rather than a guess.
+    let slot_seed = hex::decode(&outcome.invite.slot_seed_hex)
+        .ok()
+        .and_then(|b| <[u8; 32]>::try_from(b).ok());
+    let membership = rekindle_transport::session::CommunityMembership {
+        governance_key: link.governance_key.clone(),
+        pseudonym_key: outcome.identity.pseudo_hex.clone(),
+        display_name: session_display_name,
+        role_ids: Vec::new(),
+        slot_index: outcome.claimed.local_subkey,
+        registry_key: outcome.claimed.registry_key.clone(),
+        community_name: outcome.invite.community_name.clone(),
+        slot_seed,
+        channel_record_keys: std::collections::HashMap::new(),
+        // v2.0 join needs neither: admission is self-sovereign, so there
+        // is no mailbox to petition and no inbox to be approved from.
+        community_mailbox_key: String::new(),
+        join_inbox_key: String::new(),
+        is_operator: false,
+        governance_keypair_label: None,
+        segment_index: Some(outcome.claimed.segment_index),
+        lamport_counter: 0,
+        mek_generation: 0,
     };
-
-    // Clean up pending join entry (may already be removed by handler)
-    ctx.pending_joins.lock().remove(&submitted.governance_key);
-
-    // Phase 3: Complete join (read channels + cache MEKs)
-    match rekindle_transport::operations::community::complete_join(
-        &transport,
-        &submitted,
-        slot_index,
-        &ctx.mek_cache,
-        &signing_key,
-    )
-    .await
     {
-        Ok(result) => {
-            let membership = rekindle_transport::session::CommunityMembership {
-                governance_key: result.governance_key.clone(),
-                pseudonym_key: result.our_pseudonym_key.clone(),
-                display_name: session.identity.display_name.clone(),
-                role_ids: Vec::new(),
-                slot_index: result.our_slot_index,
-                registry_key: result.registry_key.clone(),
-                community_name: result.community_name.clone(),
-                slot_seed: Some(result.slot_seed),
-                channel_record_keys: std::collections::HashMap::new(),
-                community_mailbox_key: result.community_mailbox_key.clone(),
-                join_inbox_key: String::new(), // joiners don't operate the inbox
-                is_operator: false,
-                governance_keypair_label: None,
-                // `None`, not `Some(0)`: the daemon's join is still
-                // segment-unaware (`JoinResult` carries no segment), so
-                // claiming the genesis segment would be a guess that is
-                // wrong for any community that has expanded. Phase 2.5
-                // sets this for real when the claim goes through
-                // `claim_registry_slot`, which walks segment descriptors.
-                segment_index: None,
-                lamport_counter: 0,
-                mek_generation: 0,
-            };
-            {
-                let mut guard = ctx.session.write();
-                if let Some(ref mut s) = *guard {
-                    s.join_community(membership);
-                }
-            }
-            if let Err(e) = ctx.save_session() {
-                return e;
-            }
-            IpcResponse::ok(&serde_json::json!({
-                "community_name": result.community_name,
-                "governance_key": result.governance_key,
-                "channels": result.channels.len(),
-                "meks_cached": result.meks_cached,
-            }))
+        let mut guard = ctx.session.write();
+        if let Some(ref mut sess) = *guard {
+            sess.join_community(membership);
         }
-        Err(e) => IpcResponse::error(500, format!("community join completion failed: {e}")),
     }
+    if let Err(e) = ctx.save_session() {
+        return e;
+    }
+
+    // Seed the runtime cache with the state the join already merged, so
+    // the first read afterwards does not go back to the DHT.
+    ctx.community_runtime
+        .set_governance_state(&link.governance_key, outcome.snapshot.gov_state);
+
+    IpcResponse::ok(&serde_json::json!({
+        "community_name": outcome.invite.community_name,
+        "governance_key": link.governance_key,
+        "segment": outcome.claimed.segment_index,
+        "slot": outcome.claimed.local_subkey,
+        "known_members": outcome.initial_presence.known_members.len(),
+    }))
 }
 
 pub(crate) async fn handle_leave(

@@ -32,6 +32,7 @@ pub mod error;
 pub mod event;
 pub mod invite_secrets;
 pub mod join;
+pub mod join_flow;
 pub mod join_gate;
 pub mod join_stages;
 pub mod membership_events;

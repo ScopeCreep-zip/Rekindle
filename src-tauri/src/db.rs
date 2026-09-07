@@ -14,11 +14,21 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// from the schema — safe because the app is not live yet and identity
 /// keys live in Stronghold, not `SQLite`.
 ///
+/// 74: admission governance entries. `GovernanceEntry` gained
+/// `JoinRequested`, `MemberApproved`, `MemberRejected` and
+/// `AdmissionPolicy` (Cap'n Proto union arms 34-37), so a peer on the
+/// old schema cannot read entries written by a new one — the union
+/// discriminant is unknown to it. Also flips the daemon to the v2.0
+/// self-sovereign join: members claim their own registry slot from the
+/// invite's shared slot seed instead of being assigned one, so slots
+/// written under the old flow used a locally-derived seed that no longer
+/// resolves.
+///
 /// 73: profile DHT record renumbered. The two tracks had disagreed about
 /// subkey 8 (Strand Relay pool vs friend-inbox key); the friend-inbox
 /// pair moved to 9/10 and the record now allocates 11 subkeys. See
 /// `rekindle_types::dht_layout::profile`.
-const SCHEMA_VERSION: i64 = 73;
+const SCHEMA_VERSION: i64 = 74;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

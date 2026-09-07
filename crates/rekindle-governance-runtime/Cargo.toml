@@ -19,6 +19,7 @@ rekindle-utils = { path = "../rekindle-utils" }
 async-trait = "0.1"
 blake3 = "1"
 futures = { workspace = true }
+base64 = "0.22"
 hex = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
