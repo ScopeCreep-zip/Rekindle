@@ -13,11 +13,13 @@
 //! semantics — "log + ignore" on invalid edges — are preserved).
 
 pub mod community_rpc;
+pub mod community_runtime;
 pub mod dispatch;
 pub mod event_router;
 pub mod friend_inbox;
 pub mod governance_rpc;
 pub mod handler;
+pub(crate) mod mek_wrap;
 
 pub use rekindle_lifecycle::{
     AppLifecycle as DaemonLifecycle, LifecycleError, LifecycleState as DaemonState, TransportGuard,

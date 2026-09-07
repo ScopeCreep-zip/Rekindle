@@ -1,6 +1,7 @@
 //! Wire types stored in channel record pages, plus the serde helpers
 //! their field attributes reference.
 
+use super::super::base64_bytes;
 use serde::{Deserialize, Serialize};
 
 /// A message entry written to a channel record subkey.
@@ -237,23 +238,5 @@ impl ChannelSubkeyPayload {
         out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
         out.extend_from_slice(&entries_json);
         out
-    }
-}
-
-/// Serde helper for base64-encoding Vec<u8> fields in JSON.
-mod base64_bytes {
-    use base64::Engine;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error> {
-        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        serializer.serialize_str(&b64)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        base64::engine::general_purpose::STANDARD
-            .decode(&s)
-            .map_err(serde::de::Error::custom)
     }
 }

@@ -3,6 +3,7 @@
 //! These types are used in the manifest (DFLT record), member registry
 //! (SMPL record), and per-channel message records (SMPL records).
 
+use super::base64_bytes;
 use serde::{Deserialize, Serialize};
 
 // ── Manifest + registry subkey layout ──
@@ -380,24 +381,6 @@ pub struct InviteSecrets {
     /// Joiner claims the first empty slot in this range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_range: Option<(u32, u32)>,
-}
-
-/// Serde helper for base64-encoding Vec<u8> fields in JSON.
-mod base64_bytes {
-    use base64::Engine;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error> {
-        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        serializer.serialize_str(&b64)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        base64::engine::general_purpose::STANDARD
-            .decode(&s)
-            .map_err(serde::de::Error::custom)
-    }
 }
 
 #[cfg(test)]

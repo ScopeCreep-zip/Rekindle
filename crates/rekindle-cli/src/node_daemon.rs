@@ -130,6 +130,9 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     let (event_watch_tx, event_watch_rx) = tokio::sync::watch::channel(None);
 
     let daemon_ctx = Arc::new(DaemonContext {
+        community_runtime: Arc::new(
+            rekindle_node::daemon::community_runtime::CommunityRuntimeMap::new(),
+        ),
         transport: RwLock::new(transport),
         session: session_arc,
         mek_cache,

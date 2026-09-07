@@ -131,4 +131,8 @@ pub struct DaemonContext {
             >,
         >,
     >,
+    /// Per-community runtime state backing the governance adapter —
+    /// cached CRDT `GovernanceState` and open-record tracking. Not
+    /// persisted; see `daemon::community_runtime`.
+    pub community_runtime: Arc<crate::daemon::community_runtime::CommunityRuntimeMap>,
 }

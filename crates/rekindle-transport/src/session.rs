@@ -266,6 +266,33 @@ pub struct CommunityMembership {
     /// Format: "community-governance-{short_key}"
     #[serde(skip)]
     pub governance_keypair_label: Option<String>,
+
+    // ── v2.0 governance-runtime fields ──
+    //
+    // The daemon's `GovernanceRuntimeDeps` adapter reports these across
+    // the Schwarzschild boundary as `governance_runtime::CommunityMembership`.
+    // They are `#[serde(default)]` so a session.json written before this
+    // existed still loads — an absent segment means "genesis segment",
+    // and absent counters start at zero, which is what a pre-v2.0
+    // membership effectively had.
+    /// Plate Gate segment hosting our slot (architecture §15).
+    /// `None` = unknown/legacy; `0` = genesis segment. The global slot
+    /// used for keypair derivation is `segment * SLOTS_PER_SEGMENT +
+    /// slot_index`, so for segment 0 the two are equal.
+    #[serde(default)]
+    pub segment_index: Option<u32>,
+
+    /// Governance CRDT Lamport counter for this community.
+    ///
+    /// NOT the gossip mesh clock (`GossipMesh::clock`) — that one orders
+    /// epidemic broadcast, this one orders governance entries for the
+    /// CRDT merge. Two clocks, deliberately separate.
+    #[serde(default)]
+    pub lamport_counter: u64,
+
+    /// Highest community-level MEK generation we have seen.
+    #[serde(default)]
+    pub mek_generation: u64,
 }
 
 // ── Pending friend requests ─────────────────────────────────────────────
@@ -406,6 +433,9 @@ mod tests {
             join_inbox_key: String::new(),
             is_operator: false,
             governance_keypair_label: None,
+            segment_index: Some(0),
+            lamport_counter: 7,
+            mek_generation: 2,
         }
     }
 

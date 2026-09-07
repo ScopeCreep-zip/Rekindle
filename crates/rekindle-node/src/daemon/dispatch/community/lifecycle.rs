@@ -84,6 +84,15 @@ pub(crate) async fn handle_create(
                 join_inbox_key: result.join_inbox_key.clone(),
                 is_operator: true,
                 governance_keypair_label: Some(format!("community-governance-{gov_key_short}")),
+                // The creator is definitionally in the genesis segment.
+                // `mek_generation` stays 0 here and is read from
+                // `MekCache` by the adapter — the create path does not
+                // report a generation, and inventing one would make the
+                // persisted value disagree with the cache that actually
+                // holds the key.
+                segment_index: Some(0),
+                lamport_counter: 0,
+                mek_generation: 0,
             };
             {
                 let mut guard = ctx.session.write();
@@ -296,6 +305,15 @@ pub(crate) async fn handle_join(
                 join_inbox_key: String::new(), // joiners don't operate the inbox
                 is_operator: false,
                 governance_keypair_label: None,
+                // `None`, not `Some(0)`: the daemon's join is still
+                // segment-unaware (`JoinResult` carries no segment), so
+                // claiming the genesis segment would be a guess that is
+                // wrong for any community that has expanded. Phase 2.5
+                // sets this for real when the claim goes through
+                // `claim_registry_slot`, which walks segment descriptors.
+                segment_index: None,
+                lamport_counter: 0,
+                mek_generation: 0,
             };
             {
                 let mut guard = ctx.session.write();

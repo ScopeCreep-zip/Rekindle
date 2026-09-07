@@ -1,5 +1,6 @@
 pub mod audit_log;
 pub mod automod;
+pub(crate) mod base64_bytes;
 pub mod channel_record;
 pub mod envelope;
 pub mod manifest;

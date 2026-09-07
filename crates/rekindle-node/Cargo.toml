@@ -14,6 +14,8 @@ workspace = true
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
+# Tier-6 CRDT state type for the daemon's cached governance merge.
+rekindle-governance = { path = "../rekindle-governance" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 
 # Async runtime
