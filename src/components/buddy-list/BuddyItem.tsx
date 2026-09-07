@@ -1,4 +1,5 @@
 import { Component, Show } from "solid-js";
+import { formatDuration } from "../../utils/formatting";
 import StatusDot from "../status/StatusDot";
 import Tooltip from "../common/Tooltip";
 import type { UserStatus } from "../../stores/auth.store";
@@ -21,15 +22,6 @@ interface BuddyItemProps {
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onSelect: (publicKey: string) => void;
-}
-
-function formatElapsed(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${mins}m`;
-  }
-  return `${mins}m`;
 }
 
 const BuddyItem: Component<BuddyItemProps> = (props) => {
@@ -55,7 +47,7 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
       text += ` on ${props.serverAddress}`;
     }
     if (props.gameElapsed && props.gameElapsed > 0) {
-      text += ` (${formatElapsed(props.gameElapsed)})`;
+      text += ` (${formatDuration(props.gameElapsed)})`;
     }
     return text;
   };

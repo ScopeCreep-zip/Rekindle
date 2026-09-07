@@ -1,0 +1,437 @@
+.welcome-channel-desc {
+  font-size: 12px;
+  color: var(--color-xfire-text-dim);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.message-decrypt-failed {
+  padding: 8px 12px;
+  color: var(--color-xfire-text-secondary);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.message-decrypt-failed-icon {
+  color: var(--color-xfire-text-secondary);
+}
+
+.message-automod-blur {
+  padding: 8px 12px;
+  color: var(--color-xfire-text-secondary);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.message-automod-blur-text {
+  filter: blur(4px);
+  user-select: none;
+}
+
+.message-automod-reveal-btn {
+  border: 1px solid var(--color-xfire-border);
+  background: transparent;
+  color: var(--color-xfire-text);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.poll-card {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-xfire-bg-panel) 90%, transparent);
+}
+
+.poll-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.poll-card-question {
+  color: var(--color-xfire-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.poll-card-status {
+  color: var(--color-xfire-text-secondary);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.poll-card-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  color: var(--color-xfire-text-secondary);
+  font-size: 11px;
+}
+
+.poll-card-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.poll-card-answer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-xfire-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.poll-card-answer:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-xfire-accent) 10%, transparent);
+}
+
+.poll-card-answer:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.poll-card-answer-selected {
+  border-color: var(--color-xfire-accent);
+  background: color-mix(in srgb, var(--color-xfire-accent) 14%, transparent);
+}
+
+.poll-card-answer-text {
+  flex: 1;
+}
+
+.poll-card-answer-count {
+  color: var(--color-xfire-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.poll-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.poll-card-submit,
+.poll-card-close {
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  background: transparent;
+  color: var(--color-xfire-text-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.poll-card-submit:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.poll-card-submit:hover:not(:disabled),
+.poll-card-close:hover {
+  background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+}
+
+.poll-create-answer-row {
+  align-items: center;
+}
+
+.poll-create-add-btn,
+.poll-create-remove-btn {
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  background: transparent;
+  color: var(--color-xfire-text-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.poll-create-add-btn:hover,
+.poll-create-remove-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+}
+
+.poll-create-remove-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.poll-create-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-xfire-text-secondary);
+  font-size: 12px;
+}
+
+.dm-invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 4px;
+}
+
+.dm-invite-empty {
+  color: var(--color-xfire-text-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+
+.dm-invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-xfire-border-subtle);
+  border-radius: 4px;
+  background: var(--color-xfire-bg-elevated);
+}
+
+.dm-invite-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dm-invite-meta strong {
+  color: var(--color-xfire-text-primary);
+  font-size: 13px;
+}
+
+.dm-invite-kind {
+  color: var(--color-xfire-text-secondary);
+  font-size: 12px;
+}
+
+.dm-invite-key {
+  color: var(--color-xfire-text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dm-invite-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.relay-section-subtitle {
+  margin-top: 14px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-xfire-text-secondary);
+}
+
+.relay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-xfire-border-subtle);
+}
+
+.relay-row:last-of-type {
+  border-bottom: none;
+}
+
+.relay-row-badge {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-xfire-accent, #4a90e2);
+}
+
+.push-relay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-xfire-border-subtle);
+  gap: 12px;
+}
+
+.push-relay-row:last-of-type {
+  border-bottom: none;
+}
+
+.push-relay-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.push-relay-platform {
+  font-size: 11px;
+  color: var(--color-xfire-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.push-relay-watch-count {
+  font-size: 11px;
+  color: var(--color-xfire-text-tertiary);
+}
+
+/* Architecture §28.5 mention rendering. Privileged classes
+   (everyone/here/role) get the strongest visual; @user mentions
+   are subtler so a chat full of names doesn't become a wall of
+   chips. The `chat-mention-self` modifier highlights when the
+   local member is the actual target. */
+.chat-mention {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(74, 144, 226, 0.18);
+  color: var(--color-xfire-accent, #4a90e2);
+  font-weight: 500;
+}
+
+.chat-mention-everyone,
+.chat-mention-here {
+  background: rgba(255, 184, 108, 0.22);
+  color: #c2570a;
+}
+
+.chat-mention-role {
+  background: rgba(140, 99, 197, 0.2);
+  color: #6f42c1;
+}
+
+.chat-mention-self {
+  background: rgba(255, 96, 96, 0.28);
+  color: #b3261e;
+}
+
+/* Shared LoadingButton component — async submit + aria-busy. */
+.loading-button-spinner {
+  display: inline-block;
+  margin-right: 6px;
+  animation: loading-button-spin 0.8s linear infinite;
+}
+
+.loading-button-label {
+  display: inline-block;
+}
+
+@keyframes loading-button-spin {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-button-spinner {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Architecture §10.8 text-in-voice locked-pane placeholder. */
+.voice-chat-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 32px;
+  text-align: center;
+}
+
+/* ─── Architecture §32 a11y — high-contrast / forced-colors support ───
+ * Windows High Contrast (forced-colors) and macOS "Increase Contrast"
+ * (prefers-contrast: more) take over color decisions. Map our chrome
+ * to the platform-supplied keywords (CanvasText, ButtonText, etc.) so
+ * focus rings + borders survive the override. APCA Lc target: ≥75 for
+ * essential UI text. */
+
+@media (forced-colors: active) {
+  /* Restore borders on chrome elements that rely on background tinting
+   * for separation — forced-colors strips backgrounds. */
+  .modal-container,
+  .context-menu,
+  .menu-dropdown,
+  .profile-popup,
+  .form-input,
+  .form-textarea,
+  .form-btn-primary,
+  .form-btn-secondary,
+  .form-btn-danger,
+  .channel-item,
+  .member-item,
+  .buddy-item,
+  .community-item,
+  .xfire-titlebar,
+  .status-bar {
+    border: 1px solid CanvasText;
+  }
+
+  /* Selected / active states use the platform's Highlight tokens so
+   * they remain visible. */
+  .channel-item-selected,
+  .member-item .member-name[aria-current],
+  .buddy-item-selected,
+  .community-item-selected,
+  .context-menu-item[data-highlighted],
+  .menu-dropdown-item[data-highlighted],
+  .menu-bar-item[data-expanded] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  /* Focus rings — forced-colors strips outline colors unless we ask
+   * for the system focus token explicitly. */
+  *:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* Icons rendered as font glyphs lose their decorative role; let the
+   * platform pick the foreground. */
+  .nf-icon {
+    color: ButtonText;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-xfire-border: rgba(255, 255, 255, 0.55);
+    --color-xfire-text-dim: rgba(255, 255, 255, 0.85);
+    --color-xfire-text-status: rgba(255, 255, 255, 0.85);
+  }
+
+  .form-btn-primary,
+  .form-btn-secondary,
+  .form-btn-danger {
+    border-width: 2px;
+  }
+
+  *:focus-visible {
+    outline-width: 3px;
+  }
+}

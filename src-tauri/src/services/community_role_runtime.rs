@@ -16,6 +16,7 @@ use crate::commands::community::types::CommunityRoleDto;
 use crate::db::DbPool;
 use crate::services::governance_adapter::GovernanceAdapter;
 use crate::state::SharedState;
+use crate::state_helpers;
 
 pub fn get_roles_inner(
     state: &SharedState,
@@ -79,15 +80,14 @@ pub async fn unassign_role_with_check_inner(
 }
 
 fn build_adapter(state: &SharedState, pool: &DbPool) -> Result<GovernanceAdapter, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle not initialized".to_string())?;
-    let _: tauri::State<'_, DbPool> = app_handle.state();
+    // The caller supplies the pool, so only the app handle is read here.
+    // This used to also do `let _: tauri::State<'_, DbPool> =
+    // app_handle.state();` — fetching the pool purely to discard it,
+    // which panics if the pool is unmanaged and otherwise does nothing.
+    let app_handle = state_helpers::app_handle(state).ok_or("app handle not initialized")?;
     Ok(GovernanceAdapter::new(
         Arc::clone(state),
-        app_handle.clone(),
+        app_handle,
         pool.clone(),
     ))
 }

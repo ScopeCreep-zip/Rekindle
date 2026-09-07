@@ -8,10 +8,8 @@
 use async_trait::async_trait;
 use rekindle_gossip::{GossipDeps, PeerInfo};
 use rekindle_protocol::dht::community::envelope::SignedEnvelope;
-use tauri::Manager as _;
 
-use crate::services::gossip_adapter::GossipAdapter;
-use crate::state::OnlineMember;
+use crate::services::gossip_adapter::{state_mutations, state_reads, GossipAdapter};
 use crate::state_helpers;
 
 use std::collections::HashMap;
@@ -34,66 +32,23 @@ impl GossipDeps for GossipAdapter {
     }
 
     fn increment_lamport(&self, community_id: &str) {
-        // NOT a duplicate of `state_helpers::increment_lamport` despite
-        // the name: that helper advances the community CRDT clock
-        // (`CommunityState::lamport_counter`); this one advances the
-        // gossip-mesh clock (`community.gossip.lamport_counter`).
-        // Different clocks — do not "deduplicate" them onto one helper.
-        let mut communities = self.state.communities.write();
-        if let Some(community) = communities.get_mut(community_id) {
-            if let Some(ref mut gossip) = community.gossip {
-                gossip.lamport_counter += 1;
-            }
-        }
+        state_mutations::increment_lamport(&self.state, community_id);
     }
 
     fn current_peers(&self, community_id: &str) -> Option<Vec<PeerInfo>> {
-        let communities = self.state.communities.read();
-        let community = communities.get(community_id)?;
-        let gossip = community.gossip.as_ref()?;
-        Some(
-            gossip
-                .peers
-                .iter()
-                .map(|(key, member)| PeerInfo {
-                    pseudonym_key: key.clone(),
-                    route_blob: member.route_blob.clone(),
-                })
-                .collect(),
-        )
+        state_reads::current_peers(&self.state, community_id)
     }
 
     fn peer_reliability_scores(&self, community_id: &str) -> HashMap<String, f64> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
-            return HashMap::new();
-        };
-        rekindle_gossip::scores_from_counters(&community.peer_reliability)
+        state_reads::peer_reliability_scores(&self.state, community_id)
     }
 
     fn online_member_status(&self, community_id: &str, peer_key: &str) -> Option<String> {
-        let communities = self.state.communities.read();
-        communities
-            .get(community_id)?
-            .gossip
-            .as_ref()?
-            .online_members
-            .get(peer_key)
-            .map(|m| m.status.clone())
+        state_reads::online_member_status(&self.state, community_id, peer_key)
     }
 
     fn enqueue_pending_mesh(&self, community_id: &str, signed: SignedEnvelope) {
-        let mut communities = self.state.communities.write();
-        let Some(community) = communities.get_mut(community_id) else {
-            return;
-        };
-        let Some(ref mut gossip) = community.gossip else {
-            return;
-        };
-        if gossip.pending_mesh_broadcasts.len() >= rekindle_gossip::MAX_PENDING_MESH {
-            gossip.pending_mesh_broadcasts.pop_front();
-        }
-        gossip.pending_mesh_broadcasts.push_back(signed);
+        state_mutations::enqueue_pending_mesh(&self.state, community_id, signed);
     }
 
     fn update_peer_route(
@@ -103,38 +58,16 @@ impl GossipDeps for GossipAdapter {
         status: &str,
         route_blob: Vec<u8>,
     ) {
-        {
-            let mut communities = self.state.communities.write();
-            if let Some(community) = communities.get_mut(community_id) {
-                if let Some(ref mut gossip) = community.gossip {
-                    let now = rekindle_utils::timestamp_secs();
-                    let member = OnlineMember {
-                        route_blob: route_blob.clone(),
-                        status: status.to_string(),
-                        last_seen: now,
-                        ..Default::default()
-                    };
-                    gossip
-                        .online_members
-                        .insert(peer_key.to_string(), member.clone());
-                    if gossip.peers.contains_key(peer_key) {
-                        gossip.peers.insert(peer_key.to_string(), member);
-                    }
-                }
-            }
-        }
-
-        // A successful re-resolve proves the peer's advertised voice
-        // route is stale too. Heal the bound voice transport's roster
-        // entry (refresh-only — never adds gossip peers to the media
-        // plane) so frame sends, which have no re-resolve of their
-        // own, stop failing against the VoiceJoin-era blob.
-        let transport = {
-            let ve = self.state.voice_engine.lock();
-            ve.as_ref()
-                .filter(|h| h.community_id.as_deref() == Some(community_id))
-                .map(|h| h.transport.clone())
-        };
+        let transport = state_mutations::update_peer_route(
+            &self.state,
+            community_id,
+            peer_key,
+            status,
+            route_blob.clone(),
+        );
+        // Heal the bound voice transport's roster entry outside the
+        // state lock — the await cannot happen while a parking_lot
+        // guard is alive.
         if let Some(transport) = transport {
             let pk = peer_key.to_string();
             tauri::async_runtime::spawn(async move {
@@ -216,7 +149,7 @@ impl GossipDeps for GossipAdapter {
 /// `services/community/gossip.rs` constructs this per call (cheap —
 /// just clones two Arcs) and hands it to the crate's orchestrators.
 pub fn build_adapter(state: &std::sync::Arc<crate::state::AppState>) -> Option<GossipAdapter> {
-    let app_handle = state.app_handle.read().clone()?;
-    let pool = app_handle.try_state::<crate::db::DbPool>()?.inner().clone();
+    // GossipAdapter needs only state + pool; the handle is dropped.
+    let (_app_handle, pool) = state_helpers::app_context(state)?;
     Some(GossipAdapter::new(std::sync::Arc::clone(state), pool))
 }

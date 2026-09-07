@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store";
 import { commands } from "../../ipc/commands";
 import { setCommunityState, communityState } from "../../stores/community.store";
-import type { CommunityEvent as CommunityEventType, Role } from "../../stores/community.store";
+import type { Role, ScheduledEvent } from "../../stores/community.store";
 import type { EventInfo } from "../../ipc/commands";
 
 // Typing indicator state
@@ -23,7 +23,7 @@ export function computeDisplayRoleName(roleIds: number[], roles: Role[]): string
   return highestRole?.name ?? "member";
 }
 
-export function transformEvent(e: EventInfo): CommunityEventType {
+export function transformEvent(e: EventInfo): ScheduledEvent {
   return {
     id: e.id,
     title: e.title,
@@ -34,7 +34,7 @@ export function transformEvent(e: EventInfo): CommunityEventType {
     channelId: e.channelId,
     maxAttendees: e.maxAttendees,
     createdAt: e.createdAt,
-    status: e.status as CommunityEventType["status"],
+    status: e.status as ScheduledEvent["status"],
     rsvps: e.rsvps.map((r) => ({
       pseudonymKey: r.pseudonymKey,
       status: r.status as "going" | "maybe" | "declined",

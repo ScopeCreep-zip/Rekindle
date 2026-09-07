@@ -1,0 +1,491 @@
+@layer components {
+  .message-input-field {
+    width: 100%;
+    height: 48px;
+  }
+
+  /* Status picker */
+  .status-picker {
+    position: relative;
+  }
+
+  .status-picker-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    z-index: var(--z-dropdown);
+  }
+
+  .status-picker-label {
+    margin-left: 8px;
+  }
+
+  /* Header add button (community/channel) */
+  .header-add-btn {
+    margin-left: auto;
+    font-size: 14px;
+    padding: 0 4px;
+  }
+
+  /* Community layout */
+  .community-layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .community-sidebar {
+    width: 180px;
+    background: var(--color-xfire-bg-dark);
+    border-right: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .community-sidebar-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+  }
+
+  .community-list {
+    flex: 0 1 auto;
+    max-height: 140px;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .community-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .community-item:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .community-item-selected {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .community-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background: var(--color-xfire-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  /* Architecture §32 Phase 5 W15 — when the community has an icon
+   * blob cached locally, the buddy list renders it as an `<img>`
+   * instead of the first-letter placeholder. The image inherits the
+   * `.community-icon` rectangle so layout stays identical. */
+  .community-icon-image {
+    object-fit: cover;
+    background: var(--color-xfire-bg-panel);
+  }
+
+  .community-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Channel list */
+  .channel-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .channel-section-header {
+    padding: 8px 12px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .channel-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px 4px 20px;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .channel-item:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+    color: var(--color-xfire-text);
+  }
+
+  .channel-item-selected {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    color: var(--color-xfire-text);
+  }
+
+  .channel-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .channel-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .channel-unread-badge {
+    margin-left: auto;
+    background: var(--color-xfire-accent);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+
+  .channel-presence-badge {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+  }
+
+  /* If unread is also present, the unread badge keeps the far-right slot
+     and the presence count sits just left of it. */
+  .channel-presence-badge + .channel-unread-badge {
+    margin-left: 4px;
+  }
+
+  .channel-presence-dot {
+    color: var(--color-xfire-online);
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  /* Member list sidebar */
+  .member-sidebar {
+    width: 200px;
+    background: var(--color-xfire-bg-dark);
+    border-left: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .member-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .member-list-header {
+    padding: 8px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .member-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    gap: 6px;
+    cursor: default;
+  }
+
+  .member-item:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .member-name {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .member-name-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .role-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 14px;
+  }
+
+  .role-tag-default {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* ─── Member profile popup ─── */
+  .profile-popup {
+    position: fixed;
+    z-index: var(--z-popover);
+    min-width: 200px;
+    max-width: 280px;
+    padding: 12px;
+    background: var(--color-xfire-bg-primary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 6px;
+    box-shadow: var(--shadow-elevated);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .profile-popup-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .profile-popup-key {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-family: monospace;
+  }
+
+  .profile-popup-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .profile-popup-lastseen {
+    font-size: 11px;
+    color: var(--color-xfire-text-tertiary, var(--color-xfire-text-secondary));
+    margin-top: -2px;
+  }
+
+  .profile-popup-roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .profile-popup-self-roles {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--color-xfire-border);
+  }
+
+  .profile-popup-self-roles-title {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .profile-popup-self-role-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+    background: var(--color-xfire-bg-secondary);
+    color: var(--color-xfire-text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+  }
+
+  .profile-popup-self-role-btn:hover:not(:disabled) {
+    background: var(--color-xfire-bg-tertiary);
+  }
+
+  .profile-popup-self-role-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+  }
+
+  .profile-popup-self-role-btn-active {
+    border-color: var(--color-xfire-accent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, var(--color-xfire-bg-secondary));
+  }
+
+  .profile-popup-timeout {
+    font-size: 11px;
+    color: var(--color-xfire-busy);
+    font-style: italic;
+  }
+
+  .profile-popup-game {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0;
+  }
+
+  .profile-popup-game-name {
+    font-size: 12px;
+    color: var(--color-xfire-ingame);
+  }
+
+  .profile-popup-game-server {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .profile-popup-join-btn {
+    margin-top: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    background: var(--color-xfire-ingame);
+    color: var(--color-xfire-bg);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+
+  .profile-popup-join-btn:hover {
+    filter: brightness(1.2);
+  }
+
+  .member-game-info {
+    font-size: 0.65rem;
+    color: var(--color-xfire-ingame);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .member-game-server {
+    font-size: 0.6rem;
+    color: var(--color-xfire-text-dim);
+    font-family: monospace;
+  }
+
+  /* Avatar */
+  .avatar {
+    border-radius: 50%;
+    background: var(--color-xfire-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  /* Community main area */
+  .community-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .community-channel-header {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 6px;
+    background: var(--color-xfire-bg-dark);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+  }
+
+  .community-channel-header-icon {
+    color: var(--color-xfire-text-dim);
+    font-size: 14px;
+  }
+
+  /* Voice panel */
+  .voice-panel {
+    background: var(--color-xfire-bg-status);
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    padding: 8px;
+    flex-shrink: 0;
+  }
+
+  .voice-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .voice-panel-status {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-online);
+  }
+
+  .voice-panel-status-disconnected {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .voice-panel-controls {
+    display: flex;
+    gap: 4px;
+  }
+
+  .voice-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    background: color-mix(in srgb, white 8%, transparent);
+    transition: background 0.15s;
+  }
+}

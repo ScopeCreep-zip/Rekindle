@@ -8,9 +8,9 @@
 use std::sync::Arc;
 
 use rekindle_types::expression::SoundboardMeta;
-use tauri::Manager;
 
 use crate::state::SharedState;
+use crate::state_helpers;
 
 #[derive(Debug, Clone)]
 pub struct ExpressionInfo {
@@ -31,16 +31,8 @@ pub struct ExpressionInfo {
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()
-        .ok_or_else(|| "DbPool state missing".to_string())?
-        .inner()
-        .clone();
+    let (app_handle, pool) =
+        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
     Ok(crate::services::channel_adapter::ChannelAdapter::new(
         Arc::clone(state),
         app_handle,

@@ -4,24 +4,14 @@
 
 use std::sync::Arc;
 
-use tauri::Manager;
-
-use crate::db::DbPool;
 use crate::services::channel_adapter::ChannelAdapter;
 use crate::state::AppState;
+use crate::state_helpers;
 
 fn build_adapter(state: &Arc<AppState>) -> Result<ChannelAdapter, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or("app handle not initialized")?;
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    Ok(ChannelAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool.inner().clone(),
-    ))
+    let (app_handle, pool) =
+        state_helpers::app_context(state).ok_or("app handle not initialized")?;
+    Ok(ChannelAdapter::new(Arc::clone(state), app_handle, pool))
 }
 
 pub async fn persist_hand_raise(

@@ -1,13 +1,14 @@
 import { Component, For, Show, createSignal, createMemo, onMount } from "solid-js";
 import { communityState } from "../../stores/community.store";
-import type { CommunityEvent, EventRsvp } from "../../stores/community.store";
+import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
+import { formatEventCountdown } from "../../utils/time";
 import { handleRsvpEvent, handleDeleteEvent, handleCancelEvent, handleLoadEvents } from "../../handlers/community.handlers";
 
 interface EventsPanelProps {
   communityId: string;
   myPseudonymKey: string | null;
   onCreateEvent: () => void;
-  onEditEvent?: (event: CommunityEvent) => void;
+  onEditEvent?: (event: ScheduledEvent) => void;
 }
 
 type StatusFilter = "upcoming" | "active" | "past" | "all";
@@ -22,15 +23,6 @@ function formatEventTime(timestamp: number): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function formatTimeUntil(timestamp: number): string {
-  const now = Math.floor(Date.now() / 1000);
-  const diff = timestamp - now;
-  if (diff <= 0) return "Started";
-  if (diff < 3600) return `In ${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `In ${Math.floor(diff / 3600)}h`;
-  return `In ${Math.floor(diff / 86400)}d`;
 }
 
 function myRsvpStatus(rsvps: EventRsvp[], myKey: string | null): string | null {
@@ -53,10 +45,10 @@ function statusBadgeClass(status: string): string {
 }
 
 const EventCard: Component<{
-  event: CommunityEvent;
+  event: ScheduledEvent;
   communityId: string;
   myPseudonymKey: string | null;
-  onEditEvent?: (event: CommunityEvent) => void;
+  onEditEvent?: (event: ScheduledEvent) => void;
 }> = (props) => {
   const myStatus = createMemo(() => myRsvpStatus(props.event.rsvps, props.myPseudonymKey));
   const goingCount = createMemo(() => rsvpCount(props.event.rsvps, "going"));
@@ -93,7 +85,7 @@ const EventCard: Component<{
         </Show>
         <span class="event-timezone">{userTimezone}</span>
         <Show when={props.event.status === "scheduled"}>
-          <span class="event-countdown">{formatTimeUntil(props.event.startTime)}</span>
+          <span class="event-countdown">{formatEventCountdown(props.event.startTime)}</span>
         </Show>
       </div>
       <Show when={isInteractable()}>

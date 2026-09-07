@@ -6,24 +6,15 @@
 use std::sync::Arc;
 
 use rekindle_files::AttachmentOffer;
-use tauri::Manager;
 
-use crate::db::DbPool;
 use crate::services::files_adapter::FilesAdapter;
 use crate::state::{AppState, SharedState};
+use crate::state_helpers;
 
 fn build_adapter(state: &SharedState) -> Result<Arc<FilesAdapter>, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle not initialized".to_string())?;
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    Ok(FilesAdapter::new(
-        state.clone(),
-        app_handle.clone(),
-        pool.inner().clone(),
-    ))
+    let (app_handle, pool) =
+        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
+    Ok(FilesAdapter::new(state.clone(), app_handle, pool))
 }
 
 pub fn upload_to_cache(

@@ -1,0 +1,484 @@
+@layer components {
+  .status-dot-busy {
+    color: var(--color-xfire-busy);
+  }
+
+  .status-dot-ingame {
+    color: var(--color-xfire-ingame);
+  }
+
+  .status-dot-offline {
+    color: var(--color-xfire-offline);
+  }
+
+  /* Chat message area */
+  .chat-message-area {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--color-xfire-bg-panel);
+    padding: 12px;
+  }
+
+  .chat-message {
+    margin-bottom: 4px;
+    position: relative;
+  }
+
+  .chat-message-sender-self {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+  }
+
+  .chat-message-sender-other {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .chat-message-body {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .chat-message-timestamp {
+    font-size: 10px;
+    color: var(--color-xfire-text-timestamp);
+    margin-left: 8px;
+  }
+
+  /* Message input */
+  .message-input {
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 6px 8px;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    outline: none;
+    resize: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .message-input:focus {
+    border-color: color-mix(in srgb, var(--color-xfire-accent) 50%, transparent);
+  }
+
+  .message-input::placeholder {
+    color: var(--color-xfire-offline);
+  }
+
+  /* Status bar */
+  .status-bar {
+    height: var(--chrome-height);
+    flex-shrink: 0;
+    background: var(--color-xfire-bg-status);
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text-status);
+    flex-shrink: 0;
+  }
+
+  /* Context menu */
+  .context-menu {
+    position: fixed;
+    z-index: var(--z-context-menu);
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+    padding: 4px 0;
+    min-width: 144px;
+  }
+
+  .context-menu-item {
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    cursor: pointer;
+  }
+
+  .context-menu-item:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .context-menu-item-danger {
+    color: var(--color-xfire-busy);
+  }
+
+  /* Login — must claim the flex-1 slot inside `.app-frame` so the
+   * titlebar stays at the top instead of overflowing. `min-height: 0`
+   * lets the inner content scroll if the form ever overflows. */
+  .login-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 28px 32px;
+    overflow-y: auto;
+  }
+
+  .login-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--color-xfire-accent);
+  }
+
+  .login-subtitle {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-align: center;
+  }
+
+  .login-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--color-xfire-link, var(--color-xfire-accent));
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: color 0.15s;
+  }
+
+  .login-toggle-btn:hover {
+    color: var(--color-xfire-text);
+  }
+
+  /* Account Picker — like `.login-container`, takes the flex-1 slot so
+   * the bubble grid can scroll inside the window without pushing the
+   * titlebar off-screen. */
+  .account-picker {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 32px;
+    overflow-y: auto;
+    align-items: center;
+  }
+
+  .account-picker-subtitle {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  .account-bubble-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 20px;
+    padding: 16px 24px;
+  }
+
+  .account-bubble {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 80px;
+    cursor: pointer;
+    position: relative;
+    padding: 8px 4px;
+    border-radius: 8px;
+    transition: background 0.15s;
+  }
+
+  .account-bubble:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 10%, transparent);
+  }
+
+  .account-bubble-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80px;
+  }
+
+  .account-bubble-delete {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    border: none;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .account-bubble:hover .account-bubble-delete {
+    opacity: 1;
+  }
+
+  .account-bubble-delete:hover {
+    color: var(--color-xfire-busy);
+    background: color-mix(in srgb, var(--color-xfire-busy) 15%, transparent);
+  }
+
+  .account-card-key {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--color-xfire-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  .lock-avatar {
+    cursor: pointer;
+    border-radius: 50%;
+    padding: 4px;
+    transition: box-shadow 0.2s;
+  }
+
+  .lock-avatar:hover {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-xfire-accent) 40%, transparent);
+  }
+
+  .lock-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-xfire-text);
+  }
+
+  .account-create-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px dashed var(--color-xfire-accent);
+    border-radius: 4px;
+    color: var(--color-xfire-accent);
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .account-create-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
+  }
+
+  .delete-confirm-text {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* Settings */
+  .settings-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    min-height: 0;
+  }
+
+  .settings-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .settings-option {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .settings-option:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .settings-hint {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    padding: 8px 12px;
+    font-style: italic;
+  }
+
+  .settings-category-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    padding: 8px 12px;
+    font-style: normal;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .settings-about-text {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    line-height: 1.5;
+    padding: 0 12px;
+    margin-bottom: 16px;
+  }
+
+  .settings-about-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px;
+  }
+
+  .settings-about-value {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  /* Profile */
+  .profile-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .profile-display-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+  }
+
+  .profile-status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .profile-status-label {
+    font-size: 12px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .profile-section {
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .profile-section-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 4px;
+  }
+
+  .profile-key-display {
+    font-size: 10px;
+    color: var(--color-xfire-text-status);
+    word-break: break-all;
+    background: var(--color-xfire-bg-input);
+    padding: 8px;
+    border-radius: 4px;
+  }
+
+  .profile-game-name {
+    font-size: 12px;
+    color: var(--color-xfire-ingame);
+  }
+
+  .profile-game-server {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-top: 2px;
+  }
+
+  .profile-game-elapsed {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-top: 2px;
+  }
+
+  .profile-status-message {
+    font-size: 12px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  .profile-empty-hint {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  .profile-mutual-item {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    padding: 3px 0;
+  }
+
+  /* Typing indicator */
+  .typing-indicator {
+    flex-shrink: 0;
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .typing-dots {
+    display: flex;
+    gap: 2px;
+  }
+
+  .typing-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* Message input wrapper */
+  .message-input-wrapper {
+    padding: 8px;
+    flex-shrink: 0;
+  }
+
+  .message-input-shell {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .message-input-emoji-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    background: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .message-input-emoji-btn:hover {
+    color: var(--color-xfire-text);
+    border-color: color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  }
+}

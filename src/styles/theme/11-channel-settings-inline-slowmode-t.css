@@ -1,0 +1,485 @@
+@layer components {
+  .call-stage-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 24px;
+  }
+
+  .call-stage-hero-icon {
+    font-size: 48px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .call-stage-hero-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .call-stage-hero-subtitle {
+    font-size: 13px;
+    color: var(--color-xfire-text-dim);
+    max-width: 360px;
+  }
+
+  .call-stage-join-btn {
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    color: white;
+    background: var(--color-xfire-online);
+  }
+
+  .call-stage-join-btn:hover {
+    filter: brightness(1.08);
+  }
+
+  .call-stage-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 8px;
+  }
+
+  .call-stage-stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 10px 64px; /* bottom room for the absolute control bar */
+  }
+
+  .call-stage-chat {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--color-xfire-border);
+  }
+
+  .call-stage-gallery {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-auto-rows: 1fr;
+    gap: 8px;
+    align-content: center;
+  }
+
+  .call-stage-spotlight-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .call-stage-filmstrip {
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    height: 96px;
+  }
+
+  .call-stage-filmstrip .call-stage-tile {
+    width: 150px;
+    flex-shrink: 0;
+  }
+
+  .call-stage-tile {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    min-height: 0;
+    background: black;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+  }
+
+  .call-stage-tile-spotlight {
+    flex: 1;
+    aspect-ratio: auto;
+    width: 100%;
+  }
+
+  .call-stage-tile-speaking {
+    border-color: var(--color-xfire-online);
+  }
+
+  .call-stage-tile-video,
+  .call-stage-tile-canvas,
+  .call-stage-tile-canvas canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .call-stage-tile-video {
+    transform: scaleX(-1); /* mirror own CAMERA preview, Discord-style */
+  }
+
+  /* Screen shares must read normally — mirrored text is the wart. */
+  .call-stage-tile-screen .call-stage-tile-video {
+    transform: none;
+  }
+
+  /* The native-capture self view renders into a canvas (loopback
+     decode); mirror it like the camera <video> preview. */
+  .call-stage-tile-mirror .call-stage-tile-canvas canvas {
+    transform: scaleX(-1);
+  }
+
+  .call-stage-tile-avatar {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-xfire-bg-secondary);
+  }
+
+  .call-stage-tile-overlay {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+  }
+
+  .call-stage-tile-name {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .call-stage-tile-badge {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  .call-stage-tile-badge-muted {
+    color: var(--color-xfire-busy);
+  }
+
+  /* Footer control bar, centred over the gallery (Element Call pattern). */
+  .call-control-bar {
+    position: absolute;
+    bottom: 10px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    pointer-events: none;
+  }
+
+  .call-control-group,
+  .call-control-quality {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 88%, transparent);
+    border: 1px solid var(--color-xfire-border);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+
+  .call-control-bar .voice-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+  }
+
+  .call-control-quality {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-transform: capitalize;
+    box-shadow: none;
+  }
+
+  .call-control-quality-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-xfire-offline);
+  }
+
+  .call-control-quality-good { background: var(--color-xfire-online); }
+  .call-control-quality-fair { background: var(--color-xfire-away); }
+  .call-control-quality-poor { background: var(--color-xfire-busy); }
+
+  /* Architecture §24 — community analytics dashboard. */
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .analytics-card {
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+    padding: 10px;
+  }
+
+  .analytics-card-label {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .analytics-card-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    margin-top: 4px;
+  }
+
+  .analytics-sparkline {
+    margin: 8px 0;
+  }
+
+  .analytics-sparkline-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 4px;
+  }
+
+  .analytics-sparkline-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 44px;
+    padding: 2px;
+    background: var(--color-xfire-bg-secondary);
+    border-radius: 3px;
+  }
+
+  .analytics-sparkline-bar {
+    flex: 1;
+    background: var(--color-xfire-accent);
+    min-height: 2px;
+    border-radius: 1px;
+  }
+
+  .analytics-channel-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 200px;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+  }
+
+  .analytics-channel-name {
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .analytics-channel-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .analytics-hours {
+    display: flex;
+    gap: 2px;
+    align-items: flex-end;
+    padding: 4px;
+    background: var(--color-xfire-bg-secondary);
+    border-radius: 3px;
+  }
+
+  .analytics-hour-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .analytics-hour-bar {
+    width: 100%;
+    background: var(--color-xfire-accent);
+    min-height: 2px;
+    border-radius: 1px;
+  }
+
+  .analytics-hour-label {
+    font-size: 8px;
+    color: var(--color-xfire-text-dim);
+    margin-top: 2px;
+  }
+
+  /* Architecture §23 — message search panel (Cmd/Ctrl-F). */
+  .search-panel-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 60px;
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .search-panel {
+    width: 720px;
+    max-width: 90%;
+    max-height: 80vh;
+    background: var(--color-xfire-bg-primary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+  }
+
+  .search-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-header h3 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .search-panel-close {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  .search-panel-input-row {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-query {
+    flex: 1;
+  }
+
+  .search-panel-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-pinned {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-has {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-chip {
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    color: var(--color-xfire-text-secondary);
+    padding: 3px 10px;
+    font-size: 10px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .search-panel-chip-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    color: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .search-panel-error {
+    padding: 10px 14px;
+    color: #ff7373;
+    font-size: 12px;
+  }
+
+  .search-panel-empty {
+    padding: 24px 14px;
+    text-align: center;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+
+  .search-panel-hit {
+    padding: 8px 14px;
+    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+  }
+
+  .search-panel-hit-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .search-panel-hit-scope {
+    font-size: 9px;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text-dim);
+  }
+}

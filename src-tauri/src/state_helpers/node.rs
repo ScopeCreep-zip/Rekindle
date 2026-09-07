@@ -11,6 +11,25 @@ pub fn app_handle(state: &Arc<AppState>) -> Option<tauri::AppHandle> {
     state.app_handle.read().clone()
 }
 
+/// The `(AppHandle, DbPool)` pair every adapter constructor needs.
+///
+/// Fifteen `build_adapter` functions across `services/` and `commands/`
+/// each re-spelled this: read the app handle out of `AppState`, then
+/// pull `DbPool` off the handle's managed state. They also disagreed on
+/// how — some used `app_handle.state::<DbPool>()`, which **panics** when
+/// the pool is not managed, others `try_state()`, which does not. This
+/// uses `try_state`, so a missing pool is an error every caller can
+/// handle rather than a panic in some of them.
+///
+/// Returns `Option` so `Result`-flavoured callers can attach their own
+/// message with `.ok_or(...)`.
+pub fn app_context(state: &Arc<AppState>) -> Option<(tauri::AppHandle, crate::db::DbPool)> {
+    use tauri::Manager as _;
+    let app_handle = state.app_handle.read().clone()?;
+    let pool = app_handle.try_state::<crate::db::DbPool>()?.inner().clone();
+    Some((app_handle, pool))
+}
+
 /// Routing context if node is attached. Returns `None` if not initialized
 /// or not attached to the network.
 pub fn routing_context(state: &Arc<AppState>) -> Option<veilid_core::RoutingContext> {

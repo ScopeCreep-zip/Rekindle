@@ -1,6 +1,8 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
+import type { Message as IpcMessage } from "../ipc/commands/types";
+
 export type MessageStatus = "sending" | "sent" | "queued" | "failed";
 
 export interface ReactionGroup {
@@ -26,32 +28,26 @@ export interface MessagePoll {
   selectedAnswers: number[];
 }
 
-export interface Message {
-  id: number;
-  senderId: string;
-  body: string;
-  decryptionFailed?: boolean;
-  automodBlurred?: boolean;
-  timestamp: number;
-  isOwn: boolean;
-  replyTo?: number;
+/**
+ * A chat message as the UI holds it: the IPC wire shape plus the
+ * client-side fields the backend does not send.
+ *
+ * This used to redeclare every wire field, which drifted from
+ * `ipc/commands/types.ts` in both directions — that copy lacked
+ * `replyTo`/`replyToId`/`editedAt`, this one lacked nothing but
+ * duplicated a dozen fields. Extending keeps the shared shape in one
+ * place without having to decide, field by field, which side owns it.
+ */
+export interface Message extends IpcMessage {
+  /** Delivery state, tracked locally — never sent by the backend. */
   status?: MessageStatus;
-  serverMessageId?: string;
+  replyTo?: number;
   replyToId?: string;
   editedAt?: number;
+  /** Named form of the inherited inline shape. */
   reactions?: ReactionGroup[];
-  pinned?: boolean;
   poll?: MessagePoll;
-  /** Pseudonym (hex) of the original author when this row originated from a Forward.
-   *  `null`/undefined for native messages. Backend populates from SQLite column
-   *  `forwarded_from_author` written by `services/community/channel_messages::forward_message`. */
-  forwardedFromAuthor?: string | null;
-  /** Lost Cargo attachment metadata (architecture §28.9). Decoded from
-   *  the SQLite `attachment_json` column populated by upload + receive paths. */
   attachment?: MessageAttachment;
-  /** Bitfield from `ChannelEntry::Message.flags` — VOICE_MESSAGE=0x10 (architecture §16.4),
-   *  SUPPRESS_NOTIFICATIONS=0x20, etc. */
-  flags?: number;
 }
 
 /** VOICE_MESSAGE bit on `Message.flags` per architecture §16.4. */

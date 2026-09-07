@@ -15,7 +15,6 @@
 use std::sync::Arc;
 
 use tauri::AppHandle;
-use tauri::Manager as _;
 
 use crate::db::DbPool;
 use crate::state::AppState;
@@ -53,7 +52,6 @@ impl PresenceAdapter {
 /// construct one per call (cheap — just clones three Arcs) and hand
 /// it to the crate's orchestrators.
 pub fn build_adapter(state: &Arc<AppState>) -> Option<PresenceAdapter> {
-    let app_handle = state.app_handle.read().clone()?;
-    let pool = app_handle.try_state::<DbPool>()?.inner().clone();
+    let (app_handle, pool) = crate::state_helpers::app_context(state)?;
     Some(PresenceAdapter::new(Arc::clone(state), app_handle, pool))
 }

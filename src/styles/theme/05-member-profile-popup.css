@@ -1,0 +1,486 @@
+@layer components {
+  .add-friend-copy-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+  }
+
+  .add-friend-invite-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .add-friend-cancel-btn {
+    padding: 4px 12px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
+    border: none;
+    border-radius: 3px;
+    color: white;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .add-friend-cancel-btn:hover {
+    background: var(--color-xfire-busy);
+  }
+
+  .add-friend-invite-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 8px;
+  }
+
+  .add-friend-invite-list-header {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-xfire-offline);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding-bottom: 2px;
+  }
+
+  .add-friend-invite-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+  }
+
+  .invite-status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-xfire-offline) 30%, transparent);
+    color: var(--color-xfire-offline);
+  }
+
+  .invite-status-badge.responded {
+    background: color-mix(in srgb, #22c55e 30%, transparent);
+    color: #4ade80;
+  }
+
+  .invite-time {
+    font-size: 10px;
+    color: var(--color-xfire-offline);
+  }
+
+  .invite-url-masked {
+    font-family: monospace;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+    transition: color 0.15s;
+  }
+
+  .invite-url-masked:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .invite-copy-btn {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    background: var(--color-xfire-accent);
+    color: white;
+    font-family: var(--font-family-xfire);
+    flex-shrink: 0;
+  }
+
+  .invite-copy-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+  }
+
+  .invite-cancel-btn {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
+    color: white;
+    font-family: var(--font-family-xfire);
+  }
+
+  .invite-cancel-btn:hover {
+    background: var(--color-xfire-busy);
+  }
+
+  .add-friend-divider {
+    text-align: center;
+    color: var(--color-xfire-offline);
+    font-size: 11px;
+    padding: 4px 0;
+  }
+
+  /* Bottom action bar */
+  .action-bar {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    flex-shrink: 0;
+  }
+
+  .action-bar-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-accent);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .action-bar-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  /* Notification center */
+  .notification-bell-wrapper {
+    position: relative;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .notification-bell {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .notification-bell:hover {
+    color: var(--color-xfire-text);
+    background: color-mix(in srgb, white 8%, transparent);
+  }
+
+  .notification-badge {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--color-xfire-busy);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .notification-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: var(--z-popover);
+    width: 260px;
+    max-height: 320px;
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 6px;
+    box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.5);
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
+  }
+
+  .notification-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    flex-shrink: 0;
+  }
+
+  .notification-panel-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-xfire-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .notification-panel-list {
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 10%, transparent);
+    transition: background 0.15s;
+  }
+
+  .notification-item:hover {
+    background: color-mix(in srgb, white 4%, transparent);
+  }
+
+  .notification-item:last-child {
+    border-bottom: none;
+  }
+
+  .notification-item-read {
+    opacity: 0.5;
+  }
+
+  .notification-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .notification-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-xfire-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .notification-body {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .notification-time {
+    font-size: 10px;
+    color: var(--color-xfire-text-timestamp);
+  }
+
+  .notification-mark-read {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .notification-mark-read:hover {
+    color: var(--color-xfire-online);
+    background: color-mix(in srgb, var(--color-xfire-online) 15%, transparent);
+  }
+
+  .notification-mark-all {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-accent);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .notification-mark-all:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  .notification-empty {
+    padding: 24px 10px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  /* Logout button */
+  .logout-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .logout-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
+    color: var(--color-xfire-busy);
+  }
+
+  /* Network status indicator */
+  .network-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    margin-left: auto;
+    padding: 0 4px;
+  }
+
+  .network-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .network-dot-connected {
+    background: var(--color-xfire-online);
+  }
+
+  .network-dot-disconnected {
+    background: var(--color-xfire-busy);
+  }
+
+  .network-dot-connecting {
+    background: var(--color-xfire-away);
+  }
+
+  /* Architecture §32 a11y — animation only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .network-dot-connecting {
+      --pulse-min-opacity: 0.3;
+      animation: opacity-pulse 1.5s ease-in-out infinite;
+    }
+  }
+
+  .network-dot-partial {
+    background: var(--color-xfire-away);
+  }
+
+  /* Community join "dial-in" stepper — per-phase backend join gates */
+  .join-stepper {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .join-stepper-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .join-step-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--color-xfire-offline);
+  }
+
+  .join-step-dot-started {
+    background: var(--color-xfire-away);
+  }
+
+  /* Architecture §32 a11y — animation only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .join-step-dot-started {
+      --pulse-min-opacity: 0.3;
+      animation: opacity-pulse 1.5s ease-in-out infinite;
+    }
+  }
+
+  .join-step-dot-done {
+    background: var(--color-xfire-online);
+  }
+
+  .join-step-dot-failed,
+  .join-step-dot-timedOut {
+    background: var(--color-xfire-busy);
+  }
+
+  /* Community header actions */
+  .community-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    flex-shrink: 0;
+  }
+
+  .community-leave-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-family: var(--font-family-xfire);
+    margin-left: auto;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .community-leave-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
+    color: var(--color-xfire-busy);
+  }
+
+  /* Member context menu */
+  .context-menu-separator {
+    height: 1px;
+    background: color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    margin: 4px 0;
+  }
+
+  .context-menu-header {
+    padding: 4px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Friend group management */
+  .group-submenu {
+    padding: 4px 0;
+  }
+}

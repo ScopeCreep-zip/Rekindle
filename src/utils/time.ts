@@ -24,3 +24,23 @@ export function formatTimeUntil(epochMs: number): string {
   const days = Math.floor(hours / 24);
   return `${days}d`;
 }
+
+/**
+ * Countdown to a scheduled event, from a Unix-**seconds** timestamp
+ * (e.g. "In 20m", "Started").
+ *
+ * Distinct from [`formatTimeUntil`], which takes **milliseconds**,
+ * returns "expired" rather than "Started", and omits the "In " prefix.
+ * The events panel and the community-window sidebar each carried an
+ * identical private copy of this — and neither could use
+ * `formatTimeUntil`, because despite the near-identical name it speaks
+ * a different unit and vocabulary.
+ */
+export function formatEventCountdown(epochSecs: number): string {
+  const now = Math.floor(Date.now() / 1000);
+  const diff = epochSecs - now;
+  if (diff <= 0) return "Started";
+  if (diff < 3600) return `In ${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `In ${Math.floor(diff / 3600)}h`;
+  return `In ${Math.floor(diff / 86400)}d`;
+}

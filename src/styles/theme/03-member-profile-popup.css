@@ -1,0 +1,500 @@
+@layer components {
+  .voice-btn:hover {
+    background: color-mix(in srgb, white 15%, transparent);
+  }
+
+  .voice-btn-active {
+    background: color-mix(in srgb, var(--color-xfire-busy) 60%, transparent);
+    color: white;
+  }
+
+  .voice-btn-disconnect {
+    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
+    color: white;
+  }
+
+  .voice-participants {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .voice-participant {
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    gap: 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+  }
+
+  .voice-participant-speaking {
+    background: color-mix(in srgb, var(--color-xfire-online) 15%, transparent);
+  }
+
+  .voice-speaking-ring {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-xfire-online);
+    flex-shrink: 0;
+  }
+
+  .voice-silent-ring {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-xfire-offline);
+    flex-shrink: 0;
+  }
+
+  .voice-participant-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Architecture §28.6 — forum-channel tag chip input. The chip rows
+   * live inside the same flex container as the inline text input so
+   * the visible affordance behaves like a contiguous editable region;
+   * pressing Enter / "," commits, Backspace on empty input pops the
+   * last chip. Used in `CreateChannelModal` and the in-place tag
+   * editor in `ChannelsTab.tsx`. */
+  .forum-tag-chip-input {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 6px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+    background: var(--color-xfire-bg-input);
+    min-height: 28px;
+  }
+
+  .forum-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    border-radius: 2px;
+    color: var(--color-xfire-text-primary);
+    font-size: 11px;
+  }
+
+  .forum-tag-chip-remove {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-secondary);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .forum-tag-chip-input-field {
+    flex: 1;
+    min-width: 80px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-xfire-text-primary);
+    font-size: 12px;
+  }
+
+  /* Modal */
+  /* Kobalte Dialog renders Overlay + Content as siblings inside a Portal,
+   * so the backdrop and the centering layer are separate concerns. */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .modal-overlay-positioner {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+    pointer-events: none;
+  }
+
+  .modal-container {
+    pointer-events: auto;
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 6px;
+    min-width: 280px;
+    max-height: calc(100vh - 56px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+  }
+
+  .modal-container-sm { max-width: 360px; }
+  .modal-container-md { max-width: 480px; }
+  .modal-container-lg { max-width: 680px; }
+
+  /* Plan §Failure 6 — soundboard panel inside VoicePanel */
+  .soundboard-panel {
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    margin-top: 6px;
+  }
+  .soundboard-panel-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+  }
+  .soundboard-panel-header:hover {
+    color: var(--color-xfire-text-primary);
+  }
+  .soundboard-panel-count {
+    font-size: 10px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    color: var(--color-xfire-accent);
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .soundboard-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 6px;
+    padding: 6px 10px 10px 10px;
+  }
+  .soundboard-panel-clip {
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    color: var(--color-xfire-text-primary);
+    border-radius: 4px;
+    padding: 6px 4px;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    overflow: hidden;
+  }
+  .soundboard-panel-clip:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-input));
+  }
+  .soundboard-panel-clip-name {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Plan §Failure 5 — DM call action bar */
+  .dm-call-bar {
+    display: flex;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    background: var(--color-xfire-bg-panel);
+  }
+
+  /* Plan §Failure 5 — incoming-call modal */
+  .incoming-call-modal {
+    padding: 18px 16px;
+    text-align: center;
+  }
+  .incoming-call-modal-header {
+    margin-bottom: 16px;
+  }
+  .incoming-call-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-xfire-text-secondary);
+    text-transform: capitalize;
+    margin-bottom: 6px;
+  }
+  .incoming-call-display-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+  .incoming-call-timer {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+  }
+  .incoming-call-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+  .incoming-call-accept,
+  .incoming-call-decline {
+    min-width: 96px;
+  }
+  .incoming-call-decline-more {
+    min-width: 36px;
+    padding: 6px 10px;
+  }
+  /* W13-fix.3 — inline decline-with-reason options panel inside the
+   * Dialog. Replaces a nested DropdownMenu whose portal collided with
+   * the Dialog overlay's z-index. */
+  .incoming-call-decline-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 20%, transparent);
+  }
+  .incoming-call-decline-options > button {
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+
+  /* Wave 12 W12.3 — call-waiting banner shown when an incoming call
+   * arrives during an active call. Slim top-of-viewport docked panel
+   * so the active call's controls stay reachable. */
+  .call-waiting-banner {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 60%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-xfire-bg-secondary) 96%, transparent);
+    backdrop-filter: blur(6px);
+    box-shadow: var(--shadow-elevated);
+    max-width: min(560px, calc(100% - 32px));
+  }
+  .call-waiting-banner-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.2;
+  }
+  .call-waiting-banner-name {
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+  .call-waiting-banner-kind {
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    text-transform: capitalize;
+  }
+  .call-waiting-banner-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Wave 12 W12.4 — outgoing-call panel (Calling X… + ringback + cancel). */
+  .outgoing-call-panel {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 75;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-online) 50%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-xfire-bg-secondary) 96%, transparent);
+    backdrop-filter: blur(6px);
+    box-shadow: var(--shadow-elevated);
+    min-width: 200px;
+  }
+  .outgoing-call-panel-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+  .outgoing-call-panel-kind {
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    text-transform: capitalize;
+  }
+  .outgoing-call-panel-timer {
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+  }
+  .outgoing-call-panel-cancel {
+    margin-top: 4px;
+    min-width: 96px;
+  }
+
+  /* Wave 12 W12.8 — missed-call action row in the notification panel. */
+  .notification-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .notification-action-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Wave 12 W12.5 — active call panel. */
+  .active-call-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-online) 35%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-xfire-bg-secondary) 92%, transparent);
+  }
+  .active-call-panel-popout {
+    border-radius: 0;
+    border: none;
+    height: 100%;
+  }
+  .active-call-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .active-call-peer-avatar {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--color-xfire-accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    border: 2px solid transparent;
+    transition: border-color 80ms ease-out;
+  }
+  .active-call-peer-avatar-speaking {
+    border-color: var(--color-xfire-online);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-xfire-online) 50%, transparent);
+  }
+  .active-call-peer-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+  .active-call-peer-name {
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+  .active-call-peer-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    text-transform: capitalize;
+  }
+  .active-call-status-online { color: var(--color-xfire-online); }
+  .active-call-status-away   { color: var(--color-xfire-away); }
+  .active-call-status-busy   { color: var(--color-xfire-busy); }
+  .active-call-status-offline { color: var(--color-xfire-offline); }
+  .active-call-timer {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .active-call-quality {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    flex: 0 0 auto;
+  }
+  .active-call-quality-bar {
+    width: 3px;
+    background: color-mix(in srgb, var(--color-xfire-text-secondary) 30%, transparent);
+    border-radius: 1px;
+  }
+  .active-call-quality-bar:nth-child(1) { height: 4px; }
+  .active-call-quality-bar:nth-child(2) { height: 7px; }
+  .active-call-quality-bar:nth-child(3) { height: 10px; }
+  .active-call-quality-bar:nth-child(4) { height: 13px; }
+  .active-call-quality-bar-on {
+    background: var(--color-xfire-online);
+  }
+
+  .active-call-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .call-control-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 25%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg-tertiary) 80%, transparent);
+    color: var(--color-xfire-text-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .call-control-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-bg-tertiary) 100%, transparent);
+  }
+  .call-control-btn-active {
+    background: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+    color: #fff;
+  }
+  .call-control-btn-hangup {
+    background: var(--color-xfire-busy);
+    border-color: var(--color-xfire-busy);
+    color: #fff;
+  }
+  .call-control-btn-hangup:hover {
+    filter: brightness(1.15);
+  }
+
+  .active-call-devices {
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 15%, transparent);
+    padding-top: 6px;
+    font-size: 11px;
+  }
+  .active-call-devices-summary {
+    cursor: pointer;
+    color: var(--color-xfire-text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .active-call-device-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .active-call-device-row label {
+    width: 80px;
+    color: var(--color-xfire-text-secondary);
+  }
+  .active-call-device-row select {
+    flex: 1;
+    background: var(--color-xfire-bg-tertiary);
+    color: var(--color-xfire-text-primary);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 25%, transparent);
+    border-radius: 3px;
+    padding: 2px 4px;
+  }
+}

@@ -1,0 +1,487 @@
+@layer components {
+  .search-panel-hit-scope-channel {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    color: var(--color-xfire-accent);
+  }
+
+  .search-panel-hit-scope-thread {
+    background: color-mix(in srgb, #c4b06a 25%, transparent);
+    color: #ffd479;
+  }
+
+  .search-panel-hit-time {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-hit-body {
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .search-panel-hit-context {
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+  }
+
+  .search-panel-hit-match {
+    color: var(--color-xfire-text-primary);
+    margin: 2px 0;
+  }
+
+  .search-panel-footer {
+    padding: 8px 14px;
+    border-top: 1px solid var(--color-xfire-border);
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-align: center;
+  }
+
+  /* Architecture §28.8 — sender-fetched OpenGraph link preview card. */
+  .message-link-preview {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: var(--color-xfire-bg-secondary);
+    border-left: 3px solid var(--color-xfire-accent);
+    border-radius: 4px;
+    text-decoration: none;
+    color: inherit;
+    max-width: 480px;
+  }
+
+  .message-link-preview:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-secondary));
+  }
+
+  .message-link-preview-image {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .message-link-preview-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .message-link-preview-site {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .message-link-preview-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .message-link-preview-description {
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Architecture §28.5 — mention autocomplete popover. */
+  .mention-popover {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: 4px;
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+    box-shadow: var(--shadow-elevated);
+    max-height: 180px;
+    overflow-y: auto;
+    z-index: var(--z-dropdown);
+  }
+
+  .mention-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-primary);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mention-popover-row-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .mention-popover-tag {
+    font-size: 9px;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text-dim);
+  }
+
+  .mention-popover-tag-special {
+    background: color-mix(in srgb, #f44336 25%, transparent);
+    color: #ff9c92;
+  }
+
+  .mention-popover-tag-role {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    color: var(--color-xfire-accent);
+  }
+
+  .mention-popover-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Architecture §17.1 — per-channel notification level + sound picker. */
+  .channel-notif-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-left: 4px;
+  }
+
+  .channel-notif-select {
+    padding: 3px 6px;
+    font-size: 11px;
+    max-width: 140px;
+  }
+
+  .channel-topic-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 240px;
+  }
+
+  .channel-topic-input {
+    flex: 1;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+
+  /* ─── Inline topic editing in channel header ─── */
+  .channel-topic-editable {
+    cursor: pointer;
+  }
+
+  .channel-topic-editable:hover {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+  }
+
+  .channel-topic-header-input {
+    width: 200px;
+    padding: 2px 6px;
+    font-size: 11px;
+    margin-left: 8px;
+  }
+
+  /* ─── Channel notification select (kept for reference, now in channel context menu) ─── */
+  .channel-notification-select {
+    font-size: 0.7rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--bg-tertiary, var(--color-xfire-bg-input));
+    color: var(--text-secondary, var(--color-xfire-text-dim));
+    border: 1px solid var(--border-subtle, color-mix(in srgb, var(--color-xfire-offline) 20%, transparent));
+    cursor: pointer;
+    margin-left: 8px;
+  }
+
+  /* ─── Right panel (replaces member-sidebar) ─── */
+  .right-panel {
+    width: 200px;
+    background: var(--color-xfire-bg-dark);
+    border-left: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .right-panel .pin-panel {
+    position: static;
+    width: 100%;
+    height: 100%;
+    border-left: none;
+  }
+
+  .right-panel .thread-panel {
+    width: 100%;
+    border-left: none;
+  }
+
+  .right-panel .thread-list-panel {
+    width: 100%;
+    border-left: none;
+  }
+
+  /* ─── Community unread badge ─── */
+  .community-unread-badge {
+    margin-left: auto;
+    background: var(--color-xfire-accent);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 8px;
+    min-width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  /* ─── Channel header badge (pin/thread count) ─── */
+  .channel-header-badge {
+    font-size: 9px;
+    color: var(--color-xfire-text-dim);
+    margin-left: 2px;
+  }
+
+  /* ─── Active header button ─── */
+  .header-btn-active {
+    color: var(--color-xfire-accent) !important;
+  }
+
+  /* ─── Profile popup actions ─── */
+  .profile-popup-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  /* Architecture §32 — empty-state hint surfaced when the local
+   * member's per-community profile has no bio / avatar / banner /
+   * pronouns set. Sits above the "Edit profile" button so it doubles
+   * as an inline call-to-action. */
+  .profile-popup-empty-hint {
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    line-height: 1.4;
+  }
+
+  .profile-popup-action-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .profile-popup-action-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  /* ─── Per-community profile (bio / pronouns / badges / theme) ─── */
+  .profile-popup-pronouns {
+    font-size: 10px;
+    color: var(--profile-accent, var(--color-xfire-accent));
+    padding: 0 8px 4px;
+  }
+
+  .profile-popup-bio {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    padding: 4px 8px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .profile-popup-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .profile-popup-badge {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--profile-accent, var(--color-xfire-accent)) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--profile-accent, var(--color-xfire-accent)) 35%, transparent);
+    color: var(--color-xfire-text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .profile-popup-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  .profile-popup-edit-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .profile-popup-edit-input,
+  .profile-popup-edit-textarea {
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  .profile-popup-edit-input:focus,
+  .profile-popup-edit-textarea:focus {
+    outline: none;
+    border-color: var(--color-xfire-accent);
+  }
+
+  .profile-popup-edit-color {
+    width: 40px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .profile-popup-edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .profile-popup-edit-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .profile-popup-edit-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .profile-popup-edit-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .profile-popup-edit-btn-secondary {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+  }
+
+  /* ─── Bulk message delete (mod selection mode) ─── */
+  .message-list-mod-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 8px;
+  }
+
+  .message-list-mod-btn {
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 35%, transparent);
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .message-list-mod-btn:hover {
+    color: var(--color-xfire-text);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .message-list-selection-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-elevated);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--color-xfire-bg) 85%, var(--color-xfire-accent) 15%);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  }
+
+  .message-list-selection-count {
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    margin-right: auto;
+  }
+
+  .message-list-selection-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .message-list-selection-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .message-list-selection-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .message-list-selection-btn-danger {
+    background: color-mix(in srgb, #c0392b 20%, transparent);
+    border-color: color-mix(in srgb, #c0392b 45%, transparent);
+  }
+
+  .message-list-selection-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, #c0392b 35%, transparent);
+  }
+
+  .chat-message-selectable {
+    cursor: pointer;
+    padding-left: 28px;
+    position: relative;
+    transition: background 0.1s;
+  }
+}

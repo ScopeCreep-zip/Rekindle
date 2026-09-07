@@ -1,0 +1,482 @@
+@layer components {
+  .channel-type-select {
+    width: auto;
+    min-width: 60px;
+  }
+
+  .settings-subsection {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid color-mix(in srgb, white 8%, transparent);
+  }
+
+  .settings-subsection-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 8px;
+    margin: 0 0 4px 0;
+  }
+
+  .channel-create-category-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .channel-create-category-btn:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+    color: var(--color-xfire-text);
+  }
+
+  /* Settings member row */
+  .settings-member-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.15s;
+  }
+
+  .settings-member-row:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .settings-member-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .settings-member-actions .form-btn-secondary,
+  .settings-member-actions .form-btn-danger {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+
+  .settings-role-picker {
+    margin-left: 20px;
+    padding: 2px 0;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 3px;
+    background: var(--color-xfire-bg-panel);
+  }
+
+  /* Settings list rows (bans, invites, etc.) */
+  .settings-list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 3px;
+  }
+
+  .settings-list-item:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .settings-list-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .settings-list-name {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-list-date {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* ─── Invite create form ─── */
+  .invite-create-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .invite-create-form .form-input {
+    width: auto;
+    flex: 1;
+    min-width: 60px;
+  }
+
+  .invite-create-form .form-select {
+    width: auto;
+    min-width: 100px;
+  }
+
+  /* Created invite link display */
+  .invite-link-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0;
+    padding: 8px;
+    background: color-mix(in srgb, var(--xf-accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--xf-accent) 30%, transparent);
+    border-radius: 4px;
+  }
+
+  .invite-link-display .form-input {
+    flex: 1;
+    font-family: monospace;
+    font-size: 11px;
+    cursor: text;
+  }
+
+  /* Invite list item actions (copy + revoke) */
+  .settings-list-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* ─── Audit log ─── */
+  .audit-log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .audit-log-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    background: var(--color-xfire-bg-secondary);
+  }
+
+  .audit-log-entry:hover {
+    background: var(--color-xfire-bg-tertiary);
+  }
+
+  .audit-log-action {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    text-transform: capitalize;
+  }
+
+  .audit-log-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .audit-log-actor {
+    color: var(--color-xfire-accent);
+  }
+
+  .audit-log-target {
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .audit-log-target::before {
+    content: "\2192 ";
+  }
+
+  .audit-log-details {
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  .audit-log-time {
+    margin-left: auto;
+  }
+
+  /* ─── Community Events ─── */
+  .event-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    background: var(--color-xfire-bg-secondary);
+    border-left: 3px solid var(--color-xfire-accent);
+    transition: background 0.15s;
+  }
+
+  .event-card:hover {
+    background: var(--color-xfire-bg-tertiary);
+  }
+
+  .event-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .event-card-description {
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+    line-height: 1.4;
+  }
+
+  .event-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .event-countdown {
+    color: var(--color-xfire-accent);
+    font-weight: 600;
+  }
+
+  .event-rsvp-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .event-rsvp-btn {
+    padding: 3px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--color-xfire-border);
+    background: transparent;
+    color: var(--color-xfire-text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .event-rsvp-btn:hover {
+    background: var(--color-xfire-bg-tertiary);
+    color: var(--color-xfire-text-primary);
+  }
+
+  .event-rsvp-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    border-color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent);
+  }
+
+  .event-rsvp-count {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-left: auto;
+  }
+
+  .event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .event-empty {
+    text-align: center;
+    color: var(--color-xfire-text-dim);
+    font-size: 12px;
+    padding: 24px 0;
+  }
+
+  .event-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .event-card-cancelled {
+    opacity: 0.6;
+    border-left-color: var(--color-xfire-text-dim);
+  }
+
+  .event-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .event-status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+
+  .event-status-scheduled {
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    color: var(--color-xfire-accent);
+  }
+
+  .event-status-active {
+    background: color-mix(in srgb, #4caf50 20%, transparent);
+    color: #4caf50;
+  }
+
+  .event-status-completed {
+    background: color-mix(in srgb, var(--color-xfire-text-dim) 20%, transparent);
+    color: var(--color-xfire-text-dim);
+  }
+
+  .event-status-cancelled {
+    background: color-mix(in srgb, #f44336 20%, transparent);
+    color: #f44336;
+  }
+
+  .event-filter-row {
+    display: flex;
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  .event-filter-btn {
+    padding: 3px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--color-xfire-border);
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .event-filter-btn:hover {
+    background: var(--color-xfire-bg-tertiary);
+    color: var(--color-xfire-text-primary);
+  }
+
+  .event-filter-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    border-color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent);
+  }
+
+  /* Logout icon button */
+  .logout-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .logout-icon-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
+    color: var(--color-xfire-busy);
+  }
+
+  /* Member roles inline row */
+  .member-roles-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 1px;
+  }
+
+  /* Role picker styled checkbox */
+  .role-picker-checkbox {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--color-xfire-text-dim);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .role-picker-checkbox:checked {
+    background: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .role-picker-checkbox:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* Member group headers (hoisted role sections) */
+  .member-group-header {
+    padding: 8px 12px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Member search */
+  .member-search-wrapper {
+    padding: 4px 8px;
+  }
+
+  .member-search-input {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .member-search-input:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  /* Voice channel join button (hover reveal) */
+  .channel-voice-join-btn {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    border: none;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-xfire-online) 60%, transparent);
+    color: white;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+}

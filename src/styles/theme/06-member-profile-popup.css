@@ -1,0 +1,488 @@
+@layer components {
+  .group-submenu-item {
+    padding: 3px 16px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    cursor: pointer;
+  }
+
+  .group-submenu-item:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .group-create-inline {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+  }
+
+  .group-create-input {
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .group-create-input:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+
+  /* Avatar upload */
+  .avatar-upload-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .avatar-upload-btn {
+    padding: 6px 14px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .avatar-upload-btn:hover {
+    background: color-mix(in srgb, white 15%, transparent);
+  }
+
+  .avatar-upload-hint {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  /* Update check */
+  .update-check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .update-status {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .update-status-available {
+    font-size: 11px;
+    color: var(--color-xfire-online);
+    font-weight: 600;
+  }
+
+  /* Role picker */
+  .role-picker-list {
+    padding: 4px 0;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .role-picker-item {
+    padding: 3px 16px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    cursor: pointer;
+  }
+
+  .role-picker-item:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .role-picker-item-active {
+    color: var(--color-xfire-accent);
+    font-weight: 600;
+  }
+
+  .role-picker-check {
+    font-family: monospace;
+    font-size: 10px;
+    margin-right: 4px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .role-picker-item-active .role-picker-check {
+    color: var(--color-xfire-accent);
+  }
+
+  /* Timeout indicator badge on members */
+  .timeout-indicator {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    line-height: 14px;
+    text-align: center;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--color-xfire-away) 40%, transparent);
+    color: var(--color-xfire-away);
+    flex-shrink: 0;
+    margin-left: 2px;
+  }
+
+  /* Role management rows in settings */
+  .settings-role-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.15s;
+  }
+
+  .settings-role-row:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .settings-role-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    border: 1px solid color-mix(in srgb, white 15%, transparent);
+    background: var(--settings-role-color, var(--color-xfire-text-dim));
+  }
+
+  .settings-role-name {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-role-position {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+  }
+
+  .settings-role-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .settings-role-actions .form-btn-danger {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+
+  /* Role create form in settings */
+  .settings-role-create {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .settings-role-create .form-input {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  /* Member role checkboxes in settings */
+  .settings-member-roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  /* Empty placeholder */
+  .empty-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .empty-placeholder-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .empty-placeholder-subtitle {
+    font-size: 11px;
+  }
+
+  /* Buddy unread badge */
+  .buddy-unread-badge {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--color-xfire-busy);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  /* Buddy voice icon */
+  .buddy-voice-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  /* Chat peer status bar */
+  .chat-peer-status {
+    height: var(--chrome-height);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    background: color-mix(in srgb, var(--color-xfire-bg-panel) 80%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .chat-peer-status-label {
+    text-transform: capitalize;
+  }
+
+  /* Message send status */
+  .message-status {
+    font-size: 10px;
+    margin-left: 4px;
+  }
+
+  .message-status-sending {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .message-status-sent {
+    color: var(--color-xfire-online);
+  }
+
+  .message-status-queued {
+    color: var(--color-xfire-away);
+  }
+
+  .message-status-failed {
+    color: var(--color-xfire-busy);
+    font-weight: 700;
+  }
+
+  /* Profile action buttons */
+  .profile-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 0;
+    margin-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+  }
+
+  /* Network disconnection banner */
+  .network-banner {
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--color-xfire-away) 30%, var(--color-xfire-bg-dark));
+    color: var(--color-xfire-away);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  /* Architecture §32 a11y — pulse only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .network-banner {
+      --pulse-min-opacity: 0.3;
+      animation: opacity-pulse 2s ease-in-out infinite;
+    }
+  }
+
+  /* Icon-only action bar buttons */
+  .action-bar-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-accent);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.15s;
+    position: relative;
+  }
+
+  .action-bar-icon-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  /* Voice call button in chat header */
+  .chat-call-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-online);
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: auto;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .chat-call-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-online) 20%, transparent);
+  }
+
+  .chat-call-btn-active {
+    color: var(--color-xfire-busy);
+  }
+
+  .chat-call-btn-active:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 20%, transparent);
+  }
+
+  /* Retry button on failed messages */
+  .message-retry-btn {
+    background: none;
+    border: none;
+    color: var(--color-xfire-busy);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0 2px;
+    margin-left: 2px;
+    transition: color 0.15s;
+  }
+
+  .message-retry-btn:hover {
+    color: var(--color-xfire-text);
+  }
+
+  /* Community settings modal */
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .settings-section-accented {
+    padding-left: 8px;
+    border-left: 2px solid var(--color-xfire-accent);
+  }
+
+  .settings-section-success {
+    padding-left: 8px;
+    border-left: 2px solid var(--color-xfire-online);
+  }
+
+  .settings-value {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .settings-value-mono {
+    font-family: monospace;
+    font-size: 10px;
+    word-break: break-all;
+    color: var(--color-xfire-text-status);
+  }
+
+  .settings-copy-btn {
+    padding: 4px 10px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .settings-copy-btn:hover {
+    background: color-mix(in srgb, white 15%, transparent);
+  }
+
+  /* Channel management row in settings */
+  .channel-manage-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.15s;
+  }
+
+  .channel-manage-row:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .channel-manage-icon {
+    font-size: 14px;
+    color: var(--color-xfire-text-dim);
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .channel-manage-name {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .channel-manage-type {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    padding: 1px 5px;
+    background: color-mix(in srgb, white 8%, transparent);
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .channel-manage-btn {
+    padding: 3px 8px;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  .channel-rename-input {
+    flex: 1;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+
+  .channel-create-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+  }
+}

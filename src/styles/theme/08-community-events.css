@@ -1,0 +1,485 @@
+@layer components {
+  .channel-item:hover .channel-voice-join-btn {
+    opacity: 1;
+  }
+
+  .channel-voice-join-btn:hover {
+    background: var(--color-xfire-online);
+  }
+
+  /* Timeout duration dropdown */
+  .timeout-select {
+    width: auto;
+    min-width: 80px;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: var(--color-xfire-text);
+    font-family: var(--font-family-xfire);
+  }
+
+  /* Community description hint text */
+  .community-description-hint {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-left: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Channel overwrite editor */
+  .overwrite-editor {
+    padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 4px;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .overwrite-perm-grid {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 4px 8px;
+    align-items: center;
+    font-size: 11px;
+  }
+
+  .overwrite-perm-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    padding-bottom: 2px;
+  }
+
+  /* Context menu icon */
+  .context-menu-icon {
+    font-size: 12px;
+    margin-right: 6px;
+    opacity: 0.7;
+  }
+
+  /* Toast notifications */
+  .toast-container {
+    position: fixed;
+    bottom: 12px;
+    right: 12px;
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  .toast-item {
+    padding: 8px 14px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: white;
+    pointer-events: auto;
+    cursor: pointer;
+    max-width: 320px;
+    word-break: break-word;
+  }
+
+  /* Architecture §32 a11y — toast slide-in only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .toast-message {
+      animation: toast-slide-in var(--motion-duration-base) ease-out;
+    }
+  }
+
+  .toast-success { background: color-mix(in srgb, var(--color-xfire-online) 90%, black); }
+  .toast-error { background: color-mix(in srgb, var(--color-xfire-busy) 90%, black); }
+  .toast-info { background: color-mix(in srgb, var(--color-xfire-accent) 90%, black); }
+
+  /* Confirm dialog */
+  .confirm-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* Tab bar */
+  .buddy-tab-bar {
+    display: flex;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    flex-shrink: 0;
+  }
+
+  .buddy-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 6px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .buddy-tab:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .buddy-tab-active {
+    color: var(--color-xfire-accent);
+    border-bottom-color: var(--color-xfire-accent);
+  }
+
+  /* Search bar */
+  .buddy-search-wrapper {
+    padding: 4px 8px;
+    flex-shrink: 0;
+  }
+
+  .buddy-search-input {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .buddy-search-input:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .buddy-search-input::placeholder {
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* Menu bar */
+  .menu-bar {
+    display: flex;
+    height: 22px;
+    align-items: stretch;
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 90%, white);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    flex-shrink: 0;
+  }
+
+  .menu-bar-item {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    font-family: var(--font-family-xfire);
+    padding: 0 10px;
+    height: 100%;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .menu-bar-item:hover,
+  .menu-bar-item:focus-visible {
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text);
+    outline: none;
+  }
+
+  /* Kobalte sets data-expanded="" on the trigger while its menu is open. */
+  .menu-bar-item[data-expanded] {
+    background: color-mix(in srgb, white 12%, transparent);
+    color: var(--color-xfire-text);
+  }
+
+  .menu-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 160px;
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+    border-radius: 4px;
+    box-shadow: var(--shadow-elevated);
+    z-index: var(--z-context-menu);
+    padding: 4px 0;
+  }
+
+  .menu-dropdown-item {
+    padding: 5px 14px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.1s;
+  }
+
+  .menu-dropdown-item:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .menu-dropdown-separator {
+    height: 1px;
+    background: color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    margin: 4px 0;
+  }
+
+  .menu-dropdown-item-disabled {
+    color: var(--color-xfire-text-dim);
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .menu-dropdown-item-disabled:hover {
+    background: transparent;
+  }
+
+  .menu-dropdown-item-danger {
+    color: var(--color-xfire-busy);
+  }
+
+  .menu-dropdown-item-danger:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 20%, transparent);
+  }
+
+  /* Identity bar two-row layout */
+  .identity-bar-top-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .identity-bar-status-msg {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    padding: 0 6px 2px 36px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+
+  .identity-bar-status-msg:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .identity-bar-status-msg-edit {
+    width: calc(100% - 42px);
+    margin-left: 36px;
+    margin-bottom: 2px;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid var(--color-xfire-accent);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  /* Buddy nickname */
+  .buddy-nickname {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-weight: 400;
+  }
+
+  /* Action bar spacer */
+  .action-bar-spacer {
+    flex: 1;
+  }
+
+  /* ─── Notification overrides ─── */
+  .notification-override-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-radius: 4px;
+  }
+
+  .notification-override-label {
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .notification-override-select {
+    /* Reuse form-select styling */
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .notification-override-select:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  /* ─── Reply preview ─── */
+  .reply-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 10%, var(--color-xfire-bg-dark));
+    border-left: 3px solid var(--color-xfire-accent);
+    border-radius: 0 4px 4px 0;
+  }
+
+  .reply-preview-icon {
+    color: var(--color-xfire-accent);
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .reply-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .reply-preview-sender {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-accent);
+  }
+
+  .reply-preview-body {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .reply-preview-close {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px;
+    flex-shrink: 0;
+  }
+
+  .reply-preview-close:hover {
+    color: var(--color-xfire-text);
+  }
+
+  /* ─── Reply snippet on messages ─── */
+  .reply-snippet {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    margin-bottom: 2px;
+    background: color-mix(in srgb, white 4%, transparent);
+    border-left: 2px solid var(--color-xfire-accent);
+    border-radius: 0 3px 3px 0;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+  }
+
+  .reply-snippet:hover {
+    background: color-mix(in srgb, white 8%, transparent);
+  }
+
+  .reply-snippet-sender {
+    font-weight: 600;
+    color: var(--color-xfire-accent);
+  }
+
+  /* ─── Reactions ─── */
+  .reaction-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .reaction-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    background: color-mix(in srgb, white 5%, transparent);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .reaction-chip:hover {
+    background: color-mix(in srgb, white 10%, transparent);
+  }
+
+  .reaction-chip-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .reaction-chip-emoji {
+    font-size: 14px;
+  }
+
+  .reaction-chip-expression {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+  }
+
+  .reaction-chip-count {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-weight: 600;
+  }
+
+  .reaction-chip-active .reaction-chip-count {
+    color: var(--color-xfire-accent);
+  }
+
+  /* ─── Emoji picker ─── */
+  /* Plan §Failure 3 — positioning is owned by Kobalte Popover (floating-ui).
+   * `.emoji-picker` keeps only the visual frame; the parent `.emoji-picker-popover`
+   * Popover.Content is portaled into <body> so it escapes the chat area's
+   * overflow clip and the message bubble's stacking context. */
+  .emoji-picker-popover {
+    z-index: var(--z-popover);
+  }
+
+  .emoji-picker {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+    border-radius: 6px;
+    box-shadow: var(--shadow-elevated);
+  }
+}

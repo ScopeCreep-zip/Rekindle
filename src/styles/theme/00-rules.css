@@ -1,0 +1,484 @@
+@layer components {
+  /* Architecture §32 a11y — global focus-visible. Every interactive
+   * element gets a 2px accent ring on keyboard focus; mouse focus is
+   * suppressed so the dense Xfire UI stays clean for sighted users.
+   * Per-element overrides can wrap their own ring in a corresponding
+   * `:focus-visible` rule, but the global ring is the safety net so
+   * the audit's "0 focus-visible rules" gap closes in one cascade. */
+  *:focus-visible {
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Architecture §32 a11y — skip link rendered as the first focusable
+   * child of each top-level window. Hidden via `clip-path: inset(100%)`
+   * (modern 2026-canon pattern; not the deprecated `left: -9999px`
+   * trick) so screen readers still announce it; on focus it pops to
+   * the top-left corner so keyboard users can bypass nav. */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--z-skip-link);
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-text-primary);
+    padding: 8px 16px;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 0 0 4px 0;
+    clip-path: inset(100%);
+  }
+  .skip-link:focus {
+    clip-path: inset(0);
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 2px;
+  }
+
+  /* Architecture §32 a11y — `<a href="#main-content">Skip to …</a>`
+   * targets a wrapper that needs to take the `flex: 1` slot inside
+   * `.app-frame` so the footer (`BottomActionBar`, `.status-bar`,
+   * `MessageInput`, etc.) keeps its bottom-stickiness. The wrapper
+   * is a flex column itself so any `flex: 1` descendant (e.g.
+   * `.buddy-list`, `.chat-message-area`) still grows naturally. */
+  .window-main {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Architecture §32 a11y — visually-hidden helper for ARIA live regions
+   * and screen-reader-only labels (D3 / D5 announcements). */
+  .live-region-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(100%);
+    border: 0;
+  }
+
+  /* Nerd Font icon utility */
+  .nf-icon {
+    font-family: var(--font-family-icons);
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1;
+    display: inline-block;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .nf-icon-sm {
+    font-size: 12px;
+  }
+
+  .nf-icon-md {
+    font-size: 14px;
+  }
+  /* Window frame */
+  .app-frame {
+    background: var(--color-xfire-bg-dark);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Custom titlebar */
+  .xfire-titlebar {
+    height: var(--chrome-height);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 6px;
+    flex-shrink: 0;
+    background: linear-gradient(to right, #0f1a3a, #1a2a5e);
+  }
+
+  .xfire-titlebar-text {
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    font-weight: 600;
+  }
+
+  .xfire-titlebar-btn {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    color: color-mix(in srgb, var(--color-xfire-text) 60%, transparent);
+    font-size: 10px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .xfire-titlebar-btn:hover {
+    color: var(--color-xfire-text);
+    background: color-mix(in srgb, white 10%, transparent);
+  }
+
+  .xfire-titlebar-btn-close:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 80%, transparent);
+    color: white;
+  }
+
+  .xfire-titlebar-spacer {
+    flex: 1;
+  }
+
+  /* ─── Form primitives ─── */
+  .form-input {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .form-input:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .form-select {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .form-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .form-textarea {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+    resize: vertical;
+    min-height: 48px;
+  }
+
+  .form-textarea:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .form-error {
+    font-size: 11px;
+    color: var(--color-xfire-busy);
+    text-align: center;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .form-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .form-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .form-btn-primary {
+    width: 100%;
+    padding: 8px;
+    background: var(--color-xfire-accent);
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .form-btn-primary:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+  }
+
+  .form-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .form-btn-secondary {
+    padding: 8px 16px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .form-btn-secondary:hover {
+    background: color-mix(in srgb, white 12%, transparent);
+  }
+
+  .form-btn-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .form-btn-danger {
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 60%, transparent);
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .form-btn-danger:hover {
+    background: var(--color-xfire-busy);
+  }
+
+  .form-btn-danger:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .form-field {
+    padding: 4px 12px;
+    margin-bottom: 12px;
+  }
+
+  .form-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .form-field-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .form-field-row .form-input {
+    flex: 1;
+    margin: 0;
+  }
+
+  .form-field-row .form-btn-primary {
+    margin: 0;
+    padding: 6px 12px;
+    min-width: auto;
+  }
+
+  .form-tabs {
+    display: flex;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    flex-shrink: 0;
+    padding: 0 8px;
+    gap: 2px;
+    background: var(--color-xfire-bg-dark);
+    overflow-x: auto;
+  }
+
+  .form-tabs-equal {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  .form-tabs-equal .form-tab {
+    flex: 1;
+    color: var(--color-xfire-offline);
+    font-size: 12px;
+  }
+
+  .form-tab {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .form-tab:hover:not(.form-tab-active) {
+    color: var(--color-xfire-text-primary);
+  }
+
+  .form-tab-active,
+  .form-tab.active {
+    color: var(--color-xfire-accent);
+    border-bottom-color: var(--color-xfire-accent);
+  }
+
+  /* Buddy list */
+  .buddy-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .buddy-group-header {
+    padding: 4px 12px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+  }
+
+  .buddy-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .buddy-item:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .buddy-item-content {
+    overflow: hidden;
+    flex: 1;
+  }
+
+  .buddy-item-selected {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .buddy-name {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .buddy-name-offline {
+    color: var(--color-xfire-offline);
+  }
+
+  .buddy-game-info {
+    font-size: 10px;
+    color: var(--color-xfire-ingame);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .buddy-status-message {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-style: italic;
+  }
+
+  .buddy-last-seen {
+    font-size: 10px;
+    color: var(--color-xfire-offline);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Pending friend requests (Awaiting Response group) */
+  .buddy-group-pending .buddy-item {
+    opacity: 0.6;
+  }
+
+  .buddy-group-pending .buddy-name {
+    font-style: italic;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .buddy-group-pending .buddy-group-header {
+    color: var(--color-xfire-away);
+  }
+
+  /* Status dots — architecture §32 a11y. The host span carries the
+   * status color via `color`; the inline SVG fills with `currentColor`
+   * so the existing palette tokens still drive the visual identity.
+   * Per WCAG 1.4.1, each status renders a distinct shape (circle vs
+   * ring vs cutout / bar / triangle overlay) so colorblind and
+   * grayscale users can distinguish them without relying on hue. */
+  .status-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    line-height: 0;
+  }
+
+  .status-dot svg {
+    display: block;
+  }
+
+  .status-dot-online {
+    color: var(--color-xfire-online);
+  }
+
+  .status-dot-away {
+    color: var(--color-xfire-away);
+  }
+}

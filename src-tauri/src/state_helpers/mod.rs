@@ -54,10 +54,10 @@ pub use identity::{
     owner_key_or_default, pseudonym_credentials, voice_self_identity,
 };
 pub use node::{
-    api_and_routing_context, app_handle, friend_list_dht_key, friend_list_owner_keypair,
-    is_attached, our_route_blob, profile_dht_info, register_background_handle,
-    require_routing_context, require_safe_routing_context, routing_context,
-    safe_api_and_routing_context, safe_routing_context, veilid_api,
+    api_and_routing_context, app_context, app_handle, friend_list_dht_key,
+    friend_list_owner_keypair, is_attached, our_route_blob, profile_dht_info,
+    register_background_handle, require_routing_context, require_safe_routing_context,
+    routing_context, safe_api_and_routing_context, safe_routing_context, veilid_api,
 };
 pub use routes::{
     cache_peer_route, cached_route_blob, evict_stale_peer_routes, friend_for_dht_key,

@@ -88,14 +88,9 @@ export interface Role {
   exclusionGroup?: string;
 }
 
-export interface SoundboardMeta {
-  /** Architecture §18.3 — duration of the clip, ≤5 seconds. */
-  durationSeconds: number;
-  /** 0.0–1.0 multiplier the receivers apply to channel volume. */
-  volume: number;
-  /** Optional Unicode glyph the picker shows next to the name. */
-  emoji?: string;
-}
+// Declared once in the IPC layer, which mirrors the Rust contract.
+import type { SoundboardMeta } from "../ipc/commands/types";
+export type { SoundboardMeta };
 
 export interface Expression {
   id: string;
@@ -146,32 +141,26 @@ export interface Thread {
   messageCount: number;
 }
 
-export type RecurrenceFrequency = "daily" | "weekly" | "monthly";
+// Scheduled-event types (architecture §21) — declared once in the IPC
+// layer; these were byte-identical copies.
+import type {
+  DayOfWeek,
+  EventLocation,
+  RecurrenceFrequency,
+  RecurrenceRule,
+} from "../ipc/commands/types";
+export type { DayOfWeek, EventLocation, RecurrenceFrequency, RecurrenceRule };
 
-export type DayOfWeek =
-  | "sunday"
-  | "monday"
-  | "tuesday"
-  | "wednesday"
-  | "thursday"
-  | "friday"
-  | "saturday";
-
-export interface RecurrenceRule {
-  frequency: RecurrenceFrequency;
-  interval: number;
-  daysOfWeek?: DayOfWeek[];
-  until?: number;
-  count?: number;
-}
-
-export type EventLocation =
-  | { type: "voice_channel"; data: string }
-  | { type: "stage_channel"; data: string }
-  | { type: "external"; data: string }
-  | { type: "in_game"; data: { gameId: number; serverAddress?: string } };
-
-export interface CommunityEvent {
+/**
+ * A scheduled community event (architecture §21) — the calendar entry
+ * shown in the events panel.
+ *
+ * Named `CommunityEvent` until it collided with
+ * `ipc/channels/community_events.ts`'s `CommunityEvent`, which is the
+ * Rust `CommunityEvent` enum arriving over IPC. Two exported types, one
+ * name, entirely different meanings.
+ */
+export interface ScheduledEvent {
   id: string;
   title: string;
   description: string;
@@ -220,7 +209,7 @@ export interface Community {
   myRoleIds: number[];
   myPseudonymKey: string | null;
   mekGeneration: number;
-  events: CommunityEvent[];
+  events: ScheduledEvent[];
   memberRegistryKey?: string;
   governanceKey: string | null;
   onboardingConfig?: OnboardingConfig;

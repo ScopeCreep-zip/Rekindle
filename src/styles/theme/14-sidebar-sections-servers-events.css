@@ -1,0 +1,255 @@
+@layer components {
+  .sidebar-event-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .sidebar-event-countdown {
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    flex-shrink: 0;
+    margin-left: 6px;
+  }
+
+  .sidebar-section-more {
+    display: block;
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 2px 12px;
+    text-align: left;
+  }
+
+  .sidebar-section-more:hover {
+    color: var(--color-xfire-accent);
+  }
+
+  /* ─── Emoji picker expanded ─── */
+  .emoji-picker-search {
+    width: 100%;
+    padding: 4px 6px;
+    font-size: 11px;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+    border-radius: 3px;
+    color: var(--color-xfire-text);
+    outline: none;
+    margin-bottom: 4px;
+    box-sizing: border-box;
+  }
+
+  .emoji-picker-search:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .emoji-picker-tabs {
+    display: flex;
+    gap: 2px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    margin-bottom: 4px;
+  }
+
+  .emoji-picker-tab {
+    background: transparent;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+
+  .emoji-picker-tab:hover,
+  .emoji-picker-tab-active {
+    opacity: 1;
+    background: color-mix(in srgb, white 8%, transparent);
+  }
+
+  .emoji-picker-scroll {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 220px;
+  }
+
+  .emoji-picker-section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    padding: 4px 2px 2px;
+    letter-spacing: 0.05em;
+  }
+
+  .emoji-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 1px;
+  }
+
+  .emoji-picker-empty {
+    text-align: center;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    padding: 16px 0;
+  }
+
+  .expression-picker-section {
+    margin-bottom: 10px;
+  }
+
+  .expression-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .expression-picker-grid {
+    margin-bottom: 10px;
+  }
+
+  .expression-picker-upload-btn {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    background: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .expression-picker-upload-btn:hover {
+    border-color: color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  }
+
+  .expression-picker-image {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
+
+  .expression-picker-fallback {
+    font-size: 10px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .expression-picker-empty {
+    padding-top: 8px;
+  }
+
+  /* Architecture §18 — expression-picker tab strip + soundboard items. */
+  .expression-picker-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--color-xfire-border);
+    margin-bottom: 6px;
+  }
+
+  .expression-picker-tab {
+    background: transparent;
+    border: none;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    cursor: pointer;
+  }
+
+  .expression-picker-tab-active {
+    color: var(--color-xfire-text-primary);
+    border-bottom: 2px solid var(--color-xfire-accent);
+  }
+
+  .expression-picker-soundboard-glyph {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .expression-picker-soundboard-name {
+    font-size: 10px;
+    color: var(--color-xfire-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60px;
+  }
+
+  .chat-inline-expression {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+    vertical-align: text-bottom;
+    margin: 0 2px;
+  }
+
+  /* ─── Event timezone ─── */
+  .event-timezone {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    margin-left: 4px;
+  }
+
+  /* ─── Thread list controls (search + sort) ─── */
+  .thread-list-controls {
+    padding: 4px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .thread-list-sort-row {
+    display: flex;
+    gap: 4px;
+  }
+
+  /* ─── Settings audit log collapsible ─── */
+  .settings-audit-collapsible {
+    margin-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    padding-top: 8px;
+    width: 100%;
+  }
+
+  .settings-audit-collapsible summary {
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 0;
+  }
+
+  .settings-audit-collapsible summary:hover {
+    color: var(--color-xfire-text-primary);
+  }
+
+  .settings-audit-collapsible .audit-log-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  /* ─── Compact spacing (5.3 — Xfire dense aesthetic) ─── */
+  .community-sidebar {
+    width: 170px;
+  }
+
+  .community-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
+
+  .community-item {
+    padding: 3px 10px;
+  }
+
+  .channel-item {
+    padding: 3px 10px 3px 16px;
+  }
+
+  .member-item {
+    padding: 3px 12px;
+  }
+}

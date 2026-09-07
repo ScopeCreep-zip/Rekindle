@@ -14,7 +14,8 @@ import {
 } from "../../ipc/permissions";
 import type { Message } from "../../stores/chat.store";
 import type { EditMode } from "../../components/chat/MessageInput";
-import type { Thread, CommunityEvent } from "../../stores/community.store";
+import type { ScheduledEvent, Thread } from "../../stores/community.store";
+import { formatEventCountdown as formatTimeUntilEvent } from "../../utils/time";
 
 export type RightPanel = "members" | "pins" | "threadList" | "thread" | null;
 
@@ -60,7 +61,7 @@ export function createCommunityWindowState() {
   const [deleteTarget, setDeleteTarget] = createSignal<string | null>(null);
   const [isLoadingOlder, setIsLoadingOlder] = createSignal(false);
   const [hasMoreOlder, setHasMoreOlder] = createSignal(true);
-  const [editingEvent, setEditingEvent] = createSignal<CommunityEvent | null>(null);
+  const [editingEvent, setEditingEvent] = createSignal<ScheduledEvent | null>(null);
   const [createPollTarget, setCreatePollTarget] = createSignal<string | null>(null);
   const [createThreadTarget, setCreateThreadTarget] = createSignal<{ starterMessageId: string; initialName: string } | null>(null);
   const [forwardTarget, setForwardTarget] = createSignal<string | null>(null);
@@ -172,7 +173,7 @@ export function createCommunityWindowState() {
   });
 
   // Upcoming events for sidebar (max 2)
-  const upcomingEvents = createMemo((): CommunityEvent[] => {
+  const upcomingEvents = createMemo((): ScheduledEvent[] => {
     const community = activeCommunity();
     if (!community?.events) return [];
     const now = Math.floor(Date.now() / 1000);
@@ -198,15 +199,6 @@ export function createCommunityWindowState() {
 
   // Sidebar servers (max 3)
   const sidebarServerList = createMemo(() => gameServers().slice(0, 3));
-
-  function formatTimeUntilEvent(timestamp: number): string {
-    const now = Math.floor(Date.now() / 1000);
-    const diff = timestamp - now;
-    if (diff <= 0) return "Started";
-    if (diff < 3600) return `In ${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `In ${Math.floor(diff / 3600)}h`;
-    return `In ${Math.floor(diff / 86400)}d`;
-  }
 
   return {
     getCommunityFromUrl,

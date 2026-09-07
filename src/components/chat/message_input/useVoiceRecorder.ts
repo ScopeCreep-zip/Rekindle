@@ -1,4 +1,5 @@
 import { createSignal, onCleanup } from "solid-js";
+import { bytesToBase64 } from "../../../utils/base64";
 import { handleSendVoiceMessage } from "../../../handlers/community.handlers";
 
 const VOICE_MESSAGE_MAX_MS = 5 * 60 * 1000;
@@ -59,12 +60,6 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
       out[i] = max;
     }
     return out;
-  }
-
-  function bytesToBase64(bytes: Uint8Array): string {
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
   }
 
   async function startRecording(): Promise<void> {

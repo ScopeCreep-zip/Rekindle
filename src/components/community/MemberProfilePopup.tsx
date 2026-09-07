@@ -1,4 +1,5 @@
 import { Component, Show, For, createEffect, createSignal } from "solid-js";
+import { colorIntToHex, parseColorHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
 import LoadingButton from "../common/LoadingButton";
 import type { Member, Role } from "../../stores/community.store";
@@ -27,16 +28,9 @@ const MAX_PRONOUNS_LEN = 32;
 const MAX_BADGES = 8;
 const MAX_BADGE_LEN = 32;
 
+/** This popup falls back to the accent blue rather than black. */
 function formatColorHex(value: number | null | undefined): string {
-  if (value == null) return "#3a8ee6";
-  return `#${(value & 0xffffff).toString(16).padStart(6, "0")}`;
-}
-
-function parseColorHex(input: string): number | null {
-  const trimmed = input.trim().replace(/^#/, "");
-  if (trimmed.length !== 6) return null;
-  const parsed = Number.parseInt(trimmed, 16);
-  return Number.isFinite(parsed) ? parsed : null;
+  return colorIntToHex(value, "#3a8ee6");
 }
 
 function parseBadges(input: string): string[] {

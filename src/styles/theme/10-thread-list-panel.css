@@ -1,0 +1,492 @@
+@layer components {
+  .stage-panel-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stage-panel-member-card,
+  .stage-panel-request-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--color-xfire-bg-3);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-border) 75%, transparent);
+  }
+
+  .stage-panel-member-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-member-meta {
+    font-size: 12px;
+    color: var(--color-xfire-text-2);
+  }
+
+  .stage-panel-request-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stage-panel-approve-btn {
+    padding: 9px 11px;
+    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-3));
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-deny-btn {
+    padding: 9px 11px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 16%, var(--color-xfire-bg-3));
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-empty {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--color-xfire-border);
+    border-radius: 12px;
+    color: var(--color-xfire-text-2);
+    font-size: 13px;
+    text-align: center;
+    padding: 16px;
+  }
+
+  .stage-panel-requests {
+    min-height: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .stage-panel-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .thread-list-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px;
+  }
+
+  .thread-list-item {
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .thread-list-item:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .thread-list-item-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+  }
+
+  .thread-list-item-meta {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    margin-top: 2px;
+  }
+
+  .thread-archived {
+    opacity: 0.5;
+  }
+
+  .thread-list-toggle-archived {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 6px 8px;
+    text-align: left;
+  }
+
+  .thread-list-toggle-archived:hover {
+    color: var(--color-xfire-text);
+  }
+
+  /* ─── Thread starter badge ─── */
+  .thread-starter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    margin-top: 3px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+    border: none;
+    color: var(--color-xfire-accent);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .thread-starter-badge:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+  }
+
+  /* ─── Message actions (hover toolbar) ─── */
+  .message-actions {
+    position: absolute;
+    top: -8px;
+    right: 8px;
+    display: none;
+    gap: 2px;
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  .chat-message:hover .message-actions {
+    display: flex;
+  }
+
+  .message-action-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .message-action-btn:hover {
+    background: color-mix(in srgb, white 10%, transparent);
+    color: var(--color-xfire-text);
+  }
+
+  /* Edit indicator */
+  .edit-indicator {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    margin-left: 4px;
+  }
+
+  /* ─── Inline edit mode header ─── */
+  .edit-mode-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-dark));
+    border-left: 3px solid var(--color-xfire-accent);
+    border-radius: 0 4px 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-accent);
+  }
+
+  .edit-mode-cancel {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px;
+  }
+
+  .edit-mode-cancel:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .message-input-editing {
+    border-color: var(--color-xfire-accent);
+  }
+
+  /* ─── Infinite scroll sentinel & spinner ─── */
+  .messages-scroll-sentinel {
+    min-height: 1px;
+  }
+
+  .messages-loading-spinner {
+    text-align: center;
+    padding: 8px 0;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  /* ─── Channel topic in header ─── */
+  .channel-topic {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--color-xfire-text-dim);
+    margin-left: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ─── Announcement channel icon ─── */
+  .announcement-icon {
+    color: var(--color-xfire-accent);
+  }
+
+  /* ─── Game server list ─── */
+  .game-server-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .game-server-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .game-server-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    padding: 4px 0;
+  }
+
+  .game-server-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+
+  .game-server-row:hover {
+    background: color-mix(in srgb, white 5%, transparent);
+  }
+
+  .game-server-icon {
+    color: var(--color-xfire-text-dim);
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .game-server-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .game-server-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .game-server-address {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-family: monospace;
+  }
+
+  .game-server-remove-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .game-server-remove-btn:hover {
+    color: var(--color-xfire-busy);
+    background: color-mix(in srgb, var(--color-xfire-busy) 15%, transparent);
+  }
+
+  .game-server-join-btn {
+    background: var(--color-xfire-ingame);
+    color: var(--color-xfire-bg);
+    border: none;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .game-server-join-btn:hover {
+    filter: brightness(1.2);
+  }
+
+  .game-server-add-form {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid var(--color-xfire-border);
+    align-items: center;
+  }
+
+  .game-server-add-form .form-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+
+  .game-server-add-form .form-btn-primary {
+    font-size: 12px;
+    padding: 4px 10px;
+    flex-shrink: 0;
+  }
+
+  /* ─── Channel settings inline (slowmode / topic in ChannelsTab) ─── */
+  .channel-settings-inline {
+    padding: 2px 8px 2px 32px;
+  }
+
+  .channel-settings-inline-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .channel-slowmode-label {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    padding: 1px 5px;
+    background: color-mix(in srgb, white 8%, transparent);
+    border-radius: 3px;
+  }
+
+  .channel-slowmode-input {
+    width: 80px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+
+  /* Architecture §32 Phase 5 W15 — per-community avatar + banner edit row. */
+  .profile-popup-edit-image-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .profile-popup-edit-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--color-xfire-border);
+  }
+
+  .profile-popup-edit-banner {
+    width: 200px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--color-xfire-border);
+  }
+
+  .profile-popup-edit-image-placeholder {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    padding: 6px 8px;
+    background: var(--color-xfire-bg-secondary);
+    border: 1px dashed var(--color-xfire-border);
+    border-radius: 4px;
+  }
+
+  /* Architecture §10.6 — video / screen-share grid. */
+  .video-call-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+  }
+
+  .video-call-panel-hidden {
+    display: none;
+  }
+
+  .video-call-controls {
+    display: flex;
+    gap: 6px;
+  }
+
+  .video-call-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 6px;
+  }
+
+  .video-call-tile {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: black;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .video-call-video,
+  .video-call-canvas,
+  .video-call-canvas canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .video-call-tile-label {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* §10.6 — main-pane conferencing "call stage" (community voice channel):
+     a participant gallery with screen-share / click-to-spotlight over a
+     centred control bar, plus an optional text-in-voice chat column. */
+  .call-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-xfire-bg-dark);
+  }
+}

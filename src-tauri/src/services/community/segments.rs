@@ -7,25 +7,17 @@
 use std::sync::Arc;
 
 use rekindle_governance_runtime as gov_rt;
-use tauri::Manager;
 
 use crate::state::SharedState;
+use crate::state_helpers;
 
 use gov_rt::SegmentDescriptor;
 
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::governance_adapter::GovernanceAdapter, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()
-        .ok_or_else(|| "DbPool state missing".to_string())?
-        .inner()
-        .clone();
+    let (app_handle, pool) =
+        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
     Ok(crate::services::governance_adapter::GovernanceAdapter::new(
         Arc::clone(state),
         app_handle,

@@ -114,18 +114,9 @@ export interface RemoteStream {
   awaitKeyframe: boolean;
 }
 
-export function decodeBase64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
-  return btoa(s);
-}
+// Declared once in utils/base64 — the voice recorder needs the same
+// encoder. Re-exported so this module's existing importers are unchanged.
+export { bytesToBase64, decodeBase64ToBytes } from "../../../utils/base64";
 
 /** W11.4 — DM-mode random 16-byte stream id (hex). DM is 1:1, so
  *  there's no per-channel collision risk that would require the

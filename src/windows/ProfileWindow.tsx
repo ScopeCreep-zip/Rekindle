@@ -1,4 +1,5 @@
 import { Component, createMemo, createSignal, For, onMount, onCleanup, Show } from "solid-js";
+import { formatDuration } from "../utils/formatting";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import StatusDot from "../components/status/StatusDot";
@@ -147,12 +148,7 @@ const ProfileWindow: Component = () => {
 };
 
 function formatElapsed(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `Playing for ${hours}h ${mins}m`;
-  }
-  return `Playing for ${mins}m`;
+  return `Playing for ${formatDuration(seconds)}`;
 }
 
 export default ProfileWindow;

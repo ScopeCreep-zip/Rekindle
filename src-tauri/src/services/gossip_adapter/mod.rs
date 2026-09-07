@@ -13,6 +13,8 @@ use crate::db::DbPool;
 use crate::state::AppState;
 
 pub mod deps_impl;
+mod state_mutations;
+mod state_reads;
 
 /// Adapter struct — holds the `AppState` (for in-memory community /
 /// peer-overlay reads and mutations) and a `DbPool` clone (for the

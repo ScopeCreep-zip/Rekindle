@@ -48,8 +48,11 @@ export interface Message {
 }
 
 export interface SoundboardMeta {
+  /** Architecture §18.3 — duration of the clip, ≤5 seconds. */
   durationSeconds: number;
+  /** 0.0–1.0 multiplier the receivers apply to channel volume. */
   volume: number;
+  /** Optional Unicode glyph the picker shows next to the name. */
   emoji?: string;
 }
 

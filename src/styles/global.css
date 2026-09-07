@@ -1,6 +1,28 @@
 @import "tailwindcss" source(none);
 @source "../";
-@import "./xfire-theme.css";
+/* The Xfire skin, split into ordered parts. It was one 7,926-line file,
+ * which the 600-line ceiling could not cover. Import order IS cascade
+ * order, so these must stay sorted: each part re-opens
+ * `@layer components`, and CSS concatenates them in source order.
+ * `99-top-level.css` holds the keyframes and media queries that sat
+ * outside the layer. */
+@import "./theme/00-rules.css";
+@import "./theme/01-form-primitives.css";
+@import "./theme/02-form-primitives.css";
+@import "./theme/03-member-profile-popup.css";
+@import "./theme/04-member-profile-popup.css";
+@import "./theme/05-member-profile-popup.css";
+@import "./theme/06-member-profile-popup.css";
+@import "./theme/07-member-profile-popup.css";
+@import "./theme/08-community-events.css";
+@import "./theme/09-emoji-picker.css";
+@import "./theme/10-thread-list-panel.css";
+@import "./theme/11-channel-settings-inline-slowmode-t.css";
+@import "./theme/12-channel-settings-inline-slowmode-t.css";
+@import "./theme/13-bulk-message-delete-mod-selection-.css";
+@import "./theme/14-sidebar-sections-servers-events.css";
+@import "./theme/90-top-level.css";
+@import "./theme/91-top-level.css";
 @import "./animations.css";
 @import "./scrollbar.css";
 
@@ -78,6 +100,14 @@
   --z-modal: 510;              /* modal content sits above its own backdrop */
   --z-toast: 600;              /* future toast layer; above modals */
   --z-skip-link: 9999;         /* must beat everything for a11y */
+}
+
+/* Elevation shadow for floating surfaces — popups, dropdowns, call
+ * banners, pickers. Eight selectors in `xfire-theme.css` each carried
+ * the identical `0 4px 12px rgba(0, 0, 0, 0.4)` literal, so restyling
+ * "things that float" meant finding all eight. */
+:root {
+  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* Architecture §32 — single chrome-height token. Titlebar, status bar,

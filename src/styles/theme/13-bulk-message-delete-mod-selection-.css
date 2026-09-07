@@ -1,0 +1,488 @@
+@layer components {
+  .chat-message-selectable:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
+  }
+
+  .chat-message-selected {
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+  }
+
+  .chat-message-select-checkbox {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    accent-color: var(--color-xfire-accent);
+  }
+
+  /* ─── Lost Cargo attachment card ─── */
+  .attachment-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-xfire-bg) 88%, transparent);
+  }
+
+  .attachment-card-icon {
+    font-size: 22px;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+  }
+
+  .attachment-card-icon-ready {
+    color: var(--color-xfire-accent);
+  }
+
+  .attachment-card-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .attachment-card-filename {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-card-info {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .attachment-card-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .attachment-card-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .attachment-card-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .attachment-card-pin-btn {
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 35%, transparent);
+    color: var(--color-xfire-text-dim);
+    font-size: 12px;
+    width: 26px;
+    height: 26px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .attachment-card-pin-btn:hover {
+    color: var(--color-xfire-text);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .attachment-card-pin-btn-active {
+    color: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .message-input-attach-btn,
+  .message-input-mic-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .message-input-attach-btn:hover,
+  .message-input-mic-btn:hover {
+    color: var(--color-xfire-accent);
+  }
+
+  .message-input-mic-btn-active {
+    color: #c0392b;
+  }
+
+  /* Architecture §32 a11y — opacity fade replaces the original
+   * `transform: scale()` pulse. Scale-based pulses are vestibular-
+   * disorder hostile (WCAG 2.3.3 + 2024 vestibular guidance); opacity
+   * preserves the "this is active" affordance without the hazard. */
+  @media (prefers-reduced-motion: no-preference) {
+    .message-input-mic-btn-active {
+      --pulse-min-opacity: 0.55;
+      animation: opacity-pulse 1s ease-in-out infinite;
+    }
+  }
+
+  .message-input-mic-timer {
+    font-size: 10px;
+    color: var(--color-xfire-text);
+  }
+
+  /* ─── Voice-message player (architecture §16.4) ─── */
+  .voice-message {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    margin-top: 4px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-xfire-bg) 88%, transparent);
+    max-width: 360px;
+  }
+
+  .voice-message-play-btn {
+    background: var(--color-xfire-accent);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .voice-message-play-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .voice-message-waveform {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    height: 24px;
+    overflow: hidden;
+  }
+
+  .voice-message-bar {
+    display: inline-block;
+    background: color-mix(in srgb, var(--color-xfire-text-dim) 60%, transparent);
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+
+  .voice-message-bar-played {
+    background: var(--color-xfire-accent);
+  }
+
+  .voice-message-duration {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Architecture §17.4 — raid alert overlay rendered at the top of
+   * `CommunityWindow` while the backend's raid detector is firing.
+   * Higher visual weight than the plate-gate banner because the
+   * threat surface (join floods) is more time-sensitive. */
+  .raid-alert-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 30%, var(--color-xfire-bg-dark));
+    color: var(--color-xfire-busy);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
+    font-size: 11px;
+  }
+
+  .raid-alert-banner-text {
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  /* ─── Plate Gate (architecture §15) admin banner ─── */
+  .plate-gate-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 5px;
+  }
+
+  /* `warning` variant — proactive at ≤10 slots remaining. */
+  .plate-gate-banner-warning {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-away) 55%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, var(--color-xfire-away) 20%);
+  }
+
+  /* `alert` variant — once segment is full. Higher visual weight so
+   * an admin lingering on this tab can't miss the call to expand. */
+  .plate-gate-banner-alert {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, var(--color-xfire-busy) 20%);
+  }
+
+  .plate-gate-banner-text {
+    flex: 1;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    line-height: 1.4;
+  }
+
+  .plate-gate-banner-btn {
+    background: var(--color-xfire-accent);
+    border: none;
+    color: white;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .plate-gate-banner-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .plate-gate-status {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-left: 2px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  /* ─── Forwarded message indicator ─── */
+  .message-forwarded-header {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .message-forwarded-icon {
+    color: var(--color-xfire-accent);
+  }
+
+  /* ─── Forward message dialog ─── */
+  .forward-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .forward-dialog {
+    background: var(--color-xfire-bg);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+    border-radius: 6px;
+    width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .forward-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+  }
+
+  .forward-dialog-title {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .forward-dialog-close {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    padding: 0;
+    font-size: 14px;
+  }
+
+  .forward-dialog-close:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .forward-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .forward-dialog-label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .forward-dialog-select {
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 3px;
+  }
+
+  .forward-dialog-select:focus {
+    outline: none;
+    border-color: var(--color-xfire-accent);
+  }
+
+  .forward-dialog-hint {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  .forward-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .forward-dialog-btn {
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .forward-dialog-btn:hover:not(:disabled) {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .forward-dialog-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .forward-dialog-btn-primary {
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  }
+
+  .forward-dialog-btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 28%, transparent);
+  }
+
+  /* ─── Message highlight (jump to pinned message) ─── */
+  .message-highlight {
+    background: rgba(27, 161, 253, 0.2);
+    transition: background 1.5s ease-out;
+  }
+
+  /* ─── Pin panel jump button ─── */
+  .pin-panel-item-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .pin-panel-jump-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-accent);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .pin-panel-jump-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  /* ─── Sidebar sections (servers, events) ─── */
+  .sidebar-servers-section,
+  .sidebar-events-section {
+    padding: 0 0 4px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 10%, transparent);
+  }
+
+  .sidebar-server-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 12px;
+    height: 22px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+  }
+
+  .sidebar-server-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .sidebar-server-join-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-accent);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 1px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-server-join-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  .sidebar-event-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 12px;
+    height: 22px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+  }
+}

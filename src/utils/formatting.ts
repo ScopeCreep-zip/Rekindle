@@ -24,19 +24,15 @@ export function formatAction(action: string): string {
   return action.replace(/_/g, " ");
 }
 
-/** Format a millisecond timestamp as a relative time string (e.g. "3m ago"). */
-export function formatRelativeTime(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+/**
+ * Format a millisecond timestamp as a relative time string (e.g. "3m ago").
+ *
+ * Re-exported from `time.ts`, which owns the implementation. This file
+ * had its own copy that stopped at days where the other adds a months
+ * tier, so the same 60-day-old item read "60d ago" or "2mo ago" purely
+ * by which util a component happened to import.
+ */
+export { formatRelativeTime } from "./time";
 
 /** Format a Unix-seconds expiration timestamp as a relative duration (e.g. "3h", "2d"). */
 export function formatExpiry(expiresAt: number | null): string {
@@ -47,4 +43,17 @@ export function formatExpiry(expiresAt: number | null): string {
   if (diff < 3600) return `${Math.ceil(diff / 60)}m`;
   if (diff < 86400) return `${Math.ceil(diff / 3600)}h`;
   return `${Math.ceil(diff / 86400)}d`;
+}
+
+/**
+ * Format a duration in seconds as "1h 20m" (or "20m" under an hour).
+ *
+ * `BuddyItem` and `ProfileWindow` each had this as `formatElapsed`,
+ * identical but for ProfileWindow prefixing "Playing for ". The prefix
+ * is the caller's business; the arithmetic is not.
+ */
+export function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 }
