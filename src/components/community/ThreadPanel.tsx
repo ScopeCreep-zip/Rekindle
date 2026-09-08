@@ -3,6 +3,7 @@ import type { Thread } from "../../stores/community.store";
 import type { Message } from "../../stores/chat.store";
 import MessageBubble from "../chat/MessageBubble";
 import { ICON_CLOSE, ICON_THREAD, ICON_ARCHIVE } from "../../icons";
+import LiveRegion from "../common/LiveRegion";
 
 interface ThreadPanelProps {
   thread: Thread | null;
@@ -85,14 +86,10 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
               <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
             </button>
           </div>
-          <div
+          <LiveRegion
             class="thread-panel-messages"
-            ref={containerRef}
-            role="log"
-            aria-live="polite"
-            aria-relevant="additions"
-            aria-atomic="false"
-            aria-label={`Thread: ${thread().name}`}
+            ref={(el) => (containerRef = el)}
+            label={`Thread: ${thread().name}`}
           >
             <For each={props.messages}>
               {(msg) => (
@@ -113,7 +110,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
                 />
               )}
             </For>
-          </div>
+          </LiveRegion>
           <div class="message-input-wrapper">
             <textarea
               class="message-input message-input-field"

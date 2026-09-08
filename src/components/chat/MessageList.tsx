@@ -8,6 +8,7 @@ import {
 } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import MessageBubble from "./MessageBubble";
+import LiveRegion from "../common/LiveRegion";
 
 interface MessageListProps {
   communityId?: string;
@@ -120,14 +121,10 @@ const MessageList: Component<MessageListProps> = (props) => {
   }
 
   return (
-    <div
+    <LiveRegion
       class="chat-message-area"
-      ref={containerRef}
-      role="log"
-      aria-live="polite"
-      aria-relevant="additions"
-      aria-atomic="false"
-      aria-label={props.channelId ? "Channel messages" : "Direct message conversation"}
+      ref={(el) => (containerRef = el)}
+      label={props.channelId ? "Channel messages" : "Direct message conversation"}
     >
       {/* Sentinel for infinite scroll — triggers onLoadOlder when visible */}
       <div ref={sentinelRef} class="messages-scroll-sentinel">
@@ -205,7 +202,7 @@ const MessageList: Component<MessageListProps> = (props) => {
           );
         }}
       </For>
-    </div>
+    </LiveRegion>
   );
 };
 

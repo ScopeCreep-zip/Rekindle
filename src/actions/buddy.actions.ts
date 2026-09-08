@@ -5,6 +5,7 @@ import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
 import { transformFriendMap } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
+import { withTimeout, DHT_WRITE_TIMEOUT_MS } from "../utils/request-timeout";
 
 export function handleDoubleClickFriend(
   publicKey: string,
@@ -58,7 +59,16 @@ export async function handleAddFriend(
 ): Promise<string | null> {
   try {
     const displayName = publicKey.slice(0, 12) + "...";
-    await commands.addFriend(publicKey, displayName, message);
+    // Architecture §32 a11y — a friend request writes to the peer's
+    // inbox DHT record, which blocks on Veilid bootstrap or NAT punch
+    // retries. Without a bound the button spins forever with nothing
+    // to tell the user; `RequestTimeoutError` reaches them through the
+    // same `errorMessage` path as any other failure.
+    await withTimeout(
+      commands.addFriend(publicKey, displayName, message),
+      DHT_WRITE_TIMEOUT_MS,
+      "Friend request",
+    );
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -232,7 +242,11 @@ export async function handleLoadOutgoingInvites(): Promise<void> {
 
 export async function handleAddFriendFromInvite(inviteString: string): Promise<string | null> {
   try {
-    await commands.addFriendFromInvite(inviteString);
+    await withTimeout(
+      commands.addFriendFromInvite(inviteString),
+      DHT_WRITE_TIMEOUT_MS,
+      "Invite redemption",
+    );
     return null;
   } catch (e) {
     return errorMessage(e);

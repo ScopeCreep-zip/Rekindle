@@ -13,6 +13,17 @@ interface LiveRegionProps {
    * avoid drowning out other announcements.
    */
   priority?: "polite" | "assertive";
+  /**
+   * Class for the scroll container. The region has to BE the scroller
+   * (see below), so it carries the layout class rather than sitting
+   * inside a separate one.
+   */
+  class?: string;
+  /**
+   * Element ref, for the scroll-to-bottom and infinite-scroll logic
+   * that both consumers run against this exact node.
+   */
+  ref?: (el: HTMLDivElement) => void;
   children: JSX.Element;
 }
 
@@ -26,10 +37,19 @@ interface LiveRegionProps {
  * `aria-relevant="additions"` keeps deletions silent. `aria-atomic`
  * stays false (default) so only the new message is read, not the
  * entire history on every update.
+ *
+ * `MessageList` and `ThreadPanel` both hand-rolled these five
+ * attributes inline instead of using this component — which is how the
+ * two drifted apart on `aria-label` wording and how this file ended up
+ * reported as an orphan despite being the intended home for the
+ * pattern. `class` and `ref` exist so the component can be the
+ * scroller both of them need it to be.
  */
 const LiveRegion: Component<LiveRegionProps> = (props) => {
   return (
     <div
+      class={props.class}
+      ref={props.ref}
       role="log"
       aria-live={props.priority ?? "polite"}
       aria-relevant="additions"

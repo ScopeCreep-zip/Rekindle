@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
 
 import ExpressionPicker from "../community/ExpressionPicker";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 
 const EMOJI_CATEGORIES: { name: string; icon: string; emojis: string[] }[] = [
   {
@@ -118,6 +119,7 @@ interface EmojiPickerProps {
 }
 
 const EmojiPicker: Component<EmojiPickerProps> = (props) => {
+  const reducedMotion = useReducedMotion();
   let ref: HTMLDivElement | undefined;
   let searchRef: HTMLInputElement | undefined;
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -174,7 +176,14 @@ const EmojiPicker: Component<EmojiPickerProps> = (props) => {
                 onClick={() => {
                   setActiveCategory(idx());
                   const section = ref?.querySelector(`[data-category="${idx()}"]`);
-                  section?.scrollIntoView({ behavior: "smooth" });
+                  // Architecture §32 a11y — the OS reduced-motion
+                  // preference has to be honoured here in JS: a
+                  // scroll animation started by `scrollIntoView` is
+                  // not reachable from the `@media` guards in
+                  // `animations.css`.
+                  section?.scrollIntoView({
+                    behavior: reducedMotion() ? "auto" : "smooth",
+                  });
                 }}
               >
                 {cat.icon}

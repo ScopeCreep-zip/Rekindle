@@ -183,7 +183,13 @@ share, overlay, auto-update.
 - [x] Block list
 - [x] Mailbox DHT records (route blob fallback for offline peers)
 - [x] File sharing via Veilid (Lost Cargo — `rekindle-files`)
-- [x] Strand Relay forwarding (architecture §13)
+- [x] Strand Relay forwarding (architecture §13) — single-hop:
+  volunteered-friend pool, `blake3(target || blob)` selection,
+  per-relay circuit breaker. Lives in `rekindle-route::relay`,
+  not a `rekindle-relay` crate.
+- [ ] Strand Relay 3-hop onion envelope (architecture §13)
+- [ ] Relay capacity advertisement — bandwidth / latency / uptime
+  (§13; selection currently uses hash affinity + health)
 - [x] Mobile push relay client (`push_relay`)
 - [x] Cross-device sync foundation (architecture §28.4)
 - [x] Video / screen-share fragmentation pipeline
