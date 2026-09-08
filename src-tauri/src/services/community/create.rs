@@ -18,7 +18,11 @@ use veilid_core::CRYPTO_KIND_VLD0;
 
 use crate::state::AppState;
 
-pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<String, String> {
+pub async fn create_community(
+    state: &Arc<AppState>,
+    name: &str,
+    admission: rekindle_types::governance::AdmissionMode,
+) -> Result<String, String> {
     let app_handle = state
         .app_handle
         .read()
@@ -34,7 +38,7 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         app_handle,
         pool,
     );
-    rekindle_governance_runtime::create_community(&adapter, name)
+    rekindle_governance_runtime::create_community(&adapter, name, admission)
         .await
         .map_err(|e| e.to_string())
 }

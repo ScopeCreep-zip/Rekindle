@@ -123,12 +123,13 @@ pub async fn create_community_inner(
     pool: &DbPool,
     keystore_handle: &KeystoreHandle,
     name: String,
+    admission: rekindle_types::governance::AdmissionMode,
 ) -> Result<String, String> {
     use crate::db;
     use crate::services;
 
     let owner_key = state_helpers::current_owner_key(state)?;
-    let community_id = services::community::create_community(state, &name).await?;
+    let community_id = services::community::create_community(state, &name, admission).await?;
 
     {
         let ks = keystore_handle.lock();

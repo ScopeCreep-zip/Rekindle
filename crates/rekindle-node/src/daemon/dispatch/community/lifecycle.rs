@@ -13,6 +13,7 @@ pub(crate) async fn handle_create(
     state: DaemonState,
     name: &str,
     description: &str,
+    approval_required: bool,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -47,11 +48,25 @@ pub(crate) async fn handle_create(
     // Persistence, keypair storage and the genesis governance state all
     // happen inside the flow via `Deps::insert_community`, so there is
     // no membership to hand-assemble here any more.
-    let community_id =
-        match rekindle_governance_runtime::create_community(&adapter(ctx), &name).await {
-            Ok(id) => id,
-            Err(e) => return IpcResponse::error(500, format!("community create failed: {e}")),
-        };
+    // Genesis-only, so this is the one chance to set it: the merge
+    // honours `AdmissionPolicy` solely as the genesis entry, which is
+    // what stops anyone holding `MANAGE_COMMUNITY` flipping a gated
+    // community open later.
+    let admission = if approval_required {
+        rekindle_types::governance::AdmissionMode::ApprovalRequired
+    } else {
+        rekindle_types::governance::AdmissionMode::Open
+    };
+    let community_id = match rekindle_governance_runtime::create_community(
+        &adapter(ctx),
+        &name,
+        admission,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => return IpcResponse::error(500, format!("community create failed: {e}")),
+    };
 
     if !description.is_empty() {
         // Description is metadata, not part of genesis. A failure here

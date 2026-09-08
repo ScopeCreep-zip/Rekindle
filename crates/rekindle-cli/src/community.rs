@@ -17,13 +17,17 @@ pub async fn dispatch(
 ) -> anyhow::Result<()> {
     match cmd {
         CommunityCmd::Create {
-            name, description, ..
+            name,
+            description,
+            approval_required,
+            ..
         } => {
             let validated_name = helpers::validate_name(name, "Community")?;
             let value = client
                 .request_ok(IpcRequest::CommunityCreate {
                     name: validated_name,
                     description: description.clone().unwrap_or_default(),
+                    approval_required: *approval_required,
                 })
                 .await?;
             format::print_structured(&value, mode)

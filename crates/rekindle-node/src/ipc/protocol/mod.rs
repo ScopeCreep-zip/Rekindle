@@ -78,7 +78,19 @@ pub enum IpcRequest {
 
     // ── Communities ───────────────────────────────────────────────
     /// Create a new community.
-    CommunityCreate { name: String, description: String },
+    CommunityCreate {
+        name: String,
+        description: String,
+        /// Genesis admission mode. `false` (the default) is
+        /// `AdmissionMode::Open`; `true` requires an approval before
+        /// honest peers count a joiner as a member.
+        ///
+        /// Chosen at creation and only at creation — the merge honours
+        /// `AdmissionPolicy` solely as the genesis entry, so this cannot
+        /// be changed later by anyone holding `MANAGE_COMMUNITY`.
+        #[serde(default)]
+        approval_required: bool,
+    },
     /// Join a community via governance key or invite code.
     CommunityJoin { invite: String },
     /// Leave a community.

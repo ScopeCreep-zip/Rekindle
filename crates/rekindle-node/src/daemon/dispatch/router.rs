@@ -42,9 +42,11 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         }
 
         // ── Community ────────────────────────────────────────────
-        IpcRequest::CommunityCreate { name, description } => {
-            community::handle_create(ctx, state, &name, &description).await
-        }
+        IpcRequest::CommunityCreate {
+            name,
+            description,
+            approval_required,
+        } => community::handle_create(ctx, state, &name, &description, approval_required).await,
         IpcRequest::CommunityJoin { invite } => community::handle_join(ctx, state, &invite).await,
         IpcRequest::CommunityLeave { governance_key } => {
             community::handle_leave(ctx, state, &governance_key).await

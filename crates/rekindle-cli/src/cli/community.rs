@@ -21,6 +21,13 @@ pub enum CommunityCmd {
         /// Community icon image path.
         #[arg(long)]
         icon: Option<PathBuf>,
+        /// Require an approval before a joiner counts as a member.
+        ///
+        /// Fixed at creation: the merge honours `AdmissionPolicy` only
+        /// as the genesis entry, so this cannot be changed later — not
+        /// even by an administrator.
+        #[arg(long)]
+        approval_required: bool,
     },
 
     /// Join via invite code or governance key.

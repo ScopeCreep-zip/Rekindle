@@ -70,10 +70,15 @@ impl std::fmt::Debug for IpcRequest {
                 .finish(),
             Self::FriendList => write!(f, "FriendList"),
             Self::FriendRequests => write!(f, "FriendRequests"),
-            Self::CommunityCreate { name, description } => f
+            Self::CommunityCreate {
+                name,
+                description,
+                approval_required,
+            } => f
                 .debug_struct("CommunityCreate")
                 .field("name", name)
                 .field("description", description)
+                .field("approval_required", approval_required)
                 .finish(),
             Self::CommunityJoin { invite } => f
                 .debug_struct("CommunityJoin")

@@ -61,7 +61,12 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// same messages. Discovery is `ChannelCreated.record_key` plus
 /// `ChannelSegmentLinked` out of merged governance, which is what made
 /// the member index deletable.
-const SCHEMA_VERSION: i64 = 77;
+/// 78: genesis entries gained `AdmissionPolicy` at lamport 1, shifting
+/// the other five up by one. Every community created before this has an
+/// entry set that cannot express `ApprovalRequired` — the variant was
+/// merged, validated and Cap'n Proto encoded, and nothing ever wrote it,
+/// so the mode was unreachable and every community was `Open`.
+const SCHEMA_VERSION: i64 = 78;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

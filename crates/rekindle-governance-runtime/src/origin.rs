@@ -12,7 +12,7 @@ use rand::RngCore;
 use rekindle_governance::merge;
 use rekindle_secrets::derive;
 use rekindle_secrets::keys::{MediaEncryptionKey, SlotSeed};
-use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
+use rekindle_types::governance::{AdmissionMode, GovernanceEntry, GovernanceSubkeyPayload};
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions;
 use rekindle_types::presence::MemberPresence;
@@ -45,11 +45,84 @@ fn role_id_to_legacy_u32(role_id: &RoleId) -> u32 {
     u32::from_le_bytes(bytes)
 }
 
+/// The six entries every community starts with.
+///
+/// Extracted so the ordering can be tested: `AdmissionPolicy` is
+/// honoured **only** as the genesis entry, so its position at lamport 1
+/// is load-bearing. A later one is ignored by every honest peer, which
+/// is what makes the mode immutable — an administrator cannot flip a
+/// gated community open.
+///
+/// Nothing wrote this variant before; the mode was merged, validated and
+/// Cap'n Proto encoded, and unreachable, so every community was `Open`
+/// whatever its creator intended.
+fn genesis_entries(
+    name: &str,
+    my_pseudo: &PseudonymKey,
+    channel_id: ChannelId,
+    channel_record_key: &str,
+    admission: AdmissionMode,
+) -> Vec<GovernanceEntry> {
+    vec![
+        GovernanceEntry::AdmissionPolicy {
+            mode: admission,
+            lamport: 1,
+        },
+        GovernanceEntry::CommunityMeta {
+            name: Some(name.to_string()),
+            description: None,
+            icon_hash: None,
+            banner_hash: None,
+            lamport: 2,
+        },
+        GovernanceEntry::RoleDefinition {
+            role_id: RoleId([0u8; 16]),
+            name: "@everyone".into(),
+            permissions: permissions::DEFAULT_EVERYONE,
+            position: 0,
+            color: 0,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            lamport: 3,
+        },
+        GovernanceEntry::RoleDefinition {
+            role_id: OWNER_ROLE_ID,
+            name: "Owner".into(),
+            permissions: permissions::ADMINISTRATOR,
+            position: u32::MAX,
+            color: 0xC1_7C_17,
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            lamport: 4,
+        },
+        GovernanceEntry::RoleAssignment {
+            target: my_pseudo.clone(),
+            role_id: OWNER_ROLE_ID,
+            lamport: 5,
+        },
+        GovernanceEntry::ChannelCreated {
+            channel_id,
+            name: "general".into(),
+            channel_type: "text".into(),
+            record_key: channel_record_key.to_string(),
+            category_id: None,
+            position: 0,
+            parent_voice_channel_id: None,
+            lamport: 6,
+        },
+    ]
+}
+
 /// Create a new community with flat SMPL governance (o_cnt:0 universal
 /// schema). Returns the governance record key as the community ID.
 pub async fn create_community<D: GovernanceRuntimeDeps>(
     deps: &D,
     name: &str,
+    admission: AdmissionMode,
 ) -> Result<String, GovernanceRuntimeError> {
     // 1. Generate the shared slot seed (32 bytes) — derives all 255 member
     //    slot keypairs deterministically.
@@ -92,57 +165,9 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         creator_slot_kp.to_bytes(),
     );
 
-    // 7. Genesis governance entries (architecture §Failure 4 — five entries:
-    //    community meta + @everyone + Owner role + RoleAssignment + #general).
+    // 7. Genesis governance entries.
     let channel_id = random_channel_id();
-    let genesis_entries = vec![
-        GovernanceEntry::CommunityMeta {
-            name: Some(name.to_string()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-            lamport: 1,
-        },
-        GovernanceEntry::RoleDefinition {
-            role_id: RoleId([0u8; 16]),
-            name: "@everyone".into(),
-            permissions: permissions::DEFAULT_EVERYONE,
-            position: 0,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-            lamport: 2,
-        },
-        GovernanceEntry::RoleDefinition {
-            role_id: OWNER_ROLE_ID,
-            name: "Owner".into(),
-            permissions: permissions::ADMINISTRATOR,
-            position: u32::MAX,
-            color: 0xC1_7C_17,
-            hoist: true,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-            lamport: 3,
-        },
-        GovernanceEntry::RoleAssignment {
-            target: my_pseudo.clone(),
-            role_id: OWNER_ROLE_ID,
-            lamport: 4,
-        },
-        GovernanceEntry::ChannelCreated {
-            channel_id,
-            name: "general".into(),
-            channel_type: "text".into(),
-            record_key: ch_key.clone(),
-            category_id: None,
-            position: 0,
-            parent_voice_channel_id: None,
-            lamport: 5,
-        },
-    ];
+    let genesis_entries = genesis_entries(name, &my_pseudo, channel_id, &ch_key, admission);
 
     // Architecture §26 W26 — sign the genesis payload with the creator's
     // pseudonym secret so future readers can verify authorship.
@@ -297,5 +322,51 @@ mod tests {
         assert_eq!(SLOTS_PER_SEGMENT, 255);
         assert_eq!(CREATOR_SLOT, 0);
         assert_eq!(OWNER_ROLE_ID.0, [0xFFu8; 16]);
+    }
+}
+
+#[cfg(test)]
+mod genesis_tests {
+    use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
+
+    /// The mode is only honoured as the genesis entry, so it has to be
+    /// *first*. If it drifted to a later lamport the merge would ignore
+    /// it and every community would silently be `Open` again — which is
+    /// exactly the state this fixed.
+    #[test]
+    fn admission_policy_is_the_first_genesis_entry() {
+        let entries = super::genesis_entries(
+            "c",
+            &rekindle_types::id::PseudonymKey([1u8; 32]),
+            rekindle_types::id::ChannelId([2u8; 16]),
+            "rec",
+            AdmissionMode::ApprovalRequired,
+        );
+        assert!(
+            matches!(
+                entries.first(),
+                Some(GovernanceEntry::AdmissionPolicy {
+                    mode: AdmissionMode::ApprovalRequired,
+                    lamport: 1
+                })
+            ),
+            "AdmissionPolicy must be the genesis entry at lamport 1, got {:?}",
+            entries.first()
+        );
+    }
+
+    /// Lamports must stay dense and ordered — the merge uses them for
+    /// LWW, and a duplicate would make two genesis facts race.
+    #[test]
+    fn genesis_lamports_are_one_through_six_in_order() {
+        let entries = super::genesis_entries(
+            "c",
+            &rekindle_types::id::PseudonymKey([1u8; 32]),
+            rekindle_types::id::ChannelId([2u8; 16]),
+            "rec",
+            AdmissionMode::Open,
+        );
+        let lamports: Vec<u64> = entries.iter().map(GovernanceEntry::lamport).collect();
+        assert_eq!(lamports, vec![1, 2, 3, 4, 5, 6]);
     }
 }

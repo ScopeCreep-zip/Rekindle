@@ -22,10 +22,18 @@ pub async fn get_community_details(
     Ok(list_community_details_inner(state.inner()))
 }
 
+/// Create a community.
+///
+/// `approval_required` picks the genesis admission mode and is
+/// immutable afterwards: the CRDT honours `AdmissionPolicy` only as the
+/// genesis entry, so a later one is ignored by every honest peer — not
+/// even an administrator can flip a community from open to gated, which
+/// is the point.
 #[tauri::command]
 pub async fn create_community(
     _app: tauri::AppHandle,
     name: String,
+    approval_required: Option<bool>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
@@ -37,6 +45,11 @@ pub async fn create_community(
         pool.inner(),
         keystore_handle.inner(),
         name,
+        if approval_required.unwrap_or(false) {
+            rekindle_types::governance::AdmissionMode::ApprovalRequired
+        } else {
+            rekindle_types::governance::AdmissionMode::Open
+        },
     )
     .await
 }
