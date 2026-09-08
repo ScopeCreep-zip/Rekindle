@@ -74,6 +74,23 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
     };
 
     let banned: HashSet<String> = gov_state.bans.iter().map(|p| hex::encode(p.0)).collect();
+
+    // Under `ApprovalRequired`, holding a slot is not membership.
+    //
+    // This is where admission is actually enforced. `o_cnt: 0` means the
+    // SMPL schema cannot refuse a write, so anyone with the slot seed
+    // can occupy a subkey whatever the mode says — the architecture is
+    // explicit that "an unapproved member still occupies an SMPL slot;
+    // the schema cannot prevent that, but honest peers do not count them
+    // as a member". Every reader applies this independently, exactly as
+    // it applies the ban list.
+    //
+    // Without it `ApprovalRequired` was inert: the mode was recorded at
+    // genesis, `approve_member` wrote decisions, and nothing ever read
+    // them.
+    let approval_required = gov_state.effective_admission_mode()
+        == rekindle_types::governance::AdmissionMode::ApprovalRequired;
+
     registry_scan::fetch_occupied(deps, registry_key, &occupied)
         .await
         .into_iter()
@@ -82,11 +99,16 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
             // uses them only to decide whether an accepted row is
             // *online*, never whether it is accepted.
             match parse_and_classify_row(&raw, &banned, 0, 0) {
-                ClassifiedRow::Accepted(row) => Some(RosterMember {
-                    subkey,
-                    pseudonym_hex: row.pseudonym_hex,
-                    display_name: row.presence.display_name,
-                }),
+                ClassifiedRow::Accepted(row) => {
+                    if approval_required && !is_admitted(gov_state, &row.pseudonym_hex) {
+                        return None;
+                    }
+                    Some(RosterMember {
+                        subkey,
+                        pseudonym_hex: row.pseudonym_hex,
+                        display_name: row.presence.display_name,
+                    })
+                }
                 // Empty, malformed, forged, banned, departed — none of
                 // these is a member. `reclaim` treats the same set as
                 // reusable slots.
@@ -94,6 +116,22 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
             }
         })
         .collect()
+}
+
+/// Has this pseudonym been admitted?
+///
+/// The creator is admitted by construction — they wrote the genesis
+/// entries, so requiring an approval they could only give themselves
+/// would lock them out of their own community on the first merge.
+fn is_admitted(gov_state: &GovernanceState, pseudonym_hex: &str) -> bool {
+    let key = rekindle_types::id::PseudonymKey::from_hex_lossy(pseudonym_hex);
+    if gov_state.creator.as_ref() == Some(&key) {
+        return true;
+    }
+    gov_state
+        .admitted
+        .get(&key)
+        .is_some_and(|decision| decision.approved)
 }
 
 /// The slot we occupy in a registry, found by our own pseudonym.
@@ -114,4 +152,74 @@ pub async fn find_my_slot<D: GovernanceRuntimeDeps>(
         .into_iter()
         .find(|m| m.pseudonym_hex == my_pseudonym_hex)
         .map(|m| m.subkey)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_admitted;
+    use rekindle_governance::state::{AdmissionDecision, GovernanceState};
+    use rekindle_types::governance::AdmissionMode;
+    use rekindle_types::id::PseudonymKey;
+
+    fn key(byte: u8) -> PseudonymKey {
+        PseudonymKey([byte; 32])
+    }
+    fn hex_of(byte: u8) -> String {
+        hex::encode([byte; 32])
+    }
+
+    #[test]
+    fn an_approved_member_is_admitted() {
+        let mut state = GovernanceState::default();
+        state.admitted.insert(
+            key(1),
+            AdmissionDecision {
+                approved: true,
+                lamport: 4,
+            },
+        );
+        assert!(is_admitted(&state, &hex_of(1)));
+    }
+
+    /// A rejected member holds a slot — `o_cnt: 0` cannot stop them —
+    /// but is not counted. This is the whole enforcement point.
+    #[test]
+    fn a_rejected_member_is_not_admitted() {
+        let mut state = GovernanceState::default();
+        state.admitted.insert(
+            key(2),
+            AdmissionDecision {
+                approved: false,
+                lamport: 4,
+            },
+        );
+        assert!(!is_admitted(&state, &hex_of(2)));
+    }
+
+    #[test]
+    fn an_undecided_member_is_not_admitted() {
+        assert!(!is_admitted(&GovernanceState::default(), &hex_of(3)));
+    }
+
+    /// The creator wrote the genesis entries, so requiring an approval
+    /// they could only give themselves would lock them out of their own
+    /// community on the first merge.
+    #[test]
+    fn the_creator_is_admitted_without_a_decision() {
+        let state = GovernanceState {
+            creator: Some(key(9)),
+            ..Default::default()
+        };
+        assert!(state.admitted.is_empty());
+        assert!(is_admitted(&state, &hex_of(9)));
+    }
+
+    /// Default is `Open` — every community that predates the admission
+    /// entries must keep admitting everyone, or the roster would empty
+    /// itself on upgrade.
+    #[test]
+    fn absent_admission_policy_means_open() {
+        let state = GovernanceState::default();
+        assert_eq!(state.effective_admission_mode(), AdmissionMode::Open);
+    }
 }

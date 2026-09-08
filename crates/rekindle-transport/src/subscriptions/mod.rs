@@ -79,6 +79,10 @@ pub struct SubscriptionManager {
     poll_handle: Option<JoinHandle<()>>,
     /// Shutdown signal for the poll loop.
     poll_shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Handle for the maintenance loop (typing expiry, dedup eviction).
+    maintenance_handle: Option<JoinHandle<()>>,
+    /// Shutdown signal for the maintenance loop.
+    maintenance_shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
 impl SubscriptionManager {
@@ -100,6 +104,8 @@ impl SubscriptionManager {
             renewal_shutdown_tx: None,
             poll_handle: None,
             poll_shutdown_tx: None,
+            maintenance_handle: None,
+            maintenance_shutdown_tx: None,
         }
     }
 

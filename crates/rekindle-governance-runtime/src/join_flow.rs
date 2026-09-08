@@ -171,6 +171,14 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
 
     // 5. Claim a slot (CAS, retrying past contention, auto-expanding
     //    the Plate Gate when every segment is full).
+    //
+    //    Claimed *before* any admission check, on purpose. `o_cnt: 0`
+    //    means the SMPL schema cannot refuse a write, so a slot claim is
+    //    not an access-control point and pretending otherwise would be
+    //    theatre. Admission is enforced where it can be — every reader
+    //    independently declines to count an unapproved row as a member
+    //    (`roster::segment_roster`), the same reader-validates rule that
+    //    makes bans work.
     let display_name = Some(deps.identity_display_name());
     let claimed = claim_registry_slot(
         deps,
@@ -198,6 +206,38 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         &claimed.occupied_subkeys,
     )
     .await;
+
+    // 7. Under `AdmissionMode::ApprovalRequired`, announce ourselves so
+    //    an approver has something to act on.
+    //
+    //    Without this the pending list is always empty and nobody can
+    //    ever be approved — which made `ApprovalRequired` silently
+    //    identical to `Open`, since the slot claim above never consulted
+    //    it either. The approver side (`approve_member`, `reject_member`,
+    //    `pending_members`) was wired; this half was not.
+    //
+    //    Self-authored by construction and `validate_write` drops a
+    //    `JoinRequested` whose author is not the requester, so this
+    //    cannot enqueue anyone else.
+    if crate::admission::admission_mode(deps, governance_key)
+        == rekindle_types::governance::AdmissionMode::ApprovalRequired
+    {
+        let display_name = deps.identity_display_name();
+        if let Err(error) =
+            crate::admission::request_join(deps, governance_key, &display_name).await
+        {
+            // Not fatal to the join: the slot is claimed and the DHT
+            // write is durable, so a retry can re-announce. Failing the
+            // whole join here would leave a claimed slot with no record
+            // of why its holder is unapproved.
+            tracing::warn!(
+                community = %governance_key,
+                %error,
+                "join: could not announce the admission request — approvers will not see us \
+                 until it is re-sent"
+            );
+        }
+    }
 
     Ok(JoinStagesOutcome {
         snapshot,

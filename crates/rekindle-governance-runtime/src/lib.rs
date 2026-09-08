@@ -40,6 +40,7 @@ pub mod membership_events;
 pub mod moderation;
 pub mod origin;
 pub mod overflow;
+pub mod ownership;
 pub mod roles;
 pub mod roster;
 pub mod segments;

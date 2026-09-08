@@ -3,8 +3,20 @@
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 
-use crate::daemon::dispatch::{state_error, DaemonContext};
+use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 
+/// Give another member administrative control.
+///
+/// Named `TransferOwnership` on the wire, but under flat governance
+/// there is no owner to move: `GovernanceState.creator` is fixed by the
+/// genesis entries and holds `ALL` permanently. See
+/// `rekindle_governance_runtime::ownership` for why that is deliberate
+/// and what Matrix concluded about the same question.
+///
+/// This used to rewrite `owner_pseudonym` / `operator_pseudonyms` in
+/// the v1.0 governance-manifest metadata subkey. Nothing reads those
+/// under v2.0 — permissions come from the merged CRDT — so it reported
+/// success and granted the new owner nothing at all.
 pub(crate) async fn handle_transfer_ownership(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -14,72 +26,29 @@ pub(crate) async fn handle_transfer_ownership(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let membership = match ctx.resolve_community(governance_key) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    if !membership.is_operator {
-        return IpcResponse::error(403, "not an operator for this community");
-    }
-
-    let dht = match transport.dht() {
-        Ok(d) => d,
-        Err(e) => return IpcResponse::error(500, format!("DHT: {e}")),
-    };
-
-    // Read and update governance metadata
-    let Ok(Some(metadata)) = dht
-        .governance()
-        .read_metadata(&membership.governance_key)
-        .await
-    else {
-        return IpcResponse::error(500, "cannot read governance metadata");
-    };
-
-    let mut updated = metadata;
-    let old_owner = updated.owner_pseudonym.clone();
-    updated.owner_pseudonym = new_owner_pseudonym.to_string();
-    updated.operator_pseudonyms.retain(|p| p != &old_owner);
-    if !updated
-        .operator_pseudonyms
-        .contains(&new_owner_pseudonym.to_string())
-    {
-        updated
-            .operator_pseudonyms
-            .push(new_owner_pseudonym.to_string());
-    }
-
-    if let Err(e) = dht
-        .governance()
-        .write_metadata(&membership.governance_key, &updated)
-        .await
-    {
-        return IpcResponse::error(500, format!("metadata update failed: {e}"));
-    }
-
-    // Update local session: current user is no longer operator
-    {
-        let mut guard = ctx.session.write();
-        if let Some(ref mut s) = *guard {
-            if let Some(m) = s.communities.get_mut(governance_key) {
-                m.is_operator = false;
-                m.governance_keypair_label = None;
-            }
-        }
-    }
-    if let Err(e) = ctx.save_session() {
+    if let Err(e) = ctx.resolve_community(governance_key) {
         return e;
     }
 
-    IpcResponse::ok(&serde_json::json!({
-        "transferred": true,
-        "old_owner": old_owner,
-        "new_owner": new_owner_pseudonym,
-    }))
+    // Permission comes from the CRDT, not from `is_operator` — that
+    // flag is v1.0 residue and under `o_cnt: 0` grants nothing.
+    match rekindle_governance_runtime::ownership::grant_administration(
+        &adapter(ctx),
+        governance_key,
+        new_owner_pseudonym,
+    )
+    .await
+    {
+        Ok(outcome) => IpcResponse::ok(&serde_json::json!({
+            "granted": new_owner_pseudonym,
+            "roleId": outcome.role_id,
+            "relinquished": outcome.relinquished,
+            // The caller needs to know: a creator cannot step down, so
+            // "transfer" from the creator is a grant and nothing more.
+            "stillCreator": outcome.still_creator,
+        })),
+        Err(e) => IpcResponse::error(500, format!("grant administration failed: {e}")),
+    }
 }
 
 pub(crate) fn write_encrypted_backup(

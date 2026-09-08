@@ -447,6 +447,9 @@ pub(crate) async fn handle_unlock(
         }
         sub_mgr.start_renewal_loop();
         sub_mgr.start_poll_loop(60);
+        // Typing indicators expire and the dedup cache sheds by TTL only
+        // if something sweeps them.
+        sub_mgr.start_maintenance_loop();
         tracing::info!(
             watches = sub_mgr.watch_count(),
             communities = session.communities.len(),
