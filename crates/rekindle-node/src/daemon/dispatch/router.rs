@@ -51,9 +51,9 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         IpcRequest::CommunityLeave { governance_key } => {
             community::handle_leave(ctx, state, &governance_key).await
         }
-        IpcRequest::CommunityList => community::handle_list(ctx, state).await,
+        IpcRequest::CommunityList => community::handle_list(ctx, state),
         IpcRequest::CommunityInfo { governance_key } => {
-            community::handle_info(ctx, state, &governance_key).await
+            community::handle_info(ctx, state, &governance_key)
         }
         IpcRequest::CommunityApprove {
             governance_key,
@@ -258,7 +258,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
                 .await
         }
         IpcRequest::InviteList { community } => {
-            governance::handle_invite_list(ctx, state, &community).await
+            governance::handle_invite_list(ctx, state, &community)
         }
         IpcRequest::InviteRevoke {
             community,

@@ -93,8 +93,9 @@ pub use friend_store::{FriendRecord, FriendStatus, FriendStore, MemoryFriendStor
 
 // Query engine
 pub use query::{
-    ChannelOverviewDisplay, CommunityDetail, CommunityOverview, DecryptedMessageDisplay,
-    DmMessageDisplay, DmThreadDisplay, FriendDisplay, QueryEngine, RoleDisplay,
+    community_detail, list_communities, ChannelOverviewDisplay, CommunityDetail,
+    CommunityMetaSummary, CommunityOverview, DecryptedMessageDisplay, DmMessageDisplay,
+    DmThreadDisplay, FriendDisplay, QueryEngine, RoleDisplay,
 };
 
 // Frame

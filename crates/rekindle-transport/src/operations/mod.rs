@@ -16,7 +16,6 @@ pub mod community;
 pub mod dm;
 pub mod friend;
 pub mod identity;
-pub mod invites;
 pub mod mek;
 pub mod presence;
 pub mod voice;

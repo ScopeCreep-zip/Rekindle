@@ -7,7 +7,6 @@
 pub mod channel_log;
 pub mod channel_smpl;
 pub mod friend_list;
-pub mod governance;
 pub mod mailbox;
 pub mod profile;
 pub mod record;
@@ -41,11 +40,6 @@ impl DhtStore {
     /// Access mailbox record operations.
     pub fn mailbox(&self) -> mailbox::MailboxOps<'_> {
         mailbox::MailboxOps::new(&self.rc)
-    }
-
-    /// Access governance manifest record operations.
-    pub fn governance(&self) -> governance::GovernanceOps<'_> {
-        governance::GovernanceOps::new(&self.rc)
     }
 
     /// Access member registry record operations.

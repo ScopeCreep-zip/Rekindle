@@ -233,7 +233,9 @@ pub async fn destroy_identity(
         .close(&session.identity.friend_list_dht_key)
         .await;
     for membership in session.communities.values() {
-        let _ = dht.governance().close(&membership.governance_key).await;
+        let _ =
+            crate::broadcast::dht::record::close(dht.routing_context(), &membership.governance_key)
+                .await;
         let _ = crate::broadcast::dht_writes::close(node, &membership.registry_key).await;
     }
     info!("identity destroyed — all DHT records closed");

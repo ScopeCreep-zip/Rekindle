@@ -90,6 +90,7 @@ impl QueryEngine {
 }
 
 mod communities;
+pub use communities::{community_detail, list_communities, CommunityMetaSummary};
 mod display_map;
 mod messages;
 mod social;
