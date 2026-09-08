@@ -202,16 +202,18 @@ impl InboundHandler for DaemonHandler {
 
     /// A desktop-format community gossip envelope arrived, verified.
     ///
-    /// Routed by variant here rather than projected onto
-    /// `GossipPayload`: `CommunityEnvelope` carries the whole
-    /// `Control(..)` family and `WatchRelay`, none of which the
-    /// three-variant `GossipPayload` can express.
+    /// `WatchRelay` is handled here because it has no `GossipPayload`
+    /// equivalent — the daemon's three-variant type cannot express it.
+    /// Everything that *does* have one is projected and handed to the
+    /// existing `on_gossip` pipeline rather than reimplemented, so
+    /// unread counts, typing state and the presence overlay behave
+    /// identically whichever format the message arrived in.
     async fn on_community_gossip(
         &self,
         community_id: &str,
         sender_pseudonym: &str,
         envelope: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
-        _lamport_ts: u64,
+        lamport_ts: u64,
     ) {
         use rekindle_protocol::dht::community::envelope::CommunityEnvelope as Env;
 
@@ -221,7 +223,7 @@ impl InboundHandler for DaemonHandler {
             "handler: on_community_gossip"
         );
 
-        match envelope {
+        let projected = match envelope {
             Env::WatchRelay {
                 record_key,
                 subkey,
@@ -230,19 +232,75 @@ impl InboundHandler for DaemonHandler {
             } => {
                 self.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
                     .await;
+                return;
             }
-            // Everything else is delivered as a value-change style
-            // signal so the existing subscription pipeline picks it up.
-            // Deliberately not silent: an unrouted variant is a gap to
-            // close, not traffic to ignore.
-            other => {
+            Env::MessageNotification {
+                channel_id,
+                message_id,
+                author_pseudonym,
+                subkey_index,
+                lamport_ts: inner_lamport,
+                sequence,
+                content_hash,
+                timestamp,
+            } => GossipPayload::MessageNotification {
+                channel_id,
+                message_id,
+                author_pseudonym,
+                subkey_index,
+                lamport_ts: inner_lamport,
+                sequence,
+                content_hash,
+                timestamp,
+            },
+            Env::TypingIndicator {
+                channel_id,
+                pseudonym_key,
+            } => GossipPayload::TypingIndicator {
+                channel_id,
+                pseudonym_key,
+            },
+            Env::PresenceUpdate {
+                pseudonym_key,
+                status,
+                game_info,
+                route_blob,
+            } => GossipPayload::PresenceUpdate {
+                pseudonym_key,
+                status,
+                // `PresenceGameInfo` is one struct on the protocol side
+                // and three flat fields on the transport side. Unpacked
+                // rather than dropped: rich presence is the whole point
+                // of the field, and losing it silently would make a
+                // desktop peer's game status vanish on the daemon.
+                game_name: game_info.as_ref().map(|g| g.game_name.clone()),
+                game_id: game_info.as_ref().and_then(|g| g.game_id),
+                elapsed_seconds: game_info.as_ref().and_then(|g| g.elapsed_seconds),
+                server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
+                route_blob,
+            },
+            // The `Control(..)` family. Both tracks have one, but they
+            // are separate enums with different variant sets, so a
+            // faithful projection is a per-variant mapping rather than
+            // a cast — and writing a lossy one here would silently drop
+            // whichever control messages did not line up.
+            //
+            // Logged rather than dropped quietly: this is a known gap
+            // with a name, and the traffic that reaches it is visible
+            // under `RUST_LOG=rekindle_node=debug`.
+            Env::Control(control) => {
                 debug!(
                     community = community_id,
-                    variant = ?std::mem::discriminant(&other),
-                    "on_community_gossip: variant not yet routed on this track"
+                    variant = ?std::mem::discriminant(&control),
+                    "on_community_gossip: control variant not yet projected onto the daemon's \
+                     ControlPayload"
                 );
+                return;
             }
-        }
+        };
+
+        self.on_gossip(community_id, sender_pseudonym, projected, lamport_ts)
+            .await;
     }
 
     async fn on_gossip(
@@ -446,140 +504,5 @@ impl InboundHandler for DaemonHandler {
                 }
             }
         }
-    }
-}
-
-impl DaemonHandler {
-    /// Mutual Aid §14.3 — a peer holding a watch slot is telling us a
-    /// record's subkey changed.
-    ///
-    /// This is Plumtree's lazy push. Veilid reserves only
-    /// `member_watch_limit` (8) signed watch slots plus
-    /// `public_watch_limit` (32) anonymous ones **per record**, so in a
-    /// community of any size most members hold no watch on any given
-    /// record. Peers that do hold one relay the notification — the
-    /// `IHAVE` — and we pull the value ourselves.
-    ///
-    /// The relay carries a `content_hash` and no ciphertext, on purpose:
-    /// gossip is unencrypted at the envelope layer, so shipping the
-    /// value would leak it to every hop. The hash lets us verify that
-    /// what we fetched is what the observer saw.
-    async fn on_watch_relay(
-        &self,
-        record_key: &str,
-        subkey: u32,
-        content_hash: &str,
-        observer_pseudonym: &str,
-    ) {
-        let Some(transport) = self.transport.read().clone() else {
-            return;
-        };
-
-        // If we hold our own watch on this record, our value-change
-        // callback covers the same change — skip the redundant fetch.
-        // Members without a slot fall through, which is the whole point
-        // of the relay.
-        let we_watch = self
-            .subscriptions
-            .read()
-            .as_ref()
-            .is_some_and(|manager| manager.has_watch(record_key));
-        if we_watch {
-            tracing::trace!(
-                record_key,
-                subkey,
-                "watch relay: own watch covers this record"
-            );
-            return;
-        }
-
-        let Ok(Some(value)) = rekindle_transport::broadcast::dht_writes::get(
-            transport.as_ref(),
-            record_key,
-            subkey,
-            true,
-        )
-        .await
-        else {
-            return;
-        };
-
-        let actual = blake3::hash(&value).to_hex().to_string();
-        if actual != content_hash {
-            debug!(
-                record_key,
-                subkey,
-                observer = &observer_pseudonym[..12.min(observer_pseudonym.len())],
-                "watch relay: content hash mismatch, dropping"
-            );
-            return;
-        }
-
-        self.on_value_change(record_key, vec![subkey], Some(value))
-            .await;
-    }
-}
-
-impl DaemonHandler {
-    /// Broadcast a `WatchRelay` for a change our own watch reported.
-    ///
-    /// The relay names the record, the subkey and a BLAKE3 hash of the
-    /// new value — never the value. Gossip is unencrypted at the
-    /// envelope layer, so shipping the bytes would hand a channel
-    /// message's ciphertext to every forwarding hop; the hash is what a
-    /// watchless peer verifies its own fetch against.
-    ///
-    /// Silent when we hold no watch on the record: `on_value_change`
-    /// also fires for values we pulled after someone else's relay, and
-    /// re-relaying those would put one change into an endless loop
-    /// around the mesh (the dedup cache would break the loop, but only
-    /// after the traffic had gone out).
-    fn relay_watch_change(&self, record_key: &str, changed_subkeys: &[u32], value: Option<&[u8]>) {
-        let Some(value) = value else {
-            // No first value means either a multi-subkey change (the
-            // caller must fetch each one anyway) or a dead watch. In
-            // both cases we have no hash to publish.
-            return;
-        };
-        let Some(subkey) = changed_subkeys.first().copied() else {
-            return;
-        };
-        let we_watch = self
-            .subscriptions
-            .read()
-            .as_ref()
-            .is_some_and(|manager| manager.has_watch(record_key));
-        if !we_watch {
-            return;
-        }
-
-        // Which community does this record belong to, and who are we in
-        // it? A relay has to be attributable — `observer_pseudonym` is
-        // what lets a receiver weigh it.
-        let Some((community_id, observer)) = self.community_for_record(record_key) else {
-            return;
-        };
-
-        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::WatchRelay {
-            record_key: record_key.to_string(),
-            subkey,
-            content_hash: blake3::hash(value).to_hex().to_string(),
-            observer_pseudonym: observer,
-        };
-        crate::daemon::gossip::send(&self.gossip_tx, &community_id, &envelope);
-    }
-
-    /// `(community_id, my_pseudonym)` for whichever community owns this
-    /// record — governance, registry, or one of its channel records.
-    fn community_for_record(&self, record_key: &str) -> Option<(String, String)> {
-        let guard = self.session.read();
-        let session = guard.as_ref()?;
-        session.communities.values().find_map(|m| {
-            let ours = m.governance_key == record_key
-                || m.registry_key == record_key
-                || m.channel_record_keys.values().any(|k| k == record_key);
-            (ours && !m.pseudonym_key.is_empty())
-                .then(|| (m.governance_key.clone(), m.pseudonym_key.clone()))
-        })
     }
 }

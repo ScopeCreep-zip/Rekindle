@@ -24,6 +24,7 @@ pub mod governance_rpc;
 pub mod handler;
 pub mod mek_rotation;
 pub mod presence_adapter;
+mod watch_relay;
 
 pub use rekindle_lifecycle::{
     AppLifecycle as DaemonLifecycle, LifecycleError, LifecycleState as DaemonState, TransportGuard,
