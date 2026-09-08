@@ -200,20 +200,21 @@ fn types_in(src: &str) -> Vec<(String, usize)> {
         // Only *declarations*: `pub struct Foo`, `enum Bar`, `type Baz =`.
         // A `pub use` re-export names the same type and must not count as
         // a second declaration — that is how a facade would be flagged.
-        let rest = [
-            "pub struct ",
-            "pub enum ",
-            "pub type ",
-            "struct ",
-            "enum ",
-            "type ",
-        ]
-        .iter()
-        .find_map(|kw| t.strip_prefix(kw));
+        // `pub` only, including `pub(crate)`/`pub(super)`. A private type
+        // is invisible outside its crate, so it cannot be confused with
+        // another crate's — `struct CachedRoute` in transport's peer
+        // registry and `struct InviteContext` in the join flow are
+        // local details, not competing definitions.
+        let vis = t
+            .strip_prefix("pub(crate) ")
+            .or_else(|| t.strip_prefix("pub(super) "))
+            .or_else(|| t.strip_prefix("pub "));
+        let Some(vis) = vis else { continue };
+        let rest = ["struct ", "enum ", "type "]
+            .iter()
+            .find_map(|kw| vis.strip_prefix(kw));
         let Some(rest) = rest else { continue };
-        if t.starts_with("pub use") || t.starts_with("use ") {
-            continue;
-        }
+
         let name: String = rest
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '_')

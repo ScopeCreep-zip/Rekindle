@@ -60,28 +60,6 @@ pub struct ChannelMessageDto {
     pub reactions: Vec<ReactionGroupDto>,
 }
 
-/// Helper for `skip_serializing_if` on `u32` fields that default to 0.
-///
-/// `serde`'s `skip_serializing_if` always passes by reference, so `&u32` is required.
-fn is_zero(v: &u32) -> bool {
-    *v == 0
-}
-
-/// Channel info as returned by the server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelInfoDto {
-    pub id: String,
-    pub name: String,
-    pub channel_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category_id: Option<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub topic: String,
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub slowmode_seconds: u32,
-}
-
 /// A channel category as returned by the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,20 +155,4 @@ pub struct GameServerDto {
 pub struct UnreadCountDto {
     pub channel_id: String,
     pub unread_count: u32,
-}
-
-/// A thread (branching conversation from a channel message).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadInfoDto {
-    pub id: String,
-    pub channel_id: String,
-    pub name: String,
-    pub starter_message_id: String,
-    pub creator_pseudonym: String,
-    pub created_at: u64,
-    pub archived: bool,
-    pub auto_archive_seconds: u32,
-    pub last_message_at: u64,
-    pub message_count: u32,
 }

@@ -100,18 +100,10 @@ pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as
 
 // ── Member types ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberPresence {
-    pub pseudonym_key: String,
-    pub status: String,
-    pub status_message: Option<String>,
-    pub game_info: Option<String>,
-    pub route_blob: Option<Vec<u8>>,
-    pub last_heartbeat: u64,
-    #[serde(default)]
-    pub is_archiver: bool,
-}
+// `MemberPresence` lived here with no reader — the third copy of that
+// name this migration has removed. The live type is
+// `rekindle_types::presence::MemberPresence`, which this crate's own
+// `operations/community/leave.rs` already imports directly.
 
 // ── Ban types ───────────────────────────────────────────────────────
 

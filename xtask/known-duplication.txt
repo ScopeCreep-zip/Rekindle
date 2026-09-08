@@ -54,13 +54,11 @@ css flex: 1 ; overflow-y: auto ; padding: 4px
 css flex: 1 ; overflow-y: auto ; padding: 4px 0
 css flex: 1 ; overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
 css overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
-type rekindle (src-tauri)::ChannelInfoDto rekindle-protocol::ChannelInfoDto
 type rekindle (src-tauri)::ChannelMessageRow rekindle-channel::ChannelMessageRow
 type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
 type rekindle (src-tauri)::CommunityRecords rekindle-records::CommunityRecords
 type rekindle (src-tauri)::EventRsvpEntry rekindle-presence::EventRsvpEntry
 type rekindle (src-tauri)::ExclusionGroupEdit rekindle-governance-runtime::ExclusionGroupEdit
-type rekindle (src-tauri)::InviteContext rekindle-governance-runtime::InviteContext
 type rekindle (src-tauri)::MemberProfileSnapshot rekindle-channel::MemberProfileSnapshot rekindle-presence::MemberProfileSnapshot
 type rekindle (src-tauri)::Message rekindle-node::Message
 type rekindle (src-tauri)::OnlineMember rekindle-transport::OnlineMember
@@ -68,7 +66,6 @@ type rekindle (src-tauri)::PendingFriendRequest rekindle-transport::PendingFrien
 type rekindle (src-tauri)::PresenceEvent rekindle-types::PresenceEvent
 type rekindle (src-tauri)::RoleDto rekindle-protocol::RoleDto
 type rekindle (src-tauri)::SharedState rekindle-transport::SharedState
-type rekindle (src-tauri)::ThreadInfoDto rekindle-protocol::ThreadInfoDto
 type rekindle (src-tauri)::VoiceEvent rekindle-types::VoiceEvent
 type rekindle-audit::AuditEntry rekindle-node::AuditEntry
 type rekindle-calls::CallError rekindle-transport::CallError
@@ -77,15 +74,9 @@ type rekindle-cli::ChannelEntry rekindle-types::ChannelEntry
 type rekindle-cli::PolicyConfig rekindle-node::PolicyConfig
 type rekindle-crypto::CryptoError rekindle-types::CryptoError
 type rekindle-crypto::PreKeyBundle rekindle-protocol::PreKeyBundle
-type rekindle-crypto::SharedSessionStore rekindle-transport::SharedSessionStore
 type rekindle-crypto::SignalSessionManager rekindle-transport::SignalSessionManager
 type rekindle-dm::GroupDmParticipant rekindle-transport::GroupDmParticipant
-type rekindle-dm::PartialFrame rekindle-video::PartialFrame
-type rekindle-e2e-server::ServerState rekindle-node::ServerState
 type rekindle-gossip::GossipError rekindle-types::GossipError
-type rekindle-gossip::GossipMesh rekindle-transport::GossipMesh
 type rekindle-governance-runtime::OnlineMemberSnapshot rekindle-presence::OnlineMemberSnapshot
 type rekindle-governance-runtime::SegmentDescriptor rekindle-presence::SegmentDescriptor
 type rekindle-protocol::MekTransferPayload rekindle-transport::MekTransferPayload
-type rekindle-route::CachedRoute rekindle-transport::CachedRoute
-type rekindle-transport::MemberPresence rekindle-types::MemberPresence

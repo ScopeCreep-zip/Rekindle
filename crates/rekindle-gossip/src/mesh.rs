@@ -1,25 +1,13 @@
 //! Gossip mesh peer tracking helpers and fan-out selection rules.
 
-use std::collections::HashMap;
-
-/// Minimal mesh state that tracks selected peers and the broader online set.
-#[derive(Debug, Clone, Default)]
-pub struct GossipMesh<T> {
-    pub peers: HashMap<String, T>,
-    pub online_members: HashMap<String, T>,
-    pub needs_initial_sync: bool,
-}
-
-impl<T> GossipMesh<T> {
-    /// Create an empty mesh in the initial-sync state.
-    pub fn new() -> Self {
-        Self {
-            peers: HashMap::new(),
-            online_members: HashMap::new(),
-            needs_initial_sync: true,
-        }
-    }
-}
+// `GossipMesh<T>` lived here and was never used — not by this crate, not
+// re-exported from its `lib.rs`, not imported anywhere. It is a leftover
+// from plan item 4.8, which converged the gossip *primitives*
+// (`fanout_degree`, `DEFAULT_TTL`, `LamportClock`, `TokenBucket`) into
+// this crate and left the struct behind. The live mesh is
+// `rekindle_transport::gossip::GossipMesh`, which carries
+// `community_id`, the clock and the rate limiter rather than a bare
+// peer map, and which imports this crate's functions.
 
 /// Compute the mesh fan-out degree for the current online population.
 ///
