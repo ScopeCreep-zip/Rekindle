@@ -52,7 +52,14 @@ export function viteDevServer(mode: "e2e" | "mock"): WebServerConfig {
   return {
     command: `${flag} pnpm dev`,
     url: FRONTEND_URL,
-    reuseExistingServer: !process.env.CI,
+    // Never reuse. The two modes need *different* server environments,
+    // and a server already on :1420 carries no signal about which flag
+    // started it — a plain `pnpm dev` left running makes every mock test
+    // fail with `window.__mockWindows is not a function`, because
+    // index.html only injects the mocks when VITE_PLAYWRIGHT is set.
+    // That cost is one dev-server start per run; the alternative is a
+    // suite whose result depends on what else you had open.
+    reuseExistingServer: false,
     timeout: 60_000,
   };
 }

@@ -9,12 +9,11 @@
 //   pnpm exec depcruise --config .dependency-cruiser.cjs --output-type dot src \
 //     | dot -Tsvg > deps.svg
 //
-// CI gate: .github/workflows/lint.yml `frontend-arch` job. The step is
-// guarded on the dependency-cruiser binary being present, which it is
-// not yet — see docs/contributor/linting.md "Pending devDependencies".
-// Until that lands these rules document the boundary rather than
-// enforce it; biome's noRestrictedImports covers the Tauri-import
-// subset in the meantime.
+// CI gate: .github/workflows/lint.yml `frontend-arch` job, which now
+// runs it for real — `dependency-cruiser` is a devDependency and the
+// step's "is the binary present" guard is gone. Before that the job
+// existed but its only step always skipped, so these rules documented
+// the boundary rather than enforcing it.
 //
 // Tiers (lower may be imported by higher; never the reverse):
 //
@@ -47,11 +46,16 @@ module.exports = {
       comment:
         "Direct imports of @tauri-apps/api defeat the typed wrapper layer. " +
         "Use src/ipc/commands.ts or src/ipc/channels.ts.",
+      // `pathNot` rather than a `(?!ipc/)` lookahead: dependency-cruiser
+      // 18 refuses lookahead in a path regex as ReDoS-unsafe and bails
+      // out of the whole run, which is one way this gate could have kept
+      // reporting success while checking nothing.
       from: {
-        path: "^src/(?!ipc/)",
+        path: "^src/",
+        pathNot: "^src/ipc/",
       },
       to: {
-        path: "^@tauri-apps/api(/.*)?$",
+        path: "^@tauri-apps/api($|/)",
       },
     },
     {
@@ -61,12 +65,14 @@ module.exports = {
         "Direct imports of Tauri plugins defeat the typed wrapper layer. " +
         "Wrap the plugin in a thin module under src/ipc/ first.",
       from: {
-        path: "^src/(?!ipc/)",
+        path: "^src/",
+        pathNot: "^src/ipc/",
       },
       to: {
-        path: "^@tauri-apps/plugin-(?!opener$)",
+        path: "^@tauri-apps/plugin-",
         // `@tauri-apps/plugin-opener` is the documented path for safe
         // external-URL navigation — see frontend-rendering.md gate 4.
+        pathNot: "^@tauri-apps/plugin-opener$",
       },
     },
 
@@ -199,11 +205,16 @@ module.exports = {
         "tier-aware backstop.",
       from: {
         orphan: true,
+        // Every pattern here is single-quantifier by construction.
+        // dependency-cruiser rejects nested quantifiers as ReDoS-unsafe
+        // and aborts the entire run on the first one it sees, so a
+        // `(?:\\.\\w+)*\\.` here silently disabled all 200-odd lines of
+        // tier rules rather than just this one.
         pathNot: [
-          "(^|/)\\.[^/]+\\.(?:js|cjs|mjs|ts|tsx|json)$",
+          "(^|/)\\.[^/.]+\\.(?:js|cjs|mjs|ts|tsx|json)$",
           "\\.d\\.ts$",
-          "(^|/)tsconfig\\.[^/]+\\.json$",
-          "(^|/)(?:babel|webpack|vite|playwright|knip|biome)(?:\\.\\w+)*\\.(?:js|cjs|mjs|ts|json)$",
+          "(^|/)tsconfig\\.[^/.]+\\.json$",
+          "(^|/)(?:babel|webpack|vite|playwright|knip|biome)[^/]*\\.(?:js|cjs|mjs|ts|json)$",
         ],
       },
       to: {},

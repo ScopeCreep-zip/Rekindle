@@ -10,10 +10,13 @@
 // Kept separate from tsconfig.json so `pnpm build` (tsc && vite build)
 // stays scoped to shipped app code; run via `pnpm typecheck`.
 //
-// Scope is e2e/** only. playwright.config.ts and
-// playwright.security.config.ts read `process.env`, which needs
-// @types/node — not a dependency of this project, and not worth adding
-// for two config files that Playwright itself executes on every run.
+// Scope is e2e/** only. The playwright.*.config.ts files read
+// `process.env` and are covered by tsconfig.node.json, which carries
+// @types/node. That judgement was revisited when the shared
+// playwright.base.config.ts was extracted: three config files with real
+// logic in them is past the point where "Playwright executes them
+// anyway" covers it, and keeping `node` types in a separate project
+// means they never reach src/**.
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {

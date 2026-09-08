@@ -115,3 +115,6 @@ ehthumbs.db
 *.sqlite-shm
 .gitsecret/keys/random_seed
 !*.secret
+
+# TypeScript project-references build cache (tsconfig.node.json is composite)
+*.tsbuildinfo
