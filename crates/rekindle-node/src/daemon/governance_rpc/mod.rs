@@ -11,8 +11,6 @@ use rekindle_transport::payload::rpc::{CallResponse, GovernanceOp, GovernanceReq
 
 use super::community_rpc::{open_registry_writable, HANDLER_DEADLINE};
 
-mod channels;
-mod moderation;
 mod roles;
 
 pub(super) fn get_node(
@@ -94,14 +92,6 @@ async fn handle_op_inner(
     // operation explicitly (not `_`) so adding a `GovernanceOp` is a compile
     // error here — exhaustiveness is preserved at this dispatch point.
     match req.operation {
-        GovernanceOp::RegisterChannelRecord { .. } => {
-            moderation::handle_op_group_a(req.operation, session, transport, gov_key).await
-        }
-        GovernanceOp::CreateChannel { .. }
-        | GovernanceOp::DeleteChannel { .. }
-        | GovernanceOp::UpdateChannel { .. } => {
-            channels::handle_op_group_b(req.operation, session, transport, gov_key).await
-        }
         GovernanceOp::CreateRole { .. }
         | GovernanceOp::UpdateRole { .. }
         | GovernanceOp::DeleteRole { .. }

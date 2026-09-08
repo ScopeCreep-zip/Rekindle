@@ -334,12 +334,19 @@ genesis — the record has no privileged owner.
 - **Governance record** — every member writes their
   `GovernanceEntry` history to their assigned subkey. Reader merges
   all subkeys via `rekindle-governance::merge::merge()`.
-- **Member registry record** — claim-and-hold slot model. Members
-  claim a free subkey on join. The MEK vault lives here too,
-  encrypted per-slot.
-- **Channel records** — one SMPL record per channel for message
-  persistence. Same 255-subkey layout. Channel `message_record_key`
-  is stored on the `channels` SQLite row.
+- **Member registry record** — a presence directory, not a ledger.
+  Members claim a free subkey on join and overwrite it each
+  heartbeat; it never grows. Membership is a predicate over these
+  rows (validly signed, not banned, not departed), computed by
+  `rekindle_governance_runtime::roster`. Nothing community-wide
+  lives here: the member index, MEK vault and moderation queue were
+  v1.0 owner subkeys that `o_cnt: 0` credentials nobody to write.
+- **Channel records** — one SMPL record per `(channel, segment)` for
+  message persistence, each member writing to their own slot subkey.
+  Same 255-subkey layout. The segment-0 record key is
+  `ChannelCreated.record_key` in merged governance; further segments
+  are announced with `ChannelSegmentLinked`, so discovery needs no
+  registration step.
 
 When a community grows beyond 255 members, **Plate Gates** add
 fractal SMPL segments. `community_members.segment_index` and

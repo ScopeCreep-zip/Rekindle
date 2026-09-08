@@ -1,143 +1,41 @@
-//! Phase 23.C — local MEK rotation lifted from
-//! `commands/community/legacy/control.rs`. Generate the next-gen MEK,
-//! wrap one copy per registered member, persist to the vault SMPL
-//! record, update AppState + keystore + cache, and broadcast
-//! `MEKRotated`. Used by `commands/community/mek.rs::rotate_mek`.
+//! Operator-requested community MEK rotation.
+//!
+//! Now a thin shell over
+//! [`rekindle_mek_rotation::rotate_mek_on_request`], which both tracks
+//! drive. What it replaced was the last MEK-vault writer in the
+//! workspace, and it was wrong in three independent ways:
+//!
+//! * It published wrapped copies to the registry's MEK-vault subkey — a
+//!   write `o_cnt: 0` grants nobody a credential for, of a key
+//!   `communities-channels.md` says is *"**never** written to DHT"*.
+//! * It read the v1.0 member index to enumerate recipients.
+//! * It refused to run without a `registry_owner_keypair`, making
+//!   rotation a creator privilege. That is the coordinator in
+//!   miniature.
+//!
+//! Delivery is now per-recipient `app_call` over the gossip overlay's
+//! online set, the same path a departure rotation takes.
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use std::sync::Arc;
 
 use crate::state::SharedState;
-use crate::state_helpers;
 
 pub async fn rotate_mek_local(
+    app_handle: &tauri::AppHandle,
     state: &SharedState,
     community_id: &str,
-    keystore: &crate::keystore::KeystoreHandle,
 ) -> Result<(), String> {
-    use rekindle_crypto::group::media_key::MediaEncryptionKey;
-    use rekindle_crypto::group::mek_distribution::wrap_mek;
-    use rekindle_protocol::dht::community::member_registry;
-    use rekindle_protocol::dht::community::types::{EncryptedMEKCopy, MEKVaultEntry};
+    let pool = tauri::Manager::try_state::<crate::db::DbPool>(app_handle)
+        .ok_or_else(|| "DbPool state missing".to_string())?
+        .inner()
+        .clone();
+    let adapter =
+        crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
 
-    let current_gen = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .map_or(0, |c| c.mek_generation)
-    };
-    let new_gen = current_gen + 1;
-
-    let (my_signing_key, my_pseudonym, registry_key, registry_owner_kp) = {
-        let communities = state.communities.read();
-        let c = communities.get(community_id).ok_or("community not found")?;
-        let registry_key = c
-            .member_registry_key
-            .clone()
-            .ok_or("no member registry key")?;
-        let registry_kp = c
-            .registry_owner_keypair
-            .clone()
-            .ok_or("no registry_owner_keypair — only admins can rotate MEK")?;
-        let my_pseudonym = c.my_pseudonym_key.clone().ok_or("no pseudonym key")?;
-        let secret = state.identity_secret.lock();
-        let signing_key = match *secret {
-            Some(ref s) => {
-                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id)
-            }
-            None => return Err("no identity secret".into()),
-        };
-        (signing_key, my_pseudonym, registry_key, registry_kp)
-    };
-
-    // Stamp the minter's election rank so concurrent admin rotations at the
-    // same generation converge deterministically (lowest rank wins on every
-    // peer). Manual rotation has no departed/trigger member, so use a zero
-    // context — the rank is then a stable per-minter tiebreak.
-    let mek = match hex::decode(&my_pseudonym)
-        .ok()
-        .and_then(|b| <[u8; 32]>::try_from(b).ok())
-    {
-        Some(me) => {
-            let rank = rekindle_secrets::rotator::election_hash(&[0u8; 32], &me);
-            MediaEncryptionKey::generate(new_gen).with_provenance(me, rank)
-        }
-        None => MediaEncryptionKey::generate(new_gen),
-    };
-
-    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
-    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
-    if let Ok(kp) = registry_owner_kp.parse::<veilid_core::KeyPair>() {
-        if let Err(e) = mgr.open_record_writable(&registry_key, kp).await {
-            tracing::warn!(error = %e, "failed to open registry writable for MEK rotation");
-        }
-    }
-
-    let members = member_registry::read_member_index(&mgr, &registry_key)
+    // `None` = the community-wide key. The adapter's `MekPersist` impl
+    // writes it to the keystore, so the caller no longer threads a
+    // `KeystoreHandle` in just for that.
+    rekindle_mek_rotation::rotate_mek_on_request(adapter.as_ref(), community_id, None)
         .await
-        .map_err(|e| format!("read member index: {e}"))?;
-
-    let mek_wire = mek.to_wire_bytes();
-    let mut copies = Vec::with_capacity(members.len());
-    for member in &members {
-        let Some(pub_bytes): Option<[u8; 32]> = hex::decode(&member.pseudonym_key)
-            .ok()
-            .and_then(|b| b.try_into().ok())
-        else {
-            tracing::warn!(
-                member = %member.pseudonym_key,
-                "skipping MEK wrap — invalid pseudonym key"
-            );
-            continue;
-        };
-        match wrap_mek(&my_signing_key, &pub_bytes, &mek_wire) {
-            Ok(encrypted) => {
-                copies.push(EncryptedMEKCopy {
-                    target_pseudonym: member.pseudonym_key.clone(),
-                    encrypted_mek: encrypted,
-                });
-            }
-            Err(e) => {
-                tracing::warn!(
-                    member = %member.pseudonym_key,
-                    error = %e,
-                    "failed to wrap MEK for member"
-                );
-            }
-        }
-    }
-
-    let vault_entry = MEKVaultEntry {
-        channel_id: String::new(),
-        generation: new_gen,
-        rotator_pseudonym: my_pseudonym.clone(),
-        copies,
-    };
-    member_registry::write_mek_vault(&mgr, &registry_key, &[vault_entry])
-        .await
-        .map_err(|e| format!("write MEK vault: {e}"))?;
-
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.mek_generation = new_gen;
-        }
-    }
-    if state_helpers::install_community_mek(state, community_id, mek) {
-        crate::services::community::media_ready_runtime::on_mek_updated(state, community_id, None);
-    }
-
-    if let Some(ref ks) = *keystore.lock() {
-        if let Some(mek) = state.mek_cache.lock().get(community_id) {
-            crate::keystore::persist_mek(ks, community_id, mek);
-        }
-    }
-
-    let envelope = CommunityEnvelope::Control(ControlPayload::MEKRotated {
-        channel_id: None,
-        new_generation: new_gen,
-        rotator_pseudonym: None,
-    });
-    let _ = crate::services::community::send_to_mesh(state, community_id, &envelope);
-
-    Ok(())
+        .map_err(|e| e.to_string())
 }

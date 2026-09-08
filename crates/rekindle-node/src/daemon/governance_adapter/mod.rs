@@ -5,7 +5,7 @@
 //! v2.0 flat-SMPL governance the Tauri host does. Before this existed,
 //! `rekindle-node` had no dependency on `rekindle-governance-runtime`
 //! at all and drove membership through the v1.0 coordinator accessors
-//! (`read/write_member_index`, `read/write_mek_vault`).
+//! (the v1.0 `read/write_member_index` accessors, now deleted).
 //!
 //! **This is a second adapter behind one trait, not a duplicate.**
 //! `docs/architecture/services-pattern.md` §2 defines an adapter as

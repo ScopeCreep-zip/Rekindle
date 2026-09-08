@@ -5,6 +5,7 @@
 //! record type used by Rekindle.
 
 pub mod channel_log;
+pub mod channel_smpl;
 pub mod friend_list;
 pub mod governance;
 pub mod mailbox;

@@ -1,16 +1,13 @@
 //! Phase 23.C — channel-creation runtime orchestration lifted from
 //! `commands/community/channels.rs`. Same pattern as the sibling
 //! `community_*_runtime.rs` modules: legitimate Tauri-runtime glue
-//! (DHT record creation + governance entry write + AppState mutation
-//! + SQLite persist), no protocol decisions in the body.
+//! (AppState mutation + SQLite persist), no protocol decisions in the
+//! body. Record creation and the `ChannelCreated` write moved into
+//! `rekindle_governance_runtime::channels`, which the daemon calls too.
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::schema;
-use rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT;
-use rekindle_secrets::derive;
 use rekindle_types::permissions;
-use veilid_core::CRYPTO_KIND_VLD0;
 
 use crate::db::DbPool;
 use crate::db_helpers::db_call;
@@ -26,11 +23,10 @@ pub async fn create_channel_inner(
     category_id: Option<String>,
     parent_voice_channel_id: Option<String>,
 ) -> Result<String, String> {
-    use crate::commands::community::helpers::{hex_to_id_16, random_16_bytes, require_permission};
+    use crate::commands::community::helpers::{hex_to_id_16, require_permission};
 
     require_permission(&state, &community_id, permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(&state)?;
-    let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
     let next_position = {
         let communities = state.communities.read();
         let community = communities
@@ -49,8 +45,6 @@ pub async fn create_channel_inner(
         )
     };
 
-    let channel_id_bytes = random_16_bytes();
-    let channel_id = hex::encode(channel_id_bytes);
     let parsed_category_id = category_id
         .as_deref()
         .map(|id| rekindle_types::id::CategoryId(hex_to_id_16(id)));
@@ -58,51 +52,32 @@ pub async fn create_channel_inner(
         .as_deref()
         .map(|id| rekindle_types::id::ChannelId(hex_to_id_16(id)));
 
-    let slot_seed_hex = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|community| community.slot_seed.clone())
-            .ok_or("no slot seed available for community")?
-    };
-    let slot_seed_bytes: [u8; 32] = hex::decode(&slot_seed_hex)
-        .map_err(|e| format!("invalid slot seed hex: {e}"))?
-        .try_into()
-        .map_err(|_| "slot seed must be 32 bytes")?;
-    let mut member_pubkeys = Vec::with_capacity(MAX_MEMBERS_PER_SEGMENT);
-    for index in 0..MAX_MEMBERS_PER_SEGMENT {
-        let keypair = derive::derive_slot_keypair(
-            &slot_seed_bytes,
-            u32::try_from(index).map_err(|_| "slot index overflow")?,
-        )
-        .map_err(|e| format!("slot keypair derivation failed at index {index}: {e}"))?;
-        member_pubkeys.push(keypair.verifying_key().to_bytes());
-    }
-    let channel_schema = schema::community_smpl_schema(&member_pubkeys)
-        .map_err(|e| format!("channel schema creation failed: {e}"))?;
-    let channel_desc = rc
-        .create_dht_record(CRYPTO_KIND_VLD0, channel_schema, None)
-        .await
-        .map_err(|e| format!("channel record creation failed: {e}"))?;
-    let record_key = channel_desc.key().to_string();
-    state_helpers::track_open_records(&state, std::slice::from_ref(&record_key));
-
-    let lamport = state_helpers::increment_lamport(&state, &community_id);
-    crate::services::community::write_entry(
-        &state,
+    // Record creation + `ChannelCreated` in one call, shared with the
+    // daemon. Both shells were assembling this by hand, and only one of
+    // them got it right: the daemon appended to the v1.0 manifest
+    // channels subkey with no record key at all.
+    let app_handle = state_helpers::app_handle(&state).ok_or("app handle not initialized")?;
+    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
+        Arc::clone(&state),
+        app_handle,
+        pool.clone(),
+    );
+    let created = rekindle_governance_runtime::channels::create_channel(
+        &adapter,
         &community_id,
-        rekindle_types::governance::GovernanceEntry::ChannelCreated {
-            channel_id: rekindle_types::id::ChannelId(channel_id_bytes),
+        rekindle_governance_runtime::channels::NewChannel {
             name: name.clone(),
             channel_type: channel_type.clone(),
-            record_key: record_key.clone(),
             category_id: parsed_category_id,
             position: next_position,
             parent_voice_channel_id: parsed_parent_voice,
-            lamport,
         },
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
+    let channel_id = created.channel_id_hex.clone();
+    let record_key = created.record_key.clone();
+    state_helpers::track_open_records(&state, std::slice::from_ref(&record_key));
 
     let channel_type: ChannelType = channel_type.parse().unwrap_or(ChannelType::Text);
     let channel = crate::state::ChannelInfo {

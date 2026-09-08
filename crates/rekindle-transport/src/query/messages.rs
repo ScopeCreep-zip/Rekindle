@@ -1,5 +1,7 @@
 //! Channel listing and decrypted channel history.
 
+use std::collections::HashMap;
+
 use crate::error::Result;
 use crate::payload::dht_types::ChannelMessage;
 
@@ -17,111 +19,62 @@ impl QueryEngine {
 
     /// Read channel message history with MEK decryption.
     ///
-    /// Per-member DhtLog architecture: each member owns their own
-    /// append-only DhtLog per channel. This method scans the member
-    /// registry for channel_records entries, opens each member's DhtLog,
-    /// reads the last N messages from each, decrypts with the MEK, and
-    /// merges all messages by (lamport_ts, sender_pseudonym) for
-    /// deterministic total ordering across high-latency links.
+    /// SMPL segment-record architecture: one record per `(channel,
+    /// segment)`, every member writing to their own slot subkey.
+    /// `record_keys` is `(segment_index, record_key)` as merged
+    /// governance reports it, and `display_names` maps a pseudonym to
+    /// the name the presence roster observed for it.
+    ///
+    /// This used to read the registry's member-index subkey to learn
+    /// each member's `DhtLog` spine key. That subkey is a community-wide
+    /// aggregate no `o_cnt: 0` writer is credentialed for, and it was
+    /// the last thing keeping the index alive on this track.
     pub async fn channel_history(
         &self,
         community_id: &str,
         channel_id: &str,
-        _channel_log_key: &str,
-        registry_key: &str,
+        record_keys: &[(u32, String)],
+        display_names: &HashMap<String, String>,
         limit: usize,
-        local_channel_record_keys: &std::collections::HashMap<String, String>,
     ) -> Result<Vec<DecryptedMessageDisplay>> {
-        // Read member index with force_refresh=true to get the latest
-        // channel_records entries (RegisterChannelRecord may have just completed).
-        let members: Vec<crate::payload::dht_types::MemberSummary> =
-            match crate::broadcast::dht::record::get(
+        let member_count = crate::payload::dht_types::SLOTS_PER_SEGMENT;
+        let mut raw_messages: Vec<ChannelMessage> = Vec::new();
+
+        for (segment_index, record_key) in record_keys {
+            match crate::broadcast::dht::channel_smpl::read_messages(
                 self.dht.routing_context(),
-                registry_key,
-                crate::payload::dht_types::REGISTRY_MEMBER_INDEX,
-                true,
+                record_key,
+                member_count,
             )
             .await
             {
-                Ok(Some(data)) => serde_json::from_slice(&data).unwrap_or_default(),
-                _ => Vec::new(),
-            };
-
-        // Collect all known DhtLog keys: from registry + from local session.
-        // Local session has our own channel_record_keys that may not have
-        // propagated to the registry yet (RegisterChannelRecord takes time).
-        let mut log_keys_to_scan: Vec<(String, String)> = Vec::new(); // (display_name, log_key)
-
-        for member in &members {
-            if let Some(log_key) = member.channel_records.get(channel_id) {
-                log_keys_to_scan.push((member.display_name.clone(), log_key.clone()));
-            }
-        }
-
-        // Add our own local record key if not already in the registry list
-        if let Some(local_key) = local_channel_record_keys.get(channel_id) {
-            if !log_keys_to_scan.iter().any(|(_, k)| k == local_key) {
-                log_keys_to_scan.push(("me".to_string(), local_key.clone()));
-            }
-        }
-
-        tracing::info!(
-            channel_id,
-            registry_members = members.len(),
-            log_keys_count = log_keys_to_scan.len(),
-            local_keys = local_channel_record_keys.len(),
-            "channel_history: scanning DhtLogs"
-        );
-
-        // Collect raw messages from each member's DhtLog.
-        let mut raw_messages: Vec<(String, ChannelMessage)> = Vec::new();
-
-        for (display_name, log_key) in &log_keys_to_scan {
-            let log = match crate::broadcast::dht::channel_log::DhtLog::open_read(
-                self.dht.routing_context(),
-                log_key,
-            )
-            .await
-            {
-                Ok(l) => l,
-                Err(e) => {
+                Ok(messages) => raw_messages.extend(messages),
+                Err(error) => {
+                    // One unreadable segment must not blank the whole
+                    // channel — the other segments still hold messages.
                     tracing::warn!(
-                        member = %display_name, log = %log_key,
-                        error = %e, "channel_history: cannot open DhtLog"
+                        channel_id,
+                        segment = segment_index,
+                        record = %record_key,
+                        %error,
+                        "channel_history: segment record unreadable, skipping"
                     );
-                    continue;
                 }
-            };
-
-            // Read the last `limit` entries from this member's log
-            let entries = match log.tail(u32::try_from(limit).unwrap_or(u32::MAX)).await {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::debug!(
-                        member = %display_name, error = %e,
-                        "DhtLog tail read failed"
-                    );
-                    continue;
-                }
-            };
-
-            for raw in &entries {
-                let msg: ChannelMessage = match serde_json::from_slice(raw) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        tracing::debug!(error = %e, "skipping malformed DhtLog entry");
-                        continue;
-                    }
-                };
-                raw_messages.push((display_name.clone(), msg));
             }
         }
+
+        tracing::debug!(
+            channel_id,
+            segments = record_keys.len(),
+            messages = raw_messages.len(),
+            "channel_history: scanned channel segment records"
+        );
 
         // Decrypt — lock scoped to this block, no awaits
         let mut messages = Vec::with_capacity(raw_messages.len());
         {
             let mek_cache = self.mek_cache.read();
-            for (author_name, channel_msg) in &raw_messages {
+            for channel_msg in &raw_messages {
                 let message_id = channel_msg
                     .message_id
                     .clone()
@@ -134,7 +87,14 @@ impl QueryEngine {
                     message_id,
                     sequence: channel_msg.sequence,
                     author_pseudonym: channel_msg.sender_pseudonym.clone(),
-                    author_display_name: author_name.clone(),
+                    // The roster is the only name source now. A message
+                    // from someone who has since left has no row to name
+                    // them, so it falls back to their pseudonym rather
+                    // than rendering blank.
+                    author_display_name: display_names
+                        .get(&channel_msg.sender_pseudonym)
+                        .cloned()
+                        .unwrap_or_else(|| channel_msg.sender_pseudonym.clone()),
                     body,
                     timestamp: channel_msg.timestamp,
                     reply_to_sequence: channel_msg.reply_to,

@@ -26,6 +26,7 @@
 pub mod admission;
 pub mod apply;
 pub mod bootstrap;
+pub mod channels;
 pub mod deps;
 pub mod dht_hydration;
 pub mod error;
@@ -40,14 +41,15 @@ pub mod moderation;
 pub mod origin;
 pub mod overflow;
 pub mod roles;
+pub mod roster;
 pub mod segments;
 
 pub use apply::write_entry;
 pub use bootstrap::build_bootstrap_response;
 pub use deps::{
     ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
-    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, MemberIndexRow, OnlineMemberSnapshot,
-    RecentMessageRow, UserStatusKind,
+    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow,
+    UserStatusKind,
 };
 pub use dht_hydration::{
     hydrate_community_state_from_dht, open_and_track_one_community, open_community_dht_records,

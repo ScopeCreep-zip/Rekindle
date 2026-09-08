@@ -80,18 +80,17 @@ pub mod manifest {
     pub const SUBKEY_COUNT: u32 = 16;
 }
 
-/// Subkey layout for the member registry record (SMPL, `o_cnt: 0`).
+/// The member registry record (SMPL, `o_cnt: 0`) has **no** layout
+/// module, and that absence is the v2.0 design rather than an omission.
 ///
-/// Every subkey is a member slot addressed by its raw index. The
-/// community-wide entries below predate flat governance and still
-/// occupy low indices that now belong to members — see the module
-/// header of `rekindle_transport::broadcast::dht::registry`.
-pub mod registry {
-    pub const MEMBER_INDEX: u32 = 0;
-    pub const MEK_VAULT: u32 = 1;
-    pub const MODERATION_QUEUE: u32 = 5;
-}
-
+/// Every subkey is a member slot addressed by its raw index. The three
+/// community-wide entries that used to live at 0, 1 and 5 —
+/// `MEMBER_INDEX`, `MEK_VAULT`, `MODERATION_QUEUE` — were v1.0 owner
+/// subkeys, and `o_cnt: 0` credentials nobody to write them. Each has
+/// a v2.0 home: membership is derived by scanning signed presence rows
+/// (`rekindle_governance_runtime::roster`), the key is distributed
+/// peer-to-peer (`rekindle-mek-rotation`), and admission is a
+/// `GovernanceEntry`.
 /// Subkey layout for a mailbox record.
 pub mod mailbox {
     pub const ROUTE_BLOB: u32 = 0;

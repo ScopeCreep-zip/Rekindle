@@ -7329,7 +7329,6 @@ dependencies = [
  "blake3",
  "hex",
  "parking_lot 0.12.5",
- "rand 0.8.5",
  "regex",
  "rekindle-codec",
  "rekindle-crypto",
@@ -7684,6 +7683,7 @@ dependencies = [
  "rekindle-governance-runtime",
  "rekindle-lifecycle",
  "rekindle-mek-rotation",
+ "rekindle-presence",
  "rekindle-protocol",
  "rekindle-transport",
  "rekindle-types",
@@ -7869,6 +7869,7 @@ name = "rekindle-utils"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "rand 0.8.5",
  "tokio",
  "tracing",
 ]

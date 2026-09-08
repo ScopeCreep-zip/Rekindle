@@ -155,4 +155,15 @@ pub struct DaemonContext {
     /// `&DaemonContext` handler cannot give it. See
     /// `daemon::mek_rotation`.
     pub mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
+    /// Shutdown handles for the per-community presence polls, keyed by
+    /// governance key.
+    ///
+    /// The polls hold an `Arc<DaemonContext>` and write presence rows,
+    /// so locking has to stop them — otherwise the daemon keeps
+    /// advertising a member whose identity is no longer unlocked.
+    pub presence_shutdowns:
+        parking_lot::Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<()>>>,
+    /// Asks the presence supervisor to start polls. Sent on unlock,
+    /// once the signing key and broadcast manager exist.
+    pub presence_start_tx: crate::daemon::presence_adapter::supervisor::PresenceStartSender,
 }

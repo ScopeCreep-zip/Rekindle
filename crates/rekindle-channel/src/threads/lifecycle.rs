@@ -18,7 +18,7 @@ pub async fn create_thread<D: ChannelMessagingDeps>(
     forum_tag: Option<String>,
     auto_archive_override: Option<u64>,
 ) -> Result<String, ChannelError> {
-    let thread_id_bytes: [u8; 16] = rand::random();
+    let thread_id_bytes = rekindle_utils::random::id_bytes_16();
     let thread_id = hex::encode(thread_id_bytes);
     let thread_type = parent_thread_type(deps, community_id, channel_id)?;
     let auto_archive_seconds = match auto_archive_override {

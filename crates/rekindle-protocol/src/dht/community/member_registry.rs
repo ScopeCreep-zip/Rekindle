@@ -19,10 +19,7 @@
 //! credential that can write them. They are v1.0 leftovers; see
 //! `.claude/plans/` for the migration.
 
-use crate::dht::DHTManager;
 use crate::error::ProtocolError;
-
-use super::types::{MEKVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX};
 
 /// Maximum member slots per registry segment.
 ///
@@ -36,56 +33,6 @@ use super::types::{MEKVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_ME
 /// boundaries, so changing it reshards existing communities. One extra
 /// slot is not worth a wire-visible migration.
 pub const SLOTS_PER_SEGMENT: u32 = 255;
-
-// ── Member index (subkey 0 — see the v1.0 note in the module header) ──
-
-/// Read the member index from the registry.
-pub async fn read_member_index(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<Vec<MemberSummary>, ProtocolError> {
-    match dht.get_value(key, REGISTRY_MEMBER_INDEX).await? {
-        Some(data) => serde_json::from_slice(&data)
-            .map_err(|e| ProtocolError::Deserialization(format!("member index: {e}"))),
-        None => Ok(Vec::new()),
-    }
-}
-
-/// Write the member index to the registry (subkey 0).
-pub async fn write_member_index(
-    dht: &DHTManager,
-    key: &str,
-    members: &[MemberSummary],
-) -> Result<(), ProtocolError> {
-    let bytes = serde_json::to_vec(members)
-        .map_err(|e| ProtocolError::Serialization(format!("member index: {e}")))?;
-    dht.set_value(key, REGISTRY_MEMBER_INDEX, bytes).await
-}
-
-// ── MEK vault (subkey 1 — see the v1.0 note in the module header) ──
-
-/// Read the MEK vault from the registry.
-pub async fn read_mek_vault(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<Vec<MEKVaultEntry>, ProtocolError> {
-    match dht.get_value(key, REGISTRY_MEK_VAULT).await? {
-        Some(data) => serde_json::from_slice(&data)
-            .map_err(|e| ProtocolError::Deserialization(format!("MEK vault: {e}"))),
-        None => Ok(Vec::new()),
-    }
-}
-
-/// Write the MEK vault to the registry (subkey 1).
-pub async fn write_mek_vault(
-    dht: &DHTManager,
-    key: &str,
-    vault: &[MEKVaultEntry],
-) -> Result<(), ProtocolError> {
-    let bytes = serde_json::to_vec(vault)
-        .map_err(|e| ProtocolError::Serialization(format!("MEK vault: {e}")))?;
-    dht.set_value(key, REGISTRY_MEK_VAULT, bytes).await
-}
 
 // ── Pre-allocated SMPL slots (slot seed derivation) ──
 
@@ -126,17 +73,18 @@ pub fn derive_slot_veilid_keypair(
 }
 
 #[cfg(test)]
-mod v1_layout_pin {
-    //! Pins the registry layout **as it is today**, before the Phase 2
-    //! flip, so the migration is caught by a failing assertion rather
-    //! than by review.
+mod layout_invariants {
+    //! The registry layout under `o_cnt: 0`, asserted rather than
+    //! assumed.
     //!
-    //! Two of these assert something that is *wrong* under v2.0 — that
-    //! subkeys 0 and 1 are still addressed as owner slots. They are
-    //! written to fail the moment those accessors are retired, at which
-    //! point this module is deleted with them. Do not "fix" them here.
+    //! This started as a migration pin whose job was to *fail* once the
+    //! v1.0 owner-subkey accessors retired, and it did: a third test
+    //! asserted that `REGISTRY_MEMBER_INDEX` collided with member slot
+    //! 0, and it went when the accessor did. What remains is the
+    //! standing invariant — raw slot addressing, and a schema veilid
+    //! itself agrees is legal.
 
-    use super::{REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX, SLOTS_PER_SEGMENT};
+    use super::SLOTS_PER_SEGMENT;
 
     #[test]
     fn member_slots_are_addressed_raw_with_no_owner_offset() {
@@ -148,26 +96,6 @@ mod v1_layout_pin {
             assert!(slot < SLOTS_PER_SEGMENT, "slot {slot} is in range");
         }
         assert_eq!(SLOTS_PER_SEGMENT, 255);
-    }
-
-    #[test]
-    fn v1_owner_subkeys_still_collide_with_member_slots() {
-        // THE defect Phase 2 step 6 removes. Under `o_cnt: 0` there is
-        // no owner credential, so subkeys 0 and 1 are member slots —
-        // yet the index and MEK-vault accessors still write them. When
-        // those accessors go, this assertion goes with them.
-        assert_eq!(REGISTRY_MEMBER_INDEX, 0);
-        assert_eq!(REGISTRY_MEK_VAULT, 1);
-
-        // A compile-time assertion, not a runtime one: all three are
-        // `const`, so the comparison is decided during compilation and a
-        // runtime `assert!` would be dead weight (clippy says so). As a
-        // `const` block it states the collision as a fact about the
-        // build — both v1.0 owner subkeys land inside the member slot
-        // range, which is exactly why they cannot survive `o_cnt: 0`.
-        const _: () = assert!(
-            REGISTRY_MEMBER_INDEX < SLOTS_PER_SEGMENT && REGISTRY_MEK_VAULT < SLOTS_PER_SEGMENT
-        );
     }
 
     #[test]

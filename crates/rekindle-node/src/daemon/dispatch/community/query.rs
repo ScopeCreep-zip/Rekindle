@@ -1,34 +1,90 @@
 //! Community queries: list, info.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+
+use rekindle_types::display::CommunityOverview;
 
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 
 use crate::daemon::dispatch::{state_error, DaemonContext};
 
-pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+/// List joined communities with their real metadata.
+///
+/// This used to hand-roll `serde_json::json!` with `member_count: 0`
+/// and `channel_count: 0` hardcoded, while `QueryEngine::list_communities`
+/// — which reads the actual governance metadata — sat unwired. The CLI
+/// dashboard has been rendering every community as empty as a result.
+///
+/// Falls back to the session-only shape when the transport is down, so
+/// a detached daemon still lists what it has joined rather than
+/// erroring.
+pub(crate) async fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
-    ctx.require_session(|session| {
-        let communities: Vec<serde_json::Value> = session
+    let memberships = match ctx.require_session(|session| {
+        session
             .communities
             .values()
-            .map(|m| {
-                serde_json::json!({
-                    "governance_key": m.governance_key,
-                    "name": m.community_name,
-                    "description": "",
-                    "member_count": 0,
-                    "channel_count": 0,
-                    "our_pseudonym": m.pseudonym_key,
-                })
-            })
-            .collect();
-        IpcResponse::ok(&communities)
-    })
-    .unwrap_or_else(|e| e)
+            .cloned()
+            .collect::<Vec<rekindle_transport::CommunityMembership>>()
+    }) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+
+    // From the roster the presence poll materialised, not from a DHT
+    // read: every row behind these counts was W26-verified and
+    // ban-filtered when it was scanned.
+    let member_counts: HashMap<String, u32> = memberships
+        .iter()
+        .map(|m| {
+            (
+                m.governance_key.clone(),
+                u32::try_from(ctx.community_runtime.member_count(&m.governance_key))
+                    .unwrap_or(u32::MAX),
+            )
+        })
+        .collect();
+
+    let Ok(transport) = ctx.require_transport() else {
+        return IpcResponse::ok(&session_only_overviews(&memberships, &member_counts));
+    };
+    let query = match transport.query(Arc::clone(&ctx.mek_cache)) {
+        Ok(q) => q,
+        Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
+    };
+    match query.list_communities(&memberships, &member_counts).await {
+        Ok(overviews) => IpcResponse::ok(&overviews),
+        Err(e) => {
+            tracing::debug!(error = %e, "community list: DHT metadata unavailable, using session");
+            IpcResponse::ok(&session_only_overviews(&memberships, &member_counts))
+        }
+    }
+}
+
+/// The overview we can build without reading the DHT: names come from
+/// the persisted membership, channel counts are unknown.
+fn session_only_overviews(
+    memberships: &[rekindle_transport::CommunityMembership],
+    member_counts: &HashMap<String, u32>,
+) -> Vec<CommunityOverview> {
+    memberships
+        .iter()
+        .map(|m| CommunityOverview {
+            governance_key: m.governance_key.clone(),
+            name: m.community_name.clone(),
+            description: String::new(),
+            member_count: member_counts
+                .get(&m.governance_key)
+                .copied()
+                .unwrap_or_default(),
+            channel_count: 0,
+            our_pseudonym: m.pseudonym_key.clone(),
+        })
+        .collect()
 }
 
 pub(crate) async fn handle_info(
@@ -51,7 +107,12 @@ pub(crate) async fn handle_info(
         Ok(q) => q,
         Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
     };
-    match query.community_detail(&membership).await {
+    let member_count = u32::try_from(
+        ctx.community_runtime
+            .member_count(&membership.governance_key),
+    )
+    .unwrap_or(u32::MAX);
+    match query.community_detail(&membership, member_count).await {
         Ok(detail) => IpcResponse::ok(&detail),
         Err(e) => IpcResponse::error(500, format!("community detail: {e}")),
     }

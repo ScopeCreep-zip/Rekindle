@@ -24,7 +24,7 @@
 //! 8. For each new ban: `spawn_text_mek_rotation_for_ban` (fire-and-forget).
 
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::id::{PseudonymKey, RoleId};
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
@@ -186,20 +186,44 @@ pub async fn hydrate_community_state_from_dht<D: GovernanceRuntimeDeps>(deps: &D
 
     for (community_id, registry_key, my_pk) in &registry_info {
         let Some(pk) = my_pk else { continue };
-        let members = match deps.read_member_index_for_registry(registry_key).await {
-            Ok(m) => m,
-            Err(error) => {
-                tracing::debug!(
-                    community = %community_id,
-                    %error,
-                    "failed to read member registry during hydration",
-                );
-                continue;
-            }
+        // Recover our slot by finding the registry row that carries OUR
+        // signature, rather than by reading a member-index row that
+        // claimed to describe us.
+        //
+        // Strictly stronger than what it replaces. The index was a
+        // shared structure under `o_cnt: 0` — any member could write it,
+        // so a row asserting our slot index proved nothing. A presence
+        // row must be signed by the pseudonym it names, and only we hold
+        // that key.
+        //
+        // Roles come from the merged CRDT for the same reason: that is
+        // where role assignments are authoritative.
+        //
+        // Defaulted rather than skipped when absent. This runs *before*
+        // `rebuild_governance_from_dht`, so on a cold
+        // `governance_entries_cache` there is no merged state yet, and
+        // refusing to look would lose the slot recovery entirely. The
+        // state is only used to filter bans and read roles: an empty ban
+        // set means a banned-self row still resolves our slot (which the
+        // member index also did, being ban-blind), and empty roles are a
+        // documented no-op in `apply_recovered_member_state`.
+        let gov_state = deps.governance_state(community_id).unwrap_or_default();
+        let Some(subkey) = crate::roster::find_my_slot(deps, registry_key, pk, &gov_state).await
+        else {
+            continue;
         };
-        if let Some(me) = members.iter().find(|m| &m.pseudonym_key_hex == pk) {
-            deps.apply_recovered_member_state(community_id, me.subkey_index, &me.role_ids);
-        }
+        let role_ids = gov_state
+            .role_assignments
+            .get(&PseudonymKey::from_hex_lossy(pk))
+            .map(|roles| {
+                roles
+                    .iter()
+                    .copied()
+                    .map(RoleId::to_legacy_u32)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        deps.apply_recovered_member_state(community_id, subkey, &role_ids);
     }
 
     for (community_id, _, _) in &registry_info {

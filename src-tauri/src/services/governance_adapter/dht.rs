@@ -3,9 +3,7 @@
 //! resolve the `RoutingContext` via the parent adapter's `rc()`
 //! helper, then map errors uniformly to `GovernanceRuntimeError`.
 
-use rekindle_governance_runtime::{
-    DhtRecordInfo, GovernanceRuntimeError, MemberIndexRow, RecentMessageRow,
-};
+use rekindle_governance_runtime::{DhtRecordInfo, GovernanceRuntimeError, RecentMessageRow};
 use rekindle_protocol::dht::schema;
 use veilid_core::{SetDHTValueOptions, CRYPTO_KIND_VLD0};
 
@@ -285,26 +283,4 @@ pub(super) async fn app_call_peer_impl(
     rc.app_call(veilid_core::Target::RouteId(route_id), payload)
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("app_call: {e}")))
-}
-
-pub(super) async fn read_member_index_for_registry_impl(
-    adapter: &GovernanceAdapter,
-    registry_key: &str,
-) -> Result<Vec<MemberIndexRow>, GovernanceRuntimeError> {
-    use rekindle_protocol::dht::community::member_registry;
-    use rekindle_protocol::dht::DHTManager;
-
-    let rc = adapter.rc()?;
-    let mgr = DHTManager::new(rc);
-    let members = member_registry::read_member_index(&mgr, registry_key)
-        .await
-        .map_err(|e| GovernanceRuntimeError::Adapter(format!("read_member_index: {e}")))?;
-    Ok(members
-        .into_iter()
-        .map(|m| MemberIndexRow {
-            pseudonym_key_hex: m.pseudonym_key,
-            subkey_index: m.subkey_index,
-            role_ids: m.role_ids,
-        })
-        .collect())
 }

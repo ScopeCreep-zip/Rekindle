@@ -11,6 +11,7 @@ description = "Shared utility functions for Rekindle workspace crates"
 retry = ["dep:tokio", "dep:tracing"]
 
 [dependencies]
+rand = { workspace = true }
 # blake3 is NOT optional, deliberately. `blake3_hex` is the single
 # spelling of the content hash that the channel track computes and the
 # sync track verifies; if reaching it required opting into a feature,

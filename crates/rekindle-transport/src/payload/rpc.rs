@@ -92,21 +92,6 @@ pub enum GovernanceOp {
     // `MemberRejected` governance entry and the joiner claims its own
     // slot — so there is nothing to request.
 
-    // ── Channel management ──────────────────────────────────────
-    CreateChannel {
-        name: String,
-        kind: String,
-        topic: Option<String>,
-    },
-    DeleteChannel {
-        channel_id: String,
-    },
-    UpdateChannel {
-        channel_id: String,
-        name: Option<String>,
-        topic: Option<String>,
-    },
-
     // ── Role management ─────────────────────────────────────────
     CreateRole {
         name: String,
@@ -139,15 +124,6 @@ pub enum GovernanceOp {
     // ── Ownership ───────────────────────────────────────────────
     TransferOwnership {
         new_owner_pseudonym: String,
-    },
-
-    // ── Channel record registration ─────────────────────────────
-    /// Member registers their per-channel message record key so other
-    /// members can discover it for history reads.
-    RegisterChannelRecord {
-        member_pseudonym: String,
-        channel_id: String,
-        record_key: String,
     },
 }
 

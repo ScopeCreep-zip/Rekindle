@@ -40,7 +40,6 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 
 use crate::broadcast::node::TransportNode;
-use crate::crypto::mek::MekCache;
 use crate::gossip::GossipMesh;
 use crate::session::Session;
 
@@ -61,8 +60,6 @@ pub struct SubscriptionManager {
     node: Arc<TransportNode>,
     /// Session state (identity, communities, DM keys).
     session: Arc<RwLock<Option<Session>>>,
-    /// MEK cache for channel decryption context.
-    mek_cache: Arc<RwLock<MekCache>>,
     /// Mutable state: unread counts, typing, presence, voice.
     state: Arc<RwLock<SubscriptionState>>,
     /// Active DHT watches registry.
@@ -88,16 +85,11 @@ impl SubscriptionManager {
     ///
     /// Call `setup_identity()` and `setup_community()` to begin watching.
     /// Call `start_renewal_loop()` to enable automatic watch renewal.
-    pub fn new(
-        node: Arc<TransportNode>,
-        session: Arc<RwLock<Option<Session>>>,
-        mek_cache: Arc<RwLock<MekCache>>,
-    ) -> Self {
+    pub fn new(node: Arc<TransportNode>, session: Arc<RwLock<Option<Session>>>) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
             node,
             session,
-            mek_cache,
             state: Arc::new(RwLock::new(SubscriptionState::default())),
             watches: Arc::new(RwLock::new(WatchRegistry::new())),
             dedup: Arc::new(RwLock::new(dedup::EventDedup::default())),

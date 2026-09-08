@@ -12,10 +12,6 @@ use rekindle_types::expression::SoundboardMeta;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-fn random_16_bytes() -> [u8; 16] {
-    rand::random()
-}
-
 fn my_pseudonym_for_community<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -79,7 +75,7 @@ pub async fn upload_emoji<D: ChannelMessagingDeps>(
     };
     enforce_count_limit(deps, community_id, "emoji", animated, max, kind_label)?;
 
-    let expression_id = random_16_bytes();
+    let expression_id = rekindle_utils::random::id_bytes_16();
     let content_hash = blake3::hash(&bytes).to_hex().to_string();
     let creator = my_pseudonym_for_community(deps, community_id);
     let mime_type = if animated { "image/gif" } else { "image/png" }.to_string();
@@ -131,7 +127,7 @@ pub async fn upload_sticker<D: ChannelMessagingDeps>(
     )?;
     let normalized_tags = normalize_tags(tags)?;
 
-    let expression_id = random_16_bytes();
+    let expression_id = rekindle_utils::random::id_bytes_16();
     let content_hash = blake3::hash(&bytes).to_hex().to_string();
     let creator = my_pseudonym_for_community(deps, community_id);
     let mime_type = if animated { "image/apng" } else { "image/png" }.to_string();
@@ -208,7 +204,7 @@ pub async fn upload_soundboard_sound<D: ChannelMessagingDeps>(
     )?;
     let normalized_tags = normalize_tags(tags)?;
 
-    let expression_id = random_16_bytes();
+    let expression_id = rekindle_utils::random::id_bytes_16();
     let content_hash = blake3::hash(&bytes).to_hex().to_string();
     let sound_meta = SoundboardMeta {
         duration_seconds,

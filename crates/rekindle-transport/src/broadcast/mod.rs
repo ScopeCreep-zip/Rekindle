@@ -75,7 +75,7 @@ pub struct BroadcastManager {
     pub(crate) session: Arc<RwLock<Option<Session>>>,
     pub(crate) mek_cache: Arc<RwLock<MekCache>>,
     pub(crate) meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
-    pub(crate) rate_limiter: RwLock<OutboundRateLimiter>,
+    pub(crate) rate_limiter: Arc<RwLock<OutboundRateLimiter>>,
 }
 
 impl BroadcastManager {
@@ -89,7 +89,7 @@ impl BroadcastManager {
             session,
             mek_cache,
             meshes: Arc::new(RwLock::new(HashMap::new())),
-            rate_limiter: RwLock::new(OutboundRateLimiter::default()),
+            rate_limiter: Arc::new(RwLock::new(OutboundRateLimiter::default())),
         }
     }
 
@@ -116,6 +116,21 @@ impl BroadcastManager {
     pub fn mek_cache(&self) -> &Arc<RwLock<MekCache>> {
         &self.mek_cache
     }
+    /// Outbound gossip rate limiter.
+    ///
+    /// Exposed because presence is the highest-frequency broadcast in
+    /// the system — a heartbeat per member per tick — and
+    /// `gossip::presence_update` takes the limiter rather than owning
+    /// one, so every caller shares the same budget instead of each
+    /// getting its own.
+    /// `Arc` rather than a borrow, for the same reason `meshes` is:
+    /// sync trait methods that broadcast have to clone their handles out
+    /// and `tokio::spawn`, because blocking on a send inside an async
+    /// runtime stalls a worker thread.
+    pub fn rate_limiter(&self) -> &Arc<RwLock<OutboundRateLimiter>> {
+        &self.rate_limiter
+    }
+
     pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> {
         &self.meshes
     }

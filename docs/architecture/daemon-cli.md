@@ -334,7 +334,9 @@ service or a system-level service for headless deployments.
 | Veilid public API surface | `crates/rekindle-transport/src/lib.rs` |
 | Outbound Veilid I/O | `crates/rekindle-transport/src/broadcast/` |
 | Inbound Veilid I/O | `crates/rekindle-transport/src/subscriptions/` |
-| Per-feature operations | `crates/rekindle-transport/src/operations/{community,channel,dm,friend,voice,mek,presence,roles,moderation,invites,identity}.rs` |
+| Per-feature operations | `crates/rekindle-transport/src/operations/` — `{channel,dm,friend,voice,mek,presence,roles,moderation,invites,identity}.rs` plus the `community/` and `calls/` directories |
+| Channel messages on the wire | `crates/rekindle-transport/src/broadcast/dht/channel_smpl.rs` — one SMPL record per `(channel, segment)`, each member writing their own slot subkey. Replaced a per-member DFLT `DhtLog` announced through the registry member index |
+| Channel lifecycle | `crates/rekindle-governance-runtime/src/channels.rs` — record + `ChannelCreated` in one call, shared by daemon and desktop |
 | Daemon entry / lib | `crates/rekindle-node/src/lib.rs` |
 | Lifecycle state machine | `crates/rekindle-node/src/daemon/mod.rs` |
 | IPC server | `crates/rekindle-node/src/ipc/server.rs` |

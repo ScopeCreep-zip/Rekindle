@@ -86,6 +86,11 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // exists.
     let (mek_rotation_tx, mek_rotation_rx) = rekindle_node::daemon::mek_rotation::channel();
 
+    // Presence polls are requested on unlock; the supervisor below owns
+    // the `Arc<DaemonContext>` the long-lived poll loops need.
+    let (presence_start_tx, presence_start_rx) =
+        rekindle_node::daemon::presence_adapter::supervisor::channel();
+
     let handler = Arc::new(DaemonHandler::new(
         Arc::clone(&transport_subscriptions),
         Arc::clone(&session_arc),
@@ -155,6 +160,8 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         event_watch_tx,
         pending_joins: Arc::clone(&pending_joins),
         mek_rotation_tx,
+        presence_shutdowns: parking_lot::Mutex::new(std::collections::HashMap::new()),
+        presence_start_tx,
     });
 
     // The rotation worker owns an `Arc<DaemonContext>` — the reason the
@@ -164,6 +171,16 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         Arc::clone(&daemon_ctx),
         mek_rotation_rx,
     ));
+
+    // Presence supervisor. Spawns one registry-scan loop per community
+    // when unlock asks; those loops are what give the daemon a validated
+    // member roster at all.
+    let presence_supervisor = tokio::spawn(
+        rekindle_node::daemon::presence_adapter::supervisor::run_supervisor(
+            Arc::clone(&daemon_ctx),
+            presence_start_rx,
+        ),
+    );
 
     // ── 7. Bind IPC socket and create bus server ──────────────────
     let socket_path = ipc::socket_path()?;
@@ -273,9 +290,15 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // same outcome as a rotation nobody was online to receive — which
     // the protocol already handles by rotating when someone returns.
     mek_rotation_worker.abort();
+    // The polls themselves are stopped through their own shutdown
+    // channels first, so they can finish an in-flight registry write
+    // rather than being cut mid-DHT-op.
+    rekindle_node::daemon::presence_adapter::DaemonPresenceAdapter::stop_all_polls(&daemon_ctx);
+    presence_supervisor.abort();
     let _ = subscriber_handle.await;
     let _ = consumer_handle.await;
     let _ = mek_rotation_worker.await;
+    let _ = presence_supervisor.await;
 
     shutdown_transport(&daemon_ctx).await;
 

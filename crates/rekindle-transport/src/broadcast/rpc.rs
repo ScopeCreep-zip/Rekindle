@@ -118,80 +118,6 @@ pub async fn governance_op(
 // moderator and validated by every reader
 // (`rekindle_governance_runtime::moderation`).
 
-/// Convenience: send a CreateChannel governance op.
-pub async fn governance_create_channel(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    name: &str,
-    kind: &str,
-    topic: Option<&str>,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::CreateChannel {
-            name: name.into(),
-            kind: kind.into(),
-            topic: topic.map(String::from),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: send a DeleteChannel governance op.
-pub async fn governance_delete_channel(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    channel_id: &str,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::DeleteChannel {
-            channel_id: channel_id.into(),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: send an UpdateChannel governance op.
-pub async fn governance_update_channel(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    channel_id: &str,
-    name: Option<&str>,
-    topic: Option<&str>,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::UpdateChannel {
-            channel_id: channel_id.into(),
-            name: name.map(String::from),
-            topic: topic.map(String::from),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
 /// Convenience: send a CreateRole governance op.
 pub async fn governance_create_role(
     node: &TransportNode,
@@ -283,32 +209,6 @@ pub async fn governance_transfer_ownership(
         governance_key,
         GovernanceOp::TransferOwnership {
             new_owner_pseudonym: new_owner_pseudonym.into(),
-        },
-        signing_key,
-        sender_hex,
-    )
-    .await
-}
-
-/// Convenience: register a channel record key via governance RPC.
-pub async fn governance_register_channel_record(
-    node: &TransportNode,
-    target: &PeerTarget,
-    governance_key: &str,
-    member_pseudonym: &str,
-    channel_id: &str,
-    record_key: &str,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-) -> Result<GovernanceOpResponse> {
-    governance_op(
-        node,
-        target,
-        governance_key,
-        GovernanceOp::RegisterChannelRecord {
-            member_pseudonym: member_pseudonym.into(),
-            channel_id: channel_id.into(),
-            record_key: record_key.into(),
         },
         signing_key,
         sender_hex,

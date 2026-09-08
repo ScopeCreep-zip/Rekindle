@@ -195,11 +195,18 @@ whether to accept an incoming envelope (e.g., did this pseudonym have
 
 ### MEK Distribution
 
-Each channel has its own MEK (per-channel, not per-community). MEKs are
-distributed via the SMPL member registry's MEK vault (encrypted per-member
-slot). Rotation uses the deterministic rotator
+Each channel has its own MEK (per-channel, not per-community). The MEK is
+**never written to the DHT**. The rotator wraps one copy per recipient
+(X25519 ECDH from its own pseudonym) and delivers each by `app_call`
+over that member's private route.
+
+Rotation uses the deterministic rotator
 (`blake3(departed_pseudonym ‖ self_pseudonym)` — lowest hash wins) to pick the
-peer responsible for re-wrapping.
+peer responsible for re-wrapping, cascading to the next candidate when the
+primary does not deliver. An operator-requested rotation skips the cascade
+and rotates in place (`rekindle_mek_rotation::rotate_mek_on_request`),
+stamping its election rank so two admins rotating at one generation still
+converge.
 
 Full architecture: [`../architecture/communities.md`](../architecture/communities.md) (chiral-network v2.0).
 

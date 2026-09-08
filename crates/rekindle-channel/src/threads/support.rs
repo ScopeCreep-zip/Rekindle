@@ -234,9 +234,8 @@ pub(super) fn thread_write_context<D: ChannelMessagingDeps>(
 }
 
 pub(super) fn uuid_simple() -> String {
-    // Lightweight v4-like 16-byte hex (rand-backed) for thread message
-    // IDs. Matches `uuid::Uuid::new_v4().simple()` output length so
-    // existing src-tauri callers + DB rows can swap in cleanly.
-    let bytes: [u8; 16] = rand::random();
-    hex::encode(bytes)
+    // Lightweight v4-like 16-byte hex for thread message IDs. Matches
+    // `uuid::Uuid::new_v4().simple()` output length so existing
+    // src-tauri callers + DB rows can swap in cleanly.
+    hex::encode(rekindle_utils::random::id_bytes_16())
 }

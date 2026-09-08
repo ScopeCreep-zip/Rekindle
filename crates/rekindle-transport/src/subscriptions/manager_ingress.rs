@@ -200,7 +200,13 @@ impl SubscriptionManager {
                         peer_key: peer_key.clone(),
                         timestamp: rekindle_utils::timestamp_ms(),
                         sender_name: None, // enriched from friend list
-                        body: None,        // enriched by reading DhtLog
+                        // Still unenriched. Filling this means reading
+                        // the channel record and decrypting, which is
+                        // what the manager's `mek_cache` was for — it
+                        // was removed with the MEK-vault watch that was
+                        // its only reader, and this path will need it
+                        // back when the enrichment is implemented.
+                        body: None,
                     },
                 ));
                 self.process_event(SubscriptionEvent::UnreadChanged {
@@ -243,40 +249,6 @@ impl SubscriptionManager {
                         },
                     };
                     self.process_event(SubscriptionEvent::Governance(event));
-                }
-            }
-            watches::WatchKind::MemberRegistry { community } => {
-                for subkey in &changed_subkeys {
-                    match *subkey {
-                        crate::payload::dht_types::REGISTRY_MEMBER_INDEX => {
-                            debug!(community = %community, "member index changed");
-                            // The daemon re-reads the member list on this signal.
-                        }
-                        crate::payload::dht_types::REGISTRY_MEK_VAULT => {
-                            // Read the current max generation from the mek_cache
-                            let generation = self
-                                .mek_cache
-                                .read()
-                                .snapshot(&community)
-                                .iter()
-                                .map(|e| e.generation)
-                                .max()
-                                .unwrap_or(0);
-                            debug!(community = %community, generation, "MEK vault changed");
-                            self.process_event(SubscriptionEvent::Crypto(
-                                events::CryptoEvent::MekRotated {
-                                    community: community.clone(),
-                                    channel: None,
-                                    generation,
-                                    rotator_pseudonym: None,
-                                },
-                            ));
-                        }
-                        crate::payload::dht_types::REGISTRY_MODERATION_QUEUE => {
-                            debug!(community = %community, "moderation queue changed");
-                        }
-                        _ => {}
-                    }
                 }
             }
             watches::WatchKind::JoinInbox { community } => {

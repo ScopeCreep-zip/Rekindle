@@ -30,9 +30,7 @@ use veilid_core::{DHTSchemaSMPLMember, KeyPair, RoutingContext};
 
 use super::record;
 use crate::error::{Result, TransportError};
-use crate::payload::dht_types::{
-    MekVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX, SLOTS_PER_SEGMENT,
-};
+use crate::payload::dht_types::SLOTS_PER_SEGMENT;
 
 /// Operations on a community member registry.
 pub struct RegistryOps<'a> {
@@ -67,96 +65,6 @@ impl<'a> RegistryOps<'a> {
         let (key, keypair) = record::create_smpl(self.rc, 0, members).await?;
         tracing::info!(key = %key, slots = SLOTS_PER_SEGMENT, "member registry created (o_cnt:0)");
         Ok((key, keypair))
-    }
-
-    // ── Member index (owner subkey 0) ────────────────────────────
-
-    pub async fn read_member_index(&self, key: &str) -> Result<Vec<MemberSummary>> {
-        match record::get(self.rc, key, REGISTRY_MEMBER_INDEX, false).await? {
-            Some(data) => {
-                serde_json::from_slice(&data).map_err(|e| TransportError::DeserializationFailed {
-                    type_id: 0,
-                    reason: format!("index: {e}"),
-                })
-            }
-            None => Ok(Vec::new()),
-        }
-    }
-
-    pub async fn write_member_index(&self, key: &str, members: &[MemberSummary]) -> Result<()> {
-        let bytes =
-            serde_json::to_vec(members).map_err(|e| TransportError::SerializationFailed {
-                reason: format!("index: {e}"),
-            })?;
-        record::set(self.rc, key, REGISTRY_MEMBER_INDEX, bytes, None)
-            .await
-            .map(|_| ())
-    }
-
-    // ── MEK vault (owner subkey 1) ───────────────────────────────
-
-    pub async fn read_mek_vault(&self, key: &str) -> Result<Vec<MekVaultEntry>> {
-        match record::get(self.rc, key, REGISTRY_MEK_VAULT, false).await? {
-            Some(data) => {
-                serde_json::from_slice(&data).map_err(|e| TransportError::DeserializationFailed {
-                    type_id: 0,
-                    reason: format!("vault: {e}"),
-                })
-            }
-            None => Ok(Vec::new()),
-        }
-    }
-
-    pub async fn write_mek_vault(&self, key: &str, vault: &[MekVaultEntry]) -> Result<()> {
-        let bytes = serde_json::to_vec(vault).map_err(|e| TransportError::SerializationFailed {
-            reason: format!("vault: {e}"),
-        })?;
-        record::set(self.rc, key, REGISTRY_MEK_VAULT, bytes, None)
-            .await
-            .map(|_| ())
-    }
-
-    // ── Moderation queue (owner subkey 5) ─────────────────────────
-
-    pub async fn read_moderation_queue(
-        &self,
-        key: &str,
-    ) -> Result<Vec<crate::payload::dht_types::PendingJoinEntry>> {
-        match record::get(
-            self.rc,
-            key,
-            crate::payload::dht_types::REGISTRY_MODERATION_QUEUE,
-            false,
-        )
-        .await?
-        {
-            Some(data) if !data.is_empty() => {
-                serde_json::from_slice(&data).map_err(|e| TransportError::DeserializationFailed {
-                    type_id: 0,
-                    reason: format!("moderation queue: {e}"),
-                })
-            }
-            _ => Ok(Vec::new()),
-        }
-    }
-
-    pub async fn write_moderation_queue(
-        &self,
-        key: &str,
-        queue: &[crate::payload::dht_types::PendingJoinEntry],
-    ) -> Result<()> {
-        let bytes = serde_json::to_vec(queue).map_err(|e| TransportError::SerializationFailed {
-            reason: format!("moderation queue: {e}"),
-        })?;
-        record::set(
-            self.rc,
-            key,
-            crate::payload::dht_types::REGISTRY_MODERATION_QUEUE,
-            bytes,
-            None,
-        )
-        .await
-        .map(|_| ())
     }
 
     // ── Open / Close ─────────────────────────────────────────────

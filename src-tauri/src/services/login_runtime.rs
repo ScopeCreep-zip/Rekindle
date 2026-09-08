@@ -227,15 +227,19 @@ pub(super) async fn spawn_dht_publish(
 
         // Architecture §7.3 login catch-up: re-acquire any community MEK that is
         // ABSENT or BEHIND the governance generation, rather than waiting for
-        // incidental incoming traffic to trigger acquisition. Joiners request
-        // the current key from the deterministic responder; owners go through
-        // recovery (re-acquire, then mint a superseding key only if no peer
-        // serves it). Fires only when behind/absent, so a normal login is a
-        // no-op. `c.mek_generation` is the authoritative target (restored from
-        // SQLite before this runs and never clobbered).
-        let keystore = tauri::Manager::try_state::<crate::keystore::KeystoreHandle>(&app_handle)
-            .map(|s| s.inner().clone());
-        let behind: Vec<(String, String, bool)> = {
+        // incidental incoming traffic to trigger acquisition. Fires only when
+        // behind/absent, so a normal login is a no-op. `c.mek_generation` is
+        // the authoritative target (restored from SQLite before this runs and
+        // never clobbered).
+        //
+        // Every member takes the same path. This used to fork on
+        // `registry_owner_keypair.is_some()` — creators recovered, joiners
+        // only requested — which under `o_cnt: 0` means a community whose
+        // creator never returns can never recover its key. `spawn_community_mek_recovery`
+        // requests first regardless and mints only if the deterministic
+        // election picks this node, so the fork bought nothing the election
+        // does not already decide.
+        let behind: Vec<(String, String)> = {
             let communities = state.communities.read();
             let cache = state.mek_cache.lock();
             communities
@@ -248,31 +252,17 @@ pub(super) async fn spawn_dht_publish(
                     if !is_behind {
                         return None;
                     }
-                    c.my_pseudonym_key
-                        .clone()
-                        .map(|p| (c.id.clone(), p, c.registry_owner_keypair.is_some()))
+                    c.my_pseudonym_key.clone().map(|p| (c.id.clone(), p))
                 })
                 .collect()
         };
-        for (cid, pseudonym, is_owner) in behind {
-            if is_owner {
-                if let Some(ref ks) = keystore {
-                    services::community::mek_rotation::spawn_community_mek_recovery(
-                        state.clone(),
-                        cid,
-                        pseudonym,
-                        ks.clone(),
-                    );
-                }
-            } else {
-                services::community::mek_rotation::spawn_mek_request_with_retry(
-                    state.clone(),
-                    cid,
-                    String::new(),
-                    0,
-                    pseudonym,
-                );
-            }
+        for (cid, pseudonym) in behind {
+            services::community::mek_rotation::spawn_community_mek_recovery(
+                app_handle.clone(),
+                state.clone(),
+                cid,
+                pseudonym,
+            );
         }
     }
 

@@ -1,8 +1,8 @@
-//! Channel message operations — send, read history.
+//! Channel message operations — send.
 //!
-//! DhtLog creation/append via `broadcast::dht_writes` primitives.
-//! MEK encryption is business logic here.
-//! Keypair bytes are deserialized inside the broadcast boundary.
+//! Writes into the channel's SMPL segment record via
+//! `broadcast::dht::channel_smpl`. MEK encryption is business logic
+//! here; the Veilid keypair is parsed inside the broadcast boundary.
 
 use std::sync::Arc;
 
@@ -18,16 +18,24 @@ use crate::session::CommunityMembership;
 #[derive(Debug, Clone)]
 pub struct MessageSent {
     pub message_id: String,
-    pub sequence: u64,
     pub timestamp: u64,
-    pub member_record_key: String,
-    pub new_log_keypair_bytes: Option<Vec<u8>>,
+    pub channel_record_key: String,
+}
+
+/// Where a channel write lands: the segment record and our slot in it.
+///
+/// The caller resolves this — the record key comes from merged
+/// governance (`ChannelCreated` for segment 0, `ChannelSegmentLinked`
+/// beyond it) and the keypair is derived from the shared slot seed, so
+/// neither is transport's to invent.
+#[derive(Debug, Clone)]
+pub struct ChannelWriteTarget {
+    pub channel_record_key: String,
+    pub slot_index: u32,
+    pub slot_keypair_str: String,
 }
 
 /// Send a message to a community channel.
-///
-/// `existing_log_keypair_bytes`: optional 64-byte serialized keypair for the
-/// member's existing DhtLog. Pass None on first write — a new DhtLog is created.
 pub async fn send_message(
     node: &TransportNode,
     membership: &CommunityMembership,
@@ -35,13 +43,9 @@ pub async fn send_message(
     plaintext: &str,
     reply_to_sequence: Option<u64>,
     mek_cache: &Arc<RwLock<MekCache>>,
-    existing_log_keypair_bytes: Option<&[u8]>,
+    target: &ChannelWriteTarget,
+    signing_key: &ed25519_dalek::SigningKey,
 ) -> Result<MessageSent> {
-    // Deserialize keypair if provided
-    let existing_log_keypair = existing_log_keypair_bytes
-        .map(crate::broadcast::node::deserialize_keypair)
-        .transpose()?;
-
     // Step 1: Encrypt with MEK
     let ciphertext = {
         let cache = mek_cache.read();
@@ -83,44 +87,32 @@ pub async fn send_message(
         mentioned_pseudonyms: Vec::new(),
         mentioned_roles: Vec::new(),
     };
-    let msg_bytes =
-        serde_json::to_vec(&channel_msg).map_err(|e| TransportError::SerializationFailed {
-            reason: e.to_string(),
-        })?;
 
-    // Step 3: Get or create DhtLog via broadcast primitives
-    let mut new_log_keypair_bytes = None;
-    let (log, spine_key) = if let (Some(key), Some(kp)) = (
-        membership.channel_record_keys.get(channel_id),
-        existing_log_keypair,
-    ) {
-        match crate::broadcast::dht_writes::open_dht_log_write(node, key, kp).await {
-            Ok(log) => (log, key.clone()),
-            Err(e) => {
-                tracing::warn!(key, error = %e, "DhtLog reopen failed, creating new");
-                let (log, kp) = crate::broadcast::dht_writes::create_dht_log(node).await?;
-                let spine = log.spine_key();
-                new_log_keypair_bytes = Some(crate::broadcast::node::serialize_keypair(&kp));
-                (log, spine)
-            }
-        }
-    } else {
-        let (log, kp) = crate::broadcast::dht_writes::create_dht_log(node).await?;
-        let spine = log.spine_key();
-        new_log_keypair_bytes = Some(crate::broadcast::node::serialize_keypair(&kp));
-        info!(log_key = %spine, channel = channel_id, "created per-member DhtLog");
-        (log, spine)
-    };
+    // Step 3: Write to our slot in the channel's segment record.
+    let author = rekindle_types::id::PseudonymKey::from_hex_lossy(&membership.pseudonym_key);
+    crate::broadcast::dht::channel_smpl::write_message(
+        node,
+        &target.channel_record_key,
+        target.slot_index,
+        &target.slot_keypair_str,
+        author,
+        signing_key,
+        &channel_msg,
+    )
+    .await?;
 
-    // Step 4: Append
-    let sequence = log.append(&msg_bytes).await?;
-    info!(message_id, channel = channel_id, community = %membership.community_name, log_key = %spine_key, sequence, "message appended");
+    info!(
+        message_id,
+        channel = channel_id,
+        community = %membership.community_name,
+        record = %target.channel_record_key,
+        slot = target.slot_index,
+        "message written to channel segment record"
+    );
 
     Ok(MessageSent {
         message_id,
-        sequence,
         timestamp,
-        member_record_key: spine_key,
-        new_log_keypair_bytes,
+        channel_record_key: target.channel_record_key.clone(),
     })
 }

@@ -15,6 +15,12 @@ use super::{ack, ensure_open, get_node, open_dht, reject, save};
 /// transfer (create/update/delete/assign/unassign-role, rotate-mek,
 /// transfer-ownership). Split out of `handle_op_inner` to satisfy
 /// clippy::too_many_lines.
+/// The match below has no catch-all, and that is the point: with the
+/// channel ops gone `GovernanceOp` is exactly these four, so a new
+/// variant is a compile error here rather than a runtime
+/// `unreachable!()`. The plan flagged that hazard in
+/// `capnp_envelope/governance/dispatch_write.rs`; this is the same shape
+/// resolved the safe way.
 pub(super) async fn handle_op_group_c(
     operation: GovernanceOp,
     session: &RwLock<Option<rekindle_transport::Session>>,
@@ -144,8 +150,5 @@ pub(super) async fn handle_op_group_c(
             );
             ack()
         }
-
-        // Unreachable: the dispatcher only routes group C ops here.
-        _ => unreachable!("handle_op_group_c received an out-of-group operation"),
     }
 }

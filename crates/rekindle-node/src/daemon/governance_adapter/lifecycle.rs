@@ -4,7 +4,7 @@
 //! plain state access nor a direct DHT call.
 
 use rekindle_governance::state::GovernanceState;
-use rekindle_governance_runtime::deps::{CommunityDhtOpenSetup, DiscoveredMember, MemberIndexRow};
+use rekindle_governance_runtime::deps::{CommunityDhtOpenSetup, DiscoveredMember};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_protocol::dht::community::envelope::{
     CommunityEnvelope, ControlPayload as ProtocolControl,
@@ -201,48 +201,6 @@ impl DaemonGovernanceAdapter<'_> {
     }
 
     // ---------- Hydration ----------
-
-    /// Read a registry's member rows.
-    ///
-    /// Reads member *slots* rather than the v1.0 index subkey: under
-    /// `o_cnt: 0` each member writes their own `MemberPresence` to their
-    /// own subkey, and only occupied slots are fetched so a 255-slot
-    /// record does not cost 255 round trips.
-    pub(super) async fn read_member_index_for_registry_impl(
-        &self,
-        registry_key: &str,
-    ) -> Result<Vec<MemberIndexRow>, GovernanceRuntimeError> {
-        let present = self.inspect_present_subkeys_impl(registry_key).await?;
-        let mut rows = Vec::with_capacity(present.len());
-        for slot in present {
-            let Some(bytes) = self.get_dht_value_impl(registry_key, slot, false).await? else {
-                continue;
-            };
-            let Ok(presence) =
-                serde_json::from_slice::<rekindle_types::presence::MemberPresence>(&bytes)
-            else {
-                // A slot we cannot parse is a peer running a different
-                // build, not a fatal condition — skip it.
-                tracing::debug!(
-                    registry_key,
-                    slot,
-                    "registry slot did not parse as MemberPresence"
-                );
-                continue;
-            };
-            rows.push(MemberIndexRow {
-                pseudonym_key_hex: hex::encode(presence.pseudonym_key.0),
-                subkey_index: slot,
-                // The v2.0 registry carries presence, not roles —
-                // `MemberPresence` has no role list. Role assignments
-                // live in the governance CRDT, which the caller merges
-                // separately; reporting an empty list here is accurate
-                // rather than a placeholder.
-                role_ids: Vec::new(),
-            });
-        }
-        Ok(rows)
-    }
 
     pub(super) fn list_communities_for_dht_open_impl(&self) -> Vec<CommunityDhtOpenSetup> {
         let guard = self.ctx.session.read();

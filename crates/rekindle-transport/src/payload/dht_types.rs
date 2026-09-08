@@ -73,10 +73,6 @@ pub use rekindle_types::dht_layout::manifest::{
     POLICIES as MANIFEST_POLICIES, REGISTRY_SPINE_V1 as MANIFEST_REGISTRY_SPINE,
     ROLES as MANIFEST_ROLES, SUBKEY_COUNT as MANIFEST_SUBKEY_COUNT, WELCOME as MANIFEST_WELCOME,
 };
-pub use rekindle_types::dht_layout::registry::{
-    MEK_VAULT as REGISTRY_MEK_VAULT, MEMBER_INDEX as REGISTRY_MEMBER_INDEX,
-    MODERATION_QUEUE as REGISTRY_MODERATION_QUEUE,
-};
 
 /// Maximum member slots per registry segment.
 ///
@@ -242,12 +238,6 @@ pub struct MemberSummary {
     /// registry — each member controls their own profile.
     #[serde(default)]
     pub profile_dht_key: Option<String>,
-    /// Per-channel DhtLog spine keys owned by this member.
-    /// Maps channel_id → DhtLog spine key (append-only log, member-owned).
-    /// Each member creates and owns their own DhtLog per channel.
-    /// No shared secrets — write access is per-member, enforced by Veilid.
-    #[serde(default)]
-    pub channel_records: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,61 +264,6 @@ pub struct BanEntry {
     pub banned_at: u64,
 }
 
-// ── Pending join queue (moderation queue subkey 5) ──────────────────
-
-/// A pending join request in the moderation queue.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingJoinEntry {
-    pub requester_pseudonym_hex: String,
-    pub display_name: String,
-    pub profile_dht_key: String,
-    pub invite_code_hash: Option<String>,
-    pub requested_at: u64,
-    pub status: PendingJoinStatus,
-    /// Ed25519 signature over the canonical content bytes, signed with
-    /// the requester's pseudonym signing key. Verified by process_inbox
-    /// before approval. Empty for legacy entries (pre-signature migration).
-    #[serde(default)]
-    pub signature_hex: String,
-}
-
-impl PendingJoinEntry {
-    /// Canonical bytes for signature verification.
-    /// Covers identity-binding fields only (not status/timestamp which change).
-    pub fn signature_content(&self) -> Vec<u8> {
-        let mut content = Vec::new();
-        content.extend_from_slice(b"rekindle-join-request-v1:");
-        content.extend_from_slice(self.requester_pseudonym_hex.as_bytes());
-        content.extend_from_slice(b":");
-        content.extend_from_slice(self.profile_dht_key.as_bytes());
-        content.extend_from_slice(b":");
-        content.extend_from_slice(self.display_name.as_bytes());
-        content
-    }
-}
-
-/// Status of a pending join request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PendingJoinStatus {
-    Pending,
-    Approved {
-        approved_by: String,
-        approved_at: u64,
-    },
-    Rejected {
-        rejected_by: String,
-        reason: String,
-        rejected_at: u64,
-    },
-    /// Member is leaving the community. Written to the join inbox by the
-    /// leaving member so the owner can process cleanup + rekey.
-    Left {
-        left_at: u64,
-    },
-}
-
 // ── Invite types ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -343,24 +278,6 @@ pub struct InviteEntry {
     #[serde(default)]
     pub use_count: u32,
     pub encrypted_secrets: Option<String>,
-}
-
-// ── MEK vault ───────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MekVaultEntry {
-    pub channel_id: String,
-    pub generation: u64,
-    pub rotator_pseudonym: String,
-    pub copies: Vec<EncryptedMekCopy>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EncryptedMekCopy {
-    pub target_pseudonym: String,
-    pub encrypted_mek: Vec<u8>,
 }
 
 // ── Channel message record ──────────────────────────────────────────

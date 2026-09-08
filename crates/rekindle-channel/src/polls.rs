@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 
-use rand::RngCore;
 use rekindle_protocol::dht::community::channel_record::{
     ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
 };
@@ -47,11 +46,15 @@ pub fn validate_poll_create(question: &str, answers: &[String]) -> Result<(), Ch
     Ok(())
 }
 
+/// A fresh poll identifier.
+///
+/// Kept as a named wrapper rather than inlining the call: `poll_id` is a
+/// domain concept and callers read better for it. The bytes come from
+/// the one generator, so this cannot drift from how channel, category
+/// and role ids are minted.
 #[must_use]
 pub fn random_poll_id() -> [u8; 16] {
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    bytes
+    rekindle_utils::random::id_bytes_16()
 }
 
 pub fn parse_poll_id(poll_id_hex: &str) -> Result<[u8; 16], ChannelError> {

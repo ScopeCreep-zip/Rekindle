@@ -437,7 +437,6 @@ pub(crate) async fn handle_unlock(
         let mut sub_mgr = rekindle_transport::SubscriptionManager::new(
             Arc::clone(transport),
             Arc::clone(&ctx.session),
-            Arc::clone(&ctx.mek_cache),
         );
         sub_mgr.setup_identity(session).await;
         for membership in session.communities.values() {
@@ -477,6 +476,34 @@ pub(crate) async fn handle_unlock(
         *ctx.broadcast_mgr.write() = Some(bcast_mgr);
     }
 
+    // Presence polls last, after the signing key, subscriptions and
+    // broadcast manager are all in place — the poll signs its own row
+    // and broadcasts through the mesh on its first tick.
+    {
+        let community_ids: Vec<String> = ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.communities.keys().cloned().collect())
+            .unwrap_or_default();
+        if !community_ids.is_empty() {
+            let count = community_ids.len();
+            if ctx
+                .presence_start_tx
+                .send(
+                    crate::daemon::presence_adapter::supervisor::PresenceStartRequest {
+                        community_ids,
+                    },
+                )
+                .is_err()
+            {
+                tracing::warn!("presence supervisor is gone — no roster will be maintained");
+            } else {
+                tracing::info!(communities = count, "presence polls requested");
+            }
+        }
+    }
+
     let _ = ctx.lifecycle.transition(DaemonState::Operational);
     IpcResponse::ok(&serde_json::json!({ "state": "operational" }))
 }
@@ -509,6 +536,12 @@ pub(crate) fn handle_shutdown(ctx: &DaemonContext) -> IpcResponse {
 /// Handle Lock — transition to Locked, zeroize signing key.
 pub(crate) fn handle_lock(ctx: &DaemonContext) -> IpcResponse {
     let _ = ctx.lifecycle.transition(DaemonState::Locking);
+    // Stop the presence polls before dropping the key. They write our
+    // own presence row every tick, so a poll outliving the lock would
+    // keep advertising a member whose identity is no longer unlocked —
+    // and would start failing to sign, which is the same thing said
+    // more noisily.
+    crate::daemon::presence_adapter::DaemonPresenceAdapter::stop_all_polls(ctx);
     // Drop the signing key — ZeroizeOnDrop zeroizes the bytes.
     *ctx.signing_key.write() = None;
     let _ = ctx.lifecycle.transition(DaemonState::Locked);

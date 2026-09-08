@@ -93,16 +93,6 @@ pub struct RecentMessageRow {
     pub mek_generation: u64,
 }
 
-/// Row returned from `read_member_index_for_registry`. The pseudonym
-/// key is hex-encoded so the trait stays free of `rekindle-types::id`
-/// constructors at callsites.
-#[derive(Debug, Clone)]
-pub struct MemberIndexRow {
-    pub pseudonym_key_hex: String,
-    pub subkey_index: u32,
-    pub role_ids: Vec<u32>,
-}
-
 /// Snapshot of the per-community DHT-records info the
 /// `open_community_dht_records` orchestrator needs. The adapter
 /// builds this from a single `state.communities.read()` so the lock

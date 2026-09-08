@@ -9,6 +9,8 @@ use rekindle_governance_runtime::deps::{
     CommunityMembership, OnlineMemberSnapshot, UserStatusKind,
 };
 
+use rekindle_transport::session::CommunityMembership as SessionMembership;
+
 use super::DaemonGovernanceAdapter;
 
 use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
@@ -94,14 +96,47 @@ impl DaemonGovernanceAdapter<'_> {
             // actually need a writer rather than eagerly here.
             dht_owner_keypair: None,
             lamport_counter: membership.lamport_counter,
-            channel_log_keys: membership.channel_record_keys.clone(),
-            channel_ids: membership.channel_record_keys.keys().cloned().collect(),
+            channel_log_keys: self.channel_record_keys_impl(community_id, membership),
+            channel_ids: self.channel_ids_impl(community_id, membership),
             mek_generation: membership.mek_generation,
         })
     }
 
     pub(super) fn governance_state_impl(&self, community_id: &str) -> Option<GovernanceState> {
         self.ctx.community_runtime.governance_state(community_id)
+    }
+
+    /// Channel-id → segment-0 record key, from merged governance.
+    ///
+    /// `ChannelCreated.record_key` is the canonical location: it is CRDT
+    /// state every peer merged, so a joiner has it the moment the merge
+    /// lands. The session copy is a cache that only the creator's own
+    /// `insert_community` seeds, which is why a joined community used to
+    /// have an empty map and no way to send.
+    ///
+    /// Session entries are folded in underneath rather than ignored —
+    /// they cover the window before the first merge completes.
+    fn channel_record_keys_impl(
+        &self,
+        community_id: &str,
+        membership: &SessionMembership,
+    ) -> std::collections::HashMap<String, String> {
+        let mut out = membership.channel_record_keys.clone();
+        if let Some(state) = self.ctx.community_runtime.governance_state(community_id) {
+            for (channel_id, channel) in &state.channels {
+                if channel.record_key.is_empty() {
+                    continue;
+                }
+                out.insert(hex::encode(channel_id.0), channel.record_key.clone());
+            }
+        }
+        out
+    }
+
+    fn channel_ids_impl(&self, community_id: &str, membership: &SessionMembership) -> Vec<String> {
+        self.channel_record_keys_impl(community_id, membership)
+            .into_keys()
+            .collect()
     }
 
     /// Snapshot the gossip overlay's online members.
@@ -176,11 +211,12 @@ impl DaemonGovernanceAdapter<'_> {
     /// Channel message-record keys for a community.
     pub(super) fn channel_log_keys_for_community_impl(&self, community_id: &str) -> Vec<String> {
         let guard = self.ctx.session.read();
-        guard
-            .as_ref()
-            .and_then(|s| s.communities.get(community_id))
-            .map(|m| m.channel_record_keys.values().cloned().collect())
-            .unwrap_or_default()
+        let Some(membership) = guard.as_ref().and_then(|s| s.communities.get(community_id)) else {
+            return Vec::new();
+        };
+        self.channel_record_keys_impl(community_id, membership)
+            .into_values()
+            .collect()
     }
 
     pub(super) fn governance_overflow_keys_impl(&self, community_id: &str) -> Vec<String> {

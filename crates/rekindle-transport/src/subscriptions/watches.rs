@@ -31,11 +31,26 @@ pub enum WatchKind {
     DmLog { peer_key: String },
     /// Community governance manifest (subkeys: metadata, channels, roles, bans, invites).
     GovernanceManifest { community: String },
-    /// Community member registry (subkeys: member index, MEK vault, moderation queue).
-    MemberRegistry { community: String },
     /// Community join inbox (operator only, DFLT(32), subkeys 0-31).
     JoinInbox { community: String },
-    /// A member's per-channel DhtLog spine.
+    /// A channel record changing.
+    ///
+    /// **Nothing establishes this watch.** `WatchKind::ChannelLog` is
+    /// constructed nowhere; the arm in `manager_ingress` that handles it
+    /// is unreachable. It is kept, not deleted, because it is an
+    /// unfinished path rather than a dead one — and one that only became
+    /// implementable when channel messages moved to SMPL segment
+    /// records, whose keys merged governance already publishes.
+    ///
+    /// Finishing it needs three things: the session's
+    /// `channel_record_keys` kept in sync with `gov_state.channels` (the
+    /// desktop does this in `state_helpers/governance.rs`), a watch
+    /// established over each record's member subkeys, and a decision
+    /// about `member_pseudonym` — a segment record has one writer per
+    /// subkey, so the changed subkey names a slot, and resolving that to
+    /// a pseudonym needs the presence roster. Until then the daemon
+    /// learns about new channel messages by reading history, not by
+    /// being told.
     ChannelLog {
         community: String,
         channel_id: String,
@@ -105,7 +120,6 @@ impl WatchRegistry {
         self.entries.retain(|_, e| {
             !matches!(&e.kind,
                 WatchKind::GovernanceManifest { community: c }
-                | WatchKind::MemberRegistry { community: c }
                 | WatchKind::JoinInbox { community: c }
                 | WatchKind::ChannelLog { community: c, .. }
                 if c == community
@@ -251,22 +265,11 @@ pub async fn setup_community_watches(
     )
     .await;
 
-    // Watch member registry (member index, MEK vault, moderation queue)
-    let reg_subkeys = vec![
-        dht_types::REGISTRY_MEMBER_INDEX,
-        dht_types::REGISTRY_MEK_VAULT,
-        dht_types::REGISTRY_MODERATION_QUEUE,
-    ];
-    establish_watch(
-        node,
-        registry,
-        &membership.registry_key,
-        &reg_subkeys,
-        WatchKind::MemberRegistry {
-            community: community.clone(),
-        },
-    )
-    .await;
+    // No member-registry watch. Its three subkeys were community-wide
+    // v1.0 entries that no longer exist; under `o_cnt: 0` every subkey
+    // is a member's presence row, and those are read by the presence
+    // poll rather than watched. Watching them here reported one
+    // arbitrary member's heartbeat as a governance signal.
 
     // Watch join inbox (operators only — they process incoming join requests)
     if membership.is_operator && !membership.join_inbox_key.is_empty() {

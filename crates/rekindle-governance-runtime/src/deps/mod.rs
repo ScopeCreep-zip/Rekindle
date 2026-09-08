@@ -281,16 +281,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// records to read from the DHT.
     fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)>;
 
-    /// Read the full member index from a community's SMPL registry
-    /// record. Returns per-member `(pseudonym_key_hex, subkey_index,
-    /// role_ids)` so the orchestrator can recover state for the
-    /// logged-in user without touching `veilid-core` or protocol types
-    /// directly.
-    async fn read_member_index_for_registry(
-        &self,
-        registry_key: &str,
-    ) -> Result<Vec<MemberIndexRow>, GovernanceRuntimeError>;
-
     /// Apply recovered member state for one community: writes
     /// `my_subkey_index` if missing, updates `my_role_ids` if the DHT
     /// view is richer, then persists both to SQLite so the next login

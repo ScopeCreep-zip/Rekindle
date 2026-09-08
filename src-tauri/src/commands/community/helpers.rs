@@ -9,19 +9,11 @@ pub(crate) fn u32_to_role_id(role_id: u32) -> rekindle_types::id::RoleId {
 }
 
 pub(crate) fn random_16_bytes() -> [u8; 16] {
-    use rand::RngCore;
-
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    bytes
+    rekindle_utils::random::id_bytes_16()
 }
 
 pub(crate) fn random_nonce(bytes_len: usize) -> Vec<u8> {
-    use rand::RngCore;
-
-    let mut nonce = vec![0u8; bytes_len];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
-    nonce
+    rekindle_utils::random::bytes(bytes_len)
 }
 
 pub(crate) fn require_permission(

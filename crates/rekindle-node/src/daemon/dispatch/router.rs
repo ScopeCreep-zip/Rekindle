@@ -49,7 +49,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         IpcRequest::CommunityLeave { governance_key } => {
             community::handle_leave(ctx, state, &governance_key).await
         }
-        IpcRequest::CommunityList => community::handle_list(ctx, state),
+        IpcRequest::CommunityList => community::handle_list(ctx, state).await,
         IpcRequest::CommunityInfo { governance_key } => {
             community::handle_info(ctx, state, &governance_key).await
         }
@@ -76,7 +76,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         }
 
         // ── Channel ──────────────────────────────────────────────
-        IpcRequest::ChannelList { community } => channel::handle_list(ctx, state, &community).await,
+        IpcRequest::ChannelList { community } => channel::handle_list(ctx, state, &community),
         IpcRequest::ChannelCreate {
             community,
             name,

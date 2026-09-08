@@ -48,7 +48,20 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// subkey 8 (Strand Relay pool vs friend-inbox key); the friend-inbox
 /// pair moved to 9/10 and the record now allocates 11 subkeys. See
 /// `rekindle_types::dht_layout::profile`.
-const SCHEMA_VERSION: i64 = 76;
+/// 77: the member registry lost its last community-wide subkeys. The
+/// member index (0), MEK vault (1) and moderation queue (5) were v1.0
+/// owner subkeys that `o_cnt: 0` credentials nobody to write, and each
+/// collided with a real member slot. Membership is now derived by
+/// scanning signed presence rows, the MEK is delivered peer-to-peer and
+/// never written to the DHT, and admission is a `GovernanceEntry`.
+///
+/// Landing with it: the daemon's channel storage moved from a
+/// per-member DFLT `DhtLog` to the SMPL `(channel, segment)` records the
+/// desktop already wrote, so the two tracks finally read and write the
+/// same messages. Discovery is `ChannelCreated.record_key` plus
+/// `ChannelSegmentLinked` out of merged governance, which is what made
+/// the member index deletable.
+const SCHEMA_VERSION: i64 = 77;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

@@ -96,8 +96,10 @@ fn build_forward_notification(
 }
 
 fn random_message_id(prefix: &str) -> String {
-    let bytes: [u8; 16] = rand::random();
-    format!("{prefix}{}", hex::encode(bytes))
+    format!(
+        "{prefix}{}",
+        hex::encode(rekindle_utils::random::id_bytes_16())
+    )
 }
 
 /// Send-result returned to the orchestrator caller.

@@ -16,21 +16,20 @@ use crate::services::community_mek_local_rotate::rotate_mek_local;
 pub async fn rotate_mek(
     community_id: String,
     idempotency_key: uuid::Uuid,
+    app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
-    keystore: State<'_, crate::keystore::KeystoreHandle>,
 ) -> Result<(), String> {
     // Phase 5 — gate writes on lifecycle.
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let _ = pool;
     let state_clone = state.inner().clone();
-    let keystore_clone = keystore.inner().clone();
     state
         .idempotency
         .wrap(idempotency_key, || async move {
             require_permission(&state_clone, &community_id, permissions::ADMINISTRATOR)?;
-            rotate_mek_local(&state_clone, &community_id, &keystore_clone).await?;
+            rotate_mek_local(&app, &state_clone, &community_id).await?;
             tracing::info!(community = %community_id, "MEK rotated locally");
             Ok(())
         })

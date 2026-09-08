@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
-    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, MemberIndexRow, OnlineMemberSnapshot,
-    RecentMessageRow, UserStatusKind,
+    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow,
+    UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
@@ -302,13 +302,6 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
 
     fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)> {
         self.list_registries_with_my_pseudonym_impl()
-    }
-
-    async fn read_member_index_for_registry(
-        &self,
-        registry_key: &str,
-    ) -> Result<Vec<MemberIndexRow>, GovernanceRuntimeError> {
-        self.read_member_index_for_registry_impl(registry_key).await
     }
 
     fn apply_recovered_member_state(

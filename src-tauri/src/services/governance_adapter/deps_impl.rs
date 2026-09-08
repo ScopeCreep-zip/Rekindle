@@ -10,7 +10,7 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::{
     ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
     DiscoveredMember, GovernanceRuntimeDeps, GovernanceRuntimeError, GovernanceRuntimeEvent,
-    MekSnapshot, MemberIndexRow, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
+    MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::governance::GovernanceEntry;
@@ -383,13 +383,6 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
                 Some((cid.clone(), rk, cs.my_pseudonym_key.clone()))
             })
             .collect()
-    }
-
-    async fn read_member_index_for_registry(
-        &self,
-        registry_key: &str,
-    ) -> Result<Vec<MemberIndexRow>, GovernanceRuntimeError> {
-        dht::read_member_index_for_registry_impl(self, registry_key).await
     }
 
     fn apply_recovered_member_state(

@@ -289,18 +289,10 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
         ));
     }
 
-    // Lazy creation: derive 255 slot pubkeys for this segment using GLOBAL
-    // slot indices (architecture §8.3 + §15.2), build the universal SMPL
-    // schema, create the record.
+    // Lazy creation: derive this segment's slot pubkeys, build the
+    // universal SMPL schema, create the record.
     let slot_seed = slot_seed_from_membership(&membership, community_id)?;
-    let slot_range_start = segment_index * SLOTS_PER_SEGMENT;
-    let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
-    for global_slot in slot_range_start..slot_range_start + SLOTS_PER_SEGMENT {
-        let sk = derive::derive_slot_keypair(&slot_seed.0, global_slot).map_err(|e| {
-            GovernanceRuntimeError::Crypto(format!("derive_slot_keypair {global_slot}: {e}"))
-        })?;
-        member_pubkeys.push(sk.verifying_key().to_bytes());
-    }
+    let member_pubkeys = segment_slot_pubkeys(&slot_seed.0, segment_index)?;
 
     let new_record = deps.create_smpl_record(&member_pubkeys).await?;
     let new_record_key = new_record.record_key.clone();
@@ -377,6 +369,29 @@ fn slot_seed_from_membership(
         .try_into()
         .map_err(|_| GovernanceRuntimeError::Crypto("slot_seed must be 32 bytes".to_string()))?;
     Ok(SlotSeed(seed_bytes))
+}
+
+/// The 255 slot public keys that define one segment's SMPL schema.
+///
+/// Indices are **global** (architecture §8.3 + §15.2): segment N covers
+/// `N * SLOTS_PER_SEGMENT .. (N+1) * SLOTS_PER_SEGMENT`, so a member's
+/// keypair is a function of the seed and their global slot alone. Every
+/// record in a community — registry segments and channel segments —
+/// is keyed this way, which is what lets any member derive their own
+/// writer credential for a record they have only just heard about.
+pub fn segment_slot_pubkeys(
+    slot_seed: &[u8; 32],
+    segment_index: u32,
+) -> Result<Vec<[u8; 32]>, GovernanceRuntimeError> {
+    let slot_range_start = segment_index * SLOTS_PER_SEGMENT;
+    let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
+    for global_slot in slot_range_start..slot_range_start + SLOTS_PER_SEGMENT {
+        let sk = derive::derive_slot_keypair(slot_seed, global_slot).map_err(|e| {
+            GovernanceRuntimeError::Crypto(format!("derive_slot_keypair {global_slot}: {e}"))
+        })?;
+        member_pubkeys.push(sk.verifying_key().to_bytes());
+    }
+    Ok(member_pubkeys)
 }
 
 #[cfg(test)]

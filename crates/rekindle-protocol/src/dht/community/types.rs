@@ -3,7 +3,6 @@
 //! These types are used in the manifest (DFLT record), member registry
 //! (SMPL record), and per-channel message records (SMPL records).
 
-use super::base64_bytes;
 use serde::{Deserialize, Serialize};
 
 // ── Manifest + registry subkey layout ──
@@ -25,9 +24,6 @@ pub use rekindle_types::dht_layout::manifest::{
     METADATA as MANIFEST_METADATA, ONBOARDING as MANIFEST_ONBOARDING,
     POLICIES as MANIFEST_POLICIES, ROLES as MANIFEST_ROLES, SUBKEY_COUNT as MANIFEST_SUBKEY_COUNT,
     WELCOME as MANIFEST_WELCOME,
-};
-pub use rekindle_types::dht_layout::registry::{
-    MEK_VAULT as REGISTRY_MEK_VAULT, MEMBER_INDEX as REGISTRY_MEMBER_INDEX,
 };
 
 // ── Channel types ──
@@ -249,37 +245,6 @@ pub enum ModerationLevel {
     High,
 }
 
-// ── MEK distribution types ──
-
-/// MEK vault entry stored in registry owner subkey 1.
-///
-/// Contains encrypted copies of the current MEK for each member,
-/// wrapped with X25519 ECDH + AES-256-GCM.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MEKVaultEntry {
-    /// Channel ID this vault entry is for (empty string = community-wide MEK).
-    pub channel_id: String,
-    /// MEK generation number.
-    pub generation: u64,
-    /// Pseudonym public key (hex) of the admin who wrapped these copies.
-    /// Recipients need this to derive the shared ECDH secret for unwrapping.
-    pub rotator_pseudonym: String,
-    /// Per-member encrypted MEK copies.
-    pub copies: Vec<EncryptedMEKCopy>,
-}
-
-/// A single encrypted MEK copy targeted at a specific member.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EncryptedMEKCopy {
-    /// Target member's pseudonym public key (hex).
-    pub target_pseudonym: String,
-    /// Encrypted MEK: `[12-byte nonce || ciphertext+tag]` (68 bytes for a 40-byte MEK).
-    #[serde(with = "base64_bytes")]
-    pub encrypted_mek: Vec<u8>,
-}
-
 /// Invite entry stored in manifest subkey 7.
 ///
 /// The `code_hash` is SHA-256(raw_code) so the raw invite code is never
@@ -366,23 +331,6 @@ mod tests {
         assert_eq!(json, "\"forum\"");
         let back: ChannelKind = serde_json::from_str(&json).unwrap();
         assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn mek_vault_entry_serde() {
-        let entry = MEKVaultEntry {
-            channel_id: "ch_01".into(),
-            generation: 1,
-            rotator_pseudonym: "rotator_key_hex".into(),
-            copies: vec![EncryptedMEKCopy {
-                target_pseudonym: "abcdef".into(),
-                encrypted_mek: vec![1, 2, 3, 4, 5],
-            }],
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let back: MEKVaultEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.channel_id, "ch_01");
-        assert_eq!(back.copies[0].encrypted_mek, vec![1, 2, 3, 4, 5]);
     }
 
     #[test]

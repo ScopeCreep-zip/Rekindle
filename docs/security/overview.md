@@ -166,7 +166,13 @@ generation.
 
 The 255-subkey SMPL layout caps a single segment at 255 members. Beyond that,
 **Plate Gates** (architecture §15) add fractal SMPL segments. Each segment
-has its own member registry and MEK vault.
+has its own member registry.
+
+There is no MEK vault. An earlier design published per-member wrapped
+copies of the key into a registry subkey; under `o_cnt: 0` no writer is
+credentialed for a community-wide subkey, and the key is never written
+to the DHT at all. Distribution is per-recipient `app_call` from the
+elected rotator.
 
 ## Layer 4: Vault (`rekindle-vault`, At-Rest Encryption)
 

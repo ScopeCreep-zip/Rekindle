@@ -24,6 +24,11 @@ rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # boundary. No veilid_core types are named from this crate.
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+# Tier 5. The community presence orchestrators — registry scan, W26
+# verification, gossip overlay rebuild. Only src-tauri implemented
+# `CommunityPresenceDeps`, which is why the daemon had no roster and
+# read the v1.0 member index instead.
+rekindle-presence = { path = "../rekindle-presence" }
 # Deterministic-rotator MEK rotation (communities-channels.md). The
 # daemon implements its `MekDistributeDeps` so a departure rotates the
 # key on this track too; before this it only logged the intent.

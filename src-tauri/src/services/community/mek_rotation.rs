@@ -8,6 +8,8 @@
 use std::sync::Arc;
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_secrets::rotator::select_rotator;
+use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
 
@@ -86,26 +88,72 @@ pub fn spawn_mek_request_with_retry(
 }
 
 /// Decide whether a community-MEK recovery should fall back to a last-resort
-/// local mint. Mint ONLY when we are the owner AND nothing landed during the
-/// re-acquire window (the slot started empty and is still empty — no peer
-/// served the canonical key). A non-owner never mints; an owner that did
-/// receive a key (slot now populated) keeps the canonical one.
+/// local mint. Mint ONLY when we are the elected minter AND nothing landed
+/// during the re-acquire window (the slot started empty and is still empty —
+/// no peer served the canonical key). An unelected peer never mints; an
+/// elected one that did receive a key (slot now populated) keeps the
+/// canonical one.
 #[must_use]
-pub fn should_last_resort_mint(initial: Option<u64>, current: Option<u64>, is_owner: bool) -> bool {
-    is_owner && initial.is_none() && current.is_none()
+pub fn should_last_resort_mint(initial: Option<u64>, current: Option<u64>, elected: bool) -> bool {
+    elected && initial.is_none() && current.is_none()
+}
+
+/// Are we the peer that mints when nobody served the key?
+///
+/// This gate used to be `registry_owner_keypair.is_some()` — "did I
+/// create this community". Under `o_cnt: 0` that keypair authorizes no
+/// write on the registry at all, so it had degenerated into a pure
+/// creator privilege: if the creator never came back, the community's
+/// media stayed permanently undecryptable. That is the single point of
+/// failure v2.0 removed.
+///
+/// The replacement is the election every other MEK decision already
+/// uses — [`select_rotator`] over `blake3(context || candidate)` — with
+/// the zero context `rotate_mek_on_request` stamps its provenance rank
+/// against, so the minter and the rank it publishes agree.
+///
+/// Candidates are the peers we can *see*: the gossip overlay's online
+/// set plus ourselves. Scoping to online members is what keeps this
+/// live — an offline lowest-ranked member must not veto recovery for
+/// everyone else. The cost is that two peers with different online
+/// views can both elect themselves. That degrades to a resolvable tie
+/// rather than a fork: both mint at the same generation, both stamp
+/// their election rank, and `convergence::incoming_wins_same_generation`
+/// converges every peer on the lower-ranked key.
+fn elected_to_mint(state: &Arc<AppState>, community_id: &str) -> bool {
+    let Some(me) = super::mek_rotation_support::my_pseudonym(state, community_id) else {
+        return false;
+    };
+    let mut candidates = vec![me.clone()];
+    {
+        let communities = state.communities.read();
+        if let Some(gossip) = communities
+            .get(community_id)
+            .and_then(|c| c.gossip.as_ref())
+        {
+            for pseudonym in gossip.online_members.keys() {
+                let key = PseudonymKey::from_hex_lossy(pseudonym);
+                if key != me {
+                    candidates.push(key);
+                }
+            }
+        }
+    }
+    select_rotator(&PseudonymKey([0u8; 32]), &candidates) == Some(me)
 }
 
 /// Community-MEK recovery after vault loss (architecture §7.3): re-acquire the
 /// canonical key from an online peer via `RequestMEK`; only if no peer serves
-/// it within the cascade window AND we are the owner, mint a SUPERSEDING key
-/// (`rotate_mek_local` mints at `mek_generation + 1` and broadcasts), so a peer
-/// that appears later converges FORWARD via Max-Register instead of forking.
-/// Never mints a colliding same-generation key.
+/// it within the cascade window AND [`elected_to_mint`] picks us, mint a
+/// SUPERSEDING key (`rotate_mek_local` mints at `mek_generation + 1` and
+/// broadcasts), so a peer that appears later converges FORWARD via
+/// Max-Register instead of forking. Never mints a colliding same-generation
+/// key.
 pub fn spawn_community_mek_recovery(
+    app_handle: tauri::AppHandle,
     state: Arc<AppState>,
     community_id: String,
     requester_pseudonym: String,
-    keystore: crate::keystore::KeystoreHandle,
 ) {
     tokio::spawn(async move {
         // Snapshot before requesting so we can tell whether anything landed.
@@ -130,13 +178,7 @@ pub fn spawn_community_mek_recovery(
 
         let current =
             crate::state_helpers::channel_media_mek(&state, &community_id, "").map(|(_, g)| g);
-        let is_owner = {
-            let communities = state.communities.read();
-            communities
-                .get(&community_id)
-                .is_some_and(|c| c.registry_owner_keypair.is_some())
-        };
-        if !should_last_resort_mint(initial, current, is_owner) {
+        if !should_last_resort_mint(initial, current, elected_to_mint(&state, &community_id)) {
             return;
         }
 
@@ -146,9 +188,9 @@ pub fn spawn_community_mek_recovery(
              minting a superseding key (last resort)"
         );
         if let Err(e) = crate::services::community_mek_local_rotate::rotate_mek_local(
+            &app_handle,
             &state,
             &community_id,
-            &keystore,
         )
         .await
         {
@@ -192,8 +234,8 @@ mod tests {
     use super::should_last_resort_mint;
 
     #[test]
-    fn owner_mints_only_when_nothing_landed() {
-        // Owner, slot still empty after the window → mint (no peer served it).
+    fn elected_mints_only_when_nothing_landed() {
+        // Elected, slot still empty after the window → mint (no peer served it).
         assert!(should_last_resort_mint(None, None, true));
     }
 
@@ -205,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn non_owner_never_mints() {
+    fn unelected_never_mints() {
         assert!(!should_last_resort_mint(None, None, false));
         assert!(!should_last_resort_mint(None, Some(3), false));
     }

@@ -47,6 +47,44 @@ pub struct CommunityRuntime {
     /// Governance overflow record keys (the `overflow_next` chain), in
     /// chain order — so this one stays a `Vec`.
     pub overflow_keys: Vec<String>,
+    /// The community's members, as the presence poll last observed
+    /// them, keyed by hex pseudonym.
+    ///
+    /// Runtime-derived like everything else here: there is no
+    /// membership ledger to persist. `communities-overview.md` calls
+    /// the registry a presence directory — "Single struct overwritten
+    /// per heartbeat. Never grows" — and under `AdmissionMode::Open`
+    /// governance holds no entry for a joiner either. A member is a
+    /// *predicate over registry rows*: a validly-signed
+    /// `MemberPresence` whose author is neither banned nor departed.
+    ///
+    /// The poll evaluates that predicate once per tick and leaves the
+    /// answer here, so queries read a materialised roster instead of
+    /// re-verifying signatures per request. That is the whole reason
+    /// the daemon needs a presence subsystem rather than a member-index
+    /// read.
+    pub members: HashMap<String, MemberRecord>,
+    /// Per-member roles as merged from governance, keyed by hex
+    /// pseudonym. Separate from `members` because a role assignment can
+    /// arrive (via the CRDT) before the member's presence row does.
+    pub member_roles: HashMap<String, Vec<u32>>,
+    /// Channels whose initial history catch-up has completed.
+    pub synced_channels: BTreeSet<String>,
+}
+
+/// One member as last seen in the registry.
+#[derive(Debug, Clone, Default)]
+pub struct MemberRecord {
+    /// Peer-supplied. Untrusted display data — render escaped.
+    pub display_name: Option<String>,
+    pub subkey_index: u32,
+    pub segment_index: u32,
+    pub bio: Option<String>,
+    pub pronouns: Option<String>,
+    pub theme_color: Option<u32>,
+    pub badges: Vec<String>,
+    pub avatar_ref: Option<String>,
+    pub banner_ref: Option<String>,
 }
 
 /// All communities' runtime state, keyed by governance key.
@@ -125,6 +163,66 @@ impl CommunityRuntimeMap {
     }
 
     /// Drop all runtime state for a community — on leave, or on logout.
+    /// Replace the observed roster for a community.
+    ///
+    /// Wholesale rather than merged: the poll re-derives the full set
+    /// each tick, so a member who vanished from the registry must
+    /// vanish here too. A merge would let a departed member linger
+    /// forever, which is the bug the reclamation work exists to avoid
+    /// on the slot side.
+    pub fn set_members(&self, community_id: &str, members: HashMap<String, MemberRecord>) {
+        self.inner
+            .write()
+            .entry(community_id.to_string())
+            .or_default()
+            .members = members;
+    }
+
+    /// Snapshot the observed roster.
+    pub fn members(&self, community_id: &str) -> HashMap<String, MemberRecord> {
+        self.inner
+            .read()
+            .get(community_id)
+            .map(|c| c.members.clone())
+            .unwrap_or_default()
+    }
+
+    /// How many members the last poll observed.
+    pub fn member_count(&self, community_id: &str) -> usize {
+        self.inner
+            .read()
+            .get(community_id)
+            .map_or(0, |c| c.members.len())
+    }
+
+    /// Replace the merged per-member role map.
+    pub fn set_member_roles(&self, community_id: &str, roles: HashMap<String, Vec<u32>>) {
+        self.inner
+            .write()
+            .entry(community_id.to_string())
+            .or_default()
+            .member_roles = roles;
+    }
+
+    /// Snapshot the merged per-member role map.
+    pub fn member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
+        self.inner
+            .read()
+            .get(community_id)
+            .map(|c| c.member_roles.clone())
+            .unwrap_or_default()
+    }
+
+    /// Record that a channel finished its initial history catch-up.
+    pub fn mark_channel_synced(&self, community_id: &str, channel_id: &str) {
+        self.inner
+            .write()
+            .entry(community_id.to_string())
+            .or_default()
+            .synced_channels
+            .insert(channel_id.to_string());
+    }
+
     pub fn remove(&self, community_id: &str) {
         self.inner.write().remove(community_id);
     }

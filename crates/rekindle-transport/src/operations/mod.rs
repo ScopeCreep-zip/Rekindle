@@ -12,7 +12,6 @@
 
 pub mod calls;
 pub mod channel;
-pub mod channel_admin;
 pub mod community;
 pub mod dm;
 pub mod friend;

@@ -129,12 +129,6 @@ impl MediaEncryptionKey {
         self.election_rank
     }
 
-    /// Consume the key, returning the raw bytes.
-    #[must_use]
-    pub fn to_bytes(self) -> Vec<u8> {
-        self.key.to_vec()
-    }
-
     /// Get the raw key bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.key
