@@ -125,12 +125,6 @@
 
   .call-stage-tile-video,
   .call-stage-tile-canvas,
-  .call-stage-tile-canvas canvas {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
-  }
 
   .call-stage-tile-video {
     transform: scaleX(-1); /* mirror own CAMERA preview, Discord-style */
@@ -255,12 +249,6 @@
     padding: 10px;
   }
 
-  .analytics-card-label {
-    font-size: 10px;
-    color: var(--color-xfire-text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
 
   .analytics-card-value {
     font-size: 18px;
@@ -273,11 +261,6 @@
     margin: 8px 0;
   }
 
-  .analytics-sparkline-label {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    margin-bottom: 4px;
-  }
 
   .analytics-sparkline-bars {
     display: flex;
@@ -474,12 +457,4 @@
     margin-bottom: 4px;
   }
 
-  .search-panel-hit-scope {
-    font-size: 9px;
-    text-transform: uppercase;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: color-mix(in srgb, white 8%, transparent);
-    color: var(--color-xfire-text-dim);
-  }
 }

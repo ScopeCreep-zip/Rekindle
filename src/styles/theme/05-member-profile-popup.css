@@ -251,13 +251,6 @@
     opacity: 0.5;
   }
 
-  .notification-item-content {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    flex: 1;
-  }
 
   .notification-title {
     font-size: 11px;
@@ -268,13 +261,6 @@
     white-space: nowrap;
   }
 
-  .notification-body {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .notification-time {
     font-size: 10px;
@@ -464,11 +450,6 @@
   }
 
   /* Member context menu */
-  .context-menu-separator {
-    height: 1px;
-    background: color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    margin: 4px 0;
-  }
 
   .context-menu-header {
     padding: 4px 12px;

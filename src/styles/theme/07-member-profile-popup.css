@@ -54,12 +54,6 @@
     background: color-mix(in srgb, white 5%, transparent);
   }
 
-  .settings-member-actions {
-    display: flex;
-    gap: 4px;
-    margin-left: auto;
-    flex-shrink: 0;
-  }
 
   .settings-member-actions .form-btn-secondary,
   .settings-member-actions .form-btn-danger {
@@ -88,20 +82,7 @@
     background: color-mix(in srgb, white 5%, transparent);
   }
 
-  .settings-list-info {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
 
-  .settings-list-name {
-    font-size: 12px;
-    color: var(--color-xfire-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .settings-list-date {
     font-size: 10px;
@@ -109,12 +90,6 @@
   }
 
   /* ─── Invite create form ─── */
-  .invite-create-form {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
 
   .invite-create-form .form-input {
     width: auto;
@@ -228,11 +203,6 @@
     background: var(--color-xfire-bg-tertiary);
   }
 
-  .event-card-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--color-xfire-text-primary);
-  }
 
   .event-card-description {
     font-size: 12px;
@@ -276,11 +246,6 @@
     color: var(--color-xfire-text-primary);
   }
 
-  .event-rsvp-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
-    border-color: var(--color-xfire-accent);
-    color: var(--color-xfire-accent);
-  }
 
   .event-rsvp-count {
     font-size: 11px;
@@ -288,12 +253,6 @@
     margin-left: auto;
   }
 
-  .event-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 8px;
-  }
 
   .event-empty {
     text-align: center;
@@ -302,12 +261,6 @@
     padding: 24px 0;
   }
 
-  .event-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
 
   .event-card-cancelled {
     opacity: 0.6;
@@ -372,11 +325,6 @@
     color: var(--color-xfire-text-primary);
   }
 
-  .event-filter-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
-    border-color: var(--color-xfire-accent);
-    color: var(--color-xfire-accent);
-  }
 
   /* Logout icon button */
   .logout-icon-btn {
@@ -434,31 +382,12 @@
   }
 
   /* Member group headers (hoisted role sections) */
-  .member-group-header {
-    padding: 8px 12px 4px;
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--color-xfire-text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
 
   /* Member search */
   .member-search-wrapper {
     padding: 4px 8px;
   }
 
-  .member-search-input {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 3px;
-    padding: 4px 8px;
-    font-size: 11px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
 
   .member-search-input:focus {
     border-color: var(--color-xfire-accent);

@@ -8,11 +8,6 @@
     color: var(--color-xfire-text-0);
   }
 
-  .stage-panel-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
 
   .stage-panel-member-card,
   .stage-panel-request-card {
@@ -37,11 +32,6 @@
     color: var(--color-xfire-text-2);
   }
 
-  .stage-panel-request-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
 
   .stage-panel-approve-btn {
     padding: 9px 11px;
@@ -78,11 +68,6 @@
     }
   }
 
-  .thread-list-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px;
-  }
 
   .thread-list-item {
     padding: 8px;
@@ -250,18 +235,7 @@
   }
 
   /* ─── Game server list ─── */
-  .game-server-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 8px;
-  }
 
-  .game-server-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
 
   .game-server-group-header {
     display: flex;
@@ -293,12 +267,6 @@
     flex-shrink: 0;
   }
 
-  .game-server-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1;
-  }
 
   .game-server-label {
     font-size: 12px;
@@ -309,11 +277,6 @@
     white-space: nowrap;
   }
 
-  .game-server-address {
-    font-size: 10px;
-    color: var(--color-xfire-text-dim);
-    font-family: monospace;
-  }
 
   .game-server-remove-btn {
     background: transparent;
@@ -372,11 +335,6 @@
     padding: 2px 8px 2px 32px;
   }
 
-  .channel-settings-inline-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
 
   .channel-slowmode-label {
     font-size: 10px;
@@ -393,12 +351,6 @@
   }
 
   /* Architecture §32 Phase 5 W15 — per-community avatar + banner edit row. */
-  .profile-popup-edit-image-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
 
   .profile-popup-edit-avatar {
     width: 48px;
@@ -461,12 +413,6 @@
 
   .video-call-video,
   .video-call-canvas,
-  .video-call-canvas canvas {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
-  }
 
   .video-call-tile-label {
     position: absolute;

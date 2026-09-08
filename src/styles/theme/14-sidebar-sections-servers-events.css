@@ -1,10 +1,4 @@
 @layer components {
-  .sidebar-event-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-  }
 
   .sidebar-event-countdown {
     color: var(--color-xfire-text-dim);
@@ -103,12 +97,6 @@
     margin-bottom: 10px;
   }
 
-  .expression-picker-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
 
   .expression-picker-grid {
     margin-bottom: 10px;

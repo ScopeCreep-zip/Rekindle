@@ -1,10 +1,4 @@
 @layer components {
-  .group-submenu-item {
-    padding: 3px 16px;
-    font-size: 11px;
-    color: var(--color-xfire-text);
-    cursor: pointer;
-  }
 
   .group-submenu-item:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
@@ -61,11 +55,6 @@
     background: color-mix(in srgb, white 15%, transparent);
   }
 
-  .avatar-upload-hint {
-    font-size: 10px;
-    color: var(--color-xfire-text-dim);
-    font-style: italic;
-  }
 
   /* Update check */
   .update-check-row {
@@ -80,11 +69,6 @@
     color: var(--color-xfire-text-dim);
   }
 
-  .update-status-available {
-    font-size: 11px;
-    color: var(--color-xfire-online);
-    font-weight: 600;
-  }
 
   /* Role picker */
   .role-picker-list {
@@ -93,12 +77,6 @@
     overflow-y: auto;
   }
 
-  .role-picker-item {
-    padding: 3px 16px;
-    font-size: 11px;
-    color: var(--color-xfire-text);
-    cursor: pointer;
-  }
 
   .role-picker-item:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
@@ -137,14 +115,6 @@
   }
 
   /* Role management rows in settings */
-  .settings-role-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border-radius: 3px;
-    transition: background 0.15s;
-  }
 
   .settings-role-row:hover {
     background: color-mix(in srgb, white 5%, transparent);
@@ -159,14 +129,6 @@
     background: var(--settings-role-color, var(--color-xfire-text-dim));
   }
 
-  .settings-role-name {
-    font-size: 12px;
-    color: var(--color-xfire-text);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .settings-role-position {
     font-size: 10px;
@@ -174,12 +136,6 @@
     flex-shrink: 0;
   }
 
-  .settings-role-actions {
-    display: flex;
-    gap: 4px;
-    margin-left: auto;
-    flex-shrink: 0;
-  }
 
   .settings-role-actions .form-btn-danger {
     padding: 2px 6px;
@@ -187,12 +143,6 @@
   }
 
   /* Role create form in settings */
-  .settings-role-create {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px;
-  }
 
   .settings-role-create .form-input {
     flex: 1;
@@ -381,11 +331,6 @@
   }
 
   /* Community settings modal */
-  .settings-section {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
 
   .settings-section-accented {
     padding-left: 8px;
@@ -428,35 +373,12 @@
   }
 
   /* Channel management row in settings */
-  .channel-manage-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border-radius: 3px;
-    transition: background 0.15s;
-  }
 
   .channel-manage-row:hover {
     background: color-mix(in srgb, white 5%, transparent);
   }
 
-  .channel-manage-icon {
-    font-size: 14px;
-    color: var(--color-xfire-text-dim);
-    width: 16px;
-    text-align: center;
-    flex-shrink: 0;
-  }
 
-  .channel-manage-name {
-    font-size: 12px;
-    color: var(--color-xfire-text);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .channel-manage-type {
     font-size: 10px;
@@ -479,10 +401,4 @@
     font-size: 12px;
   }
 
-  .channel-create-inline {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px;
-  }
 }

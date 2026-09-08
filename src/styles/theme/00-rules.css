@@ -105,11 +105,6 @@
     background: linear-gradient(to right, #0f1a3a, #1a2a5e);
   }
 
-  .xfire-titlebar-text {
-    font-size: 11px;
-    color: var(--color-xfire-text);
-    font-weight: 600;
-  }
 
   .xfire-titlebar-btn {
     width: 20px;
@@ -141,33 +136,11 @@
   }
 
   /* ─── Form primitives ─── */
-  .form-input {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
 
   .form-input:focus {
     border-color: var(--color-xfire-accent);
   }
 
-  .form-select {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
 
   .form-select:disabled {
     opacity: 0.5;
@@ -198,11 +171,6 @@
     text-align: center;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
 
   .form-label {
     font-size: 11px;
@@ -212,11 +180,6 @@
     letter-spacing: 0.05em;
   }
 
-  .form-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
 
   .form-btn-primary {
     width: 100%;
@@ -300,11 +263,6 @@
     display: block;
   }
 
-  .form-field-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-  }
 
   .form-field-row .form-input {
     flex: 1;
@@ -366,11 +324,6 @@
   }
 
   /* Buddy list */
-  .buddy-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px 0;
-  }
 
   .buddy-group-header {
     padding: 4px 12px;
@@ -382,13 +335,6 @@
     cursor: pointer;
   }
 
-  .buddy-item {
-    display: flex;
-    align-items: center;
-    padding: 4px 12px;
-    gap: 8px;
-    cursor: pointer;
-  }
 
   .buddy-item:hover {
     background: color-mix(in srgb, white 5%, transparent);
@@ -403,13 +349,6 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
   }
 
-  .buddy-name {
-    font-size: 12px;
-    color: var(--color-xfire-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .buddy-name-offline {
     color: var(--color-xfire-offline);

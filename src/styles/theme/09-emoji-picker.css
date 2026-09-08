@@ -31,26 +31,11 @@
     z-index: var(--z-elevated);
   }
 
-  .pin-panel-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-xfire-text);
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
-  }
 
   .pin-panel-header .modal-close-btn {
     margin-left: auto;
   }
 
-  .pin-panel-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px;
-  }
 
   .pin-panel-empty {
     text-align: center;
@@ -131,11 +116,6 @@
     transition: transform 0.15s;
   }
 
-  .category-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   /* ─── Thread panel ─── */
   .thread-panel {
@@ -147,27 +127,11 @@
     flex-shrink: 0;
   }
 
-  .thread-panel-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-xfire-text);
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
-  }
 
   .thread-panel-header .modal-close-btn {
     margin-left: auto;
   }
 
-  .thread-panel-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-  }
 
   .thread-panel-archive-btn {
     background: transparent;
@@ -222,11 +186,6 @@
     gap: 12px;
   }
 
-  .forum-channel-title-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
 
   .forum-channel-title {
     font-size: 18px;
@@ -276,12 +235,6 @@
     background: var(--color-xfire-bg-2);
   }
 
-  .forum-channel-composer-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
 
   .forum-channel-composer-title {
     font-weight: 700;
@@ -332,12 +285,6 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-2));
   }
 
-  .forum-channel-thread-topline {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
 
   .forum-channel-thread-name {
     font-size: 15px;

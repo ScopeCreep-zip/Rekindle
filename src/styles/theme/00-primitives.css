@@ -1,0 +1,390 @@
+/* Shared visual primitives.
+ *
+ * Every rule here was written out two-to-four times across the theme
+ * files. Those files are not concerns — they are the 600-line slices
+ * `xfire-theme.css` was cut into, which is why `.category-name` lived
+ * in `09-emoji-picker.css` and `.automod-rule-list` in
+ * `90-top-level.css`. Splitting by line budget stopped the file being
+ * too big; it did nothing about the same three declarations being
+ * written in four places.
+ *
+ * Imported FIRST and in the same `@layer components`, so source order
+ * puts it before every theme part: any later rule of equal specificity
+ * still wins, exactly as it did when these declarations sat inline.
+ * That was verified before the move — no selector here has any of these
+ * properties set a second time anywhere in the sheet, so nothing was
+ * relying on a later override.
+ */
+@layer components {
+  .category-name,
+  .channel-name,
+  .community-name,
+  .voice-participant-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .add-friend-invite-result,
+  .forum-channel-title-group,
+  .game-server-group,
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mention-popover-label,
+  .sidebar-event-title,
+  .sidebar-server-name,
+  .thread-panel-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .add-friend-section,
+  .form-group,
+  .stage-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .channel-settings-inline-row,
+  .form-field-row,
+  .profile-status-row {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+  }
+
+  .buddy-list,
+  .channel-list,
+  .member-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .attachment-card-filename,
+  .buddy-name,
+  .settings-list-name {
+    color: var(--color-xfire-text);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-message-sender-other,
+  .reaction-chip-count,
+  .voice-panel-status-disconnected {
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .chat-message-sender-self,
+  .xfire-titlebar-text {
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .form-input,
+  .form-select {
+    background: var(--color-xfire-bg-input);
+    border-radius: 0.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    color: var(--color-xfire-text);
+    font-family: var(--font-family-xfire);
+    font-size: 13px;
+    outline: none;
+    padding: 8px 12px;
+    width: 100%;
+  }
+
+  .form-row,
+  .stage-panel-request-actions {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+  }
+
+  .buddy-item,
+  .settings-option {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    gap: 8px;
+    padding: 4px 12px;
+  }
+
+  .analytics-sparkline-label,
+  .profile-section-label {
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .profile-game-elapsed,
+  .profile-game-server {
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .channel-section-header,
+  .member-group-header {
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 8px 12px 4px;
+    text-transform: uppercase;
+  }
+
+  .channel-icon,
+  .channel-manage-icon {
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+    font-size: 14px;
+    text-align: center;
+    width: 16px;
+  }
+
+  .event-card-title,
+  .profile-popup-name {
+    color: var(--color-xfire-text-primary);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .game-server-address,
+  .profile-popup-key {
+    color: var(--color-xfire-text-dim);
+    font-family: monospace;
+    font-size: 10px;
+  }
+
+  .update-status-available,
+  .voice-panel-status {
+    color: var(--color-xfire-online);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .call-waiting-banner-kind,
+  .outgoing-call-panel-kind {
+    color: var(--color-xfire-text-secondary);
+    font-size: 11px;
+    text-transform: capitalize;
+  }
+
+  .attachment-card-meta,
+  .notification-item-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .notification-body,
+  .reply-preview-body {
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .context-menu-separator,
+  .menu-dropdown-separator {
+    background: color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    height: 1px;
+    margin: 4px 0;
+  }
+
+  .group-submenu-item,
+  .role-picker-item {
+    color: var(--color-xfire-text);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 3px 16px;
+  }
+
+  .avatar-upload-hint,
+  .forward-dialog-hint {
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    font-style: italic;
+  }
+
+  .channel-manage-row,
+  .settings-role-row {
+    align-items: center;
+    border-radius: 3px;
+    display: flex;
+    gap: 8px;
+    padding: 4px 8px;
+    transition: background 0.15s;
+  }
+
+  .channel-manage-name,
+  .settings-role-name {
+    color: var(--color-xfire-text);
+    flex: 1;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-member-actions,
+  .settings-role-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .channel-create-inline,
+  .settings-role-create {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .game-server-info,
+  .settings-list-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .invite-create-form,
+  .profile-popup-edit-image-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .event-filter-active,
+  .event-rsvp-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    border-color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent);
+  }
+
+  .event-list,
+  .game-server-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .event-card-header,
+  .expression-picker-header {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .buddy-search-input,
+  .member-search-input {
+    background: var(--color-xfire-bg-input);
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    color: var(--color-xfire-text);
+    font-family: var(--font-family-xfire);
+    font-size: 11px;
+    outline: none;
+    padding: 4px 8px;
+    width: 100%;
+  }
+
+  .pin-panel-header,
+  .thread-panel-header {
+    align-items: center;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    color: var(--color-xfire-text);
+    display: flex;
+    font-size: 12px;
+    font-weight: 600;
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  .pin-panel-list,
+  .thread-list-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px;
+  }
+
+  .forum-channel-composer-header,
+  .forum-channel-thread-topline {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+  }
+
+  .call-stage-tile-canvas canvas,
+  .video-call-canvas canvas {
+    display: block;
+    height: 100%;
+    object-fit: contain;
+    width: 100%;
+  }
+
+  .analytics-card-label,
+  .message-link-preview-site {
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .mention-popover-tag,
+  .search-panel-hit-scope {
+    background: color-mix(in srgb, white 8%, transparent);
+    border-radius: 3px;
+    color: var(--color-xfire-text-dim);
+    font-size: 9px;
+    padding: 1px 5px;
+    text-transform: uppercase;
+  }
+
+  .profile-popup-action-btn,
+  .profile-popup-edit-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    color: var(--color-xfire-text);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 3px 8px;
+    transition: background 0.15s;
+  }
+
+  .sidebar-event-row,
+  .sidebar-server-row {
+    align-items: center;
+    color: var(--color-xfire-text);
+    display: flex;
+    font-size: 11px;
+    height: 22px;
+    justify-content: space-between;
+    padding: 2px 12px;
+  }
+
+}

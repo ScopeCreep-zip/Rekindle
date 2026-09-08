@@ -2,10 +2,24 @@
 @source "../";
 /* The Xfire skin, split into ordered parts. It was one 7,926-line file,
  * which the 600-line ceiling could not cover. Import order IS cascade
- * order, so these must stay sorted: each part re-opens
+ * order, so these must stay sorted: parts `00`-`14` each re-open
  * `@layer components`, and CSS concatenates them in source order.
- * `99-top-level.css` holds the keyframes and media queries that sat
- * outside the layer. */
+ *
+ * `00-primitives.css` comes first and holds the declaration sets that
+ * were written two-to-four times across the other parts. Same layer,
+ * earliest source position, so any later rule of equal specificity
+ * still wins — which is what makes hoisting them safe.
+ *
+ * NOTE: `90-` and `91-top-level.css` have no `@layer components`
+ * wrapper, so their ~140 class rules sit OUTSIDE the layer and
+ * therefore beat every layered rule regardless of specificity. This
+ * comment used to say `99-top-level.css` held "the keyframes and media
+ * queries that sat outside the layer"; there is no `99-`, and the two
+ * files that exist hold 140 ordinary rules and 5 at-rules between them.
+ * Whether that precedence is intentional or an artifact of the split
+ * is unresolved, so those two parts were left untouched by the
+ * primitives hoist — moving a rule out of them would demote it. */
+@import "./theme/00-primitives.css";
 @import "./theme/00-rules.css";
 @import "./theme/01-form-primitives.css";
 @import "./theme/02-form-primitives.css";

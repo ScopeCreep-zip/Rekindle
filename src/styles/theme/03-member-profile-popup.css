@@ -49,11 +49,6 @@
     flex-shrink: 0;
   }
 
-  .voice-participant-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   /* Architecture §28.6 — forum-channel tag chip input. The chip rows
    * live inside the same flex container as the inline text input so
@@ -289,11 +284,6 @@
     font-weight: 700;
     color: var(--color-xfire-text-primary);
   }
-  .call-waiting-banner-kind {
-    font-size: 11px;
-    color: var(--color-xfire-text-secondary);
-    text-transform: capitalize;
-  }
   .call-waiting-banner-actions {
     display: flex;
     gap: 8px;
@@ -321,11 +311,6 @@
     font-size: 15px;
     font-weight: 700;
     color: var(--color-xfire-text-primary);
-  }
-  .outgoing-call-panel-kind {
-    font-size: 11px;
-    color: var(--color-xfire-text-secondary);
-    text-transform: capitalize;
   }
   .outgoing-call-panel-timer {
     font-size: 11px;

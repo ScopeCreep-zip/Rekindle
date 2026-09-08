@@ -439,11 +439,6 @@
     padding: 6px 12px;
   }
 
-  .add-friend-section {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
 
   .add-friend-generate {
     display: flex;
@@ -451,11 +446,6 @@
     gap: 8px;
   }
 
-  .add-friend-invite-result {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
 
   .add-friend-invite-text {
     width: 100%;
