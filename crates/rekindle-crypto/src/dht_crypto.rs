@@ -69,7 +69,7 @@ impl DhtRecordKey {
         use chacha20poly1305::XNonce;
 
         let cipher = XChaCha20Poly1305::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut nonce_bytes = [0u8; NONCE_LEN];
         chacha20poly1305::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut nonce_bytes);
@@ -77,7 +77,7 @@ impl DhtRecordKey {
 
         let ciphertext = cipher
             .encrypt(nonce, plaintext)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut output = Vec::with_capacity(NONCE_LEN + ciphertext.len());
         output.extend_from_slice(&nonce_bytes);
@@ -94,20 +94,18 @@ impl DhtRecordKey {
         use chacha20poly1305::XNonce;
 
         if data.len() < NONCE_LEN + TAG_LEN {
-            return Err(CryptoError::DecryptionError(
-                "ciphertext too short".to_string(),
-            ));
+            return Err(CryptoError::decryption("ciphertext too short".to_string()));
         }
 
         let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
         let nonce = XNonce::from_slice(nonce_bytes);
 
         let cipher = XChaCha20Poly1305::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::decryption(e.to_string()))?;
 
         cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))
+            .map_err(|e| CryptoError::decryption(e.to_string()))
     }
 }
 

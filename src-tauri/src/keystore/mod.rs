@@ -102,7 +102,7 @@ impl StrongholdKeystore {
     /// validation).
     fn initialize_from_file(path: &Path, passphrase: &str) -> Result<Self, CryptoError> {
         let vault = VaultStore::open(path, passphrase)
-            .map_err(|e| CryptoError::StorageError(format!("vault open: {e}")))?;
+            .map_err(|e| CryptoError::storage(format!("vault open: {e}")))?;
         Ok(Self { vault })
     }
 
@@ -111,7 +111,7 @@ impl StrongholdKeystore {
     pub fn entry_count(&self) -> Result<usize, CryptoError> {
         self.vault
             .entry_count()
-            .map_err(|e| CryptoError::StorageError(format!("vault count: {e}")))
+            .map_err(|e| CryptoError::storage(format!("vault count: {e}")))
     }
 
     /// On-disk path of this vault — exposed for diagnostics. Used to read
@@ -127,7 +127,7 @@ impl StrongholdKeystore {
     pub(crate) fn vault_put(&self, vault_key: &VaultKey, data: &[u8]) -> Result<(), CryptoError> {
         self.vault
             .put(vault_key, data)
-            .map_err(|e| CryptoError::StorageError(format!("vault put: {e}")))
+            .map_err(|e| CryptoError::storage(format!("vault put: {e}")))
     }
 
     /// Load and decrypt the entry addressed by `vault_key`, or `None`.
@@ -135,14 +135,14 @@ impl StrongholdKeystore {
         self.vault
             .get(vault_key)
             .map(|opt| opt.map(|z| z.to_vec()))
-            .map_err(|e| CryptoError::StorageError(format!("vault get: {e}")))
+            .map_err(|e| CryptoError::storage(format!("vault get: {e}")))
     }
 
     /// Remove the entry addressed by `vault_key` (idempotent).
     pub(crate) fn vault_delete(&self, vault_key: &VaultKey) -> Result<(), CryptoError> {
         self.vault
             .delete(vault_key)
-            .map_err(|e| CryptoError::StorageError(format!("vault delete: {e}")))
+            .map_err(|e| CryptoError::storage(format!("vault delete: {e}")))
     }
 }
 

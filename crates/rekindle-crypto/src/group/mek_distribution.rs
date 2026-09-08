@@ -13,22 +13,8 @@
 //! (68 bytes for the 40-byte MEK wire input: 8-byte generation LE + 32-byte key).
 
 use ed25519_dalek::SigningKey;
-use rekindle_secrets::CryptoError as SecretsCryptoError;
 
 use crate::error::CryptoError;
-
-/// Map the secrets-crate error taxonomy onto this crate's.
-fn map_err(e: SecretsCryptoError) -> CryptoError {
-    match e {
-        SecretsCryptoError::Encryption(s) => CryptoError::EncryptionError(s),
-        SecretsCryptoError::Decryption(s) => CryptoError::DecryptionError(s),
-        SecretsCryptoError::InvalidKey(s) => CryptoError::InvalidKey(s),
-        SecretsCryptoError::KeyGeneration(s) => CryptoError::KeyGeneration(s),
-        SecretsCryptoError::Signing(s) => CryptoError::SigningError(s),
-        SecretsCryptoError::Verification(s) => CryptoError::VerificationError(s),
-        SecretsCryptoError::Storage(s) => CryptoError::StorageError(s),
-    }
-}
 
 /// Wrap (encrypt) MEK wire bytes for a specific recipient.
 ///
@@ -43,7 +29,7 @@ pub fn wrap_mek(
     mek_wire_bytes: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     rekindle_secrets::mek::wrap_mek(sender_signing_key, recipient_ed25519_public, mek_wire_bytes)
-        .map_err(map_err)
+        .map_err(Into::into)
 }
 
 /// Wrap MEK wire bytes via RFC 9180 HPKE (v2 format, `0x02`-prefixed).
@@ -61,7 +47,7 @@ pub fn hpke_wrap_mek(
         recipient_ed25519_public,
         mek_wire_bytes,
     )
-    .map_err(map_err)
+    .map_err(Into::into)
 }
 
 /// Unwrap (decrypt) MEK wire bytes received from a peer. Reads BOTH
@@ -78,7 +64,7 @@ pub fn unwrap_mek(
     wrapped_mek: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     rekindle_secrets::mek::unwrap_mek(recipient_signing_key, sender_ed25519_public, wrapped_mek)
-        .map_err(map_err)
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

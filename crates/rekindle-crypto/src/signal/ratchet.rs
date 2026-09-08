@@ -161,14 +161,14 @@ impl RatchetState {
         self.send_counter += 1;
 
         let cipher = Aes256Gcm::new_from_slice(&message_key)
-            .map_err(|e| CryptoError::EncryptionError(format!("AES init: {e}")))?;
+            .map_err(|e| CryptoError::encryption(format!("AES init: {e}")))?;
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[4..].copy_from_slice(&self.send_counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let ciphertext = cipher
             .encrypt(nonce, plaintext)
-            .map_err(|e| CryptoError::EncryptionError(format!("AES encrypt: {e}")))?;
+            .map_err(|e| CryptoError::encryption(format!("AES encrypt: {e}")))?;
 
         let mut output = Vec::with_capacity(HEADER_LEN + ciphertext.len());
         output.extend_from_slice(new_ratchet_public.as_bytes());
@@ -182,15 +182,13 @@ impl RatchetState {
     /// step against the sender's fresh ratchet public from the header.
     pub fn decrypt_step(&mut self, message: &[u8]) -> Result<Vec<u8>, CryptoError> {
         if message.len() < HEADER_LEN {
-            return Err(CryptoError::DecryptionError(
-                "Signal message too short".into(),
-            ));
+            return Err(CryptoError::decryption("Signal message too short".into()));
         }
 
         let their_new_ratchet_pub = to_32(&message[..32], "sender ratchet public")?;
         let nonce_bytes: [u8; 12] = message[40..52]
             .try_into()
-            .map_err(|_| CryptoError::DecryptionError("invalid nonce".into()))?;
+            .map_err(|_| CryptoError::decryption("invalid nonce".into()))?;
         let ciphertext = &message[52..];
 
         let our_ratchet_secret =
@@ -208,12 +206,12 @@ impl RatchetState {
         self.recv_counter += 1;
 
         let cipher = Aes256Gcm::new_from_slice(&message_key)
-            .map_err(|e| CryptoError::DecryptionError(format!("AES init: {e}")))?;
+            .map_err(|e| CryptoError::decryption(format!("AES init: {e}")))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| CryptoError::DecryptionError(format!("AES decrypt: {e}")))
+            .map_err(|e| CryptoError::decryption(format!("AES decrypt: {e}")))
     }
 
     /// Serialize for the session store. Layout (unchanged from both

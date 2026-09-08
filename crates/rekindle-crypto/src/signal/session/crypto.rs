@@ -89,7 +89,7 @@ impl SignalSessionManager {
         message: &[u8],
     ) -> Result<Vec<u8>, CryptoError> {
         if message.len() < ratchet::HEADER_LEN {
-            return Err(CryptoError::DecryptionError("message too short".into()));
+            return Err(CryptoError::decryption("message too short".into()));
         }
         if let Some(cache) = self.cache.as_ref() {
             return self.decrypt_with_cache(cache, peer_address, message).await;

@@ -63,7 +63,7 @@ impl SignalSessionManager {
             return Ok(None);
         };
         let pq_lr_secret = MlKemSecret::from_secret_bytes(&pq_lr_bytes)
-            .ok_or_else(|| CryptoError::InvalidKey("PQ LR secret wrong length".into()))?;
+            .ok_or_else(|| CryptoError::invalid_key("PQ LR secret wrong length".into()))?;
         let pq_lr_public = pq_lr_secret.public();
 
         // Phase 3b — PQ one-time key (optional).
@@ -71,7 +71,7 @@ impl SignalSessionManager {
             match self.prekeys.load_pq_secret(id, PqKeyKind::OneTime)? {
                 Some(bytes) => {
                     Some(MlKemSecret::from_secret_bytes(&bytes).ok_or_else(|| {
-                        CryptoError::InvalidKey("PQ OT secret wrong length".into())
+                        CryptoError::invalid_key("PQ OT secret wrong length".into())
                     })?)
                 }
                 None => return Ok(None),
@@ -85,7 +85,7 @@ impl SignalSessionManager {
 
         // Reconstruct the X25519 public side of the stored signed prekey.
         let secret_array: [u8; 32] = <[u8; 32]>::try_from(&signed_prekey_secret_bytes[..])
-            .map_err(|_| CryptoError::InvalidKey("signed prekey wrong length".into()))?;
+            .map_err(|_| CryptoError::invalid_key("signed prekey wrong length".into()))?;
         let signed_prekey_secret = StaticSecret::from(secret_array);
         let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
 
@@ -93,7 +93,7 @@ impl SignalSessionManager {
         // PQXDH domain-separated payload (0x01 || SPK).
         let signing_key =
             SigningKey::from_bytes(&<[u8; 32]>::try_from(&identity_private[..32]).map_err(
-                |_| CryptoError::InvalidKey("identity key wrong length for signing".into()),
+                |_| CryptoError::invalid_key("identity key wrong length for signing".into()),
             )?);
         let signed_prekey_signature = signing_key
             .sign(&spk_signing_payload(signed_prekey_public.as_bytes()))
@@ -103,7 +103,7 @@ impl SignalSessionManager {
         // Reconstruct one-time prekey public if present.
         let one_time_prekey = if let Some(bytes) = one_time_prekey_bytes {
             let array: [u8; 32] = <[u8; 32]>::try_from(&bytes[..])
-                .map_err(|_| CryptoError::InvalidKey("one-time prekey wrong length".into()))?;
+                .map_err(|_| CryptoError::invalid_key("one-time prekey wrong length".into()))?;
             let secret = StaticSecret::from(array);
             Some(X25519Public::from(&secret).as_bytes().to_vec())
         } else {
@@ -158,7 +158,7 @@ impl SignalSessionManager {
 
         let signing_key =
             SigningKey::from_bytes(&<[u8; 32]>::try_from(&identity_private[..32]).map_err(
-                |_| CryptoError::InvalidKey("identity key wrong length for signing".into()),
+                |_| CryptoError::invalid_key("identity key wrong length for signing".into()),
             )?);
 
         // Generate signed prekey (X25519).

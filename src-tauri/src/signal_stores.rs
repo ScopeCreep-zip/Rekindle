@@ -98,7 +98,7 @@ impl IdentityKeyStore for StrongholdIdentityStore {
         let ks = self.keystore.lock();
         if let Some(keystore) = ks.as_ref() {
             persist_trusted_identity(keystore, address, identity_key)
-                .map_err(CryptoError::StorageError)?;
+                .map_err(CryptoError::storage)?;
         }
         drop(ks);
         self.cache.save_identity(address, identity_key)
@@ -153,8 +153,7 @@ impl PreKeyStore for StrongholdPreKeyStore {
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
         let ks = self.keystore.lock();
         if let Some(keystore) = ks.as_ref() {
-            persist_signal_prekey(keystore, prekey_id, key_data)
-                .map_err(CryptoError::StorageError)?;
+            persist_signal_prekey(keystore, prekey_id, key_data).map_err(CryptoError::storage)?;
         }
         drop(ks);
         let cache = self.cache.lock();
@@ -184,7 +183,7 @@ impl PreKeyStore for StrongholdPreKeyStore {
         let ks = self.keystore.lock();
         if let Some(keystore) = ks.as_ref() {
             persist_signal_signed_prekey(keystore, signed_prekey_id, key_data)
-                .map_err(CryptoError::StorageError)?;
+                .map_err(CryptoError::storage)?;
         }
         drop(ks);
         let cache = self.cache.lock();
@@ -222,7 +221,7 @@ impl PreKeyStore for StrongholdPreKeyStore {
         let ks = self.keystore.lock();
         if let Some(keystore) = ks.as_ref() {
             persist_signal_pq_secret(keystore, prekey_id, last_resort, key_data)
-                .map_err(CryptoError::StorageError)?;
+                .map_err(CryptoError::storage)?;
         }
         drop(ks);
         self.cache.lock().store_pq_secret(prekey_id, kind, key_data)
@@ -277,7 +276,7 @@ impl SessionStore for StrongholdSessionStore {
         let ks = self.keystore.lock();
         if let Some(keystore) = ks.as_ref() {
             persist_signal_session(keystore, address, session_data)
-                .map_err(CryptoError::StorageError)?;
+                .map_err(CryptoError::storage)?;
         }
         drop(ks);
         let cache = self.cache.lock();
@@ -350,7 +349,7 @@ impl rekindle_crypto::signal::SessionPersistence for VaultSessionStore {
             }
         })
         .await
-        .map_err(|e| CryptoError::StorageError(format!("vault session load join: {e}")))?
+        .map_err(|e| CryptoError::storage(format!("vault session load join: {e}")))?
     }
 
     async fn store(&self, peer_hex: &str, session: &[u8]) -> Result<(), CryptoError> {
@@ -360,14 +359,12 @@ impl rekindle_crypto::signal::SessionPersistence for VaultSessionStore {
         tokio::task::spawn_blocking(move || {
             let ks = keystore.lock();
             match ks.as_ref() {
-                Some(k) => {
-                    persist_signal_session(k, &peer, &bytes).map_err(CryptoError::StorageError)
-                }
+                Some(k) => persist_signal_session(k, &peer, &bytes).map_err(CryptoError::storage),
                 None => Err(CryptoError::VaultLocked),
             }
         })
         .await
-        .map_err(|e| CryptoError::StorageError(format!("vault session store join: {e}")))?
+        .map_err(|e| CryptoError::storage(format!("vault session store join: {e}")))?
     }
 }
 

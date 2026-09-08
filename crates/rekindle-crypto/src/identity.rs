@@ -58,7 +58,7 @@ impl Identity {
     ) -> Result<(), CryptoError> {
         public_key
             .verify_strict(message, signature)
-            .map_err(|e| CryptoError::VerificationError(e.to_string()))
+            .map_err(|e| CryptoError::verification(e.to_string()))
     }
 
     /// Derive an X25519 static secret from this Ed25519 key for Diffie-Hellman.
@@ -92,9 +92,8 @@ impl Identity {
     pub fn peer_ed25519_to_x25519(
         ed25519_public_bytes: &[u8; 32],
     ) -> Result<x25519_dalek::PublicKey, CryptoError> {
-        let verifying_key = VerifyingKey::from_bytes(ed25519_public_bytes).map_err(|e| {
-            CryptoError::VerificationError(format!("invalid Ed25519 public key: {e}"))
-        })?;
+        let verifying_key = VerifyingKey::from_bytes(ed25519_public_bytes)
+            .map_err(|e| CryptoError::verification(format!("invalid Ed25519 public key: {e}")))?;
         let montgomery = verifying_key.to_montgomery();
         Ok(x25519_dalek::PublicKey::from(montgomery.to_bytes()))
     }

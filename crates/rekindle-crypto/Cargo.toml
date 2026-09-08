@@ -8,6 +8,9 @@ description = "Ed25519 identity, Signal Protocol sessions, and group encryption 
 workspace = true
 
 [dependencies]
+# Tier 1 owns the primitive crypto error taxonomy; this crate wraps it
+# rather than restating it (see src/error.rs).
+rekindle-types = { path = "../rekindle-types" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
 postcard = { version = "1", features = ["use-std"] }

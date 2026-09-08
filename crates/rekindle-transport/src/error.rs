@@ -209,21 +209,26 @@ pub enum TransportError {
 /// reserved for genuine invariant violations.
 impl From<rekindle_crypto::error::CryptoError> for TransportError {
     fn from(e: rekindle_crypto::error::CryptoError) -> Self {
+        use rekindle_crypto::error::CoreCryptoError as Core;
         use rekindle_crypto::error::CryptoError as C;
         match e {
-            C::EncryptionError(reason) => Self::EncryptionFailed { reason },
-            C::DecryptionError(reason) => Self::DecryptionFailed { reason },
+            C::Core(Core::Encryption(reason)) => Self::EncryptionFailed { reason },
+            C::Core(Core::Decryption(reason)) => Self::DecryptionFailed { reason },
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
             // Handshake, ratchet, key-material, and key-store failures —
             // the CryptoError Display already prefixes its own kind
-            // ("invalid key material: …", "prekey error: …", …).
-            other @ (C::KeyGeneration(_)
-            | C::SigningError(_)
-            | C::VerificationError(_)
-            | C::InvalidKey(_)
+            // ("invalid key material: …", "signal session error: …").
+            // Still enumerated rather than caught by `_`: a new variant
+            // on either enum must fail to compile here so the mapping
+            // gets a deliberate answer, not a silent stringify.
+            other @ (C::Core(
+                Core::KeyGeneration(_)
+                | Core::Signing(_)
+                | Core::Verification(_)
+                | Core::InvalidKey(_)
+                | Core::Storage(_),
+            )
             | C::SessionError(_)
-            | C::PreKeyError(_)
-            | C::StorageError(_)
             | C::VaultLocked) => Self::SignalProtocol {
                 reason: other.to_string(),
             },

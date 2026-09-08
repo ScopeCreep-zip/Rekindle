@@ -34,7 +34,7 @@ impl SignalSessionManager {
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
         let identity_signing = SigningKey::from_bytes(
             &<[u8; 32]>::try_from(&identity_private[..32])
-                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
+                .map_err(|_| CryptoError::invalid_key("identity key wrong length".into()))?,
         );
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
@@ -42,9 +42,9 @@ impl SignalSessionManager {
         //    verification on SPK and PQ keys.
         let their_ik_ed = VerifyingKey::from_bytes(
             &<[u8; 32]>::try_from(bundle.identity_key.as_slice())
-                .map_err(|_| CryptoError::InvalidKey("their identity key wrong length".into()))?,
+                .map_err(|_| CryptoError::invalid_key("their identity key wrong length".into()))?,
         )
-        .map_err(|e| CryptoError::InvalidKey(format!("their identity key not on curve: {e}")))?;
+        .map_err(|e| CryptoError::invalid_key(format!("their identity key not on curve: {e}")))?;
 
         // 3. Run the PQXDH initiator handshake against the bundle.
         let hs = pqxdh::pqxdh_initiator(&our_ik_x25519, bundle, &their_ik_ed)
@@ -96,7 +96,7 @@ impl SignalSessionManager {
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
         let identity_signing = SigningKey::from_bytes(
             &<[u8; 32]>::try_from(&identity_private[..32])
-                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
+                .map_err(|_| CryptoError::invalid_key("identity key wrong length".into()))?,
         );
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
@@ -104,10 +104,10 @@ impl SignalSessionManager {
         let spk_data = self
             .prekeys
             .load_signed_prekey(signed_prekey_id)?
-            .ok_or_else(|| CryptoError::InvalidKey("signed prekey not found".into()))?;
+            .ok_or_else(|| CryptoError::invalid_key("signed prekey not found".into()))?;
         let our_spk_secret = StaticSecret::from(
             <[u8; 32]>::try_from(spk_data.as_slice())
-                .map_err(|_| CryptoError::InvalidKey("signed prekey wrong length".into()))?,
+                .map_err(|_| CryptoError::invalid_key("signed prekey wrong length".into()))?,
         );
 
         // 3. Our optional one-time prekey secret.
@@ -115,10 +115,10 @@ impl SignalSessionManager {
             let otpk_data = self
                 .prekeys
                 .load_prekey(otpk_id)?
-                .ok_or_else(|| CryptoError::InvalidKey("one-time prekey not found".into()))?;
+                .ok_or_else(|| CryptoError::invalid_key("one-time prekey not found".into()))?;
             Some(StaticSecret::from(
                 <[u8; 32]>::try_from(otpk_data.as_slice())
-                    .map_err(|_| CryptoError::InvalidKey("one-time prekey wrong length".into()))?,
+                    .map_err(|_| CryptoError::invalid_key("one-time prekey wrong length".into()))?,
             ))
         } else {
             None
@@ -133,19 +133,19 @@ impl SignalSessionManager {
             .prekeys
             .load_pq_secret(pq_id, pq_kind)?
             .ok_or_else(|| {
-                CryptoError::InvalidKey(format!(
+                CryptoError::invalid_key(format!(
                     "ML-KEM secret not found for ({pq_id}, {pq_kind:?})"
                 ))
             })?;
         let our_ml_kem_secret = MlKemSecret::from_secret_bytes(&pq_secret_bytes)
-            .ok_or_else(|| CryptoError::InvalidKey("ML-KEM secret wrong length".into()))?;
+            .ok_or_else(|| CryptoError::invalid_key("ML-KEM secret wrong length".into()))?;
 
         // 5. Initiator's Ed25519 identity (for X25519 DH partner derivation).
         let initiator_ik_ed = VerifyingKey::from_bytes(
             &<[u8; 32]>::try_from(their_identity_key)
-                .map_err(|_| CryptoError::InvalidKey("their identity key wrong length".into()))?,
+                .map_err(|_| CryptoError::invalid_key("their identity key wrong length".into()))?,
         )
-        .map_err(|e| CryptoError::InvalidKey(format!("their identity key not on curve: {e}")))?;
+        .map_err(|e| CryptoError::invalid_key(format!("their identity key not on curve: {e}")))?;
 
         // 6. Run the PQXDH responder.
         let root_key_z = pqxdh::pqxdh_responder(&pqxdh::ResponderInput {

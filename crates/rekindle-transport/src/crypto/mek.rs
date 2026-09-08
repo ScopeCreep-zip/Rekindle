@@ -129,9 +129,13 @@ pub fn wrap_mek(
         mek_wire_bytes,
     )
     .map_err(|e| match e {
-        rekindle_crypto::error::CryptoError::EncryptionError(reason) => {
-            TransportError::EncryptionFailed { reason }
-        }
+        // Encryption failure keeps its own transport variant; everything
+        // else collapses to the wrap/unwrap failure. The primitive
+        // failures now live in Tier 1 behind `Core`, so the pattern
+        // nests one level rather than naming a variant this crate owns.
+        rekindle_crypto::error::CryptoError::Core(
+            rekindle_crypto::error::CoreCryptoError::Encryption(reason),
+        ) => TransportError::EncryptionFailed { reason },
         other => TransportError::MekUnwrapFailed {
             reason: other.to_string(),
         },

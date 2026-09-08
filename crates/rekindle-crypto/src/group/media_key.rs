@@ -115,7 +115,7 @@ impl MediaEncryptionKey {
     /// Channel chat messages MUST use [`Self::encrypt_with_aad`].
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut nonce_bytes = [0u8; 12];
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
@@ -123,7 +123,7 @@ impl MediaEncryptionKey {
 
         let ciphertext = cipher
             .encrypt(nonce, plaintext)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         // Prepend nonce to ciphertext
         let mut output = Vec::with_capacity(12 + ciphertext.len());
@@ -142,7 +142,7 @@ impl MediaEncryptionKey {
         aad: ChannelAad<'_>,
     ) -> Result<Vec<u8>, CryptoError> {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut nonce_bytes = [0u8; 12];
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
@@ -152,7 +152,7 @@ impl MediaEncryptionKey {
         let mut buffer = plaintext.to_vec();
         cipher
             .encrypt_in_place(&nonce, &aad_bytes, &mut buffer)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut output = Vec::with_capacity(12 + buffer.len());
         output.extend_from_slice(&nonce_bytes);
@@ -209,18 +209,18 @@ impl MediaEncryptionKey {
     /// [`Self::decrypt_with_aad`] with the matching `ChannelAad`.
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         if data.len() < 12 {
-            return Err(CryptoError::DecryptionError("data too short".into()));
+            return Err(CryptoError::decryption("data too short".into()));
         }
 
         let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::decryption(e.to_string()))?;
 
         let nonce = Nonce::from_slice(&data[..12]);
         let ciphertext = &data[12..];
 
         cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))
+            .map_err(|e| CryptoError::decryption(e.to_string()))
     }
 
     /// Architecture §8 line 1626 — decrypt with the canonical channel
@@ -232,10 +232,10 @@ impl MediaEncryptionKey {
         aad: ChannelAad<'_>,
     ) -> Result<Vec<u8>, CryptoError> {
         if data.len() < 12 {
-            return Err(CryptoError::DecryptionError("data too short".into()));
+            return Err(CryptoError::decryption("data too short".into()));
         }
         let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::decryption(e.to_string()))?;
         let nonce = Nonce::from_slice(&data[..12]);
         let aad_bytes = aad.to_bytes();
         cipher
@@ -246,7 +246,7 @@ impl MediaEncryptionKey {
                     aad: &aad_bytes,
                 },
             )
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))
+            .map_err(|e| CryptoError::decryption(e.to_string()))
     }
 }
 

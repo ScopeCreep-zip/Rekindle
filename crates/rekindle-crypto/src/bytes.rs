@@ -14,7 +14,7 @@ use crate::error::CryptoError;
 /// or panicking.
 pub fn to_32(bytes: &[u8], what: &str) -> Result<[u8; 32], CryptoError> {
     <[u8; 32]>::try_from(bytes).map_err(|_| {
-        CryptoError::InvalidKey(format!("{what}: expected 32 bytes, got {}", bytes.len()))
+        CryptoError::invalid_key(format!("{what}: expected 32 bytes, got {}", bytes.len()))
     })
 }
 
