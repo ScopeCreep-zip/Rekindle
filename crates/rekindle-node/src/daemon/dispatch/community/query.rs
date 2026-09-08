@@ -56,7 +56,26 @@ pub(crate) async fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcR
         Ok(q) => q,
         Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
     };
-    match query.list_communities(&memberships, &member_counts).await {
+    // Channel counts from merged governance, same reasoning as the
+    // member counts above: the v1.0 manifest channels subkey has had no
+    // writer since channels became `ChannelCreated` entries.
+    let channel_counts: HashMap<String, u32> = memberships
+        .iter()
+        .map(|m| {
+            let n = ctx
+                .community_runtime
+                .governance_state(&m.governance_key)
+                .map_or(0, |gov| {
+                    u32::try_from(gov.channels.len()).unwrap_or(u32::MAX)
+                });
+            (m.governance_key.clone(), n)
+        })
+        .collect();
+
+    match query
+        .list_communities(&memberships, &member_counts, &channel_counts)
+        .await
+    {
         Ok(overviews) => IpcResponse::ok(&overviews),
         Err(e) => {
             tracing::debug!(error = %e, "community list: DHT metadata unavailable, using session");
@@ -112,7 +131,12 @@ pub(crate) async fn handle_info(
             .member_count(&membership.governance_key),
     )
     .unwrap_or(u32::MAX);
-    match query.community_detail(&membership, member_count).await {
+    let channels = super::super::channel::channel_overviews(ctx, &membership.governance_key);
+    let roles = super::super::governance::role_displays(ctx, &membership.governance_key);
+    match query
+        .community_detail(&membership, member_count, channels, roles)
+        .await
+    {
         Ok(detail) => IpcResponse::ok(&detail),
         Err(e) => IpcResponse::error(500, format!("community detail: {e}")),
     }

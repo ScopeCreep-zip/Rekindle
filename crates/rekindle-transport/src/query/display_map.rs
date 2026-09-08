@@ -1,49 +1,13 @@
 //! Mapping from DHT payload types to display types.
 
+//! The `ChannelEntry` → display and `RoleEntry` → display mappers lived
+//! here. Both mapped the v1.0 governance-manifest payload types, which
+//! nothing has written since channels and roles became `ChannelCreated`
+//! and `RoleDefinition` governance entries — the caller now builds the
+//! display types from merged CRDT state directly.
+
 use crate::crypto::mek::MekCache;
-use crate::payload::dht_types::{ChannelEntry, ChannelKind, ChannelMessage, RoleEntry};
-
-use super::{ChannelOverviewDisplay, RoleDisplay};
-
-// ── Free functions ──────────────────────────────────────────────────────
-
-pub(super) fn channel_to_display(entry: &ChannelEntry) -> ChannelOverviewDisplay {
-    ChannelOverviewDisplay {
-        id: entry.id.clone(),
-        name: entry.name.clone(),
-        kind: channel_kind_str(entry.kind),
-        category_id: entry.category_id.clone(),
-        topic: entry.topic.clone(),
-        mek_generation: entry.mek_generation,
-        log_key: entry.log_key.clone(),
-        sort_order: entry.sort_order,
-    }
-}
-
-pub(super) fn channel_kind_str(kind: ChannelKind) -> String {
-    match kind {
-        ChannelKind::Text => "text",
-        ChannelKind::Voice => "voice",
-        ChannelKind::Announcement => "announcement",
-        ChannelKind::Forum => "forum",
-        ChannelKind::Stage => "stage",
-        ChannelKind::Directory => "directory",
-        ChannelKind::Media => "media",
-        ChannelKind::Events => "events",
-        ChannelKind::Dm => "dm",
-    }
-    .to_string()
-}
-
-pub(super) fn role_to_display(entry: &RoleEntry) -> RoleDisplay {
-    RoleDisplay {
-        id: entry.id,
-        name: entry.name.clone(),
-        color: entry.color,
-        permissions: entry.permissions,
-        position: entry.position,
-    }
-}
+use crate::payload::dht_types::ChannelMessage;
 
 /// Abbreviate a hex key for display: first 8 + "…" + last 4.
 pub(super) fn abbreviate_key(key: &str) -> String {

@@ -118,9 +118,8 @@ pub use broadcast::BroadcastManager;
 // Payload types
 pub use payload::dm::DmPayload;
 pub use payload::rpc::{
-    CallResponse, ChannelEntrySummary, CommunityLeaveNotification, GovernanceOp,
-    GovernanceOpResponse, GovernanceRequest, InboundCall, MekTransferPayload, SyncRequest,
-    SyncResponse,
+    CallResponse, ChannelEntrySummary, CommunityLeaveNotification, InboundCall, MekTransferPayload,
+    SyncRequest, SyncResponse,
 };
 pub use payload::voice::VoicePayload;
 

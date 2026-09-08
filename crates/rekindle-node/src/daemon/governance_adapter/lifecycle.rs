@@ -77,32 +77,32 @@ impl DaemonGovernanceAdapter<'_> {
     // ---------- Join flow ----------
 
     /// `app_call` a peer through its advertised private route.
+    ///
+    /// **Unframed**, matching the desktop, which sends a raw `app_call`
+    /// (`governance_adapter/dht.rs`). The daemon used to wrap the same
+    /// bytes in a `TypeId::CommunityGovOp` frame and sign them as a
+    /// `SignedPayload`, so the two shells could not have answered each
+    /// other's peer calls — the frame is gone with the `GovernanceOp`
+    /// mechanism it belonged to.
+    ///
+    /// The payload is the caller's business: this is the transport for
+    /// the BootstrapBundle fetch (§14.4), which the architecture calls
+    /// "convenience, not trust" — nothing here can be relied on for
+    /// authority, and the bundle's contents are re-verified against the
+    /// DHT regardless.
     pub(super) async fn app_call_peer_impl(
         &self,
         target_route_blob: &[u8],
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, GovernanceRuntimeError> {
         let node = self.transport()?;
-        let secret = self.identity_secret_impl().ok_or_else(|| {
-            GovernanceRuntimeError::Adapter("identity locked — cannot app_call".into())
-        })?;
-        let public_hex = {
-            let guard = self.ctx.session.read();
-            guard
-                .as_ref()
-                .map(|s| s.identity.public_key_hex.clone())
-                .ok_or_else(|| GovernanceRuntimeError::Adapter("no session".into()))?
-        };
-        let target = node
-            .import_route(target_route_blob)
-            .map_err(|e| GovernanceRuntimeError::Adapter(format!("import route: {e}")))?;
         node.caller()
-            .call(
-                &target,
-                rekindle_transport::frame::TypeId::CommunityGovOp,
-                &secret,
-                &public_hex,
-                &payload,
+            .call_community_envelope(
+                &node
+                    .import_route(target_route_blob)
+                    .map_err(|e| GovernanceRuntimeError::Adapter(format!("import route: {e}")))?,
+                payload,
+                std::time::Duration::from_secs(10),
             )
             .await
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("app_call: {e}")))

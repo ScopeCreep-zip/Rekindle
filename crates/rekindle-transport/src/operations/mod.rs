@@ -19,5 +19,4 @@ pub mod identity;
 pub mod invites;
 pub mod mek;
 pub mod presence;
-pub mod roles;
 pub mod voice;

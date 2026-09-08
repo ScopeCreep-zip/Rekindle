@@ -33,7 +33,10 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState, community: &s
 
 /// Every live channel, sorted by position then name so two peers list
 /// one community identically.
-fn channel_overviews(ctx: &DaemonContext, community_id: &str) -> Vec<ChannelOverviewDisplay> {
+pub(crate) fn channel_overviews(
+    ctx: &DaemonContext,
+    community_id: &str,
+) -> Vec<ChannelOverviewDisplay> {
     let Some(gov) = ctx.community_runtime.governance_state(community_id) else {
         return Vec::new();
     };

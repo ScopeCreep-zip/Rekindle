@@ -58,7 +58,6 @@ pub enum TypeId {
     /// Member leave notification (best-effort, triggers rekey).
     CommunityLeave = 0x21,
     /// Governance operation from admin/moderator (permissioned).
-    CommunityGovOp = 0x22,
 
     // ── Sync + DM RPC (app_call, Ed25519 signed) ────────────────
     /// History sync request to archiver node.
@@ -168,8 +167,7 @@ impl TypeId {
             | Self::ProfileKeyRotated
             | Self::DmPresenceUpdate
             | Self::GossipBroadcast
-            | Self::CommunityLeave
-            | Self::CommunityGovOp => MessageClass::Text,
+            | Self::CommunityLeave => MessageClass::Text,
         }
     }
 
@@ -189,7 +187,6 @@ impl TypeId {
             0x10 => Some(Self::GossipBroadcast),
             0x11 => Some(Self::VoicePacket),
             0x21 => Some(Self::CommunityLeave),
-            0x22 => Some(Self::CommunityGovOp),
             0x23 => Some(Self::SyncRequest),
             0x24 => Some(Self::SyncResponse),
             0x25 => Some(Self::DmCall),
@@ -242,7 +239,6 @@ impl TypeId {
         matches!(
             self,
             Self::CommunityLeave
-            | Self::CommunityGovOp
             | Self::SyncRequest
             | Self::SyncResponse
             | Self::DmCall
@@ -387,7 +383,6 @@ mod tests {
         assert_eq!(TypeId::GossipBroadcast as u8, 0x10);
         assert_eq!(TypeId::VoicePacket as u8, 0x11);
         assert_eq!(TypeId::CommunityLeave as u8, 0x21);
-        assert_eq!(TypeId::CommunityGovOp as u8, 0x22);
         assert_eq!(TypeId::DmCall as u8, 0x25);
     }
 

@@ -20,7 +20,6 @@ pub mod friend_inbox;
 pub mod gossip;
 pub mod gossip_adapter;
 pub mod governance_adapter;
-pub mod governance_rpc;
 pub mod handler;
 pub mod mek_rotation;
 pub mod presence_adapter;

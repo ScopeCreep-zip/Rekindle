@@ -1,6 +1,9 @@
 //! Community overview/detail queries.
 //!
-//! Member counts arrive as a parameter rather than being read here.
+//! Member counts, channels and roles all arrive as parameters rather
+//! than being read here. Each is an answer the merged CRDT holds and
+//! this layer cannot reach.
+//!
 //! These used to call `read_member_index` — one aggregate subkey
 //! asserting facts about every member, which `o_cnt: 0` gives nobody
 //! the authority to write. The count now comes from the caller's
@@ -14,19 +17,25 @@ use std::collections::HashMap;
 use crate::error::{Result, TransportError};
 use crate::session::CommunityMembership;
 
-use super::display_map::{channel_to_display, role_to_display};
-use super::{CommunityDetail, CommunityOverview, QueryEngine};
+use super::{ChannelOverviewDisplay, CommunityDetail, CommunityOverview, QueryEngine, RoleDisplay};
 
 impl QueryEngine {
     /// List joined communities with overview metadata.
     ///
     /// Reads each community's governance metadata subkey for
-    /// name/description. `member_counts` is keyed by governance key; a
-    /// community missing from it reports zero.
+    /// name/description. `member_counts` and `channel_counts` are keyed
+    /// by governance key; a community missing from either reports zero.
+    ///
+    /// Both come from the caller for the same reason: they are answers
+    /// the merged CRDT holds, and this layer has no access to it. The
+    /// channel count used to come from the v1.0 manifest channels
+    /// subkey, which nothing has written since channels became
+    /// `ChannelCreated` entries.
     pub async fn list_communities(
         &self,
         memberships: &[CommunityMembership],
         member_counts: &HashMap<String, u32>,
+        channel_counts: &HashMap<String, u32>,
     ) -> Result<Vec<CommunityOverview>> {
         let mut result = Vec::with_capacity(memberships.len());
 
@@ -36,13 +45,6 @@ impl QueryEngine {
                 .governance()
                 .read_metadata(&m.governance_key)
                 .await?;
-
-            let channels = self
-                .dht
-                .governance()
-                .read_channels(&m.governance_key)
-                .await
-                .unwrap_or_default();
 
             let (name, description) = match metadata {
                 Some(meta) => (meta.name, meta.description.unwrap_or_default()),
@@ -57,7 +59,10 @@ impl QueryEngine {
                     .get(&m.governance_key)
                     .copied()
                     .unwrap_or_default(),
-                channel_count: u32::try_from(channels.len()).unwrap_or(u32::MAX),
+                channel_count: channel_counts
+                    .get(&m.governance_key)
+                    .copied()
+                    .unwrap_or_default(),
                 our_pseudonym: m.pseudonym_key.clone(),
             });
         }
@@ -70,6 +75,8 @@ impl QueryEngine {
         &self,
         membership: &CommunityMembership,
         member_count: u32,
+        channels: Vec<ChannelOverviewDisplay>,
+        roles: Vec<RoleDisplay>,
     ) -> Result<CommunityDetail> {
         // Ensure governance and registry records are open for reading.
         // Records may have been closed since community creation/join.
@@ -96,18 +103,6 @@ impl QueryEngine {
                 ),
             })?;
 
-        let channels = self
-            .dht
-            .governance()
-            .read_channels(&membership.governance_key)
-            .await?;
-
-        let roles = self
-            .dht
-            .governance()
-            .read_roles(&membership.governance_key)
-            .await?;
-
         Ok(CommunityDetail {
             governance_key: membership.governance_key.clone(),
             name: metadata.name,
@@ -115,8 +110,8 @@ impl QueryEngine {
             owner_pseudonym: metadata.owner_pseudonym,
             created_at: metadata.created_at,
             member_count,
-            channels: channels.iter().map(channel_to_display).collect(),
-            roles: roles.iter().map(role_to_display).collect(),
+            channels,
+            roles,
             our_pseudonym: membership.pseudonym_key.clone(),
             our_roles: membership.role_ids.clone(),
         })

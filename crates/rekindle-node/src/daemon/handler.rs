@@ -298,23 +298,11 @@ impl InboundHandler for DaemonHandler {
         let mek_cache = Arc::clone(&self.mek_cache);
         let signing_key_arc = Arc::clone(&self.signing_key);
         let session_arc = Arc::clone(&self.session);
-        let transport_arc = Arc::clone(&self.transport);
-        let session_path = self.session_path.clone();
         let sender_ps = sender_pseudonym.map(String::from);
 
         match request {
             InboundCall::CommunityLeave(notif) => {
                 super::community_rpc::handle_leave(&notif, &session_arc, &self.mek_rotation_tx)
-            }
-            InboundCall::CommunityGovOp(op) => {
-                super::governance_rpc::handle_op(
-                    sender_ps.as_deref(),
-                    op,
-                    &session_arc,
-                    &transport_arc,
-                    &session_path,
-                )
-                .await
             }
             InboundCall::CommunityMekTransfer(transfer) => {
                 super::community_rpc::handle_mek_transfer(

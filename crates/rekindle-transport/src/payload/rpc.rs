@@ -61,80 +61,14 @@ pub struct CommunityLeaveNotification {
 
 // ── Governance operations ───────────────────────────────────────────────
 
-/// Governance operation request scoped to a specific community.
-///
-/// Every governance operation must identify which community it targets.
-/// The submitter's permissions are validated against their role in that
-/// community's member registry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GovernanceRequest {
-    /// Which community this operation applies to.
-    pub governance_key: String,
-    /// The operation to execute.
-    pub operation: GovernanceOp,
-}
-
-/// Governance operations submitted by admins/moderators to the community owner's daemon.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GovernanceOp {
-    // Kick / Ban / Unban / Timeout used to be here as coordinator RPCs:
-    // a moderator asked the operator to mutate the member index and a
-    // bespoke bans list. v2.0 writes `BanEntry` / `TimeoutEntry` /
-    // `UnbanEntry` / `RemoveTimeoutEntry` governance entries instead —
-    // one CRDT both tracks merge, rather than two stores that disagreed
-    // about who was banned.
-
-    // ── Moderation ──────────────────────────────────────────────
-
-    // Join approval/rejection used to live here as coordinator RPCs: a
-    // member asked the operator to assign them a registry slot. v2.0 has
-    // no coordinator — the approver writes a `MemberApproved` /
-    // `MemberRejected` governance entry and the joiner claims its own
-    // slot — so there is nothing to request.
-
-    // ── Role management ─────────────────────────────────────────
-    CreateRole {
-        name: String,
-        permissions: u64,
-        color: u32,
-        position: i32,
-    },
-    UpdateRole {
-        role_id: u32,
-        name: Option<String>,
-        permissions: Option<u64>,
-        color: Option<u32>,
-    },
-    DeleteRole {
-        role_id: u32,
-    },
-    // AssignRole / UnassignRole used to be here as coordinator RPCs: a
-    // moderator asked the operator to edit the target's row in the
-    // shared member index. v2.0 writes `RoleAssignment` /
-    // `RoleUnassignment` governance entries, which every peer merges and
-    // validates — and under `o_cnt: 0` nobody holds a writer credential
-    // for the index anyway. Neither op had a sender left.
-
-    // RotateMek used to be here: a member asked the operator to rekey a
-    // channel and publish copies to the registry MEK vault. v2.0 rotates
-    // on departure via the deterministic rotator
-    // (`rekindle-mek-rotation`) and delivers peer-to-peer, so there is
-    // no operator to ask and no vault to publish to.
-
-    // ── Ownership ───────────────────────────────────────────────
-    TransferOwnership {
-        new_owner_pseudonym: String,
-    },
-}
-
-/// Response to a governance operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GovernanceOpResponse {
-    Ok(serde_json::Value),
-    PermissionDenied { required: String },
-    NotFound { entity: String },
-    Failed { reason: String },
-}
+// The `GovernanceOp` RPC mechanism lived here: a member asked the
+// community's "operator" over `app_call` to perform a privileged write.
+// Every variant is gone and so is the enum — v2.0 has no operator, and
+// each operation became a governance entry the requester writes itself
+// and every peer validates on merge. The last four (CreateRole,
+// UpdateRole, DeleteRole, TransferOwnership) had no sender at all;
+// ownership in particular could not mean anything, since
+// `GovernanceState.creator` is fixed at genesis.
 
 // ── Legacy types (sync/bootstrap) ───────────────────────────────────────
 
@@ -213,8 +147,6 @@ pub struct CallRingingPayload {
 pub enum InboundCall {
     /// Member leaving (best-effort notification for cleanup + rekey).
     CommunityLeave(CommunityLeaveNotification),
-    /// Governance operation from admin/moderator (permissioned, scoped to community).
-    CommunityGovOp(GovernanceRequest),
     /// History sync request from archiver.
     Sync(SyncRequest),
     /// DM-class message via app_call (friend handshake).
@@ -267,14 +199,6 @@ pub fn deserialize_inbound_call(type_id: TypeId, bytes: &[u8]) -> Result<Inbound
                     reason: e.to_string(),
                 })?;
             Ok(InboundCall::CommunityLeave(req))
-        }
-        TypeId::CommunityGovOp => {
-            let req: GovernanceRequest =
-                postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {
-                    type_id: type_id as u8,
-                    reason: e.to_string(),
-                })?;
-            Ok(InboundCall::CommunityGovOp(req))
         }
         TypeId::SyncRequest => {
             let req: SyncRequest =

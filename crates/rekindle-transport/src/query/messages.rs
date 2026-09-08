@@ -5,17 +5,11 @@ use std::collections::HashMap;
 use crate::error::Result;
 use crate::payload::dht_types::ChannelMessage;
 
-use super::display_map::{channel_to_display, decrypt_channel_body};
-use super::{ChannelOverviewDisplay, DecryptedMessageDisplay, QueryEngine};
+use super::display_map::decrypt_channel_body;
+use super::{DecryptedMessageDisplay, QueryEngine};
 
 impl QueryEngine {
     // ── Channel queries ─────────────────────────────────────────────
-
-    /// List channels in a community.
-    pub async fn list_channels(&self, governance_key: &str) -> Result<Vec<ChannelOverviewDisplay>> {
-        let channels = self.dht.governance().read_channels(governance_key).await?;
-        Ok(channels.iter().map(channel_to_display).collect())
-    }
 
     /// Read channel message history with MEK decryption.
     ///

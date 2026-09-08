@@ -8,7 +8,36 @@ use super::{adapter, state_error, DaemonContext};
 
 // ── Roles ───────────────────────────────────────────────────────────────
 
-pub(crate) async fn handle_role_list(
+/// Every live role, from merged governance.
+///
+/// The v1.0 manifest roles subkey is gone: `RoleAssign` always wrote
+/// `RoleAssignment` entries while create/update/delete wrote the
+/// manifest, so a daemon-created role had no `RoleDefinition` for
+/// `compute_permissions` to find and the assignment conferred nothing —
+/// on either track.
+pub(crate) fn role_displays(
+    ctx: &DaemonContext,
+    community_id: &str,
+) -> Vec<rekindle_types::display::RoleDisplay> {
+    let Some(gov) = ctx.community_runtime.governance_state(community_id) else {
+        return Vec::new();
+    };
+    let mut out: Vec<rekindle_types::display::RoleDisplay> = gov
+        .roles
+        .iter()
+        .map(|(id, role)| rekindle_types::display::RoleDisplay {
+            id: id.to_legacy_u32(),
+            name: role.name.clone(),
+            color: role.color,
+            permissions: role.permissions,
+            position: i32::try_from(role.position).unwrap_or(i32::MAX),
+        })
+        .collect();
+    out.sort_by_key(|r| r.id);
+    out
+}
+
+pub(crate) fn handle_role_list(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -16,20 +45,16 @@ pub(crate) async fn handle_role_list(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    match rekindle_transport::operations::roles::list_roles(&transport, &membership.governance_key)
-        .await
-    {
-        Ok(roles) => IpcResponse::ok(&roles),
-        Err(e) => IpcResponse::error(500, format!("role list: {e}")),
-    }
+    // From merged governance, not the v1.0 manifest roles subkey.
+    // `RoleAssign` has always written `RoleAssignment` entries while
+    // create/update/delete wrote the manifest, so a daemon-created role
+    // had no `RoleDefinition` for `compute_permissions` to find and the
+    // assignment conferred nothing — on either track.
+    IpcResponse::ok(&role_displays(ctx, &membership.governance_key))
 }
 
 /// Attributes for a new role, grouped so the dispatch handler threads a single
@@ -54,26 +79,34 @@ pub(crate) async fn handle_role_create(
         Ok(n) => n,
         Err(e) => return e,
     };
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    // Still gated on being attached: the entry write goes to the DHT,
+    // and failing here is a clearer answer than a deep write error.
+    if let Err(e) = ctx.require_transport() {
+        return e;
+    }
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    match rekindle_transport::operations::roles::create_role(
-        &transport,
+    // `position` is allocated by the runtime from the merged role table
+    // so two peers creating concurrently do not collide; the caller's
+    // hint is ignored rather than silently honoured on one track only.
+    let _ = spec.position;
+    match rekindle_governance_runtime::roles::create_role(
+        &adapter(ctx),
         &membership.governance_key,
-        &name,
-        spec.permissions,
+        name.clone(),
         spec.color,
-        spec.position,
+        spec.permissions,
+        false,
+        false,
+        false,
+        None,
     )
     .await
     {
-        Ok(role) => IpcResponse::ok(&serde_json::json!({
-            "id": role.id, "name": role.name, "permissions": role.permissions,
+        Ok(role_id) => IpcResponse::ok(&serde_json::json!({
+            "id": role_id, "name": name, "permissions": spec.permissions,
         })),
         Err(e) => IpcResponse::error(500, format!("role create: {e}")),
     }
@@ -96,27 +129,34 @@ pub(crate) async fn handle_role_update(
             return e;
         }
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    // Still gated on being attached: the entry write goes to the DHT,
+    // and failing here is a clearer answer than a deep write error.
+    if let Err(e) = ctx.require_transport() {
+        return e;
+    }
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    match rekindle_transport::operations::roles::update_role(
-        &transport,
-        &membership.governance_key,
-        role_id,
-        name,
+    let patch = rekindle_governance_runtime::roles::RoleSnapshotPatch {
+        name: name.map(ToOwned::to_owned),
         permissions,
         color,
+        position: None,
+        hoist: None,
+        mentionable: None,
+        self_assignable: None,
+        exclusion_group: rekindle_governance_runtime::roles::ExclusionGroupEdit::Unchanged,
+    };
+    match rekindle_governance_runtime::roles::edit_role(
+        &adapter(ctx),
+        &membership.governance_key,
+        role_id,
+        patch,
     )
     .await
     {
-        Ok(role) => IpcResponse::ok(&serde_json::json!({
-            "id": role.id, "name": role.name,
-        })),
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "id": role_id, "name": name })),
         Err(e) => IpcResponse::error(500, format!("role update: {e}")),
     }
 }
@@ -130,16 +170,20 @@ pub(crate) async fn handle_role_delete(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    // Still gated on being attached: the entry write goes to the DHT,
+    // and failing here is a clearer answer than a deep write error.
+    if let Err(e) = ctx.require_transport() {
+        return e;
+    }
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    match rekindle_transport::operations::roles::delete_role(
-        &transport,
+    // Archived, not deleted: `RoleArchived` is the CRDT's tombstone, so
+    // a peer that had merged the definition drops it on the next merge
+    // rather than keeping a role nobody else can see.
+    match rekindle_governance_runtime::roles::delete_role(
+        &adapter(ctx),
         &membership.governance_key,
         role_id,
     )

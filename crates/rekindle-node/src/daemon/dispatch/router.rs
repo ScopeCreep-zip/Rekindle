@@ -159,9 +159,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         IpcRequest::DmInbox { limit } => social::handle_dm_inbox(ctx, state, limit).await,
 
         // ── Governance (roles, moderation, invites) ──────────────
-        IpcRequest::RoleList { community } => {
-            governance::handle_role_list(ctx, state, &community).await
-        }
+        IpcRequest::RoleList { community } => governance::handle_role_list(ctx, state, &community),
         IpcRequest::RoleCreate {
             community,
             name,
