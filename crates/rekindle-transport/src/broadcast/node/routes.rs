@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use veilid_core::VeilidAPI;
 
-use super::updates::classify_dead_routes;
+use super::updates::personal_route_died;
 use super::{build_routing_context, TransportNode};
 use crate::broadcast::dht::DhtStore;
 use crate::broadcast::peer_registry::PeerTarget;
@@ -221,52 +221,6 @@ async fn heal_personal_route(
     }
 }
 
-/// Allocate + publish one community mailbox route. On publish failure
-/// the unpublished route is released immediately (nothing can
-/// reference it; don't leak an allocation). Returns the new route id
-/// on success for `community_live` bookkeeping.
-async fn heal_community_route(
-    api: &VeilidAPI,
-    config: &Arc<TransportConfig>,
-    mailbox_key: &str,
-) -> Option<veilid_core::RouteId> {
-    let rb = match api.new_private_route().await {
-        Ok(rb) => rb,
-        Err(e) => {
-            tracing::warn!(mailbox = %mailbox_key, error = %e, "community route heal: allocation failed");
-            return None;
-        }
-    };
-    let rc = match build_routing_context(api, &config.safety.dht) {
-        Ok(rc) => rc,
-        Err(e) => {
-            tracing::warn!(error = %e, "community route heal: no routing context");
-            let _ = api.release_private_route(rb.route_id);
-            return None;
-        }
-    };
-    let dht = DhtStore::new(rc);
-    match dht
-        .mailbox()
-        .update_community_route(mailbox_key, &rb.blob)
-        .await
-    {
-        Ok(()) => {
-            tracing::info!(mailbox = %mailbox_key, "community route healed (event-driven)");
-            Some(rb.route_id)
-        }
-        Err(e) => {
-            // Never published — release now so a failing mailbox
-            // doesn't leak an allocation per attempt.
-            if let Err(re) = api.release_private_route(rb.route_id) {
-                tracing::debug!(error = %re, "unpublished community route release failed");
-            }
-            tracing::warn!(mailbox = %mailbox_key, error = %e, "community route publish failed");
-            None
-        }
-    }
-}
-
 pub(super) async fn run_route_authority_loop(
     api: VeilidAPI,
     route_manager: Arc<parking_lot::RwLock<RouteManager>>,
@@ -281,11 +235,10 @@ pub(super) async fn run_route_authority_loop(
         tokio::time::interval(tokio::time::Duration::from_secs(watchdog_secs.max(1)));
     interval.tick().await; // skip immediate first tick
 
-    // Published community mailbox routes (operator only) — needed to
-    // match dead RouteIds back to their mailbox, to avoid re-allocating
-    // per watchdog tick, and to release on operator-exit / shutdown.
-    let mut community_live: std::collections::HashMap<String, veilid_core::RouteId> =
-        std::collections::HashMap::new();
+    // The personal route is the only one this loop owns. Community
+    // mailbox routes are gone with the coordinator: a member is reached
+    // through its own registry row, so there is no shared endpoint for
+    // one peer to keep alive on everyone's behalf.
     let mut heal_gate =
         rekindle_route::lifecycle::HealGate::new(rekindle_route::lifecycle::HEAL_COOLDOWN);
 
@@ -297,18 +250,11 @@ pub(super) async fn run_route_authority_loop(
                 while let Ok(RouteAuthorityEvent::DeadLocalRoutes(more)) = heal_rx.try_recv() {
                     dead.extend(more);
                 }
-                let (personal_died, dead_mailboxes) = classify_dead_routes(
-                    &dead,
-                    route_manager.read().route_id(),
-                    &community_live,
-                );
+                let personal_died =
+                    personal_route_died(&dead, route_manager.read().route_id());
                 if personal_died {
                     route_manager.write().forget_route();
-                }
-                for mailbox in &dead_mailboxes {
-                    community_live.remove(mailbox);
-                }
-                if !personal_died && dead_mailboxes.is_empty() {
+                } else {
                     continue;
                 }
                 if !shared.is_attached() {
@@ -326,14 +272,7 @@ pub(super) async fn run_route_authority_loop(
                     tracing::debug!("dead-route heal within cooldown — watchdog backstops");
                     continue;
                 }
-                if personal_died {
-                    heal_personal_route(&api, &route_manager, &session, &config).await;
-                }
-                for mailbox in dead_mailboxes {
-                    if let Some(id) = heal_community_route(&api, &config, &mailbox).await {
-                        community_live.insert(mailbox, id);
-                    }
-                }
+                heal_personal_route(&api, &route_manager, &session, &config).await;
             }
             _ = interval.tick() => {
                 if !shared.is_attached() {
@@ -344,38 +283,8 @@ pub(super) async fn run_route_authority_loop(
                 if !route_manager.read().has_route() {
                     heal_personal_route(&api, &route_manager, &session, &config).await;
                 }
-                let operator_mailboxes: Vec<String> = {
-                    let guard = session.read();
-                    guard.as_ref().map_or_else(Vec::new, |s| {
-                        s.communities.values()
-                            .filter(|m| m.is_operator && !m.community_mailbox_key.is_empty())
-                            .map(|m| m.community_mailbox_key.clone())
-                            .collect()
-                    })
-                };
-                for mailbox in &operator_mailboxes {
-                    if !community_live.contains_key(mailbox) {
-                        if let Some(id) = heal_community_route(&api, &config, mailbox).await {
-                            community_live.insert(mailbox.clone(), id);
-                        }
-                    }
-                }
-                // Operator-exit: release routes for mailboxes we no
-                // longer operate (the route is alive — explicit
-                // release is correct when abandoning it).
-                let active: std::collections::HashSet<&String> = operator_mailboxes.iter().collect();
-                community_live.retain(|key, route| {
-                    if active.contains(key) {
-                        return true;
-                    }
-                    let _ = api.release_private_route(route.clone());
-                    false
-                });
             }
             _ = shutdown_rx.recv() => {
-                for (_, route) in community_live.drain() {
-                    let _ = api.release_private_route(route);
-                }
                 tracing::info!("route authority loop shutting down");
                 break;
             }

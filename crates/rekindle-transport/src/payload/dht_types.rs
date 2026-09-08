@@ -27,9 +27,6 @@ pub const STATUS_INVISIBLE: u8 = 4;
 /// Number of subkeys in the friend inbox DHT record (DFLT).
 pub const FRIEND_INBOX_SUBKEY_COUNT: u32 = 32;
 
-/// Number of subkeys in the community join inbox DHT record (DFLT).
-pub const JOIN_INBOX_SUBKEY_COUNT: u32 = 32;
-
 // ── Friend list record (DFLT, 1 subkey) ─────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,74 +82,15 @@ pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
 pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
 
 // ── Community metadata ──────────────────────────────────────────────
-
-/// Join policy for community membership requests.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum JoinPolicy {
-    /// Any user can join immediately. MEK is distributed automatically on approval.
-    #[default]
-    AutoAllow,
-    /// Users enter a waiting room. An owner/admin/mod with admission privileges
-    /// must approve before MEK distribution and channel access.
-    WaitingRoom,
-    /// Users must have a valid invite code. Approval may still be required
-    /// depending on the invite's configuration.
-    InviteOnly,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommunityMetadata {
-    pub name: String,
-    pub description: Option<String>,
-    pub icon_hash: Option<String>,
-    pub banner_hash: Option<String>,
-    pub created_at: u64,
-    pub owner_pseudonym: String,
-    #[serde(default)]
-    pub last_refreshed: u64,
-    /// How new members are admitted to the community.
-    #[serde(default)]
-    pub join_policy: JoinPolicy,
-    /// Community mailbox DHT key — stores the community's route blob for
-    /// receiving join requests and governance operations via Veilid RPC.
-    /// The mailbox is owned by the governance keypair.
-    #[serde(default)]
-    pub community_mailbox_key: String,
-    /// Pseudonyms of members who hold the governance keypair and can
-    /// execute governance writes. The owner is always in this set.
-    /// Additional operators provide high-availability when the owner is offline.
-    #[serde(default)]
-    pub operator_pseudonyms: Vec<String>,
-    /// Maximum members per registry segment.
-    #[serde(default = "default_max_members")]
-    pub max_members: u32,
-    /// Automatic MEK rotation interval in hours. 0 = manual only.
-    /// Default 168 (7 days).
-    #[serde(default = "default_mek_rotation_hours")]
-    pub mek_rotation_interval_hours: u32,
-    /// DHT key for the join request inbox (DFLT, 32 subkeys).
-    /// Prospective members write join requests here using the published
-    /// keypair. The owner's daemon reads and processes them asynchronously.
-    /// No RPC, no routes, no timeouts — pure DHT.
-    #[serde(default)]
-    pub join_inbox_key: String,
-    /// Hex-encoded keypair (64 bytes: 32 pub + 32 secret) for the join inbox.
-    /// Published so any prospective member can open the record for writing.
-    #[serde(default)]
-    pub join_inbox_keypair_hex: String,
-}
-
-fn default_max_members() -> u32 {
-    // Was 245 — the v1.0 "256 subkeys minus an 11-subkey owner block"
-    // figure. Under o_cnt:0 there is no owner block, and every registry
-    // is actually built with 255 slots.
-    SLOTS_PER_SEGMENT
-}
-fn default_mek_rotation_hours() -> u32 {
-    168
-}
+//
+// `JoinPolicy` + `CommunityMetadata` lived here: the v1.0
+// governance-manifest metadata subkey, carrying `owner_pseudonym`,
+// `operator_pseudonyms`, `community_mailbox_key`, `join_inbox_key`
+// and its published keypair. Every one of those is a coordinator
+// concept flat governance removed, and the struct had no reader left
+// on either track — `GovernanceState.metadata` is the community's
+// name and description now, merged from `CommunityMeta` entries that
+// each peer validates for itself.
 
 // ── Channel types ───────────────────────────────────────────────────
 

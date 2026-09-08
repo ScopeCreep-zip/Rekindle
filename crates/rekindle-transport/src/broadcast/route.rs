@@ -38,17 +38,6 @@ pub async fn allocate_with_deadline(
     result
 }
 
-/// Allocate a community-specific route.
-pub async fn allocate_community(node: &TransportNode) -> Result<(String, Vec<u8>)> {
-    debug!("route: allocating community");
-    let result = node.allocate_route().await;
-    match &result {
-        Ok((id, _)) => info!(route_id = %id, "route: community allocated"),
-        Err(e) => warn!(error = %e, "route: community allocation failed"),
-    }
-    result
-}
-
 /// Allocate a voice-specific route.
 pub async fn allocate_voice(node: &TransportNode) -> Result<(String, Vec<u8>)> {
     debug!("route: allocating voice");
@@ -118,22 +107,5 @@ pub async fn publish_to_mailbox(
     node.dht()?
         .mailbox()
         .update_route(mailbox_key, route_blob)
-        .await
-}
-
-/// Publish a community route blob to the community mailbox.
-pub async fn publish_to_community_mailbox(
-    node: &TransportNode,
-    community_mailbox_key: &str,
-    route_blob: &[u8],
-) -> Result<()> {
-    debug!(
-        community_mailbox_key,
-        blob_bytes = route_blob.len(),
-        "route: publishing to community mailbox"
-    );
-    node.dht()?
-        .mailbox()
-        .update_community_route(community_mailbox_key, route_blob)
         .await
 }

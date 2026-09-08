@@ -197,34 +197,11 @@ impl TransportNode {
             }
         }
 
-        // Step 6: For operator communities, allocate community routes and publish to mailbox
-        for membership in session.communities.values() {
-            if !membership.is_operator || membership.community_mailbox_key.is_empty() {
-                continue;
-            }
-            match crate::broadcast::route::allocate_community(self).await {
-                Ok((_route_id, community_route_blob)) => {
-                    match crate::broadcast::route::publish_to_community_mailbox(
-                        self,
-                        &membership.community_mailbox_key,
-                        &community_route_blob,
-                    )
-                    .await
-                    {
-                        Ok(()) => info!(
-                            community = membership.community_name.as_str(),
-                            "community route refreshed"
-                        ),
-                        Err(e) => {
-                            warn!(community = membership.community_name.as_str(), error = %e, "community route publish failed");
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(community = membership.community_name.as_str(), error = %e, "community route allocation failed");
-                }
-            }
-        }
+        // Under flat governance there is no per-community route to
+        // republish. A member is reached through the route blob in its
+        // own registry row, refreshed by the presence heartbeat, and a
+        // joiner through `InviteSecrets::inviter_route_blob` — neither
+        // needs a shared endpoint that one privileged peer maintains.
 
         let community_count = session.communities.len();
         info!(communities = community_count, "session resumed");

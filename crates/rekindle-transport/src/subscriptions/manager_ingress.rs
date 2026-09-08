@@ -248,10 +248,6 @@ impl SubscriptionManager {
                     ));
                 }
             }
-            watches::WatchKind::JoinInbox { community } => {
-                debug!(community = %community, subkeys = ?changed_subkeys, "join inbox changed");
-                // The daemon's inbox processor is triggered by this signal.
-            }
             watches::WatchKind::ChannelRecord {
                 community,
                 channel_id,

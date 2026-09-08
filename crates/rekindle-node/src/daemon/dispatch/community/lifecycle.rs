@@ -172,9 +172,6 @@ pub(crate) async fn handle_join(
         channel_record_keys: std::collections::HashMap::new(),
         // v2.0 join needs neither: admission is self-sovereign, so there
         // is no mailbox to petition and no inbox to be approved from.
-        community_mailbox_key: String::new(),
-        join_inbox_key: String::new(),
-        is_operator: false,
         governance_keypair_label: None,
         segment_index: Some(outcome.claimed.segment_index),
         lamport_counter: 0,

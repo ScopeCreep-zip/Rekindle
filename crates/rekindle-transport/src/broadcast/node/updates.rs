@@ -1,6 +1,6 @@
 //! Veilid update classification helpers — used by the dispatch bootstrap
 //! (`veilid_update_label`) and the route authority loop
-//! (`classify_dead_routes`).
+//! (`personal_route_died`).
 
 /// Human-readable `VeilidUpdate` variant name for logs.
 ///
@@ -9,26 +9,22 @@
 /// upstream adds a variant.
 pub(super) use rekindle_protocol::node::veilid_update_name as veilid_update_label;
 
-/// Pure classification of a dead-route batch against owned state:
-/// did the personal route die, and which community mailboxes lost
-/// their published route.
-pub(super) fn classify_dead_routes(
+/// Did our personal route die in this batch?
+///
+/// This used to also report which community mailboxes lost their
+/// published route. Flat governance has no community mailbox — a member
+/// is reached through the route blob in its own registry row — so the
+/// personal route is the only one this node publishes.
+pub(super) fn personal_route_died(
     dead: &[veilid_core::RouteId],
     personal: Option<&veilid_core::RouteId>,
-    community_live: &std::collections::HashMap<String, veilid_core::RouteId>,
-) -> (bool, Vec<String>) {
-    let personal_died = personal.is_some_and(|p| dead.contains(p));
-    let mailboxes = community_live
-        .iter()
-        .filter(|(_, id)| dead.contains(id))
-        .map(|(key, _)| key.clone())
-        .collect();
-    (personal_died, mailboxes)
+) -> bool {
+    personal.is_some_and(|p| dead.contains(p))
 }
 
 #[cfg(test)]
 mod route_authority_tests {
-    use super::classify_dead_routes;
+    use super::personal_route_died;
 
     fn route_id(byte: u8) -> veilid_core::RouteId {
         veilid_core::RouteId::new(
@@ -38,33 +34,21 @@ mod route_authority_tests {
     }
 
     #[test]
-    fn classify_dead_routes_personal() {
+    fn our_route_in_the_dead_batch() {
         let personal = route_id(1);
-        let dead = vec![route_id(1)];
-        let live = std::collections::HashMap::new();
-        let (personal_died, mailboxes) = classify_dead_routes(&dead, Some(&personal), &live);
-        assert!(personal_died);
-        assert!(mailboxes.is_empty());
+        assert!(personal_route_died(&[route_id(1)], Some(&personal)));
     }
 
     #[test]
-    fn classify_dead_routes_community() {
-        let dead = vec![route_id(2)];
-        let mut live = std::collections::HashMap::new();
-        live.insert("mb1".to_string(), route_id(2));
-        live.insert("mb2".to_string(), route_id(3));
-        let (personal_died, mailboxes) = classify_dead_routes(&dead, None, &live);
-        assert!(!personal_died);
-        assert_eq!(mailboxes, vec!["mb1".to_string()]);
+    fn someone_elses_dead_route_is_not_ours() {
+        let personal = route_id(1);
+        assert!(!personal_route_died(&[route_id(9)], Some(&personal)));
     }
 
+    /// No personal route allocated yet — nothing of ours can have died,
+    /// so the heal path must not fire on another node's churn.
     #[test]
-    fn classify_dead_routes_none() {
-        let personal = route_id(1);
-        let dead = vec![route_id(9)];
-        let live = std::collections::HashMap::new();
-        let (personal_died, mailboxes) = classify_dead_routes(&dead, Some(&personal), &live);
-        assert!(!personal_died);
-        assert!(mailboxes.is_empty());
+    fn no_personal_route_never_dies() {
+        assert!(!personal_route_died(&[route_id(2), route_id(3)], None));
     }
 }

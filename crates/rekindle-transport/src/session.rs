@@ -247,22 +247,8 @@ pub struct CommunityMembership {
     #[serde(default)]
     pub channel_record_keys: HashMap<String, String>,
 
-    /// Community mailbox DHT key — the community's RPC endpoint.
-    /// Used to send join requests and governance operations.
-    #[serde(default)]
-    pub community_mailbox_key: String,
-
-    /// Join inbox DHT key (operators only). Used to match ValueChange events
-    /// and trigger inbox processing for auto-approval of join requests.
-    #[serde(default)]
-    pub join_inbox_key: String,
-
-    /// Whether this member is an operator (holds the governance keypair).
-    /// Operators can execute governance writes on behalf of the community.
-    #[serde(default)]
-    pub is_operator: bool,
-
-    /// OS keyring label for the governance keypair, if this member is an operator.
+    /// OS keyring label for the genesis governance keypair, if this
+    /// member created the community.
     /// Format: "community-governance-{short_key}"
     #[serde(skip)]
     pub governance_keypair_label: Option<String>,
@@ -429,9 +415,6 @@ mod tests {
             community_name: "dev-team".into(),
             slot_seed: None,
             channel_record_keys: HashMap::new(),
-            community_mailbox_key: "VLD0:mailbox:community".into(),
-            join_inbox_key: String::new(),
-            is_operator: false,
             governance_keypair_label: None,
             segment_index: Some(0),
             lamport_counter: 7,

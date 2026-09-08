@@ -119,11 +119,6 @@ impl DaemonGovernanceAdapter<'_> {
             community_name: community.name.clone(),
             slot_seed,
             channel_record_keys,
-            // The origin flow does not mint a mailbox or join inbox; the
-            // v2.0 join is self-sovereign and needs neither.
-            community_mailbox_key: String::new(),
-            join_inbox_key: String::new(),
-            is_operator: true,
             governance_keypair_label: community
                 .dht_owner_keypair
                 .as_ref()

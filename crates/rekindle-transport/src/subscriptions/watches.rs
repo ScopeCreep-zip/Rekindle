@@ -36,8 +36,6 @@ pub enum WatchKind {
     /// reader re-merges; it cannot tell what changed from the subkey
     /// index alone.
     GovernanceRecord { community: String },
-    /// Community join inbox (operator only, DFLT(32), subkeys 0-31).
-    JoinInbox { community: String },
     /// A channel's SMPL segment record.
     ///
     /// PATH 3 of the three-path model. One record per
@@ -114,7 +112,6 @@ impl WatchRegistry {
         self.entries.retain(|_, e| {
             !matches!(&e.kind,
                 WatchKind::GovernanceRecord { community: c }
-                | WatchKind::JoinInbox { community: c }
                 | WatchKind::ChannelRecord { community: c, .. }
                 if c == community
             )
@@ -361,27 +358,10 @@ pub async fn setup_community_watches(
         .await;
     }
 
-    // Watch join inbox (operators only — they process incoming join requests)
-    if membership.is_operator && !membership.join_inbox_key.is_empty() {
-        let inbox_subkeys: Vec<u32> = (0..dht_types::JOIN_INBOX_SUBKEY_COUNT).collect();
-        establish_watch(
-            node,
-            registry,
-            &membership.join_inbox_key,
-            &inbox_subkeys,
-            WatchKind::JoinInbox {
-                community: community.clone(),
-            },
-        )
-        .await;
-    }
-
     info!(
         community = membership.community_name.as_str(),
         governance = %membership.governance_key,
         registry = %membership.registry_key,
-        join_inbox = %membership.join_inbox_key,
-        is_operator = membership.is_operator,
         "community watches established"
     );
 }
