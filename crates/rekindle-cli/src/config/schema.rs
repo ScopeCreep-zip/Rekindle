@@ -271,20 +271,11 @@ impl Default for TuiConfig {
 /// Policy fields are additive: they set minimums/maximums, they never
 /// disable features that users enabled. Violations produce hard errors
 /// with a message pointing to the admin.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct PolicyConfig {
-    /// Minimum allowed hop_count for any safety profile.
-    pub min_hop_count: Option<u8>,
-
-    /// Whether signature verification can be disabled.
-    /// If true, users cannot set verify_signatures=false.
-    #[serde(default)]
-    pub require_signature_verification: bool,
-
-    /// Maximum allowed gossip TTL.
-    pub max_gossip_ttl: Option<u8>,
-}
+// Declared by `rekindle-node`, which this crate already depends on and
+// already imports it from in `node_daemon.rs` — the CLI was holding two
+// identically-shaped `PolicyConfig`s at once, one loaded from
+// `/etc/rekindle/policy.toml` and one handed to `DaemonContext`.
+pub use rekindle_node::daemon::dispatch::PolicyConfig;
 
 // ── Default value functions ─────────────────────────────────────────────
 

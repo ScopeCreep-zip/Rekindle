@@ -239,32 +239,15 @@ pub struct CommunityState {
 
 /// Tracks DHT records opened for a single community.
 ///
-/// Follows VeilidChat's "open once, keep open" pattern: records are opened during
-/// join_community and closed only on leave or logout. Presence poll and keepalive
-/// use the already-open records via `get_dht_value` without re-opening.
-#[derive(Debug, Default, Clone)]
-pub struct CommunityRecords {
-    /// The primary community governance record key.
-    pub governance_key: Option<String>,
-    /// The SMPL member registry record key.
-    pub registry_key: Option<String>,
-    /// Writer keypair used when opening the registry (preserved to avoid clobber on re-open).
-    pub registry_writer: Option<String>,
-    /// All opened channel SMPL record keys.
-    pub channel_keys: Vec<String>,
-    /// Member-owned GovernanceOverflow record keys (the author's spill pages,
-    /// and any overflow chain this node has *followed* as a reader — Mutual Aid
-    /// §14.1: readers keep what they read alive). Warmed + tracked-open + closed
-    /// on leave like `channel_keys`; never *watched* (the primary subkey's watch
-    /// already re-follows the chain on change).
-    pub governance_overflow_keys: Vec<String>,
-    /// Whether records have been opened for this session (false after restart until rejoin).
-    pub records_open: bool,
-    /// Fingerprint of the last inspected governance record state.
-    pub governance_report_fingerprint: Option<u64>,
-    /// Fingerprints of the last inspected channel record state by channel id.
-    pub channel_report_fingerprints: HashMap<String, u64>,
-}
+/// Every DHT record open for one community.
+///
+/// Declared by `rekindle-records`, whose stated job is "DHT record
+/// lifecycle" (CLAUDE.md, Tier 3). This file used to carry a second
+/// `CommunityRecords` that had grown the fields the lifecycle actually
+/// needs while the crate's sat unused with a speculative
+/// `HashMap<channel_id, record_key>`. The fields came here; the type
+/// went there.
+pub use rekindle_records::lifecycle::CommunityRecords;
 
 /// Aggregated RSVP entry for a single member and event.
 //

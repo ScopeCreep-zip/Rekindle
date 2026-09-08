@@ -14,12 +14,11 @@ use rekindle_types::permissions;
 /// Architecture §19.4 — explicit edit verb so callers can either set
 /// a new exclusion-group slug or clear it. Omitting the field
 /// entirely on `edit_role` is "no change".
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
-pub enum ExclusionGroupEdit {
-    Set(String),
-    Clear,
-}
+// Declared by `rekindle-governance-runtime`, whose copy is the superset:
+// it also has `Unchanged`, the case this one expressed by passing
+// `Option::None` alongside. One enum, three cases, no second encoding of
+// "leave it alone".
+pub use rekindle_governance_runtime::roles::ExclusionGroupEdit;
 
 /// Architecture §19.4 — exclusion-group slugs are case-insensitive
 /// short tags. Normalise to lowercase and reject overlong / control
@@ -97,17 +96,18 @@ pub async fn edit_role_handler_inner(
         .map(|s| s.parse::<u64>())
         .transpose()
         .map_err(|e| format!("invalid permissions: {e}"))?;
-    let normalised_exclusion: rekindle_governance_runtime::roles::ExclusionGroupEdit =
-        match exclusion_group {
-            None => rekindle_governance_runtime::roles::ExclusionGroupEdit::Unchanged,
-            Some(ExclusionGroupEdit::Clear) => {
-                rekindle_governance_runtime::roles::ExclusionGroupEdit::Clear
-            }
-            Some(ExclusionGroupEdit::Set(value)) => match normalize_exclusion_group(Some(value))? {
-                None => rekindle_governance_runtime::roles::ExclusionGroupEdit::Clear,
-                Some(s) => rekindle_governance_runtime::roles::ExclusionGroupEdit::Set(s),
-            },
-        };
+    // One enum now, so this is only the slug normalisation — the
+    // arm-for-arm translation between a local two-case copy and the
+    // runtime's three-case one is gone. An absent field and an explicit
+    // `Unchanged` mean the same thing and say so.
+    let normalised_exclusion = match exclusion_group {
+        None | Some(ExclusionGroupEdit::Unchanged) => ExclusionGroupEdit::Unchanged,
+        Some(ExclusionGroupEdit::Clear) => ExclusionGroupEdit::Clear,
+        Some(ExclusionGroupEdit::Set(value)) => match normalize_exclusion_group(Some(value))? {
+            None => ExclusionGroupEdit::Clear,
+            Some(s) => ExclusionGroupEdit::Set(s),
+        },
+    };
     edit_role_inner(
         state,
         pool,

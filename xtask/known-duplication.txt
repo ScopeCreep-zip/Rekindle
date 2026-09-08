@@ -9,8 +9,6 @@
 # DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
 # deliberate and permanent — those carry a reason; this file does not.
 type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
-type rekindle (src-tauri)::CommunityRecords rekindle-records::CommunityRecords
-type rekindle (src-tauri)::ExclusionGroupEdit rekindle-governance-runtime::ExclusionGroupEdit
 type rekindle (src-tauri)::MemberProfileSnapshot rekindle-channel::MemberProfileSnapshot rekindle-presence::MemberProfileSnapshot
 type rekindle (src-tauri)::Message rekindle-node::Message
 type rekindle (src-tauri)::OnlineMember rekindle-transport::OnlineMember
@@ -23,7 +21,6 @@ type rekindle-audit::AuditEntry rekindle-node::AuditEntry
 type rekindle-calls::CallError rekindle-transport::CallError
 type rekindle-channel::AutoModAction rekindle-protocol::AutoModAction
 type rekindle-cli::ChannelEntry rekindle-types::ChannelEntry
-type rekindle-cli::PolicyConfig rekindle-node::PolicyConfig
 type rekindle-crypto::CryptoError rekindle-types::CryptoError
 type rekindle-crypto::PreKeyBundle rekindle-protocol::PreKeyBundle
 type rekindle-crypto::SignalSessionManager rekindle-transport::SignalSessionManager

@@ -36,7 +36,14 @@ pub struct RoleSnapshotInsert {
 /// Three-state edit for the exclusion-group slug. `Unchanged` is the
 /// default (caller doesn't want to touch the field); `Clear` removes
 /// the existing exclusion group; `Set` overwrites with a new slug.
-#[derive(Debug, Clone, Default)]
+///
+/// Carries the IPC wire contract because it *is* the IPC type — the
+/// `edit_role` command deserialises straight into it. src-tauri used to
+/// declare a two-case copy (`Set`/`Clear`) with these attributes and
+/// express `Unchanged` by passing `Option::None` beside it, which is
+/// the same three states in two encodings.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
 pub enum ExclusionGroupEdit {
     #[default]
     Unchanged,

@@ -83,21 +83,8 @@ pub fn collect_and_clear_community_records(
     let Some(cs) = communities.get_mut(community_id) else {
         return Vec::new();
     };
-    let records = &mut cs.open_community_records;
-    let mut keys = Vec::new();
-    if let Some(ref k) = records.governance_key {
-        keys.push(k.clone());
-    }
-    if let Some(ref k) = records.registry_key {
-        keys.push(k.clone());
-    }
-    keys.append(&mut records.channel_keys);
-    // §10 teardown: close GovernanceOverflow records too (the author's spill
-    // pages and any followed chain) — they were opened+tracked on join/login.
-    keys.append(&mut records.governance_overflow_keys);
-    records.governance_key = None;
-    records.registry_key = None;
-    records.registry_writer = None;
-    records.records_open = false;
-    keys
+    // §10 teardown lives on the inventory itself, so the overflow chain
+    // (the author's spill pages and any followed chain) cannot be
+    // forgotten here the way a hand-rolled sweep can forget it.
+    cs.open_community_records.take_all_for_close()
 }
