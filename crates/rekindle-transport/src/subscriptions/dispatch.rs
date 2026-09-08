@@ -114,10 +114,10 @@ async fn dispatch_update<H: InboundHandler>(
 
 async fn dispatch_app_message<H: InboundHandler>(
     handler: &Arc<H>,
-    config: &TransportConfig,
+    _config: &TransportConfig,
     dedup: &mut DedupCache,
     raw: &[u8],
-    api: &veilid_core::VeilidAPI,
+    _api: &veilid_core::VeilidAPI,
     shared: &SharedState,
 ) {
     let (type_id, payload) = match frame::decode(raw) {
@@ -148,12 +148,11 @@ async fn dispatch_app_message<H: InboundHandler>(
     };
 
     match type_id {
-        TypeId::GossipBroadcast => {
-            super::dispatch_gossip::dispatch_gossip(
-                handler, config, dedup, payload, raw, api, shared,
-            )
-            .await;
-        }
+        // `TypeId::GossipBroadcast` is no longer produced. Gossip is the
+        // unframed Cap'n Proto `SignedEnvelope` handled above, matching
+        // the desktop; the framed postcard form existed only on this
+        // track and no peer could read it. Falls through to the
+        // "unexpected type" arm if one ever arrives.
         TypeId::VoicePacket => {
             dispatch_voice(handler, payload).await;
         }

@@ -360,12 +360,17 @@ mod tests {
     }
 
     #[test]
-    fn initial_gossip_ttl_matches_the_shared_default() {
+    fn initial_gossip_ttl_is_the_shared_default() {
+        // There is only one TTL constant now. This crate used to carry a
+        // second (`broadcast::gossip::DEFAULT_TTL`, briefly 3 against
+        // codec's 5) and this test pinned them together; the whole
+        // postcard gossip stack it belonged to is gone, so the
+        // assertion is that the envelope every track signs starts at the
+        // architecture's five hops.
         assert_eq!(
-            crate::broadcast::gossip::DEFAULT_TTL,
             rekindle_codec::envelope::DEFAULT_TTL,
-            "daemon-originated envelopes must carry the same hop budget \
-             as desktop-originated ones — they traverse the same mesh"
+            5,
+            "the mesh is specified at a 5-hop TTL"
         );
     }
 

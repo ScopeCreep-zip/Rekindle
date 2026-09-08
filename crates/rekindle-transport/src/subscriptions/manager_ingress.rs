@@ -6,21 +6,26 @@ use tracing::debug;
 use super::{state_effects, watches, SubscriptionManager};
 use crate::gossip::GossipAdmission;
 use crate::payload::dm::DmPayload;
-use crate::payload::gossip::GossipPayload;
+use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
 use super::events::{self, SubscriptionEvent};
 use crate::payload::dht_types::SLOTS_PER_SEGMENT;
 
 impl SubscriptionManager {
-    /// Route a gossip payload. Called by the daemon's InboundHandler.
+    /// Route a verified gossip envelope. Called by the daemon's
+    /// `InboundHandler`.
     ///
-    /// Pipeline: rate limit → Lamport merge → payload.into_event() →
-    /// state_effects → dedup → emit
+    /// Pipeline: rate limit → Lamport merge → `envelope_into_event` →
+    /// state_effects → dedup → emit.
+    ///
+    /// Takes the canonical `CommunityEnvelope`. It used to take a
+    /// postcard `GossipPayload` — this track's own near-copy — so a
+    /// desktop peer's broadcast could not be represented here at all.
     pub fn on_gossip(
         &self,
         community_id: &str,
         sender_pseudonym: &str,
-        payload: GossipPayload,
+        envelope: CommunityEnvelope,
         lamport_ts: u64,
     ) {
         debug!(
@@ -71,8 +76,14 @@ impl SubscriptionManager {
             }
         }
 
-        let event = payload.into_event(community_id, sender_pseudonym);
-        self.process_event(event);
+        // `None` for payloads that are not subscriber-facing — Mutual
+        // Aid watch relays and the media/transport plane. Handled by
+        // their own subsystems, not dropped silently here.
+        if let Some(event) =
+            crate::payload::gossip::envelope_into_event(envelope, community_id, sender_pseudonym)
+        {
+            self.process_event(event);
+        }
     }
 
     /// Route a DM payload. Called by the daemon's InboundHandler.

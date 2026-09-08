@@ -8,7 +8,6 @@ use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, TransportError};
-use crate::payload::gossip::SignedGossipEnvelope;
 
 /// A signed payload wrapper for DM and RPC messages.
 ///
@@ -162,46 +161,6 @@ pub fn verify_signed_payload_with_window(
     Ok(())
 }
 
-/// Sign a gossip envelope with the sender's pseudonym key.
-///
-/// Signature is computed over `payload_bytes` only (the inner serialized
-/// gossip payload). Community ID and sender pseudonym are in the clear
-/// for routing/dedup but are not signed — the payload itself carries
-/// the authenticated content.
-pub fn sign_gossip_envelope(
-    signing_key: &SigningKey,
-    community_id: &str,
-    sender_pseudonym: &str,
-    payload_bytes: &[u8],
-    ttl: u8,
-    lamport_ts: u64,
-) -> SignedGossipEnvelope {
-    let signature = signing_key.sign(payload_bytes);
-
-    SignedGossipEnvelope {
-        community_id: community_id.to_string(),
-        sender_pseudonym: sender_pseudonym.to_string(),
-        payload_bytes: payload_bytes.to_vec(),
-        signature: signature.to_bytes().to_vec(),
-        ttl,
-        lamport_ts,
-    }
-}
-
-/// Verify the Ed25519 signature on a [`SignedGossipEnvelope`].
-///
-/// The `sender_pseudonym` field is the hex-encoded Ed25519 public key.
-pub fn verify_gossip_envelope(envelope: &SignedGossipEnvelope) -> Result<()> {
-    let verifying_key = parse_verifying_key(&envelope.sender_pseudonym)?;
-    let signature = parse_signature(&envelope.signature)?;
-
-    verifying_key
-        .verify_strict(&envelope.payload_bytes, &signature)
-        .map_err(|_| TransportError::SignatureVerificationFailed {
-            sender: envelope.sender_pseudonym.clone(),
-        })
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────
 
 fn parse_verifying_key(hex_str: &str) -> Result<VerifyingKey> {
@@ -312,17 +271,5 @@ mod tests {
         assert!(verify_signed_payload(&signed).is_ok());
         assert_eq!(signed.correlation_id.as_deref(), Some(cid));
         assert_eq!(signed.seq, 7);
-    }
-
-    #[test]
-    fn gossip_envelope_sign_verify() {
-        let secret = [7u8; 32];
-        let key = SigningKey::from_bytes(&secret);
-        let pseudo_hex = hex::encode(key.verifying_key().to_bytes());
-
-        let envelope =
-            sign_gossip_envelope(&key, "community_abc", &pseudo_hex, b"gossip payload", 5, 42);
-
-        assert!(verify_gossip_envelope(&envelope).is_ok());
     }
 }

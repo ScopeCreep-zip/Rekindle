@@ -20,23 +20,6 @@ use crate::broadcast::node::TransportNode;
 use crate::crypto::mek::{Mek, MekCache};
 use crate::error::{Result, TransportError};
 
-pub fn build_mek_request_payload(
-    channel_id: &str,
-    needed_generation: u64,
-    our_pseudonym: &str,
-) -> Result<Vec<u8>> {
-    postcard::to_stdvec(&crate::payload::gossip::GossipPayload::Control(
-        crate::payload::gossip::ControlPayload::RequestMek {
-            channel_id: channel_id.to_string(),
-            needed_generation,
-            requester_pseudonym: our_pseudonym.to_string(),
-        },
-    ))
-    .map_err(|e| TransportError::SerializationFailed {
-        reason: e.to_string(),
-    })
-}
-
 fn parse_pseudonym_pub(hex_str: &str) -> Result<[u8; 32]> {
     let bytes = hex::decode(hex_str)
         .map_err(|e| TransportError::Internal(format!("invalid pseudonym hex: {e}")))?;

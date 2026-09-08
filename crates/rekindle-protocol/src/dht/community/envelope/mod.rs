@@ -78,6 +78,59 @@ pub enum CommunityEnvelope {
     },
 }
 
+impl CommunityEnvelope {
+    /// Is this envelope addressed to **one** member rather than the
+    /// community?
+    ///
+    /// Directed payloads must never be gossip-forwarded. Two things go
+    /// wrong if they are: a payload wrapped for a single recipient is
+    /// amplified to every peer within the TTL for no one's benefit, and
+    /// §10.6 requires that channel media stay on the roster it was sent
+    /// to rather than fanning out epidemically.
+    ///
+    /// This is the single definition. There were two, and they
+    /// disagreed: `rekindle-transport`'s postcard
+    /// `SignedGossipEnvelope::is_private` listed six variants while
+    /// `src-tauri`'s `is_private_control_payload` listed four, omitting
+    /// `JoinRejected` and `KickedNotification` — so a desktop node
+    /// re-broadcast two payloads a daemon node would not. The union is
+    /// the correct answer, plus the media plane, which was previously
+    /// guarded separately and only on one track.
+    #[must_use]
+    pub fn is_directed(&self) -> bool {
+        let Self::Control(payload) = self else {
+            return false;
+        };
+        matches!(
+            payload,
+            // Wrapped or granted to a single recipient.
+            ControlPayload::JoinAccepted { .. }
+                | ControlPayload::JoinRejected { .. }
+                | ControlPayload::SlotKeypairGrant { .. }
+                | ControlPayload::AdminKeypairGrant { .. }
+                | ControlPayload::MekTransfer(_)
+                | ControlPayload::MekTransferAck(_)
+                | ControlPayload::KickedNotification
+                // Answers to one peer's question.
+                | ControlPayload::SyncResponse { .. }
+                | ControlPayload::BootstrapResponse { .. }
+                // Media plane — §10.6. Directed to a call or channel
+                // roster; flooding it would multiply a video stream by
+                // the fan-out degree at every hop.
+                | ControlPayload::VideoFragment(_)
+                | ControlPayload::VideoParityFragment(_)
+                | ControlPayload::FrameAck { .. }
+                | ControlPayload::KeyframeRequest { .. }
+                | ControlPayload::BandwidthEstimate { .. }
+                | ControlPayload::MediaCapabilities { .. }
+                | ControlPayload::TopologyChange { .. }
+                | ControlPayload::AttachmentChunk { .. }
+                | ControlPayload::MultiAttachmentChunk { .. }
+                | ControlPayload::RequestAttachment { .. }
+        )
+    }
+}
+
 /// Game information for community presence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

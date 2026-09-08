@@ -59,18 +59,13 @@ pub async fn leave_community(
     mek_cache
         .write()
         .remove_community(&membership.governance_key);
-    let gossip_payload = crate::payload::gossip::GossipPayload::Control(
-        crate::payload::gossip::ControlPayload::MemberLeave {
-            pseudonym_key: membership.pseudonym_key.clone(),
-        },
-    );
-    let leave_payload_bytes =
-        postcard::to_stdvec(&gossip_payload).map_err(|e| TransportError::SerializationFailed {
-            reason: e.to_string(),
-        })?;
     info!(community = %membership.community_name, "community left");
     Ok(LeaveResult {
-        leave_payload_bytes,
+        departure_notice: rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::MemberLeave {
+                pseudonym_key: membership.pseudonym_key.clone(),
+            },
+        ),
     })
 }
 

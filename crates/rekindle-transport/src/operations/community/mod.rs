@@ -25,6 +25,20 @@ mod leave;
 
 pub use leave::leave_community;
 
+/// What a leave leaves behind for the caller to broadcast.
+///
+/// The departure notice is PATH 2 — peers also learn from the signed
+/// `departed` row this writes into our registry slot (PATH 1), but that
+/// is only observed on their next presence poll, and a departure is what
+/// triggers the MEK rotation that gives forward secrecy. Telling them
+/// now is the difference between seconds and a poll interval.
+///
+/// This used to be `leave_payload_bytes: Vec<u8>` — a postcard
+/// `GossipPayload::Control(MemberLeave)`, which no desktop peer could
+/// parse, and which the daemon discarded unsent anyway (`Ok(_)` in
+/// `dispatch::community::lifecycle`). Returning the envelope instead of
+/// bytes means the caller broadcasts it through the same signed Cap'n
+/// Proto path as everything else.
 pub struct LeaveResult {
-    pub leave_payload_bytes: Vec<u8>,
+    pub departure_notice: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
 }

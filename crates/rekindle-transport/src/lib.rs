@@ -104,9 +104,7 @@ pub use frame::TypeId;
 pub use rekindle_utils::{timestamp_ms, timestamp_secs};
 
 // Crypto (for app-layer use)
-pub use crypto::envelope::{
-    sign_gossip_envelope, sign_payload, verify_gossip_envelope, verify_signed_payload,
-};
+pub use crypto::envelope::{sign_payload, verify_signed_payload};
 pub use crypto::mek::{unwrap_mek, wrap_mek, Mek, MekCache};
 pub use crypto::voice_crypto::VoiceSessionKey;
 
@@ -119,7 +117,6 @@ pub use broadcast::BroadcastManager;
 
 // Payload types
 pub use payload::dm::DmPayload;
-pub use payload::gossip::{ControlPayload, GossipPayload, SignedGossipEnvelope};
 pub use payload::rpc::{
     CallResponse, ChannelEntrySummary, CommunityLeaveNotification, GovernanceOp,
     GovernanceOpResponse, GovernanceRequest, InboundCall, MekTransferPayload, SyncRequest,

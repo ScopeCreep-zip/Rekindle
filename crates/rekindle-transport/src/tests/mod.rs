@@ -2,14 +2,15 @@
 //!
 //! Tests that require a live Veilid node are gated behind integration
 //! test infrastructure. Unit tests here cover payload serialization.
-//! Frame, envelope, voice crypto, and gossip tests are inline in their
-//! respective modules.
+//! Frame, envelope and voice crypto tests are inline in their
+//! respective modules. Gossip moved to `tests/gossip_wire_compat.rs`
+//! when the postcard `GossipPayload` was deleted — it tests the Cap'n
+//! Proto envelope both tracks actually exchange.
 
 pub mod mock_node;
 
 use crate::frame::TypeId;
 use crate::payload::dm::{deserialize_dm, dm_type_id, serialize_dm, DmPayload};
-use crate::payload::gossip::{ControlPayload, GossipPayload, SignedGossipEnvelope};
 use crate::payload::rpc::*;
 use crate::payload::voice::VoicePayload;
 
@@ -56,46 +57,6 @@ fn dm_roundtrip_friend_request() {
 }
 
 #[test]
-fn gossip_payload_roundtrip() {
-    let payload = GossipPayload::MessageNotification {
-        channel_id: "ch_01".into(),
-        message_id: "msg_abc".into(),
-        author_pseudonym: "pseudo_123".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
-        sequence: 3,
-        content_hash: "abc123".into(),
-        timestamp: 1_234_567_890,
-    };
-    let bytes = postcard::to_stdvec(&payload).unwrap();
-    let back: GossipPayload = postcard::from_bytes(&bytes).unwrap();
-    match back {
-        GossipPayload::MessageNotification {
-            channel_id,
-            message_id,
-            ..
-        } => {
-            assert_eq!(channel_id, "ch_01");
-            assert_eq!(message_id, "msg_abc");
-        }
-        _ => panic!("wrong variant"),
-    }
-}
-
-#[test]
-fn control_payload_roundtrip() {
-    let payload = ControlPayload::MemberLeave {
-        pseudonym_key: "abc123".into(),
-    };
-    let bytes = postcard::to_stdvec(&payload).unwrap();
-    let back: ControlPayload = postcard::from_bytes(&bytes).unwrap();
-    match back {
-        ControlPayload::MemberLeave { pseudonym_key } => assert_eq!(pseudonym_key, "abc123"),
-        _ => panic!("wrong variant"),
-    }
-}
-
-#[test]
 fn voice_payload_roundtrip() {
     let payload = VoicePayload {
         sender_key_hex: "deadbeef".into(),
@@ -133,69 +94,4 @@ fn call_response_roundtrip() {
         CallResponse::Ok(data) => assert_eq!(data, b"response data"),
         _ => panic!("wrong variant"),
     }
-}
-
-#[test]
-fn signed_gossip_envelope_dedup_key_message() {
-    let payload = GossipPayload::MessageNotification {
-        channel_id: "ch_01".into(),
-        message_id: "unique_msg_id".into(),
-        author_pseudonym: "p".into(),
-        subkey_index: 0,
-        lamport_ts: 1,
-        sequence: 1,
-        content_hash: "hash".into(),
-        timestamp: 0,
-    };
-    let payload_bytes = postcard::to_stdvec(&payload).unwrap();
-    let envelope = SignedGossipEnvelope {
-        community_id: "c1".into(),
-        sender_pseudonym: "sender".into(),
-        payload_bytes,
-        signature: vec![0; 64],
-        ttl: 5,
-        lamport_ts: 1,
-    };
-    assert_eq!(envelope.dedup_key(), "unique_msg_id");
-}
-
-#[test]
-fn signed_gossip_envelope_private_detection() {
-    let payload = GossipPayload::Control(ControlPayload::JoinAccepted {
-        mek_encrypted: vec![],
-        mek_generation: 0,
-        member_registry_key: None,
-        slot_index: None,
-        wrapped_slot_seed: None,
-    });
-    let payload_bytes = postcard::to_stdvec(&payload).unwrap();
-    let envelope = SignedGossipEnvelope {
-        community_id: "c1".into(),
-        sender_pseudonym: "s".into(),
-        payload_bytes,
-        signature: vec![0; 64],
-        ttl: 5,
-        lamport_ts: 1,
-    };
-    assert!(envelope.is_private());
-}
-
-#[test]
-fn message_notification_stays_compact() {
-    let payload = GossipPayload::MessageNotification {
-        channel_id: "ch01".into(),
-        message_id: "m01".into(),
-        author_pseudonym: "p01".into(),
-        subkey_index: 7,
-        lamport_ts: 42,
-        sequence: 3,
-        content_hash: "abc123".into(),
-        timestamp: 1_234_567_890,
-    };
-    let bytes = postcard::to_stdvec(&payload).unwrap();
-    assert!(
-        bytes.len() < 200,
-        "MessageNotification should be compact (< 200 bytes), was {} bytes",
-        bytes.len()
-    );
 }

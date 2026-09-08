@@ -10,11 +10,13 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use rekindle_protocol::dht::community::envelope::{
+    CommunityEnvelope, ControlPayload, SignedEnvelope,
+};
 use tracing::{debug, info, warn};
 
 use rekindle_transport::{
     payload::dm::DmPayload,
-    payload::gossip::{GossipPayload, SignedGossipEnvelope},
     payload::rpc::{CallResponse, InboundCall},
     payload::voice::VoicePayload,
     InboundHandler, PendingFriendRequest, Session, SubscriptionManager, TransportEvent,
@@ -200,114 +202,11 @@ impl InboundHandler for DaemonHandler {
             .await;
     }
 
-    /// A desktop-format community gossip envelope arrived, verified.
-    ///
-    /// `WatchRelay` is handled here because it has no `GossipPayload`
-    /// equivalent — the daemon's three-variant type cannot express it.
-    /// Everything that *does* have one is projected and handed to the
-    /// existing `on_gossip` pipeline rather than reimplemented, so
-    /// unread counts, typing state and the presence overlay behave
-    /// identically whichever format the message arrived in.
-    async fn on_community_gossip(
-        &self,
-        community_id: &str,
-        sender_pseudonym: &str,
-        envelope: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
-        lamport_ts: u64,
-    ) {
-        use rekindle_protocol::dht::community::envelope::CommunityEnvelope as Env;
-
-        debug!(
-            community = community_id,
-            sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
-            "handler: on_community_gossip"
-        );
-
-        let projected = match envelope {
-            Env::WatchRelay {
-                record_key,
-                subkey,
-                content_hash,
-                observer_pseudonym,
-            } => {
-                self.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
-                    .await;
-                return;
-            }
-            Env::MessageNotification {
-                channel_id,
-                message_id,
-                author_pseudonym,
-                subkey_index,
-                lamport_ts: inner_lamport,
-                sequence,
-                content_hash,
-                timestamp,
-            } => GossipPayload::MessageNotification {
-                channel_id,
-                message_id,
-                author_pseudonym,
-                subkey_index,
-                lamport_ts: inner_lamport,
-                sequence,
-                content_hash,
-                timestamp,
-            },
-            Env::TypingIndicator {
-                channel_id,
-                pseudonym_key,
-            } => GossipPayload::TypingIndicator {
-                channel_id,
-                pseudonym_key,
-            },
-            Env::PresenceUpdate {
-                pseudonym_key,
-                status,
-                game_info,
-                route_blob,
-            } => GossipPayload::PresenceUpdate {
-                pseudonym_key,
-                status,
-                // `PresenceGameInfo` is one struct on the protocol side
-                // and three flat fields on the transport side. Unpacked
-                // rather than dropped: rich presence is the whole point
-                // of the field, and losing it silently would make a
-                // desktop peer's game status vanish on the daemon.
-                game_name: game_info.as_ref().map(|g| g.game_name.clone()),
-                game_id: game_info.as_ref().and_then(|g| g.game_id),
-                elapsed_seconds: game_info.as_ref().and_then(|g| g.elapsed_seconds),
-                server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
-                route_blob,
-            },
-            // The `Control(..)` family. Both tracks have one, but they
-            // are separate enums with different variant sets, so a
-            // faithful projection is a per-variant mapping rather than
-            // a cast — and writing a lossy one here would silently drop
-            // whichever control messages did not line up.
-            //
-            // Logged rather than dropped quietly: this is a known gap
-            // with a name, and the traffic that reaches it is visible
-            // under `RUST_LOG=rekindle_node=debug`.
-            Env::Control(control) => {
-                debug!(
-                    community = community_id,
-                    variant = ?std::mem::discriminant(&control),
-                    "on_community_gossip: control variant not yet projected onto the daemon's \
-                     ControlPayload"
-                );
-                return;
-            }
-        };
-
-        self.on_gossip(community_id, sender_pseudonym, projected, lamport_ts)
-            .await;
-    }
-
     async fn on_gossip(
         &self,
         community_id: &str,
         sender_pseudonym: &str,
-        payload: GossipPayload,
+        envelope: CommunityEnvelope,
         lamport_ts: u64,
     ) {
         debug!(
@@ -316,16 +215,29 @@ impl InboundHandler for DaemonHandler {
             "handler: on_gossip"
         );
 
+        // Mutual Aid §14.3 — plumbing, not news. Acted on by fetching
+        // the record, never surfaced as a subscription event, so it is
+        // intercepted before the pipeline.
+        if let CommunityEnvelope::WatchRelay {
+            ref record_key,
+            subkey,
+            ref content_hash,
+            ref observer_pseudonym,
+        } = envelope
+        {
+            self.on_watch_relay(record_key, subkey, content_hash, observer_pseudonym)
+                .await;
+            return;
+        }
+
         // Tier 2: If this is a JoinAccepted for a pending join, cache MEK + complete oneshot.
         // Check BEFORE forwarding to SubscriptionManager (which takes ownership).
-        if let GossipPayload::Control(
-            rekindle_transport::payload::gossip::ControlPayload::JoinAccepted {
-                slot_index: Some(slot),
-                ref mek_encrypted,
-                mek_generation,
-                ..
-            },
-        ) = &payload
+        if let CommunityEnvelope::Control(ControlPayload::JoinAccepted {
+            slot_index: Some(slot),
+            ref mek_encrypted,
+            mek_generation,
+            ..
+        }) = &envelope
         {
             // Cache MEK from direct notification (bypasses DHT vault propagation)
             if !mek_encrypted.is_empty() && *mek_generation > 0 {
@@ -364,12 +276,18 @@ impl InboundHandler for DaemonHandler {
         }
 
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
-            sub_mgr.on_gossip(community_id, sender_pseudonym, payload, lamport_ts);
+            sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts);
         }
     }
 
-    async fn on_gossip_forward(&self, _envelope: &SignedGossipEnvelope) {
-        // Gossip forwarding to mesh peers — handled by broadcast manager
+    /// Re-broadcast a verified envelope one hop further.
+    ///
+    /// Queued for the gossip worker, which re-signs nothing — the
+    /// envelope keeps its original author's signature, and only the TTL
+    /// the transport already decremented has changed. That is what makes
+    /// a relayed message still attributable to whoever wrote it.
+    async fn on_gossip_forward(&self, envelope: &SignedEnvelope) {
+        crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
     }
 
     async fn on_voice(&self, _sender_key: &str, _packet: VoicePayload) {

@@ -71,18 +71,31 @@ pub(crate) fn handle_mek_request(
         Err(e) => return e,
     };
 
-    match rekindle_transport::operations::mek::build_mek_request_payload(
-        channel,
-        generation,
-        &membership.pseudonym_key,
-    ) {
-        Ok(payload_bytes) => IpcResponse::ok(&serde_json::json!({
-            "gossip_payload_len": payload_bytes.len(),
-            "channel": channel,
-            "generation": generation,
-        })),
-        Err(e) => IpcResponse::error(500, format!("mek request: {e}")),
-    }
+    // Actually broadcast it. This used to call
+    // `operations::mek::build_mek_request_payload`, serialize a postcard
+    // `GossipPayload` and return `{"gossip_payload_len": N}` — the bytes
+    // were never sent, so asking the daemon for a MEK reported a length
+    // and did nothing. A member missing a key stayed missing it.
+    //
+    // `cascade_index: 0` addresses the deterministic top-rank responder
+    // (§A3/P1.3). Only that peer replies; the requester re-sends with an
+    // incremented index if nobody does, which is the desktop's
+    // `spawn_mek_request_with_retry` loop.
+    let request = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::RequestMEK {
+            channel_id: channel.to_string(),
+            needed_generation: generation,
+            requester_pseudonym: membership.pseudonym_key.clone(),
+            cascade_index: 0,
+        },
+    );
+    crate::daemon::gossip::send(&ctx.gossip_tx, &membership.governance_key, &request);
+
+    IpcResponse::ok(&serde_json::json!({
+        "requested": true,
+        "channel": channel,
+        "generation": generation,
+    }))
 }
 
 pub(crate) async fn handle_prekey_replenish(

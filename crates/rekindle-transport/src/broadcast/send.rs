@@ -16,7 +16,6 @@ use crate::config::TransportConfig;
 use crate::crypto::envelope::sign_payload;
 use crate::error::{Result, TransportError};
 use crate::frame::{self, TypeId};
-use crate::payload::gossip::SignedGossipEnvelope;
 
 /// Report of a broadcast operation.
 #[derive(Debug, Default)]
@@ -88,64 +87,6 @@ impl Sender {
             "DM sent",
         );
         Ok(())
-    }
-
-    /// Broadcast a signed gossip envelope to a set of peers.
-    pub async fn broadcast_gossip(
-        &self,
-        targets: &[(String, PeerTarget)],
-        envelope: &SignedGossipEnvelope,
-    ) -> BroadcastReport {
-        let envelope_bytes = match postcard::to_stdvec(envelope) {
-            Ok(b) => b,
-            Err(e) => {
-                return BroadcastReport {
-                    delivered: 0,
-                    failures: vec![("*".into(), format!("serialization: {e}"))],
-                }
-            }
-        };
-
-        let frame_bytes = match frame::encode(TypeId::GossipBroadcast, &envelope_bytes) {
-            Ok(f) => f,
-            Err(e) => {
-                return BroadcastReport {
-                    delivered: 0,
-                    failures: vec![("*".into(), format!("frame: {e}"))],
-                }
-            }
-        };
-
-        let rc = match build_routing_context(&self.api, &self.config.safety.text) {
-            Ok(rc) => rc,
-            Err(e) => {
-                return BroadcastReport {
-                    delivered: 0,
-                    failures: vec![("*".into(), format!("routing: {e}"))],
-                }
-            }
-        };
-
-        let mut report = BroadcastReport::default();
-        for (peer_key, target) in targets {
-            match rc
-                .app_message(
-                    Target::RouteId(target.route_id.clone()),
-                    frame_bytes.clone(),
-                )
-                .await
-            {
-                Ok(()) => report.delivered += 1,
-                Err(e) => report.failures.push((peer_key.clone(), e.to_string())),
-            }
-        }
-
-        debug!(
-            delivered = report.delivered,
-            failed = report.failures.len(),
-            "gossip broadcast"
-        );
-        report
     }
 
     /// Send an encrypted, signed voice packet to a single peer.

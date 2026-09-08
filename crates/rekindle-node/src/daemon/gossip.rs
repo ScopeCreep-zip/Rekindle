@@ -34,16 +34,31 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use super::dispatch::DaemonContext;
 use super::gossip_adapter::DaemonGossipAdapter;
 
-/// One envelope to fan out over a community's mesh.
+/// One broadcast for the worker.
 #[derive(Debug, Clone)]
-pub struct GossipRequest {
-    pub community_id: String,
-    pub envelope: CommunityEnvelope,
+pub enum GossipRequest {
+    /// Something we are originating — sign it and fan it out.
+    ///
+    /// Boxed because `CommunityEnvelope` is far larger than a
+    /// `SignedEnvelope` (it inlines every control variant, the largest
+    /// being a bootstrap bundle), and an unboxed enum would pay that
+    /// size on every forward too.
+    Originate {
+        community_id: String,
+        envelope: Box<CommunityEnvelope>,
+    },
+    /// Something a peer signed that we are relaying one hop further.
+    ///
+    /// Kept distinct from `Originate` because a forward must **not** be
+    /// re-signed: the envelope carries its author's signature, and
+    /// replacing it would make every relayed message look like ours and
+    /// destroy attribution. Only the TTL differs from what we received.
+    Forward(SignedEnvelope),
 }
 
 /// Handle used by adapters to broadcast.
@@ -67,9 +82,9 @@ pub fn channel() -> (GossipSender, GossipReceiver) {
 /// log.
 pub fn send(tx: &GossipSender, community_id: &str, envelope: &CommunityEnvelope) {
     if tx
-        .send(GossipRequest {
+        .send(GossipRequest::Originate {
             community_id: community_id.to_string(),
-            envelope: envelope.clone(),
+            envelope: Box::new(envelope.clone()),
         })
         .is_err()
     {
@@ -78,6 +93,12 @@ pub fn send(tx: &GossipSender, community_id: &str, envelope: &CommunityEnvelope)
             "gossip: worker gone, dropping broadcast"
         );
     }
+}
+
+/// Relay a peer's envelope one hop further, unmodified but for the TTL
+/// the transport already decremented.
+pub fn forward(tx: &GossipSender, envelope: SignedEnvelope) {
+    let _ = tx.send(GossipRequest::Forward(envelope));
 }
 
 /// Drain broadcast requests until the daemon shuts down.
@@ -89,18 +110,26 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
     let adapter = Arc::new(DaemonGossipAdapter::new(ctx));
     tracing::info!("gossip worker started");
     while let Some(request) = rx.recv().await {
-        if let Err(error) = rekindle_gossip::send_to_mesh(
-            Arc::clone(&adapter),
-            &request.community_id,
-            &request.envelope,
-        )
-        .await
-        {
-            tracing::warn!(
-                community = %&request.community_id[..16.min(request.community_id.len())],
-                %error,
-                "gossip: broadcast pipeline error"
-            );
+        match request {
+            GossipRequest::Originate {
+                community_id,
+                envelope,
+            } => {
+                if let Err(error) =
+                    rekindle_gossip::send_to_mesh(Arc::clone(&adapter), &community_id, &envelope)
+                        .await
+                {
+                    tracing::warn!(
+                        community = %&community_id[..16.min(community_id.len())],
+                        %error,
+                        "gossip: broadcast pipeline error"
+                    );
+                }
+            }
+            GossipRequest::Forward(signed) => {
+                let community_id = signed.community_id.clone();
+                rekindle_gossip::send_to_mesh_raw(Arc::clone(&adapter), &community_id, signed);
+            }
         }
     }
     tracing::info!("gossip worker stopped");

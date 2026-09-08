@@ -145,3 +145,53 @@ fn watch_relay_carries_no_payload_bytes() {
         "a WatchRelay must not carry the value it announces"
     );
 }
+
+/// A directed payload is never gossip-forwarded.
+///
+/// §10.6 and the join path both depend on it: a `JoinAccepted` is
+/// wrapped for one recipient, and amplifying it to the whole mesh
+/// within the TTL benefits nobody. Ported from a unit test that asserted
+/// the same thing about the deleted postcard envelope — where the rule
+/// had drifted into two disagreeing copies, one listing six variants and
+/// one four.
+#[test]
+fn directed_payloads_are_not_forwarded() {
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    let join_accepted = CommunityEnvelope::Control(ControlPayload::JoinAccepted {
+        mek_encrypted: vec![],
+        mek_generation: 0,
+        members: Vec::new(),
+        member_registry_key: None,
+        slot_index: None,
+        wrapped_slot_seed: None,
+    });
+    assert!(join_accepted.is_directed());
+
+    // Both halves of the drift, now covered by the one definition.
+    assert!(CommunityEnvelope::Control(ControlPayload::JoinRejected {
+        reason: "no".into()
+    })
+    .is_directed());
+    assert!(CommunityEnvelope::Control(ControlPayload::KickedNotification).is_directed());
+
+    // A channel message notification is exactly what *must* be
+    // forwarded — the epidemic wave is how it reaches members outside
+    // the sender's fan-out.
+    assert!(!notification().is_directed());
+}
+
+/// The notification carries the manifest, not the cargo.
+///
+/// Gossip is unencrypted at the envelope layer and fans out to
+/// `min(N, 6)` peers per hop for five hops, so payload size multiplies.
+/// A notification names the message; the body stays in the record.
+#[test]
+fn message_notification_stays_compact() {
+    let bytes = encode_community_envelope(&notification()).expect("encode");
+    assert!(
+        bytes.len() < 400,
+        "MessageNotification should stay compact, was {} bytes",
+        bytes.len()
+    );
+}

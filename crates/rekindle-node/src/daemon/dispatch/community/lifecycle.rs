@@ -218,7 +218,16 @@ pub(crate) async fn handle_leave(
     )
     .await
     {
-        Ok(_) => {
+        Ok(result) => {
+            // Tell the mesh before forgetting the community — after
+            // `leave_community` the gossip overlay is still populated,
+            // and the departure is what triggers peers' MEK rotation.
+            // These bytes used to be built and dropped on the floor.
+            crate::daemon::gossip::send(
+                &ctx.gossip_tx,
+                &membership.governance_key,
+                &result.departure_notice,
+            );
             {
                 let mut guard = ctx.session.write();
                 if let Some(ref mut s) = *guard {

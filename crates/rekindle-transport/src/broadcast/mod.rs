@@ -30,7 +30,6 @@ pub mod send;
 // Application-level broadcast (calls through infrastructure above)
 pub mod dht_writes;
 pub mod dm;
-pub mod gossip;
 pub mod route;
 pub mod rpc;
 pub mod voice;

@@ -18,7 +18,6 @@ pub mod friend;
 pub mod identity;
 pub mod invites;
 pub mod mek;
-pub mod moderation;
 pub mod presence;
 pub mod roles;
 pub mod voice;

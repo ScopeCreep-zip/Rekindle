@@ -23,10 +23,10 @@
 use std::future::Future;
 
 use crate::payload::dm::DmPayload;
-use crate::payload::gossip::{GossipPayload, SignedGossipEnvelope};
 use crate::payload::rpc::{CallResponse, InboundCall};
 use crate::payload::voice::VoicePayload;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
 /// Identity of a verified inbound message sender.
 #[derive(Debug, Clone)]
@@ -99,26 +99,6 @@ pub trait InboundHandler: Send + Sync + 'static {
         &self,
         community_id: &str,
         sender_pseudonym: &str,
-        payload: GossipPayload,
-        lamport_ts: u64,
-    ) -> impl Future<Output = ()> + Send;
-
-    /// A verified **community** gossip envelope arrived, unframed.
-    ///
-    /// This is the format the desktop track broadcasts: a Cap'n Proto
-    /// `CommunityEnvelope` inside a `SignedEnvelope`, straight onto
-    /// `app_message` with no transport frame. It reaches here already
-    /// signature-verified and deduped.
-    ///
-    /// Kept separate from [`Self::on_gossip`] rather than mapped onto
-    /// it: `GossipPayload` has three variants and `CommunityEnvelope`
-    /// has the whole `Control(..)` family plus `WatchRelay`, so
-    /// projecting one onto the other would silently drop exactly the
-    /// messages that only exist in the richer type.
-    fn on_community_gossip(
-        &self,
-        community_id: &str,
-        sender_pseudonym: &str,
         envelope: CommunityEnvelope,
         lamport_ts: u64,
     ) -> impl Future<Output = ()> + Send;
@@ -128,9 +108,15 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// The transport layer calls this BEFORE `on_gossip` so the message
     /// propagates even if handler processing is slow. The application layer
     /// should use its `Sender::broadcast_gossip` with its current peer set.
-    /// The envelope's TTL has already been decremented by the transport.
-    fn on_gossip_forward(&self, envelope: &SignedGossipEnvelope)
-        -> impl Future<Output = ()> + Send;
+    /// The envelope's TTL has already been decremented by the transport,
+    /// and directed payloads (`CommunityEnvelope::is_directed`) never
+    /// reach here — §10.6.
+    ///
+    /// Epidemic delivery depends on this hop. A sender fans out to
+    /// `min(N, 6)` peers and relies on receivers re-broadcasting within
+    /// the 5-hop TTL; without it a message reaches six people in a
+    /// forty-member community.
+    fn on_gossip_forward(&self, envelope: &SignedEnvelope) -> impl Future<Output = ()> + Send;
 
     /// An authenticated, encrypted voice packet arrived.
     fn on_voice(&self, sender_key: &str, packet: VoicePayload) -> impl Future<Output = ()> + Send;
