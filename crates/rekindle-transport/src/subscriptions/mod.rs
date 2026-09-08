@@ -22,6 +22,7 @@ pub mod events;
 pub use rekindle_events::{dedup, state, state_effects};
 mod bare_envelope;
 pub mod dispatch;
+mod dispatch_gossip;
 mod manager_ingress;
 mod manager_lifecycle;
 mod manager_network;

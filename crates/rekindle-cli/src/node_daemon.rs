@@ -86,6 +86,12 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // exists.
     let (mek_rotation_tx, mek_rotation_rx) = rekindle_node::daemon::mek_rotation::channel();
 
+    // Outbound gossip (PATH 2). Every adapter's `send_to_mesh` queues
+    // here so one encoder puts one wire format on the network; the
+    // worker below owns the `Arc<DaemonContext>` and the single
+    // `ResolveGate` that route re-resolution coalesces through.
+    let (gossip_tx, gossip_rx) = rekindle_node::daemon::gossip::channel();
+
     // Presence polls are requested on unlock; the supervisor below owns
     // the `Arc<DaemonContext>` the long-lived poll loops need.
     let (presence_start_tx, presence_start_rx) =
@@ -100,6 +106,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         Arc::clone(&transport_for_handler),
         Arc::clone(&pending_joins),
         mek_rotation_tx.clone(),
+        gossip_tx.clone(),
     ));
 
     let transport = match rekindle_transport::TransportNode::start(
@@ -159,6 +166,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         broadcast_mgr: RwLock::new(None),
         event_watch_tx,
         pending_joins: Arc::clone(&pending_joins),
+        gossip_tx,
         mek_rotation_tx,
         presence_shutdowns: parking_lot::Mutex::new(std::collections::HashMap::new()),
         presence_start_tx,
@@ -170,6 +178,13 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     let mek_rotation_worker = tokio::spawn(rekindle_node::daemon::mek_rotation::run_worker(
         Arc::clone(&daemon_ctx),
         mek_rotation_rx,
+    ));
+
+    // Gossip worker. Holds one adapter for its lifetime so concurrent
+    // route re-resolutions actually coalesce through a shared gate.
+    let gossip_worker = tokio::spawn(rekindle_node::daemon::gossip::run_worker(
+        Arc::clone(&daemon_ctx),
+        gossip_rx,
     ));
 
     // Presence supervisor. Spawns one registry-scan loop per community
@@ -290,6 +305,10 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // same outcome as a rotation nobody was online to receive — which
     // the protocol already handles by rotating when someone returns.
     mek_rotation_worker.abort();
+    // Same reasoning, more so: gossip is PATH 2 with "Durability: None".
+    // A broadcast lost at shutdown costs latency, never content — the
+    // SMPL write already landed and peers pick it up on PATH 3.
+    gossip_worker.abort();
     // The polls themselves are stopped through their own shutdown
     // channels first, so they can finish an in-flight registry write
     // rather than being cut mid-DHT-op.
@@ -298,6 +317,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     let _ = subscriber_handle.await;
     let _ = consumer_handle.await;
     let _ = mek_rotation_worker.await;
+    let _ = gossip_worker.await;
     let _ = presence_supervisor.await;
 
     shutdown_transport(&daemon_ctx).await;

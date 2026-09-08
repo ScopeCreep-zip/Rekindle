@@ -17,6 +17,8 @@ pub mod community_runtime;
 pub mod dispatch;
 pub mod event_router;
 pub mod friend_inbox;
+pub mod gossip;
+pub mod gossip_adapter;
 pub mod governance_adapter;
 pub mod governance_rpc;
 pub mod handler;

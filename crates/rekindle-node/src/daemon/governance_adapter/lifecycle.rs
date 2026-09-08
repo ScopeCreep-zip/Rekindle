@@ -6,9 +6,7 @@
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{CommunityDhtOpenSetup, DiscoveredMember};
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_protocol::dht::community::envelope::{
-    CommunityEnvelope, ControlPayload as ProtocolControl,
-};
+use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
@@ -17,97 +15,15 @@ use super::DaemonGovernanceAdapter;
 impl DaemonGovernanceAdapter<'_> {
     // ---------- Gossip ----------
 
-    /// Broadcast a governance notification over the community's gossip
-    /// mesh — Path 2 of three-path delivery.
+    /// Fan a governance envelope out over the community mesh.
     ///
-    /// Carries a *notification*, never cargo. Per the chiral
-    /// notification model (`docs/glossary.md`) gossip moves metadata —
-    /// record key, subkey, sequence — while the ciphertext stays in the
-    /// SMPL record. Serialising the whole envelope onto the mesh would
-    /// break that, and it is a harvest-now-decrypt-later property, not a
-    /// style preference.
-    ///
-    /// The trait method is sync while the mesh send is async, so the
-    /// send is spawned. That matches the desktop adapter, whose
-    /// `send_to_mesh` also returns immediately and logs pipeline errors
-    /// inside the task: Path 1 (the durable SMPL write) has already
-    /// completed by the time this is called, so the caller must not
-    /// block on Path 2 or fail because of it.
-    pub(super) fn send_to_mesh_impl(
-        &self,
-        community_id: &str,
-        envelope: &CommunityEnvelope,
-    ) -> Result<(), GovernanceRuntimeError> {
-        let CommunityEnvelope::Control(payload) = envelope else {
-            return Err(GovernanceRuntimeError::Adapter(
-                "send_to_mesh: only Control envelopes are gossiped".into(),
-            ));
-        };
-
-        // Only the variants transport can actually put on the wire.
-        // `RequestSegmentExpansion` has no counterpart in transport's
-        // `ControlPayload`, so Plate Gate expansion requests fail here
-        // loudly rather than being silently dropped — the gap is real
-        // and an error names it at the moment it matters.
-        let ProtocolControl::GovernanceUpdated {
-            governance_key,
-            subkey_index,
-            lamport_ts,
-        } = payload
-        else {
-            // Deliberately does not name or Debug-print the payload:
-            // `ControlPayload` variants include `MekTransfer`, so
-            // formatting one would put key material in the log.
-            return Err(GovernanceRuntimeError::Adapter(
-                "send_to_mesh: this control variant has no transport gossip \
-                 payload yet (only GovernanceUpdated is wired)"
-                    .into(),
-            ));
-        };
-
-        let node = self.transport()?;
-        let meshes = {
-            let guard = self.ctx.broadcast_mgr.read();
-            let manager = guard.as_ref().ok_or_else(|| {
-                GovernanceRuntimeError::Adapter("broadcast manager not started".into())
-            })?;
-            std::sync::Arc::clone(manager.meshes())
-        };
-        let sender = self
-            .community_membership_impl(community_id)
-            .and_then(|m| m.my_pseudonym_hex)
-            .ok_or_else(|| {
-                GovernanceRuntimeError::Adapter("no pseudonym for this community".into())
-            })?;
-        let signing_key = self.identity_secret_impl().ok_or_else(|| {
-            GovernanceRuntimeError::Adapter("identity locked — cannot sign gossip".into())
-        })?;
-
-        let community_id = community_id.to_string();
-        let governance_key = governance_key.clone();
-        let subkey_index = *subkey_index;
-        let lamport_ts = *lamport_ts;
-        tokio::spawn(async move {
-            let report = rekindle_transport::broadcast::gossip::governance_updated(
-                &node,
-                &meshes,
-                &community_id,
-                &sender,
-                &governance_key,
-                subkey_index,
-                lamport_ts,
-                &signing_key,
-            )
-            .await;
-            if report.delivered == 0 && !report.failures.is_empty() {
-                tracing::debug!(
-                    community_id = %community_id,
-                    failures = report.failures.len(),
-                    "gossip: governance notification reached no peers"
-                );
-            }
-        });
-        Ok(())
+    /// Queued for the gossip worker. This used to accept only
+    /// `Control(..)` and, within that, only the variants transport had a
+    /// postcard helper for — everything else returned "this control
+    /// variant has no transport gossip". Every variant now goes, in the
+    /// Cap'n Proto form desktop peers read. See `daemon::gossip`.
+    pub(super) fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
+        crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
     }
 
     // ---------- Permissions ----------

@@ -32,6 +32,16 @@ impl SubscriptionManager {
             .or_insert_with(|| GossipMesh::new(membership.governance_key.clone()));
     }
 
+    /// Do we hold a watch on this record?
+    ///
+    /// Used by the Mutual Aid watch relay (§14.3) to skip a redundant
+    /// fetch: if our own watch covers the record, its value-change
+    /// callback reports the same change a peer is relaying to us.
+    #[must_use]
+    pub fn has_watch(&self, record_key: &str) -> bool {
+        self.watches.read().entries.contains_key(record_key)
+    }
+
     /// Remove all watches and state for a community.
     pub fn teardown_community(&self, governance_key: &str) {
         self.watches.write().remove_community(governance_key);

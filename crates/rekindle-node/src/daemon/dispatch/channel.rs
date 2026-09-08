@@ -345,6 +345,31 @@ pub(crate) async fn handle_send(
         Ok(sent) => {
             ctx.community_runtime
                 .mark_channel_synced(&membership.governance_key, &channel_id);
+
+            // PATH 2 — gossip the notification. The SMPL write above is
+            // PATH 1 and authoritative; this is what gives online peers
+            // the message in 50–150ms instead of waiting for a watch to
+            // fire or the 60s inspect to notice. The desktop's pipeline
+            // has always done this; the daemon wrote the record and told
+            // nobody, so a daemon member's messages appeared to peers
+            // only on their next history read.
+            //
+            // Carries no ciphertext, deliberately — gossip is
+            // unencrypted at the envelope layer, so the notification
+            // names the message and peers read the body from the record.
+            let notification =
+                rekindle_protocol::dht::community::envelope::CommunityEnvelope::MessageNotification {
+                    channel_id: channel_id.clone(),
+                    message_id: sent.message_id.clone(),
+                    author_pseudonym: membership.pseudonym_key.clone(),
+                    subkey_index: membership.slot_index,
+                    lamport_ts: sent.timestamp,
+                    sequence: sent.sequence,
+                    content_hash: sent.content_hash.clone(),
+                    timestamp: sent.timestamp,
+                };
+            crate::daemon::gossip::send(&ctx.gossip_tx, &membership.governance_key, &notification);
+
             IpcResponse::ok(&serde_json::json!({
                 "message_id": sent.message_id,
                 "timestamp": sent.timestamp,

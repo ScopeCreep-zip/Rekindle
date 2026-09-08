@@ -9,11 +9,10 @@
 //! departed.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use rekindle_presence::community::{GossipOverlayPlan, GossipOverlaySnapshot};
 use rekindle_presence::deps::OnlineMemberSnapshot;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
 use super::DaemonPresenceAdapter;
 
@@ -38,106 +37,14 @@ fn to_mesh_members(
 impl DaemonPresenceAdapter {
     /// Fan a presence-orchestrator envelope out over the community mesh.
     ///
-    /// Two kinds arrive here and no others: `PresenceUpdate` (a
-    /// top-level envelope variant, not a control payload) and
-    /// `Control(SyncRequest)`. Matching them by name rather than
-    /// accepting anything keeps an unhandled kind loud instead of
-    /// silently unsent.
-    ///
-    /// Handles are cloned out and the send is spawned: the trait method
-    /// is sync and this runs on the tokio runtime, so blocking here
-    /// would stall a worker thread.
+    /// Queued for the gossip worker rather than translated here. This
+    /// used to match `PresenceUpdate` and `Control(SyncRequest)` by name
+    /// and error on anything else — one of three such partial
+    /// translations on this track, each into transport's postcard
+    /// `GossipPayload`, which no desktop peer could read. See
+    /// `daemon::gossip`.
     pub(super) fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
-        let Some(node) = self.transport() else { return };
-        let Some(signing_key) = self.ctx.signing_key.read().as_ref().map(|k| *k.as_bytes()) else {
-            return;
-        };
-        let (meshes, rate_limiter) = {
-            let guard = self.ctx.broadcast_mgr.read();
-            let Some(manager) = guard.as_ref() else {
-                return;
-            };
-            (
-                Arc::clone(manager.meshes()),
-                Arc::clone(manager.rate_limiter()),
-            )
-        };
-        let community_id = community_id.to_string();
-
-        match envelope {
-            CommunityEnvelope::PresenceUpdate {
-                pseudonym_key,
-                status,
-                route_blob,
-                ..
-            } => {
-                let sender = pseudonym_key.clone();
-                let status = status.clone();
-                let route_blob = route_blob.clone();
-                tokio::spawn(async move {
-                    // Returns `None` when rate-limited, which is a
-                    // normal outcome at heartbeat cadence, not a failure.
-                    let report = rekindle_transport::broadcast::gossip::presence_update(
-                        &node,
-                        &meshes,
-                        &rate_limiter,
-                        &community_id,
-                        &sender,
-                        &status,
-                        None,
-                        None,
-                        None,
-                        None,
-                        route_blob,
-                        &signing_key,
-                    )
-                    .await;
-                    if let Some(report) = report {
-                        if report.delivered == 0 && !report.failures.is_empty() {
-                            tracing::debug!(
-                                community = %community_id,
-                                failures = report.failures.len(),
-                                "gossip: presence update reached no peers"
-                            );
-                        }
-                    }
-                });
-            }
-            CommunityEnvelope::Control(ControlPayload::SyncRequest {
-                channel_id,
-                since_timestamp,
-            }) => {
-                let sender = self.my_pseudonym_impl(&community_id);
-                if sender.is_empty() {
-                    return;
-                }
-                let channel_id = channel_id.clone();
-                let since = *since_timestamp;
-                tokio::spawn(async move {
-                    let report = rekindle_transport::broadcast::gossip::sync_request(
-                        &node,
-                        &meshes,
-                        &community_id,
-                        &sender,
-                        &channel_id,
-                        since,
-                        &signing_key,
-                    )
-                    .await;
-                    if report.delivered == 0 && !report.failures.is_empty() {
-                        tracing::debug!(
-                            community = %community_id,
-                            channel = %channel_id,
-                            "gossip: sync request reached no peers"
-                        );
-                    }
-                });
-            }
-            _ => tracing::debug!(
-                community = %&community_id[..16.min(community_id.len())],
-                "send_to_mesh: unexpected envelope on the presence path"
-            ),
-        }
+        crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
     }
 
     /// The overlay's rebuild inputs: gossip clock, sync gate, and any

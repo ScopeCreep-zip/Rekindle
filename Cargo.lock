@@ -7679,6 +7679,7 @@ dependencies = [
  "postcard",
  "rand 0.8.5",
  "rekindle-crypto",
+ "rekindle-gossip",
  "rekindle-governance",
  "rekindle-governance-runtime",
  "rekindle-lifecycle",

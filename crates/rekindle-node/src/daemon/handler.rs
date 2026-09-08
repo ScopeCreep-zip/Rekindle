@@ -51,6 +51,8 @@ pub struct DaemonHandler {
     /// notification arrives here, and under v2.0 the only correct
     /// response is to start the deterministic rotation.
     pub(crate) mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
+    /// Outbound gossip, for the Mutual Aid watch relay (§14.3).
+    pub(crate) gossip_tx: crate::daemon::gossip::GossipSender,
 }
 
 impl DaemonHandler {
@@ -70,6 +72,7 @@ impl DaemonHandler {
             >,
         >,
         mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
+        gossip_tx: crate::daemon::gossip::GossipSender,
     ) -> Self {
         Self {
             subscriptions,
@@ -80,6 +83,7 @@ impl DaemonHandler {
             transport,
             pending_joins,
             mek_rotation_tx,
+            gossip_tx,
         }
     }
 
@@ -194,6 +198,51 @@ impl InboundHandler for DaemonHandler {
         debug!("FriendRequestAck received — scanning friend inbox");
         super::friend_inbox::scan_friend_inbox(&session, &transport, &session_path, &inbox_key)
             .await;
+    }
+
+    /// A desktop-format community gossip envelope arrived, verified.
+    ///
+    /// Routed by variant here rather than projected onto
+    /// `GossipPayload`: `CommunityEnvelope` carries the whole
+    /// `Control(..)` family and `WatchRelay`, none of which the
+    /// three-variant `GossipPayload` can express.
+    async fn on_community_gossip(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        envelope: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+        _lamport_ts: u64,
+    ) {
+        use rekindle_protocol::dht::community::envelope::CommunityEnvelope as Env;
+
+        debug!(
+            community = community_id,
+            sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+            "handler: on_community_gossip"
+        );
+
+        match envelope {
+            Env::WatchRelay {
+                record_key,
+                subkey,
+                content_hash,
+                observer_pseudonym,
+            } => {
+                self.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
+                    .await;
+            }
+            // Everything else is delivered as a value-change style
+            // signal so the existing subscription pipeline picks it up.
+            // Deliberately not silent: an unrouted variant is a gap to
+            // close, not traffic to ignore.
+            other => {
+                debug!(
+                    community = community_id,
+                    variant = ?std::mem::discriminant(&other),
+                    "on_community_gossip: variant not yet routed on this track"
+                );
+            }
+        }
     }
 
     async fn on_gossip(
@@ -329,6 +378,20 @@ impl InboundHandler for DaemonHandler {
     ) {
         debug!(record_key, subkeys = ?changed_subkeys, "handler: on_value_change");
 
+        // Mutual Aid §14.3 — pay the watch slot forward.
+        //
+        // Veilid reserves 8 signed + 32 anonymous watch slots per
+        // record, so in a community of any size most members hold none.
+        // Holding one makes us an eager-push node in Plumtree terms, and
+        // the obligation that comes with it is to lazy-push what we saw
+        // to everyone who could not get a slot. Principle 12: "a member
+        // who relays for peers gets relayed for in return."
+        //
+        // Only for a change we observed through our own watch — a relay
+        // we ourselves fetched from a peer's relay must not be
+        // re-relayed, or one change echoes around the mesh.
+        self.relay_watch_change(record_key, &changed_subkeys, first_value.as_deref());
+
         // Forward to SubscriptionManager for event emission
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             sub_mgr.on_value_change(record_key, changed_subkeys, first_value);
@@ -383,5 +446,140 @@ impl InboundHandler for DaemonHandler {
                 }
             }
         }
+    }
+}
+
+impl DaemonHandler {
+    /// Mutual Aid §14.3 — a peer holding a watch slot is telling us a
+    /// record's subkey changed.
+    ///
+    /// This is Plumtree's lazy push. Veilid reserves only
+    /// `member_watch_limit` (8) signed watch slots plus
+    /// `public_watch_limit` (32) anonymous ones **per record**, so in a
+    /// community of any size most members hold no watch on any given
+    /// record. Peers that do hold one relay the notification — the
+    /// `IHAVE` — and we pull the value ourselves.
+    ///
+    /// The relay carries a `content_hash` and no ciphertext, on purpose:
+    /// gossip is unencrypted at the envelope layer, so shipping the
+    /// value would leak it to every hop. The hash lets us verify that
+    /// what we fetched is what the observer saw.
+    async fn on_watch_relay(
+        &self,
+        record_key: &str,
+        subkey: u32,
+        content_hash: &str,
+        observer_pseudonym: &str,
+    ) {
+        let Some(transport) = self.transport.read().clone() else {
+            return;
+        };
+
+        // If we hold our own watch on this record, our value-change
+        // callback covers the same change — skip the redundant fetch.
+        // Members without a slot fall through, which is the whole point
+        // of the relay.
+        let we_watch = self
+            .subscriptions
+            .read()
+            .as_ref()
+            .is_some_and(|manager| manager.has_watch(record_key));
+        if we_watch {
+            tracing::trace!(
+                record_key,
+                subkey,
+                "watch relay: own watch covers this record"
+            );
+            return;
+        }
+
+        let Ok(Some(value)) = rekindle_transport::broadcast::dht_writes::get(
+            transport.as_ref(),
+            record_key,
+            subkey,
+            true,
+        )
+        .await
+        else {
+            return;
+        };
+
+        let actual = blake3::hash(&value).to_hex().to_string();
+        if actual != content_hash {
+            debug!(
+                record_key,
+                subkey,
+                observer = &observer_pseudonym[..12.min(observer_pseudonym.len())],
+                "watch relay: content hash mismatch, dropping"
+            );
+            return;
+        }
+
+        self.on_value_change(record_key, vec![subkey], Some(value))
+            .await;
+    }
+}
+
+impl DaemonHandler {
+    /// Broadcast a `WatchRelay` for a change our own watch reported.
+    ///
+    /// The relay names the record, the subkey and a BLAKE3 hash of the
+    /// new value — never the value. Gossip is unencrypted at the
+    /// envelope layer, so shipping the bytes would hand a channel
+    /// message's ciphertext to every forwarding hop; the hash is what a
+    /// watchless peer verifies its own fetch against.
+    ///
+    /// Silent when we hold no watch on the record: `on_value_change`
+    /// also fires for values we pulled after someone else's relay, and
+    /// re-relaying those would put one change into an endless loop
+    /// around the mesh (the dedup cache would break the loop, but only
+    /// after the traffic had gone out).
+    fn relay_watch_change(&self, record_key: &str, changed_subkeys: &[u32], value: Option<&[u8]>) {
+        let Some(value) = value else {
+            // No first value means either a multi-subkey change (the
+            // caller must fetch each one anyway) or a dead watch. In
+            // both cases we have no hash to publish.
+            return;
+        };
+        let Some(subkey) = changed_subkeys.first().copied() else {
+            return;
+        };
+        let we_watch = self
+            .subscriptions
+            .read()
+            .as_ref()
+            .is_some_and(|manager| manager.has_watch(record_key));
+        if !we_watch {
+            return;
+        }
+
+        // Which community does this record belong to, and who are we in
+        // it? A relay has to be attributable — `observer_pseudonym` is
+        // what lets a receiver weigh it.
+        let Some((community_id, observer)) = self.community_for_record(record_key) else {
+            return;
+        };
+
+        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::WatchRelay {
+            record_key: record_key.to_string(),
+            subkey,
+            content_hash: blake3::hash(value).to_hex().to_string(),
+            observer_pseudonym: observer,
+        };
+        crate::daemon::gossip::send(&self.gossip_tx, &community_id, &envelope);
+    }
+
+    /// `(community_id, my_pseudonym)` for whichever community owns this
+    /// record — governance, registry, or one of its channel records.
+    fn community_for_record(&self, record_key: &str) -> Option<(String, String)> {
+        let guard = self.session.read();
+        let session = guard.as_ref()?;
+        session.communities.values().find_map(|m| {
+            let ours = m.governance_key == record_key
+                || m.registry_key == record_key
+                || m.channel_record_keys.values().any(|k| k == record_key);
+            (ours && !m.pseudonym_key.is_empty())
+                .then(|| (m.governance_key.clone(), m.pseudonym_key.clone()))
+        })
     }
 }

@@ -340,4 +340,36 @@ impl Caller {
         );
         Ok(response)
     }
+
+    /// Fire-and-forget an **unframed** payload to a peer named by their
+    /// route blob.
+    ///
+    /// This is the gossip send. Gossip is deliberately unframed: the
+    /// desktop's mesh broadcast puts a Cap'n Proto `SignedEnvelope`
+    /// straight onto `app_message`, and a daemon that wrapped the same
+    /// bytes in a `TypeId::GossipBroadcast` frame produced something no
+    /// desktop peer could read. The envelope carries its own Ed25519
+    /// signature over `(community_id, sender_pseudonym, envelope_bytes)`,
+    /// so the frame's authentication would be redundant with a property
+    /// the payload already has — the same argument that justifies
+    /// `call_community_envelope` above.
+    ///
+    /// Takes the route blob rather than an imported `PeerTarget` so the
+    /// caller never names a Veilid type; the import happens here.
+    pub async fn send_unframed_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
+        let route_id = self
+            .api
+            .import_remote_private_route(route_blob.to_vec())
+            .map_err(|e| TransportError::SendFailed {
+                target: "route-blob".to_string(),
+                reason: format!("import route: {e}"),
+            })?;
+        let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
+        rc.app_message(Target::RouteId(route_id), data)
+            .await
+            .map_err(|e| TransportError::SendFailed {
+                target: "route-blob".to_string(),
+                reason: e.to_string(),
+            })
+    }
 }

@@ -18,7 +18,7 @@ use rekindle_mek_rotation::{
     ChannelMekCache, MekDistributeDeps, MekPersist, MekRotationError, MekRotationEvent,
     RotationRecipient,
 };
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
@@ -274,69 +274,18 @@ impl MekDistributeDeps for DaemonMekAdapter {
             .map_err(|e| MekRotationError::InvalidInput(e.to_string()))
     }
 
+    /// Fan a rotation envelope out over the community mesh.
+    ///
+    /// Queued for the gossip worker. This used to accept `MEKRotated`
+    /// and nothing else, because that was the only variant transport had
+    /// a postcard helper for — the third of three partial translations
+    /// this track carried. See `daemon::gossip`.
     fn send_to_mesh(
         &self,
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), MekRotationError> {
-        // Only `MEKRotated` reaches here — it is the one broadcast the
-        // rotation orchestrators make. Matching the variant by name
-        // rather than accepting any control payload keeps an unhandled
-        // one loud instead of silently unsent, which is how the
-        // daemon's governance `send_to_mesh` used to lose messages.
-        let CommunityEnvelope::Control(ControlPayload::MEKRotated {
-            channel_id,
-            new_generation,
-            ..
-        }) = envelope
-        else {
-            return Err(MekRotationError::InvalidInput(
-                "send_to_mesh: only MEKRotated is wired on the daemon track".into(),
-            ));
-        };
-
-        let node = self
-            .transport()
-            .ok_or_else(|| MekRotationError::Transport("transport not started".into()))?;
-        let meshes = {
-            let guard = self.ctx.broadcast_mgr.read();
-            let manager = guard.as_ref().ok_or_else(|| {
-                MekRotationError::Transport("broadcast manager not started".into())
-            })?;
-            Arc::clone(manager.meshes())
-        };
-        let signing_key = self
-            .identity_secret()
-            .ok_or_else(|| MekRotationError::Transport("locked — cannot sign gossip".into()))?;
-        let sender = self
-            .my_pseudonym(community_id)
-            .map(|p| hex::encode(p.0))
-            .ok_or_else(|| {
-                MekRotationError::InvalidInput("no pseudonym for this community".into())
-            })?;
-
-        let community_id = community_id.to_string();
-        let channel_id = channel_id.clone();
-        let new_generation = *new_generation;
-        tokio::spawn(async move {
-            let report = rekindle_transport::broadcast::gossip::mek_rotated(
-                &node,
-                &meshes,
-                &community_id,
-                &sender,
-                channel_id.as_deref(),
-                new_generation,
-                &signing_key,
-            )
-            .await;
-            if report.delivered == 0 && !report.failures.is_empty() {
-                tracing::debug!(
-                    community = %community_id,
-                    failures = report.failures.len(),
-                    "gossip: MEKRotated reached no peers"
-                );
-            }
-        });
+        crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
         Ok(())
     }
 }

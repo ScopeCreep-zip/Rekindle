@@ -40,6 +40,8 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+use rekindle_codec::dedup::DedupCache;
+
 use crate::crypto::mek::MekCache;
 use crate::gossip::GossipMesh;
 use crate::session::Session;
@@ -76,6 +78,10 @@ pub struct BroadcastManager {
     pub(crate) mek_cache: Arc<RwLock<MekCache>>,
     pub(crate) meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
     pub(crate) rate_limiter: Arc<RwLock<OutboundRateLimiter>>,
+    /// Outbound mesh dedup, so a broadcast we originate is not
+    /// re-processed when it comes back around the mesh. The desktop
+    /// keeps the equivalent on `AppState.dedup_cache`.
+    pub(crate) mesh_dedup: Arc<RwLock<DedupCache>>,
 }
 
 impl BroadcastManager {
@@ -90,6 +96,9 @@ impl BroadcastManager {
             mek_cache,
             meshes: Arc::new(RwLock::new(HashMap::new())),
             rate_limiter: Arc::new(RwLock::new(OutboundRateLimiter::default())),
+            // 1024 entries — the architecture's stated mesh dedup size
+            // (§3.1, "1024-entry FIFO cache").
+            mesh_dedup: Arc::new(RwLock::new(DedupCache::new(1024))),
         }
     }
 
@@ -129,6 +138,11 @@ impl BroadcastManager {
     /// runtime stalls a worker thread.
     pub fn rate_limiter(&self) -> &Arc<RwLock<OutboundRateLimiter>> {
         &self.rate_limiter
+    }
+
+    /// Outbound mesh dedup cache.
+    pub fn mesh_dedup(&self) -> &Arc<RwLock<DedupCache>> {
+        &self.mesh_dedup
     }
 
     pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> {

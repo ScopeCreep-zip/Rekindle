@@ -210,7 +210,8 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.send_to_mesh_impl(community_id, envelope)
+        self.send_to_mesh_impl(community_id, envelope);
+        Ok(())
     }
 
     // ---------- Permissions ----------

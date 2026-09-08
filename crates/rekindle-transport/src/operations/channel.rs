@@ -20,6 +20,17 @@ pub struct MessageSent {
     pub message_id: String,
     pub timestamp: u64,
     pub channel_record_key: String,
+    /// BLAKE3 of the ciphertext exactly as written to the record.
+    ///
+    /// Returned so the caller's gossip notification can carry it: a
+    /// peer that fetches the subkey verifies what it read against this,
+    /// which is what makes the notification safe to act on without
+    /// trusting the forwarding hops.
+    pub content_hash: String,
+    /// The sequence written into the record. The daemon keeps no
+    /// per-channel counter, so this is 0 — reported rather than hidden
+    /// so the gossip notification and the record agree.
+    pub sequence: u64,
 }
 
 /// Where a channel write lands: the segment record and our slot in it.
@@ -114,5 +125,7 @@ pub async fn send_message(
         message_id,
         timestamp,
         channel_record_key: target.channel_record_key.clone(),
+        content_hash: blake3::hash(&channel_msg.ciphertext).to_hex().to_string(),
+        sequence: channel_msg.sequence,
     })
 }

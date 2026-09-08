@@ -26,7 +26,6 @@ use crate::crypto::envelope::SignedPayload;
 use crate::frame::{self, TypeId};
 use crate::gossip::DedupCache;
 use crate::handler::{InboundHandler, VerifiedSender};
-use crate::payload::gossip::SignedGossipEnvelope;
 use crate::payload::voice::VoicePayload;
 use crate::shared::{AttachmentState, SharedState};
 
@@ -124,6 +123,25 @@ async fn dispatch_app_message<H: InboundHandler>(
     let (type_id, payload) = match frame::decode(raw) {
         Ok(result) => result,
         Err(e) => {
+            // Not a transport frame. Before dropping it, try the
+            // unframed gossip format: a Cap'n Proto `SignedEnvelope`
+            // straight on `app_message`, which is what the desktop's
+            // mesh broadcast sends. Without this branch a desktop peer's
+            // gossip never reaches a daemon member at all — PATH 2 of
+            // the three-path model simply does not cross the tracks.
+            //
+            // Safe unframed because the envelope authenticates itself:
+            // `verify_gossip_signed_envelope` checks an Ed25519
+            // signature over `(community_id, sender_pseudonym,
+            // envelope_bytes)` made with the sender's community
+            // pseudonym. The frame's signature would be redundant with
+            // a property the payload already carries — the same
+            // argument that admits the bare MEK transfer in
+            // `dispatch_app_call`, and unlike that one it does not turn
+            // on the payload type, so every variant is covered.
+            if super::dispatch_gossip::dispatch_bare_gossip(handler, dedup, raw).await {
+                return;
+            }
             warn!(error = %e, raw_len = raw.len(), "dropping: frame decode failed");
             return;
         }
@@ -131,7 +149,10 @@ async fn dispatch_app_message<H: InboundHandler>(
 
     match type_id {
         TypeId::GossipBroadcast => {
-            dispatch_gossip(handler, config, dedup, payload, raw, api, shared).await;
+            super::dispatch_gossip::dispatch_gossip(
+                handler, config, dedup, payload, raw, api, shared,
+            )
+            .await;
         }
         TypeId::VoicePacket => {
             dispatch_voice(handler, payload).await;
@@ -315,78 +336,6 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     if let Err(e) = api.app_call_reply(call_id, response_bytes).await {
         warn!(error = %e, "failed to send MEK transfer reply");
     }
-}
-
-async fn dispatch_gossip<H: InboundHandler>(
-    handler: &Arc<H>,
-    _config: &TransportConfig,
-    dedup: &mut DedupCache,
-    payload: &[u8],
-    _raw_frame: &[u8],
-    _api: &veilid_core::VeilidAPI,
-    _shared: &SharedState,
-) {
-    let envelope: SignedGossipEnvelope = match postcard::from_bytes(payload) {
-        Ok(e) => e,
-        Err(e) => {
-            warn!(error = %e, "dropping gossip: deserialization failed");
-            return;
-        }
-    };
-
-    if let Err(e) = crate::crypto::envelope::verify_gossip_envelope(&envelope) {
-        // Phase F — promote the failure to structured fields so the
-        // `RUST_LOG=rekindle_transport=debug` trace stream gives the
-        // operator the community_id + sender_pseudonym + reason
-        // without having to grep the unstructured message tail. The
-        // transport-layer gossip envelope here does NOT carry video
-        // payloads (those ride the protocol-layer `CommunityEnvelope`
-        // verified in `src-tauri/services/veilid/app_message.rs`), so
-        // no `VideoEvent::EnvelopeRejected` is emitted at this site —
-        // only the structured warn.
-        tracing::warn!(
-            target: "rekindle_transport::dispatch",
-            reason = %e,
-            sender_pseudonym = %envelope.sender_pseudonym,
-            community_id = %envelope.community_id,
-            "verify_gossip_envelope failed"
-        );
-        return;
-    }
-
-    let dedup_key = envelope.dedup_key();
-    if dedup.check_and_insert(
-        &envelope.community_id,
-        &envelope.sender_pseudonym,
-        &dedup_key,
-    ) {
-        trace!(dedup_key = %dedup_key, "gossip dedup: duplicate");
-        return;
-    }
-
-    if envelope.ttl > 0 && !envelope.is_private() {
-        let mut forwarded = envelope.clone();
-        forwarded.ttl = forwarded.ttl.saturating_sub(1);
-        handler.on_gossip_forward(&forwarded).await;
-    }
-
-    let gossip_payload = match postcard::from_bytes(&envelope.payload_bytes) {
-        Ok(p) => p,
-        Err(e) => {
-            warn!(error = %e, "dropping gossip: inner payload parse failed");
-            return;
-        }
-    };
-
-    // Deliver to InboundHandler — the daemon forwards to SubscriptionManager
-    handler
-        .on_gossip(
-            &envelope.community_id,
-            &envelope.sender_pseudonym,
-            gossip_payload,
-            envelope.lamport_ts,
-        )
-        .await;
 }
 
 async fn dispatch_dm<H: InboundHandler>(

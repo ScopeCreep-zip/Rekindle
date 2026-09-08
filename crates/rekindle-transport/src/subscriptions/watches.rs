@@ -33,28 +33,17 @@ pub enum WatchKind {
     GovernanceManifest { community: String },
     /// Community join inbox (operator only, DFLT(32), subkeys 0-31).
     JoinInbox { community: String },
-    /// A channel record changing.
+    /// A channel's SMPL segment record.
     ///
-    /// **Nothing establishes this watch.** `WatchKind::ChannelLog` is
-    /// constructed nowhere; the arm in `manager_ingress` that handles it
-    /// is unreachable. It is kept, not deleted, because it is an
-    /// unfinished path rather than a dead one — and one that only became
-    /// implementable when channel messages moved to SMPL segment
-    /// records, whose keys merged governance already publishes.
-    ///
-    /// Finishing it needs three things: the session's
-    /// `channel_record_keys` kept in sync with `gov_state.channels` (the
-    /// desktop does this in `state_helpers/governance.rs`), a watch
-    /// established over each record's member subkeys, and a decision
-    /// about `member_pseudonym` — a segment record has one writer per
-    /// subkey, so the changed subkey names a slot, and resolving that to
-    /// a pseudonym needs the presence roster. Until then the daemon
-    /// learns about new channel messages by reading history, not by
-    /// being told.
-    ChannelLog {
+    /// PATH 3 of the three-path model. One record per
+    /// `(channel, segment)` with a subkey per member, so the changed
+    /// subkey names the author's slot rather than identifying the
+    /// record's single owner — which is why this no longer carries a
+    /// `member_pseudonym` the way the per-member `DhtLog` version did.
+    ChannelRecord {
         community: String,
         channel_id: String,
-        member_pseudonym: String,
+        segment_index: u32,
     },
 }
 
@@ -121,7 +110,7 @@ impl WatchRegistry {
             !matches!(&e.kind,
                 WatchKind::GovernanceManifest { community: c }
                 | WatchKind::JoinInbox { community: c }
-                | WatchKind::ChannelLog { community: c, .. }
+                | WatchKind::ChannelRecord { community: c, .. }
                 if c == community
             )
         });
@@ -152,8 +141,37 @@ pub async fn establish_watch(
     subkeys: &[u32],
     kind: WatchKind,
 ) -> bool {
-    // Ensure record is open (idempotent for already-open records)
-    if let Err(e) = crate::broadcast::dht_writes::open_readonly(node, record_key).await {
+    establish_watch_as(node, registry, record_key, subkeys, kind, None).await
+}
+
+/// Establish a watch, optionally as a **schema member**.
+///
+/// Veilid reserves watch slots in two tiers (see `watch_dht_values` in
+/// veilid-core): `public_watch_limit` (32) for anonymous readers,
+/// first-come-first-served, and `member_watch_limit` (8) reserved for
+/// watchers whose signer is a member of the record's SMPL schema. Its
+/// own docs note that "members can be specified via the SMPL schema and
+/// do not need to allocate writable subkeys in order to offer a member
+/// watch capability" — so opening with our slot keypair moves us out of
+/// the contended public pool at no cost.
+///
+/// `writer` is that keypair, in string form. `None` keeps the old
+/// read-only open for records we hold no slot in.
+pub async fn establish_watch_as(
+    node: &TransportNode,
+    registry: &RwLock<WatchRegistry>,
+    record_key: &str,
+    subkeys: &[u32],
+    kind: WatchKind,
+    writer: Option<&str>,
+) -> bool {
+    let opened = match writer {
+        Some(writer) => {
+            crate::broadcast::dht_writes::open_str(node, record_key, Some(writer)).await
+        }
+        None => crate::broadcast::dht_writes::open_readonly(node, record_key).await,
+    };
+    if let Err(e) = opened {
         warn!(record_key, error = %e, "watch: cannot open record");
         return false;
     }
@@ -166,20 +184,35 @@ pub async fn establish_watch(
         }
     };
 
+    // Registered whether or not Veilid granted the watch.
+    //
+    // The registry is also the 60-second inspect poll's work list
+    // (`poll::run_poll_loop` iterates it), and a declined watch is the
+    // case that needs the fallback *most*: with 8 member and 32 public
+    // slots per record, a community larger than 40 members leaves the
+    // rest with no watch at all. Registering only on success gave those
+    // members neither push nor poll — the architecture's PATH 3 has two
+    // halves and they were getting zero.
+    //
+    // The renewal loop retries the watch on its own schedule, so a slot
+    // freed later is picked up without re-registering.
     if active {
         debug!(record_key, subkeys = ?subkeys, "watch established");
-        registry.write().insert(
-            record_key.to_string(),
-            WatchEntry {
-                kind,
-                subkeys: subkeys.to_vec(),
-                established_at: Instant::now(),
-                renewal_interval: WATCH_RENEWAL_INTERVAL,
-            },
-        );
     } else {
-        warn!(record_key, "watch: Veilid declined the watch");
+        debug!(
+            record_key,
+            "watch: Veilid declined (slots full) — record still enrolled in the inspect poll"
+        );
     }
+    registry.write().insert(
+        record_key.to_string(),
+        WatchEntry {
+            kind,
+            subkeys: subkeys.to_vec(),
+            established_at: Instant::now(),
+            renewal_interval: WATCH_RENEWAL_INTERVAL,
+        },
+    );
 
     active
 }
@@ -270,6 +303,42 @@ pub async fn setup_community_watches(
     // is a member's presence row, and those are read by the presence
     // poll rather than watched. Watching them here reported one
     // arbitrary member's heartbeat as a governance signal.
+
+    // Watch each channel's SMPL segment record — PATH 3.
+    //
+    // Opened **writable with our slot keypair**, which is what moves the
+    // watch out of Veilid's contended `public_watch_limit` (32,
+    // first-come-first-served) and into the `member_watch_limit` (8)
+    // reserved for schema members. veilid-core's own docs are explicit
+    // that members "do not need to allocate writable subkeys in order to
+    // offer a member watch capability", so this costs nothing we were
+    // not already entitled to.
+    //
+    // Eight slots does not cover a large community, and that is expected
+    // rather than a failure: `establish_watch_as` enrols the record in
+    // the 60-second inspect poll whether or not the watch is granted,
+    // and peers that did get a slot relay what they see over gossip
+    // (`CommunityEnvelope::WatchRelay`, architecture §14.3).
+    let slot_writer = membership.slot_seed.and_then(|seed| {
+        crate::broadcast::dht_writes::derive_slot_keypair_str(&seed, membership.slot_index).ok()
+    });
+    let segment_index = membership.segment_index.unwrap_or(0);
+    let channel_subkeys: Vec<u32> = (0..dht_types::SLOTS_PER_SEGMENT).collect();
+    for (channel_id, record_key) in &membership.channel_record_keys {
+        establish_watch_as(
+            node,
+            registry,
+            record_key,
+            &channel_subkeys,
+            WatchKind::ChannelRecord {
+                community: community.clone(),
+                channel_id: channel_id.clone(),
+                segment_index,
+            },
+            slot_writer.as_deref(),
+        )
+        .await;
+    }
 
     // Watch join inbox (operators only — they process incoming join requests)
     if membership.is_operator && !membership.join_inbox_key.is_empty() {

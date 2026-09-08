@@ -26,6 +26,7 @@ use crate::payload::dm::DmPayload;
 use crate::payload::gossip::{GossipPayload, SignedGossipEnvelope};
 use crate::payload::rpc::{CallResponse, InboundCall};
 use crate::payload::voice::VoicePayload;
+use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
 /// Identity of a verified inbound message sender.
 #[derive(Debug, Clone)]
@@ -99,6 +100,26 @@ pub trait InboundHandler: Send + Sync + 'static {
         community_id: &str,
         sender_pseudonym: &str,
         payload: GossipPayload,
+        lamport_ts: u64,
+    ) -> impl Future<Output = ()> + Send;
+
+    /// A verified **community** gossip envelope arrived, unframed.
+    ///
+    /// This is the format the desktop track broadcasts: a Cap'n Proto
+    /// `CommunityEnvelope` inside a `SignedEnvelope`, straight onto
+    /// `app_message` with no transport frame. It reaches here already
+    /// signature-verified and deduped.
+    ///
+    /// Kept separate from [`Self::on_gossip`] rather than mapped onto
+    /// it: `GossipPayload` has three variants and `CommunityEnvelope`
+    /// has the whole `Control(..)` family plus `WatchRelay`, so
+    /// projecting one onto the other would silently drop exactly the
+    /// messages that only exist in the richer type.
+    fn on_community_gossip(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        envelope: CommunityEnvelope,
         lamport_ts: u64,
     ) -> impl Future<Output = ()> + Send;
 

@@ -154,6 +154,13 @@ pub struct DaemonContext {
     /// open, and because a detached task needs `'static` state that a
     /// `&DaemonContext` handler cannot give it. See
     /// `daemon::mek_rotation`.
+    /// Outbound gossip (PATH 2), queued for the worker that owns the
+    /// daemon's `Arc<DaemonContext>`.
+    ///
+    /// Every `Deps::send_to_mesh` on this track goes through here, so
+    /// there is one encoder and one wire format rather than three
+    /// partial translations. See `daemon::gossip`.
+    pub gossip_tx: crate::daemon::gossip::GossipSender,
     pub mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
     /// Shutdown handles for the per-community presence polls, keyed by
     /// governance key.

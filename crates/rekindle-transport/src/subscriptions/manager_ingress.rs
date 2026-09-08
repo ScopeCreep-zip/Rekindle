@@ -9,6 +9,7 @@ use crate::payload::dm::DmPayload;
 use crate::payload::gossip::GossipPayload;
 
 use super::events::{self, SubscriptionEvent};
+use crate::payload::dht_types::SLOTS_PER_SEGMENT;
 
 impl SubscriptionManager {
     /// Route a gossip payload. Called by the daemon's InboundHandler.
@@ -255,28 +256,44 @@ impl SubscriptionManager {
                 debug!(community = %community, subkeys = ?changed_subkeys, "join inbox changed");
                 // The daemon's inbox processor is triggered by this signal.
             }
-            watches::WatchKind::ChannelLog {
+            watches::WatchKind::ChannelRecord {
                 community,
                 channel_id,
-                member_pseudonym,
+                segment_index,
             } => {
+                // PATH 3 fired: someone wrote a message to this
+                // channel's segment record. The changed subkey is the
+                // author's slot within the segment; the ciphertext is
+                // in the record, not in this notification, so the
+                // reader fetches and decrypts.
                 let count = self
                     .state
                     .write()
                     .unread
                     .increment_channel(&community, &channel_id);
-                self.process_event(SubscriptionEvent::ChannelMessage(
-                    events::ChannelMessageEvent::New {
-                        community: community.clone(),
-                        channel: channel_id.clone(),
-                        message_id: String::new(), // resolved by the reader
-                        sender_pseudonym: member_pseudonym,
-                        sequence: 0,
-                        timestamp: rekindle_utils::timestamp_ms(),
-                        body: None,              // enriched by decrypt stage
-                        reply_to_sequence: None, // enriched by decrypt stage
-                    },
-                ));
+                for subkey in &changed_subkeys {
+                    self.process_event(SubscriptionEvent::ChannelMessage(
+                        events::ChannelMessageEvent::New {
+                            community: community.clone(),
+                            channel: channel_id.clone(),
+                            message_id: String::new(), // resolved by the reader
+                            // The global slot, not a pseudonym. A
+                            // segment record has 255 writers, so the
+                            // subkey names a slot; mapping that to its
+                            // holder needs the presence roster, which
+                            // lives a layer up. The reader resolves it
+                            // when it fetches the message.
+                            sender_pseudonym: format!(
+                                "slot:{}",
+                                segment_index * SLOTS_PER_SEGMENT + subkey
+                            ),
+                            sequence: 0,
+                            timestamp: rekindle_utils::timestamp_ms(),
+                            body: None,
+                            reply_to_sequence: None,
+                        },
+                    ));
+                }
                 self.process_event(SubscriptionEvent::UnreadChanged {
                     context: events::UnreadContext::Channel {
                         community,

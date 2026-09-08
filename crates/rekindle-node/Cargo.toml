@@ -24,6 +24,11 @@ rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # boundary. No veilid_core types are named from this crate.
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+# Tier 5. The shared gossip stack — Cap'n Proto `CommunityEnvelope`
+# over unframed `app_message`, the format the desktop already used.
+# Before this the daemon had its own postcard `GossipPayload` and the
+# two tracks could not read each other's broadcasts at all.
+rekindle-gossip = { path = "../rekindle-gossip" }
 # Tier 5. The community presence orchestrators — registry scan, W26
 # verification, gossip overlay rebuild. Only src-tauri implemented
 # `CommunityPresenceDeps`, which is why the daemon had no roster and

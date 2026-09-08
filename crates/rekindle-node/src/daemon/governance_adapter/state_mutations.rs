@@ -21,6 +21,46 @@ use crate::daemon::community_rpc::{governance_keypair_label, registry_keypair_la
 
 impl DaemonGovernanceAdapter<'_> {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
+        // Mirror each channel's record key into the session before the
+        // state lands. `ChannelCreated.record_key` is the canonical
+        // location, but the session copy is what `setup_community_watches`
+        // and the leave path read — and only the *creator's*
+        // `insert_community` ever seeded it, so a joined community had an
+        // empty map and no channel watches at all.
+        //
+        // Insert-only: an entry already present came from our own create
+        // and is the same key, and clearing the map would drop a channel
+        // whose `ChannelCreated` has not merged yet.
+        let channel_keys: Vec<(String, String)> = state
+            .channels
+            .iter()
+            .filter(|(_, channel)| !channel.record_key.is_empty())
+            .map(|(id, channel)| (hex::encode(id.0), channel.record_key.clone()))
+            .collect();
+        if !channel_keys.is_empty() {
+            let mut changed = false;
+            {
+                let mut guard = self.ctx.session.write();
+                if let Some(membership) = guard
+                    .as_mut()
+                    .and_then(|s| s.communities.get_mut(community_id))
+                {
+                    for (channel_id, record_key) in channel_keys {
+                        if membership
+                            .channel_record_keys
+                            .insert(channel_id, record_key)
+                            .is_none()
+                        {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if changed {
+                self.persist_session();
+            }
+        }
+
         self.ctx
             .community_runtime
             .set_governance_state(community_id, state);
