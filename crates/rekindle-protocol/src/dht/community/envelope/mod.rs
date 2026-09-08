@@ -179,12 +179,11 @@ pub struct VoiceRosterEntry {
 pub use rekindle_codec::envelope::SignedEnvelope;
 
 /// A single onboarding answer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OnboardingAnswer {
-    pub question_id: String,
-    pub selected_options: Vec<String>,
-}
+/// Re-exported from Tier 1 rather than declared here. Two declarations
+/// of this name existed with *different fields*; the vocabulary tier is
+/// the one home for the shape, and this crate's Cap'n Proto codec reads
+/// and writes exactly it.
+pub use rekindle_types::presence::OnboardingAnswer;
 
 #[cfg(test)]
 mod tests;

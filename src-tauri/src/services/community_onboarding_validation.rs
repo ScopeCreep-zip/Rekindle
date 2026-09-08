@@ -11,7 +11,7 @@ pub const MAX_ONBOARDING_QUESTION_TITLE_CHARS: usize = 100;
 pub const MAX_WELCOME_SCREEN_CHANNELS: usize = 5;
 
 pub fn validate_onboarding_shape(
-    config: &rekindle_protocol::dht::community::onboarding::OnboardingConfig,
+    config: &crate::channels::community_channel::onboarding_dto::OnboardingConfigDto,
 ) -> Result<(), String> {
     if config.questions.len() > MAX_ONBOARDING_QUESTIONS {
         return Err(format!(

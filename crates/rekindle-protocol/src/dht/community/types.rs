@@ -269,28 +269,9 @@ pub struct InviteEntry {
     pub encrypted_secrets: Option<String>,
 }
 
-/// Secrets embedded in a community invite for self-service joining.
-///
-/// Encrypted with HKDF(invite_code) → AES-256-GCM and stored alongside
-/// the invite metadata in manifest subkey 7. Contains everything a new
-/// member needs to join without any online coordinator or peer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InviteSecrets {
-    /// Slot seed for deriving SMPL presence keypairs (hex-encoded, 32 bytes).
-    pub slot_seed: String,
-    /// MEK wire bytes: `[8-byte generation LE || 32-byte key]` (base64-encoded).
-    pub mek_wire_bytes: String,
-    /// DHT record key for the member registry (SMPL record).
-    pub registry_key: String,
-    /// Pre-assigned subkey index (single-use invites).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assigned_subkey_index: Option<u32>,
-    /// Slot range `[start, end]` inclusive (multi-use invites).
-    /// Joiner claims the first empty slot in this range.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub slot_range: Option<(u32, u32)>,
-}
+// `InviteSecrets` lived here and had no user: every site — the invite
+// mint, the join flow, both hosts — uses `rekindle_types::invite::
+// InviteSecrets`, the Tier-1 one that actually carries the slot seed.
 
 #[cfg(test)]
 mod tests {

@@ -129,18 +129,43 @@ const MIN_CSS_DECLS: usize = 3;
 ///
 /// Keyed on the exact `crate::Type` site list, like the body gate: a
 /// bare name would exempt every future collision under that name too.
-const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[(
-    &[
-        "rekindle-governance-runtime::CommunityMembership",
-        "rekindle-transport::CommunityMembership",
-    ],
-    "Deliberate, and documented in the migration plan (2.3): \
+const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
+    (
+        &["rekindle-protocol::GameInfo", "rekindle-types::GameInfo"],
+        "Two different wire forms, not one type in two places. \
+         protocol's is the 1:1 rich-presence payload the Cap'n Proto \
+         codec encodes — `game_id: u32`, `elapsed_seconds: u32`, a \
+         `server_info` field, snake_case on the wire. Tier 1's is the \
+         community presence form — `game_id: Option<String>`, \
+         `elapsed_seconds: Option<u64>`, no `server_info`, camelCase. \
+         Converging them is a Cap'n Proto presence schema change, not a \
+         rename; recorded here so the next reader sees the difference \
+         is deliberate rather than assuming they are interchangeable.",
+    ),
+    (
+        &["rekindle-files::MockCalls", "rekindle-video::MockCalls"],
+        "Per-crate test doubles: same idiom, different domain fields. \
+         The migration plan examined these and declined them by name.",
+    ),
+    (
+        &["rekindle-files::MockDeps", "rekindle-video::MockDeps"],
+        "Same as MockCalls — a shared mock would couple two unrelated \
+         Deps traits so one crate's test could not move without the \
+         other's.",
+    ),
+    (
+        &[
+            "rekindle-governance-runtime::CommunityMembership",
+            "rekindle-transport::CommunityMembership",
+        ],
+        "Deliberate, and documented in the migration plan (2.3): \
          transport's is the daemon's persisted session record; the \
          runtime crate's is the all-Option snapshot that crosses the \
          Deps boundary. Converging them would drag host-shaped state \
          across the adapter horizon, which is the opposite of the \
          services-pattern design.",
-)];
+    ),
+];
 
 /// Frontend duplicates that are accepted rather than fixed.
 ///
@@ -158,8 +183,20 @@ fn types_in(src: &str) -> Vec<(String, usize)> {
     let src = &src[..cut];
     let mut out = Vec::new();
 
+    // Only module-level declarations count. `type Err = …` inside a
+    // `impl FromStr` is an associated type, not a type this crate owns,
+    // and every crate with a `FromStr` impl would otherwise collide with
+    // every other on the name `Err`.
+    let mut depth = 0i32;
+
     for (idx, line) in src.lines().enumerate() {
         let t = line.trim_start();
+        let at_module_level = depth == 0;
+        depth += i32::try_from(line.matches('{').count()).unwrap_or(0)
+            - i32::try_from(line.matches('}').count()).unwrap_or(0);
+        if !at_module_level {
+            continue;
+        }
         // Only *declarations*: `pub struct Foo`, `enum Bar`, `type Baz =`.
         // A `pub use` re-export names the same type and must not count as
         // a second declaration — that is how a facade would be flagged.
@@ -183,6 +220,12 @@ fn types_in(src: &str) -> Vec<(String, usize)> {
             .collect();
         // Skip single-letter generics-ish names and empty matches.
         if name.len() < 3 || !name.starts_with(char::is_uppercase) {
+            continue;
+        }
+        // `pub type Result<T> = std::result::Result<T, ThisCrateError>`
+        // is the idiomatic per-crate alias. Every crate is *supposed* to
+        // have one; flagging them would train people to ignore the gate.
+        if name == "Result" {
             continue;
         }
         out.push((name, idx + 1));

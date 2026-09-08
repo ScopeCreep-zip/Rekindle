@@ -538,3 +538,5 @@ pub enum CommunityEvent {
 
 #[cfg(test)]
 mod wire_tests;
+
+pub mod onboarding_dto;

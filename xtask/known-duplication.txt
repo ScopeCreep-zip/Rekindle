@@ -58,7 +58,6 @@ type rekindle (src-tauri)::ChannelInfoDto rekindle-protocol::ChannelInfoDto
 type rekindle (src-tauri)::ChannelMessageRow rekindle-channel::ChannelMessageRow
 type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
 type rekindle (src-tauri)::CommunityRecords rekindle-records::CommunityRecords
-type rekindle (src-tauri)::Err rekindle-channel::Err rekindle-protocol::Err
 type rekindle (src-tauri)::EventRsvpEntry rekindle-presence::EventRsvpEntry
 type rekindle (src-tauri)::ExclusionGroupEdit rekindle-governance-runtime::ExclusionGroupEdit
 type rekindle (src-tauri)::InviteContext rekindle-governance-runtime::InviteContext
@@ -74,7 +73,6 @@ type rekindle (src-tauri)::VoiceEvent rekindle-types::VoiceEvent
 type rekindle-audit::AuditEntry rekindle-node::AuditEntry
 type rekindle-calls::CallError rekindle-transport::CallError
 type rekindle-channel::AutoModAction rekindle-protocol::AutoModAction rekindle-transport::AutoModAction
-type rekindle-channel::TriggerConfig rekindle-governance::TriggerConfig
 type rekindle-cli::ChannelEntry rekindle-transport::ChannelEntry rekindle-types::ChannelEntry
 type rekindle-cli::PolicyConfig rekindle-node::PolicyConfig
 type rekindle-crypto::CryptoError rekindle-types::CryptoError
@@ -84,13 +82,10 @@ type rekindle-crypto::SignalSessionManager rekindle-transport::SignalSessionMana
 type rekindle-dm::GroupDmParticipant rekindle-transport::GroupDmParticipant
 type rekindle-dm::PartialFrame rekindle-video::PartialFrame
 type rekindle-e2e-server::ServerState rekindle-node::ServerState
-type rekindle-files::MockCalls rekindle-video::MockCalls
-type rekindle-files::MockDeps rekindle-video::MockDeps
 type rekindle-gossip::GossipError rekindle-types::GossipError
 type rekindle-gossip::GossipMesh rekindle-transport::GossipMesh
 type rekindle-governance-runtime::OnlineMemberSnapshot rekindle-presence::OnlineMemberSnapshot
 type rekindle-governance-runtime::SegmentDescriptor rekindle-presence::SegmentDescriptor
-type rekindle-node::Result rekindle-transport::Result
 type rekindle-protocol::AuditAction rekindle-transport::AuditAction
 type rekindle-protocol::AuditChange rekindle-transport::AuditChange
 type rekindle-protocol::AuditLogEntry rekindle-transport::AuditLogEntry
@@ -103,16 +98,10 @@ type rekindle-protocol::CategoryEntry rekindle-transport::CategoryEntry
 type rekindle-protocol::ChannelKind rekindle-transport::ChannelKind
 type rekindle-protocol::FriendEntry rekindle-transport::FriendEntry
 type rekindle-protocol::FriendList rekindle-transport::FriendList
-type rekindle-protocol::GameInfo rekindle-types::GameInfo
-type rekindle-protocol::GuideStep rekindle-types::GuideStep
 type rekindle-protocol::InviteBlob rekindle-transport::InviteBlob
 type rekindle-protocol::InviteEntry rekindle-transport::InviteEntry
-type rekindle-protocol::InviteSecrets rekindle-types::InviteSecrets
 type rekindle-protocol::MekTransferPayload rekindle-transport::MekTransferPayload
 type rekindle-protocol::MemberSummary rekindle-transport::MemberSummary
-type rekindle-protocol::OnboardingAnswer rekindle-types::OnboardingAnswer
-type rekindle-protocol::OnboardingOption rekindle-types::OnboardingOption
-type rekindle-protocol::OnboardingQuestion rekindle-types::OnboardingQuestion
 type rekindle-protocol::RaidAction rekindle-transport::RaidAction
 type rekindle-protocol::RaidProtection rekindle-transport::RaidProtection
 type rekindle-route::CachedRoute rekindle-transport::CachedRoute

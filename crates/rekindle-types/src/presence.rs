@@ -191,13 +191,36 @@ pub struct EventRSVP {
     pub status: String,
 }
 
-/// Answer text submitted for an onboarding question.
+/// One submitted answer to an onboarding question.
+///
+/// This was declared here with `answer_text: String` while every live
+/// site — the `SubmitOnboardingAnswers` control payload, the Cap'n Proto
+/// codec, `governance-runtime`'s required-answer validation, and the
+/// frontend DTO — used `selected_options: Vec<String>`. Tier 1 is where
+/// someone looks for the authoritative shape, so the wrong one here was
+/// worse than none: adopting it would have silently dropped every
+/// multi-select answer, and `MemberPresence::onboarding_answers` was
+/// already typed with it.
+///
+/// One declaration now, in the vocabulary tier;
+/// `rekindle_protocol::dht::community::envelope` re-exports it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingAnswer {
     pub question_id: String,
-    pub answer_text: String,
+    /// Option IDs the member selected. Multi-select questions carry
+    /// several; single-select carries one.
+    pub selected_options: Vec<String>,
 }
+
+// Historical note kept for the next reader:
+// had **zero users**, while every live site — the control envelope, the
+// Cap'n Proto codec, `governance-runtime`'s required-answer validation,
+// and the frontend DTO — uses `selected_options: Vec<String>`. A
+// Tier-1 type is where someone looks for the authoritative shape, so a
+// dead one with the wrong fields is worse than none: adopting it would
+// have silently dropped every multi-select answer. The live definition
+// is `rekindle_protocol::dht::community::envelope::OnboardingAnswer`.
 
 /// Range of message history this member has cached locally.
 /// Used by mutual aid: newcomers can request ranges from peers who have them.

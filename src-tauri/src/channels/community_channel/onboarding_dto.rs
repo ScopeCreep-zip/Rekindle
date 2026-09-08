@@ -1,37 +1,49 @@
-//! Onboarding and welcome screen types for manifest subkeys 10-11.
+//! Frontend-facing onboarding DTOs.
 //!
-//! - Subkey 10: `OnboardingConfig` — join flow settings, questions, guide steps
-//! - Subkey 11: `WelcomeScreen` — featured channels and description
+//! These lived in `rekindle-protocol::dht::community::onboarding` and
+//! duplicated three Tier-1 type names — `OnboardingQuestion`,
+//! `OnboardingOption`, `GuideStep` — against
+//! `rekindle_types::governance::onboarding`. They are not the same
+//! types: the Tier-1 ones carry newtype IDs (`RoleId`, `ChannelId`) and
+//! are what `rekindle-governance` merges and what the Cap'n Proto codec
+//! encodes; these carry hex strings and `u32`s because that is what
+//! crosses IPC to the webview.
+//!
+//! So the shape is right and the *home* was wrong: a frontend DTO
+//! belongs beside the other frontend DTOs, not in the v1.0 protocol
+//! crate. The `Dto` suffix follows this module's existing convention
+//! (`RoleDto`, `ThreadInfoDto`) and removes the name collision that
+//! made two different things look like one.
 
 use serde::{Deserialize, Serialize};
 
 /// Onboarding configuration stored in manifest subkey 10.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OnboardingConfig {
+pub struct OnboardingConfigDto {
     /// Whether onboarding is enabled for new members.
     pub enabled: bool,
     /// The onboarding mode.
-    pub mode: OnboardingMode,
+    pub mode: OnboardingModeDto,
     /// Channel IDs that all new members see by default.
     #[serde(default)]
     pub default_channels: Vec<String>,
     /// Questions presented during the onboarding flow.
     #[serde(default)]
-    pub questions: Vec<OnboardingQuestion>,
+    pub questions: Vec<OnboardingQuestionDto>,
     /// Optional welcome message shown at the start of onboarding.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub welcome_message: Option<String>,
     /// Guided steps shown after completing questions.
     #[serde(default)]
-    pub guide_steps: Vec<GuideStep>,
+    pub guide_steps: Vec<GuideStepDto>,
 }
 
-impl Default for OnboardingConfig {
+impl Default for OnboardingConfigDto {
     fn default() -> Self {
         Self {
             enabled: false,
-            mode: OnboardingMode::Default,
+            mode: OnboardingModeDto::Default,
             default_channels: Vec::new(),
             questions: Vec::new(),
             welcome_message: None,
@@ -43,7 +55,7 @@ impl Default for OnboardingConfig {
 /// Onboarding flow modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum OnboardingMode {
+pub enum OnboardingModeDto {
     /// Standard join — assign default roles immediately.
     Default,
     /// Multi-step guided setup with questions.
@@ -55,7 +67,7 @@ pub enum OnboardingMode {
 /// A question presented during onboarding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OnboardingQuestion {
+pub struct OnboardingQuestionDto {
     pub question_id: String,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,13 +76,13 @@ pub struct OnboardingQuestion {
     pub required: bool,
     /// If true, only one option can be selected; if false, multi-select.
     pub single_select: bool,
-    pub options: Vec<OnboardingOption>,
+    pub options: Vec<OnboardingOptionDto>,
 }
 
 /// An option for an onboarding question.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OnboardingOption {
+pub struct OnboardingOptionDto {
     pub option_id: String,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,7 +98,7 @@ pub struct OnboardingOption {
 /// A guided step shown after onboarding questions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GuideStep {
+pub struct GuideStepDto {
     pub title: String,
     pub description: String,
     /// Optional channel ID to highlight.
@@ -100,17 +112,17 @@ pub struct GuideStep {
 /// Welcome screen stored in manifest subkey 11.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WelcomeScreen {
+pub struct WelcomeScreenDto {
     /// Community description shown on the welcome screen.
     pub description: String,
     /// Up to 5 featured channels with descriptions.
-    pub channels: Vec<WelcomeChannelEntry>,
+    pub channels: Vec<WelcomeChannelEntryDto>,
 }
 
 /// A channel featured on the welcome screen.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WelcomeChannelEntry {
+pub struct WelcomeChannelEntryDto {
     pub channel_id: String,
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -123,33 +135,33 @@ mod tests {
 
     #[test]
     fn onboarding_config_default() {
-        let config = OnboardingConfig::default();
+        let config = OnboardingConfigDto::default();
         assert!(!config.enabled);
-        assert_eq!(config.mode, OnboardingMode::Default);
+        assert_eq!(config.mode, OnboardingModeDto::Default);
         assert!(config.questions.is_empty());
     }
 
     #[test]
     fn onboarding_config_serde() {
-        let config = OnboardingConfig {
+        let config = OnboardingConfigDto {
             enabled: true,
-            mode: OnboardingMode::Guided,
+            mode: OnboardingModeDto::Guided,
             default_channels: vec!["ch_general".into(), "ch_rules".into()],
-            questions: vec![OnboardingQuestion {
+            questions: vec![OnboardingQuestionDto {
                 question_id: "q_01".into(),
                 title: "What are you interested in?".into(),
                 description: Some("Select your interests".into()),
                 required: true,
                 single_select: false,
                 options: vec![
-                    OnboardingOption {
+                    OnboardingOptionDto {
                         option_id: "opt_gaming".into(),
                         title: "Gaming".into(),
                         description: None,
                         roles_to_assign: vec![5],
                         channels_to_show: vec!["ch_gaming".into()],
                     },
-                    OnboardingOption {
+                    OnboardingOptionDto {
                         option_id: "opt_dev".into(),
                         title: "Development".into(),
                         description: Some("Code and tech".into()),
@@ -159,7 +171,7 @@ mod tests {
                 ],
             }],
             welcome_message: Some("Welcome to our community!".into()),
-            guide_steps: vec![GuideStep {
+            guide_steps: vec![GuideStepDto {
                 title: "Say hello".into(),
                 description: "Introduce yourself in #general".into(),
                 channel_id: Some("ch_general".into()),
@@ -168,9 +180,9 @@ mod tests {
         };
 
         let json = serde_json::to_string(&config).unwrap();
-        let back: OnboardingConfig = serde_json::from_str(&json).unwrap();
+        let back: OnboardingConfigDto = serde_json::from_str(&json).unwrap();
         assert!(back.enabled);
-        assert_eq!(back.mode, OnboardingMode::Guided);
+        assert_eq!(back.mode, OnboardingModeDto::Guided);
         assert_eq!(back.questions.len(), 1);
         assert_eq!(back.questions[0].options.len(), 2);
         assert_eq!(back.guide_steps.len(), 1);
@@ -179,35 +191,35 @@ mod tests {
     #[test]
     fn onboarding_mode_serde() {
         let modes = vec![
-            OnboardingMode::Default,
-            OnboardingMode::Guided,
-            OnboardingMode::Gated,
+            OnboardingModeDto::Default,
+            OnboardingModeDto::Guided,
+            OnboardingModeDto::Gated,
         ];
         for mode in &modes {
             let json = serde_json::to_string(mode).unwrap();
-            let back: OnboardingMode = serde_json::from_str(&json).unwrap();
+            let back: OnboardingModeDto = serde_json::from_str(&json).unwrap();
             assert_eq!(*mode, back);
         }
     }
 
     #[test]
     fn welcome_screen_default() {
-        let screen = WelcomeScreen::default();
+        let screen = WelcomeScreenDto::default();
         assert!(screen.description.is_empty());
         assert!(screen.channels.is_empty());
     }
 
     #[test]
     fn welcome_screen_serde() {
-        let screen = WelcomeScreen {
+        let screen = WelcomeScreenDto {
             description: "Welcome to Rekindle!".into(),
             channels: vec![
-                WelcomeChannelEntry {
+                WelcomeChannelEntryDto {
                     channel_id: "ch_general".into(),
                     description: "Chat with everyone".into(),
                     emoji: Some("💬".into()),
                 },
-                WelcomeChannelEntry {
+                WelcomeChannelEntryDto {
                     channel_id: "ch_rules".into(),
                     description: "Read the rules".into(),
                     emoji: None,
@@ -216,7 +228,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&screen).unwrap();
-        let back: WelcomeScreen = serde_json::from_str(&json).unwrap();
+        let back: WelcomeScreenDto = serde_json::from_str(&json).unwrap();
         assert_eq!(back.channels.len(), 2);
         assert_eq!(back.channels[0].channel_id, "ch_general");
     }

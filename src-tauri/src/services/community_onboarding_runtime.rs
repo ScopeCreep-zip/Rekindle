@@ -33,7 +33,7 @@ pub async fn set_onboarding_config_inner(
     config: serde_json::Value,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
-    let config: rekindle_protocol::dht::community::onboarding::OnboardingConfig =
+    let config: crate::channels::community_channel::onboarding_dto::OnboardingConfigDto =
         serde_json::from_value(config).map_err(|e| format!("invalid config: {e}"))?;
     validate_onboarding_shape(&config)?;
 
@@ -72,7 +72,7 @@ pub async fn set_welcome_screen_inner(
     screen: serde_json::Value,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
-    let screen: rekindle_protocol::dht::community::onboarding::WelcomeScreen =
+    let screen: crate::channels::community_channel::onboarding_dto::WelcomeScreenDto =
         serde_json::from_value(screen).map_err(|e| format!("invalid screen: {e}"))?;
     if screen.channels.len() > MAX_WELCOME_SCREEN_CHANNELS {
         return Err(format!(

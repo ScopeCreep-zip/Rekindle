@@ -9,15 +9,17 @@ use crate::commands::community::helpers::{hex_to_id_16, u32_to_role_id};
 
 pub fn governance_onboarding_to_manifest_shape(
     onboarding: &rekindle_governance::state::OnboardingState,
-) -> rekindle_protocol::dht::community::onboarding::OnboardingConfig {
-    use rekindle_protocol::dht::community::onboarding::{OnboardingConfig, OnboardingMode};
+) -> crate::channels::community_channel::onboarding_dto::OnboardingConfigDto {
+    use crate::channels::community_channel::onboarding_dto::{
+        OnboardingConfigDto, OnboardingModeDto,
+    };
 
-    OnboardingConfig {
+    OnboardingConfigDto {
         enabled: onboarding.enabled,
         mode: match onboarding.mode.as_str() {
-            "guided" => OnboardingMode::Guided,
-            "gated" => OnboardingMode::Gated,
-            _ => OnboardingMode::Default,
+            "guided" => OnboardingModeDto::Guided,
+            "gated" => OnboardingModeDto::Gated,
+            _ => OnboardingModeDto::Default,
         },
         default_channels: onboarding
             .default_channels
@@ -39,39 +41,41 @@ pub fn governance_onboarding_to_manifest_shape(
 }
 
 pub fn onboarding_mode_to_string(
-    mode: rekindle_protocol::dht::community::onboarding::OnboardingMode,
+    mode: crate::channels::community_channel::onboarding_dto::OnboardingModeDto,
 ) -> String {
     match mode {
-        rekindle_protocol::dht::community::onboarding::OnboardingMode::Default => "default",
-        rekindle_protocol::dht::community::onboarding::OnboardingMode::Guided => "guided",
-        rekindle_protocol::dht::community::onboarding::OnboardingMode::Gated => "gated",
+        crate::channels::community_channel::onboarding_dto::OnboardingModeDto::Default => "default",
+        crate::channels::community_channel::onboarding_dto::OnboardingModeDto::Guided => "guided",
+        crate::channels::community_channel::onboarding_dto::OnboardingModeDto::Gated => "gated",
     }
     .to_string()
 }
 
 pub fn governance_welcome_to_protocol(
     screen: &rekindle_governance::state::WelcomeScreenState,
-) -> rekindle_protocol::dht::community::onboarding::WelcomeScreen {
-    use rekindle_protocol::dht::community::onboarding::{WelcomeChannelEntry, WelcomeScreen};
+) -> crate::channels::community_channel::onboarding_dto::WelcomeScreenDto {
+    use crate::channels::community_channel::onboarding_dto::{
+        WelcomeChannelEntryDto, WelcomeScreenDto,
+    };
 
     let channels = screen
         .channels
         .iter()
-        .map(|channel| WelcomeChannelEntry {
+        .map(|channel| WelcomeChannelEntryDto {
             channel_id: hex::encode(channel.channel_id.0),
             description: channel.description.clone(),
             emoji: channel.emoji.clone(),
         })
         .collect();
 
-    WelcomeScreen {
+    WelcomeScreenDto {
         description: screen.description.clone(),
         channels,
     }
 }
 
 pub fn protocol_question_to_governance(
-    question: rekindle_protocol::dht::community::onboarding::OnboardingQuestion,
+    question: crate::channels::community_channel::onboarding_dto::OnboardingQuestionDto,
 ) -> rekindle_types::governance::OnboardingQuestion {
     rekindle_types::governance::OnboardingQuestion {
         question_id: question.question_id,
@@ -88,7 +92,7 @@ pub fn protocol_question_to_governance(
 }
 
 fn protocol_option_to_governance(
-    option: rekindle_protocol::dht::community::onboarding::OnboardingOption,
+    option: crate::channels::community_channel::onboarding_dto::OnboardingOptionDto,
 ) -> rekindle_types::governance::OnboardingOption {
     rekindle_types::governance::OnboardingOption {
         option_id: option.option_id,
@@ -109,7 +113,7 @@ fn protocol_option_to_governance(
 }
 
 pub fn protocol_guide_step_to_governance(
-    step: rekindle_protocol::dht::community::onboarding::GuideStep,
+    step: crate::channels::community_channel::onboarding_dto::GuideStepDto,
 ) -> rekindle_types::governance::GuideStep {
     rekindle_types::governance::GuideStep {
         title: step.title,
@@ -124,7 +128,7 @@ pub fn protocol_guide_step_to_governance(
 }
 
 pub fn protocol_welcome_channel_to_governance(
-    channel: rekindle_protocol::dht::community::onboarding::WelcomeChannelEntry,
+    channel: crate::channels::community_channel::onboarding_dto::WelcomeChannelEntryDto,
 ) -> rekindle_types::governance::WelcomeChannel {
     rekindle_types::governance::WelcomeChannel {
         channel_id: rekindle_types::id::ChannelId(hex_to_id_16(&channel.channel_id)),
@@ -135,8 +139,8 @@ pub fn protocol_welcome_channel_to_governance(
 
 fn governance_question_to_protocol(
     question: &rekindle_types::governance::OnboardingQuestion,
-) -> rekindle_protocol::dht::community::onboarding::OnboardingQuestion {
-    rekindle_protocol::dht::community::onboarding::OnboardingQuestion {
+) -> crate::channels::community_channel::onboarding_dto::OnboardingQuestionDto {
+    crate::channels::community_channel::onboarding_dto::OnboardingQuestionDto {
         question_id: question.question_id.clone(),
         title: question.title.clone(),
         description: question.description.clone(),
@@ -152,8 +156,8 @@ fn governance_question_to_protocol(
 
 fn governance_option_to_protocol(
     option: &rekindle_types::governance::OnboardingOption,
-) -> rekindle_protocol::dht::community::onboarding::OnboardingOption {
-    rekindle_protocol::dht::community::onboarding::OnboardingOption {
+) -> crate::channels::community_channel::onboarding_dto::OnboardingOptionDto {
+    crate::channels::community_channel::onboarding_dto::OnboardingOptionDto {
         option_id: option.option_id.clone(),
         title: option.title.clone(),
         description: option.description.clone(),
@@ -172,8 +176,8 @@ fn governance_option_to_protocol(
 
 fn governance_guide_step_to_protocol(
     step: &rekindle_types::governance::GuideStep,
-) -> rekindle_protocol::dht::community::onboarding::GuideStep {
-    rekindle_protocol::dht::community::onboarding::GuideStep {
+) -> crate::channels::community_channel::onboarding_dto::GuideStepDto {
+    crate::channels::community_channel::onboarding_dto::GuideStepDto {
         title: step.title.clone(),
         description: step.description.clone(),
         channel_id: step.channel_id.as_ref().map(|id| hex::encode(id.0)),

@@ -4,7 +4,6 @@ pub(crate) mod base64_bytes;
 pub mod channel_record;
 pub mod envelope;
 pub mod member_registry;
-pub mod onboarding;
 pub mod types;
 
 // Re-export types for convenient access via `dht::community::*`
@@ -16,7 +15,6 @@ pub use envelope::{
     sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
     PresenceGameInfo, SignedEnvelope,
 };
-pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, WelcomeScreen};
 // `CoordinatorInfo`, `MemberPresence` and `SignedPresence` used to be
 // re-exported here. All three were v1.0 coordinator-era types with no
 // reachable caller — and `MemberPresence` was a second struct of that
@@ -24,7 +22,7 @@ pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, Welco
 // presence type is `rekindle_types::presence::MemberPresence`.
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
-    InviteEntry, InviteSecrets, MemberSummary, ModerationLevel, RoleEntryV2,
+    InviteEntry, MemberSummary, ModerationLevel, RoleEntryV2,
 };
 
 use serde::{Deserialize, Serialize};
