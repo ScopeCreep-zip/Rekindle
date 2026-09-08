@@ -1,0 +1,140 @@
+# Accepted duplications — a burn-down, not an excuse.
+#
+# Every line is a real duplicate that CI would otherwise fail on.
+# No gate's severity was lowered to produce this file. A duplicate
+# NOT listed here fails the build. Shrink the list by fixing
+# duplicates, then run `cargo xtask baseline-duplication`.
+#
+# Prefer a written exception in xtask/src/duplication.rs (or
+# DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
+# deliberate and permanent — those carry a reason; this file does not.
+body crates/rekindle-calls/src/lib.rs crates/rekindle-calls/src/signaling/handlers.rs
+body crates/rekindle-cli/src/views/channel_watch.rs crates/rekindle-cli/src/views/dm_inbox.rs
+body crates/rekindle-node/src/daemon/gossip_adapter/state_reads.rs crates/rekindle-node/src/daemon/governance_adapter/state_reads.rs
+body crates/rekindle-node/src/daemon/gossip_adapter/state_reads.rs crates/rekindle-node/src/daemon/presence_adapter/state_reads.rs
+body crates/rekindle-node/src/daemon/governance_adapter/lifecycle.rs crates/rekindle-node/src/daemon/presence_adapter/gossip.rs
+body crates/rekindle-node/src/daemon/governance_adapter/state_reads.rs crates/rekindle-node/src/daemon/presence_adapter/state_reads.rs
+body crates/rekindle-node/src/daemon/mek_rotation/deps_impl.rs crates/rekindle-node/src/daemon/presence_adapter/events.rs
+body crates/rekindle-node/src/daemon/mek_rotation/deps_impl.rs crates/rekindle-node/src/daemon/presence_adapter/mod.rs
+body src-tauri/src/channels/community_channel/dto.rs src-tauri/src/state/community.rs
+body src-tauri/src/services/calls_adapter/deps_impl.rs src-tauri/src/services/voice_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
+body src-tauri/src/services/channel_adapter/deps_impl.rs src-tauri/src/services/files_adapter/deps_impl.rs src-tauri/src/services/governance_adapter/deps_impl.rs src-tauri/src/services/mek_adapter.rs src-tauri/src/services/video_adapter.rs src-tauri/src/services/voice_signaling_adapter.rs
+body src-tauri/src/services/channel_adapter/deps_impl.rs src-tauri/src/services/governance_adapter/deps_impl.rs
+body src-tauri/src/services/channel_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
+body src-tauri/src/services/community/automod.rs src-tauri/src/services/community/channel_polls.rs src-tauri/src/services/community/stage.rs
+body src-tauri/src/services/community/channel_messages.rs src-tauri/src/services/community/expressions.rs src-tauri/src/services/community/threads.rs
+body src-tauri/src/services/community/join/state.rs src-tauri/src/services/community/presence/mod.rs
+body src-tauri/src/services/cross_device_sync/tests.rs src-tauri/src/services/search/tests.rs
+body src-tauri/src/services/gossip_adapter/deps_impl.rs src-tauri/src/services/voice_adapter/deps_impl.rs
+body src-tauri/src/services/governance_adapter/deps_impl.rs src-tauri/src/services/voice_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
+body src-tauri/src/services/video_adapter.rs src-tauri/src/services/voice_adapter/deps_impl.rs
+body src-tauri/src/services/voice_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
+css align-items: center ; border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent) ; color: var(--color-xfire-text) ; display: flex ; font-size: 12px ; font-weight: 600 ; gap: 6px ; padding: 8px 12px
+css align-items: center ; border-radius: 3px ; display: flex ; gap: 8px ; padding: 4px 8px ; transition: background 0.15s
+css align-items: center ; color: var(--color-xfire-text) ; display: flex ; font-size: 11px ; height: 22px ; justify-content: space-between ; padding: 2px 12px
+css align-items: center ; cursor: pointer ; display: flex ; gap: 8px ; padding: 4px 12px
+css align-items: center ; display: flex ; flex-wrap: wrap ; gap: 8px
+css align-items: center ; display: flex ; gap: 12px ; justify-content: space-between
+css align-items: center ; display: flex ; gap: 6px
+css align-items: center ; display: flex ; gap: 6px ; padding: 8px
+css align-items: center ; display: flex ; gap: 8px
+css align-items: center ; display: flex ; gap: 8px ; justify-content: space-between
+css background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent) ; border-radius: 3px ; border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent) ; color: var(--color-xfire-text) ; cursor: pointer ; font-size: 10px ; padding: 3px 8px ; transition: background 0.15s
+css background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent) ; border-color: var(--color-xfire-accent) ; color: var(--color-xfire-accent)
+css background: color-mix(in srgb, var(--color-xfire-offline) 20%, transparent) ; height: 1px ; margin: 4px 0
+css background: color-mix(in srgb, white 8%, transparent) ; border-radius: 3px ; color: var(--color-xfire-text-dim) ; font-size: 9px ; padding: 1px 5px ; text-transform: uppercase
+css background: transparent ; border-radius: 4px ; border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent) ; color: var(--color-xfire-text-primary) ; cursor: pointer ; font-size: 11px ; padding: 6px 10px
+css background: var(--color-xfire-bg-input) ; border-radius: 0.25rem ; border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent) ; color: var(--color-xfire-text) ; font-family: var(--font-family-xfire) ; font-size: 13px ; outline: none ; padding: 8px 12px ; width: 100%
+css background: var(--color-xfire-bg-input) ; border-radius: 3px ; border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent) ; color: var(--color-xfire-text) ; font-family: var(--font-family-xfire) ; font-size: 11px ; outline: none ; padding: 4px 8px ; width: 100%
+css color: var(--color-xfire-online) ; font-size: 11px ; font-weight: 600
+css color: var(--color-xfire-text) ; cursor: pointer ; font-size: 11px ; padding: 3px 16px
+css color: var(--color-xfire-text) ; flex: 1 ; font-size: 12px ; overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
+css color: var(--color-xfire-text) ; font-size: 11px ; font-weight: 600
+css color: var(--color-xfire-text) ; font-size: 12px ; overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
+css color: var(--color-xfire-text-dim) ; flex-shrink: 0 ; font-size: 14px ; text-align: center ; width: 16px
+css color: var(--color-xfire-text-dim) ; font-family: monospace ; font-size: 10px
+css color: var(--color-xfire-text-dim) ; font-size: 10px ; font-style: italic
+css color: var(--color-xfire-text-dim) ; font-size: 10px ; font-weight: 700 ; letter-spacing: 0.05em ; padding: 8px 12px 4px ; text-transform: uppercase
+css color: var(--color-xfire-text-dim) ; font-size: 10px ; letter-spacing: 0.5px ; text-transform: uppercase
+css color: var(--color-xfire-text-dim) ; font-size: 11px ; font-weight: 600
+css color: var(--color-xfire-text-dim) ; font-size: 11px ; margin-bottom: 4px
+css color: var(--color-xfire-text-dim) ; font-size: 11px ; margin-top: 2px
+css color: var(--color-xfire-text-dim) ; font-size: 11px ; overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
+css color: var(--color-xfire-text-primary) ; font-size: 14px ; font-weight: 600
+css color: var(--color-xfire-text-secondary) ; font-size: 11px ; text-transform: capitalize
+css display: block ; height: 100% ; object-fit: contain ; width: 100%
+css display: flex ; flex-direction: column ; flex: 1 ; gap: 2px ; min-width: 0
+css display: flex ; flex-direction: column ; flex: 1 ; min-width: 0
+css display: flex ; flex-direction: column ; gap: 10px
+css display: flex ; flex-direction: column ; gap: 2px ; min-width: 0
+css display: flex ; flex-direction: column ; gap: 4px
+css display: flex ; flex-direction: column ; gap: 6px
+css display: flex ; flex-direction: column ; gap: 8px ; padding: 8px
+css display: flex ; flex-shrink: 0 ; gap: 4px ; margin-left: auto
+css flex: 1 ; overflow-y: auto ; padding: 4px
+css flex: 1 ; overflow-y: auto ; padding: 4px 0
+css flex: 1 ; overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
+css overflow: hidden ; text-overflow: ellipsis ; white-space: nowrap
+type rekindle (src-tauri)::ChannelInfoDto rekindle-protocol::ChannelInfoDto
+type rekindle (src-tauri)::ChannelMessageRow rekindle-channel::ChannelMessageRow
+type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
+type rekindle (src-tauri)::CommunityRecords rekindle-records::CommunityRecords
+type rekindle (src-tauri)::Err rekindle-channel::Err rekindle-protocol::Err
+type rekindle (src-tauri)::EventRsvpEntry rekindle-presence::EventRsvpEntry
+type rekindle (src-tauri)::ExclusionGroupEdit rekindle-governance-runtime::ExclusionGroupEdit
+type rekindle (src-tauri)::InviteContext rekindle-governance-runtime::InviteContext
+type rekindle (src-tauri)::MemberProfileSnapshot rekindle-channel::MemberProfileSnapshot rekindle-presence::MemberProfileSnapshot
+type rekindle (src-tauri)::Message rekindle-node::Message
+type rekindle (src-tauri)::OnlineMember rekindle-transport::OnlineMember
+type rekindle (src-tauri)::PendingFriendRequest rekindle-transport::PendingFriendRequest
+type rekindle (src-tauri)::PresenceEvent rekindle-types::PresenceEvent
+type rekindle (src-tauri)::RoleDto rekindle-protocol::RoleDto
+type rekindle (src-tauri)::SharedState rekindle-transport::SharedState
+type rekindle (src-tauri)::ThreadInfoDto rekindle-protocol::ThreadInfoDto
+type rekindle (src-tauri)::VoiceEvent rekindle-types::VoiceEvent
+type rekindle-audit::AuditEntry rekindle-node::AuditEntry
+type rekindle-calls::CallError rekindle-transport::CallError
+type rekindle-channel::AutoModAction rekindle-protocol::AutoModAction rekindle-transport::AutoModAction
+type rekindle-channel::TriggerConfig rekindle-governance::TriggerConfig
+type rekindle-cli::ChannelEntry rekindle-transport::ChannelEntry rekindle-types::ChannelEntry
+type rekindle-cli::PolicyConfig rekindle-node::PolicyConfig
+type rekindle-crypto::CryptoError rekindle-types::CryptoError
+type rekindle-crypto::PreKeyBundle rekindle-protocol::PreKeyBundle
+type rekindle-crypto::SharedSessionStore rekindle-transport::SharedSessionStore
+type rekindle-crypto::SignalSessionManager rekindle-transport::SignalSessionManager
+type rekindle-dm::GroupDmParticipant rekindle-transport::GroupDmParticipant
+type rekindle-dm::PartialFrame rekindle-video::PartialFrame
+type rekindle-e2e-server::ServerState rekindle-node::ServerState
+type rekindle-files::MockCalls rekindle-video::MockCalls
+type rekindle-files::MockDeps rekindle-video::MockDeps
+type rekindle-gossip::GossipError rekindle-types::GossipError
+type rekindle-gossip::GossipMesh rekindle-transport::GossipMesh
+type rekindle-governance-runtime::OnlineMemberSnapshot rekindle-presence::OnlineMemberSnapshot
+type rekindle-governance-runtime::SegmentDescriptor rekindle-presence::SegmentDescriptor
+type rekindle-node::Result rekindle-transport::Result
+type rekindle-protocol::AuditAction rekindle-transport::AuditAction
+type rekindle-protocol::AuditChange rekindle-transport::AuditChange
+type rekindle-protocol::AuditLogEntry rekindle-transport::AuditLogEntry
+type rekindle-protocol::AuditTarget rekindle-transport::AuditTarget
+type rekindle-protocol::AutoModConfig rekindle-transport::AutoModConfig
+type rekindle-protocol::AutoModRule rekindle-transport::AutoModRule
+type rekindle-protocol::AutoModTrigger rekindle-transport::AutoModTrigger
+type rekindle-protocol::BanEntry rekindle-transport::BanEntry
+type rekindle-protocol::CategoryEntry rekindle-transport::CategoryEntry
+type rekindle-protocol::ChannelKind rekindle-transport::ChannelKind
+type rekindle-protocol::FriendEntry rekindle-transport::FriendEntry
+type rekindle-protocol::FriendList rekindle-transport::FriendList
+type rekindle-protocol::GameInfo rekindle-types::GameInfo
+type rekindle-protocol::GuideStep rekindle-types::GuideStep
+type rekindle-protocol::InviteBlob rekindle-transport::InviteBlob
+type rekindle-protocol::InviteEntry rekindle-transport::InviteEntry
+type rekindle-protocol::InviteSecrets rekindle-types::InviteSecrets
+type rekindle-protocol::MekTransferPayload rekindle-transport::MekTransferPayload
+type rekindle-protocol::MemberSummary rekindle-transport::MemberSummary
+type rekindle-protocol::OnboardingAnswer rekindle-types::OnboardingAnswer
+type rekindle-protocol::OnboardingOption rekindle-types::OnboardingOption
+type rekindle-protocol::OnboardingQuestion rekindle-types::OnboardingQuestion
+type rekindle-protocol::RaidAction rekindle-transport::RaidAction
+type rekindle-protocol::RaidProtection rekindle-transport::RaidProtection
+type rekindle-route::CachedRoute rekindle-transport::CachedRoute
+type rekindle-transport::MemberPresence rekindle-types::MemberPresence

@@ -35,6 +35,8 @@ use clap::{Parser, Subcommand};
 use ignore::WalkBuilder;
 use quote::ToTokens as _;
 
+mod duplication;
+
 #[derive(Parser)]
 #[command(
     name = "xtask",
@@ -61,6 +63,12 @@ enum Command {
     CheckDuplicateConstants,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
+    /// Verify no type name is declared in two crates.
+    CheckDuplicateTypes,
+    /// Verify no TS body or CSS rule is duplicated across files.
+    CheckFrontendDuplication,
+    /// Rewrite `xtask/known-duplication.txt` from the current tree.
+    BaselineDuplication,
     /// One-shot helper: add `reason = "TODO: justify"` to bare allows.
     RetrofitAllowReasons {
         /// Print what would change without writing files.
@@ -101,6 +109,14 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "duplicate-bodies",
                     Box::new(|| check_duplicate_bodies(&root)),
                 ),
+                (
+                    "duplicate-types",
+                    Box::new(|| duplication::check_duplicate_types(&root)),
+                ),
+                (
+                    "frontend-duplication",
+                    Box::new(|| duplication::check_frontend_duplication(&root)),
+                ),
             ] {
                 println!("\n── xtask: {label}");
                 if let Err(e) = runner() {
@@ -120,6 +136,9 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckAllowReasons => check_allow_reasons(&root),
         Command::CheckDuplicateConstants => check_duplicate_constants(&root),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
+        Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
+        Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),
+        Command::BaselineDuplication => duplication::write_baseline(&root),
         Command::RetrofitAllowReasons { dry_run } => retrofit_allow_reasons(&root, *dry_run),
     }
 }
@@ -269,7 +288,7 @@ fn dep_present(toml: &str, dep: &str) -> bool {
 /// WalkBuilder + is_file + extension filter. (`check_boundaries` is a
 /// flat, non-recursive `read_dir` over `crates/*` — a different shape,
 /// deliberately left alone.)
-fn walk_source_files(dir: &Path, exts: &[&str]) -> Result<Vec<PathBuf>> {
+pub(crate) fn walk_source_files(dir: &Path, exts: &[&str]) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
@@ -396,7 +415,7 @@ struct ConstSite {
 }
 
 /// Which crate a source file belongs to, for grouping.
-fn crate_of(rel_path: &str) -> String {
+pub(crate) fn crate_of(rel_path: &str) -> String {
     let mut parts = rel_path.split('/');
     match (parts.next(), parts.next()) {
         (Some("crates"), Some(name)) => name.to_string(),
@@ -640,7 +659,7 @@ const DUPLICATE_BODY_EXCEPTIONS: &[(&[&str], &str)] = &[
     ),
 ];
 
-fn normalise_body(body: &str) -> String {
+pub(crate) fn normalise_body(body: &str) -> String {
     let no_comments: String = body
         .lines()
         .map(|l| match l.find("//") {
@@ -709,6 +728,17 @@ fn functions_in(src: &str) -> Vec<(String, String, usize)> {
 }
 
 fn check_duplicate_bodies(root: &Path) -> Result<()> {
+    duplication::report(
+        "function-body",
+        collect_duplicate_bodies(root)?,
+        root,
+        "Hoist the shared one to a crate both can reach, or make the \
+         existing definition `pub` and import it. A \"must stay in sync \
+         with X\" comment is not a fix — that comment IS the defect.",
+    )
+}
+
+pub(crate) fn collect_duplicate_bodies(root: &Path) -> Result<Vec<duplication::Offender>> {
     let mut by_body: BTreeMap<String, Vec<(String, String, String, usize)>> = BTreeMap::new();
 
     for subdir in ["crates", "src-tauri/src"] {
@@ -733,11 +763,18 @@ fn check_duplicate_bodies(root: &Path) -> Result<()> {
         }
     }
 
-    let mut offenders = 0usize;
+    let mut offenders = Vec::new();
     for sites in by_body.values() {
         let crates: std::collections::BTreeSet<&str> =
             sites.iter().map(|(c, _, _, _)| c.as_str()).collect();
-        if crates.len() < 2 {
+        // Two or more distinct FILES, not two or more crates. The gate
+        // used to skip same-crate duplicates entirely, which made
+        // `build_adapter` written out three times in src-tauri
+        // invisible to it — the largest category of duplication left in
+        // the tree after the cross-crate ones were burned down.
+        let files: std::collections::BTreeSet<&str> =
+            sites.iter().map(|(_, _, f, _)| f.as_str()).collect();
+        if files.len() < 2 {
             continue;
         }
         // Key on the exact set of `crate::function` sites, not a bare
@@ -758,23 +795,23 @@ fn check_duplicate_bodies(root: &Path) -> Result<()> {
         }) {
             continue;
         }
-        println!("  ✗ identical body in {} crates", crates.len());
+        let mut lines = vec![if crates.len() > 1 {
+            format!("  ✗ identical body in {} crates", crates.len())
+        } else {
+            format!("  ✗ identical body in {} files of one crate", files.len())
+        }];
         for (crate_name, name, rel, line) in sites {
-            println!("      {crate_name:28} {name:32} {rel}:{line}");
+            lines.push(format!("      {crate_name:28} {name:32} {rel}:{line}"));
         }
-        offenders += 1;
+        let mut sorted_files: Vec<&str> = files.iter().copied().collect();
+        sorted_files.sort_unstable();
+        offenders.push(duplication::Offender {
+            key: format!("body {}", sorted_files.join(" ")),
+            lines,
+        });
     }
 
-    if offenders > 0 {
-        return Err(anyhow!(
-            "{offenders} function bod(ies) duplicated across crates.\n\
-             Hoist the shared one to a crate both can reach, or make the \
-             existing definition `pub` and import it.\n\
-             A \"must stay in sync with X\" comment is not a fix — that \
-             comment IS the defect."
-        ));
-    }
-    Ok(())
+    Ok(offenders)
 }
 
 // ────────────────────────────────────────────────────────────────

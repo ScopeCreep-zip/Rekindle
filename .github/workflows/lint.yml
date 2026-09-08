@@ -125,6 +125,15 @@ jobs:
   # file-size ceiling (the burn-down allowlist is gone; any file over the
   # limit fails), allow-reason hygiene. Pure Rust, no GTK.
   # ──────────────────────────────────────────────────────────────────
+  # Seven gates, all languages: crate boundaries, the 600-line ceiling
+  # (rs/ts/tsx/css), `#[allow]` reasons, and four duplication checks —
+  # Rust constants, Rust function bodies (cross-crate AND intra-crate),
+  # Rust type names across crates, and frontend TS bodies + CSS rules.
+  #
+  # The duplication gates share one baseline, `xtask/known-duplication.txt`,
+  # on the same terms as the dependency-cruiser one: a burn-down, not an
+  # excuse. Every line in it is a real duplicate, no gate's severity was
+  # lowered to create it, and anything NOT listed fails the build.
   xtask:
     name: Guardrails (cargo xtask check)
     runs-on: ubuntu-24.04
