@@ -1,25 +1,24 @@
 //! Cache and persistence backings for the daemon's MEK rotation.
 //!
-//! `rekindle-mek-rotation` speaks `MediaEncryptionKey`; the daemon's
-//! store is `rekindle_transport::crypto::mek::MekCache`, holding `Mek`.
-//! Both are a 32-byte key plus a generation, so the adapter converts
-//! rather than introducing a second cache — two stores would drift
-//! exactly when it matters, mid-rotation.
+//! `rekindle-mek-rotation` and `rekindle_transport::crypto::mek::MekCache`
+//! now speak the *same* type — `rekindle_secrets::keys::MediaEncryptionKey`,
+//! re-exported by transport as `Mek` — so this is a passthrough rather
+//! than a conversion.
 //!
-//! **Except for the election rank.** `Mek` is the 40-byte base wire form
-//! and has no provenance field, while `MediaEncryptionKey` carries an
-//! optional `(rotator_pseudonym, election_rank)` suffix. Converting
-//! drops it — the lossy direction `tests/mek_wire_compat.rs` pins — and
-//! the rank is not decoration: `convergence::incoming_wins_same_generation`
-//! is how two peers who minted *different* key bytes at the *same*
-//! generation converge on one of them. Without the rank the daemon would
-//! keep whichever key arrived last while the desktop kept the
-//! lowest-ranked one, which is precisely the channel-MEK split-brain
-//! that module exists to prevent. So the ranks ride in a side map keyed
-//! the same way, and `insert` applies the same rule the desktop's
-//! `install_channel_mek` does.
+//! It did not start that way. Transport held a third implementation of
+//! the 40-byte MEK format with no provenance field, so every insert
+//! dropped the `election_rank` that
+//! `convergence::incoming_wins_same_generation` needs to resolve a
+//! same-generation split-brain, and the ranks had to ride in a side map
+//! keyed alongside the cache. Making Tier 2's type canonical deleted the
+//! workaround rather than the symptom: the key carries its own
+//! provenance, so the comparison reads it straight off the cached value.
+//!
+//! `insert` still applies the three-way rule (refuse downgrade / accept
+//! newer / tiebreak equal by rank), because that is protocol policy and
+//! a cache should not silently arbitrate it — see
+//! `MekCache::replace_generation`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -31,32 +30,12 @@ use rekindle_transport::crypto::mek::{Mek, MekCache};
 /// Presents the daemon's `MekCache` through the rotation crate's trait.
 pub struct MekCacheAdapter {
     inner: Arc<RwLock<MekCache>>,
-    /// Election rank per `(community, channel)` for the currently cached
-    /// generation. See the module docs for why this cannot live in
-    /// `MekCache` itself.
-    ranks: parking_lot::Mutex<HashMap<(String, String), RankedGeneration>>,
-}
-
-/// The provenance of a cached key.
-#[derive(Clone, Copy)]
-struct RankedGeneration {
-    generation: u64,
-    /// `None` for a key minted before provenance existed, or by a peer
-    /// that does not stamp it. Untagged loses to tagged, never the
-    /// reverse — see `incoming_wins_same_generation`.
-    rank: Option<[u8; 32]>,
-    /// The minter, kept alongside the rank so `get` can hand back the
-    /// key exactly as it arrived rather than inventing a placeholder.
-    rotator: Option<[u8; 32]>,
 }
 
 impl MekCacheAdapter {
     #[must_use]
     pub fn new(inner: Arc<RwLock<MekCache>>) -> Self {
-        Self {
-            inner,
-            ranks: parking_lot::Mutex::new(HashMap::new()),
-        }
+        Self { inner }
     }
 }
 
@@ -71,94 +50,59 @@ impl ChannelMekCache for MekCacheAdapter {
         // retains superseded generations, and a rotation that has
         // already advanced past `generation` must still be able to read
         // the older key it is replacing.
-        let mek = self
-            .inner
+        //
+        // A plain clone now — the cached value *is* a
+        // `MediaEncryptionKey`, provenance included, so nothing has to be
+        // reconstructed or re-attached on the way out.
+        self.inner
             .read()
             .get_generation(community_id, channel_id, generation)
-            .map(|mek| MediaEncryptionKey::from_bytes(*mek.as_bytes(), mek.generation()))?;
-
-        // Re-attach the provenance the `Mek` form cannot hold, when the
-        // side map still describes this generation. Only presence checks
-        // use `get` inside the rotation crate today, but a key handed
-        // onward without its rank would leave the *next* reader unable
-        // to run the same-generation tiebreak — the hazard this whole
-        // side map exists to close.
-        let provenance = self
-            .ranks
-            .lock()
-            .get(&(community_id.to_string(), channel_id.to_string()))
-            .filter(|r| r.generation == generation)
-            .and_then(|r| r.rank.zip(r.rotator));
-        Some(match provenance {
-            Some((rank, rotator)) => mek.with_provenance(rotator, rank),
-            None => mek,
-        })
+            .cloned()
     }
 
     /// Accept a key only if it is genuinely newer, or wins the
     /// same-generation tiebreak.
     ///
-    /// Three cases, matching the desktop's `install_channel_mek`:
-    /// a lower generation is a downgrade and is refused; a higher one
-    /// replaces; an equal one is resolved by election rank so every peer
-    /// converges on the same bytes regardless of arrival order.
+    /// Three cases, matching the desktop's `install_channel_mek`: a lower
+    /// generation is a downgrade and is refused; a higher one replaces;
+    /// an equal one is resolved by election rank so every peer converges
+    /// on the same bytes regardless of arrival order.
     fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey) {
-        let key = (community_id.to_string(), channel_id.to_string());
-        let incoming = RankedGeneration {
-            generation: mek.generation(),
-            rank: mek.election_rank(),
-            rotator: mek.rotator_pseudonym(),
-        };
+        let incoming_generation = mek.generation();
 
-        let mut ranks = self.ranks.lock();
-        // The cache is the authority on what generation is held; `ranks`
-        // only remembers how it got there, and may be empty after a
-        // restart or for a key that arrived through another path.
-        let cached_generation = self
+        let cached = self
             .inner
             .read()
             .current(community_id, channel_id)
-            .map(Mek::generation);
-        if let Some(cached_generation) = cached_generation {
-            if incoming.generation < cached_generation {
+            .map(|c| (c.generation(), c.election_rank()));
+
+        if let Some((cached_generation, cached_rank)) = cached {
+            if incoming_generation < cached_generation {
                 tracing::debug!(
                     community = %community_id,
                     channel = %channel_id,
                     cached = cached_generation,
-                    incoming = incoming.generation,
+                    incoming = incoming_generation,
                     "refusing MEK downgrade"
                 );
                 return;
             }
-            if incoming.generation == cached_generation {
-                let cached_rank = ranks
-                    .get(&key)
-                    .filter(|r| r.generation == cached_generation)
-                    .and_then(|r| r.rank);
-                if !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
+            if incoming_generation == cached_generation
+                && !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
                     cached_rank.as_ref(),
-                    incoming.rank.as_ref(),
-                ) {
-                    return;
-                }
-                tracing::debug!(
-                    community = %community_id,
-                    channel = %channel_id,
-                    generation = incoming.generation,
-                    "same-generation MEK replaced by lower-ranked minter"
-                );
+                    mek.election_rank().as_ref(),
+                )
+            {
+                return;
             }
         }
 
         // `replace_generation`, not `insert`: `insert` dedupes by
         // generation and would silently drop a same-generation key that
         // has just *won* the tiebreak above.
-        self.inner.write().replace_generation(
-            community_id,
-            channel_id,
-            Mek::from_bytes(*mek.as_bytes(), incoming.generation),
-        );
-        ranks.insert(key, incoming);
+        self.inner
+            .write()
+            .replace_generation(community_id, channel_id, mek);
     }
 
     fn current_generation(&self, community_id: &str, channel_id: &str) -> u64 {

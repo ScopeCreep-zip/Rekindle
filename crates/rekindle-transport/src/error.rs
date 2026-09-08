@@ -207,29 +207,43 @@ pub enum TransportError {
 /// `CryptoError` here. Each variant maps to its specific transport
 /// counterpart — never a blanket stringify into `Internal`, which is
 /// reserved for genuine invariant violations.
+/// The seven primitive crypto failures Tier 1 owns.
+///
+/// Needed directly because the canonical `MediaEncryptionKey` lives in
+/// `rekindle-secrets` and returns this type — so `mek.encrypt(..)?`
+/// inside this crate converts through here rather than through the
+/// `rekindle-crypto` wrapper.
+impl From<rekindle_crypto::error::CoreCryptoError> for TransportError {
+    fn from(e: rekindle_crypto::error::CoreCryptoError) -> Self {
+        use rekindle_crypto::error::CoreCryptoError as Core;
+        match e {
+            Core::Encryption(reason) => Self::EncryptionFailed { reason },
+            Core::Decryption(reason) => Self::DecryptionFailed { reason },
+            // Key-material and key-store failures. The Display already
+            // prefixes its own kind ("invalid key material: …").
+            // Enumerated rather than caught by `_` so a new Tier 1
+            // variant fails to compile here and gets a deliberate
+            // answer instead of a silent stringify.
+            other @ (Core::KeyGeneration(_)
+            | Core::Signing(_)
+            | Core::Verification(_)
+            | Core::InvalidKey(_)
+            | Core::Storage(_)) => Self::SignalProtocol {
+                reason: other.to_string(),
+            },
+        }
+    }
+}
+
 impl From<rekindle_crypto::error::CryptoError> for TransportError {
     fn from(e: rekindle_crypto::error::CryptoError) -> Self {
-        use rekindle_crypto::error::CoreCryptoError as Core;
         use rekindle_crypto::error::CryptoError as C;
         match e {
-            C::Core(Core::Encryption(reason)) => Self::EncryptionFailed { reason },
-            C::Core(Core::Decryption(reason)) => Self::DecryptionFailed { reason },
+            // Delegate the primitives rather than restating them — the
+            // two impls used to carry the same seven-arm mapping.
+            C::Core(core) => core.into(),
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
-            // Handshake, ratchet, key-material, and key-store failures —
-            // the CryptoError Display already prefixes its own kind
-            // ("invalid key material: …", "signal session error: …").
-            // Still enumerated rather than caught by `_`: a new variant
-            // on either enum must fail to compile here so the mapping
-            // gets a deliberate answer, not a silent stringify.
-            other @ (C::Core(
-                Core::KeyGeneration(_)
-                | Core::Signing(_)
-                | Core::Verification(_)
-                | Core::InvalidKey(_)
-                | Core::Storage(_),
-            )
-            | C::SessionError(_)
-            | C::VaultLocked) => Self::SignalProtocol {
+            other @ (C::SessionError(_) | C::VaultLocked) => Self::SignalProtocol {
                 reason: other.to_string(),
             },
         }

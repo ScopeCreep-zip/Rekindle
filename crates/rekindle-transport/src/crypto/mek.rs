@@ -9,102 +9,32 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
 use ed25519_dalek::SigningKey;
-use rand::RngCore;
-use zeroize::ZeroizeOnDrop;
 
 use crate::error::{Result, TransportError};
 
-/// A media encryption key with its generation number.
-#[derive(Clone, ZeroizeOnDrop)]
-pub struct Mek {
-    key: [u8; 32],
-    #[zeroize(skip)]
-    generation: u64,
-}
-
-impl Mek {
-    /// Generate a new random MEK at the given generation.
-    pub fn generate(generation: u64) -> Self {
-        let mut key = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut key);
-        Self { key, generation }
-    }
-
-    /// Restore from raw bytes and generation.
-    pub fn from_bytes(key: [u8; 32], generation: u64) -> Self {
-        Self { key, generation }
-    }
-
-    /// Deserialize from 40-byte wire format: `[generation(8 LE) || key(32)]`.
-    pub fn from_wire_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 40 {
-            return None;
-        }
-        let generation = u64::from_le_bytes(bytes[..8].try_into().ok()?);
-        let key: [u8; 32] = bytes[8..40].try_into().ok()?;
-        Some(Self { key, generation })
-    }
-
-    /// Serialize to 40-byte wire format.
-    pub fn to_wire_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(40);
-        buf.extend_from_slice(&self.generation.to_le_bytes());
-        buf.extend_from_slice(&self.key);
-        buf
-    }
-
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.key
-    }
-    pub fn generation(&self) -> u64 {
-        self.generation
-    }
-
-    /// Encrypt plaintext with this MEK. Returns `[12-byte nonce || ciphertext+tag]`.
-    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.key).map_err(|e| TransportError::EncryptionFailed {
-                reason: e.to_string(),
-            })?;
-        let mut nonce_bytes = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ct =
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| TransportError::EncryptionFailed {
-                    reason: e.to_string(),
-                })?;
-        let mut out = Vec::with_capacity(12 + ct.len());
-        out.extend_from_slice(&nonce_bytes);
-        out.extend_from_slice(&ct);
-        Ok(out)
-    }
-
-    /// Decrypt ciphertext. Expects `[12-byte nonce || ciphertext+tag]`.
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        if data.len() < 12 {
-            return Err(TransportError::DecryptionFailed {
-                reason: "data too short".into(),
-            });
-        }
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.key).map_err(|e| TransportError::DecryptionFailed {
-                reason: e.to_string(),
-            })?;
-        let nonce = Nonce::from_slice(&data[..12]);
-        cipher
-            .decrypt(nonce, &data[12..])
-            .map_err(|e| TransportError::DecryptionFailed {
-                reason: e.to_string(),
-            })
-    }
-}
+/// The Media Encryption Key, re-exported from Tier 2.
+///
+/// This was a third implementation of the same 40-byte wire format
+/// (`[generation LE(8) || key(32)]`) alongside
+/// `rekindle_secrets::keys::MediaEncryptionKey` and
+/// `rekindle_crypto::group::media_key::MediaEncryptionKey` — with the
+/// same AES-GCM body and the same `[nonce(12) || ct+tag]` layout,
+/// differing only in which error type it returned.
+///
+/// Being the *base* form was the real cost. Converting into it dropped
+/// the 65-byte provenance suffix, so the daemon's `MekCacheAdapter` had
+/// to carry election ranks in a side map to run
+/// `convergence::incoming_wins_same_generation` — without which two
+/// peers minting different bytes at one generation never converge. The
+/// canonical type carries its own provenance and the workaround goes
+/// with it.
+///
+/// `encrypt`/`decrypt` now return `CryptoError`; callers in this crate
+/// convert through the existing `From<CryptoError> for TransportError`,
+/// which maps encryption and decryption failures to their own variants
+/// rather than stringifying.
+pub use rekindle_secrets::keys::MediaEncryptionKey as Mek;
 
 // ── MEK wrapping (ECDH + HKDF + AES-GCM) ────────────────────────────
 //
@@ -185,13 +115,13 @@ impl MekCache {
     pub fn insert(&mut self, community_id: &str, channel_id: &str, mek: Mek) {
         let key = (community_id.to_string(), channel_id.to_string());
         let generations = self.entries.entry(key).or_default();
-        let gen = mek.generation;
-        if !generations.iter().any(|cm| cm.mek.generation == gen) {
+        let gen = mek.generation();
+        if !generations.iter().any(|cm| cm.mek.generation() == gen) {
             generations.push(CachedMek {
                 mek,
                 cached_at: Instant::now(),
             });
-            generations.sort_by_key(|cm| cm.mek.generation);
+            generations.sort_by_key(|cm| cm.mek.generation());
         }
     }
 
@@ -206,14 +136,15 @@ impl MekCache {
     ///
     /// Callers use this only after deciding the incoming key wins, via
     /// `rekindle_mek_rotation::convergence::incoming_wins_same_generation`.
-    /// The decision is deliberately not made here: this type holds the
-    /// 40-byte base form and cannot see the election rank the comparison
-    /// needs.
+    /// The decision stays out of this type on purpose — a cache should
+    /// not arbitrate protocol conflicts — but the inputs are no longer
+    /// out of reach: `Mek` is now the canonical key and carries its own
+    /// `election_rank`, so a caller can compare without a side table.
     pub fn replace_generation(&mut self, community_id: &str, channel_id: &str, mek: Mek) {
         let key = (community_id.to_string(), channel_id.to_string());
         let generations = self.entries.entry(key).or_default();
-        let gen = mek.generation;
-        if let Some(existing) = generations.iter_mut().find(|cm| cm.mek.generation == gen) {
+        let gen = mek.generation();
+        if let Some(existing) = generations.iter_mut().find(|cm| cm.mek.generation() == gen) {
             existing.mek = mek;
             existing.cached_at = Instant::now();
             return;
@@ -222,7 +153,7 @@ impl MekCache {
             mek,
             cached_at: Instant::now(),
         });
-        generations.sort_by_key(|cm| cm.mek.generation);
+        generations.sort_by_key(|cm| cm.mek.generation());
     }
 
     /// Get the current (latest generation) MEK for a channel.
@@ -242,7 +173,7 @@ impl MekCache {
     ) -> Option<&Mek> {
         self.entries
             .get(&(community_id.to_string(), channel_id.to_string()))
-            .and_then(|gens| gens.iter().find(|cm| cm.mek.generation == generation))
+            .and_then(|gens| gens.iter().find(|cm| cm.mek.generation() == generation))
             .map(|cm| &cm.mek)
     }
 
@@ -268,7 +199,7 @@ impl MekCache {
             .flat_map(|((_, channel_id), entries)| {
                 entries.iter().map(move |cm| MekCacheEntrySnapshot {
                     channel_id: channel_id.clone(),
-                    generation: cm.mek.generation,
+                    generation: cm.mek.generation(),
                     age_secs: cm.cached_at.elapsed().as_secs(),
                 })
             })
