@@ -195,7 +195,10 @@ pub async fn inspect(
 /// No network traffic. `ValueSeqNum::NONE` (an unwritten subkey) is
 /// reported as `0` — callers that must tell "absent" from "written at
 /// seq 0" want [`inspect_present_subkeys`] instead.
-pub async fn inspect_local_seqs(node: &TransportNode, record_key: &str) -> Result<Vec<u64>> {
+pub async fn inspect_local_seqs(
+    node: &TransportNode,
+    record_key: &str,
+) -> Result<Vec<Option<u64>>> {
     let dht = node.dht()?;
     let report = dht::record::inspect_with_scope(
         dht.routing_context(),
@@ -204,15 +207,22 @@ pub async fn inspect_local_seqs(node: &TransportNode, record_key: &str) -> Resul
         veilid_core::DHTReportScope::Local,
     )
     .await?;
-    // `Local` scope populates `local_seqs`; `network_seqs` is empty.
-    Ok(seqs_as_u64(report.local_seqs()))
+    // `Local` scope populates `local_seqs` and fills `network_seqs`
+    // with `ValueSeqNum::NONE` — veilid's `inspect_record` returns
+    // `vec![ValueSeqNum::NONE; …]` for it without consulting the
+    // network at all. Reading `network_seqs()` here would yield all-None
+    // regardless of what the cache holds.
+    Ok(seqs_as_opt_u64(report.local_seqs()))
 }
 
 /// Per-subkey sequence numbers confirmed against the **network**.
 ///
 /// What a slot claim must use: the local cache can show a subkey free
 /// when another member has already taken it.
-pub async fn inspect_network_seqs(node: &TransportNode, record_key: &str) -> Result<Vec<u64>> {
+pub async fn inspect_network_seqs(
+    node: &TransportNode,
+    record_key: &str,
+) -> Result<Vec<Option<u64>>> {
     let dht = node.dht()?;
     let report = dht::record::inspect_with_scope(
         dht.routing_context(),
@@ -221,7 +231,7 @@ pub async fn inspect_network_seqs(node: &TransportNode, record_key: &str) -> Res
         veilid_core::DHTReportScope::UpdateGet,
     )
     .await?;
-    Ok(seqs_as_u64(report.network_seqs()))
+    Ok(seqs_as_opt_u64(report.network_seqs()))
 }
 
 /// Indices of subkeys that currently hold a value, network-confirmed.
@@ -247,16 +257,16 @@ pub async fn inspect_present_subkeys(node: &TransportNode, record_key: &str) -> 
         .collect())
 }
 
-/// Flatten sequence numbers to a dense `Vec<u64>`, mapping the
-/// never-written sentinel (`ValueSeqNum::NONE`, internally `None`) to 0.
+/// Widen sequence numbers to a dense `Vec<Option<u64>>`, preserving the
+/// never-written sentinel (`ValueSeqNum::NONE`) as `None`.
 ///
 /// `ValueSeqNum` is a newtype over `Option<u32>`, so this goes through
-/// `to_option()` rather than a numeric conversion — and the flattening
-/// is why [`inspect_present_subkeys`] exists for callers that need to
-/// tell "never written" from "written at seq 0".
-fn seqs_as_u64(seqs: &[veilid_core::ValueSeqNum]) -> Vec<u64> {
+/// `to_option()` rather than a numeric conversion. Callers that only
+/// want the occupied indices should use [`inspect_present_subkeys`],
+/// which does this filtering in one network round trip.
+fn seqs_as_opt_u64(seqs: &[veilid_core::ValueSeqNum]) -> Vec<Option<u64>> {
     seqs.iter()
-        .map(|seq| seq.to_option().map_or(0, u64::from))
+        .map(|seq| seq.to_option().map(u64::from))
         .collect()
 }
 
@@ -348,6 +358,32 @@ pub async fn set_str(
     set(node, record_key, subkey, data, writer).await
 }
 
+/// [`set_str`] that refuses to queue the write when offline.
+///
+/// For present-tense assertions — a presence heartbeat above all.
+/// veilid's default queues an offline write and returns `Ok(None)`,
+/// which a caller cannot tell from success; this returns `TryAgain`
+/// instead. A heartbeat that flushes minutes later claims we were
+/// reachable when we were not, and the presence poll reads a fresh
+/// `last_heartbeat` as exactly that.
+pub async fn set_online_str(
+    node: &TransportNode,
+    record_key: &str,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<&str>,
+) -> Result<Option<Vec<u8>>> {
+    let writer = writer.map(parse_writer).transpose()?;
+    let dht = node.dht()?;
+    debug!(record_key, subkey, "dht: set (online only)");
+    let result =
+        dht::record::set_online_only(dht.routing_context(), record_key, subkey, data, writer).await;
+    if let Err(e) = &result {
+        warn!(record_key, subkey, error = %e, "dht: online-only set failed");
+    }
+    result
+}
+
 /// [`create_dflt`] returning the owner keypair in string form.
 pub async fn create_dflt_str(
     node: &TransportNode,
@@ -401,4 +437,42 @@ pub fn format_keypair_str(ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
     let bare_secret = veilid_core::BareSecretKey::new(&ed_secret);
     let pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
     veilid_core::KeyPair::new_from_parts(pubkey, bare_secret).to_string()
+}
+
+#[cfg(test)]
+mod seq_semantics_tests {
+    use super::seqs_as_opt_u64;
+    use veilid_core::ValueSeqNum;
+
+    /// The fact every occupancy check in the workspace rests on.
+    ///
+    /// `ValueSeqNum` is `Option<u32>`, and veilid's **first** write to a
+    /// subkey lands at seq 0 — so `Some(0)` is an occupied subkey, not an
+    /// empty one. Two readers (`segments::highest_segment_full` and
+    /// `dht_hydration`) had flattened `None` to `0` and then tested
+    /// `!= 0`, which silently classified every write-once member as
+    /// absent. If a future change reintroduces the flattening, this
+    /// fails here rather than in a community that will not expand.
+    #[test]
+    fn seq_zero_is_written_not_empty() {
+        let seqs = [
+            ValueSeqNum::NONE,
+            ValueSeqNum::from(0),
+            ValueSeqNum::from(1),
+            ValueSeqNum::NONE,
+        ];
+        assert_eq!(
+            seqs_as_opt_u64(&seqs),
+            vec![None, Some(0), Some(1), None],
+            "seq 0 must survive as Some(0)"
+        );
+        assert_eq!(
+            seqs_as_opt_u64(&seqs)
+                .iter()
+                .filter(|s| s.is_some())
+                .count(),
+            2,
+            "occupancy counts the written-once subkey"
+        );
+    }
 }

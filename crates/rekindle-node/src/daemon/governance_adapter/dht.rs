@@ -123,7 +123,7 @@ impl DaemonGovernanceAdapter<'_> {
     pub(super) async fn inspect_local_seqs_impl(
         &self,
         record_key: &str,
-    ) -> Result<Vec<u64>, GovernanceRuntimeError> {
+    ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
         let node = self.transport()?;
         dht_writes::inspect_local_seqs(&node, record_key)
             .await
@@ -136,7 +136,7 @@ impl DaemonGovernanceAdapter<'_> {
     pub(super) async fn inspect_network_seqs_impl(
         &self,
         record_key: &str,
-    ) -> Result<Vec<u64>, GovernanceRuntimeError> {
+    ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
         let node = self.transport()?;
         dht_writes::inspect_network_seqs(&node, record_key)
             .await

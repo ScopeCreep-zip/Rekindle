@@ -115,27 +115,40 @@ pub(super) async fn set_dht_value_impl(
     Ok(outcome.map(|v| v.data().to_vec()))
 }
 
+///
+/// Reads `local_seqs()`, not `network_seqs()`. Under
+/// `DHTReportScope::Local` veilid's `inspect_record` short-circuits with
+/// `vec![ValueSeqNum::NONE; len]` for the network half — it never
+/// consults the network, so that accessor is all-`None` by
+/// construction. This impl read it, mapped every `None` to `0`, and so
+/// reported every subkey empty on every call; `highest_segment_full`
+/// consequently always answered `false` and Plate Gate expansion past
+/// 255 members could never fire. The daemon adapter had it right.
 pub(super) async fn inspect_dht_record_local_seqs_impl(
     adapter: &GovernanceAdapter,
     record_key: &str,
-) -> Result<Vec<u64>, GovernanceRuntimeError> {
+) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
     let rc = adapter.rc()?;
     let key = GovernanceAdapter::parse_record_key(record_key)?;
     let report = rc
         .inspect_dht_record(key, None, veilid_core::DHTReportScope::Local)
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("inspect Local: {e}")))?;
-    Ok(report
-        .network_seqs()
-        .iter()
-        .map(|s| u64::from(s.to_option().unwrap_or(0)))
-        .collect())
+    Ok(seqs_as_opt_u64(report.local_seqs()))
+}
+
+/// Preserve `ValueSeqNum`'s never-written sentinel as `None`.
+///
+/// `Some(0)` is a subkey written exactly once, which is why this cannot
+/// collapse to a plain `u64`.
+fn seqs_as_opt_u64(seqs: &[veilid_core::ValueSeqNum]) -> Vec<Option<u64>> {
+    seqs.iter().map(|s| s.to_option().map(u64::from)).collect()
 }
 
 pub(super) async fn inspect_dht_record_update_get_seqs_impl(
     adapter: &GovernanceAdapter,
     record_key: &str,
-) -> Result<Vec<u64>, GovernanceRuntimeError> {
+) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
     let rc = adapter.rc()?;
     let key = GovernanceAdapter::parse_record_key(record_key)?;
     let report = rc
@@ -146,11 +159,7 @@ pub(super) async fn inspect_dht_record_update_get_seqs_impl(
         )
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("inspect UpdateGet: {e}")))?;
-    Ok(report
-        .network_seqs()
-        .iter()
-        .map(|s| u64::from(s.to_option().unwrap_or(0)))
-        .collect())
+    Ok(seqs_as_opt_u64(report.network_seqs()))
 }
 
 pub(super) async fn inspect_dht_record_present_subkeys_impl(

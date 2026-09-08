@@ -183,12 +183,53 @@ pub async fn get(
 }
 
 /// Write a subkey value. Optionally specify an explicit writer keypair.
+///
+/// Queues the write when offline, per veilid's default
+/// (`SetDHTValueOptions::allow_offline` defaults to `true`): a failed
+/// fanout "does not error; the write is deferred (returns `Ok(None)`)".
+/// That is right for content — a channel message written on a train
+/// should land when the tunnel ends — and wrong for anything asserting
+/// present-tense fact. Use [`set_online_only`] for those.
 pub async fn set(
     rc: &RoutingContext,
     key: &str,
     subkey: u32,
     data: Vec<u8>,
     writer: Option<KeyPair>,
+) -> Result<Option<Vec<u8>>> {
+    set_inner(rc, key, subkey, data, writer, true).await
+}
+
+/// Write a subkey value, refusing to queue it when offline.
+///
+/// With `allow_offline: false` veilid "will not [write] if the node is
+/// offline, and a `TryAgain` error will be returned" — an honest,
+/// retryable failure instead of `Ok(None)`, which the caller cannot
+/// distinguish from success.
+///
+/// For a presence heartbeat that distinction is the whole point. A
+/// queued heartbeat flushes minutes later and tells every reader we
+/// were reachable at a moment we were not — worse than no heartbeat,
+/// because the presence poll treats a fresh `last_heartbeat` as
+/// liveness. Ownership claims want the same treatment for the same
+/// reason: a deferred write must not read as a held slot.
+pub async fn set_online_only(
+    rc: &RoutingContext,
+    key: &str,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<KeyPair>,
+) -> Result<Option<Vec<u8>>> {
+    set_inner(rc, key, subkey, data, writer, false).await
+}
+
+async fn set_inner(
+    rc: &RoutingContext,
+    key: &str,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<KeyPair>,
+    allow_offline: bool,
 ) -> Result<Option<Vec<u8>>> {
     let rk = parse_key(key)?;
 
@@ -200,9 +241,9 @@ pub async fn set(
         });
     }
 
-    let options = writer.map(|w| SetDHTValueOptions {
-        writer: Some(w),
-        ..Default::default()
+    let options = Some(SetDHTValueOptions {
+        writer,
+        allow_offline: Some(veilid_core::AllowOffline(allow_offline)),
     });
 
     let outcome = rc

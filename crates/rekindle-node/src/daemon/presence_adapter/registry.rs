@@ -97,7 +97,12 @@ impl DaemonPresenceAdapter {
         .await
         .map_err(|e| PresenceError::Dht(format!("open registry: {e}")))?;
 
-        rekindle_transport::broadcast::dht_writes::set_str(
+        // Online-only: veilid queues an offline write and reports
+        // `Ok(None)`, which is indistinguishable from success. A
+        // heartbeat that flushes minutes later advertises liveness we
+        // did not have, and every reader's staleness check believes it.
+        // Failing now is the honest answer — the next tick retries.
+        rekindle_transport::broadcast::dht_writes::set_online_str(
             node.as_ref(),
             registry_key,
             subkey_index,

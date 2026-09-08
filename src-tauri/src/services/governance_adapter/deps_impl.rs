@@ -138,14 +138,14 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     async fn inspect_dht_record_local_seqs(
         &self,
         record_key: &str,
-    ) -> Result<Vec<u64>, GovernanceRuntimeError> {
+    ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
         dht::inspect_dht_record_local_seqs_impl(self, record_key).await
     }
 
     async fn inspect_dht_record_update_get_seqs(
         &self,
         record_key: &str,
-    ) -> Result<Vec<u64>, GovernanceRuntimeError> {
+    ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
         dht::inspect_dht_record_update_get_seqs_impl(self, record_key).await
     }
 

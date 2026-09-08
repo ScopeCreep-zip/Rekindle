@@ -260,10 +260,14 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
         // — local seqs may be empty after a restart).
         let occupied_subkeys: Vec<u32> =
             match deps.inspect_dht_record_update_get_seqs(gov_key_str).await {
+                // `is_some()`, not `!= 0`. A subkey written exactly
+                // once sits at seq 0, so the old test skipped every
+                // author with a single governance entry — their write
+                // never merged on any peer that hydrated cold.
                 Ok(seqs) => seqs
                     .iter()
                     .enumerate()
-                    .filter(|(_, &seq)| seq != 0)
+                    .filter(|(_, seq)| seq.is_some())
                     .map(|(idx, _)| u32::try_from(idx).unwrap_or(0))
                     .collect(),
                 Err(error) => {

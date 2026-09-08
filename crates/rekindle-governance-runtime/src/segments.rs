@@ -101,10 +101,15 @@ pub async fn highest_segment_full<D: GovernanceRuntimeDeps>(
     let seqs = deps
         .inspect_dht_record_local_seqs(&highest.registry_key)
         .await?;
+    // `is_some()`, not `!= 0`: veilid's first write to a subkey lands at
+    // seq 0, so a member who has written exactly once occupies the slot
+    // while reporting `Some(0)`. Counting that as free left a genuinely
+    // full segment looking unfull, and expansion refused with
+    // `SegmentNotFull` at precisely the moment it was needed.
     let occupied = seqs
         .iter()
         .take(SLOTS_PER_SEGMENT as usize)
-        .filter(|seq| **seq != 0)
+        .filter(|seq| seq.is_some())
         .count();
     Ok(occupied >= SLOTS_PER_SEGMENT as usize)
 }

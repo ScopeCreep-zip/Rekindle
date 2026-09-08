@@ -133,19 +133,30 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
 
+    /// Per-subkey seq numbers from this node's local cache, indexed by
+    /// subkey. `None` means never written; `Some(0)` means **written
+    /// once** — veilid's first write to a subkey lands at seq 0.
+    ///
+    /// Both adapters used to flatten that into `Vec<u64>` with `None`
+    /// mapped to `0`, and both callers then read `seq != 0` as
+    /// "occupied". A member who had written exactly one entry was
+    /// therefore invisible: skipped by the hydration scan, and uncounted
+    /// when deciding whether a segment was full. `Option` makes the
+    /// distinction unspellable-away.
     async fn inspect_dht_record_local_seqs(
         &self,
         record_key: &str,
-    ) -> Result<Vec<u64>, GovernanceRuntimeError>;
+    ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError>;
 
     /// Network-authoritative inspect (Veilid `DHTReportScope::UpdateGet`)
     /// returning per-subkey seq numbers. Used during slot claim to confirm
     /// occupancy from the network (not just our cached view) before
-    /// writing.
+    /// writing. Same `Option` semantics as
+    /// [`Self::inspect_dht_record_local_seqs`].
     async fn inspect_dht_record_update_get_seqs(
         &self,
         record_key: &str,
-    ) -> Result<Vec<u64>, GovernanceRuntimeError>;
+    ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError>;
 
     /// Network-authoritative inspect (`DHTReportScope::UpdateGet`) returning
     /// the subkey indices that currently hold a value. Unlike
