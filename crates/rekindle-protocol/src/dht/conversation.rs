@@ -190,21 +190,13 @@ impl ConversationRecord {
         Ok(())
     }
 
-    /// Update just the route blob in the conversation header.
-    pub async fn update_route_blob(&self, route_blob: &[u8]) -> Result<(), ProtocolError> {
-        let mut header = self.read_header().await?;
-        header.route_blob = route_blob.to_vec();
-        header.updated_at = rekindle_utils::timestamp_ms();
-        self.write_header(&header).await
-    }
-
-    /// Update just the profile snapshot in the conversation header.
-    pub async fn update_profile(&self, profile: &UserProfile) -> Result<(), ProtocolError> {
-        let mut header = self.read_header().await?;
-        header.profile = profile.clone();
-        header.updated_at = rekindle_utils::timestamp_ms();
-        self.write_header(&header).await
-    }
+    // `update_route_blob` and `update_profile` lived here: read the
+    // header, swap one field, write it back. Nothing called either. A
+    // peer's route blob and profile reach us through their profile
+    // record's presence watch, so mirroring them into the conversation
+    // header would have been a second copy to keep fresh — and the
+    // conversation record has exactly one reader
+    // (`sync_service`), which opens it read-only.
 
     /// Watch this conversation record for changes (subkey 0).
     pub async fn watch(&self) -> Result<bool, ProtocolError> {

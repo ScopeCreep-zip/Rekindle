@@ -82,17 +82,6 @@ impl DHTManager {
     /// Invalidate a cached imported route by its blob bytes.
     ///
     /// Called when a send operation fails with a route error — ensures the
-    /// next `get_or_import_route` call for the same blob will perform a fresh
-    /// import rather than returning the stale `RouteId`.
-    pub fn invalidate_route_blob(&mut self, route_blob: &[u8]) {
-        if self.imported_routes.remove(route_blob).is_some() {
-            tracing::debug!(
-                blob_len = route_blob.len(),
-                "invalidated cached route import after send failure"
-            );
-        }
-    }
-
     /// Selectively invalidate cached routes when remote routes die.
     ///
     /// Clears both the peer route cache (via `RouteId → pubkey` reverse map)

@@ -4,7 +4,6 @@ pub mod conversation;
 pub mod friends;
 pub mod log;
 pub mod mailbox;
-pub mod presence;
 pub mod profile;
 pub mod schema;
 pub mod short_array;

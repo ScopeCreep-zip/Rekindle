@@ -233,84 +233,43 @@ fn round_trip_game_status() {
 #[test]
 fn round_trip_account_header() {
     let header = account::AccountHeader {
-        contact_list_key: "VLD0:abc123".to_string(),
-        chat_list_key: "VLD0:def456".to_string(),
-        invitation_list_key: "VLD0:ghi789".to_string(),
         display_name: "xXGamerXx".to_string(),
         status_message: "Playing games".to_string(),
         avatar_hash: vec![0xDE, 0xAD],
         created_at: 1000,
         updated_at: 2000,
-        contact_list_keypair: Some("VLD0:contacts_kp".to_string()),
-        chat_list_keypair: Some("VLD0:chats_kp".to_string()),
-        invitation_list_keypair: None,
     };
 
     let encoded = account::encode_account_header(&header);
     let decoded = account::decode_account_header(&encoded).unwrap();
 
-    assert_eq!(decoded.contact_list_key, "VLD0:abc123");
-    assert_eq!(decoded.chat_list_key, "VLD0:def456");
-    assert_eq!(decoded.invitation_list_key, "VLD0:ghi789");
     assert_eq!(decoded.display_name, "xXGamerXx");
     assert_eq!(decoded.status_message, "Playing games");
     assert_eq!(decoded.avatar_hash, vec![0xDE, 0xAD]);
     assert_eq!(decoded.created_at, 1000);
     assert_eq!(decoded.updated_at, 2000);
-    assert_eq!(
-        decoded.contact_list_keypair,
-        Some("VLD0:contacts_kp".to_string())
-    );
-    assert_eq!(decoded.chat_list_keypair, Some("VLD0:chats_kp".to_string()));
-    assert_eq!(decoded.invitation_list_keypair, None);
 }
 
+/// An account with no avatar set must still decode.
+///
+/// `avatar_hash` is the one optional field left in the header — the
+/// encoder skips it when empty, so this is the shape every account has
+/// before the user picks a picture.
 #[test]
-fn round_trip_contact_entry() {
-    let entry = account::ContactEntry {
-        public_key: vec![0xAA; 32],
-        display_name: "Bob".to_string(),
-        nickname: "Bobby".to_string(),
-        group: "Gaming".to_string(),
-        local_conversation_key: "VLD0:local123".to_string(),
-        remote_conversation_key: "VLD0:remote456".to_string(),
-        added_at: 1000,
-        updated_at: 2000,
+fn account_header_without_avatar() {
+    let header = account::AccountHeader {
+        display_name: "no_avatar".to_string(),
+        status_message: String::new(),
+        avatar_hash: Vec::new(),
+        created_at: 7,
+        updated_at: 7,
     };
 
-    let encoded = account::encode_contact_entry(&entry);
-    let decoded = account::decode_contact_entry(&encoded).unwrap();
+    let decoded = account::decode_account_header(&account::encode_account_header(&header)).unwrap();
 
-    assert_eq!(decoded.public_key, vec![0xAA; 32]);
-    assert_eq!(decoded.display_name, "Bob");
-    assert_eq!(decoded.nickname, "Bobby");
-    assert_eq!(decoded.group, "Gaming");
-    assert_eq!(decoded.local_conversation_key, "VLD0:local123");
-    assert_eq!(decoded.remote_conversation_key, "VLD0:remote456");
-    assert_eq!(decoded.added_at, 1000);
-    assert_eq!(decoded.updated_at, 2000);
-}
-
-#[test]
-fn round_trip_chat_entry() {
-    let entry = account::ChatEntry {
-        contact_public_key: vec![0xBB; 32],
-        local_conversation_key: "VLD0:chat789".to_string(),
-        last_message_timestamp: 3000,
-        unread_count: 5,
-        is_pinned: true,
-        is_muted: false,
-    };
-
-    let encoded = account::encode_chat_entry(&entry);
-    let decoded = account::decode_chat_entry(&encoded).unwrap();
-
-    assert_eq!(decoded.contact_public_key, vec![0xBB; 32]);
-    assert_eq!(decoded.local_conversation_key, "VLD0:chat789");
-    assert_eq!(decoded.last_message_timestamp, 3000);
-    assert_eq!(decoded.unread_count, 5);
-    assert!(decoded.is_pinned);
-    assert!(!decoded.is_muted);
+    assert_eq!(decoded.display_name, "no_avatar");
+    assert!(decoded.status_message.is_empty());
+    assert!(decoded.avatar_hash.is_empty());
 }
 
 #[test]

@@ -65,53 +65,13 @@ pub async fn update_subkey(
     dht.set_value(profile_key, subkey, value).await
 }
 
-/// Read a specific profile subkey.
-pub async fn read_subkey(
-    dht: &DHTManager,
-    profile_key: &str,
-    subkey: u32,
-) -> Result<Option<Vec<u8>>, ProtocolError> {
-    dht.get_value(profile_key, subkey).await
-}
-
-/// Read the display name from a profile record.
-pub async fn read_display_name(
-    dht: &DHTManager,
-    profile_key: &str,
-) -> Result<Option<String>, ProtocolError> {
-    match dht.get_value(profile_key, SUBKEY_DISPLAY_NAME).await? {
-        Some(bytes) => {
-            Ok(Some(String::from_utf8(bytes).map_err(|e| {
-                ProtocolError::Deserialization(e.to_string())
-            })?))
-        }
-        None => Ok(None),
-    }
-}
-
-/// Read the status from a profile record.
-pub async fn read_status(dht: &DHTManager, profile_key: &str) -> Result<Option<u8>, ProtocolError> {
-    match dht.get_value(profile_key, SUBKEY_STATUS).await? {
-        Some(bytes) => Ok(bytes.first().copied()),
-        None => Ok(None),
-    }
-}
-
-/// Read the route blob from a profile record.
-pub async fn read_route_blob(
-    dht: &DHTManager,
-    profile_key: &str,
-) -> Result<Option<Vec<u8>>, ProtocolError> {
-    dht.get_value(profile_key, SUBKEY_ROUTE_BLOB).await
-}
-
-/// Read the prekey bundle from a profile record.
-pub async fn read_prekey_bundle(
-    dht: &DHTManager,
-    profile_key: &str,
-) -> Result<Option<Vec<u8>>, ProtocolError> {
-    dht.get_value(profile_key, SUBKEY_PREKEY_BUNDLE).await
-}
+// The five pull accessors that lived here — `read_subkey`,
+// `read_display_name`, `read_status`, `read_route_blob`,
+// `read_prekey_bundle` — are gone. Nothing pulled a peer's profile
+// subkey on demand: display name, status and route blob arrive through
+// the presence watch, and a peer's prekey bundle arrives in the friend
+// request or invite payload that needs it. Push won; the pull half was
+// never wired to anything.
 
 /// Open an existing profile DHT record and update all subkeys, or create a new one.
 ///

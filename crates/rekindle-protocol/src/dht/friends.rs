@@ -24,22 +24,6 @@ pub struct FriendList {
     pub friends: Vec<FriendEntry>,
 }
 
-/// Create a new friend list DHT record.
-///
-/// Returns `(record_key, owner_keypair)`. The keypair must be persisted to retain
-/// write access across sessions.
-pub async fn create_friend_list(
-    dht: &DHTManager,
-) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
-    let (key, owner_keypair) = dht.create_record(1).await?;
-
-    let data = capnp_codec::friend::encode_friend_list(&[]);
-    dht.set_value(&key, 0, data).await?;
-
-    tracing::info!(key = %key, "friend list record created");
-    Ok((key, owner_keypair))
-}
-
 /// Read the full friend list from DHT.
 pub async fn read_friend_list(dht: &DHTManager, key: &str) -> Result<FriendList, ProtocolError> {
     match dht.get_value(key, 0).await? {
@@ -90,6 +74,17 @@ pub async fn remove_friend(
 }
 
 /// Update a friend's nickname or group.
+/// Change a friend's local nickname and/or group in the DHT friend list.
+///
+/// **Unwired, and deliberately kept.** `FriendEntry.nickname` exists in
+/// the DHT entry, the `friends` SQLite table, `state::friend`, and the
+/// frontend's `friends.store.ts` — and every construction site sets it
+/// to `None` because no command can change it. (`set_nickname` is the
+/// user's own display name, a different thing.) This is the DHT half of
+/// a per-friend alias that was started and not finished; deleting it
+/// would erase the only evidence of that. The missing pieces are a
+/// `set_friend_nickname` command, the SQLite update, and a friends
+/// event so the list re-renders.
 pub async fn update_friend(
     dht: &DHTManager,
     key: &str,

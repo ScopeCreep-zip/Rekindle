@@ -66,7 +66,7 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// entry set that cannot express `ApprovalRequired` — the variant was
 /// merged, validated and Cap'n Proto encoded, and nothing ever wrote it,
 /// so the mode was unreachable and every community was `Open`.
-const SCHEMA_VERSION: i64 = 79;
+const SCHEMA_VERSION: i64 = 80;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

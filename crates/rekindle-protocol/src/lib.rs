@@ -4,7 +4,6 @@ pub mod dht;
 pub mod error;
 pub mod messaging;
 pub mod node;
-pub mod peer;
 pub mod routing;
 pub mod veilid_config;
 
