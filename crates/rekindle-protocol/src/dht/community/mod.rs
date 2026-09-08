@@ -3,7 +3,6 @@ pub mod automod;
 pub(crate) mod base64_bytes;
 pub mod channel_record;
 pub mod envelope;
-pub mod manifest;
 pub mod member_registry;
 pub mod onboarding;
 pub mod types;

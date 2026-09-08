@@ -29,8 +29,13 @@ pub enum WatchKind {
     FriendInbox,
     /// A peer's DM DhtLog spine.
     DmLog { peer_key: String },
-    /// Community governance manifest (subkeys: metadata, channels, roles, bans, invites).
-    GovernanceManifest { community: String },
+    /// A community's SMPL governance record.
+    ///
+    /// One member's signed entry history per subkey, so a change means
+    /// "that member wrote governance" — not "this section changed". The
+    /// reader re-merges; it cannot tell what changed from the subkey
+    /// index alone.
+    GovernanceRecord { community: String },
     /// Community join inbox (operator only, DFLT(32), subkeys 0-31).
     JoinInbox { community: String },
     /// A channel's SMPL segment record.
@@ -108,7 +113,7 @@ impl WatchRegistry {
     pub fn remove_community(&mut self, community: &str) {
         self.entries.retain(|_, e| {
             !matches!(&e.kind,
-                WatchKind::GovernanceManifest { community: c }
+                WatchKind::GovernanceRecord { community: c }
                 | WatchKind::JoinInbox { community: c }
                 | WatchKind::ChannelRecord { community: c, .. }
                 if c == community
@@ -184,24 +189,31 @@ pub async fn establish_watch_as(
         }
     };
 
-    // Registered whether or not Veilid granted the watch.
+    // Registered unconditionally, because the return value cannot tell
+    // us whether a watch exists.
     //
-    // The registry is also the 60-second inspect poll's work list
-    // (`poll::run_poll_loop` iterates it), and a declined watch is the
-    // case that needs the fallback *most*: with 8 member and 32 public
-    // slots per record, a community larger than 40 members leaves the
-    // rest with no watch at all. Registering only on success gave those
-    // members neither push nor poll — the architecture's PATH 3 has two
-    // halves and they were getting zero.
+    // `watch_dht_values` "records the desired watch state and returns
+    // without a network round-trip; a background task reconciles it
+    // with a remote node", and "no network errors surface here". So
+    // `Ok(true)` means the desired state was accepted locally, not that
+    // a remote node agreed to watch — a record refused for want of a
+    // slot is indistinguishable here from one that succeeded. `false`
+    // means the watch was *cancelled* (a zero count or empty range),
+    // not declined.
     //
-    // The renewal loop retries the watch on its own schedule, so a slot
-    // freed later is picked up without re-registering.
-    if active {
-        debug!(record_key, subkeys = ?subkeys, "watch established");
-    } else {
+    // Failure surfaces later, as a `ValueChange` with `count == 0` or an
+    // empty subkey range — see `SubscriptionManager::on_watch_died`.
+    //
+    // Registering regardless is therefore the only correct behaviour,
+    // and it is also what enrols the record in the 60-second inspect
+    // poll (`poll::run_poll_loop` iterates this registry). That matters
+    // most for the members who did not get a slot: with 8 member and 32
+    // public slots per record, a community past ~40 members leaves most
+    // of them watchless, and PATH 3 has two halves.
+    if !active {
         debug!(
             record_key,
-            "watch: Veilid declined (slots full) — record still enrolled in the inspect poll"
+            "watch: cancelled at request time (zero count or empty range)"
         );
     }
     registry.write().insert(
@@ -279,22 +291,31 @@ pub async fn setup_community_watches(
 ) {
     let community = &membership.governance_key;
 
-    // Watch governance manifest (metadata, channels, roles, bans, invites)
-    let gov_subkeys = vec![
-        dht_types::MANIFEST_METADATA,
-        dht_types::MANIFEST_CHANNELS,
-        dht_types::MANIFEST_ROLES,
-        dht_types::MANIFEST_BANS,
-        dht_types::MANIFEST_INVITES,
-    ];
-    establish_watch(
+    // Watch the whole governance record.
+    //
+    // This used to watch subkeys 0, 1, 3, 4 and 7 — the v1.0 manifest's
+    // metadata / channels / roles / bans / invites sections. Under
+    // `o_cnt: 0` those are not sections, they are **member slots**: the
+    // governance record holds one member's signed `GovernanceEntry`
+    // history per subkey. So it watched five arbitrary members and was
+    // blind to everyone else's bans, role changes and channel creation.
+    //
+    // The whole range, because any member may write governance and the
+    // CRDT is only correct if we see all of it. Same slot addressing as
+    // the registry and channel records.
+    let gov_subkeys: Vec<u32> = (0..dht_types::SLOTS_PER_SEGMENT).collect();
+    let slot_writer = membership.slot_seed.and_then(|seed| {
+        crate::broadcast::dht_writes::derive_slot_keypair_str(&seed, membership.slot_index).ok()
+    });
+    establish_watch_as(
         node,
         registry,
         &membership.governance_key,
         &gov_subkeys,
-        WatchKind::GovernanceManifest {
+        WatchKind::GovernanceRecord {
             community: community.clone(),
         },
+        slot_writer.as_deref(),
     )
     .await;
 

@@ -226,41 +226,26 @@ impl SubscriptionManager {
                     count,
                 });
             }
-            watches::WatchKind::GovernanceManifest { community } => {
+            watches::WatchKind::GovernanceRecord { community } => {
+                // A governance subkey changing means the member holding
+                // that slot wrote entries. Which entries, and what they
+                // mean, is only knowable after a re-merge — the subkey
+                // index says who wrote, never what.
+                //
+                // This used to map subkey 0/1/3/4/7 onto
+                // `MetadataChanged` / `ChannelsChanged` / `RolesChanged`
+                // / `BansChanged` / `InvitesChanged`, reading the v1.0
+                // manifest's section layout into what are now member
+                // slots. Members 0, 1, 3, 4 and 7 produced five
+                // confidently wrong events; everyone else produced none.
                 for subkey in &changed_subkeys {
-                    let event = match *subkey {
-                        crate::payload::dht_types::MANIFEST_METADATA => {
-                            events::GovernanceEvent::MetadataChanged {
-                                community: community.clone(),
-                            }
-                        }
-                        crate::payload::dht_types::MANIFEST_CHANNELS => {
-                            events::GovernanceEvent::ChannelsChanged {
-                                community: community.clone(),
-                            }
-                        }
-                        crate::payload::dht_types::MANIFEST_ROLES => {
-                            events::GovernanceEvent::RolesChanged {
-                                community: community.clone(),
-                            }
-                        }
-                        crate::payload::dht_types::MANIFEST_BANS => {
-                            events::GovernanceEvent::BansChanged {
-                                community: community.clone(),
-                            }
-                        }
-                        crate::payload::dht_types::MANIFEST_INVITES => {
-                            events::GovernanceEvent::InvitesChanged {
-                                community: community.clone(),
-                            }
-                        }
-                        other => events::GovernanceEvent::GovernanceSubkeyUpdated {
+                    self.process_event(SubscriptionEvent::Governance(
+                        events::GovernanceEvent::GovernanceSubkeyUpdated {
                             community: community.clone(),
-                            subkey_index: other,
+                            subkey_index: *subkey,
                             lamport_ts: 0,
                         },
-                    };
-                    self.process_event(SubscriptionEvent::Governance(event));
+                    ));
                 }
             }
             watches::WatchKind::JoinInbox { community } => {

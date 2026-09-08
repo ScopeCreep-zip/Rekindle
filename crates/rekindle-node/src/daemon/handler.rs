@@ -405,8 +405,13 @@ impl InboundHandler for DaemonHandler {
                 TransportEvent::RemoteRoutesDied { peer_keys } => {
                     sub_mgr.on_route_change(0, peer_keys);
                 }
-                TransportEvent::WatchDied { .. } => {
-                    // Watch re-establishment handled by the renewal loop in SubscriptionManager
+                TransportEvent::WatchDied { record_key } => {
+                    // The renewal loop would eventually re-watch this,
+                    // but on a 4-minute cadence. This is the only signal
+                    // Veilid gives that a watch failed, so acting on it
+                    // immediately is the difference between a gap and a
+                    // blackout.
+                    sub_mgr.on_watch_died(&record_key);
                 }
             }
         }
