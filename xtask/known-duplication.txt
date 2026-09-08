@@ -8,19 +8,8 @@
 # Prefer a written exception in xtask/src/duplication.rs (or
 # DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
 # deliberate and permanent — those carry a reason; this file does not.
-css align-items: center ; display: flex ; gap: 12px ; justify-content: space-between
-css align-items: center ; display: flex ; gap: 6px
-css align-items: center ; display: flex ; gap: 8px
-css align-items: center ; display: flex ; gap: 8px ; justify-content: space-between
-css background: transparent ; border-radius: 4px ; border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent) ; color: var(--color-xfire-text-primary) ; cursor: pointer ; font-size: 11px ; padding: 6px 10px
-css color: var(--color-xfire-text-dim) ; font-size: 10px ; font-style: italic
-css display: flex ; flex-direction: column ; gap: 10px
-css display: flex ; flex-direction: column ; gap: 2px ; min-width: 0
-css display: flex ; flex-direction: column ; gap: 6px
-type rekindle (src-tauri)::ChannelMessageRow rekindle-channel::ChannelMessageRow
 type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
 type rekindle (src-tauri)::CommunityRecords rekindle-records::CommunityRecords
-type rekindle (src-tauri)::EventRsvpEntry rekindle-presence::EventRsvpEntry
 type rekindle (src-tauri)::ExclusionGroupEdit rekindle-governance-runtime::ExclusionGroupEdit
 type rekindle (src-tauri)::MemberProfileSnapshot rekindle-channel::MemberProfileSnapshot rekindle-presence::MemberProfileSnapshot
 type rekindle (src-tauri)::Message rekindle-node::Message

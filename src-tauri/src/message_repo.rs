@@ -224,7 +224,9 @@ pub fn find_channel_message_by_id(
 
 /// Minimal row returned by `find_channel_message_by_id` — only the fields
 /// the forward path needs (sender attribution + plaintext body to re-encrypt).
-pub struct ChannelMessageRow {
-    pub sender_key: String,
-    pub body: String,
-}
+// Declared by `rekindle-channel`, the crate whose `ChannelMessagingDeps`
+// trait this row crosses. src-tauri had its own byte-identical copy, so
+// `channel_adapter/deps_impl.rs` imported the crate's while
+// `message_repo` built its own and the two were converted implicitly by
+// field-by-field construction.
+pub use rekindle_channel::deps::ChannelMessageRow;

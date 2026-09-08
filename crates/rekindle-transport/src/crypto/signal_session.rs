@@ -32,6 +32,25 @@ pub struct SignalSessionManager {
     identity: Box<dyn IdentityKeyStore>,
     prekeys: Box<dyn PreKeyStore>,
     sessions: Box<dyn SessionStore>,
+    /// Per-peer lock serialising the ratchet's load-mutate-store.
+    ///
+    /// The Double Ratchet specification advances the sending chain as
+    /// `state.CKs, mk = KDF_CK(state.CKs)` then `state.Ns += 1`, and
+    /// requires that "every message sent or received is encrypted with a
+    /// unique message key". `encrypt` below loads the serialised
+    /// session, steps it, and stores it back; two concurrent calls for
+    /// one peer would both step from the *same* `CKs` and derive the
+    /// same message key — the one thing that construction forbids.
+    ///
+    /// The desktop manager (`rekindle_crypto::signal::session`) solves
+    /// this with a `SessionCache` of `tokio::sync::Mutex`es and async
+    /// methods. These methods are synchronous and hold no `.await`, so a
+    /// `parking_lot` mutex is the right shape here. `Arc` per entry so
+    /// the guard outlives the map lock — otherwise the whole manager
+    /// would serialise rather than one peer.
+    peer_locks: parking_lot::Mutex<
+        std::collections::HashMap<String, std::sync::Arc<parking_lot::Mutex<()>>>,
+    >,
 }
 
 impl SignalSessionManager {
@@ -44,7 +63,18 @@ impl SignalSessionManager {
             identity,
             prekeys,
             sessions,
+            peer_locks: parking_lot::Mutex::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// The lock guarding one peer's ratchet state.
+    fn peer_lock(&self, peer_address: &str) -> std::sync::Arc<parking_lot::Mutex<()>> {
+        std::sync::Arc::clone(
+            self.peer_locks
+                .lock()
+                .entry(peer_address.to_string())
+                .or_default(),
+        )
     }
 
     /// Establish a session with a peer using their PreKeyBundle (initiator X3DH).
@@ -192,6 +222,8 @@ impl SignalSessionManager {
     ///
     /// Wire format: `[ratchet_public(32) || counter(8 LE) || nonce(12) || ciphertext+tag]`
     pub fn encrypt(&self, peer_address: &str, plaintext: &[u8]) -> Result<Vec<u8>> {
+        let lock = self.peer_lock(peer_address);
+        let _serialised = lock.lock();
         let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
             TransportError::SignalSessionNotFound {
                 peer: peer_address.to_string(),
@@ -212,6 +244,8 @@ impl SignalSessionManager {
     ///
     /// Wire format: `[ratchet_public(32) || counter(8 LE) || nonce(12) || ciphertext+tag]`
     pub fn decrypt(&self, peer_address: &str, message: &[u8]) -> Result<Vec<u8>> {
+        let lock = self.peer_lock(peer_address);
+        let _serialised = lock.lock();
         let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
             TransportError::SignalSessionNotFound {
                 peer: peer_address.to_string(),

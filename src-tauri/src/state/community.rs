@@ -267,12 +267,10 @@ pub struct CommunityRecords {
 }
 
 /// Aggregated RSVP entry for a single member and event.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EventRsvpEntry {
-    pub pseudonym_key: String,
-    pub status: String,
-}
+//
+// Declared by `rekindle-presence`, which owns RSVP aggregation
+// (`community::rsvp_aggregate`). The copy here was byte-identical.
+pub use rekindle_presence::EventRsvpEntry;
 
 /// Per-community profile snapshot aggregated from a peer's presence subkey.
 ///

@@ -1,425 +1,405 @@
-  /* ─── Settings fixes (sticky footer, spacing, button sizes) ─── */
-  .settings-actions-sticky {
-    position: sticky;
-    bottom: 0;
-    background: var(--color-xfire-bg-dark);
-    padding: 8px 0;
-    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
-    margin-top: auto;
+/* Wrapped in `@layer components` like every other part.
+ *
+ * These two parts had no wrapper, which is not a cosmetic difference:
+ * per the CSS Cascade Layers spec, "styles that are not defined in a
+ * layer always override styles declared in named and anonymous layers"
+ * — regardless of specificity or source order. So ~120 ordinary class
+ * rules here silently beat all 920 layered rules, an artifact of the
+ * mechanical split rather than a decision.
+ *
+ * Verified behaviour-preserving before wrapping: only two selectors are
+ * styled for the same property both here and in a layered part
+ * (`.menu-bar-item[data-expanded]`, `*:focus-visible`). Both are
+ * identical selector strings — same specificity — and these parts are
+ * imported last, so they still win on source order once layered.
+ */
+@layer components {
+    /* ─── Settings fixes (sticky footer, spacing, button sizes) ─── */
+    .settings-actions-sticky {
+      position: sticky;
+      bottom: 0;
+      background: var(--color-xfire-bg-dark);
+      padding: 8px 0;
+      border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+      margin-top: auto;
+    }
+
+    .settings-content .form-field {
+      margin-bottom: 8px;
+    }
+
+    .settings-content .form-btn-primary,
+    .settings-content .form-btn-secondary,
+    .settings-content .form-btn-danger {
+      padding: 5px 10px;
+      font-size: 11px;
+    }
+
+
+    /* Phase 7 W24 — cross-device pairing QR display + camera scanner. */
+    .pairing-qr-display {
+      display: inline-block;
+      padding: 12px;
+      background: #f8fafc;
+      border: 1px solid var(--color-xfire-border);
+      border-radius: 6px;
+      line-height: 0;
+    }
+
+    .pairing-qr-display svg {
+      display: block;
+      width: 256px;
+      height: 256px;
+    }
+
+    .settings-button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .qr-scanner-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: var(--z-modal-backdrop);
+      padding: 20px;
+    }
+
+    .qr-scanner-overlay-card {
+      background: var(--color-xfire-bg-panel);
+      border: 1px solid var(--color-xfire-border);
+      border-radius: 8px;
+      padding: 16px;
+      max-width: 480px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+
+    .qr-scanner-video {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: #000;
+      border-radius: 4px;
+      object-fit: cover;
+    }
+
+
+    .automod-rule-card {
+      border: 1px solid var(--color-xfire-border);
+      background: color-mix(in srgb, var(--color-xfire-bg-panel) 92%, transparent);
+      padding: 10px 12px;
+      border-radius: 6px;
+    }
+
+
+    .automod-rule-name {
+      color: var(--color-xfire-text);
+      font-weight: 600;
+    }
+
+    .automod-rule-meta {
+      color: var(--color-xfire-text-dim);
+      font-size: 11px;
+      text-transform: capitalize;
+    }
+
+
+    .automod-rule-delete-btn {
+      padding: 6px 10px;
+    }
+
+    .automod-enabled-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--color-xfire-text);
+      margin-top: 10px;
+    }
+
+    .channel-category-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--color-xfire-text-dim);
+      text-transform: uppercase;
+      padding: 6px 0 2px;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+      margin-top: 8px;
+    }
+
+    .channel-category-label:first-child {
+      margin-top: 0;
+    }
+
+  /* One opacity pulse for every "this is live" affordance. `network-pulse`
+   * (min 0.3) and `voice-mic-pulse` (min 0.55) were the same three lines
+   * with a different trough, so the depth is a custom property now.
+   *
+   * `loading-button-spin` below is deliberately NOT folded in: it starts
+   * at its trough rather than at full opacity, so a spinner appearing on
+   * click fades in rather than out. Same shape, different phase. */
+  @keyframes opacity-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: var(--pulse-min-opacity, 0.3); }
   }
 
-  .settings-content .form-field {
-    margin-bottom: 8px;
-  }
+  /* ── Onboarding Wizard ──
+   * The wizard renders inside Modal's `.modal-container`, so it provides only
+   * vertical layout + section dividers. Window chrome (background, border,
+   * sizing, shadow) lives on the Modal. */
 
-  .settings-content .form-btn-primary,
-  .settings-content .form-btn-secondary,
-  .settings-content .form-btn-danger {
-    padding: 5px 10px;
-    font-size: 11px;
-  }
-
-  .settings-hint-inline {
-    font-size: 10px;
-    color: var(--color-xfire-text-dim);
-    font-style: italic;
-  }
-
-  /* Phase 7 W24 — cross-device pairing QR display + camera scanner. */
-  .pairing-qr-display {
-    display: inline-block;
-    padding: 12px;
-    background: #f8fafc;
-    border: 1px solid var(--color-xfire-border);
-    border-radius: 6px;
-    line-height: 0;
-  }
-
-  .pairing-qr-display svg {
-    display: block;
-    width: 256px;
-    height: 256px;
-  }
-
-  .settings-button-row {
+  .onboarding-wizard {
     display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 10px;
+    flex-direction: column;
+    min-height: 0;
   }
 
-  .qr-scanner-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
+  /* Architecture §19.2 — gated communities are takeover dialogs (Esc + close
+   * suppressed via Modal `dismissable={false}`). The banner explains *why*
+   * dismissal is locked so the user understands the takeover. */
+  .onboarding-wizard-gated-banner {
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 40%, transparent);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--color-xfire-text-primary);
+    line-height: 1.4;
+    margin-bottom: 12px;
+  }
+
+  .onboarding-wizard-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal-backdrop);
+    justify-content: flex-end;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .onboarding-progress {
+    font-size: 12px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .onboarding-wizard-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 0;
+    min-height: 0;
+  }
+
+  .onboarding-welcome p {
+    color: var(--color-xfire-text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* Architecture §19.2 step 3 — gated mode rules acknowledgment. */
+  .onboarding-rules {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .onboarding-rules h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    margin: 0;
+  }
+
+  .onboarding-rules-text {
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-xfire-text-secondary);
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    max-height: 240px;
+    overflow-y: auto;
+    margin: 0;
+  }
+
+  .onboarding-rules-ack {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--color-xfire-text-primary);
+    cursor: pointer;
+  }
+
+  .onboarding-question h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    margin: 0 0 4px 0;
+  }
+
+  .onboarding-question-desc {
+    font-size: 12px;
+    color: var(--color-xfire-text-dim);
+    margin: 0 0 12px 0;
+  }
+
+
+  .onboarding-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 6px;
+    background: var(--color-xfire-bg-secondary);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    text-align: left;
+    color: var(--color-xfire-text-primary);
+    font-size: 13px;
+    width: 100%;
+  }
+
+  .onboarding-option:hover {
+    border-color: var(--color-xfire-accent);
+    background: var(--color-xfire-bg-tertiary);
+  }
+
+  .onboarding-option.selected {
+    border-color: var(--color-xfire-accent);
+    background: rgba(23, 124, 193, 0.15);
+  }
+
+  .onboarding-option-title {
+    font-weight: 500;
+  }
+
+  .onboarding-option-desc {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .onboarding-guide-step {
+    text-align: center;
     padding: 20px;
   }
 
-  .qr-scanner-overlay-card {
-    background: var(--color-xfire-bg-panel);
-    border: 1px solid var(--color-xfire-border);
-    border-radius: 8px;
-    padding: 16px;
-    max-width: 480px;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  .onboarding-guide-emoji {
+    font-size: 32px;
+    display: block;
+    margin-bottom: 12px;
   }
 
-  .qr-scanner-overlay-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .qr-scanner-video {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: #000;
-    border-radius: 4px;
-    object-fit: cover;
-  }
-
-  .automod-rule-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .automod-rule-card {
-    border: 1px solid var(--color-xfire-border);
-    background: color-mix(in srgb, var(--color-xfire-bg-panel) 92%, transparent);
-    padding: 10px 12px;
-    border-radius: 6px;
-  }
-
-  .automod-rule-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .automod-rule-name {
-    color: var(--color-xfire-text);
+  .onboarding-guide-step h3 {
+    font-size: 16px;
     font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    margin: 0 0 8px 0;
   }
 
-  .automod-rule-meta {
-    color: var(--color-xfire-text-dim);
-    font-size: 11px;
-    text-transform: capitalize;
+  .onboarding-guide-step p {
+    font-size: 13px;
+    color: var(--color-xfire-text-secondary);
+    line-height: 1.5;
+    margin: 0;
   }
 
-  .automod-rule-actions {
+  .onboarding-error {
+    padding: 0 20px;
+    color: #e74c3c;
+    font-size: 12px;
+  }
+
+  .onboarding-wizard-footer {
     display: flex;
+    justify-content: flex-end;
     gap: 8px;
-    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-xfire-border);
   }
 
-  .automod-rule-delete-btn {
-    padding: 6px 10px;
-  }
+  /* ── Welcome Screen ── */
 
-  .automod-enabled-toggle {
+  .welcome-screen {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 8px;
-    color: var(--color-xfire-text);
-    margin-top: 10px;
+    padding: 40px 20px;
+    max-width: 500px;
+    margin: 0 auto;
   }
 
-  .channel-category-label {
-    font-size: 10px;
+  .welcome-screen-header h2 {
+    font-size: 22px;
     font-weight: 700;
+    color: var(--color-xfire-text-primary);
+    margin: 0 0 12px 0;
+    text-align: center;
+  }
+
+  .welcome-screen-description {
+    font-size: 14px;
+    color: var(--color-xfire-text-secondary);
+    line-height: 1.6;
+    text-align: center;
+    margin: 0 0 24px 0;
+  }
+
+  .welcome-screen-channels h3 {
+    font-size: 13px;
+    font-weight: 600;
     color: var(--color-xfire-text-dim);
     text-transform: uppercase;
-    padding: 6px 0 2px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
-    margin-top: 8px;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px 0;
   }
 
-  .channel-category-label:first-child {
-    margin-top: 0;
+  .welcome-channel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
   }
 
-/* One opacity pulse for every "this is live" affordance. `network-pulse`
- * (min 0.3) and `voice-mic-pulse` (min 0.55) were the same three lines
- * with a different trough, so the depth is a custom property now.
- *
- * `loading-button-spin` below is deliberately NOT folded in: it starts
- * at its trough rather than at full opacity, so a spinner appearing on
- * click fades in rather than out. Same shape, different phase. */
-@keyframes opacity-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: var(--pulse-min-opacity, 0.3); }
-}
+  .welcome-channel-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 6px;
+    background: var(--color-xfire-bg-secondary);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    text-align: left;
+    width: 100%;
+    color: var(--color-xfire-text-primary);
+  }
 
-/* ── Onboarding Wizard ──
- * The wizard renders inside Modal's `.modal-container`, so it provides only
- * vertical layout + section dividers. Window chrome (background, border,
- * sizing, shadow) lives on the Modal. */
+  .welcome-channel-entry:hover {
+    border-color: var(--color-xfire-accent);
+    background: var(--color-xfire-bg-tertiary);
+  }
 
-.onboarding-wizard {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
 
-/* Architecture §19.2 — gated communities are takeover dialogs (Esc + close
- * suppressed via Modal `dismissable={false}`). The banner explains *why*
- * dismissal is locked so the user understands the takeover. */
-.onboarding-wizard-gated-banner {
-  background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 40%, transparent);
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--color-xfire-text-primary);
-  line-height: 1.4;
-  margin-bottom: 12px;
-}
+  .welcome-channel-emoji {
+    font-size: 16px;
+  }
 
-.onboarding-wizard-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--color-xfire-border);
-}
-
-.onboarding-progress {
-  font-size: 12px;
-  color: var(--color-xfire-text-dim);
-}
-
-.onboarding-wizard-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px 0;
-  min-height: 0;
-}
-
-.onboarding-welcome p {
-  color: var(--color-xfire-text-secondary);
-  font-size: 14px;
-  line-height: 1.5;
-  margin: 0;
-}
-
-/* Architecture §19.2 step 3 — gated mode rules acknowledgment. */
-.onboarding-rules {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.onboarding-rules h3 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-xfire-text-primary);
-  margin: 0;
-}
-
-.onboarding-rules-text {
-  white-space: pre-wrap;
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-xfire-text-secondary);
-  background: var(--color-xfire-bg-secondary);
-  border: 1px solid var(--color-xfire-border);
-  border-radius: 4px;
-  padding: 10px 12px;
-  max-height: 240px;
-  overflow-y: auto;
-  margin: 0;
-}
-
-.onboarding-rules-ack {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--color-xfire-text-primary);
-  cursor: pointer;
-}
-
-.onboarding-question h3 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-xfire-text-primary);
-  margin: 0 0 4px 0;
-}
-
-.onboarding-question-desc {
-  font-size: 12px;
-  color: var(--color-xfire-text-dim);
-  margin: 0 0 12px 0;
-}
-
-.onboarding-options {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.onboarding-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 10px 14px;
-  border: 1px solid var(--color-xfire-border);
-  border-radius: 6px;
-  background: var(--color-xfire-bg-secondary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  text-align: left;
-  color: var(--color-xfire-text-primary);
-  font-size: 13px;
-  width: 100%;
-}
-
-.onboarding-option:hover {
-  border-color: var(--color-xfire-accent);
-  background: var(--color-xfire-bg-tertiary);
-}
-
-.onboarding-option.selected {
-  border-color: var(--color-xfire-accent);
-  background: rgba(23, 124, 193, 0.15);
-}
-
-.onboarding-option-title {
-  font-weight: 500;
-}
-
-.onboarding-option-desc {
-  font-size: 11px;
-  color: var(--color-xfire-text-dim);
-}
-
-.onboarding-guide-step {
-  text-align: center;
-  padding: 20px;
-}
-
-.onboarding-guide-emoji {
-  font-size: 32px;
-  display: block;
-  margin-bottom: 12px;
-}
-
-.onboarding-guide-step h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-xfire-text-primary);
-  margin: 0 0 8px 0;
-}
-
-.onboarding-guide-step p {
-  font-size: 13px;
-  color: var(--color-xfire-text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.onboarding-error {
-  padding: 0 20px;
-  color: #e74c3c;
-  font-size: 12px;
-}
-
-.onboarding-wizard-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-xfire-border);
-}
-
-/* ── Welcome Screen ── */
-
-.welcome-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 20px;
-  max-width: 500px;
-  margin: 0 auto;
-}
-
-.welcome-screen-header h2 {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--color-xfire-text-primary);
-  margin: 0 0 12px 0;
-  text-align: center;
-}
-
-.welcome-screen-description {
-  font-size: 14px;
-  color: var(--color-xfire-text-secondary);
-  line-height: 1.6;
-  text-align: center;
-  margin: 0 0 24px 0;
-}
-
-.welcome-screen-channels h3 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-xfire-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin: 0 0 10px 0;
-}
-
-.welcome-channel-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-}
-
-.welcome-channel-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 16px;
-  border: 1px solid var(--color-xfire-border);
-  border-radius: 6px;
-  background: var(--color-xfire-bg-secondary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  text-align: left;
-  width: 100%;
-  color: var(--color-xfire-text-primary);
-}
-
-.welcome-channel-entry:hover {
-  border-color: var(--color-xfire-accent);
-  background: var(--color-xfire-bg-tertiary);
-}
-
-.welcome-channel-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.welcome-channel-emoji {
-  font-size: 16px;
-}
-
-.welcome-channel-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-xfire-text-primary);
+  .welcome-channel-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-xfire-text-primary);
+  }
 }

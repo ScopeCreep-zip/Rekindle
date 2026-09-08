@@ -351,11 +351,6 @@
         color-mix(in srgb, var(--color-xfire-online) 10%, var(--color-xfire-bg-2)) 100%);
   }
 
-  .stage-panel-heading {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
 
   .stage-panel-title {
     font-size: 22px;

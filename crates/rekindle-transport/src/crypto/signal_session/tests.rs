@@ -267,3 +267,43 @@ async fn cross_track_responder_sends_first() {
     let wire = bob.encrypt(&alice_addr, b"responder first").await.unwrap();
     assert_eq!(alice.decrypt(&bob_addr, &wire).unwrap(), b"responder first");
 }
+
+/// Concurrent sends to one peer must not reuse a message key.
+///
+/// The Double Ratchet spec advances the sending chain as
+/// `state.CKs, mk = KDF_CK(state.CKs)` then `state.Ns += 1`, and requires
+/// that "every message sent or received is encrypted with a unique
+/// message key". `encrypt` loads the serialised session, steps it, and
+/// stores it back — so without per-peer serialisation two threads both
+/// step from the same `CKs` and derive the same key. This drove the
+/// `peer_locks` map; before it, the two ciphertexts below shared a
+/// counter.
+#[test]
+fn concurrent_encrypt_to_one_peer_never_reuses_a_message_key() {
+    use std::sync::Arc;
+
+    let (alice, _bob, _alice_addr, bob_addr) = establish_pair();
+    let alice = Arc::new(alice);
+
+    let mut handles = Vec::new();
+    for i in 0..8u8 {
+        let mgr = Arc::clone(&alice);
+        let peer = bob_addr.clone();
+        handles.push(std::thread::spawn(move || {
+            mgr.encrypt(&peer, &[i; 16]).expect("encrypt")
+        }));
+    }
+    let cts: Vec<Vec<u8>> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    // Counter is bytes 32..40 of the wire format
+    // `[ratchet_public(32) || counter(8 LE) || nonce(12) || ct]`.
+    let counters: std::collections::BTreeSet<u64> = cts
+        .iter()
+        .map(|c| u64::from_le_bytes(c[32..40].try_into().unwrap()))
+        .collect();
+    assert_eq!(
+        counters.len(),
+        cts.len(),
+        "every concurrent encrypt must consume a distinct chain counter"
+    );
+}

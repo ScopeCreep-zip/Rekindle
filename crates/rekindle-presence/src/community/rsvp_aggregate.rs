@@ -19,10 +19,17 @@ use std::hash::BuildHasher;
 use crate::community::util::presence_event_id_bytes;
 use crate::community::DiscoveredRow;
 
-/// One peer's RSVP for one event. Mirrors src-tauri's
-/// `EventRsvpEntry` shape so the adapter can convert into the
-/// AppState type with a thin map.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One peer's RSVP for one event.
+///
+/// src-tauri re-exports this rather than declaring its own. It used to
+/// have a byte-identical copy, and this doc comment used to say the two
+/// "mirror" each other so the adapter could convert "with a thin map" —
+/// which is the same thing as a standing instruction to keep two
+/// declarations in sync by hand. Serde derives live here so the one
+/// declaration can serve both the aggregation and AppState's
+/// frontend-facing snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventRsvpEntry {
     pub pseudonym_key: String,
     pub status: String,
