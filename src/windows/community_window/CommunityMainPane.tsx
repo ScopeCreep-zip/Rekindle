@@ -1,6 +1,6 @@
 import { Component, Show } from "solid-js";
-import ChannelChat from "../../components/chat/ChannelChat";
-import CallStage from "../../components/voice/call_stage/CallStage";
+import ChannelChat from "./ChannelChat";
+import CallStage from "./CallStage";
 import EventsPanel from "../../components/community/EventsPanel";
 import GameServerList from "../../components/community/GameServerList";
 import ForumChannelView from "../../components/community/ForumChannelView";

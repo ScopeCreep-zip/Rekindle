@@ -1,12 +1,12 @@
 import { Component, For, Show } from "solid-js";
-import ParticipantTile from "./ParticipantTile";
-import CallControlBar from "./CallControlBar";
-import { useCallStage } from "./useCallStage";
-import { activePipeline } from "./pipeline_store";
-import ChannelChat from "../../chat/ChannelChat";
-import { handleJoinVoice } from "../../../handlers/voice.handlers";
-import { ICON_PHONE } from "../../../icons";
-import type { CommunityVm } from "../../../windows/community_window/useCommunityWindow";
+import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
+import CallControlBar from "../../components/voice/call_stage/CallControlBar";
+import { useCallStage } from "../../components/voice/call_stage/useCallStage";
+import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
+import ChannelChat from "./ChannelChat";
+import { handleJoinVoice } from "../../handlers/voice.handlers";
+import { ICON_PHONE } from "../../icons";
+import type { CommunityVm } from "./useCommunityWindow";
 
 /// Main-pane conferencing surface for a community voice channel. When the
 /// local member isn't connected it shows a Join hero; once connected it

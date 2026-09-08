@@ -6,7 +6,7 @@ import { initVoiceEventListener } from "../../handlers/voice.handlers";
 import { subscribeCommunityChannelChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import { subscribeCommunityEventDispatcher } from "../../handlers/community.handlers";
-import { hydrateState } from "../../ipc/hydrate";
+import { hydrateState } from "../../stores/hydrate";
 import {
   handleLoadChannelMessages,
   handleLoadOlderMessages,

@@ -3,7 +3,7 @@ import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import Modal from "../common/Modal";
 import LoadingButton from "../common/LoadingButton";
 import { handleSubmitOnboarding } from "../../handlers/community.handlers";
-import type { OnboardingConfig, OnboardingAnswer } from "../../stores/types";
+import type { OnboardingConfig, OnboardingAnswer } from "../../ipc/commands/dto";
 
 interface OnboardingWizardProps {
   communityId: string;

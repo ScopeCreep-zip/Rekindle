@@ -2,8 +2,8 @@ import { invoke } from "../invoke";
 import type {
   GameStatus, NetworkStatus, Preferences,
 } from "./types";
-import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "../../stores/types";
-import type { LifecycleState } from "../../stores/lifecycle.store";
+import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
+import type { LifecycleState } from "./dto";
 
 export const systemCommands = {
   // Status

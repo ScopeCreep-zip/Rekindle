@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
 import { handleLoadSettings } from "../handlers/settings.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { hydrateState } from "../stores/hydrate";
 import ProfileTab from "./settings/ProfileTab";
 import ApplicationTab from "./settings/ApplicationTab";
 import NotificationsTab from "./settings/NotificationsTab";

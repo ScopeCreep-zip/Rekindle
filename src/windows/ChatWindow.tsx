@@ -14,7 +14,7 @@ import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "..
 import { handleStartDmCall, handleEndDmCall } from "../handlers/calls.handlers";
 import { subscribeDmChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { hydrateState } from "../stores/hydrate";
 import { commands } from "../ipc/commands";
 import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP } from "../icons";
 

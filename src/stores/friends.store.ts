@@ -1,8 +1,8 @@
 import { createStore } from "solid-js/store";
 import type { UserStatus } from "./auth.store";
-import type { GameInfo } from "./types";
+import type { GameInfo } from "../ipc/commands/dto";
 
-export type { GameInfo } from "./types";
+export type { GameInfo } from "../ipc/commands/dto";
 
 export type FriendshipState = "pendingOut" | "accepted";
 

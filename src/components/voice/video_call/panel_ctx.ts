@@ -9,7 +9,24 @@ import type { Channel } from "@tauri-apps/api/core";
 import type { NativePreviewFrameMsg } from "../../../ipc/commands";
 import type { RemoteStream } from "./codec_utils";
 import type { VideoSender } from "./sender_types";
-import type { VideoCallPanelProps } from "./useVideoCallPanel";
+
+/** W11.4 — `community` panel routes encoded frames through gossip
+ *  fan-out + MEK; `dm` panel routes 1:1 via Signal Double Ratchet. The
+ *  decoder side is identical — decoders follow per-frame codec tags. */
+export type VideoCallPanelProps =
+  | {
+      mode: "community";
+      communityId: string;
+      channelId: string;
+      /** When false the panel is invisible — used to keep state alive across panel toggles. */
+      visible: boolean;
+    }
+  | {
+      mode: "dm";
+      /** Hex-encoded peer Ed25519 public key. */
+      peerId: string;
+      visible: boolean;
+    };
 
 /** Mutable ref cell (the hook's `{ value: … }` binder convention). */
 export interface Ref<T> {

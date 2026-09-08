@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import type { MessageInputProps } from "../MessageInput";
+import type { MessageInputProps } from "./types";
 
 // Persists the most recent successful-send timestamp per channel/peer across
 // MessageInput remounts (switching channels destroys the component but the map

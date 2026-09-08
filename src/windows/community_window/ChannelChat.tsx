@@ -1,6 +1,6 @@
 import { Component, Show } from "solid-js";
-import MessageList from "./MessageList";
-import MessageInput from "./MessageInput";
+import MessageList from "../../components/chat/MessageList";
+import MessageInput from "../../components/chat/MessageInput";
 import { communityState } from "../../stores/community.store";
 import { authState } from "../../stores/auth.store";
 import {
@@ -14,7 +14,7 @@ import {
   handleClosePoll,
   handleEditChannelMessage,
 } from "../../handlers/community.handlers";
-import type { CommunityVm } from "../../windows/community_window/useCommunityWindow";
+import type { CommunityVm } from "./useCommunityWindow";
 
 /// The channel message list + composer for a community text (or text-in-voice)
 /// channel. Extracted from CommunityMainPane so the same surface can be reused

@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal } from "solid-js";
 import StatusDot from "../../status/StatusDot";
 import RoleTag from "../RoleTag";
 import type { Community, Member, Role } from "../../../stores/community.store";
-import type { ConfirmOptions } from "../CommunitySettingsModal";
+import type { ConfirmOptions } from "./types";
 import {
   handleRemoveCommunityMember,
   handleBanMember,

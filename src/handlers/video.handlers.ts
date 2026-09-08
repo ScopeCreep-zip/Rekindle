@@ -28,7 +28,7 @@
 
 import { commands } from "../ipc/commands";
 import type { Codec, MediaCapabilities, ScalabilityMode } from "../ipc/commands";
-import { wireCodecToWebCodecsString } from "../components/voice/video_call/codec_utils";
+import { wireCodecToWebCodecsString } from "../utils/webcodecs";
 
 const PROBE_WIDTH = 854;
 const PROBE_HEIGHT = 480;

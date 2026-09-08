@@ -1,3 +1,16 @@
+// Backend payload shapes — DTOs, not store state.
+//
+// This file was `src/stores/types.ts`, and every export in it is a wire
+// type the Rust side produces. That put four of them on the wrong side
+// of the `ipc-is-leaf` boundary: `src/ipc/commands/system.ts` declares
+// the commands that *return* `OnboardingConfig`, `WelcomeScreen`,
+// `OnboardingAnswer` and `GossipDiagnostics`, so it had to reach up
+// into `stores/` to name its own return types.
+//
+// `LifecycleState` moved here from `stores/lifecycle.store.ts` for the
+// same reason: it is the FSM state `setup.rs` emits, and both
+// `lifecycleCurrent()` and the channel subscription need to name it.
+
 export interface GameInfo {
   gameName: string;
   gameId: number | null;
@@ -96,3 +109,19 @@ export interface GossipDiagnostics {
   gossipPeerKeys: string[];
   onlineMemberKeys: string[];
 }
+
+/**
+ * Backend lifecycle FSM state (`setup.rs` emits `{ state, at_ms }`).
+ *
+ * The store derives a view of this; it is not the store's own type.
+ */
+export type LifecycleState =
+  | "stopped"
+  | "starting"
+  | "locked"
+  | "resuming"
+  | "operational"
+  | "degraded"
+  | "detached"
+  | "locking"
+  | "shutting_down";

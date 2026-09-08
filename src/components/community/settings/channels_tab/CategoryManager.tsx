@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import type { Community } from "../../../../stores/community.store";
-import type { ConfirmOptions } from "../../CommunitySettingsModal";
+import type { ConfirmOptions } from "../types";
 import {
   handleReorderCategories,
   handleCreateCategory,

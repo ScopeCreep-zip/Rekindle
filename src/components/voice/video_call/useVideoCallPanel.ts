@@ -18,23 +18,12 @@ import { createDecodePipeline } from "./panel_decode";
 import { createPipToggle } from "./panel_pip";
 import { createVideoSender, type SenderRoute } from "./video_sender";
 
-/** W11.4 — `community` panel routes encoded frames through gossip
- *  fan-out + MEK; `dm` panel routes 1:1 via Signal Double Ratchet. The
- *  decoder side is identical — decoders follow per-frame codec tags. */
-export type VideoCallPanelProps =
-  | {
-      mode: "community";
-      communityId: string;
-      channelId: string;
-      /** When false the panel is invisible — used to keep state alive across panel toggles. */
-      visible: boolean;
-    }
-  | {
-      mode: "dm";
-      /** Hex-encoded peer Ed25519 public key. */
-      peerId: string;
-      visible: boolean;
-    };
+// Declared in ./panel_ctx.ts and re-exported here for VideoCallPanel.tsx.
+// `PanelCtx` names these props, and this hook builds the ctx from the
+// modules that consume it (panel_capture / panel_decode / panel_pip),
+// so declaring the type here closed four module cycles.
+export type { VideoCallPanelProps } from "./panel_ctx";
+import type { VideoCallPanelProps } from "./panel_ctx";
 
 export function useVideoCallPanel(props: VideoCallPanelProps) {
   // Architecture §10.6 — desired state lives in the voice store so the

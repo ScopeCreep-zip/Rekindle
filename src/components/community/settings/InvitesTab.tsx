@@ -5,7 +5,7 @@ import {
   handleListCommunityInvites,
 } from "../../../handlers/community.handlers";
 import { communityState } from "../../../stores/community.store";
-import type { InviteDto } from "../../../stores/types";
+import type { InviteDto } from "../../../ipc/commands/dto";
 import { formatExpiry } from "../../../utils/formatting";
 import { addToast } from "../../../stores/toast.store";
 

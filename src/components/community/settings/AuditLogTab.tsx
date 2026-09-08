@@ -1,7 +1,7 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
 import { handleGetAuditLog } from "../../../handlers/community.handlers";
 import { truncateKey, formatDateTimeSecs, formatAction } from "../../../utils/formatting";
-import type { AuditLogEntryDto } from "../../../stores/types";
+import type { AuditLogEntryDto } from "../../../ipc/commands/dto";
 
 interface AuditLogTabProps {
   communityId: string;

@@ -5,16 +5,8 @@ import { createSignal } from "solid-js";
  * The 9-state path is stopped → starting → locked → resuming → operational
  * (+ degraded / detached / locking / shutting_down).
  */
-export type LifecycleState =
-  | "stopped"
-  | "starting"
-  | "locked"
-  | "resuming"
-  | "operational"
-  | "degraded"
-  | "detached"
-  | "locking"
-  | "shutting_down";
+export type { LifecycleState } from "../ipc/commands/dto";
+import type { LifecycleState } from "../ipc/commands/dto";
 
 /**
  * Pure *derived view* of the single backend authority — never a second

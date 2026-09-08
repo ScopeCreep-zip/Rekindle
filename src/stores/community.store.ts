@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 import type { Message } from "./chat.store";
-import type { GameInfo, InviteDto, OnboardingConfig, WelcomeScreen } from "./types";
+import type { GameInfo, InviteDto, OnboardingConfig, WelcomeScreen } from "../ipc/commands/dto";
 
 export interface Channel {
   id: string;

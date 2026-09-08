@@ -1,5 +1,5 @@
 import { Component, For, Show } from "solid-js";
-import type { WelcomeScreen as WelcomeScreenData } from "../../stores/types";
+import type { WelcomeScreen as WelcomeScreenData } from "../../ipc/commands/dto";
 
 interface WelcomeScreenProps {
   screen: WelcomeScreenData;

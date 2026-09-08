@@ -2,7 +2,7 @@ import type { CommunityEvent } from "../../ipc/channels";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
-import { announce } from "../../components/common/AnnounceRegion";
+import { announce } from "../../stores/announce.store";
 import { settingsState } from "../../stores/settings.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { setVideoSessionConfig } from "../../stores/video.store";

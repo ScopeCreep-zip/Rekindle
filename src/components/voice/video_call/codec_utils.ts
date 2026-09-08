@@ -44,33 +44,17 @@ export const LADDER_UNDERSHOOT_RATIO = 0.6;
 // one quiet-scene window must not bounce the ladder.
 export const LADDER_UP_STREAK = 2;
 
-/** `Codec` wire string → fully-specified WebCodecs codec parameter.
- *  Shared by the encoder (video_sender.ts) and decoder
- *  (useVideoCallPanel.ts) — one map, one edit per new codec. H.264 is
- *  constrained-baseline in Annex-B form: the encoder additionally sets
- *  `avc: { format: "annexb" }`, and decoders configure
- *  codec-string-only (SPS/PPS ride the bitstream; no avcC
- *  description). */
-export function wireCodecToWebCodecsString(codec: Codec): string {
-  switch (codec) {
-    case "vp9":
-      return "vp09.00.30.08";
-    case "vp8":
-      return "vp8";
-    case "h264":
-      return "avc1.42E01F";
-  }
-}
+// `wireCodecToWebCodecsString` moved to `src/utils/webcodecs.ts`. It is
+// a pure mapping of a wire value, and leaving it here forced
+// `handlers/video.handlers.ts` to import a component module to
+// configure a decoder. Re-exported so the sender and decoder keep one
+// import site.
+export { wireCodecToWebCodecsString } from "../../../utils/webcodecs";
 
-// Receiver playout buffer. delay = jitterEstimate × multiplier, clamped to
-// [min, max]. These are *call* bounds (live), not *streaming* bounds: WebRTC's
-// video jitter buffer lives at ~50–200ms and libwebrtc's low-latency start
-// delay is ~30–40ms. The 500ms/×3 streaming defaults pinned delay near the
-// ceiling on bursty gossip arrival and put video ~1s behind live.
-export const PLAYOUT_MIN_DELAY_MS = 40; // libwebrtc low-latency start delay
-export const PLAYOUT_MAX_DELAY_MS = 180; // WebRTC video jitter-buffer ceiling
-export const PLAYOUT_JITTER_MULTIPLIER = 2.5;
-export const PLAYOUT_MAX_FRAMES = 30; // ~2s @15fps — a runaway guard, not a buffer
+// The receiver playout-buffer bounds (PLAYOUT_MIN_DELAY_MS and friends)
+// moved to ./playout_buffer.ts, their only consumer. They were declared
+// here while this file imported `VideoPlayoutBuffer` back out of that
+// module, which is the whole of that cycle.
 export const ACK_INTERVAL_MS = 1000; // measured kbps/loss feedback cadence
 
 // Per-stream render-path latency logging (~1 Hz) to confirm the buffer sits at

@@ -9,30 +9,16 @@ import { ICON_CLOSE, ICON_EMOTICON, ICON_PAPERCLIP } from "../../icons";
 import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
 import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
 import { useSlowmode } from "./message_input/useSlowmode";
+import type { MessageInputProps } from "./message_input/types";
 
 const ICON_MIC = "\u{F036C}"; // nf-md-microphone
 const ICON_MIC_OFF = "\u{F036D}"; // nf-md-microphone_off
 
-export interface EditMode {
-  messageId: string;
-  body: string;
-}
-
-export interface MessageInputProps {
-  communityId?: string;
-  peerId: string;
-  replyTo?: { senderName: string; body: string; messageId?: string } | null;
-  editMode?: EditMode | null;
-  onSend?: (id: string, body: string, replyToId?: string) => void;
-  onDismissReply?: () => void;
-  onEditSave?: (messageId: string, newBody: string) => void;
-  onEditCancel?: () => void;
-  onTyping?: () => void;
-  disabled?: boolean;
-  disabledMessage?: string;
-  slowmodeSeconds?: number;
-  bypassSlowmode?: boolean;
-}
+// Declared in ./message_input/types.ts and re-exported here so the
+// existing import sites keep working. `useSlowmode` needs the props
+// type and this file imports `useSlowmode` — declaring it here closed
+// a module cycle.
+export type { EditMode, MessageInputProps } from "./message_input/types";
 
 const MessageInput: Component<MessageInputProps> = (props) => {
   const [body, setBody] = createSignal("");

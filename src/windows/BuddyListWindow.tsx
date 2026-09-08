@@ -29,7 +29,7 @@ import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
 import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
 import { handleListDms, subscribeDmInbox } from "../handlers/dm.handlers";
 import { handleHydrateRelayState } from "../handlers/relay.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { hydrateState } from "../stores/hydrate";
 import {
   subscribeNetworkStatus,
   subscribeProfileUpdates,

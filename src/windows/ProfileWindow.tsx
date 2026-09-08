@@ -6,7 +6,7 @@ import StatusDot from "../components/status/StatusDot";
 import { friendsState } from "../stores/friends.store";
 import { communityState } from "../stores/community.store";
 import { subscribeProfilePresenceEvents } from "../handlers/presence-events.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { hydrateState } from "../stores/hydrate";
 import { commands } from "../ipc/commands";
 import { handleRemoveFriend } from "../handlers/buddy.handlers";
 import { handleStartDmCall } from "../handlers/calls.handlers";

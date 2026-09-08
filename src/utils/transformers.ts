@@ -1,7 +1,7 @@
 import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
 import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
-import type { GameInfo } from "../stores/types";
+import type { GameInfo } from "../ipc/commands/dto";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 

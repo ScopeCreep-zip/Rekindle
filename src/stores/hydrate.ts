@@ -1,8 +1,8 @@
-import { commands } from "./commands";
-import { setAuthState } from "../stores/auth.store";
-import { fetchAvatarUrl } from "./avatar";
-import { setFriendsState } from "../stores/friends.store";
-import { setCommunityState } from "../stores/community.store";
+import { commands } from "../ipc/commands";
+import { setAuthState } from "./auth.store";
+import { fetchAvatarUrl } from "../ipc/avatar";
+import { setFriendsState } from "./friends.store";
+import { setCommunityState } from "./community.store";
 import { transformExpression, transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
 import {
   handleLoadAutoModRules,
@@ -11,6 +11,12 @@ import {
 
 /**
  * Hydrate frontend stores from the Rust backend.
+ *
+ * Lives in `stores/`, not `ipc/`. It reads through the IPC wrappers and
+ * writes store state — which is the stores tier's job description, not
+ * the Tauri boundary's. Sitting under `src/ipc/` made it four
+ * `ipc-is-leaf` violations on its own, since a leaf may not reach up
+ * into stores or handlers.
  *
  * Each Tauri webview has its own isolated JavaScript context,
  * so SolidJS stores are empty when a new window opens.

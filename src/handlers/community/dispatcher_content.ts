@@ -4,7 +4,7 @@ import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
-import type { InviteDto } from "../../stores/types";
+import type { InviteDto } from "../../ipc/commands/dto";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { showSystemNotification } from "../notification-events.handlers";
 import { transformEvent } from "./shared";

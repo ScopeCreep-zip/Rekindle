@@ -13,7 +13,7 @@ import {
   REQUEST_TO_SPEAK,
 } from "../../ipc/permissions";
 import type { Message } from "../../stores/chat.store";
-import type { EditMode } from "../../components/chat/MessageInput";
+import type { EditMode } from "../../components/chat/message_input/types";
 import type { ScheduledEvent, Thread } from "../../stores/community.store";
 import { formatEventCountdown as formatTimeUntilEvent } from "../../utils/time";
 

@@ -27,12 +27,11 @@ import AutoModTab from "./settings/AutoModTab";
 import AnalyticsTab from "./settings/AnalyticsTab";
 import PrivacyTab from "./settings/PrivacyTab";
 
-export interface ConfirmOptions {
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  action: () => void;
-}
+// Declared in ./settings/types.ts and re-exported here for existing
+// import sites. This file renders every tab and each tab's props name
+// the type, so declaring it here closed six module cycles.
+export type { ConfirmOptions } from "./settings/types";
+import type { ConfirmOptions } from "./settings/types";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;

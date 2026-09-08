@@ -4,7 +4,7 @@ import type { PresenceEvent } from "./presence_events";
 import type { VoiceEvent } from "./voice_events";
 import type { CommunityEvent } from "./community_events";
 import type { NotificationEvent, NetworkStatusEvent } from "./notification_events";
-import type { LifecycleState } from "../../stores/lifecycle.store";
+import type { LifecycleState } from "../commands/dto";
 
 /**
  * Safe listen wrapper — no-ops in E2E mode where Tauri event system
