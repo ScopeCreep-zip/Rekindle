@@ -14,6 +14,14 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// from the schema — safe because the app is not live yet and identity
 /// keys live in Stronghold, not `SQLite`.
 ///
+/// 81: the friend-list DHT record. `FriendEntry` gained `dm_log_key`
+/// and `profileDhtKey`/`dmLogKey` joined `schemas/friend.capnp`, which
+/// had only four fields while the Rust struct had five — the encoder
+/// dropped `profile_dht_key` on every write and the decoder set it to
+/// `None` with a comment saying so. The daemon track also wrote this
+/// record in postcard while the desktop wrote Cap'n Proto, so a list
+/// written by either is unreadable to the other.
+///
 /// 80: the account record's header shed the three child
 /// `DHTShortArray` pointers and their owner keypairs. Creating an
 /// account allocated a contact list, a chat list and an invitation list
@@ -80,7 +88,7 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// entry set that cannot express `ApprovalRequired` — the variant was
 /// merged, validated and Cap'n Proto encoded, and nothing ever wrote it,
 /// so the mode was unreachable and every community was `Open`.
-const SCHEMA_VERSION: i64 = 80;
+const SCHEMA_VERSION: i64 = 81;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

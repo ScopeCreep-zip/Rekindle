@@ -16,6 +16,10 @@ pub struct FriendEntry {
     pub added_at: u64,
     /// Their profile DHT record key.
     pub profile_dht_key: Option<String>,
+    /// `DhtLog` spine key for the per-peer DM conversation, created
+    /// during friend accept. Both peers read and write it.
+    #[serde(default)]
+    pub dm_log_key: Option<String>,
 }
 
 /// The entire friend list stored in a single DHT record subkey.

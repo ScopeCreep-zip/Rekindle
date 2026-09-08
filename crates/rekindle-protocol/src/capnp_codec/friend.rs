@@ -55,6 +55,12 @@ pub fn encode_friend_list(entries: &[FriendEntry]) -> Vec<u8> {
                 fe.set_group_name(group.as_str());
             }
             fe.set_added_at(entry.added_at);
+            if let Some(ref profile) = entry.profile_dht_key {
+                fe.set_profile_dht_key(profile.as_str());
+            }
+            if let Some(ref dm_log) = entry.dm_log_key {
+                fe.set_dm_log_key(dm_log.as_str());
+            }
         }
     }
     pack(&builder)
@@ -84,7 +90,8 @@ pub fn decode_friend_list(data: &[u8]) -> Result<Vec<FriendEntry>, ProtocolError
             nickname,
             group,
             added_at: fe.get_added_at(),
-            profile_dht_key: None, // Not in capnp schema — stored separately
+            profile_dht_key: text_or_none(fe.has_profile_dht_key(), fe.get_profile_dht_key())?,
+            dm_log_key: text_or_none(fe.has_dm_log_key(), fe.get_dm_log_key())?,
         });
     }
 

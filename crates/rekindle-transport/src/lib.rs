@@ -19,7 +19,6 @@ pub mod broadcast;
 pub mod subscriptions;
 
 // ── Business logic (zero veilid imports) ───────────────────────────────
-pub mod community;
 pub mod config;
 pub mod crypto;
 pub mod envelope_queue;

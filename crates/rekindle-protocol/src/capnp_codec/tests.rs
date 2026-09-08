@@ -161,6 +161,7 @@ fn round_trip_friend_list() {
             group: Some("Gaming".to_string()),
             added_at: 1000,
             profile_dht_key: Some("dht_key_1".to_string()),
+            dm_log_key: Some("VLD0:dmlog".to_string()),
         },
         FriendEntry {
             public_key: "def456".to_string(),
@@ -168,6 +169,7 @@ fn round_trip_friend_list() {
             group: None,
             added_at: 2000,
             profile_dht_key: None,
+            dm_log_key: None,
         },
     ];
 
@@ -179,12 +181,19 @@ fn round_trip_friend_list() {
     assert_eq!(decoded[0].nickname, Some("Buddy".to_string()));
     assert_eq!(decoded[0].group, Some("Gaming".to_string()));
     assert_eq!(decoded[0].added_at, 1000);
-    // profile_dht_key not in capnp schema
-    assert_eq!(decoded[0].profile_dht_key, None);
+    // Both of these used to be dropped by the encoder: the schema had
+    // four fields while the struct had five, so `profile_dht_key` went
+    // out and came back `None` — and this test asserted that loss
+    // rather than catching it. `dm_log_key` existed only on the
+    // daemon's parallel copy of the struct.
+    assert_eq!(decoded[0].profile_dht_key, Some("dht_key_1".to_string()));
+    assert_eq!(decoded[0].dm_log_key, Some("VLD0:dmlog".to_string()));
 
     assert_eq!(decoded[1].public_key, "def456");
     assert_eq!(decoded[1].nickname, None);
     assert_eq!(decoded[1].group, None);
+    assert_eq!(decoded[1].profile_dht_key, None);
+    assert_eq!(decoded[1].dm_log_key, None);
 }
 
 #[test]

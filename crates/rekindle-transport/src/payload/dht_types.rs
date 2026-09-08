@@ -28,24 +28,16 @@ pub const STATUS_INVISIBLE: u8 = 4;
 pub const FRIEND_INBOX_SUBKEY_COUNT: u32 = 32;
 
 // ── Friend list record (DFLT, 1 subkey) ─────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendEntry {
-    pub public_key: String,
-    pub nickname: Option<String>,
-    pub group: Option<String>,
-    pub added_at: u64,
-    pub profile_dht_key: Option<String>,
-    /// DhtLog spine key for the per-peer DM conversation.
-    /// Created during friend accept. Both peers read/write.
-    #[serde(default)]
-    pub dm_log_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FriendList {
-    pub friends: Vec<FriendEntry>,
-}
+//
+// Re-exported from `rekindle-protocol` rather than declared here. The
+// two crates had their own `FriendEntry`/`FriendList` for the *same*
+// DHT record, and they had already diverged: this one carried
+// `dm_log_key` and protocol's did not. Worse, the two encoded that one
+// record differently — protocol in Cap'n Proto, this crate in postcard
+// — so neither track could read the other's friend list, and whichever
+// wrote last destroyed it. Cap'n Proto is the declared serialization
+// (CLAUDE.md, `schemas/friend.capnp`), so that is the one that stayed.
+pub use rekindle_protocol::dht::friends::{FriendEntry, FriendList};
 
 // ── Mailbox record (DFLT, 1 subkey) ──────────────────────────────────
 
@@ -93,90 +85,20 @@ pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as
 // each peer validates for itself.
 
 // ── Channel types ───────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ChannelKind {
-    Text,
-    Voice,
-    Announcement,
-    Forum,
-    Stage,
-    Directory,
-    Media,
-    Events,
-    Dm,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelEntry {
-    pub id: String,
-    pub name: String,
-    pub kind: ChannelKind,
-    pub sort_order: u16,
-    pub category_id: Option<String>,
-    #[serde(default)]
-    pub topic: String,
-    #[serde(default)]
-    pub slowmode_seconds: u32,
-    #[serde(default)]
-    pub nsfw: bool,
-    pub message_record_key: Option<String>,
-    #[serde(default)]
-    pub mek_generation: u64,
-    pub log_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CategoryEntry {
-    pub id: String,
-    pub name: String,
-    pub sort_order: i32,
-}
+//
+// `ChannelEntry`, `ChannelKind`, `CategoryEntry`, `BanEntry` and
+// `RoleEntry` lived here: the v1.0 governance-manifest payload types.
+// Nothing has written that manifest since channels, roles, categories
+// and bans became `ChannelCreated` / `RoleDefinition` / `CategoryAdded`
+// / `MemberBanned` governance entries, and `query/display_map.rs`
+// already records that its mappers for them were removed because the
+// caller builds display types from merged CRDT state. They were also
+// five of the eighteen type names this crate duplicated against
+// rekindle-protocol.
 
 // ── Role types ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RoleEntry {
-    pub id: u32,
-    pub name: String,
-    pub color: u32,
-    pub permissions: u64,
-    pub position: i32,
-    #[serde(default)]
-    pub hoist: bool,
-    #[serde(default)]
-    pub mentionable: bool,
-    #[serde(default)]
-    pub self_assignable: bool,
-}
-
 // ── Member types ────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberSummary {
-    pub pseudonym_key: String,
-    pub display_name: String,
-    pub role_ids: Vec<u32>,
-    pub joined_at: u64,
-    pub subkey_index: u32,
-    #[serde(default)]
-    pub onboarding_complete: bool,
-    pub timeout_until: Option<u64>,
-    /// Member's profile DHT key for route resolution.
-    ///
-    /// Routes are published to the member's own profile record (which they
-    /// own and can update independently). Other members read the profile to
-    /// get the current route blob for RPC calls. This avoids the DFLT
-    /// ownership problem where only the registry creator can write to the
-    /// registry — each member controls their own profile.
-    #[serde(default)]
-    pub profile_dht_key: Option<String>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,30 +115,7 @@ pub struct MemberPresence {
 
 // ── Ban types ───────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BanEntry {
-    pub pseudonym_key: String,
-    pub reason: Option<String>,
-    pub banned_by: String,
-    pub banned_at: u64,
-}
-
 // ── Invite types ────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InviteEntry {
-    pub code_hash: String,
-    pub created_by: String,
-    pub created_at: u64,
-    pub expires_at: Option<u64>,
-    #[serde(default)]
-    pub max_uses: u32,
-    #[serde(default)]
-    pub use_count: u32,
-    pub encrypted_secrets: Option<String>,
-}
 
 // ── Channel message record ──────────────────────────────────────────
 
@@ -289,15 +188,3 @@ pub enum FriendRequestStatus {
 }
 
 // ── Invite blob (for friend invites) ────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InviteBlob {
-    pub public_key: String,
-    pub display_name: String,
-    pub mailbox_dht_key: String,
-    pub profile_dht_key: String,
-    pub route_blob: Vec<u8>,
-    pub prekey_bundle: Vec<u8>,
-    pub invite_id: Option<String>,
-    pub signature: Vec<u8>,
-}

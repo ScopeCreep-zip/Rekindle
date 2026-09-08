@@ -51,35 +51,12 @@ pub fn receive_mek_transfer_payload(
     Ok(gen)
 }
 
-pub fn wrap_meks_for_member(
-    channels: &[crate::payload::dht_types::ChannelEntry],
-    recipient_pseudonym_hex: &str,
-    signing_key_bytes: &[u8; 32],
-    governance_key: &str,
-    mek_cache: &RwLock<MekCache>,
-) -> Result<Vec<crate::payload::rpc::MekTransferPayload>> {
-    let recipient_pub = parse_pseudonym_pub(recipient_pseudonym_hex)?;
-    let our_pseudonym =
-        crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, governance_key);
-    let our_pseudonym_hex = hex::encode(our_pseudonym.verifying_key().to_bytes());
-    let cache = mek_cache.read();
-    let mut transfers = Vec::with_capacity(channels.len());
-    for channel in channels {
-        let Some(mek) = cache.current(governance_key, &channel.id) else {
-            tracing::warn!(channel = %channel.name, "no MEK cached — skipping");
-            continue;
-        };
-        let wrapped =
-            crate::crypto::mek::wrap_mek(&our_pseudonym, &recipient_pub, &mek.to_wire_bytes())?;
-        transfers.push(crate::payload::rpc::MekTransferPayload {
-            channel_id: channel.id.clone(),
-            generation: mek.generation(),
-            rotator_pseudonym_hex: our_pseudonym_hex.clone(),
-            wrapped_mek: wrapped,
-        });
-    }
-    Ok(transfers)
-}
+// `wrap_meks_for_member` lived here: the v1.0 flow where a coordinator
+// wrapped every channel MEK for a joining member. It had no callers.
+// Under v2.0 the invite carries the MEK in `InviteSecrets` and rotation
+// is peer-to-peer (`rekindle-mek-rotation`), so there is no privileged
+// peer to do the wrapping — the same reason `node/daemon/mek_wrap.rs`
+// went earlier in this migration.
 
 /// Replenish prekeys — generate new bundle, publish to profile DHT via raw primitive.
 pub async fn replenish_prekeys(

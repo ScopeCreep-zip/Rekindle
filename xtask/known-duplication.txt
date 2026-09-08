@@ -72,8 +72,8 @@ type rekindle (src-tauri)::ThreadInfoDto rekindle-protocol::ThreadInfoDto
 type rekindle (src-tauri)::VoiceEvent rekindle-types::VoiceEvent
 type rekindle-audit::AuditEntry rekindle-node::AuditEntry
 type rekindle-calls::CallError rekindle-transport::CallError
-type rekindle-channel::AutoModAction rekindle-protocol::AutoModAction rekindle-transport::AutoModAction
-type rekindle-cli::ChannelEntry rekindle-transport::ChannelEntry rekindle-types::ChannelEntry
+type rekindle-channel::AutoModAction rekindle-protocol::AutoModAction
+type rekindle-cli::ChannelEntry rekindle-types::ChannelEntry
 type rekindle-cli::PolicyConfig rekindle-node::PolicyConfig
 type rekindle-crypto::CryptoError rekindle-types::CryptoError
 type rekindle-crypto::PreKeyBundle rekindle-protocol::PreKeyBundle
@@ -86,23 +86,6 @@ type rekindle-gossip::GossipError rekindle-types::GossipError
 type rekindle-gossip::GossipMesh rekindle-transport::GossipMesh
 type rekindle-governance-runtime::OnlineMemberSnapshot rekindle-presence::OnlineMemberSnapshot
 type rekindle-governance-runtime::SegmentDescriptor rekindle-presence::SegmentDescriptor
-type rekindle-protocol::AuditAction rekindle-transport::AuditAction
-type rekindle-protocol::AuditChange rekindle-transport::AuditChange
-type rekindle-protocol::AuditLogEntry rekindle-transport::AuditLogEntry
-type rekindle-protocol::AuditTarget rekindle-transport::AuditTarget
-type rekindle-protocol::AutoModConfig rekindle-transport::AutoModConfig
-type rekindle-protocol::AutoModRule rekindle-transport::AutoModRule
-type rekindle-protocol::AutoModTrigger rekindle-transport::AutoModTrigger
-type rekindle-protocol::BanEntry rekindle-transport::BanEntry
-type rekindle-protocol::CategoryEntry rekindle-transport::CategoryEntry
-type rekindle-protocol::ChannelKind rekindle-transport::ChannelKind
-type rekindle-protocol::FriendEntry rekindle-transport::FriendEntry
-type rekindle-protocol::FriendList rekindle-transport::FriendList
-type rekindle-protocol::InviteBlob rekindle-transport::InviteBlob
-type rekindle-protocol::InviteEntry rekindle-transport::InviteEntry
 type rekindle-protocol::MekTransferPayload rekindle-transport::MekTransferPayload
-type rekindle-protocol::MemberSummary rekindle-transport::MemberSummary
-type rekindle-protocol::RaidAction rekindle-transport::RaidAction
-type rekindle-protocol::RaidProtection rekindle-transport::RaidProtection
 type rekindle-route::CachedRoute rekindle-transport::CachedRoute
 type rekindle-transport::MemberPresence rekindle-types::MemberPresence
