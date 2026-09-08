@@ -5,12 +5,9 @@
 //! module constructs a `ChannelAdapter` per call and maps the crate's
 //! `ExpressionView` ↔ src-tauri `ExpressionInfo`.
 
-use std::sync::Arc;
-
 use rekindle_types::expression::SoundboardMeta;
 
 use crate::state::SharedState;
-use crate::state_helpers;
 
 #[derive(Debug, Clone)]
 pub struct ExpressionInfo {
@@ -31,13 +28,7 @@ pub struct ExpressionInfo {
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
-    let (app_handle, pool) =
-        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
-    Ok(crate::services::channel_adapter::ChannelAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    ))
+    crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
 }
 
 fn view_to_info(view: rekindle_channel::deps::ExpressionView) -> ExpressionInfo {

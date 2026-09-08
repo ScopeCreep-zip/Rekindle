@@ -10,6 +10,11 @@ workspace = true
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
+# Tier 5 (downward edge). Reuses `parse_and_classify_row` — the W26
+# signature verify + ban filter that decides whether a registry row
+# represents a real member — so slot reclamation and presence polling
+# cannot drift on what "occupied" means.
+rekindle-presence = { path = "../rekindle-presence" }
 rekindle-governance = { path = "../rekindle-governance" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-protocol = { path = "../rekindle-protocol" }

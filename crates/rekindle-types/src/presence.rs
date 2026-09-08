@@ -38,6 +38,31 @@ pub struct MemberPresence {
     /// Unix timestamp of last heartbeat write.
     pub last_heartbeat: u64,
 
+    /// Set by a departing member on their own row to release the slot.
+    ///
+    /// `communities-governance.md` promises leaving frees a slot, but
+    /// Veilid has no per-subkey delete and `inspect_present_subkeys`
+    /// reports *ever written*, so a departed member's slot reads as
+    /// occupied forever. This is the tombstone the claim path reads
+    /// instead (`join_stages::reclaim`).
+    ///
+    /// It must be **signed**, which is why it lives in the row rather
+    /// than being expressed as zeroed bytes: the slot seed is shared, so
+    /// any member can write any slot, and an unsigned empty payload
+    /// would let anyone free anyone's slot and collide two members onto
+    /// one index. Inside `signing_bytes()` it cannot be flipped by a
+    /// third party.
+    ///
+    /// `skip_serializing_if` is load-bearing for compatibility, not
+    /// tidiness. A live row omits the field and stays byte-identical to
+    /// the pre-existing format, so old readers still verify it. Only a
+    /// departed row carries it — and an old reader, which drops unknown
+    /// fields before recomputing `signing_bytes()`, fails that
+    /// signature and treats the slot as reclaimable too. Both ends
+    /// converge on the same answer without a flag day.
+    #[serde(default, skip_serializing_if = "is_not_departed")]
+    pub departed: bool,
+
     /// Currently playing game (from rekindle-game-detect).
     pub game_info: Option<GameInfo>,
 
@@ -119,6 +144,15 @@ pub struct MemberPresence {
     /// Receivers MUST verify before applying.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signature: Vec<u8>,
+}
+
+/// `skip_serializing_if` predicate for [`MemberPresence::departed`].
+///
+/// Deliberately not `std::ops::Not::not` — serde hands the predicate a
+/// reference, and the indirection is worth naming because omitting this
+/// field is what keeps live rows wire-identical for old readers.
+fn is_not_departed(departed: &bool) -> bool {
+    !*departed
 }
 
 impl MemberPresence {
@@ -231,6 +265,15 @@ pub enum SessionStatus {
     Invisible,
 }
 
+/// Architecture §13.4 — "invisible" appears offline to others, so the
+/// wire payload uses `"offline"` for both Invisible and Offline.
+///
+/// Named rather than inlined because the fold is a *privacy* rule, not a
+/// formatting choice: anything that writes a status onto the wire has to
+/// collapse Invisible, and a bare `"offline"` literal at a new callsite
+/// is indistinguishable from a genuine offline.
+pub const INVISIBLE_WIRE_VALUE: &str = "offline";
+
 impl SessionStatus {
     /// Wire string used by the transitional `MemberPresence.status`
     /// field (Invisible folds to "offline" — peers must not see it).
@@ -240,8 +283,22 @@ impl SessionStatus {
             Self::Online => "online",
             Self::Away => "away",
             Self::Busy => "busy",
-            Self::Offline | Self::Invisible => "offline",
+            Self::Offline | Self::Invisible => INVISIBLE_WIRE_VALUE,
         }
+    }
+
+    /// `true` when peers should consider this status "available"
+    /// (receive routing decisions + mention escalation).
+    #[must_use]
+    pub fn is_visible_online(self) -> bool {
+        matches!(self, Self::Online | Self::Away | Self::Busy)
+    }
+
+    /// `true` when the user is actively present at the keyboard
+    /// (presence indicators flash, notifications can wake them).
+    #[must_use]
+    pub fn is_actively_engaged(self) -> bool {
+        matches!(self, Self::Online | Self::Busy)
     }
 }
 
@@ -358,6 +415,11 @@ impl Default for MemberPresence {
             custom_status: None,
             route_blob: Vec::new(),
             last_heartbeat: 0,
+            // A default row is a live member, never a tombstone: every
+            // heartbeat builds from `..Default::default()`, so defaulting
+            // this to `true` would release the writer's own slot on every
+            // presence write.
+            departed: false,
             game_info: None,
             avatar_ref: None,
             banner_ref: None,

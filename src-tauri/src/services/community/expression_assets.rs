@@ -9,12 +9,9 @@ use rekindle_files::AttachmentOffer;
 
 use crate::services::files_adapter::FilesAdapter;
 use crate::state::{AppState, SharedState};
-use crate::state_helpers;
 
 fn build_adapter(state: &SharedState) -> Result<Arc<FilesAdapter>, String> {
-    let (app_handle, pool) =
-        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
-    Ok(FilesAdapter::new(state.clone(), app_handle, pool))
+    crate::services::build_adapter(state, FilesAdapter::new)
 }
 
 pub fn upload_to_cache(

@@ -124,10 +124,24 @@ impl DaemonGovernanceAdapter<'_> {
     /// shells hold different amounts of a created community.
     ///
     /// Detached because `insert_community` is sync while the keyring is
-    /// async, and best-effort because the community is already created:
-    /// failing here must not undo a successful genesis. The encrypted
-    /// file backups are the recovery path when the OS keyring is lost to
-    /// a migration or container rebuild.
+    /// async.
+    ///
+    /// **Best-effort is a deliberate downgrade from the v1.0 create,
+    /// which failed the whole request here** ("community created but
+    /// governance keypair storage failed. The community will not
+    /// function. Delete and recreate."). That was the right call when
+    /// the owner keypair was the registry's write credential. Under
+    /// `o_cnt: 0` it is not: `DHTSchemaSMPL::validate` only counts the
+    /// owner toward `writer_count` when `o_cnt > 0`, so this keypair
+    /// authorises **no subkey write whatsoever**. Members write their
+    /// own subkeys with slot keypairs derived from the shared seed, and
+    /// that seed is persisted on the membership where losing it *would*
+    /// be fatal. Losing this one costs record-level ownership operations
+    /// and the `is_some()` ownership marker the shells read — worth a
+    /// warning, not worth destroying a community that otherwise works.
+    ///
+    /// The encrypted file backups are the recovery path when the OS
+    /// keyring is lost to a migration or container rebuild.
     fn persist_origin_keypairs(
         &self,
         governance_key: &str,

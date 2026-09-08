@@ -18,10 +18,15 @@ pub use envelope::{
     PresenceGameInfo, SignedEnvelope,
 };
 pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, WelcomeScreen};
+// `CoordinatorInfo`, `MemberPresence` and `SignedPresence` used to be
+// re-exported here. All three were v1.0 coordinator-era types with no
+// reachable caller — and `MemberPresence` was a second struct of that
+// name, carrying `is_coordinator` / `coordinator_since`. The live
+// presence type is `rekindle_types::presence::MemberPresence`.
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
-    CoordinatorInfo, EncryptedMEKCopy, InviteEntry, InviteSecrets, MEKVaultEntry, MemberPresence,
-    MemberSummary, ModerationLevel, RoleEntryV2, SignedPresence,
+    EncryptedMEKCopy, InviteEntry, InviteSecrets, MEKVaultEntry, MemberSummary, ModerationLevel,
+    RoleEntryV2,
 };
 
 use serde::{Deserialize, Serialize};

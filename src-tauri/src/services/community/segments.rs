@@ -4,25 +4,19 @@
 //! `rekindle_governance_runtime::segments`. This module constructs a
 //! `GovernanceAdapter` per call and delegates.
 
-use std::sync::Arc;
-
 use rekindle_governance_runtime as gov_rt;
 
 use crate::state::SharedState;
-use crate::state_helpers;
 
 use gov_rt::SegmentDescriptor;
 
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::governance_adapter::GovernanceAdapter, String> {
-    let (app_handle, pool) =
-        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
-    Ok(crate::services::governance_adapter::GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    ))
+    crate::services::build_adapter(
+        state,
+        crate::services::governance_adapter::GovernanceAdapter::new,
+    )
 }
 
 pub fn segment_descriptors(state: &SharedState, community_id: &str) -> Vec<SegmentDescriptor> {

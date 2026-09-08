@@ -14,6 +14,16 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// from the schema — safe because the app is not live yet and identity
 /// keys live in Stronghold, not `SQLite`.
 ///
+/// 76: `MemberPresence` gained `departed`, the signed tombstone a
+/// leaver writes into its own registry slot so the slot can be reused.
+/// Live rows are unaffected — the field is `skip_serializing_if`, so a
+/// non-departed row stays byte-identical and old readers still verify
+/// it. Only a departed row carries it, and an old reader drops the
+/// unknown field before recomputing `signing_bytes()`, fails the
+/// signature, and treats the slot as reclaimable too: both ends reach
+/// the same answer. Bumped because the wire format grew a field, not
+/// because the tracks disagree.
+///
 /// 75: the registry MEK vault is gone from community creation, and the
 /// creator no longer writes itself into a shared member index. Both were
 /// owner-subkey writes that `o_cnt: 0` grants nobody a credential for,
@@ -38,7 +48,7 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// subkey 8 (Strand Relay pool vs friend-inbox key); the friend-inbox
 /// pair moved to 9/10 and the record now allocates 11 subkeys. See
 /// `rekindle_types::dht_layout::profile`.
-const SCHEMA_VERSION: i64 = 75;
+const SCHEMA_VERSION: i64 = 76;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).

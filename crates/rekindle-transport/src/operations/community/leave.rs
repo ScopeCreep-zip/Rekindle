@@ -1,16 +1,26 @@
-//! Leave a community: write a `Left` inbox entry, drop the cached MEKs,
+//! Leave a community: release our registry slot, drop the cached MEKs,
 //! and build the gossip `MemberLeave` payload for the caller to
 //! broadcast.
+//!
+//! Leaving is unilateral here, which is a deliberate divergence from
+//! MLS. RFC 9750 states "there is no similarly unilateral way for a
+//! member to leave the group; they must be removed by a remaining
+//! member" — because in MLS the group secret is derived from the
+//! membership tree, so a departure that nobody commits leaves the key
+//! schedule inconsistent. Our registry is a presence directory, not key
+//! material: the only thing this releases is the leaver\'s own slot, and
+//! W26 proves they authored it. The half that genuinely needs the
+//! remaining members is the MEK rotation, which is exactly what
+//! `rotate_text_mek_for_departure` does.
 
 use parking_lot::RwLock;
 use std::sync::Arc;
 use tracing::info;
 
-use super::{pseudonym_to_inbox_subkey, LeaveResult};
+use super::LeaveResult;
 use crate::broadcast::node::TransportNode;
 use crate::crypto::mek::MekCache;
 use crate::error::{Result, TransportError};
-use crate::payload::dht_types::{PendingJoinEntry, PendingJoinStatus};
 
 pub async fn leave_community(
     node: &TransportNode,
@@ -19,85 +29,31 @@ pub async fn leave_community(
     signing_key_bytes: &[u8; 32],
 ) -> Result<LeaveResult> {
     info!(community = %membership.community_name, "leaving community via DHT");
-    let dht = node.dht()?;
 
-    let _ = crate::broadcast::dht_writes::open_readonly(node, &membership.governance_key).await;
-    let metadata = dht
-        .governance()
-        .read_metadata(&membership.governance_key)
-        .await?
-        .ok_or_else(|| TransportError::Internal("governance metadata not found".into()))?;
-
-    if !metadata.join_inbox_key.is_empty() && !metadata.join_inbox_keypair_hex.is_empty() {
-        if let Ok(inbox_kp_bytes) = hex::decode(&metadata.join_inbox_keypair_hex) {
-            if let Ok(inbox_kp) = crate::broadcast::node::deserialize_keypair(&inbox_kp_bytes) {
-                let _ = crate::broadcast::dht_writes::open_writable(
-                    node,
-                    &metadata.join_inbox_key,
-                    inbox_kp,
-                )
-                .await;
-                let pseudonym = crate::crypto::pseudonym::derive_community_pseudonym(
-                    signing_key_bytes,
-                    &membership.governance_key,
-                );
-                let our_pseudonym_hex = hex::encode(pseudonym.verifying_key().to_bytes());
-                let mut leave_entry = PendingJoinEntry {
-                    requester_pseudonym_hex: our_pseudonym_hex.clone(),
-                    display_name: membership.display_name.clone(),
-                    profile_dht_key: String::new(),
-                    invite_code_hash: None,
-                    requested_at: rekindle_utils::timestamp_ms(),
-                    status: PendingJoinStatus::Left {
-                        left_at: rekindle_utils::timestamp_ms(),
-                    },
-                    signature_hex: String::new(),
-                };
-                let content = leave_entry.signature_content();
-                use ed25519_dalek::Signer;
-                let sig = pseudonym.sign(&content);
-                leave_entry.signature_hex = hex::encode(sig.to_bytes());
-                let subkey = pseudonym_to_inbox_subkey(&our_pseudonym_hex);
-                // Read-append-write: preserve existing entries at this subkey
-                let existing = match crate::broadcast::dht_writes::get(
-                    node,
-                    &metadata.join_inbox_key,
-                    subkey,
-                    true,
-                )
-                .await
-                {
-                    Ok(Some(data)) if !data.is_empty() && data != b"[]" => data,
-                    _ => Vec::new(),
-                };
-                let mut inbox_entries: Vec<PendingJoinEntry> = if existing.is_empty() {
-                    Vec::new()
-                } else {
-                    serde_json::from_slice::<Vec<PendingJoinEntry>>(&existing)
-                        .or_else(|_| {
-                            serde_json::from_slice::<PendingJoinEntry>(&existing).map(|e| vec![e])
-                        })
-                        .unwrap_or_default()
-                };
-                inbox_entries
-                    .retain(|e| e.requester_pseudonym_hex != leave_entry.requester_pseudonym_hex);
-                inbox_entries.push(leave_entry);
-                let entry_bytes = serde_json::to_vec(&inbox_entries).map_err(|e| {
-                    TransportError::SerializationFailed {
-                        reason: e.to_string(),
-                    }
-                })?;
-                let _ = crate::broadcast::dht_writes::set(
-                    node,
-                    &metadata.join_inbox_key,
-                    subkey,
-                    entry_bytes,
-                    None,
-                )
-                .await;
-                info!(community = %membership.community_name, "leave entry written");
-            }
-        }
+    // Release our registry slot by writing a *signed* departure row to
+    // the subkey we own.
+    //
+    // This replaces a `PendingJoinStatus::Left` write into the join
+    // inbox — coordinator-era plumbing whose reader went with the v1.0
+    // join, so it had become a write nothing consumed. It also delivers
+    // what `communities-governance.md` promises and nothing implemented:
+    // "zero own registry slot… The slot becomes available for reuse."
+    //
+    // It has to be signed rather than zeroed. The slot seed is shared
+    // with every member, so any member can write any slot; an unsigned
+    // empty payload would let anyone free anyone's slot and collide two
+    // members onto one index. W26 makes this provably ours.
+    //
+    // Best-effort: a member leaving must not be blocked by a DHT write,
+    // and a slot that fails to release is the status quo, not a
+    // regression. `rekindle-mek-rotation` handles the half that does
+    // need the remaining members — rotating the key we still hold.
+    if let Err(e) = release_registry_slot(node, membership, signing_key_bytes).await {
+        tracing::warn!(
+            community = %membership.community_name,
+            error = %e,
+            "could not release registry slot on leave — it stays occupied until reclaimed"
+        );
     }
 
     mek_cache
@@ -116,4 +72,58 @@ pub async fn leave_community(
     Ok(LeaveResult {
         leave_payload_bytes,
     })
+}
+
+/// Write a signed `departed` row into our own registry subkey.
+async fn release_registry_slot(
+    node: &TransportNode,
+    membership: &crate::session::CommunityMembership,
+    signing_key_bytes: &[u8; 32],
+) -> Result<()> {
+    let Some(slot_seed) = membership.slot_seed else {
+        return Err(TransportError::Internal(
+            "no slot seed — cannot derive the slot keypair to release".into(),
+        ));
+    };
+
+    let slot_kp = rekindle_protocol::dht::community::member_registry::derive_slot_veilid_keypair(
+        &slot_seed,
+        membership.slot_index,
+    )
+    .map_err(|e| TransportError::Internal(format!("slot keypair derivation failed: {e}")))?;
+
+    let pseudonym = crate::crypto::pseudonym::derive_community_pseudonym(
+        signing_key_bytes,
+        &membership.governance_key,
+    );
+    let mut presence = rekindle_types::presence::MemberPresence {
+        pseudonym_key: rekindle_types::id::PseudonymKey(pseudonym.verifying_key().to_bytes()),
+        // "offline" so a reader that predates `departed` still drops us
+        // from its roster rather than showing a ghost.
+        status: "offline".into(),
+        departed: true,
+        last_heartbeat: rekindle_utils::timestamp_secs(),
+        ..Default::default()
+    };
+    let sig = rekindle_secrets::derive::sign_with_pseudonym(&pseudonym, &presence.signing_bytes());
+    presence.signature = sig.to_vec();
+    let bytes = serde_json::to_vec(&presence).map_err(|e| TransportError::SerializationFailed {
+        reason: e.to_string(),
+    })?;
+
+    crate::broadcast::dht_writes::open_writable(node, &membership.registry_key, slot_kp).await?;
+    crate::broadcast::dht_writes::set(
+        node,
+        &membership.registry_key,
+        membership.slot_index,
+        bytes,
+        None,
+    )
+    .await?;
+    info!(
+        community = %membership.community_name,
+        slot = membership.slot_index,
+        "registry slot released"
+    );
+    Ok(())
 }

@@ -10,28 +10,15 @@ use std::collections::HashMap;
 
 use rekindle_governance::state::GovernanceState;
 
-/// User-status flavor without depending on src-tauri's `UserStatus` enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UserStatusKind {
-    Online,
-    Away,
-    Busy,
-    Offline,
-    Invisible,
-}
-
-impl UserStatusKind {
-    /// String form used in `MemberPresence.status` per architecture §13.4.
-    #[must_use]
-    pub fn as_wire_str(self) -> &'static str {
-        match self {
-            Self::Online => "online",
-            Self::Away => "away",
-            Self::Busy => "busy",
-            Self::Offline | Self::Invisible => "offline",
-        }
-    }
-}
+/// User-status flavor crossing the `Deps` boundary.
+///
+/// An alias, not a declaration. This was a third copy of the same five
+/// variants and the same Invisible→"offline" fold, justified as avoiding
+/// a dependency on *src-tauri's* `UserStatus` — but the crate it should
+/// have reached for is Tier 1, which it already depends on. Three
+/// definitions of one wire vocabulary is three chances for the privacy
+/// fold to drift apart.
+pub use rekindle_types::presence::SessionStatus as UserStatusKind;
 
 /// Snapshot of the fields of `CommunityState` that lifecycle ops read.
 ///

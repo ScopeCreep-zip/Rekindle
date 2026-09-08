@@ -2,7 +2,7 @@
 //!
 //! The manifest is a single-owner DFLT record owned by the community creator.
 //! It stores community metadata, channel directory, categories, roles,
-//! bans, coordinator info, policies, and invites across 16 subkeys.
+//! bans, policies, and invites across 16 subkeys.
 
 use crate::dht::DHTManager;
 use crate::error::ProtocolError;
@@ -10,11 +10,10 @@ use crate::error::ProtocolError;
 use super::automod::AutoModConfig;
 use super::onboarding::{OnboardingConfig, WelcomeScreen};
 use super::types::{
-    BanEntry, CategoryEntry, ChannelEntryV2, CommunityMetadataV2, CommunityPolicy, CoordinatorInfo,
-    InviteEntry, RoleEntryV2, MANIFEST_AUDIT_LOG_KEY, MANIFEST_AUTOMOD, MANIFEST_BANS,
-    MANIFEST_CATEGORIES, MANIFEST_CHANNELS, MANIFEST_COORDINATOR, MANIFEST_INVITES,
-    MANIFEST_METADATA, MANIFEST_ONBOARDING, MANIFEST_POLICIES, MANIFEST_ROLES,
-    MANIFEST_SUBKEY_COUNT, MANIFEST_WELCOME,
+    BanEntry, CategoryEntry, ChannelEntryV2, CommunityMetadataV2, CommunityPolicy, InviteEntry,
+    RoleEntryV2, MANIFEST_AUDIT_LOG_KEY, MANIFEST_AUTOMOD, MANIFEST_BANS, MANIFEST_CATEGORIES,
+    MANIFEST_CHANNELS, MANIFEST_INVITES, MANIFEST_METADATA, MANIFEST_ONBOARDING, MANIFEST_POLICIES,
+    MANIFEST_ROLES, MANIFEST_SUBKEY_COUNT, MANIFEST_WELCOME,
 };
 
 /// Create a new manifest DFLT record for a community.
@@ -170,34 +169,11 @@ pub async fn write_bans(
     dht.set_value(key, MANIFEST_BANS, bytes).await
 }
 
-// ── Coordinator info (subkey 5) ──
-
-/// Read coordinator info from the manifest.
-pub async fn read_coordinator(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<Option<CoordinatorInfo>, ProtocolError> {
-    match dht.get_value(key, MANIFEST_COORDINATOR).await? {
-        Some(data) => {
-            let info: CoordinatorInfo = serde_json::from_slice(&data).map_err(|e| {
-                ProtocolError::Deserialization(format!("manifest coordinator: {e}"))
-            })?;
-            Ok(Some(info))
-        }
-        None => Ok(None),
-    }
-}
-
-/// Write coordinator info to the manifest.
-pub async fn write_coordinator(
-    dht: &DHTManager,
-    key: &str,
-    info: &CoordinatorInfo,
-) -> Result<(), ProtocolError> {
-    let bytes = serde_json::to_vec(info)
-        .map_err(|e| ProtocolError::Serialization(format!("manifest coordinator: {e}")))?;
-    dht.set_value(key, MANIFEST_COORDINATOR, bytes).await
-}
+// Subkey 5 held the coordinator's route blob, epoch and heartbeat, read
+// and written by `read_coordinator` / `write_coordinator`. v2.0 has no
+// coordinator to advertise, both had zero callers, and they are gone.
+// The subkey index is left unreused so the numbering of everything
+// after it stays stable on the wire.
 
 // ── Policies (subkey 6) ──
 

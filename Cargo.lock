@@ -7595,6 +7595,7 @@ dependencies = [
  "rekindle-codec",
  "rekindle-crypto",
  "rekindle-governance",
+ "rekindle-presence",
  "rekindle-protocol",
  "rekindle-secrets",
  "rekindle-types",

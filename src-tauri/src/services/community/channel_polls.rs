@@ -9,12 +9,9 @@ use std::sync::Arc;
 
 use crate::services::channel_adapter::ChannelAdapter;
 use crate::state::AppState;
-use crate::state_helpers;
 
 fn build_adapter(state: &Arc<AppState>) -> Result<ChannelAdapter, String> {
-    let (app_handle, pool) =
-        state_helpers::app_context(state).ok_or("app handle not initialized")?;
-    Ok(ChannelAdapter::new(Arc::clone(state), app_handle, pool))
+    crate::services::build_adapter(state, ChannelAdapter::new)
 }
 
 pub async fn persist_poll_create(

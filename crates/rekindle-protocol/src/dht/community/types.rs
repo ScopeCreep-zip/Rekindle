@@ -210,43 +210,6 @@ pub struct MemberSummary {
     pub timeout_until: Option<u64>,
 }
 
-/// A member's presence data written to their own SMPL subkey.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberPresence {
-    pub pseudonym_key: String,
-    pub status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status_message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub game_info: Option<String>,
-    /// Route blob for direct messaging within the community.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub route_blob: Option<Vec<u8>>,
-    pub last_heartbeat: u64,
-    /// Whether this member is currently acting as the coordinator.
-    #[serde(default)]
-    pub is_coordinator: bool,
-    /// Timestamp when this member became coordinator (for priority resolution).
-    #[serde(default)]
-    pub coordinator_since: u64,
-    /// Whether this member opts in to serve full message history.
-    #[serde(default)]
-    pub is_archiver: bool,
-}
-
-/// Signed presence wrapper for authenticity.
-///
-/// The presence is signed by the member's pseudonym key so other members
-/// can verify it wasn't forged.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedPresence {
-    pub presence: MemberPresence,
-    /// Ed25519 signature over the serialized `presence` bytes.
-    pub pseudonym_signature: Vec<u8>,
-}
-
 /// A ban entry in the manifest ban list (subkey 4).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -255,25 +218,6 @@ pub struct BanEntry {
     pub reason: Option<String>,
     pub banned_by: String,
     pub banned_at: u64,
-}
-
-/// Coordinator info stored in manifest subkey 5.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoordinatorInfo {
-    /// The coordinator's pseudonym public key.
-    pub pseudonym_key: String,
-    /// Route blob for sending RPCs to the coordinator.
-    pub route_blob: Vec<u8>,
-    /// Monotonically increasing epoch — incremented on coordinator restart.
-    pub epoch: u64,
-    /// Capabilities advertised by the coordinator.
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-    /// Timestamp of the last heartbeat write (seconds since epoch).
-    /// Members trigger re-election when `now - heartbeat_at > 60`.
-    #[serde(default)]
-    pub heartbeat_at: u64,
 }
 
 /// Community policies stored in manifest subkey 6.

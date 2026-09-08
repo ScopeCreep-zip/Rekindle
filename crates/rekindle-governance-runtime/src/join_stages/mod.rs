@@ -295,23 +295,39 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
             .await?;
         let mut present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
 
-        // Architecture §6.2 Step 9: "on conflict, retry next slot (max 5)".
-        //
-        // This loop is why that sentence exists. Our registry is a fixed
-        // 255-subkey array, so two joiners that both pick "the lowest
-        // free subkey" contend for the same index — a collision the
-        // design makes likely rather than exceptional. (Jami avoids the
-        // whole class structurally by storing membership as commit
-        // *messages* rather than numbered slots; SMPL gives us no such
-        // out.) Before this, the first conflict returned an error whose
-        // text told the *user* to retry.
-        //
-        // A contended subkey is added to the occupied set so the next
-        // attempt skips it rather than re-racing the same index.
+        // Architecture §6.2 Step 9: "on conflict, retry next slot
+        // (max 5)". A fixed 255-subkey array makes two joiners picking
+        // "the lowest free subkey" contend by design, so a contended
+        // subkey joins the occupied set and the next attempt skips it
+        // rather than re-racing the same index. `reclaim` documents why
+        // the array is fixed at all.
         let mut claimed_slot = None;
+        // Checked at most once per segment and only when it looks full,
+        // so an ordinary join still costs one inspect and no row fetches.
+        let mut reclaim_checked = false;
         for _attempt in 0..MAX_SLOT_CLAIM_ATTEMPTS {
-            let Some(local_subkey) = (0..255u32).find(|subkey| !present_set.contains(subkey))
-            else {
+            // Ascending `find` is MLS RFC 9420 §7.1's leftmost-blank rule.
+            let mut pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
+            if pick.is_none() && !reclaim_checked {
+                reclaim_checked = true;
+                let reusable = reclaim::reclaimable_slots(
+                    deps,
+                    &candidate.registry_key,
+                    &present,
+                    ctx.gov_state,
+                )
+                .await;
+                tracing::debug!(
+                    segment = candidate.segment_index,
+                    reusable = reusable.len(),
+                    "segment full; checked for non-member slots"
+                );
+                for subkey in reusable {
+                    present_set.remove(&subkey);
+                }
+                pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
+            }
+            let Some(local_subkey) = pick else {
                 last_full_segment = Some(candidate.segment_index);
                 break;
             };
@@ -577,6 +593,8 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     );
     presence
 }
+
+mod reclaim;
 
 #[cfg(test)]
 mod tests;

@@ -11,19 +11,14 @@
 use std::sync::Arc;
 
 use crate::state::AppState;
-use crate::state_helpers;
 
 pub use rekindle_channel::MentionMatches;
 
 fn build_adapter(
     state: &Arc<AppState>,
 ) -> Option<crate::services::channel_adapter::ChannelAdapter> {
-    let (app_handle, pool) = state_helpers::app_context(state)?;
-    Some(crate::services::channel_adapter::ChannelAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    ))
+    crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
+        .ok()
 }
 
 pub fn validate_sender_permissions(

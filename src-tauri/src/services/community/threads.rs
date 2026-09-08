@@ -6,24 +6,15 @@
 //! `ThreadInfoSnapshot` ↔ src-tauri `ThreadInfoDto` and
 //! `ThreadMessageView` ↔ src-tauri `Message`.
 
-use std::sync::Arc;
-
 use crate::channels::community_channel::ThreadInfoDto;
 use crate::commands::chat::Message;
 use crate::db::DbPool;
 use crate::state::SharedState;
-use crate::state_helpers;
 
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
-    let (app_handle, pool) =
-        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
-    Ok(crate::services::channel_adapter::ChannelAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    ))
+    crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
 }
 
 fn snapshot_to_dto(snapshot: rekindle_channel::deps::ThreadInfoSnapshot) -> ThreadInfoDto {

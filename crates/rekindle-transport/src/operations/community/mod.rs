@@ -28,19 +28,3 @@ pub use leave::leave_community;
 pub struct LeaveResult {
     pub leave_payload_bytes: Vec<u8>,
 }
-
-// ── Utilities ───────────────────────────────────────────────────────────
-
-/// Deterministic inbox subkey for a pseudonym.
-///
-/// Only the leave flow still uses it, to announce a departure in the
-/// join inbox. Nothing reads that inbox any more — the operator-side
-/// reader went with the coordinator join — so this write is on the list
-/// to be replaced by the leaver zeroing its own registry slot
-/// (`communities-governance.md` §"Leave and rejoin").
-fn pseudonym_to_inbox_subkey(pseudonym_hex: &str) -> u32 {
-    let hash = blake3::hash(pseudonym_hex.as_bytes());
-    let bytes = hash.as_bytes();
-    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
-        % crate::payload::dht_types::JOIN_INBOX_SUBKEY_COUNT
-}

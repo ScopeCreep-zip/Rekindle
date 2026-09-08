@@ -68,13 +68,7 @@ pub struct SentChannelMessage {
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
-    let (app_handle, pool) =
-        state_helpers::app_context(state).ok_or("app handle or DbPool unavailable")?;
-    Ok(crate::services::channel_adapter::ChannelAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    ))
+    crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
 }
 
 fn map_result(result: rekindle_channel::ChannelSendResult) -> SentChannelMessage {
