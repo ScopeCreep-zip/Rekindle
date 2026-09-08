@@ -14,6 +14,20 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// from the schema — safe because the app is not live yet and identity
 /// keys live in Stronghold, not `SQLite`.
 ///
+/// 80: the account record's header shed the three child
+/// `DHTShortArray` pointers and their owner keypairs. Creating an
+/// account allocated a contact list, a chat list and an invitation list
+/// that nothing ever wrote an entry to, and every login reopened all
+/// three. `AccountHeader` is now the five fields it actually carries,
+/// so a header written under the old schema decodes its text fields at
+/// the wrong ordinals.
+///
+/// 79: the session membership record lost `is_operator`,
+/// `community_mailbox_key` and `join_inbox_key`. All three were the
+/// coordinator's, and the mailbox they named was never created by
+/// anything — `create_community_mailbox` had no callers, so the route
+/// the authority loop published into it went nowhere.
+///
 /// 76: `MemberPresence` gained `departed`, the signed tombstone a
 /// leaver writes into its own registry slot so the slot can be reused.
 /// Live rows are unaffected — the field is `skip_serializing_if`, so a
