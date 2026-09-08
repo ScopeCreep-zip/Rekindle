@@ -659,6 +659,43 @@ const DUPLICATE_BODY_EXCEPTIONS: &[(&[&str], &str)] = &[
     ),
 ];
 
+/// Is this body a single delegating call and nothing else?
+///
+/// The adapter pattern makes these unavoidable and duplicate-looking:
+/// six different `Deps` traits each declare `increment_lamport`, and
+/// each impl is one line forwarding to the *same*
+/// `state_helpers::increment_lamport`. The shared logic already has one
+/// home; the repetition is the trait signatures, which cannot be
+/// deduplicated and carry no logic that can drift.
+///
+/// Deliberately narrow: one expression, no `;`, no control flow, no
+/// closure. `if x { a() } else { b() }` is not a delegation, and
+/// anything with two statements has somewhere for the copies to
+/// diverge — which is the whole point of the gate.
+fn is_pure_delegation(body: &str) -> bool {
+    // A `()`-returning delegation ends in `;` — strip exactly one, then
+    // require none remain. Two statements have somewhere to diverge.
+    let body = body.strip_suffix(';').unwrap_or(body);
+    if body.contains(';') || body.contains('|') {
+        return false;
+    }
+    for kw in ["if", "match", "for", "while", "loop", "unsafe"] {
+        if body.starts_with(kw) && body[kw.len()..].starts_with(|c: char| !c.is_alphanumeric()) {
+            return false;
+        }
+    }
+    let Some(open) = body.find('(') else {
+        return false;
+    };
+    // Everything before the first `(` must be a path: `a::b::c` / `self.x`.
+    let callee = &body[..open];
+    !callee.is_empty()
+        && callee
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | ':' | '.' | '&' | '<' | '>' | ' '))
+        && (body.ends_with(')') || body.ends_with(").await") || body.ends_with(")?"))
+}
+
 pub(crate) fn normalise_body(body: &str) -> String {
     let no_comments: String = body
         .lines()
@@ -718,7 +755,7 @@ fn functions_in(src: &str) -> Vec<(String, String, usize)> {
             continue;
         }
         let body = normalise_body(&src[open + 1..close]);
-        if body.len() >= MIN_BODY_CHARS {
+        if body.len() >= MIN_BODY_CHARS && !is_pure_delegation(&body) {
             let line = src[..at].matches('\n').count() + 1;
             out.push((name, body, line));
         }

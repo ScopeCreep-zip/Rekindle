@@ -12,23 +12,11 @@ body crates/rekindle-calls/src/lib.rs crates/rekindle-calls/src/signaling/handle
 body crates/rekindle-cli/src/views/channel_watch.rs crates/rekindle-cli/src/views/dm_inbox.rs
 body crates/rekindle-node/src/daemon/gossip_adapter/state_reads.rs crates/rekindle-node/src/daemon/governance_adapter/state_reads.rs
 body crates/rekindle-node/src/daemon/gossip_adapter/state_reads.rs crates/rekindle-node/src/daemon/presence_adapter/state_reads.rs
-body crates/rekindle-node/src/daemon/governance_adapter/lifecycle.rs crates/rekindle-node/src/daemon/presence_adapter/gossip.rs
 body crates/rekindle-node/src/daemon/governance_adapter/state_reads.rs crates/rekindle-node/src/daemon/presence_adapter/state_reads.rs
 body crates/rekindle-node/src/daemon/mek_rotation/deps_impl.rs crates/rekindle-node/src/daemon/presence_adapter/events.rs
-body crates/rekindle-node/src/daemon/mek_rotation/deps_impl.rs crates/rekindle-node/src/daemon/presence_adapter/mod.rs
 body src-tauri/src/channels/community_channel/dto.rs src-tauri/src/state/community.rs
-body src-tauri/src/services/calls_adapter/deps_impl.rs src-tauri/src/services/voice_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
-body src-tauri/src/services/channel_adapter/deps_impl.rs src-tauri/src/services/files_adapter/deps_impl.rs src-tauri/src/services/governance_adapter/deps_impl.rs src-tauri/src/services/mek_adapter.rs src-tauri/src/services/video_adapter.rs src-tauri/src/services/voice_signaling_adapter.rs
-body src-tauri/src/services/channel_adapter/deps_impl.rs src-tauri/src/services/governance_adapter/deps_impl.rs
-body src-tauri/src/services/channel_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
-body src-tauri/src/services/community/automod.rs src-tauri/src/services/community/channel_polls.rs src-tauri/src/services/community/stage.rs
-body src-tauri/src/services/community/channel_messages.rs src-tauri/src/services/community/expressions.rs src-tauri/src/services/community/threads.rs
 body src-tauri/src/services/community/join/state.rs src-tauri/src/services/community/presence/mod.rs
 body src-tauri/src/services/cross_device_sync/tests.rs src-tauri/src/services/search/tests.rs
-body src-tauri/src/services/gossip_adapter/deps_impl.rs src-tauri/src/services/voice_adapter/deps_impl.rs
-body src-tauri/src/services/governance_adapter/deps_impl.rs src-tauri/src/services/voice_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
-body src-tauri/src/services/video_adapter.rs src-tauri/src/services/voice_adapter/deps_impl.rs
-body src-tauri/src/services/voice_adapter/deps_impl.rs src-tauri/src/services/voice_signaling_adapter.rs
 css align-items: center ; border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent) ; color: var(--color-xfire-text) ; display: flex ; font-size: 12px ; font-weight: 600 ; gap: 6px ; padding: 8px 12px
 css align-items: center ; border-radius: 3px ; display: flex ; gap: 8px ; padding: 4px 8px ; transition: background 0.15s
 css align-items: center ; color: var(--color-xfire-text) ; display: flex ; font-size: 11px ; height: 22px ; justify-content: space-between ; padding: 2px 12px
