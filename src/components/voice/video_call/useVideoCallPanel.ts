@@ -9,7 +9,7 @@ import type {
 import { subscribeCommunityEvents } from "../../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
-import { probeAndReportLocalVideoCapabilities } from "../../../handlers/video.handlers";
+import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
 import { setDmPeerDecodeCodecs, videoSessionConfigFor } from "../../../stores/video.store";
 import type { RemoteStream } from "./codec_utils";
 import { createCaptureController } from "./panel_capture";

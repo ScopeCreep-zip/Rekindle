@@ -1,6 +1,6 @@
 import { Component, Show } from "solid-js";
-import { handleToggleAddFriend } from "../../handlers/buddy.handlers";
-import { handleLogout } from "../../handlers/auth.handlers";
+import { handleToggleAddFriend } from "../../actions/buddy.actions";
+import { handleLogout } from "../../actions/auth.actions";
 import { setFriendsState } from "../../stores/friends.store";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 import { ICON_NEW_CHAT, ICON_ADD_FRIEND, ICON_PLUS, ICON_COMMUNITIES, ICON_LOGOUT } from "../../icons";

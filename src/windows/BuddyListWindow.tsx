@@ -21,14 +21,15 @@ import { authState, setAuthState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { buddyListUI, setBuddyListUI } from "../stores/buddylist-ui.store";
 import { switchTab } from "../stores/buddylist-ui.store";
-import { handleLoadPendingRequests } from "../handlers/buddy.handlers";
-import { handleGetGameStatus } from "../handlers/settings.handlers";
+import { handleLoadPendingRequests } from "../actions/buddy.actions";
+import { handleGetGameStatus } from "../actions/settings.actions";
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
 import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
-import { handleListDms, subscribeDmInbox } from "../handlers/dm.handlers";
-import { handleHydrateRelayState } from "../handlers/relay.handlers";
+import { subscribeDmInbox } from "../handlers/dm.handlers";
+import { handleListDms } from "../actions/dm.actions";
+import { handleHydrateRelayState } from "../actions/relay.actions";
 import { hydrateState } from "../stores/hydrate";
 import {
   subscribeNetworkStatus,

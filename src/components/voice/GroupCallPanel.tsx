@@ -5,7 +5,7 @@ import {
   handleAcceptGroupCall,
   handleDeclineGroupCall,
   handleEndGroupCall,
-} from "../../handlers/calls.handlers";
+} from "../../actions/calls.actions";
 import { ICON_HANGUP } from "../../icons";
 
 // Wave 12 W12.10 — group call surfaces.

@@ -1,7 +1,7 @@
-import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
-import { callsState, setCallsState } from "../../stores/calls.store";
-import { stopActiveRing } from "./ring";
+import { commands } from "../ipc/commands";
+import { addToast } from "../stores/toast.store";
+import { callsState, setCallsState } from "../stores/calls.store";
+import { stopActiveRing } from "./calls_ring";
 
 /// Initiate an outgoing call. The backend returns the `call_id` once
 /// the offer has been delivered and (synchronously) the
@@ -166,3 +166,7 @@ export async function handleDeclineIncomingCall(
   }
   setCallsState("incomingCalls", (prev) => prev.filter((c) => c.callId !== callId));
 }
+
+// Stopping the ringtone is a user action, so it belongs on this side of
+// the split rather than in the event-subscription module.
+export { stopActiveRing } from "./calls_ring";

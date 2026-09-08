@@ -8,8 +8,8 @@ import { communityState } from "../stores/community.store";
 import { subscribeProfilePresenceEvents } from "../handlers/presence-events.handlers";
 import { hydrateState } from "../stores/hydrate";
 import { commands } from "../ipc/commands";
-import { handleRemoveFriend } from "../handlers/buddy.handlers";
-import { handleStartDmCall } from "../handlers/calls.handlers";
+import { handleRemoveFriend } from "../actions/buddy.actions";
+import { handleStartDmCall } from "../actions/calls.actions";
 import { ICON_SEND, ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_VIDEO } from "../icons";
 
 function getKeyFromUrl(): string {

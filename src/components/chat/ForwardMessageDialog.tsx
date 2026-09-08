@@ -1,6 +1,6 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import { communityState } from "../../stores/community.store";
-import { handleForwardChannelMessage } from "../../handlers/community.handlers";
+import { handleForwardChannelMessage } from "../../actions/community.actions";
 import { ICON_CLOSE } from "../../icons";
 
 interface ForwardMessageDialogProps {

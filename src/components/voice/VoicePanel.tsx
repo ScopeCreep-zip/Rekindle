@@ -1,7 +1,7 @@
 import { Component, For, Show } from "solid-js";
 import { voiceState } from "../../stores/voice.store";
 import VoiceParticipantItem from "./VoiceParticipant";
-import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../handlers/voice.handlers";
+import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../actions/voice.actions";
 import {
   ICON_MIC,
   ICON_MIC_OFF,

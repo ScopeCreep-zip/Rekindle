@@ -3,7 +3,7 @@ import Modal from "../common/Modal";
 import {
   handleCreateChannel,
   handleSetChannelForumTags,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import { communityState } from "../../stores/community.store";
 
 interface CreateChannelModalProps {

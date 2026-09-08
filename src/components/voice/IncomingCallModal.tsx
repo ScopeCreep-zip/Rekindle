@@ -4,7 +4,7 @@ import { callsState } from "../../stores/calls.store";
 import {
   handleAcceptIncomingCall,
   handleDeclineIncomingCall,
-} from "../../handlers/calls.handlers";
+} from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
 
 /// Wave 12 W12.1+W12.3 — incoming-call modal mounted globally in

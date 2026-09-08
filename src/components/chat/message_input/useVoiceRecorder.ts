@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
 import { bytesToBase64 } from "../../../utils/base64";
-import { handleSendVoiceMessage } from "../../../handlers/community.handlers";
+import { handleSendVoiceMessage } from "../../../actions/community.actions";
 
 const VOICE_MESSAGE_MAX_MS = 5 * 60 * 1000;
 const VOICE_WAVEFORM_PEAKS = 64;

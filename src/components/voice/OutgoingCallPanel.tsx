@@ -1,6 +1,6 @@
 import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { callsState } from "../../stores/calls.store";
-import { handleEndDmCall } from "../../handlers/calls.handlers";
+import { handleEndDmCall } from "../../actions/calls.actions";
 
 // Wave 12 W12.4 — outgoing-call panel: "Calling X…" + countdown + Cancel.
 // The synthesized ringback tone is started/stopped by the calls handler

@@ -1,5 +1,5 @@
 import { Component, Show, createSignal } from "solid-js";
-import { handleAddFriend } from "../../handlers/buddy.handlers";
+import { handleAddFriend } from "../../actions/buddy.actions";
 
 interface PublicKeyTabProps {
   onClose: () => void;

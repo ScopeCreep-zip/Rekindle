@@ -4,7 +4,7 @@ import {
   handleClose,
   handleHide,
   handleMaximize,
-} from "../../handlers/titlebar.handlers";
+} from "../../actions/titlebar.actions";
 
 interface TitlebarProps {
   title: string;

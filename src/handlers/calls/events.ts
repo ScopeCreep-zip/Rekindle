@@ -8,7 +8,7 @@ import { setNotificationState } from "../../stores/notification.store";
 import { setVoiceState } from "../../stores/voice.store";
 import { friendsState } from "../../stores/friends.store";
 import { playBusyTone, playIncomingRing, playOutgoingRingback } from "../../utils/ringtone";
-import { startRing, stopActiveRing } from "./ring";
+import { startRing, stopActiveRing } from "../../actions/calls_ring";
 
 /// Wave 12 W12.8 — push a `missed_call` row into the notification inbox
 /// so the user sees a Call-back / Send Message action even after the

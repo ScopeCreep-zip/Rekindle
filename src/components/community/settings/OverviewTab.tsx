@@ -1,6 +1,6 @@
 import { Component, Show, createSignal, createEffect } from "solid-js";
 import type { Community } from "../../../stores/community.store";
-import { handleUpdateCommunityInfo } from "../../../handlers/community.handlers";
+import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import { ICON_SAVE, ICON_COPY } from "../../../icons";
 import FormField from "../../common/FormField";

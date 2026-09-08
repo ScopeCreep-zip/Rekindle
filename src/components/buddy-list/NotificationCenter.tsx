@@ -6,7 +6,7 @@ import {
 } from "../../stores/notification.store";
 import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
 import { formatRelativeTime } from "../../utils/formatting";
-import { handleStartDmCall } from "../../handlers/calls.handlers";
+import { handleStartDmCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
 
 const NotificationCenter: Component = () => {

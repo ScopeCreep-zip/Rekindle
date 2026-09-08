@@ -6,7 +6,7 @@ import {
   handleUploadEmoji,
   handleUploadSoundboardSound,
   handleUploadSticker,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import {
   calculateBasePermissions,
   CREATE_EXPRESSIONS,

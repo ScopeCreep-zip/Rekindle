@@ -23,18 +23,34 @@
 //   src/styles/      (leaf)         CSS only — never imported as TS
 //
 //   src/stores/                     reactive signals + IPC calls; no business logic
-//   src/handlers/                   event subscription registration; dispatch to stores
+//   src/actions/                    user-action dispatchers (`handle*`) — what a
+//                                   click calls; reads stores, invokes IPC
+//   src/handlers/                   event *subscription registration* (`subscribe*`)
+//                                   — wired at app/window start, never by a click
 //
 //   src/components/                 presentation only
 //   src/windows/                    one component per Tauri window; composes components
 //
+// `src/actions/` was split out of `src/handlers/`, which held both roles
+// under one name and produced 64 of this config's violations. A button
+// calling `handleAddReaction` is ordinary in any frontend; a component
+// importing event-subscription wiring is not — and while both lived in
+// one directory (behind barrels that re-exported both), the two were
+// indistinguishable at the import site. Splitting them made the rule
+// satisfiable instead of something to baseline.
+//
 // Forbidden patterns (rules below):
 //
 //   * components / handlers / stores → @tauri-apps/api or @tauri-apps/plugin-*
-//   * components → handlers
+//   * components → handlers          (a click never registers a subscription)
+//   * actions → components, windows  (actions are below presentation)
 //   * stores → components, windows
-//   * ipc → stores, handlers, components, windows  (ipc is leaf)
-//   * windows → handlers (handlers register at app start, not per window)
+//   * ipc → stores, actions, handlers, components, windows  (ipc is leaf)
+//
+// Windows *may* import handlers: several subscriptions are window-scoped
+// (BuddyListWindow's voice presence, DmWindow's inbox), so the older
+// "windows → handlers is forbidden" note described an intent the code
+// never had.
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
@@ -78,6 +94,20 @@ module.exports = {
 
     // ─── No ipc → upper tier ─────────────────────────────────────
     {
+      name: "actions-no-presentation",
+      severity: "error",
+      comment:
+        "Action dispatchers sit below presentation: they read stores and " +
+        "invoke IPC. A component or window importing an action is the " +
+        "supported direction; the reverse is not.",
+      from: {
+        path: "^src/actions/",
+      },
+      to: {
+        path: "^src/(components|windows)/",
+      },
+    },
+    {
       name: "ipc-is-leaf",
       severity: "error",
       comment:
@@ -88,7 +118,7 @@ module.exports = {
         path: "^src/ipc/",
       },
       to: {
-        path: "^src/(stores|handlers|components|windows)/",
+        path: "^src/(stores|actions|handlers|components|windows)/",
       },
     },
 

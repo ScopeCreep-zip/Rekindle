@@ -1,7 +1,7 @@
 import { Component, createEffect } from "solid-js";
 import SimpleInputModal from "../common/SimpleInputModal";
 import JoinProgressStepper from "./JoinProgressStepper";
-import { handleJoinCommunity } from "../../handlers/community.handlers";
+import { handleJoinCommunity } from "../../actions/community.actions";
 import { beginJoinProgress, endJoinProgress, resetJoinProgress } from "../../stores/join.store";
 
 interface JoinCommunityModalProps {

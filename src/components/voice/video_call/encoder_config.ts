@@ -5,7 +5,7 @@
 
 import { commands } from "../../../ipc/commands";
 import type { Codec, MediaCapabilities, SessionVideoConfig } from "../../../ipc/commands";
-import { localVideoCapabilities } from "../../../handlers/video.handlers";
+import { localVideoCapabilities } from "../../../actions/video.actions";
 import { dmPeerDecodeCodecsFor, videoSessionConfigFor } from "../../../stores/video.store";
 import { wireCodecToWebCodecsString } from "./codec_utils";
 import type { SenderRoute } from "./sender_types";

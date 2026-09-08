@@ -7,8 +7,8 @@ import type { Message } from "../../stores/chat.store";
 import type { InviteDto } from "../../ipc/commands/dto";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { showSystemNotification } from "../notification-events.handlers";
-import { transformEvent } from "./shared";
-import { handleResolveCommunityImageDataUrls } from "./lifecycle";
+import { transformEvent } from "../../actions/community/shared";
+import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
 
 /// Scheduled-event / thread / game-server / invite / community-update
 /// slice of the community event dispatcher. Returns `true` when the

@@ -2,7 +2,7 @@ import { createEffect, onMount, onCleanup } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { authState } from "../../stores/auth.store";
-import { initVoiceEventListener } from "../../handlers/voice.handlers";
+import { initVoiceEventListener } from "../../actions/voice.actions";
 import { subscribeCommunityChannelChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import { subscribeCommunityEventDispatcher } from "../../handlers/community.handlers";
@@ -22,7 +22,7 @@ import {
   handleLoadEvents,
   handleLoadOnboardingConfig,
   handleLoadWelcomeScreen,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import { commands } from "../../ipc/commands";
 import { ICON_CHANNEL_TEXT, ICON_MEGAPHONE } from "../../icons";
 import type { Message } from "../../stores/chat.store";
@@ -199,7 +199,7 @@ export function useCommunityWindow() {
   async function handleSubmitCreateThread(name: string, autoArchiveSeconds: number): Promise<void> {
     const target = createThreadTarget();
     if (!target) return;
-    const { handleCreateThread } = await import("../../handlers/community.handlers");
+    const { handleCreateThread } = await import("../../actions/community.actions");
     const threadId = await handleCreateThread(
       selectedCommunityId(),
       selectedChannelId(),

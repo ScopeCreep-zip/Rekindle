@@ -1,6 +1,6 @@
 import { Component, createSignal, Show } from "solid-js";
 import { authState, setAuthState } from "../../stores/auth.store";
-import { handleCopyPublicKey } from "../../handlers/buddy.handlers";
+import { handleCopyPublicKey } from "../../actions/buddy.actions";
 import { commands } from "../../ipc/commands";
 import StatusDot from "../status/StatusDot";
 import Avatar from "../common/Avatar";

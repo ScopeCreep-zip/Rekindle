@@ -1,7 +1,7 @@
 import { Component } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings } from "../../handlers/settings.handlers";
+import { handleSaveSettings } from "../../actions/settings.actions";
 
 const ApplicationTab: Component = () => {
   function handleToggle(key: keyof typeof settingsState): void {

@@ -1,20 +1,10 @@
-// Direct/group call handlers — facade over the `calls/` submodules.
+// Call event subscriptions — `chat-event` → `calls.store` dispatch and
+// missed-call sync.
 //
-// - `calls/ring` — single in-flight ringtone handle (`stopActiveRing`)
-// - `calls/events` — `chat-event` → `calls.store` dispatch + missed-call sync
-// - `calls/actions` — IPC kickers invoked by UI (start/end/accept/decline/react)
+// The IPC kickers this used to re-export (`handleStartDmCall`,
+// `handleAcceptIncomingCall`, `stopActiveRing`, …) now live in
+// `src/actions/calls.actions.ts`. Eleven components imported this
+// barrel for those, and got the subscription wiring in the same
+// import — one name covering two tiers.
 
-export { stopActiveRing } from "./calls/ring";
 export { subscribeCallEvents, refreshMissedCalls } from "./calls/events";
-export {
-  handleStartDmCall,
-  handleEndDmCall,
-  handleStartGroupCall,
-  handleAcceptGroupCall,
-  handleDeclineGroupCall,
-  handleEndGroupCall,
-  handleSendCallReaction,
-  removeCallReaction,
-  handleAcceptIncomingCall,
-  handleDeclineIncomingCall,
-} from "./calls/actions";

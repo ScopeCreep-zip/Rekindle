@@ -1,7 +1,7 @@
 import { Component, For, createSignal, createEffect, Show } from "solid-js";
 import { Popover } from "@kobalte/core/popover";
-import { handleKeyDown } from "../../handlers/chat.handlers";
-import { handleUploadAttachment } from "../../handlers/community.handlers";
+import { handleKeyDown } from "../../actions/chat.actions";
+import { handleUploadAttachment } from "../../actions/community.actions";
 import EmojiPicker from "./EmojiPicker";
 import ReplyPreview from "./ReplyPreview";
 import { voiceState } from "../../stores/voice.store";

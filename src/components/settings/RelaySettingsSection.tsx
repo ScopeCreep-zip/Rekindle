@@ -5,8 +5,8 @@ import {
   handleRevokeRelay,
   handleVolunteerRelay,
   relayState,
-} from "../../handlers/relay.handlers";
-import { handleSaveSettings } from "../../handlers/settings.handlers";
+} from "../../actions/relay.actions";
+import { handleSaveSettings } from "../../actions/settings.actions";
 import { settingsState } from "../../stores/settings.store";
 
 /// Strand Relay Network (architecture §13) configuration block: shows

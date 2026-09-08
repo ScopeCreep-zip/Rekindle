@@ -1,7 +1,7 @@
 import { createSignal, createMemo } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import { typingUsers } from "../../handlers/community.handlers";
+import { typingUsers } from "../../actions/community.actions";
 import {
   calculateBasePermissions,
   hasPermission,

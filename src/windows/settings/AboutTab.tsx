@@ -1,5 +1,5 @@
 import { Component, createSignal, Show } from "solid-js";
-import { handleCheckForUpdates } from "../../handlers/settings.handlers";
+import { handleCheckForUpdates } from "../../actions/settings.actions";
 
 const AboutTab: Component = () => {
   const [checkingUpdates, setCheckingUpdates] = createSignal(false);

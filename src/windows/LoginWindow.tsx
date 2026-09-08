@@ -3,7 +3,7 @@ import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import Modal from "../components/common/Modal";
 import LoadingButton from "../components/common/LoadingButton";
-import { handleLogin, handleCreateIdentity } from "../handlers/auth.handlers";
+import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
 import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";

@@ -87,11 +87,13 @@ jobs:
       # be true, which meant the job reported success while checking
       # nothing.
       #
-      # `--ignore-known` fails on NEW violations only. The 92 already in
-      # the tree accumulated across the months the rules went unenforced;
-      # they are recorded in the baseline as a burn-down, not excused —
-      # no rule's severity was lowered to get here. Shrink the baseline
-      # by fixing violations and regenerating:
+      # `--ignore-known` fails on NEW violations only. The baseline is
+      # down from 92 to 3 — and the 3 are `no-orphans` *warnings*, not
+      # errors: three finished-but-unwired Architecture §32 a11y modules
+      # (LiveRegion, useReducedMotion, request-timeout) that need wiring
+      # rather than deleting. Every error-severity violation is fixed;
+      # no rule's severity was lowered to get there. Regenerate after
+      # wiring them:
       #   pnpm exec depcruise --config .dependency-cruiser.cjs \
       #     --output-type baseline src > .dependency-cruiser-known-violations.json
       - name: dependency-cruiser — tier boundaries

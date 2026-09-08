@@ -7,7 +7,7 @@ import { transformExpression, transformFriendMap, transformCommunityMap, transfo
 import {
   handleLoadAutoModRules,
   handleResolveCommunityImageDataUrls,
-} from "../handlers/community.handlers";
+} from "../actions/community.actions";
 
 /**
  * Hydrate frontend stores from the Rust backend.

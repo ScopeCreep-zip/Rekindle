@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import { handlePlaySoundboard } from "../../handlers/community.handlers";
+import { handlePlaySoundboard } from "../../actions/community.actions";
 import {
   USE_SOUNDBOARD,
   calculateBasePermissions,

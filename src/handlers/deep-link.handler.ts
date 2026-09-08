@@ -1,6 +1,6 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeDeepLinkEvents } from "../ipc/channels";
-import { handleJoinCommunity } from "./community.handlers";
+import { handleJoinCommunity } from "../actions/community.actions";
 import { addToast } from "../stores/toast.store";
 
 export function subscribeDeepLinkHandler(): Promise<UnlistenFn> {

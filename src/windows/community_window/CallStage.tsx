@@ -4,7 +4,7 @@ import CallControlBar from "../../components/voice/call_stage/CallControlBar";
 import { useCallStage } from "../../components/voice/call_stage/useCallStage";
 import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
 import ChannelChat from "./ChannelChat";
-import { handleJoinVoice } from "../../handlers/voice.handlers";
+import { handleJoinVoice } from "../../actions/voice.actions";
 import { ICON_PHONE } from "../../icons";
 import type { CommunityVm } from "./useCommunityWindow";
 

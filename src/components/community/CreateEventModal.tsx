@@ -1,6 +1,6 @@
 import { Component, createSignal, createEffect } from "solid-js";
 import Modal from "../common/Modal";
-import { handleCreateEvent, handleEditEvent } from "../../handlers/community.handlers";
+import { handleCreateEvent, handleEditEvent } from "../../actions/community.actions";
 
 interface CreateEventModalProps {
   isOpen: boolean;

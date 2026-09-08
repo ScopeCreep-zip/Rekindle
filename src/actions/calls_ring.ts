@@ -1,4 +1,4 @@
-import type { RingHandle } from "../../utils/ringtone";
+import type { RingHandle } from "../utils/ringtone";
 
 // Wave 12 W12.1 — single in-flight ring handle per webview. Replaced
 // when a new ring would start (e.g. caller declined while another offer

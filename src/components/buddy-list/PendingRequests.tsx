@@ -4,7 +4,7 @@ import {
   handleAcceptRequest,
   handleRejectRequest,
   handleBlockUser,
-} from "../../handlers/buddy.handlers";
+} from "../../actions/buddy.actions";
 
 const PendingRequests: Component = () => {
   const [error, setError] = createSignal<string | null>(null);

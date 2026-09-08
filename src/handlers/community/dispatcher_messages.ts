@@ -6,7 +6,7 @@ import type { Message } from "../../stores/chat.store";
 import { setLinkPreviews } from "../../stores/link_preview.store";
 import { truncateKey } from "../../utils/formatting";
 import { transformMessages } from "../../utils/transformers";
-import { setTypingUsers, typingTimers } from "./shared";
+import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 
 /// Channel-message slice of the community event dispatcher (edits,
 /// deletes, reactions, pins, delivery receipts, typing, system msgs,

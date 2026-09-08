@@ -4,7 +4,7 @@ import {
   handleToggleMute,
   handleToggleDeafen,
   handleLeaveVoice,
-} from "../../../handlers/voice.handlers";
+} from "../../../actions/voice.actions";
 import SoundboardPanel from "../SoundboardPanel";
 import ReactionsTray from "../ReactionsTray";
 import {

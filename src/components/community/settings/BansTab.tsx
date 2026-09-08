@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
-import { handleGetBanList, handleUnbanMember } from "../../../handlers/community.handlers";
+import { handleGetBanList, handleUnbanMember } from "../../../actions/community.actions";
 import { ICON_REFRESH } from "../../../icons";
 
 interface BansTabProps {

@@ -1,5 +1,5 @@
 import { Component, For, createSignal } from "solid-js";
-import { handleSendCallReaction } from "../../handlers/calls.handlers";
+import { handleSendCallReaction } from "../../actions/calls.actions";
 
 // Wave 12 W12.11 — six-emoji reaction tray. Hidden behind a smiley
 // toggle so the call panel stays compact when reactions aren't in

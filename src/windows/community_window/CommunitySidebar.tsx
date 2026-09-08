@@ -5,12 +5,12 @@ import VoicePanel from "../../components/voice/VoicePanel";
 import CategoryHeader from "../../components/community/CategoryHeader";
 import { voiceState } from "../../stores/voice.store";
 import { commands } from "../../ipc/commands";
-import { handleJoinVoice } from "../../handlers/voice.handlers";
+import { handleJoinVoice } from "../../actions/voice.actions";
 import {
   handleDeleteChannel,
   handleDeleteCategory,
   handleSetNotificationOverride,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import {
   ICON_COMMUNITIES,
   ICON_PLUS,

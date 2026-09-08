@@ -1,6 +1,6 @@
 import { Component } from "solid-js";
 import SimpleInputModal from "../common/SimpleInputModal";
-import { handleRenameChannel } from "../../handlers/community.handlers";
+import { handleRenameChannel } from "../../actions/community.actions";
 
 interface RenameChannelModalProps {
   isOpen: boolean;

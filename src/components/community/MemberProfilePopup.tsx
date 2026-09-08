@@ -12,7 +12,7 @@ import {
   handleSelfAssignRole,
   handleSelfUnassignRole,
   handleUpdateCommunityProfile,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import { addToast } from "../../stores/toast.store";
 
 interface MemberProfilePopupProps {

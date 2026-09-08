@@ -1,11 +1,13 @@
 /* @refresh reload */
 import { render } from "solid-js/web";
-import { createSignal, onMount, Match, Switch, lazy, Suspense } from "solid-js";
-import { listen } from "@tauri-apps/api/event";
+import { createSignal, onCleanup, onMount, Match, Switch, lazy, Suspense } from "solid-js";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { commands } from "./ipc/commands";
 import "./styles/global.css";
 import AnnounceRegion from "./components/common/AnnounceRegion";
 import CallController from "./components/voice/CallController";
+import { refreshMissedCalls, subscribeCallEvents } from "./handlers/calls.handlers";
+import { subscribeNotificationHandler } from "./handlers/notification-events.handlers";
 
 /// Phase 10 — `localStorage` key holding the most recent journal cursor
 /// this window has observed. Updated on every `cursor-tick` event AND
@@ -96,6 +98,8 @@ const CallWindow = lazy(() => import("./windows/CallWindow"));
 function App() {
   const [route, setRoute] = createSignal(window.location.pathname);
 
+  const callUnlisteners: Promise<UnlistenFn>[] = [];
+
   onMount(() => {
     setRoute(window.location.pathname);
     // Phase 10 — install cursor-tick listener BEFORE resuming so the
@@ -103,6 +107,21 @@ function App() {
     // the persisted cursor. Then resume the backlog.
     installCursorTickListener();
     void resumeEvents();
+
+    // Wave 12 W12.1 — call + notification subscriptions, registered
+    // once per webview at app start. They were inside
+    // `<CallController />`'s own `onMount`; the host is still mounted
+    // below, so the lifetime is identical, but subscription
+    // registration is bootstrap work rather than a component's.
+    callUnlisteners.push(subscribeCallEvents());
+    callUnlisteners.push(subscribeNotificationHandler());
+    void refreshMissedCalls();
+  });
+
+  onCleanup(() => {
+    for (const p of callUnlisteners) {
+      p.then((fn) => fn()).catch(() => {});
+    }
   });
 
   return (

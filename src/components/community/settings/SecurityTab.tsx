@@ -1,7 +1,7 @@
 import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import type { ConfirmOptions } from "./types";
-import { handleRotateMek } from "../../../handlers/community.handlers";
+import { handleRotateMek } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import { commands, type CommunityPolicy } from "../../../ipc/commands";
 import {

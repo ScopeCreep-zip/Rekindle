@@ -4,7 +4,7 @@ import {
   handleGenerateInvite,
   handleAddFriendFromInvite,
   handleCancelInvite,
-} from "../../handlers/buddy.handlers";
+} from "../../actions/buddy.actions";
 import { maskInviteUrl } from "../../utils/masking";
 import { formatRelativeTime, formatTimeUntil } from "../../utils/time";
 

@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal, createMemo, onMount } from "solid-j
 import { communityState } from "../../stores/community.store";
 import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
 import { formatEventCountdown } from "../../utils/time";
-import { handleRsvpEvent, handleDeleteEvent, handleCancelEvent, handleLoadEvents } from "../../handlers/community.handlers";
+import { handleRsvpEvent, handleDeleteEvent, handleCancelEvent, handleLoadEvents } from "../../actions/community.actions";
 
 interface EventsPanelProps {
   communityId: string;

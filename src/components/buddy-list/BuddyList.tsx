@@ -11,14 +11,14 @@ import {
   handleMoveFriendToGroup,
   handleBlockUser,
   handleResetSignalSession,
-} from "../../handlers/buddy.handlers";
+} from "../../actions/buddy.actions";
 import {
   handleRevokeRelay,
   handleVolunteerRelay,
   relayState,
-} from "../../handlers/relay.handlers";
-import { handleStartDm } from "../../handlers/dm.handlers";
-import { handleStartDmCall } from "../../handlers/calls.handlers";
+} from "../../actions/relay.actions";
+import { handleStartDm } from "../../actions/dm.actions";
+import { handleStartDmCall } from "../../actions/calls.actions";
 import { authState } from "../../stores/auth.store";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";

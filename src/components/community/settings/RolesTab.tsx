@@ -10,7 +10,7 @@ import {
   handleCreateRole,
   handleEditRole,
   handleDeleteRole,
-} from "../../../handlers/community.handlers";
+} from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import {
   ICON_SAVE,

@@ -1,5 +1,5 @@
 import { Component, Show, createSignal } from "solid-js";
-import { handleCreateChannel } from "../../../../handlers/community.handlers";
+import { handleCreateChannel } from "../../../../actions/community.actions";
 import { ICON_PLUS_BOX } from "../../../../icons";
 
 type ChannelType = "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";

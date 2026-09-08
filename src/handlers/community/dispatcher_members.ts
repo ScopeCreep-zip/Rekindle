@@ -3,8 +3,8 @@ import { setCommunityState, communityState } from "../../stores/community.store"
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { transformChannel, transformMember } from "../../utils/transformers";
-import { handleLoadExpressions, handleLoadAutoModRules } from "./lifecycle";
-import { handleLoadChannelThreads } from "./events_threads";
+import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
+import { handleLoadChannelThreads } from "../../actions/community/events_threads";
 
 /// Membership / governance / moderation-alert slice of the community
 /// event dispatcher. Returns `true` when the event was consumed.

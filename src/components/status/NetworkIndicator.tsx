@@ -1,5 +1,5 @@
 import { Component, createSignal, onMount, onCleanup } from "solid-js";
-import { handleGetNetworkStatus } from "../../handlers/settings.handlers";
+import { handleGetNetworkStatus } from "../../actions/settings.actions";
 import { subscribeNetworkStatus } from "../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 

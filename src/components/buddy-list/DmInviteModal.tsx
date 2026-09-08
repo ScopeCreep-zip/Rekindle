@@ -1,7 +1,7 @@
 import { Component, For, Show } from "solid-js";
 import Modal from "../common/Modal";
 import { dmState } from "../../stores/dm.store";
-import { handleAcceptDm, handleDeclineDm } from "../../handlers/dm.handlers";
+import { handleAcceptDm, handleDeclineDm } from "../../actions/dm.actions";
 
 /// Surfaces inbound DM invites (architecture §27). Renders a modal as
 /// long as there's at least one pending invite; the user accepts or

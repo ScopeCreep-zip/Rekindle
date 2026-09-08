@@ -1,7 +1,7 @@
 import { Component, createSignal, onMount, For } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings } from "../../handlers/settings.handlers";
+import { handleSaveSettings } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
 
 const NotificationsTab: Component = () => {

@@ -4,7 +4,7 @@ import {
   handleAcceptIncomingCall,
   handleDeclineIncomingCall,
   handleEndDmCall,
-} from "../../handlers/calls.handlers";
+} from "../../actions/calls.actions";
 
 // Wave 12 W12.3 — slim banner that appears when a NEW incoming call
 // arrives while an active call is already in progress. The full

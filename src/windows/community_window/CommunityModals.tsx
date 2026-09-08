@@ -18,7 +18,7 @@ import {
   handleLeaveCommunity,
   handleDeleteChannelMessage,
   handleSubmitOnboarding,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// All modal / overlay dialogs for `CommunityWindow`, rendered as a flat

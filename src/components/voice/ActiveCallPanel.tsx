@@ -4,7 +4,7 @@ import { callsState, type CallEntry } from "../../stores/calls.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { friendsState } from "../../stores/friends.store";
-import { handleEndDmCall } from "../../handlers/calls.handlers";
+import { handleEndDmCall } from "../../actions/calls.actions";
 import {
   ICON_HANGUP,
   ICON_HEADPHONES,

@@ -2,7 +2,7 @@ import { Component, createSignal, createEffect } from "solid-js";
 import Avatar from "../../components/common/Avatar";
 import FormField from "../../components/common/FormField";
 import { authState, setAuthState } from "../../stores/auth.store";
-import { handleSetAvatar } from "../../handlers/settings.handlers";
+import { handleSetAvatar } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
 import { fetchAvatarUrl } from "../../ipc/avatar";
 

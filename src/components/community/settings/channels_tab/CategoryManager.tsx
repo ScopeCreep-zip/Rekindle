@@ -6,7 +6,7 @@ import {
   handleCreateCategory,
   handleDeleteCategory,
   handleRenameCategory,
-} from "../../../../handlers/community.handlers";
+} from "../../../../actions/community.actions";
 import {
   ICON_SAVE,
   ICON_PENCIL,

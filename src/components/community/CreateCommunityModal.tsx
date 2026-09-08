@@ -2,7 +2,7 @@ import { Component, Show, createEffect, createSignal } from "solid-js";
 
 import Modal from "../common/Modal";
 import LoadingButton from "../common/LoadingButton";
-import { handleCreateCommunity } from "../../handlers/community.handlers";
+import { handleCreateCommunity } from "../../actions/community.actions";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;

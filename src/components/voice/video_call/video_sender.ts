@@ -18,7 +18,7 @@
 // occluded on macOS.
 import { commands } from "../../../ipc/commands";
 import type { Codec } from "../../../ipc/commands";
-import { localVideoCapabilities } from "../../../handlers/video.handlers";
+import { localVideoCapabilities } from "../../../actions/video.actions";
 import {
   KEYFRAME_MIN_INTERVAL_MS,
   LADDER_OVERSHOOT_RATIO,

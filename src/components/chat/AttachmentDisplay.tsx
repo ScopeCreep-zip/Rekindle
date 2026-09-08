@@ -1,6 +1,6 @@
 import { Component, Show, createMemo, createSignal } from "solid-js";
 import type { MessageAttachment } from "../../stores/chat.store";
-import { handleDownloadAttachment, handlePinAttachment } from "../../handlers/community.handlers";
+import { handleDownloadAttachment, handlePinAttachment } from "../../actions/community.actions";
 import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
 import { communityState } from "../../stores/community.store";
 import { calculateBasePermissions } from "../../utils/permissions";

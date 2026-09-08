@@ -12,13 +12,13 @@ import {
   handleRemoveGameServer,
   handleSetChannelTopic,
   handleCreateForumPost,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import {
   handleJoinVoice,
   handleLeaveVoice,
   handleRequestToSpeak,
   handleRespondToSpeakRequest,
-} from "../../handlers/voice.handlers";
+} from "../../actions/voice.actions";
 import { ICON_PIN, ICON_THREAD, ICON_COMMUNITIES } from "../../icons";
 import type { CommunityVm } from "./useCommunityWindow";
 

@@ -12,7 +12,7 @@ import {
   handleRemoveReaction,
   handleVotePoll,
   handleClosePoll,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Phase 3 unified right rail: members, pinned messages, thread list, or

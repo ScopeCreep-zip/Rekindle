@@ -3,7 +3,7 @@ import {
   handleCreateCommunityInvite,
   handleRevokeCommunityInvite,
   handleListCommunityInvites,
-} from "../../../handlers/community.handlers";
+} from "../../../actions/community.actions";
 import { communityState } from "../../../stores/community.store";
 import type { InviteDto } from "../../../ipc/commands/dto";
 import { formatExpiry } from "../../../utils/formatting";

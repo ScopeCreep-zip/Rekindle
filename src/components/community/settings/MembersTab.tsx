@@ -11,7 +11,7 @@ import {
   handleTimeoutMember,
   handleRemoveTimeout,
   handleExpandCommunitySegment,
-} from "../../../handlers/community.handlers";
+} from "../../../actions/community.actions";
 import { highestPosition } from "../../../ipc/permissions";
 import {
   ICON_SHIELD,

@@ -3,7 +3,7 @@ import type { Community } from "../../../stores/community.store";
 import {
   handleDeleteAutoModRule,
   handleSetAutoModRule,
-} from "../../../handlers/community.handlers";
+} from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
 

@@ -1,8 +1,10 @@
+// DM inbox event subscription. The user actions that used to sit
+// beside it now live in `src/actions/dm.actions.ts`.
+
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { commands } from "../ipc/commands";
 import { subscribeChatEvents } from "../ipc/channels";
 import { dmState, setDmState, type DmMessage } from "../stores/dm.store";
-import { notificationState, setNotificationState } from "../stores/notification.store";
+import { setNotificationState } from "../stores/notification.store";
 
 /// Subscribe to chat events for the DM subsystem (architecture §27).
 /// Handles two flows:
@@ -55,48 +57,3 @@ export function subscribeDmInbox(getOwnPublicKey: () => string): Promise<Unliste
     }
   });
 }
-
-export async function handleListDms(): Promise<void> {
-  const list = await commands.listDms();
-  const map: Record<string, (typeof list)[number]> = {};
-  for (const conv of list) {
-    map[conv.recordKey] = conv;
-  }
-  setDmState("conversations", map);
-}
-
-export async function handleStartDm(
-  bobPublicKey: string,
-  alicePseudonym: string,
-): Promise<string> {
-  const recordKey = await commands.startDm(bobPublicKey, alicePseudonym);
-  await handleListDms();
-  setDmState("activeRecordKey", recordKey);
-  await commands.openDmWindow(recordKey, alicePseudonym);
-  return recordKey;
-}
-
-export async function handleAcceptDm(recordKey: string): Promise<void> {
-  await commands.acceptDmInvite(recordKey);
-  setDmState("pendingInvites", recordKey, undefined!);
-  await handleListDms();
-  setDmState("activeRecordKey", recordKey);
-  const conv = dmState.conversations[recordKey];
-  const title = conv?.initiatorPseudonym ?? recordKey.slice(0, 12);
-  await commands.openDmWindow(recordKey, title);
-}
-
-export async function handleDeclineDm(recordKey: string): Promise<void> {
-  await commands.declineDmInvite(recordKey);
-  setDmState("pendingInvites", recordKey, undefined!);
-}
-
-export async function handleSendDm(recordKey: string, body: string): Promise<void> {
-  await commands.sendDmMessage(recordKey, body);
-  // The backend re-emits MessageReceived for the local write so the
-  // subscribeDmInbox handler will append the message — no need to mutate
-  // the store here; that keeps a single source of truth for ordering.
-}
-
-// Re-export for components that surface the current notification badge.
-export { notificationState };

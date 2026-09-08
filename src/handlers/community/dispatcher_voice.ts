@@ -6,7 +6,7 @@ import { announce } from "../../stores/announce.store";
 import { settingsState } from "../../stores/settings.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { setVideoSessionConfig } from "../../stores/video.store";
-import { refreshStageHandRaises } from "./shared";
+import { refreshStageHandRaises } from "../../actions/community/shared";
 
 /// Mirror signaling membership into the call-UI roster
 /// (`voiceState.participants`), keyed by per-community pseudonym — the

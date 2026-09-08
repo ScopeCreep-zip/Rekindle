@@ -1,6 +1,6 @@
 import { Component, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { MessageAttachment } from "../../stores/chat.store";
-import { handleDownloadAttachment } from "../../handlers/community.handlers";
+import { handleDownloadAttachment } from "../../actions/community.actions";
 import { ICON_DOWNLOAD } from "../../icons";
 
 interface VoiceMessagePlayerProps {

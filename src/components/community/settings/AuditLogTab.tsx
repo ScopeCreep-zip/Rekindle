@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
-import { handleGetAuditLog } from "../../../handlers/community.handlers";
+import { handleGetAuditLog } from "../../../actions/community.actions";
 import { truncateKey, formatDateTimeSecs, formatAction } from "../../../utils/formatting";
 import type { AuditLogEntryDto } from "../../../ipc/commands/dto";
 

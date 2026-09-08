@@ -6,8 +6,8 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 import { setNotificationState } from "../stores/notification.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { chatState, setChatState } from "../stores/chat.store";
-import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "./chat.handlers";
-import { handleRefreshFriends } from "./buddy.handlers";
+import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "../actions/chat.actions";
+import { handleRefreshFriends } from "../actions/buddy.actions";
 import type { Message } from "../stores/chat.store";
 import { transformNewFriend } from "../utils/transformers";
 

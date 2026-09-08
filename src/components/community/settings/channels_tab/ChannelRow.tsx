@@ -10,7 +10,7 @@ import {
   handleReorderChannels,
   handleSetNotificationOverride,
   handleSetChannelNotificationSound,
-} from "../../../../handlers/community.handlers";
+} from "../../../../actions/community.actions";
 import ChannelOverwriteEditor from "./ChannelOverwriteEditor";
 import {
   ICON_SAVE,

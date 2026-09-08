@@ -13,7 +13,7 @@ import {
   handleVotePoll,
   handleClosePoll,
   handleEditChannelMessage,
-} from "../../handlers/community.handlers";
+} from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// The channel message list + composer for a community text (or text-in-voice)
