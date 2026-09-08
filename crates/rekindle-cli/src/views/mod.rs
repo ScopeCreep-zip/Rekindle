@@ -14,6 +14,33 @@ pub mod identity_settings;
 pub mod voice_session;
 
 use anyhow::Result;
+
+/// Route a mouse click to the focus slot whose rect contains it.
+///
+/// Focuses that slot and, when it is the input box, returns the action
+/// that enters input mode. `dm_inbox` and `channel_watch` had written
+/// this identically; a third view would have written it a third time.
+pub fn click_to_focus(
+    focus: &mut crate::tui::focus::FocusRing,
+    click_rects: &std::collections::HashMap<crate::tui::focus::FocusId, ratatui::layout::Rect>,
+    column: u16,
+    row: u16,
+) -> Option<crate::tui::action::Action> {
+    for (&id, rect) in click_rects {
+        if column >= rect.x
+            && column < rect.x + rect.width
+            && row >= rect.y
+            && row < rect.y + rect.height
+        {
+            focus.set(id);
+            if id == crate::tui::focus::FocusId::InputBox {
+                return Some(crate::tui::action::Action::EnterInputMode);
+            }
+            return None;
+        }
+    }
+    None
+}
 use crossterm::event::KeyEvent;
 use ratatui::layout::Rect;
 use ratatui::Frame;

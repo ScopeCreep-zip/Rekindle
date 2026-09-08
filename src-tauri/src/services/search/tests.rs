@@ -7,24 +7,12 @@
 //! the bm25() ranking all work together against the real schema —
 //! mocking the schema would defeat the point.
 
+use crate::test_support::open_seeded_db;
 use rekindle_types::search::{HasFilter, MessageSearch, SearchFilters, SearchSort};
 use rusqlite::Connection;
 
 use super::messages::search_messages_table;
 use super::query::build_match_expr;
-
-const MIGRATION: &str = include_str!("../../../migrations/001_init.sql");
-
-fn open_test_db() -> Connection {
-    let conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.execute_batch(MIGRATION).expect("apply migration");
-    conn.execute(
-        "INSERT INTO identity (id, public_key, created_at) VALUES (1, 'owner_pk', 0)",
-        [],
-    )
-    .expect("seed identity");
-    conn
-}
 
 fn insert_message(
     conn: &Connection,
@@ -64,7 +52,7 @@ fn default_search(query: &str) -> MessageSearch {
 
 #[test]
 fn fts5_finds_simple_word_match() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -95,7 +83,7 @@ fn fts5_finds_simple_word_match() {
 
 #[test]
 fn fts5_returns_adjacent_context() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -135,7 +123,7 @@ fn fts5_returns_adjacent_context() {
 
 #[test]
 fn channel_filter_restricts_results() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -166,7 +154,7 @@ fn channel_filter_restricts_results() {
 
 #[test]
 fn sender_filter_restricts_results() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -189,7 +177,7 @@ fn sender_filter_restricts_results() {
 
 #[test]
 fn time_window_filter_restricts_results() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -220,7 +208,7 @@ fn time_window_filter_restricts_results() {
 
 #[test]
 fn has_filter_restricts_to_attachment_kind() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -251,7 +239,7 @@ fn has_filter_restricts_to_attachment_kind() {
 
 #[test]
 fn fts5_triggers_keep_index_in_sync_on_delete() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",
@@ -280,7 +268,7 @@ fn fts5_search_perf_5k_messages_within_budget() {
     // pin a hard FTS5 number but the inspect-poll cycle assumes
     // <250ms search; we guard at 500ms (debug mode) so an accidental
     // regression like "scan all rows in Rust" trips this.
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     for i in 0..5_000 {
         let body = format!("message {i} content needle{}", i % 100);
         insert_message(
@@ -310,7 +298,7 @@ fn fts5_search_perf_5k_messages_within_budget() {
 
 #[test]
 fn ranking_orders_relevance_by_bm25() {
-    let conn = open_test_db();
+    let conn = open_seeded_db();
     insert_message(
         &conn,
         "ch1",

@@ -28,6 +28,8 @@ mod shutdown;
 pub mod signal_stores;
 pub mod state;
 pub mod state_helpers;
+#[cfg(test)]
+pub mod test_support;
 mod tray;
 pub mod video_channels;
 mod windows;

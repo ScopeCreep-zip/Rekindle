@@ -12,12 +12,7 @@ use super::DaemonPresenceAdapter;
 impl DaemonPresenceAdapter {
     /// Publish one event, if anything is listening.
     fn publish(&self, event: SubscriptionEvent) {
-        let guard = self.ctx.subscriptions.read();
-        if let Some(manager) = guard.as_ref() {
-            // Fails only when every receiver has dropped, which is the
-            // normal state with no clients attached.
-            let _ = manager.event_sender().send(event);
-        }
+        self.ctx.publish_event(event);
     }
 
     /// A member appeared in the registry that we had not seen before.

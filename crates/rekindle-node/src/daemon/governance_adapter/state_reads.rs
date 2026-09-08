@@ -18,16 +18,11 @@ use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
 impl DaemonGovernanceAdapter<'_> {
     /// Ed25519 identity secret, or `None` while the daemon is locked.
     pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
-        self.ctx.signing_key.read().as_ref().map(|k| *k.as_bytes())
+        self.ctx.identity_secret()
     }
 
     pub(super) fn identity_display_name_impl(&self) -> String {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .map(|s| s.identity.display_name.clone())
-            .unwrap_or_default()
+        self.ctx.identity_display_name()
     }
 
     /// The daemon has no per-process status toggle the way the desktop

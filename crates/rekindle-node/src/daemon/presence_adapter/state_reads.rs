@@ -13,22 +13,11 @@ impl DaemonPresenceAdapter {
     /// The trait returns `String` rather than `Option`, so the empty
     /// string is the "not a member" signal — callers compare against it.
     pub(super) fn my_pseudonym_impl(&self, community_id: &str) -> String {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| m.pseudonym_key.clone())
-            .unwrap_or_default()
+        self.ctx.my_pseudonym(community_id)
     }
 
     pub(super) fn identity_display_name_impl(&self) -> String {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .map(|s| s.identity.display_name.clone())
-            .unwrap_or_default()
+        self.ctx.identity_display_name()
     }
 
     pub(super) fn our_route_blob_impl(&self) -> Option<Vec<u8>> {

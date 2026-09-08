@@ -8,15 +8,6 @@
 # Prefer a written exception in xtask/src/duplication.rs (or
 # DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
 # deliberate and permanent — those carry a reason; this file does not.
-body crates/rekindle-calls/src/lib.rs crates/rekindle-calls/src/signaling/handlers.rs
-body crates/rekindle-cli/src/views/channel_watch.rs crates/rekindle-cli/src/views/dm_inbox.rs
-body crates/rekindle-node/src/daemon/gossip_adapter/state_reads.rs crates/rekindle-node/src/daemon/governance_adapter/state_reads.rs
-body crates/rekindle-node/src/daemon/gossip_adapter/state_reads.rs crates/rekindle-node/src/daemon/presence_adapter/state_reads.rs
-body crates/rekindle-node/src/daemon/governance_adapter/state_reads.rs crates/rekindle-node/src/daemon/presence_adapter/state_reads.rs
-body crates/rekindle-node/src/daemon/mek_rotation/deps_impl.rs crates/rekindle-node/src/daemon/presence_adapter/events.rs
-body src-tauri/src/channels/community_channel/dto.rs src-tauri/src/state/community.rs
-body src-tauri/src/services/community/join/state.rs src-tauri/src/services/community/presence/mod.rs
-body src-tauri/src/services/cross_device_sync/tests.rs src-tauri/src/services/search/tests.rs
 css align-items: center ; border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent) ; color: var(--color-xfire-text) ; display: flex ; font-size: 12px ; font-weight: 600 ; gap: 6px ; padding: 8px 12px
 css align-items: center ; border-radius: 3px ; display: flex ; gap: 8px ; padding: 4px 8px ; transition: background 0.15s
 css align-items: center ; color: var(--color-xfire-text) ; display: flex ; font-size: 11px ; height: 22px ; justify-content: space-between ; padding: 2px 12px

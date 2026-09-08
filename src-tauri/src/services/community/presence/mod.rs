@@ -21,12 +21,9 @@ use crate::state_helpers;
 /// dance. Internal presence orchestrators consume the same value via
 /// `CommunityPresenceDeps::current_presence_status_str`.
 pub fn current_presence_status(state: &Arc<AppState>, _community_id: &str) -> &'static str {
-    match state_helpers::identity_status(state).unwrap_or(crate::state::UserStatus::Online) {
-        crate::state::UserStatus::Online => "online",
-        crate::state::UserStatus::Away => "away",
-        crate::state::UserStatus::Busy => "busy",
-        crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => "offline",
-    }
+    state_helpers::identity_status(state)
+        .unwrap_or(crate::state::UserStatus::Online)
+        .as_wire_str()
 }
 
 pub use poll::{presence_poll_tick_public, start_presence_poll};

@@ -616,6 +616,22 @@ const MIN_BODY_CHARS: usize = 50;
 /// workspace would be a hole, exempting exactly these two is a note.
 const DUPLICATE_BODY_EXCEPTIONS: &[(&[&str], &str)] = &[
     (
+        &[
+            "rekindle (src-tauri)::from",
+            "rekindle (src-tauri)::from_dto",
+        ],
+        "`RoleDefinition::from_dto` and `RoleDto::from` build two \
+         different types from the same source, field by field, so the \
+         bodies match. The types must not be merged: `RoleDto` \
+         serialises `permissions` as a string \
+         (`serialize_u64_as_string`) because a u64 above 2^53-1 loses \
+         low bits through JavaScript's Number, which silently strips \
+         ADMINISTRATOR (bit 3) from the Owner role. `RoleDefinition` is \
+         cached governance state and carries no such wire constraint. \
+         Routing one through the other needs a third field-by-field \
+         conversion, which is the same code again.",
+    ),
+    (
         &["rekindle-secrets::generate", "rekindle-transport::generate"],
         "MEK codec, plan 4.2. Blocked on unifying two CryptoError \
          taxonomies (7 vs 11 variants, 116 sites) — rekindle-crypto \

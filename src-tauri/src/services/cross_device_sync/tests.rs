@@ -4,24 +4,11 @@
 //! plumbing serializes and round-trips correctly through the FTS5-era
 //! schema (so the DB columns are present and writable).
 
-use rusqlite::Connection;
-
-const MIGRATION: &str = include_str!("../../../migrations/001_init.sql");
-
-fn open_db() -> Connection {
-    let conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.execute_batch(MIGRATION).expect("apply migration");
-    conn.execute(
-        "INSERT INTO identity (id, public_key, created_at) VALUES (1, 'owner_pk', 0)",
-        [],
-    )
-    .expect("seed identity");
-    conn
-}
+use crate::test_support::open_seeded_db;
 
 #[test]
 fn identity_table_has_personal_sync_columns() {
-    let conn = open_db();
+    let conn = open_seeded_db();
     conn.execute(
         "UPDATE identity SET personal_sync_record_key = 'rk', \
              personal_sync_owner_keypair = 'kp', device_id = 'd1' \
@@ -41,7 +28,7 @@ fn identity_table_has_personal_sync_columns() {
 
 #[test]
 fn paired_devices_table_round_trips() {
-    let conn = open_db();
+    let conn = open_seeded_db();
     conn.execute(
         "INSERT INTO paired_devices (owner_key, device_id, device_public_key, display_name, paired_at) \
          VALUES ('owner_pk', 'dev1', 'pk1', 'Laptop', 100)",
@@ -60,7 +47,7 @@ fn paired_devices_table_round_trips() {
 
 #[test]
 fn channel_read_state_row_writes_and_reads() {
-    let conn = open_db();
+    let conn = open_seeded_db();
     conn.execute(
         "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
          VALUES ('owner_pk', 'c1', 'ch1', 42, 100)",
@@ -80,7 +67,7 @@ fn channel_read_state_row_writes_and_reads() {
 
 #[test]
 fn pending_pairings_table_with_blob_salt() {
-    let conn = open_db();
+    let conn = open_seeded_db();
     let salt = vec![0xAAu8; 16];
     conn.execute(
         "INSERT INTO pending_pairings (owner_key, pairing_code, pairing_salt, created_at, expires_at) \

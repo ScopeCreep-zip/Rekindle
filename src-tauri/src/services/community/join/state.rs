@@ -5,12 +5,9 @@ use crate::state::{AppState, ChannelInfo, ChannelType, RoleDefinition};
 use crate::state_helpers;
 
 pub(super) fn join_status_label(state: &Arc<AppState>) -> &'static str {
-    match state_helpers::identity_status(state).unwrap_or(crate::state::UserStatus::Online) {
-        crate::state::UserStatus::Online => "online",
-        crate::state::UserStatus::Away => "away",
-        crate::state::UserStatus::Busy => "busy",
-        crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => "offline",
-    }
+    state_helpers::identity_status(state)
+        .unwrap_or(crate::state::UserStatus::Online)
+        .as_wire_str()
 }
 
 pub(super) fn build_channels(

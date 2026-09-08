@@ -16,14 +16,10 @@ use crate::signaling::event::CallSignalEvent;
 use crate::state::{CallKind, CallState, CallStatus};
 
 /// Truncate a hex pubkey for display when no friend display name is
-/// known.
-fn short_pubkey(pk: &str) -> String {
-    if pk.len() > 16 {
-        format!("{}…", &pk[..16])
-    } else {
-        pk.to_string()
-    }
-}
+/// known. One implementation, shared with the src-tauri adapter's
+/// `emit_event` mappings — the crate root's doc comment already said it
+/// was public for exactly that reason.
+use crate::short_pubkey_helper as short_pubkey;
 
 /// Decoded `CallInvite` wire fields for [`handle_incoming_invite`].
 /// Borrows the envelope-owned strings/bytes so dispatch passes them

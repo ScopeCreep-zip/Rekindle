@@ -341,21 +341,7 @@ impl View for ChannelWatchView {
     }
 
     fn handle_click(&mut self, column: u16, row: u16) -> Option<Action> {
-        for (&id, rect) in &self.click_rects {
-            if column >= rect.x
-                && column < rect.x + rect.width
-                && row >= rect.y
-                && row < rect.y + rect.height
-            {
-                self.focus.set(id);
-                // Clicking InputBox also enters input mode
-                if id == FocusId::InputBox {
-                    return Some(Action::EnterInputMode);
-                }
-                return None;
-            }
-        }
-        None
+        crate::views::click_to_focus(&mut self.focus, &self.click_rects, column, row)
     }
 
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {

@@ -8,17 +8,11 @@ use super::DaemonGossipAdapter;
 
 impl DaemonGossipAdapter {
     pub(super) fn my_pseudonym_key_impl(&self, community_id: &str) -> String {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| m.pseudonym_key.clone())
-            .unwrap_or_default()
+        self.ctx.my_pseudonym(community_id)
     }
 
     pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
-        self.ctx.signing_key.read().as_ref().map(|k| *k.as_bytes())
+        self.ctx.identity_secret()
     }
 
     /// The fan-out targets for this community.

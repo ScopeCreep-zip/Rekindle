@@ -174,3 +174,52 @@ pub struct DaemonContext {
     /// once the signing key and broadcast manager exist.
     pub presence_start_tx: crate::daemon::presence_adapter::supervisor::PresenceStartSender,
 }
+
+impl DaemonContext {
+    /// Our pseudonym in one community, or `""` when we are not a member.
+    ///
+    /// Every adapter needs this and three of them had written the same
+    /// session walk. It reads `DaemonContext`, so it belongs on
+    /// `DaemonContext` — `services-pattern.md` puts the state access on
+    /// the host and leaves the adapter as the trait's shape.
+    ///
+    /// The empty string is the "not a member" signal because the `Deps`
+    /// traits return `String`, not `Option<String>`; callers compare
+    /// against it.
+    pub fn my_pseudonym(&self, community_id: &str) -> String {
+        self.session
+            .read()
+            .as_ref()
+            .and_then(|s| s.community(community_id))
+            .map(|m| m.pseudonym_key.clone())
+            .unwrap_or_default()
+    }
+
+    /// The unlocked Ed25519 secret, or `None` while locked.
+    ///
+    /// Copies the bytes out rather than lending the handle: the handle
+    /// is `ZeroizeOnDrop` and must not escape the lock guard.
+    pub fn identity_secret(&self) -> Option<[u8; 32]> {
+        self.signing_key.read().as_ref().map(|k| *k.as_bytes())
+    }
+
+    /// Our display name, or `""` before an identity is loaded.
+    pub fn identity_display_name(&self) -> String {
+        self.session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.display_name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Publish one `SubscriptionEvent`, if anything is listening.
+    ///
+    /// Send failure means every receiver has dropped, which is the
+    /// normal state with no clients attached — not an error.
+    pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
+        let guard = self.subscriptions.read();
+        if let Some(manager) = guard.as_ref() {
+            let _ = manager.event_sender().send(event);
+        }
+    }
+}

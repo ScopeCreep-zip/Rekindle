@@ -27,6 +27,28 @@ pub enum UserStatus {
     Invisible,
 }
 
+impl UserStatus {
+    /// The wire string the presence layer and the join flow both send.
+    ///
+    /// `Invisible` maps to `"offline"` deliberately: the point of
+    /// invisible is that peers cannot distinguish it from being offline,
+    /// so it must not leak a distinct value onto the wire.
+    ///
+    /// This match lived in `community/join/state.rs` and
+    /// `community/presence/mod.rs` as two copies. A third status would
+    /// have had to be added to both, and the one that was missed would
+    /// have silently reported the wrong presence.
+    #[must_use]
+    pub fn as_wire_str(self) -> &'static str {
+        match self {
+            Self::Online => "online",
+            Self::Away => "away",
+            Self::Busy => "busy",
+            Self::Offline | Self::Invisible => "offline",
+        }
+    }
+}
+
 /// Whether a friendship is pending (outbound request sent) or fully accepted.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
