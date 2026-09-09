@@ -10,6 +10,7 @@
  */
 
 import type { CommunityEvent } from "./community_events";
+import type { TypingContext } from "./chat_events";
 import type { EventInfo } from "../commands/types";
 import type { GameServer, Thread } from "../../stores/community.store";
 
@@ -291,6 +292,15 @@ export type CommunitySubscriptionEvent =
   | { social: SocialEvent }
   | { channelMessage: ChannelMessageEvent }
   | { crypto: CryptoEvent }
+  /**
+   * Channel typing. DM typing goes to `chat-event` — `TypingContext`
+   * carries the distinction and the backend routes on it.
+   */
+  | {
+      typing:
+        | { started: { context: TypingContext; who: string } }
+        | { stopped: { context: TypingContext; who: string } };
+    }
   | { unreadChanged: Record<string, unknown> };
 
 export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;

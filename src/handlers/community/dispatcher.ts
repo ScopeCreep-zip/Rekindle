@@ -6,6 +6,7 @@ import {
   reduceMessages,
   reduceSubscriptionMessages,
   reduceSubscriptionSystem,
+  reduceSubscriptionTyping,
 } from "./dispatcher_messages";
 import { reduceVoice, reduceSubscriptionCrypto } from "./dispatcher_voice";
 import { reduceSubscriptionContent } from "./dispatcher_content";
@@ -27,6 +28,7 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       reduceSubscriptionMembership(event);
       reduceSubscriptionMessages(event);
       reduceSubscriptionSystem(event);
+      reduceSubscriptionTyping(event);
       reduceSubscriptionCrypto(event);
       reduceSubscriptionContent(event);
       return;

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
-use crate::channels::CommunityEvent;
 use crate::db::DbPool;
 use crate::services::message_service;
 use crate::state::{AppState, OnlineMember};
@@ -417,14 +416,21 @@ async fn handle_relayed_envelope(
             channel_id,
             pseudonym_key,
         } => {
-            crate::event_dispatch::emit_live(
+            // Only `Started`: the protocol sends a keystroke ping with
+            // no explicit stop, and the frontend expires it on a 5 s
+            // timer. Synthesising a `Stopped` here would be inventing
+            // an event the peer never sent.
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ChannelTyping {
-                    community_id,
-                    channel_id,
-                    pseudonym_key,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Typing(
+                    rekindle_types::subscription_events::TypingEvent::Started {
+                        context: rekindle_types::subscription_events::TypingContext::Channel {
+                            community: community_id,
+                            channel: channel_id,
+                        },
+                        who: pseudonym_key,
+                    },
+                ),
             );
         }
         CommunityEnvelope::PresenceUpdate {

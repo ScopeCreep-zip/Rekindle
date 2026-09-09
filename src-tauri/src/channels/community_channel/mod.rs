@@ -45,13 +45,6 @@ pub enum CommunityEvent {
         channel_id: String,
         message_id: String,
     },
-    /// A member started typing in a channel.
-    #[serde(rename_all = "camelCase")]
-    ChannelTyping {
-        community_id: String,
-        channel_id: String,
-        pseudonym_key: String,
-    },
     /// Architecture §10.9: a member triggered a soundboard sound in a
     /// voice channel. The frontend looks up the expression in the local
     /// cache and plays the audio.

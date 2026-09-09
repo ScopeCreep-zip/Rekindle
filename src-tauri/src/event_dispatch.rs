@@ -44,7 +44,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, SubscriptionEvent, TypingContext, TypingEvent,
+};
 
 /// Wire shape persisted in the journal. The `channel` lets the frontend
 /// route the payload to the same listener that would have received it
@@ -236,6 +238,19 @@ fn channel_for(event: &SubscriptionEvent) -> &'static str {
             ChannelMessageEvent::New { .. }
             | ChannelMessageEvent::Edited { .. }
             | ChannelMessageEvent::Deleted { .. },
+        )
+        // Typing splits the same way, and `TypingContext` already
+        // carries the distinction: channel typing belongs to the
+        // community window, DM typing to the chat windows.
+        | SubscriptionEvent::Typing(
+            TypingEvent::Started {
+                context: TypingContext::Channel { .. },
+                ..
+            }
+            | TypingEvent::Stopped {
+                context: TypingContext::Channel { .. },
+                ..
+            },
         )
         | SubscriptionEvent::Membership(_)
         | SubscriptionEvent::Governance(_)

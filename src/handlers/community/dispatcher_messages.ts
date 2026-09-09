@@ -48,35 +48,6 @@ export function reduceMessages(event: CommunityEvent): boolean {
       }
     }
     return true;
-  } else if (event.type === "channelTyping") {
-    const { communityId, channelId, pseudonymKey } = event.data;
-    const community = communityState.communities[communityId];
-    if (community) {
-      // Find display name for the typing member
-      const member = community.members.find((m) => m.pseudonymKey === pseudonymKey);
-      const displayName = member?.displayName ?? truncateKey(pseudonymKey);
-
-      // Track typing users per channel with auto-expire
-      const key = `${channelId}:${pseudonymKey}`;
-      if (!typingTimers[key]) {
-        // Add to typing users for this channel
-        setTypingUsers(channelId, (prev) => {
-          const existing = prev ?? [];
-          if (existing.some((t) => t.pseudonymKey === pseudonymKey)) return existing;
-          return [...existing, { pseudonymKey, displayName }];
-        });
-      } else {
-        clearTimeout(typingTimers[key]);
-      }
-      // Auto-remove after 5 seconds
-      typingTimers[key] = window.setTimeout(() => {
-        setTypingUsers(channelId, (prev) =>
-          (prev ?? []).filter((t) => t.pseudonymKey !== pseudonymKey),
-        );
-        delete typingTimers[key];
-      }, 5000);
-    }
-    return true;
   } else if (event.type === "attachmentDownloaded") {
     const { communityId, channelId, attachmentId, localPath } = event.data;
     const messages = communityState.channelMessages[channelId];
@@ -298,4 +269,42 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
       "info",
     );
   }
+}
+
+/// Channel typing on the daemon vocabulary.
+///
+/// Body moved from the `channelTyping` case. Only `started` arrives:
+/// the protocol has no explicit stop, so the 5 s timer below is what
+/// expires an indicator — unchanged from before.
+export function reduceSubscriptionTyping(event: CommunitySubscriptionEvent): void {
+  if (!("typing" in event)) return;
+  const t = event.typing;
+  if (!("started" in t)) return;
+  const { context, who } = t.started;
+  if (!("channel" in context)) return;
+
+  const { community, channel } = context.channel;
+  const c = communityState.communities[community];
+  if (!c) return;
+
+  // Find display name for the typing member
+  const member = c.members.find((m) => m.pseudonymKey === who);
+  const displayName = member?.displayName ?? truncateKey(who);
+
+  // Track typing users per channel with auto-expire
+  const key = `${channel}:${who}`;
+  if (typingTimers[key]) {
+    clearTimeout(typingTimers[key]);
+  } else {
+    setTypingUsers(channel, (prev) => {
+      const existing = prev ?? [];
+      if (existing.some((x) => x.pseudonymKey === who)) return existing;
+      return [...existing, { pseudonymKey: who, displayName }];
+    });
+  }
+  // Auto-remove after 5 seconds
+  typingTimers[key] = window.setTimeout(() => {
+    setTypingUsers(channel, (prev) => (prev ?? []).filter((x) => x.pseudonymKey !== who));
+    delete typingTimers[key];
+  }, 5000);
 }
