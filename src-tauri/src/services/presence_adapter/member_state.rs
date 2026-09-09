@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use rekindle_types::id::{PseudonymKey, RoleId};
 
-use crate::channels::CommunityEvent;
 use crate::db::DbPool;
 use crate::state::{AppState, EventRsvpEntry, MemberProfileSnapshot};
 use crate::state_helpers;
@@ -171,11 +170,10 @@ pub(super) fn apply_member_profile_updates(
         }
     }
     if emit_refreshed {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_membership(
             app_handle,
-            "community-event",
-            &CommunityEvent::MembersRefreshed {
-                community_id: community_id.to_string(),
+            rekindle_types::subscription_events::MembershipEvent::MembersRefreshed {
+                community: community_id.to_string(),
             },
         );
     }

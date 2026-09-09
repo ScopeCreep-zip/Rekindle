@@ -1,38 +1,27 @@
 import type { CommunityVideoEvent } from "./community_video_events";
 
+/**
+ * Events on the `community-event` channel.
+ *
+ * Mid-migration, this channel carries **two** shapes, exactly as
+ * `chat-event` does:
+ *
+ * 1. {@link CommunityEvent} — the desktop's `{ type, data }` envelope.
+ * 2. {@link CommunitySubscriptionEvent} — the daemon vocabulary the CLI
+ *    also consumes, externally tagged. The membership family has moved
+ *    across; governance, social, crypto, voice signalling and the rest
+ *    have not yet.
+ *
+ * {@link isLegacyCommunityEvent} discriminates the two.
+ */
+
 export type CommunityEvent =
-  | {
-      type: "joinAccepted";
-      data: { communityId: string };
-    }
-  | {
-      // Per-phase "dial-in" progress for the self-sovereign join flow.
-      // The backend gates each phase in its own timeout and emits one
-      // event per transition; the frontend is a pure display of this
-      // stream (see JoinProgressStepper). `stage` is the phase label,
-      // `status` ∈ started | done | failed | timedOut.
-      type: "joinProgress";
-      data: { communityId: string; stage: string; status: string };
-    }
   | {
       // Architecture §18.4 — eager-fetched expression bytes have landed.
       // Frontend should re-pull list_expressions for this community so
       // the picker re-renders with the resolved inline_data_base64.
       type: "expressionAssetReady";
       data: { communityId: string; expressionId: string };
-    }
-  | {
-      type: "memberJoined";
-      data: {
-        communityId: string;
-        pseudonymKey: string;
-        displayName: string;
-        roleIds: number[];
-      };
-    }
-  | {
-      type: "memberRemoved";
-      data: { communityId: string; pseudonymKey: string };
     }
   | {
       type: "raidDetected";
@@ -64,23 +53,11 @@ export type CommunityEvent =
       data: { communityId: string; channelId?: string; newGeneration: number };
     }
   | {
-      type: "kicked";
-      data: { communityId: string };
-    }
-  | {
       type: "rolesChanged";
       data: {
         communityId: string;
         roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
       };
-    }
-  | {
-      type: "memberRolesChanged";
-      data: { communityId: string; pseudonymKey: string; roleIds: number[] };
-    }
-  | {
-      type: "memberTimedOut";
-      data: { communityId: string; pseudonymKey: string; timeoutUntil: number | null };
     }
   | {
       type: "channelOverwriteChanged";
@@ -370,10 +347,6 @@ export type CommunityEvent =
       data: { communityId: string; codeHash: string; newUseCount: number };
     }
   | {
-      type: "membersRefreshed";
-      data: { communityId: string };
-    }
-  | {
       type: "systemMessage";
       data: {
         communityId: string;
@@ -393,21 +366,6 @@ export type CommunityEvent =
       data: {
         communityId: string;
         locked: boolean;
-      };
-    }
-  | {
-      type: "onboardingComplete";
-      data: {
-        communityId: string;
-        pseudonymKey: string;
-        roleIds: number[];
-      };
-    }
-  | {
-      type: "joinRejected";
-      data: {
-        communityId: string;
-        reason: string;
       };
     }
   | {
@@ -435,15 +393,6 @@ export type CommunityEvent =
         channelId: string;
         attachmentId: string;
         localPath: string;
-      };
-    }
-  | {
-      type: "memberDiscovered";
-      data: {
-        communityId: string;
-        pseudonymKey: string;
-        displayName: string;
-        subkeyIndex: number;
       };
     }
   | {
@@ -524,3 +473,63 @@ export type CommunityEvent =
       };
     }
   | CommunityVideoEvent;
+
+/** Membership events from the daemon vocabulary. */
+export type MembershipEvent =
+  | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
+  | { joinAccepted: { community: string; mekGeneration: number | null; slotIndex: number | null } }
+  | { joinRejected: { community: string; reason: string } }
+  | { joinProgress: { community: string; stage: string; status: string } }
+  | { joined: { community: string; pseudonym: string; displayName: string; roleIds: number[] } }
+  | { left: { community: string; pseudonym: string } }
+  | { removed: { community: string; pseudonym: string } }
+  | { kicked: { community: string; targetPseudonym: string } }
+  | { banned: { community: string; targetPseudonym: string } }
+  | { unbanned: { community: string; targetPseudonym: string } }
+  | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
+  | { timeoutRemoved: { community: string; targetPseudonym: string } }
+  | { timeoutStatusChanged: { community: string; pseudonym: string; timeoutUntil: number | null } }
+  | { rolesChanged: { community: string; pseudonym: string; roleIds: number[] } }
+  | { onboardingCompleted: { community: string; pseudonym: string; roleIds: number[] } }
+  | { onboardingAnswersSubmitted: { community: string; senderPseudonym: string; answerCount: number } }
+  | { membersRefreshed: { community: string } }
+  | {
+      /**
+       * Found by scanning the registry rather than announced by gossip.
+       * A frontend adds the row without the join chrome.
+       */
+      memberDiscovered: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        subkeyIndex: number;
+      };
+    };
+
+/** System-level signals from the daemon vocabulary. */
+export type SystemEvent =
+  | { kicked: { community: string } }
+  | { announcement: Record<string, unknown> }
+  | { raidAlert: Record<string, unknown> }
+  | { channelLockdown: Record<string, unknown> }
+  | { bootstrapRequested: Record<string, unknown> }
+  | { bootstrapReceived: Record<string, unknown> }
+  | { syncRequested: Record<string, unknown> }
+  | { syncReceived: Record<string, unknown> };
+
+/** The daemon-vocabulary families delivered on this channel. */
+export type CommunitySubscriptionEvent =
+  | { membership: MembershipEvent }
+  | { system: SystemEvent }
+  | { governance: Record<string, unknown> }
+  | { crypto: Record<string, unknown> }
+  | { unreadChanged: Record<string, unknown> };
+
+export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;
+
+/** Whether this is the desktop's `{ type, data }` envelope. */
+export function isLegacyCommunityEvent(
+  event: AnyCommunityEvent,
+): event is CommunityEvent {
+  return "type" in event;
+}

@@ -1,6 +1,7 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeCommunityEvents } from "../../ipc/channels";
-import { reduceMembership } from "./dispatcher_members";
+import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
+import { isLegacyCommunityEvent } from "../../ipc/channels/community_events";
 import { reduceMessages } from "./dispatcher_messages";
 import { reduceVoice } from "./dispatcher_voice";
 import { reduceContent } from "./dispatcher_content";
@@ -12,6 +13,13 @@ import { reduceContent } from "./dispatcher_content";
 /// every dispatcher file under the module size cap.
 export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
   return subscribeCommunityEvents((event) => {
+    // The daemon vocabulary and the desktop envelope share this
+    // channel while the migration is in progress. Membership has moved
+    // across; the rest still arrives as `{ type, data }`.
+    if (!isLegacyCommunityEvent(event)) {
+      reduceSubscriptionMembership(event);
+      return;
+    }
     if (reduceMembership(event)) return;
     if (reduceMessages(event)) return;
     if (reduceVoice(event)) return;

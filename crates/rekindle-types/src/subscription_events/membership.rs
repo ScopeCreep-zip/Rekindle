@@ -21,12 +21,53 @@ pub enum MembershipEvent {
     /// Triggered by: gossip `ControlPayload::JoinAccepted`.
     JoinAccepted {
         community: String,
-        mek_generation: u64,
+        /// The MEK generation the joiner starts on.
+        ///
+        /// `Option` because the desktop's governance runtime signals
+        /// acceptance from a path that has not read the MEK yet; the
+        /// gossip path supplies it. `None` means "not yet known", not
+        /// generation zero.
+        mek_generation: Option<u64>,
         slot_index: Option<u32>,
     },
     /// Our own join request was rejected (we see this).
     /// Triggered by: gossip `ControlPayload::JoinRejected`.
     JoinRejected { community: String, reason: String },
+    /// The full member list was re-read and should be re-rendered.
+    ///
+    /// Not a membership *change*: a refresh follows a registry scan or
+    /// a governance rebuild, where the delta is unknown and the
+    /// frontend re-queries rather than patching rows.
+    MembersRefreshed { community: String },
+
+    /// A member was found by scanning the registry, rather than
+    /// announced by gossip.
+    ///
+    /// Distinct from [`Self::Joined`]: discovery says "this slot is
+    /// occupied and always was", so a frontend adds the row without
+    /// the join chrome (system message, sound, join toast).
+    MemberDiscovered {
+        community: String,
+        pseudonym: String,
+        display_name: String,
+        /// Which registry slot they occupy.
+        subkey_index: u32,
+    },
+
+    /// Per-phase progress through the self-sovereign join.
+    ///
+    /// Architecture §6.2: emitted before and after each gated phase
+    /// (governance snapshot → invite decode → slot claim → presence →
+    /// open records → watch) so a frontend renders a stepper instead of
+    /// one long spinner. A CLI prints the same phases as lines.
+    JoinProgress {
+        community: String,
+        /// The phase name.
+        stage: String,
+        /// `started` | `done` | `failed` | `timedOut`.
+        status: String,
+    },
+
     /// A new member joined the community (everyone sees this).
     /// Triggered by: gossip `ControlPayload::MemberJoined`.
     Joined {

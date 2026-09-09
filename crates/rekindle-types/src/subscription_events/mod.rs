@@ -177,7 +177,10 @@ impl SubscriptionEvent {
                 | MembershipEvent::TimeoutStatusChanged { community, .. }
                 | MembershipEvent::RolesChanged { community, .. }
                 | MembershipEvent::OnboardingCompleted { community, .. }
-                | MembershipEvent::OnboardingAnswersSubmitted { community, .. } => community,
+                | MembershipEvent::OnboardingAnswersSubmitted { community, .. }
+                | MembershipEvent::MembersRefreshed { community }
+                | MembershipEvent::MemberDiscovered { community, .. }
+                | MembershipEvent::JoinProgress { community, .. } => community,
             }),
             Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }

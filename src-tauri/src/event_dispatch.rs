@@ -180,6 +180,18 @@ pub fn emit_live<P: Serialize + ?Sized>(app: &AppHandle, channel: &str, payload:
 /// one family at a time; the channel names are unchanged, so the
 /// frontend's `listen()` calls do not move — only the payload shape
 /// converges.
+/// Emit a community membership event.
+///
+/// Thin wrapper over [`emit_subscription`], as for calls and
+/// notifications: the family implies the channel, so call sites do not
+/// spell out the `SubscriptionEvent::Membership` wrapper.
+pub fn emit_membership(
+    app: &AppHandle,
+    event: rekindle_types::subscription_events::MembershipEvent,
+) {
+    emit_subscription(app, &SubscriptionEvent::Membership(event));
+}
+
 /// Emit a call-signalling event.
 ///
 /// Rides the `chat-event` channel, which is where the desktop's call UI

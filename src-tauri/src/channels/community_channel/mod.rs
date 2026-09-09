@@ -32,18 +32,6 @@ pub enum CommunityEvent {
         community_id: String,
         expression_id: String,
     },
-    #[serde(rename_all = "camelCase")]
-    MemberJoined {
-        community_id: String,
-        pseudonym_key: String,
-        display_name: String,
-        role_ids: Vec<u32>,
-    },
-    #[serde(rename_all = "camelCase")]
-    MemberRemoved {
-        community_id: String,
-        pseudonym_key: String,
-    },
     /// Architecture §20.6 — peer-side raid detector. Emitted by every
     /// peer that observes the join rate exceeding
     /// `CommunityPolicy.max_joins_per_interval` within
@@ -63,23 +51,6 @@ pub enum CommunityEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         channel_id: Option<String>,
         new_generation: u64,
-    },
-    /// We were kicked from a community (our pseudonym was removed by an admin).
-    #[serde(rename_all = "camelCase")]
-    Kicked { community_id: String },
-    /// A member's assigned roles were changed.
-    #[serde(rename_all = "camelCase")]
-    MemberRolesChanged {
-        community_id: String,
-        pseudonym_key: String,
-        role_ids: Vec<u32>,
-    },
-    /// A member was timed out or their timeout was removed.
-    #[serde(rename_all = "camelCase")]
-    MemberTimedOut {
-        community_id: String,
-        pseudonym_key: String,
-        timeout_until: Option<u64>,
     },
     /// Channel permission overwrites were changed (server-side enforcement).
     #[serde(rename_all = "camelCase")]
@@ -305,10 +276,6 @@ pub enum CommunityEvent {
         message_id: String,
         rule_name: String,
     },
-    /// The member list for a community was refreshed (e.g., after DHT update).
-    /// Frontend should re-fetch members via `getCommunityMembers`.
-    #[serde(rename_all = "camelCase")]
-    MembersRefreshed { community_id: String },
     /// System message (join/leave/kick/ban events posted inline in chat).
     #[serde(rename_all = "camelCase")]
     SystemMessage {
@@ -322,34 +289,6 @@ pub enum CommunityEvent {
     /// Channel lockdown broadcast — non-admins should restrict sending.
     #[serde(rename_all = "camelCase")]
     ChannelLockdown { community_id: String, locked: bool },
-    /// A member completed onboarding — their roles were assigned.
-    #[serde(rename_all = "camelCase")]
-    OnboardingComplete {
-        community_id: String,
-        pseudonym_key: String,
-        role_ids: Vec<u32>,
-    },
-    /// Join request was rejected by a peer or admin.
-    #[serde(rename_all = "camelCase")]
-    JoinRejected {
-        community_id: String,
-        reason: String,
-    },
-    /// Join accepted by a peer — MEK and community data received.
-    #[serde(rename_all = "camelCase")]
-    JoinAccepted { community_id: String },
-    /// Architecture §6.2 — per-phase "dial-in" progress for the
-    /// self-sovereign join. Emitted before and after each gated join
-    /// phase (governance snapshot → invite decode → slot claim → presence
-    /// → open records → watch) so the UI renders a stepper instead of a
-    /// single spinner. `status` is one of `started` / `done` / `failed` /
-    /// `timedOut`.
-    #[serde(rename_all = "camelCase")]
-    JoinProgress {
-        community_id: String,
-        stage: String,
-        status: String,
-    },
     /// Sync response received — channel messages were merged from an archiver.
     /// Frontend should refresh the channel's message list.
     #[serde(rename_all = "camelCase")]
@@ -521,18 +460,6 @@ pub enum CommunityEvent {
     InviteRevoked {
         community_id: String,
         code_hash: String,
-    },
-    /// Architecture §15 — presence poll observed a previously-unknown
-    /// subkey reporting in. Emitted from
-    /// `services/community/presence/poll.rs::persist_discovered_registry_members`
-    /// once per newly-discovered pseudonym so the member list shows
-    /// the joiner without a registry refetch.
-    #[serde(rename_all = "camelCase")]
-    MemberDiscovered {
-        community_id: String,
-        pseudonym_key: String,
-        display_name: String,
-        subkey_index: u32,
     },
 }
 

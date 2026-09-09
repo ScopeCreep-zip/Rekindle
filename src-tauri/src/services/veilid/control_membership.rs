@@ -100,12 +100,11 @@ pub(super) fn handle_membership_payload(
                 Ok(())
             });
 
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MemberJoined {
-                    community_id: community_id.to_string(),
-                    pseudonym_key: pseudonym_key.clone(),
+                rekindle_types::subscription_events::MembershipEvent::Joined {
+                    community: community_id.to_string(),
+                    pseudonym: pseudonym_key.clone(),
                     display_name,
                     role_ids,
                 },
@@ -184,12 +183,11 @@ pub(super) fn handle_membership_payload(
                 }
             }
 
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MemberRemoved {
-                    community_id: community_id.to_string(),
-                    pseudonym_key,
+                rekindle_types::subscription_events::MembershipEvent::Removed {
+                    community: community_id.to_string(),
+                    pseudonym: pseudonym_key,
                 },
             );
 
@@ -224,12 +222,11 @@ pub(super) fn handle_membership_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MemberTimedOut {
-                    community_id: community_id.to_string(),
-                    pseudonym_key,
+                rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
+                    community: community_id.to_string(),
+                    pseudonym: pseudonym_key,
                     timeout_until,
                 },
             );

@@ -1,6 +1,7 @@
 import { Component, For, Show, onMount, onCleanup } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeCommunityEvents } from "../../ipc/channels";
+import { isLegacyCommunityEvent } from "../../ipc/channels/community_events";
 import { joinProgress, applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 
 /**
@@ -24,8 +25,15 @@ const JoinProgressStepper: Component = () => {
 
   onMount(() => {
     void subscribeCommunityEvents((event) => {
-      if (event.type === "joinProgress") {
-        applyJoinProgress(event.data.stage, event.data.status as JoinStageStatus);
+      // Join progress moved to the daemon vocabulary; the legacy
+      // envelope no longer carries it.
+      if (
+        !isLegacyCommunityEvent(event) &&
+        "membership" in event &&
+        "joinProgress" in event.membership
+      ) {
+        const { stage, status } = event.membership.joinProgress;
+        applyJoinProgress(stage, status as JoinStageStatus);
       }
     }).then((fn) => {
       unlisten = fn;

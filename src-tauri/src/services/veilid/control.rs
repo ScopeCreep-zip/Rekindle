@@ -185,7 +185,6 @@ async fn handle_join_and_roles_payload(
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -228,11 +227,10 @@ async fn handle_join_and_roles_payload(
         }
         ControlPayload::JoinRejected { reason } => {
             tracing::warn!(community = %community_id, reason = %reason, "join request rejected by peer");
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::JoinRejected {
-                    community_id: community_id.to_string(),
+                rekindle_types::subscription_events::MembershipEvent::JoinRejected {
+                    community: community_id.to_string(),
                     reason,
                 },
             );

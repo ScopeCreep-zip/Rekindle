@@ -94,11 +94,10 @@ pub(super) fn spawn_login_services(
             // Also emit MembersRefreshed so the frontend re-fetches members
             // even if the presence poll hasn't completed its first tick yet.
             for cid in &community_ids {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_membership(
                     &bg_app,
-                    "community-event",
-                    &crate::channels::CommunityEvent::MembersRefreshed {
-                        community_id: cid.clone(),
+                    rekindle_types::subscription_events::MembershipEvent::MembersRefreshed {
+                        community: cid.clone(),
                     },
                 );
             }

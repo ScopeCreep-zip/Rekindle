@@ -58,11 +58,10 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
                 JoinStageStatus::Failed => "failed",
                 JoinStageStatus::TimedOut => "timedOut",
             };
-            emit_live(
+            crate::event_dispatch::emit_membership(
                 &adapter.app_handle,
-                "community-event",
-                &CommunityEvent::JoinProgress {
-                    community_id,
+                rekindle_types::subscription_events::MembershipEvent::JoinProgress {
+                    community: community_id,
                     stage: stage_label,
                     status: status.to_string(),
                 },
@@ -101,10 +100,16 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
             tracing::trace!(community = %community_id, "governance entry applied");
         }
         GovernanceRuntimeEvent::JoinAccepted { community_id } => {
-            emit_live(
+            crate::event_dispatch::emit_membership(
                 &adapter.app_handle,
-                "community-event",
-                &CommunityEvent::JoinAccepted { community_id },
+                rekindle_types::subscription_events::MembershipEvent::JoinAccepted {
+                    community: community_id,
+                    // This path signals acceptance from the governance
+                    // runtime, which has not read the MEK or claimed a
+                    // slot yet. The gossip path carries both.
+                    mek_generation: None,
+                    slot_index: None,
+                },
             );
         }
         GovernanceRuntimeEvent::MemberRolesChanged {
@@ -112,12 +117,11 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
             pseudonym_hex,
             role_ids,
         } => {
-            emit_live(
+            crate::event_dispatch::emit_membership(
                 &adapter.app_handle,
-                "community-event",
-                &CommunityEvent::MemberRolesChanged {
-                    community_id,
-                    pseudonym_key: pseudonym_hex,
+                rekindle_types::subscription_events::MembershipEvent::RolesChanged {
+                    community: community_id,
+                    pseudonym: pseudonym_hex,
                     role_ids,
                 },
             );
@@ -127,12 +131,11 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
             pseudonym_hex,
             role_ids,
         } => {
-            emit_live(
+            crate::event_dispatch::emit_membership(
                 &adapter.app_handle,
-                "community-event",
-                &CommunityEvent::OnboardingComplete {
-                    community_id,
-                    pseudonym_key: pseudonym_hex,
+                rekindle_types::subscription_events::MembershipEvent::OnboardingCompleted {
+                    community: community_id,
+                    pseudonym: pseudonym_hex,
                     role_ids,
                 },
             );

@@ -69,12 +69,13 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::KickedNotification => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::Kicked {
-                    community_id: community_id.to_string(),
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::System(
+                    rekindle_types::subscription_events::SystemEvent::Kicked {
+                        community: community_id.to_string(),
+                    },
+                ),
             );
         }
         ControlPayload::SubmitOnboardingAnswers { ref answers } => {
@@ -91,12 +92,11 @@ pub(crate) async fn handle_control_events_and_threads(
             ref pseudonym_key,
             ref role_ids,
         } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::OnboardingComplete {
-                    community_id: community_id.to_string(),
-                    pseudonym_key: pseudonym_key.clone(),
+                rekindle_types::subscription_events::MembershipEvent::OnboardingCompleted {
+                    community: community_id.to_string(),
+                    pseudonym: pseudonym_key.clone(),
                     role_ids: role_ids.clone(),
                 },
             );

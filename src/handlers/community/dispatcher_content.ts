@@ -217,38 +217,6 @@ export function reduceContent(event: CommunityEvent): boolean {
       ),
     );
     return true;
-  } else if (event.type === "joinAccepted") {
-    // Architecture §7.4 — peer accepted our join request and the
-    // MEK has landed in the local cache. Refresh the community
-    // detail so the new MEK generation, member registry slot, and
-    // governance state propagate into the store, then surface a
-    // success toast so the joining user sees the explicit confirmation.
-    const { communityId } = event.data;
-    addToast("Joined community — encryption keys received", "success");
-    void commands.getCommunityDetails().then((details) => {
-      const detail = details.find((d) => d.id === communityId);
-      if (detail) {
-        setCommunityState(
-          "communities",
-          communityId,
-          transformCommunityDetail(detail),
-        );
-        void handleResolveCommunityImageDataUrls(communityId);
-      }
-    });
-    return true;
-  } else if (event.type === "joinProgress") {
-    // Per-phase "dial-in" progress from the backend join gates. Pure
-    // display: mirror the phase + status into the join store so the
-    // JoinProgressStepper re-renders. No timeout logic here — the
-    // backend gate owns each phase's budget.
-    const { stage, status } = event.data;
-    applyJoinProgress(stage, status as JoinStageStatus);
-    return true;
-  } else if (event.type === "joinRejected") {
-    const { reason } = event.data;
-    addToast(`Join rejected: ${reason}`, "error");
-    return true;
   } else if (event.type === "communityUpdated") {
     const { communityId, name, description, iconHash, bannerHash } = event.data;
     if (name !== null) {

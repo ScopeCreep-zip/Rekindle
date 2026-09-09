@@ -174,7 +174,6 @@ fn handle_gossip_moderation(
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
@@ -241,12 +240,11 @@ fn handle_gossip_moderation(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MemberTimedOut {
-                    community_id: community_id.to_string(),
-                    pseudonym_key: target_pseudonym,
+                rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
+                    community: community_id.to_string(),
+                    pseudonym: target_pseudonym,
                     timeout_until: Some(timeout_until),
                 },
             );
@@ -263,12 +261,11 @@ fn handle_gossip_moderation(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_membership(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MemberTimedOut {
-                    community_id: community_id.to_string(),
-                    pseudonym_key: target_pseudonym,
+                rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
+                    community: community_id.to_string(),
+                    pseudonym: target_pseudonym,
                     timeout_until: None,
                 },
             );
@@ -292,8 +289,6 @@ fn remove_member_from_local_state(
     target_pseudonym: String,
     label: &'static str,
 ) {
-    use crate::channels::CommunityEvent;
-
     let my_pseudonym = {
         let communities = state.communities.read();
         communities
@@ -302,12 +297,13 @@ fn remove_member_from_local_state(
     };
 
     if my_pseudonym.as_deref() == Some(&target_pseudonym) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             app_handle,
-            "community-event",
-            &CommunityEvent::Kicked {
-                community_id: community_id.to_string(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::System(
+                rekindle_types::subscription_events::SystemEvent::Kicked {
+                    community: community_id.to_string(),
+                },
+            ),
         );
         return;
     }
@@ -337,12 +333,11 @@ fn remove_member_from_local_state(
         )?;
         Ok(())
     });
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_membership(
         app_handle,
-        "community-event",
-        &CommunityEvent::MemberRemoved {
-            community_id: community_id.to_string(),
-            pseudonym_key: target_pseudonym,
+        rekindle_types::subscription_events::MembershipEvent::Removed {
+            community: community_id.to_string(),
+            pseudonym: target_pseudonym,
         },
     );
 }

@@ -18,6 +18,37 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"join_acc|");
             h.update(community.as_bytes());
         }
+        MembershipEvent::MembersRefreshed { community } => {
+            h.update(b"members_refresh|");
+            h.update(community.as_bytes());
+        }
+        MembershipEvent::MemberDiscovered {
+            community,
+            pseudonym,
+            subkey_index,
+            ..
+        } => {
+            h.update(b"member_disc|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&subkey_index.to_le_bytes());
+        }
+        MembershipEvent::JoinProgress {
+            community,
+            stage,
+            status,
+        } => {
+            // Stage and status both, so `started` and `done` for one
+            // phase are two events rather than one deduped away.
+            h.update(b"join_prog|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(stage.as_bytes());
+            h.update(b"|");
+            h.update(status.as_bytes());
+        }
         MembershipEvent::JoinRejected { community, reason } => {
             h.update(b"join_rej|");
             h.update(community.as_bytes());

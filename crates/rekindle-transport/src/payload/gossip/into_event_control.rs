@@ -57,7 +57,9 @@ pub fn control_into_event(
             ..
         } => SubscriptionEvent::Membership(MembershipEvent::JoinAccepted {
             community: c(),
-            mek_generation,
+            // Gossip carries the generation; the desktop's governance
+            // runtime signals acceptance before it has read the MEK.
+            mek_generation: Some(mek_generation),
             slot_index,
         }),
         ControlPayload::JoinRejected { reason } => {

@@ -8,7 +8,7 @@ import type {
   VoiceEvent,
   VoiceSubscriptionEvent,
 } from "./voice_events";
-import type { CommunityEvent } from "./community_events";
+import type { AnyCommunityEvent } from "./community_events";
 import type {
   NetworkStatusEvent,
   NetworkSubscriptionEvent,
@@ -63,10 +63,16 @@ export function subscribeVoiceEvents(
   });
 }
 
+/**
+ * Subscribe to community events.
+ *
+ * The channel carries both the desktop's `{ type, data }` envelope and
+ * the daemon vocabulary; `isLegacyCommunityEvent` discriminates them.
+ */
 export function subscribeCommunityEvents(
-  onEvent: (event: CommunityEvent) => void,
+  onEvent: (event: AnyCommunityEvent) => void,
 ): Promise<UnlistenFn> {
-  return safeListen<CommunityEvent>("community-event", (event) => {
+  return safeListen<AnyCommunityEvent>("community-event", (event) => {
     onEvent(event.payload);
   });
 }

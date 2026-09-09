@@ -309,12 +309,11 @@ impl CommunityPresenceDeps for PresenceAdapter {
         display_name: &str,
         subkey_index: u32,
     ) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_membership(
             &self.app_handle,
-            "community-event",
-            &crate::channels::CommunityEvent::MemberDiscovered {
-                community_id: community_id.to_string(),
-                pseudonym_key: pseudonym_key.to_string(),
+            rekindle_types::subscription_events::MembershipEvent::MemberDiscovered {
+                community: community_id.to_string(),
+                pseudonym: pseudonym_key.to_string(),
                 display_name: display_name.to_string(),
                 subkey_index,
             },

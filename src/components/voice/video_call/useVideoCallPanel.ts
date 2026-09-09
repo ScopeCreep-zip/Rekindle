@@ -7,6 +7,7 @@ import type {
   SessionVideoConfig,
 } from "../../../ipc/commands";
 import { subscribeCommunityEvents } from "../../../ipc/channels";
+import { isLegacyCommunityEvent } from "../../../ipc/channels/community_events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
@@ -188,6 +189,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     if (props.mode === "community") {
       const communityIdLocal = props.communityId;
       unlistenCommunity = subscribeCommunityEvents((event) => {
+        // Video signalling still rides the legacy envelope; the
+        // membership family has moved to the daemon vocabulary.
+        if (!isLegacyCommunityEvent(event)) return;
         if (event.type === "videoTopologyChange") {
           const { communityId, streamId } = event.data;
           if (communityId !== communityIdLocal) return;
