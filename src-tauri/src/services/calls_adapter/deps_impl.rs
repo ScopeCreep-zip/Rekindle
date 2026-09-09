@@ -17,7 +17,7 @@ use rekindle_calls::CallError;
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
 use super::CallsAdapter;
-use crate::channels::{ChatEvent, NotificationEvent};
+use crate::channels::ChatEvent;
 use crate::state_helpers;
 
 #[async_trait]
@@ -314,10 +314,9 @@ impl CallSignalingDeps for CallsAdapter {
                         expires_at_ms,
                     },
                 );
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_notification(
                     &self.app_handle,
-                    "notification-event",
-                    &NotificationEvent::CallIncoming {
+                    rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
                         from: from_public_key,
                         display_name: from_display_name,
@@ -445,10 +444,9 @@ impl CallSignalingDeps for CallsAdapter {
                         expires_at_ms,
                     },
                 );
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_notification(
                     &self.app_handle,
-                    "notification-event",
-                    &NotificationEvent::CallIncoming {
+                    rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
                         from: initiator_public_key,
                         display_name: initiator_display_name,

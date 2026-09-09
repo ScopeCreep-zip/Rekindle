@@ -7,7 +7,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::state::SharedState;
-use crate::{channels, db, event_dispatch, friend_store_sqlite, services, shortcuts, tray};
+use crate::{db, event_dispatch, friend_store_sqlite, services, shortcuts, tray};
 
 /// Run all one-time app setup. Invoked from the `tauri::Builder::setup` closure.
 pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::error::Error>> {
@@ -95,12 +95,17 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
             },
             config_dir.display(),
         );
+        // Direct emit, not `emit_notification`: this runs before
+        // `spawn_dispatch_loop`, so the queue would hold it rather than
+        // deliver it. Payload shape matches the rest of the channel.
         let _ = app.handle().emit(
             "notification-event",
-            &channels::NotificationEvent::SystemAlert {
-                title: "Identity format upgraded".to_string(),
-                body,
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Notification(
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                    title: "Identity format upgraded".to_string(),
+                    body,
+                },
+            ),
         );
     }
 
@@ -235,11 +240,15 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     event_dispatch::spawn_dispatch_loop(app.handle().clone(), &state.event_dispatch);
 
     // Emit startup notification
-    let notification = channels::NotificationEvent::SystemAlert {
+    let notification = rekindle_types::subscription_events::NotificationEvent::SystemAlert {
         title: "Rekindle".to_string(),
         body: "Application started successfully".to_string(),
     };
-    event_dispatch::emit_now(state, "notification-event", &notification);
+    event_dispatch::emit_now(
+        state,
+        "notification-event",
+        &rekindle_types::subscription_events::SubscriptionEvent::Notification(notification),
+    );
 
     tracing::info!("Rekindle started");
     Ok(())

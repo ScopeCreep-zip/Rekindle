@@ -131,10 +131,9 @@ pub(crate) async fn handle_friend_request_full(
                 "FriendRequest from already-Accepted peer with DIFFERENT identity_key — \
                  leaving existing friendship intact, asking user to verify and reset"
             );
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_notification(
                 app_handle,
-                "notification-event",
-                &crate::channels::NotificationEvent::SystemAlert {
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Peer's identity key has changed".into(),
                     body: format!(
                         "{peer_label} sent a friend request with a new identity key. \

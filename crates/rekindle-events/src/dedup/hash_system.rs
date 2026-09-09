@@ -1,15 +1,27 @@
 //! Content hashers for network transport and system-level events.
 
-use rekindle_types::subscription_events::{NetworkEvent, SystemEvent};
+use rekindle_types::subscription_events::{NetworkEvent, NotificationEvent, SystemEvent};
 
 pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
     match n {
         NetworkEvent::AttachmentChanged {
+            attachment_state,
             is_attached,
             public_internet_ready,
+            has_route,
         } => {
             h.update(b"attach|");
-            h.update(&[u8::from(*is_attached), u8::from(*public_internet_ready)]);
+            // The raw state string is included because it distinguishes
+            // transitions the three bits cannot — "attaching" and
+            // "attached_weak" both read as not-ready, and collapsing
+            // them would dedup away a real change.
+            h.update(attachment_state.as_bytes());
+            h.update(b"|");
+            h.update(&[
+                u8::from(*is_attached),
+                u8::from(*public_internet_ready),
+                u8::from(*has_route),
+            ]);
         }
         NetworkEvent::LocalRoutesDied { count } => {
             h.update(b"local_routes|");
@@ -120,6 +132,54 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent) {
         SystemEvent::AuditChainBroken { cursor } => {
             h.update(b"audit_broken|");
             h.update(&cursor.to_le_bytes());
+        }
+    }
+}
+
+pub(super) fn hash_notification(h: &mut blake3::Hasher, n: &NotificationEvent) {
+    match n {
+        NotificationEvent::MessageReceived {
+            community_id,
+            channel_id,
+            title,
+            body,
+            ..
+        } => {
+            h.update(b"msg|");
+            h.update(community_id.as_bytes());
+            h.update(b"|");
+            h.update(channel_id.as_bytes());
+            h.update(b"|");
+            h.update(title.as_bytes());
+            h.update(b"|");
+            h.update(body.as_bytes());
+        }
+        NotificationEvent::SystemAlert { title, body } => {
+            h.update(b"alert|");
+            h.update(title.as_bytes());
+            h.update(b"|");
+            h.update(body.as_bytes());
+        }
+        NotificationEvent::UpdateAvailable { version } => {
+            h.update(b"update|");
+            h.update(version.as_bytes());
+        }
+        NotificationEvent::SessionResetRequested {
+            peer_public_key,
+            safety_number,
+            ..
+        } => {
+            h.update(b"reset|");
+            h.update(peer_public_key.as_bytes());
+            h.update(b"|");
+            h.update(safety_number.as_bytes());
+        }
+        NotificationEvent::CallIncoming { call_id, .. } => {
+            // `call_id` alone: a re-delivered ring for the same call is
+            // the duplicate this exists to suppress, and `expires_at_ms`
+            // would differ between deliveries and defeat it.
+            h.update(b"call|");
+            h.update(call_id.as_bytes());
         }
     }
 }

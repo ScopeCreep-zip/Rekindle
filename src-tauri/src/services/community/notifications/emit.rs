@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use crate::channels::NotificationEvent;
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -130,10 +129,9 @@ pub async fn emit_message_notification(
         NotificationDecision::Drop => unreachable!("Drop returned early above"),
     };
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_notification(
         app_handle,
-        "notification-event",
-        &NotificationEvent::MessageReceived {
+        rekindle_types::subscription_events::NotificationEvent::MessageReceived {
             title,
             body: payload_body,
             community_id: community_id.to_string(),

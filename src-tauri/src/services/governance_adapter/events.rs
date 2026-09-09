@@ -7,7 +7,6 @@
 use rekindle_governance_runtime::{GovernanceRuntimeEvent, JoinStageStatus};
 
 use crate::channels::community_channel::CommunityEvent;
-use crate::channels::notification_channel::NotificationEvent;
 use crate::event_dispatch::emit_live;
 
 use super::{snapshot_channels_and_categories, snapshot_roles, GovernanceAdapter};
@@ -87,10 +86,9 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
                 "Community is full — waiting for an admin to expand it. Up to 30 seconds."
                     .to_string()
             };
-            emit_live(
+            crate::event_dispatch::emit_notification(
                 &adapter.app_handle,
-                "notification-event",
-                &NotificationEvent::SystemAlert {
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Joining community…".to_string(),
                     body,
                 },

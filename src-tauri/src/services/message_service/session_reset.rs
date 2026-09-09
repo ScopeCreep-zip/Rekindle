@@ -60,10 +60,9 @@ pub(super) fn handle_session_reset_payload(
             } else {
                 format!("{display} declined your secure session reset request: {reason}")
             };
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_notification(
                 app_handle,
-                "notification-event",
-                &crate::channels::NotificationEvent::SystemAlert {
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Session Reset Declined".to_string(),
                     body,
                 },
@@ -113,10 +112,9 @@ fn handle_session_reset_request(
     let safety_number = compute_safety_number(state, sender_hex, prekey_bundle)
         .unwrap_or_else(|| "<unavailable>".to_string());
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_notification(
         app_handle,
-        "notification-event",
-        &crate::channels::NotificationEvent::SessionResetRequested {
+        rekindle_types::subscription_events::NotificationEvent::SessionResetRequested {
             peer_public_key: sender_hex.to_string(),
             peer_display_name: display_name,
             safety_number,
@@ -177,10 +175,9 @@ fn handle_session_reset_accept(
             );
             let display = state_helpers::friend_display_name(state, sender_hex)
                 .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_notification(
                 app_handle,
-                "notification-event",
-                &crate::channels::NotificationEvent::SystemAlert {
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Secure session re-established".to_string(),
                     body: format!(
                         "New Signal session with {display} is active. Verify their safety number out-of-band before resuming sensitive conversations."

@@ -9,7 +9,12 @@ import type {
   VoiceSubscriptionEvent,
 } from "./voice_events";
 import type { CommunityEvent } from "./community_events";
-import type { NotificationEvent, NetworkStatusEvent } from "./notification_events";
+import type {
+  NetworkStatusEvent,
+  NetworkSubscriptionEvent,
+  NotificationEvent,
+  NotificationSubscriptionEvent,
+} from "./notification_events";
 import type { LifecycleState } from "../commands/dto";
 
 /**
@@ -69,16 +74,27 @@ export function subscribeCommunityEvents(
 export function subscribeNotificationEvents(
   onEvent: (event: NotificationEvent) => void,
 ): Promise<UnlistenFn> {
-  return safeListen<NotificationEvent>("notification-event", (event) => {
-    onEvent(event.payload);
+  return safeListen<NotificationSubscriptionEvent>("notification-event", (event) => {
+    onEvent(event.payload.notification);
   });
 }
 
+/**
+ * Subscribe to network attachment status.
+ *
+ * The channel now carries the whole `NetworkEvent` family, but the
+ * indicator only cares about attachment, so the other variants (route
+ * deaths, watch renewals) are filtered out here rather than pushed onto
+ * every caller.
+ */
 export function subscribeNetworkStatus(
   onEvent: (event: NetworkStatusEvent) => void,
 ): Promise<UnlistenFn> {
-  return safeListen<NetworkStatusEvent>("network-status", (event) => {
-    onEvent(event.payload);
+  return safeListen<NetworkSubscriptionEvent>("network-status", (event) => {
+    const inner = event.payload.network;
+    if ("attachmentChanged" in inner) {
+      onEvent(inner.attachmentChanged);
+    }
   });
 }
 

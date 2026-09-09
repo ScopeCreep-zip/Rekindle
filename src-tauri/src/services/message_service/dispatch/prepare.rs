@@ -116,10 +116,9 @@ async fn decrypt_payload(
                 let display_name = state_helpers::friend_display_name(state, sender_hex);
                 let from_label = display_name
                     .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_notification(
                     app_handle,
-                    "notification-event",
-                    &crate::channels::NotificationEvent::SystemAlert {
+                    rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                         title: "Message Decrypt Failed".to_string(),
                         body: format!(
                             "A message from {from_label} could not be decrypted. The secure \

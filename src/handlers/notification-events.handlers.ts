@@ -65,128 +65,123 @@ function playNotificationSound(communityId: string | undefined, soundRef: string
 
 export function subscribeNotificationHandler(): Promise<UnlistenFn> {
   return subscribeNotificationEvents((event) => {
-    switch (event.type) {
-      case "messageReceived": {
-        // Architecture §32 Phase 7 Week 25 — `soundRef` is the
-        // resolved sound override (channel → community → null). The
-        // `null` case lets us fall through to the bundled default.
-        // Wave 12 W12.2 — in-call DND auto-suppression silences the
-        // message ding + OS notification while a call is active so a
-        // noisy chat doesn't distract participants. The notification
-        // inbox row is still persisted (read on next visit).
-        if (!inCallSuppress()) {
-          void showSystemNotification(event.data.title, event.data.body);
-        }
-        playNotificationSound(event.data.communityId, event.data.soundRef);
-        setNotificationState("notifications", (prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "message",
-            title: event.data.title,
-            body: event.data.body,
-            communityId: event.data.communityId,
-            channelId: event.data.channelId,
-            soundRef: event.data.soundRef,
-            timestamp: Date.now(),
-            read: false,
-          },
-        ]);
-        setNotificationState("unreadCount", (c) => c + 1);
-        break;
+    if ("messageReceived" in event) {
+      const data = event.messageReceived;
+      // Architecture §32 Phase 7 Week 25 — `soundRef` is the
+      // resolved sound override (channel → community → null). The
+      // `null` case lets us fall through to the bundled default.
+      // Wave 12 W12.2 — in-call DND auto-suppression silences the
+      // message ding + OS notification while a call is active so a
+      // noisy chat doesn't distract participants. The notification
+      // inbox row is still persisted (read on next visit).
+      if (!inCallSuppress()) {
+        void showSystemNotification(data.title, data.body);
       }
-      case "systemAlert": {
-        void showSystemNotification(event.data.title, event.data.body);
-        setNotificationState("notifications", (prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "system",
-            title: event.data.title,
-            body: event.data.body,
-            timestamp: Date.now(),
-            read: false,
-          },
-        ]);
-        setNotificationState("unreadCount", (c) => c + 1);
-        break;
-      }
-      case "sessionResetRequested": {
-        // P3.3 — peer wants to re-establish the Signal session. Show
-        // a confirm dialog with the safety_number so the user verifies
-        // the peer's identity out-of-band BEFORE accepting. This is
-        // the user-driven side of the safety stance: no auto-process,
-        // no creative paths, the user must affirm the safety number.
-        const { peerPublicKey, peerDisplayName, safetyNumber } = event.data;
-        const accepted = window.confirm(
-          `${peerDisplayName} wants to reset the secure session.\n\n` +
-            `Safety number: ${safetyNumber}\n\n` +
-            `Compare this number with ${peerDisplayName} on a different ` +
-            `channel (phone call, in person, separate trusted app) BEFORE ` +
-            `accepting. If the numbers don't match, click Cancel — accepting ` +
-            `would install an attacker's keys.\n\n` +
-            `Accept and re-establish secure session?`,
-        );
-        if (accepted) {
-          void commands.acceptSessionReset(peerPublicKey).catch((e) => {
-            console.error("Failed to accept session reset:", e);
-          });
-        } else {
-          void commands.declineSessionReset(peerPublicKey, "user declined").catch((e) => {
+      playNotificationSound(data.communityId, data.soundRef);
+      setNotificationState("notifications", (prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: "message",
+          title: data.title,
+          body: data.body,
+          communityId: data.communityId,
+          channelId: data.channelId,
+          soundRef: data.soundRef,
+          timestamp: Date.now(),
+          read: false,
+        },
+      ]);
+      setNotificationState("unreadCount", (c) => c + 1);
+    } else if ("systemAlert" in event) {
+      const data = event.systemAlert;
+      void showSystemNotification(data.title, data.body);
+      setNotificationState("notifications", (prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: "system",
+          title: data.title,
+          body: data.body,
+          timestamp: Date.now(),
+          read: false,
+        },
+      ]);
+      setNotificationState("unreadCount", (c) => c + 1);
+    } else if ("sessionResetRequested" in event) {
+      // P3.3 — peer wants to re-establish the Signal session. Show
+      // a confirm dialog with the safety number so the user verifies
+      // the peer's identity out-of-band BEFORE accepting. This is
+      // the user-driven side of the safety stance: no auto-process,
+      // no creative paths, the user must affirm the safety number.
+      const { peerPublicKey, peerDisplayName, safetyNumber } =
+        event.sessionResetRequested;
+      const accepted = window.confirm(
+        `${peerDisplayName} wants to reset the secure session.\n\n` +
+          `Safety number: ${safetyNumber}\n\n` +
+          `Compare this number with ${peerDisplayName} on a different ` +
+          `channel (phone call, in person, separate trusted app) BEFORE ` +
+          `accepting. If the numbers don't match, click Cancel — accepting ` +
+          `would install an attacker's keys.\n\n` +
+          `Accept and re-establish secure session?`,
+      );
+      if (accepted) {
+        void commands.acceptSessionReset(peerPublicKey).catch((e) => {
+          console.error("Failed to accept session reset:", e);
+        });
+      } else {
+        void commands
+          .declineSessionReset(peerPublicKey, "user declined")
+          .catch((e) => {
             console.error("Failed to decline session reset:", e);
           });
-        }
-        // Also persist to the notification list so the user sees it in
-        // the notifications panel even if they dismissed the modal.
-        setNotificationState("notifications", (prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "system",
-            title: "Session Reset Request",
-            body: `${peerDisplayName} requested a session reset (safety number: ${safetyNumber})`,
-            timestamp: Date.now(),
-            read: false,
-          },
-        ]);
-        setNotificationState("unreadCount", (c) => c + 1);
-        break;
       }
-      case "updateAvailable": {
-        if (authState.status === "busy") break;
-        void showSystemNotification(
-          "Update Available",
-          `Version ${event.data.version} is available`,
-        );
-        setNotificationState("notifications", (prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "system",
-            title: "Update Available",
-            body: `Version ${event.data.version} is available`,
-            timestamp: Date.now(),
-            read: false,
-          },
-        ]);
-        setNotificationState("unreadCount", (c) => c + 1);
-        break;
-      }
-      case "callIncoming": {
-        // Wave 12 W12.3 — OS-level awareness only. The chat-event::
-        // incomingCall path populates the in-app modal and drives the
-        // synthesized ringtone (handled in calls.handlers.ts). The
-        // missed-call inbox row gets written from the
-        // chat-event::callMissed / callTimedOut arms in calls.handlers
-        // so the inbox isn't polluted with mid-flight events.
-        if (!settingsState.notifications) break;
-        const { displayName, kind, isGroup } = event.data;
-        const title = isGroup
-          ? `Incoming group ${kind} call`
-          : `Incoming ${kind} call`;
-        void showSystemNotification(title, displayName);
-        break;
-      }
+      // Also persist to the notification list so the user sees it in
+      // the notifications panel even if they dismissed the modal.
+      setNotificationState("notifications", (prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: "system",
+          title: "Session Reset Request",
+          body: `${peerDisplayName} requested a session reset (safety number: ${safetyNumber})`,
+          timestamp: Date.now(),
+          read: false,
+        },
+      ]);
+      setNotificationState("unreadCount", (c) => c + 1);
+    } else if ("updateAvailable" in event) {
+      if (authState.status === "busy") return;
+      const { version } = event.updateAvailable;
+      void showSystemNotification(
+        "Update Available",
+        `Version ${version} is available`,
+      );
+      setNotificationState("notifications", (prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: "system",
+          title: "Update Available",
+          body: `Version ${version} is available`,
+          timestamp: Date.now(),
+          read: false,
+        },
+      ]);
+      setNotificationState("unreadCount", (c) => c + 1);
+    } else if ("callIncoming" in event) {
+      // Wave 12 W12.3 — OS-level awareness only. The chat-event::
+      // incomingCall path populates the in-app modal and drives the
+      // synthesized ringtone (handled in calls.handlers.ts). The
+      // missed-call inbox row gets written from the
+      // chat-event::callMissed / callTimedOut arms in calls.handlers
+      // so the inbox isn't polluted with mid-flight events.
+      if (!settingsState.notifications) return;
+      const { displayName, kind, isGroup } = event.callIncoming;
+      const title = isGroup
+        ? `Incoming group ${kind} call`
+        : `Incoming ${kind} call`;
+      void showSystemNotification(title, displayName);
     }
   });
 }

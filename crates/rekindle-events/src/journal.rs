@@ -112,8 +112,10 @@ mod tests {
 
     fn ev() -> SubscriptionEvent {
         SubscriptionEvent::Network(NetworkEvent::AttachmentChanged {
+            attachment_state: "attached_good".into(),
             is_attached: true,
             public_internet_ready: true,
+            has_route: true,
         })
     }
 

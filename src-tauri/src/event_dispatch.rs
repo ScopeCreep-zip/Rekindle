@@ -180,6 +180,18 @@ pub fn emit_live<P: Serialize + ?Sized>(app: &AppHandle, channel: &str, payload:
 /// one family at a time; the channel names are unchanged, so the
 /// frontend's `listen()` calls do not move — only the payload shape
 /// converges.
+/// Emit a device-level notification.
+///
+/// Thin wrapper over [`emit_subscription`] so the ~20 notification call
+/// sites do not each spell out the `SubscriptionEvent::Notification`
+/// wrapper — the channel is implied by the family.
+pub fn emit_notification(
+    app: &AppHandle,
+    event: rekindle_types::subscription_events::NotificationEvent,
+) {
+    emit_subscription(app, &SubscriptionEvent::Notification(event));
+}
+
 pub fn emit_subscription(app: &AppHandle, event: &SubscriptionEvent) {
     emit_live(app, channel_for(event), event);
 }
@@ -201,6 +213,7 @@ fn channel_for(event: &SubscriptionEvent) -> &'static str {
         | SubscriptionEvent::UnreadChanged { .. } => "community-event",
         SubscriptionEvent::Friend(_)
         | SubscriptionEvent::Social(_)
+        | SubscriptionEvent::Notification(_)
         | SubscriptionEvent::System(_) => "notification-event",
         SubscriptionEvent::Network(_) => "network-status",
     }

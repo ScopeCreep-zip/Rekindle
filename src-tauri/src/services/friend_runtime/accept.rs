@@ -113,10 +113,9 @@ pub async fn accept_request_inner(
                             "failed to deserialize stored prekey bundle — cannot establish Signal session");
                     let peer_label = state_helpers::friend_display_name(&state, &public_key)
                         .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
-                    crate::event_dispatch::emit_live(
+                    crate::event_dispatch::emit_notification(
                         &app,
-                        "notification-event",
-                        &crate::channels::NotificationEvent::SystemAlert {
+                        rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                             title: "Couldn't establish secure session".into(),
                             body: format!(
                                 "Stored prekey bundle for {peer_label} is unparseable. \
@@ -158,10 +157,9 @@ pub async fn accept_request_inner(
                                         .unwrap_or_else(|| {
                                             format!("{}…", &public_key[..16.min(public_key.len())])
                                         });
-                                crate::event_dispatch::emit_live(
+                                crate::event_dispatch::emit_notification(
                                     &app,
-                                    "notification-event",
-                                    &crate::channels::NotificationEvent::SystemAlert {
+                                    rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                                         title: "Couldn't establish secure session".into(),
                                         body: format!(
                                             "Failed to establish encrypted session with {peer_label}: {e}. \

@@ -50,10 +50,9 @@ pub(super) fn handle_friend_accept(
             from = %sender_hex,
             "FriendAccept missing ephemeral key — no Signal session (peer running incompatible build?)"
         );
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_notification(
             app_handle,
-            "notification-event",
-            &crate::channels::NotificationEvent::SystemAlert {
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                 title: "Couldn't establish secure session".into(),
                 body: format!(
                     "Friend-accept from {peer_label} arrived without session-init data. \
@@ -75,10 +74,9 @@ pub(super) fn handle_friend_accept(
             // PreKeyBundle bytes garbled in transit or wrong format.
             tracing::error!(from = %sender_hex, error = %e,
                 "failed to parse PreKeyBundle from FriendAccept");
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_notification(
                 app_handle,
-                "notification-event",
-                &crate::channels::NotificationEvent::SystemAlert {
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Couldn't establish secure session".into(),
                     body: format!(
                         "Friend-accept from {peer_label} carried an unparseable prekey bundle. \
@@ -143,10 +141,9 @@ pub(super) fn handle_friend_accept(
                 // fail AEAD. Surface explicitly so the user can act.
                 tracing::error!(from = %sender_hex, error = %e,
                     "failed to establish responder Signal session — encrypted messages from peer will fail AEAD");
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_notification(
                     app_handle,
-                    "notification-event",
-                    &crate::channels::NotificationEvent::SystemAlert {
+                    rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                         title: "Couldn't establish secure session".into(),
                         body: format!(
                             "Failed to establish encrypted session with {peer_label}: {e}. \

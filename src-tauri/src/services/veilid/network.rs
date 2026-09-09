@@ -3,7 +3,6 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Manager};
 
-use crate::channels::NotificationEvent;
 use crate::db::DbPool;
 use crate::services::{message_service, sync_service};
 use crate::state::AppState;
@@ -259,11 +258,11 @@ pub fn handle_attachment(
     } else {
         "disconnected"
     };
-    let notification = NotificationEvent::SystemAlert {
+    let notification = rekindle_types::subscription_events::NotificationEvent::SystemAlert {
         title: "Network".to_string(),
         body: format!("Veilid network {status}"),
     };
-    crate::event_dispatch::emit_live(app_handle, "notification-event", &notification);
+    crate::event_dispatch::emit_notification(app_handle, notification);
 
     if reconnected && public_internet_ready && state.identity.read().is_some() {
         tracing::info!(

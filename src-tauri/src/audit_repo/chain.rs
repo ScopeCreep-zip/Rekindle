@@ -155,10 +155,9 @@ pub async fn verify_async(
                 "audit chain verification FAILED",
             );
             if let Some(cursor) = broken_at {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_notification(
                     app_handle,
-                    "notification-event",
-                    &crate::channels::NotificationEvent::SystemAlert {
+                    rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                         title: "Audit chain broken".into(),
                         body: format!(
                             "Your device's tamper-evident audit log failed integrity check at \
@@ -262,10 +261,9 @@ pub async fn restore_chain(
     );
     if let Some(broken_at) = tamper_at {
         if let Some(app) = app_handle {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_notification(
                 app,
-                "notification-event",
-                &crate::channels::NotificationEvent::SystemAlert {
+                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Audit chain broken".into(),
                     body: format!(
                         "Your device's tamper-evident audit log was modified \

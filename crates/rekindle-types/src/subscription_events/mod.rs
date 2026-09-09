@@ -13,6 +13,7 @@ mod friend;
 mod governance;
 mod membership;
 mod network;
+mod notification;
 mod presence;
 mod social;
 mod system;
@@ -25,6 +26,7 @@ pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
 pub use network::NetworkEvent;
+pub use notification::NotificationEvent;
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use social::SocialEvent;
 pub use system::SystemEvent;
@@ -62,6 +64,9 @@ pub enum SubscriptionEvent {
     Governance(GovernanceEvent),
     /// Social features (reactions, pins, threads, events, game servers).
     Social(SocialEvent),
+    /// Device-level notifications to surface to the user — an
+    /// incoming call, an app update, a message worth a sound.
+    Notification(NotificationEvent),
     /// Network and infrastructure events (attachment, routes, watches).
     Network(NetworkEvent),
     /// System-level signals (announcements, raid alerts, kicked, sync, bootstrap).
@@ -94,6 +99,7 @@ pub enum EventCategory {
     Voice,
     Governance,
     Social,
+    Notification,
     Network,
     System,
     UnreadChanged,
@@ -112,6 +118,7 @@ impl SubscriptionEvent {
             Self::Voice(_) => EventCategory::Voice,
             Self::Governance(_) => EventCategory::Governance,
             Self::Social(_) => EventCategory::Social,
+            Self::Notification(_) => EventCategory::Notification,
             Self::Network(_) => EventCategory::Network,
             Self::System(_) => EventCategory::System,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
@@ -212,7 +219,14 @@ impl SubscriptionEvent {
             // Not community-scoped: a friend event, a network state
             // change and an unread bump all belong to the device, not
             // to one community.
-            Self::Network(_) | Self::UnreadChanged { .. } | Self::Friend(_) => None,
+            // A notification names its community inside the payload
+            // where it has one, but the family as a whole is
+            // device-scoped — a call and an app update belong to
+            // no community.
+            Self::Network(_)
+            | Self::Notification(_)
+            | Self::UnreadChanged { .. }
+            | Self::Friend(_) => None,
         }
     }
 }

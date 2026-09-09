@@ -8,8 +8,18 @@ pub enum NetworkEvent {
     /// Network attachment state changed (attached, detached, degraded).
     /// Triggered by: `VeilidUpdate::Attachment` via dispatch loop.
     AttachmentChanged {
+        /// Raw Veilid `AttachmentState` string, e.g. `"detached"`,
+        /// `"attaching"`, `"attached_good"`. The booleans below collapse
+        /// this to two bits; the desktop's network indicator needs the
+        /// distinction between "attaching" and "attached_weak", which
+        /// neither bit can express.
+        attachment_state: String,
         is_attached: bool,
         public_internet_ready: bool,
+        /// Whether we hold an allocated private route for receiving.
+        /// Attached with no route means nobody can reach us, which is
+        /// not visible from the other three fields.
+        has_route: bool,
     },
     /// Our own allocated private routes died and need reallocation.
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_routes).

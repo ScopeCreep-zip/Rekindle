@@ -294,10 +294,9 @@ pub(super) async fn auto_accept_cross_request(
                                             &req.sender_hex[..16.min(req.sender_hex.len())]
                                         )
                                     });
-                            crate::event_dispatch::emit_live(
+                            crate::event_dispatch::emit_notification(
                                 app_handle,
-                                "notification-event",
-                                &crate::channels::NotificationEvent::SystemAlert {
+                                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                                     title: "Couldn't establish secure session".into(),
                                     body: format!(
                                     "Cross-request auto-accept with {peer_label} failed at the \

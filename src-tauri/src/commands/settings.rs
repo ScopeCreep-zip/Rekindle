@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
 
-use crate::channels::NotificationEvent;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preferences {
@@ -139,10 +137,10 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
     // In production, this compares versions from the update server
     let has_update = false;
     if has_update {
-        let event = NotificationEvent::UpdateAvailable {
+        let event = rekindle_types::subscription_events::NotificationEvent::UpdateAvailable {
             version: "0.2.0".to_string(),
         };
-        crate::event_dispatch::emit_live(&app, "notification-event", &event);
+        crate::event_dispatch::emit_notification(&app, event);
     }
 
     Ok(has_update)
