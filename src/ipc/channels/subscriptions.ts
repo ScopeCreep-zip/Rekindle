@@ -4,7 +4,10 @@ import type {
   PresenceEvent,
   PresenceSubscriptionEvent,
 } from "./presence_events";
-import type { VoiceEvent } from "./voice_events";
+import type {
+  VoiceEvent,
+  VoiceSubscriptionEvent,
+} from "./voice_events";
 import type { CommunityEvent } from "./community_events";
 import type { NotificationEvent, NetworkStatusEvent } from "./notification_events";
 import type { LifecycleState } from "../commands/dto";
@@ -50,8 +53,8 @@ export function subscribePresenceEvents(
 export function subscribeVoiceEvents(
   onEvent: (event: VoiceEvent) => void,
 ): Promise<UnlistenFn> {
-  return safeListen<VoiceEvent>("voice-event", (event) => {
-    onEvent(event.payload);
+  return safeListen<VoiceSubscriptionEvent>("voice-event", (event) => {
+    onEvent(event.payload.voice);
   });
 }
 

@@ -8,7 +8,7 @@
 
 use rekindle_types::subscription_events::{
     ChannelMessageEvent, FriendEvent, MembershipEvent, PresenceEvent, SubscriptionEvent,
-    TypingContext, TypingEvent, UnreadContext, VoiceEvent,
+    TypingContext, TypingEvent, UnreadContext, VoiceEvent, VoiceScope,
 };
 
 use crate::state::SubscriptionState;
@@ -93,10 +93,14 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
         }
 
         // ── Voice: join ─────────────────────────────────────────
+        // `VoiceState` is keyed by (community, channel) and has only
+        // ever held community calls — gossip was its only source. A DM
+        // call has no community, so it is skipped here rather than
+        // given a sentinel community id to sit under.
         SubscriptionEvent::Voice(VoiceEvent::Joined {
-            community,
-            channel,
+            scope: VoiceScope::Community { community, channel },
             pseudonym,
+            ..
         }) => {
             state.voice.join(
                 community,
@@ -108,8 +112,7 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
 
         // ── Voice: leave ────────────────────────────────────────
         SubscriptionEvent::Voice(VoiceEvent::Left {
-            community,
-            channel,
+            scope: VoiceScope::Community { community, channel },
             pseudonym,
         }) => {
             state.voice.leave(community, channel, pseudonym);
@@ -117,8 +120,7 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
 
         // ── Voice: mute/deafen ──────────────────────────────────
         SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
-            community,
-            channel,
+            scope: VoiceScope::Community { community, channel },
             target_pseudonym,
             muted,
         }) => {
@@ -131,8 +133,7 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
             );
         }
         SubscriptionEvent::Voice(VoiceEvent::DeafenChanged {
-            community,
-            channel,
+            scope: VoiceScope::Community { community, channel },
             target_pseudonym,
             deafened,
         }) => {

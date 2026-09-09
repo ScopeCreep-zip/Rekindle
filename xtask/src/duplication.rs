@@ -284,19 +284,9 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
         ],
         "Tier 1's is what the CLI renders; src-tauri's is what the Tauri \
          frontend renders, and carries icon/banner hashes the CLI has no \
-         use for. Same shape as the voice-event split below.",
-    ),
-    (
-        &[
-            "rekindle (src-tauri)::VoiceEvent",
-            "rekindle-types::VoiceEvent",
-        ],
-        "Two event vocabularies, one per frontend: src-tauri's is \
-         Serialize-only for the Tauri webview, Tier 1's is the \
-         round-trippable one the CLI subscribes to. Presence has \
-         already been converged onto Tier 1 \
-         (`PresenceEvent`/`PresenceSnapshot`); voice is the same \
-         work and has not been done yet.",
+         use for. The presence and voice splits of the same shape \
+         have since been converged onto Tier 1; this one is a real \
+         difference in what each frontend renders, not drift.",
     ),
     (
         &["rekindle-protocol::GameInfo", "rekindle-types::GameInfo"],

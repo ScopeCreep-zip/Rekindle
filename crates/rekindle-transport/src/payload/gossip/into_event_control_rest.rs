@@ -5,7 +5,14 @@
 
 use rekindle_types::subscription_events::{
     CryptoEvent, GovernanceEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent,
+    VoiceScope,
 };
+
+/// Every voice signal on the gossip mesh is community-scoped — a DM
+/// call never crosses it, so this side only ever builds the one arm.
+fn scope(community: String, channel: String) -> VoiceScope {
+    VoiceScope::Community { community, channel }
+}
 
 use rekindle_protocol::dht::community::envelope::ControlPayload;
 
@@ -128,14 +135,15 @@ pub fn control_into_event_rest(
         // ── Voice signaling ─────────────────────────────────
         ControlPayload::VoiceJoin { channel_id, .. } => {
             SubscriptionEvent::Voice(VoiceEvent::Joined {
-                community: c(),
-                channel: channel_id,
+                scope: scope(c(), channel_id),
                 pseudonym: s(),
+                // Gossip carries the pseudonym only; the display name
+                // is resolved from the member registry, not the wire.
+                display_name: None,
             })
         }
         ControlPayload::VoiceLeave { channel_id } => SubscriptionEvent::Voice(VoiceEvent::Left {
-            community: c(),
-            channel: channel_id,
+            scope: scope(c(), channel_id),
             pseudonym: s(),
         }),
         ControlPayload::VoiceModeSwitch {
@@ -143,8 +151,7 @@ pub fn control_into_event_rest(
             mode,
             host_pseudonym,
         } => SubscriptionEvent::Voice(VoiceEvent::ModeChanged {
-            community: c(),
-            channel: channel_id,
+            scope: scope(c(), channel_id),
             mode,
             host_pseudonym,
         }),
@@ -153,8 +160,7 @@ pub fn control_into_event_rest(
             target_pseudonym,
             muted,
         } => SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
-            community: c(),
-            channel: channel_id,
+            scope: scope(c(), channel_id),
             target_pseudonym,
             muted,
         }),
@@ -163,8 +169,7 @@ pub fn control_into_event_rest(
             target_pseudonym,
             deafened,
         } => SubscriptionEvent::Voice(VoiceEvent::DeafenChanged {
-            community: c(),
-            channel: channel_id,
+            scope: scope(c(), channel_id),
             target_pseudonym,
             deafened,
         }),
@@ -172,8 +177,7 @@ pub fn control_into_event_rest(
             channel_id,
             participants,
         } => SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
-            community: c(),
-            channel: channel_id,
+            scope: scope(c(), channel_id),
             participant_count: participants.len(),
         }),
 

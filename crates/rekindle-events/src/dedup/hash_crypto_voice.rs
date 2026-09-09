@@ -1,6 +1,6 @@
 //! Content hashers for MEK/crypto lifecycle and voice-channel events.
 
-use rekindle_types::subscription_events::{CryptoEvent, VoiceEvent};
+use rekindle_types::subscription_events::{CryptoEvent, VoiceEvent, VoiceScope};
 
 pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
     match c {
@@ -77,89 +77,114 @@ pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
 
 pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
     let now_bucket = rekindle_utils::timestamp_secs() / 5;
+
+    // Scope first, so every variant is keyed to its call without each
+    // one restating community + channel — and so a DM call, which has
+    // no community at all, hashes on its peer key instead.
+    match v.scope() {
+        Some(VoiceScope::Community { community, channel }) => {
+            h.update(b"c|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+        }
+        Some(VoiceScope::Dm { peer_key }) => {
+            h.update(b"d|");
+            h.update(peer_key.as_bytes());
+        }
+        // Device changes are machine-wide.
+        None => {
+            h.update(b"-|");
+        }
+    }
+    h.update(b"|");
+
     match v {
-        VoiceEvent::Joined {
-            community,
-            channel,
-            pseudonym,
-        } => {
+        VoiceEvent::Joined { pseudonym, .. } => {
             h.update(b"join|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
             h.update(pseudonym.as_bytes());
             h.update(b"|");
             h.update(&now_bucket.to_le_bytes());
         }
-        VoiceEvent::Left {
-            community,
-            channel,
-            pseudonym,
-        } => {
+        VoiceEvent::Left { pseudonym, .. } => {
             h.update(b"leave|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
             h.update(pseudonym.as_bytes());
             h.update(b"|");
             h.update(&now_bucket.to_le_bytes());
         }
-        VoiceEvent::ModeChanged {
-            community,
-            channel,
-            mode,
-            ..
-        } => {
+        VoiceEvent::ModeChanged { mode, .. } => {
             h.update(b"mode|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
             h.update(mode.as_bytes());
         }
         VoiceEvent::MuteChanged {
-            community,
-            channel,
             target_pseudonym,
             muted,
+            ..
         } => {
             h.update(b"mute|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
             h.update(target_pseudonym.as_bytes());
             h.update(b"|");
             h.update(&[u8::from(*muted)]);
         }
         VoiceEvent::DeafenChanged {
-            community,
-            channel,
             target_pseudonym,
             deafened,
+            ..
         } => {
             h.update(b"deafen|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
             h.update(target_pseudonym.as_bytes());
             h.update(b"|");
             h.update(&[u8::from(*deafened)]);
         }
         VoiceEvent::RosterUpdated {
-            community,
-            channel,
-            participant_count,
+            participant_count, ..
         } => {
             h.update(b"roster|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
             h.update(&(*participant_count as u64).to_le_bytes());
+        }
+        VoiceEvent::LocalJoined { .. } => {
+            h.update(b"localjoin|");
+            h.update(&now_bucket.to_le_bytes());
+        }
+        VoiceEvent::SpeakingChanged {
+            pseudonym,
+            speaking,
+            ..
+        } => {
+            // No time bucket: speaking flips many times a second and
+            // every flip is meaningful, so bucketing would swallow the
+            // stop that follows a start inside the same window.
+            h.update(b"speaking|");
+            h.update(pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&[u8::from(*speaking)]);
+        }
+        VoiceEvent::DeviceChanged {
+            device_type,
+            device_name,
+            reason,
+        } => {
+            h.update(b"device|");
+            h.update(device_type.as_bytes());
+            h.update(b"|");
+            h.update(device_name.as_bytes());
+            h.update(b"|");
+            h.update(reason.as_bytes());
+        }
+        VoiceEvent::PacketsDropped { reason, .. } => {
+            // Not the count: it climbs monotonically, so including it
+            // would make every report unique and defeat the dedup.
+            h.update(b"drops|");
+            h.update(reason.as_bytes());
+            h.update(b"|");
+            h.update(&now_bucket.to_le_bytes());
+        }
+        VoiceEvent::ConnectionQuality { quality, .. } => {
+            // The verdict, not the counters — same reason as above.
+            h.update(b"quality|");
+            h.update(quality.as_bytes());
+            h.update(b"|");
+            h.update(&now_bucket.to_le_bytes());
         }
     }
 }

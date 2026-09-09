@@ -8,8 +8,18 @@ use super::App;
 
 use rekindle_types::subscription_events::{
     ChannelMessageEvent, CryptoEvent, FriendEvent, GovernanceEvent, MembershipEvent, NetworkEvent,
-    SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent,
+    SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
+
+/// How to name a call in a toast — `#channel`, or the peer for a DM.
+fn call_label(scope: &VoiceScope) -> String {
+    match scope {
+        VoiceScope::Community { channel, .. } => format!("#{channel}"),
+        VoiceScope::Dm { peer_key } => {
+            format!("with {}", crate::helpers::abbreviate_key(peer_key))
+        }
+    }
+}
 
 impl App {
     /// Convert a terminal/transport event into an Action for the reducer.
@@ -140,7 +150,16 @@ impl App {
                 VoiceEvent::ModeChanged { .. }
                 | VoiceEvent::MuteChanged { .. }
                 | VoiceEvent::DeafenChanged { .. }
-                | VoiceEvent::RosterUpdated { .. },
+                | VoiceEvent::RosterUpdated { .. }
+                // Local-session events: forwarded and re-rendered like
+                // the rest, but without a toast — quality and speaking
+                // change often enough that toasting them would bury
+                // everything else.
+                | VoiceEvent::LocalJoined { .. }
+                | VoiceEvent::SpeakingChanged { .. }
+                | VoiceEvent::DeviceChanged { .. }
+                | VoiceEvent::PacketsDropped { .. }
+                | VoiceEvent::ConnectionQuality { .. },
             ) => {
                 let _ = self
                     .action_tx
@@ -149,12 +168,12 @@ impl App {
             }
             SubscriptionEvent::Voice(VoiceEvent::Joined {
                 ref pseudonym,
-                ref channel,
+                ref scope,
                 ..
             }) => {
                 let short = crate::helpers::abbreviate_key(pseudonym);
                 self.notifications
-                    .push(format!("{short} joined voice #{channel}"), ToastLevel::Info);
+                    .push(format!("{short} joined voice {}", call_label(scope)), ToastLevel::Info);
                 let _ = self
                     .action_tx
                     .send(Action::SubscriptionEvent(Box::new(event)));
@@ -162,12 +181,11 @@ impl App {
             }
             SubscriptionEvent::Voice(VoiceEvent::Left {
                 ref pseudonym,
-                ref channel,
-                ..
+                ref scope,
             }) => {
                 let short = crate::helpers::abbreviate_key(pseudonym);
                 self.notifications
-                    .push(format!("{short} left voice #{channel}"), ToastLevel::Info);
+                    .push(format!("{short} left voice {}", call_label(scope)), ToastLevel::Info);
                 let _ = self
                     .action_tx
                     .send(Action::SubscriptionEvent(Box::new(event)));

@@ -23,7 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, Paragraph};
 use ratatui::Frame;
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 
 use super::View;
 use crate::helpers;
@@ -63,6 +63,18 @@ pub struct VoiceSessionView {
 }
 
 impl VoiceSessionView {
+    /// Whether a voice event belongs to the call this view is showing.
+    ///
+    /// A DM call never matches: this view is opened on a community
+    /// channel, so a scope with no community is somebody else's call.
+    fn is_this_call(&self, scope: &VoiceScope) -> bool {
+        matches!(
+            scope,
+            VoiceScope::Community { community, channel }
+                if *community == self.community && *channel == self.channel
+        )
+    }
+
     /// Create a new voice session view.
     pub fn new(community: String, channel: String, use_unicode: bool) -> Self {
         Self {
@@ -201,10 +213,8 @@ impl View for VoiceSessionView {
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         match event {
             SubscriptionEvent::Voice(VoiceEvent::Joined {
-                community,
-                channel,
-                pseudonym,
-            }) if *community == self.community && *channel == self.channel => {
+                scope, pseudonym, ..
+            }) if self.is_this_call(scope) => {
                 if !self
                     .participants
                     .iter()
@@ -218,19 +228,16 @@ impl View for VoiceSessionView {
                     });
                 }
             }
-            SubscriptionEvent::Voice(VoiceEvent::Left {
-                community,
-                channel,
-                pseudonym,
-            }) if *community == self.community && *channel == self.channel => {
+            SubscriptionEvent::Voice(VoiceEvent::Left { scope, pseudonym })
+                if self.is_this_call(scope) =>
+            {
                 self.participants.retain(|p| p.pseudonym_key != *pseudonym);
             }
             SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
-                community,
-                channel,
+                scope,
                 target_pseudonym,
                 muted,
-            }) if *community == self.community && *channel == self.channel => {
+            }) if self.is_this_call(scope) => {
                 if let Some(p) = self
                     .participants
                     .iter_mut()
@@ -240,11 +247,10 @@ impl View for VoiceSessionView {
                 }
             }
             SubscriptionEvent::Voice(VoiceEvent::DeafenChanged {
-                community,
-                channel,
+                scope,
                 target_pseudonym,
                 deafened,
-            }) if *community == self.community && *channel == self.channel => {
+            }) if self.is_this_call(scope) => {
                 if let Some(p) = self
                     .participants
                     .iter_mut()

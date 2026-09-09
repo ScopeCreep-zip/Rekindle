@@ -12,18 +12,15 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 
 export function subscribeBuddyListVoiceEvents(): Promise<UnlistenFn> {
   return subscribeVoiceEvents((event) => {
-    switch (event.type) {
-      case "userJoined": {
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState("friends", event.data.publicKey, "voiceChannel", "active");
-        }
-        break;
+    if ("joined" in event) {
+      const { pseudonym } = event.joined;
+      if (friendsState.friends[pseudonym]) {
+        setFriendsState("friends", pseudonym, "voiceChannel", "active");
       }
-      case "userLeft": {
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState("friends", event.data.publicKey, "voiceChannel", null);
-        }
-        break;
+    } else if ("left" in event) {
+      const { pseudonym } = event.left;
+      if (friendsState.friends[pseudonym]) {
+        setFriendsState("friends", pseudonym, "voiceChannel", null);
       }
     }
   });

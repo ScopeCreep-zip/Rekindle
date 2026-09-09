@@ -1,11 +1,11 @@
 //! Global keyboard shortcut registration and handlers.
 
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 use std::sync::Arc;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
-use crate::channels;
 use crate::state::SharedState;
 
 /// Register the global keyboard shortcuts plugin with state-aware handlers.
@@ -70,11 +70,19 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
     let public_key = crate::state_helpers::owner_key_or_default(state);
 
     if let Some(new_muted) = state.toggle_voice_mute() {
-        let event = channels::VoiceEvent::UserMuted {
-            public_key,
-            muted: new_muted,
-        };
-        crate::event_dispatch::emit_live(app_handle, "voice-event", &event);
+        // Only meaningful inside a call: muting with no session running
+        // has no scope to report against, and `toggle_voice_mute`
+        // already returns `None` in that case.
+        if let Some(scope) = crate::state_helpers::current_voice_scope(state) {
+            crate::event_dispatch::emit_subscription(
+                app_handle,
+                &SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
+                    scope,
+                    target_pseudonym: public_key,
+                    muted: new_muted,
+                }),
+            );
+        }
 
         tracing::debug!(muted = new_muted, "voice mute toggled via global shortcut");
     }

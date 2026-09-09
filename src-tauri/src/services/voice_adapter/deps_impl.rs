@@ -6,6 +6,7 @@
 //! `io_helpers`) for bodies that would otherwise blow the file-size
 //! cap.
 
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -17,7 +18,6 @@ use rekindle_voice::{
 };
 
 use super::{event_mapping, io_helpers, session_setup, VoiceAdapter};
-use crate::channels::VoiceEvent;
 use crate::db_helpers::db_call_or_default;
 use crate::state_helpers;
 
@@ -194,11 +194,22 @@ impl VoiceSessionDeps for VoiceAdapter {
         // quiet peers. These events remain UI-facing only.
         // Phase 5 — quality + receive-stats merge into ONE UI event
         // (each emission carries both halves from the cache).
-        if let Some(merged) = event_mapping::merge_quality_event(&self.state, &event) {
-            crate::event_dispatch::dispatch(&self.app_handle, "voice-event", merged);
+        // Every event below belongs to the running session, so the
+        // scope is read once and shared. No session, nothing to report.
+        let Some(scope) = state_helpers::current_voice_scope(&self.state) else {
+            return;
+        };
+        if let Some(merged) = event_mapping::merge_quality_event(&self.state, &event, &scope) {
+            crate::event_dispatch::emit_subscription(
+                &self.app_handle,
+                &SubscriptionEvent::Voice(merged),
+            );
             return;
         }
-        crate::event_dispatch::dispatch(&self.app_handle, "voice-event", event_mapping::map(event));
+        crate::event_dispatch::emit_subscription(
+            &self.app_handle,
+            &SubscriptionEvent::Voice(event_mapping::map(event, &scope)),
+        );
     }
 
     fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
@@ -516,14 +527,14 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn emit_device_changed(&self, device_type: String, device_name: String, reason: String) {
-        crate::event_dispatch::dispatch(
+        // No scope: a device can change with no call running at all.
+        crate::event_dispatch::emit_subscription(
             &self.app_handle,
-            "voice-event",
-            VoiceEvent::DeviceChanged {
+            &SubscriptionEvent::Voice(VoiceEvent::DeviceChanged {
                 device_type,
                 device_name,
                 reason,
-            },
+            }),
         );
     }
 

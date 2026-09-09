@@ -19,12 +19,12 @@
 //! * [`io_helpers`] — audio device restart, peer-route lookup,
 //!   media-capabilities broadcast, member-name DB query.
 
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use rekindle_voice::{VoiceSessionDeps, VoiceShutdownOpts};
 
-use crate::channels::VoiceEvent;
 use crate::db::DbPool;
 use crate::state::AppState;
 
@@ -177,15 +177,20 @@ pub fn spawn_drop_telemetry(state: &Arc<AppState>, app: &tauri::AppHandle) {
             task_state
                 .voice_ingress_drops_total
                 .fetch_add(count, Ordering::Relaxed);
+            // This loop lives at login scope, so it ticks before any
+            // call starts. Drops belong to a session; with none running
+            // there is nothing to attribute them to.
             if count > 0 {
-                crate::event_dispatch::dispatch(
-                    &task_app,
-                    "voice-event",
-                    &VoiceEvent::PacketsDropped {
-                        reason: "voice_pkt_drops".into(),
-                        count,
-                    },
-                );
+                if let Some(scope) = crate::state_helpers::current_voice_scope(&task_state) {
+                    crate::event_dispatch::emit_subscription(
+                        &task_app,
+                        &SubscriptionEvent::Voice(VoiceEvent::PacketsDropped {
+                            scope,
+                            reason: "voice_pkt_drops".into(),
+                            count,
+                        }),
+                    );
+                }
             }
         }
     });

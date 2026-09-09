@@ -29,7 +29,7 @@ pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use social::SocialEvent;
 pub use system::SystemEvent;
 pub use typing::{TypingContext, TypingEvent};
-pub use voice::VoiceEvent;
+pub use voice::{VoiceEvent, VoiceScope};
 
 use serde::{Deserialize, Serialize};
 
@@ -169,14 +169,9 @@ impl SubscriptionEvent {
                 // the user's identity record), not community-scoped.
                 CryptoEvent::PqBundlePublished { .. } => None,
             },
-            Self::Voice(e) => Some(match e {
-                VoiceEvent::Joined { community, .. }
-                | VoiceEvent::Left { community, .. }
-                | VoiceEvent::ModeChanged { community, .. }
-                | VoiceEvent::MuteChanged { community, .. }
-                | VoiceEvent::DeafenChanged { community, .. }
-                | VoiceEvent::RosterUpdated { community, .. } => community,
-            }),
+            // `None` for a DM call and for device changes, both of
+            // which belong to no community.
+            Self::Voice(e) => e.community(),
             Self::Governance(e) => Some(match e {
                 GovernanceEvent::MetadataChanged { community }
                 | GovernanceEvent::ChannelsChanged { community }

@@ -63,7 +63,9 @@ pub use routes::{
     cache_peer_route, cached_route_blob, evict_stale_peer_routes, friend_for_dht_key,
     import_route_blob, invalidate_cached_peer_route, try_import_peer_route,
 };
-pub use voice::{set_voice_engine_deafened, set_voice_engine_muted, voice_engine_present};
+pub use voice::{
+    current_voice_scope, set_voice_engine_deafened, set_voice_engine_muted, voice_engine_present,
+};
 
 // ── Shared private helpers used across submodules ──────────────────────
 

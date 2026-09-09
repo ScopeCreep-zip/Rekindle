@@ -7,6 +7,9 @@
 //! (voice_join / voice_leave / stage_update / etc.) consume this trait
 //! via `Arc<dyn VoiceSignalingDeps>`.
 
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+
+use crate::channels::CommunityEvent;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -15,7 +18,6 @@ use rekindle_voice::signaling::{CommunityVoiceEvent, StageChannelInfo, VoiceSign
 use rekindle_voice::transport::VoiceTransport;
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::channels::{CommunityEvent, VoiceEvent};
 use crate::db::DbPool;
 use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
@@ -573,14 +575,16 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 target_pseudonym,
                 muted,
             } => {
-                crate::event_dispatch::dispatch(
-                    &self.app_handle,
-                    "voice-event",
-                    VoiceEvent::UserMuted {
-                        public_key: target_pseudonym,
-                        muted,
-                    },
-                );
+                if let Some(scope) = state_helpers::current_voice_scope(&self.state) {
+                    crate::event_dispatch::emit_subscription(
+                        &self.app_handle,
+                        &SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
+                            scope,
+                            target_pseudonym,
+                            muted,
+                        }),
+                    );
+                }
             }
         }
     }

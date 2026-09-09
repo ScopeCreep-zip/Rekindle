@@ -8,6 +8,7 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { commands } from "../ipc/commands";
 import { subscribeVoiceEvents } from "../ipc/channels";
+import { callType, sessionKey } from "../ipc/channels/voice_events";
 import { friendsState } from "../stores/friends.store";
 import { voiceState, setVoiceState } from "../stores/voice.store";
 import { communityState } from "../stores/community.store";
@@ -19,75 +20,72 @@ let voiceEventUnlisten: UnlistenFn | null = null;
 /** Subscribe to voice events from the backend and update the store. */
 export async function initVoiceEventListener(): Promise<UnlistenFn> {
   return subscribeVoiceEvents((event) => {
-    switch (event.type) {
-      case "localJoined":
-        // Backend-authoritative join state — every frontend (Tauri GUI, CLI,
-        // future TUI) mirrors the same activeCallType from this single event.
-        // Fixes C1: VideoCallPanel's <Show> gate at CommunityWindow.tsx:731-744
-        // requires activeCallType === "community" but the prior frontend-only
-        // set ran AFTER the gate evaluated, so the panel never mounted.
-        setVoiceState({
-          isConnected: true,
-          channelId: event.data.channelId,
-          activeCallType: event.data.activeCallType,
-        });
-        break;
-      case "userJoined":
-        setVoiceState("participants", (prev) => [
-          ...prev.filter((p) => p.publicKey !== event.data.publicKey),
-          {
-            publicKey: event.data.publicKey,
-            displayName: event.data.displayName,
-            isMuted: false,
-            isSpeaking: false,
-          },
-        ]);
-        break;
-      case "userLeft":
-        setVoiceState(
-          "participants",
-          (prev) => prev.filter((p) => p.publicKey !== event.data.publicKey),
-        );
-        break;
-      case "userSpeaking":
-        setVoiceState(
-          "participants",
-          (p) => p.publicKey === event.data.publicKey,
-          "isSpeaking",
-          event.data.speaking,
-        );
-        break;
-      case "userMuted":
-        setVoiceState(
-          "participants",
-          (p) => p.publicKey === event.data.publicKey,
-          "isMuted",
-          event.data.muted,
-        );
-        break;
-      case "connectionQuality":
-        setVoiceState("connectionQuality", event.data.quality);
-        setVoiceState("rxOverflowDrops", event.data.rxOverflowDrops);
-        setVoiceState("rxLateDrops", event.data.rxLateDrops);
-        setVoiceState("rxMekDrops", event.data.rxMekDrops);
-        setVoiceState("ingressDrops", event.data.ingressDrops);
-        break;
-      case "deviceChanged":
-        setVoiceState("deviceChangeCount", (prev) => prev + 1);
-        break;
-      case "packetsDropped": {
-        // W14.4 — backend tells us audio packets were dropped over
-        // the last 1 s. Toast so the user sees an objective signal
-        // ("audio interrupted") rather than confused silence. Backend
-        // already logged details at info!/warn!.
-        const { count, reason } = event.data;
-        addToast(
-          `Voice packets dropped: ${count} (${reason})`,
-          "error",
-        );
-        break;
-      }
+    if ("localJoined" in event) {
+      // Backend-authoritative join state — every frontend (Tauri GUI, CLI,
+      // future TUI) mirrors the same call shape from this single event.
+      // Fixes C1: VideoCallPanel's <Show> gate at CommunityWindow.tsx:731-744
+      // requires activeCallType === "community" but the prior frontend-only
+      // set ran AFTER the gate evaluated, so the panel never mounted.
+      //
+      // `activeCallType` is now derived from the scope rather than sent
+      // as its own string, so the two can no longer disagree.
+      const { scope } = event.localJoined;
+      setVoiceState({
+        isConnected: true,
+        channelId: sessionKey(scope),
+        activeCallType: callType(scope),
+      });
+    } else if ("joined" in event) {
+      const { pseudonym, displayName } = event.joined;
+      setVoiceState("participants", (prev) => [
+        ...prev.filter((p) => p.publicKey !== pseudonym),
+        {
+          publicKey: pseudonym,
+          displayName: displayName ?? pseudonym,
+          isMuted: false,
+          isSpeaking: false,
+        },
+      ]);
+    } else if ("left" in event) {
+      const { pseudonym } = event.left;
+      setVoiceState("participants", (prev) =>
+        prev.filter((p) => p.publicKey !== pseudonym),
+      );
+    } else if ("speakingChanged" in event) {
+      const { pseudonym, speaking } = event.speakingChanged;
+      setVoiceState(
+        "participants",
+        (p) => p.publicKey === pseudonym,
+        "isSpeaking",
+        speaking,
+      );
+    } else if ("muteChanged" in event) {
+      const { targetPseudonym, muted } = event.muteChanged;
+      setVoiceState(
+        "participants",
+        (p) => p.publicKey === targetPseudonym,
+        "isMuted",
+        muted,
+      );
+    } else if ("connectionQuality" in event) {
+      const q = event.connectionQuality;
+      setVoiceState("connectionQuality", q.quality);
+      setVoiceState("rxOverflowDrops", q.rxOverflowDrops);
+      setVoiceState("rxLateDrops", q.rxLateDrops);
+      setVoiceState("rxMekDrops", q.rxMekDrops);
+      setVoiceState("ingressDrops", q.ingressDrops);
+    } else if ("deviceChanged" in event) {
+      setVoiceState("deviceChangeCount", (prev) => prev + 1);
+    } else if ("packetsDropped" in event) {
+      // W14.4 — backend tells us audio packets were dropped over
+      // the last 1 s. Toast so the user sees an objective signal
+      // ("audio interrupted") rather than confused silence. Backend
+      // already logged details at info!/warn!.
+      const { count, reason } = event.packetsDropped;
+      addToast(`Voice packets dropped: ${count} (${reason})`, "error");
     }
+    // modeChanged / deafenChanged / rosterUpdated are community-channel
+    // signals handled by the community window, not this session store.
   });
 }
 

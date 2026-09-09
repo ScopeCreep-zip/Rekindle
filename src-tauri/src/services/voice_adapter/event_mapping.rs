@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use rekindle_voice::VoiceSessionEvent;
 
-use crate::channels::VoiceEvent;
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
+
 use crate::state::AppState;
 
 /// Last-known halves of the merged `ConnectionQuality` UI event. The
@@ -40,6 +41,7 @@ impl Default for VoiceQualityCache {
 pub(super) fn merge_quality_event(
     state: &Arc<AppState>,
     event: &rekindle_voice::VoiceSessionEvent,
+    scope: &VoiceScope,
 ) -> Option<VoiceEvent> {
     use rekindle_voice::VoiceSessionEvent as E;
     let mut cache = state.voice_quality_cache.lock();
@@ -59,6 +61,7 @@ pub(super) fn merge_quality_event(
         _ => return None,
     }
     Some(VoiceEvent::ConnectionQuality {
+        scope: scope.clone(),
         quality: cache.quality.clone(),
         rx_overflow_drops: cache.rx_overflow_drops,
         rx_late_drops: cache.rx_late_drops,
@@ -69,27 +72,31 @@ pub(super) fn merge_quality_event(
     })
 }
 
-pub(super) fn map(event: VoiceSessionEvent) -> VoiceEvent {
+pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {
     match event {
         VoiceSessionEvent::UserJoined {
             peer_pubkey,
             display_name,
-        } => VoiceEvent::UserJoined {
-            public_key: peer_pubkey,
-            display_name,
+        } => VoiceEvent::Joined {
+            scope: scope.clone(),
+            pseudonym: peer_pubkey,
+            display_name: Some(display_name),
         },
-        VoiceSessionEvent::UserLeft { peer_pubkey } => VoiceEvent::UserLeft {
-            public_key: peer_pubkey,
+        VoiceSessionEvent::UserLeft { peer_pubkey } => VoiceEvent::Left {
+            scope: scope.clone(),
+            pseudonym: peer_pubkey,
         },
         VoiceSessionEvent::UserSpeaking {
             peer_pubkey,
             speaking,
-        } => VoiceEvent::UserSpeaking {
-            public_key: peer_pubkey,
+        } => VoiceEvent::SpeakingChanged {
+            scope: scope.clone(),
+            pseudonym: peer_pubkey,
             speaking,
         },
-        VoiceSessionEvent::UserMuted { peer_pubkey, muted } => VoiceEvent::UserMuted {
-            public_key: peer_pubkey,
+        VoiceSessionEvent::UserMuted { peer_pubkey, muted } => VoiceEvent::MuteChanged {
+            scope: scope.clone(),
+            target_pseudonym: peer_pubkey,
             muted,
         },
         VoiceSessionEvent::DeviceChanged {
@@ -101,6 +108,7 @@ pub(super) fn map(event: VoiceSessionEvent) -> VoiceEvent {
             reason,
         },
         VoiceSessionEvent::PacketsDropped { count } => VoiceEvent::PacketsDropped {
+            scope: scope.clone(),
             reason: "voice loop".into(),
             count,
         },
@@ -124,44 +132,43 @@ pub(super) fn emit_local_joined_impl(
     public_key: &str,
     display_name: &str,
 ) {
-    crate::event_dispatch::dispatch(
-        app,
-        "voice-event",
-        &VoiceEvent::LocalJoined {
-            channel_id: channel_id.to_string(),
-            active_call_type: if community_id.is_some() {
-                "community"
-            } else {
-                "dm"
-            }
-            .to_string(),
+    // The call's shape, built here rather than read from the engine:
+    // this fires as the session comes up, so the handle may not be
+    // installed yet. `community_id` is exactly what decided the old
+    // `active_call_type` string, so the two carry the same fact.
+    let scope = match community_id {
+        Some(community) => VoiceScope::Community {
+            community: community.to_string(),
+            channel: channel_id.to_string(),
         },
-    );
-    crate::event_dispatch::dispatch(
-        app,
-        "voice-event",
-        &VoiceEvent::UserJoined {
-            public_key: public_key.to_string(),
-            display_name: display_name.to_string(),
+        None => VoiceScope::Dm {
+            peer_key: channel_id.to_string(),
         },
-    );
-    crate::event_dispatch::dispatch(
-        app,
-        "voice-event",
-        &VoiceEvent::ConnectionQuality {
+    };
+
+    for event in [
+        VoiceEvent::LocalJoined {
+            scope: scope.clone(),
+        },
+        VoiceEvent::Joined {
+            scope: scope.clone(),
+            pseudonym: public_key.to_string(),
+            display_name: Some(display_name.to_string()),
+        },
+        VoiceEvent::ConnectionQuality {
+            scope: scope.clone(),
             quality: "good".to_string(),
             rx_overflow_drops: 0,
             rx_late_drops: 0,
             rx_mek_drops: 0,
             ingress_drops: 0,
         },
-    );
-    crate::event_dispatch::dispatch(
-        app,
-        "voice-event",
-        &VoiceEvent::UserSpeaking {
-            public_key: public_key.to_string(),
+        VoiceEvent::SpeakingChanged {
+            scope: scope.clone(),
+            pseudonym: public_key.to_string(),
             speaking: false,
         },
-    );
+    ] {
+        crate::event_dispatch::emit_subscription(app, &SubscriptionEvent::Voice(event));
+    }
 }
