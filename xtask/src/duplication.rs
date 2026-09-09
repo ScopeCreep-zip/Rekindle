@@ -130,6 +130,187 @@ const MIN_CSS_DECLS: usize = 3;
 /// Keyed on the exact `crate::Type` site list, like the body gate: a
 /// bare name would exempt every future collision under that name too.
 const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
+    // ── Per-crate error types ────────────────────────────────────
+    // Rust API Guidelines, "Error types are meaningful and
+    // well-behaved": *"Define a meaningful error type specific to your
+    // crate or to the individual function."* Same-name error enums in
+    // different crates are the prescribed practice, not a collision —
+    // each crate owns its namespace.
+    (
+        &[
+            "rekindle-crypto::CryptoError",
+            "rekindle-types::CryptoError",
+        ],
+        "Tier 1 owns the seven shared conditions; rekindle-crypto WRAPS \
+         them as `Core(#[from] CoreCryptoError)` and adds four \
+         Signal-specific ones. The wrap is the point — a caller can \
+         handle either level.",
+    ),
+    (
+        &[
+            "rekindle-gossip::GossipError",
+            "rekindle-types::GossipError",
+        ],
+        "Same shape as CryptoError: Tier 1 names the shared conditions \
+         (broadcast failure, rate limiting, envelope validity) and \
+         rekindle-gossip wraps them as `Core(#[from] …)` alongside its \
+         own three. Before this branch both were in scope in that crate \
+         at once, returned by different modules, with only one exported.",
+    ),
+    (
+        &["rekindle-calls::CallError", "rekindle-transport::CallError"],
+        "rekindle-calls owns call-domain errors (key derivation, state \
+         machine); transport's covers its own call *operations* (queue, \
+         store, serialize). Neither is a superset of the other and \
+         neither crosses the other's boundary.",
+    ),
+    // ── Same name, genuinely different concepts ──────────────────
+    (
+        &["rekindle-audit::AuditEntry", "rekindle-node::AuditEntry"],
+        "rekindle-audit's is a hash-chain link — `cursor`, `prev_mac`, \
+         `mac`, `record`. rekindle-node's is the IPC audit record the \
+         chain carries — sequence, timestamps, sender name, security \
+         level, event type. One is the envelope, one is the contents.",
+    ),
+    (
+        &[
+            "rekindle-channel::AutoModAction",
+            "rekindle-protocol::AutoModAction",
+        ],
+        "protocol's is the configured *action* a rule takes \
+         (BlockMessage, AlertModerators{channel_id}, \
+         TimeoutMember{duration}, LogOnly). channel's is the local \
+         *outcome* of evaluating a message (Allow, BlockLocally, \
+         BlurContent, AlertModerators). Rule config versus evaluation \
+         result — merging them would make an unrepresentable state \
+         representable.",
+    ),
+    (
+        &["rekindle-cli::ChannelEntry", "rekindle-types::ChannelEntry"],
+        "Tier 1's is the channel *log* entry — the enum of things \
+         written to a channel record (Message with MEK ciphertext, \
+         reactions, edits). The CLI's is a TUI row: id, name, kind, \
+         category, unread count, sort order. Unrelated beyond the word \
+         'channel'; the CLI's should probably be `ChannelTreeRow`.",
+    ),
+    (
+        &["rekindle (src-tauri)::Message", "rekindle-node::Message"],
+        "rekindle-node's is the generic IPC envelope `Message<T>` — \
+         wire version, UUIDv7 id, correlation id, dual clock, \
+         classification. src-tauri's is a chat message DTO for the \
+         frontend. Same word, different layers of the stack.",
+    ),
+    (
+        &[
+            "rekindle (src-tauri)::SharedState",
+            "rekindle-transport::SharedState",
+        ],
+        "transport's is a struct of atomics tracking Veilid attachment, \
+         peer counts and latency. src-tauri's is \
+         `type SharedState = Arc<AppState>`. Not comparable.",
+    ),
+    (
+        &[
+            "rekindle (src-tauri)::PendingFriendRequest",
+            "rekindle-transport::PendingFriendRequest",
+        ],
+        "Two stages of one flow. transport's is what arrives over the \
+         wire — profile DHT key and route blob, needed to answer. \
+         src-tauri's is what the UI lists — public key, display name, \
+         message, `received_at`. Merging would put routing data in a \
+         view model.",
+    ),
+    // ── Codec boundaries: domain type vs its wire DTO ─────────────
+    (
+        &[
+            "rekindle-crypto::PreKeyBundle",
+            "rekindle-protocol::PreKeyBundle",
+        ],
+        "crypto's is the domain type; protocol's is its Cap'n Proto DTO. \
+         NOTE, from the X3DH specification: the bundle omits the \
+         one-time prekey when the server has none left, and the DH count \
+         differs (four operations with it, three without). crypto's \
+         models that with `Option`; the capnp DTO collapses the ids to \
+         bare `u32`, so `None` and a real id 0 are indistinguishable. \
+         Not live — that DTO is written into conversation headers and \
+         never read back for key agreement — but it is a landmine in a \
+         codec someone would reach for.",
+    ),
+    (
+        &[
+            "rekindle-protocol::MekTransferPayload",
+            "rekindle-transport::MekTransferPayload",
+        ],
+        "Two wire forms. protocol's is the Cap'n Proto envelope payload \
+         (`community_id`, `channel_id: Option`, `sender_pseudonym`); \
+         transport's is the local RPC form (`channel_id: String`, \
+         `rotator_pseudonym_hex`). `payload/rpc.rs` already documents \
+         which is on which wire, and the bare-envelope path deliberately \
+         carries protocol's.",
+    ),
+    (
+        &[
+            "rekindle (src-tauri)::RoleDto",
+            "rekindle-protocol::RoleDto",
+        ],
+        "src-tauri's serialises `permissions` as a string \
+         (`serialize_u64_as_string`): a u64 above 2^53-1 loses low bits \
+         through JavaScript's Number, which silently strips \
+         ADMINISTRATOR (bit 3) from the Owner role. protocol's is the \
+         Rust-to-Rust form with no such constraint.",
+    ),
+    (
+        &[
+            "rekindle-crypto::SignalSessionManager",
+            "rekindle-transport::SignalSessionManager",
+        ],
+        "Two shells over the *same* primitives — both use \
+         `rekindle_crypto::signal::{pqxdh, ratchet}`, so cross-track \
+         compatibility holds by construction. They differ in store \
+         backing (Stronghold/vault versus the daemon's own \
+         `signal_store`) and therefore in method shape: crypto's is \
+         async with a `SessionCache` of per-peer `tokio::sync::Mutex`es, \
+         transport's synchronous with a `parking_lot` map. Both now \
+         serialise the ratchet per peer, which the Double Ratchet spec \
+         requires — see the comment on `peer_locks`.",
+    ),
+    // ── One finding, three names: the two frontends have parallel
+    //    view and event vocabularies. Recorded as exceptions because
+    //    converging them is an architecture change, not a rename.
+    (
+        &[
+            "rekindle (src-tauri)::CommunityDetail",
+            "rekindle-types::CommunityDetail",
+        ],
+        "Tier 1's is what the CLI renders; src-tauri's is what the Tauri \
+         frontend renders, and carries icon/banner hashes the CLI has no \
+         use for. See the PresenceEvent entry — same finding.",
+    ),
+    (
+        &[
+            "rekindle (src-tauri)::PresenceEvent",
+            "rekindle-types::PresenceEvent",
+        ],
+        "THE FINDING, recorded once here. src-tauri never references \
+         `SubscriptionEvent` at all: the Tauri frontend gets \
+         `channels::presence_channel::PresenceEvent` \
+         (FriendOnline/FriendOffline/StatusChanged/GameChanged, \
+         Serialize-only) while the CLI gets \
+         `rekindle_types::subscription_events::PresenceEvent` \
+         (CommunityMemberChanged/FriendChanged, round-trippable). Two \
+         event vocabularies, one per frontend — which contradicts \
+         'the daemon is the substrate, frontends are interchangeable'. \
+         Converging them means routing src-tauri's ~150 emit sites \
+         through the subscription stream; that is an architecture \
+         change with its own plan, not a duplicate to collapse here.",
+    ),
+    (
+        &[
+            "rekindle (src-tauri)::VoiceEvent",
+            "rekindle-types::VoiceEvent",
+        ],
+        "Same finding as PresenceEvent — see that entry.",
+    ),
     (
         &["rekindle-protocol::GameInfo", "rekindle-types::GameInfo"],
         "Two different wire forms, not one type in two places. \

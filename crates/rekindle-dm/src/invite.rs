@@ -45,11 +45,4 @@ pub struct GroupDmInvite {
     pub mek_generation: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct GroupDmParticipant {
-    pub pseudonym: String,
-    pub subkey: u32,
-    /// Hex-encoded Ed25519 identity public key.
-    pub public_key: String,
-}
+pub use rekindle_types::member::GroupDmParticipant;

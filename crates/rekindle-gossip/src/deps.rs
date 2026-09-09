@@ -19,8 +19,25 @@ pub struct PeerInfo {
 }
 
 /// Errors surfaced by the orchestrator's public entry points.
+///
+/// One error type for this crate, per the Rust API Guidelines
+/// ("define a meaningful error type specific to your crate"). Tier 1's
+/// `GossipError` is the shared vocabulary — broadcast failure, rate
+/// limiting, envelope validity — and is wrapped rather than competing:
+/// the same shape `rekindle-crypto`'s `CryptoError` uses for
+/// `rekindle_types::error::CryptoError`.
+///
+/// Until now both were in scope in this crate at once — `broadcast.rs`
+/// returned Tier 1's inside a `CommunityError`, `mesh_broadcast.rs`
+/// returned this one, and `lib.rs` exported only this one. A caller
+/// handling a gossip failure had to know which module it had called.
 #[derive(Debug, thiserror::Error)]
 pub enum GossipError {
+    /// Broadcast failure, rate limiting, envelope validity — the
+    /// conditions Tier 1 names for every gossip implementation.
+    #[error(transparent)]
+    Core(#[from] rekindle_types::error::GossipError),
+
     #[error("identity not unlocked")]
     IdentityNotLoaded,
     #[error("community not found: {0}")]

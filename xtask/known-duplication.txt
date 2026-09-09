@@ -8,20 +8,3 @@
 # Prefer a written exception in xtask/src/duplication.rs (or
 # DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
 # deliberate and permanent — those carry a reason; this file does not.
-type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
-type rekindle (src-tauri)::Message rekindle-node::Message
-type rekindle (src-tauri)::PendingFriendRequest rekindle-transport::PendingFriendRequest
-type rekindle (src-tauri)::PresenceEvent rekindle-types::PresenceEvent
-type rekindle (src-tauri)::RoleDto rekindle-protocol::RoleDto
-type rekindle (src-tauri)::SharedState rekindle-transport::SharedState
-type rekindle (src-tauri)::VoiceEvent rekindle-types::VoiceEvent
-type rekindle-audit::AuditEntry rekindle-node::AuditEntry
-type rekindle-calls::CallError rekindle-transport::CallError
-type rekindle-channel::AutoModAction rekindle-protocol::AutoModAction
-type rekindle-cli::ChannelEntry rekindle-types::ChannelEntry
-type rekindle-crypto::CryptoError rekindle-types::CryptoError
-type rekindle-crypto::PreKeyBundle rekindle-protocol::PreKeyBundle
-type rekindle-crypto::SignalSessionManager rekindle-transport::SignalSessionManager
-type rekindle-dm::GroupDmParticipant rekindle-transport::GroupDmParticipant
-type rekindle-gossip::GossipError rekindle-types::GossipError
-type rekindle-protocol::MekTransferPayload rekindle-transport::MekTransferPayload

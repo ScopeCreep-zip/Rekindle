@@ -165,14 +165,7 @@ pub enum DmPayload {
     },
 }
 
-/// Member descriptor for a [`DmPayload::GroupDmInviteRequest`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupDmParticipant {
-    pub pseudonym: String,
-    pub subkey: u32,
-    /// Hex Ed25519 pubkey for verification.
-    pub public_key: String,
-}
+pub use rekindle_types::member::GroupDmParticipant;
 
 /// Game presence information for DM presence updates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
