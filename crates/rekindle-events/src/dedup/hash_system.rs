@@ -84,6 +84,40 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent) {
             h.update(b"|");
             h.update(&[u8::from(*active)]);
         }
+        SystemEvent::RaidDetected {
+            community,
+            joins_in_window,
+            ..
+        } => {
+            // The window count is part of the identity: the detector
+            // re-fires as the rate climbs, and each report is a
+            // different fact. Bucketed so a burst inside one window
+            // does not become a wall of toasts.
+            h.update(b"raid_det|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(&joins_in_window.to_le_bytes());
+            h.update(b"|");
+            h.update(&now_bucket.to_le_bytes());
+        }
+        SystemEvent::AutoModAlert {
+            community,
+            channel,
+            message_id,
+            rule_name,
+        } => {
+            // One alert per (message, rule): the same rule matching the
+            // same message twice is a duplicate, two different rules
+            // matching it are two alerts.
+            h.update(b"automod|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(message_id.as_bytes());
+            h.update(b"|");
+            h.update(rule_name.as_bytes());
+        }
         SystemEvent::ChannelLockdown { community, locked } => {
             h.update(b"lockdown|");
             h.update(community.as_bytes());

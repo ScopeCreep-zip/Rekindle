@@ -235,14 +235,15 @@ pub(crate) fn handle_sync_response(
         });
     }
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         app_handle,
-        "community-event",
-        &crate::channels::CommunityEvent::SyncComplete {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
-            message_count: messages.len(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::System(
+            rekindle_types::subscription_events::SystemEvent::SyncReceived {
+                community: community_id.to_string(),
+                channel: channel_id.to_string(),
+                message_count: messages.len(),
+            },
+        ),
     );
 }
 

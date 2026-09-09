@@ -215,6 +215,8 @@ impl SubscriptionEvent {
             Self::System(e) => match e {
                 SystemEvent::Announcement { community, .. } => community.as_deref(),
                 SystemEvent::RaidAlert { community, .. }
+                | SystemEvent::RaidDetected { community, .. }
+                | SystemEvent::AutoModAlert { community, .. }
                 | SystemEvent::ChannelLockdown { community, .. }
                 | SystemEvent::Kicked { community }
                 | SystemEvent::BootstrapRequested { community, .. }

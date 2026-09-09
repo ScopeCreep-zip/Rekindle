@@ -471,18 +471,27 @@ async fn handle_relayed_envelope(
                 (None, None, None, None)
             };
 
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MemberPresenceChanged {
-                    community_id,
-                    pseudonym_key,
-                    status,
-                    game_name,
-                    game_id,
-                    elapsed_seconds,
-                    server_address,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Presence(
+                    rekindle_types::subscription_events::PresenceEvent::CommunityMemberChanged {
+                        community: community_id,
+                        pseudonym: pseudonym_key,
+                        // A gossip presence row states both the status
+                        // and the game, so both are observed here.
+                        snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(
+                            status,
+                        )
+                        .with_game(
+                            rekindle_types::subscription_events::GameActivity::from_parts(
+                                game_name,
+                                game_id,
+                                elapsed_seconds,
+                                server_address,
+                            ),
+                        ),
+                    },
+                ),
             );
         }
         CommunityEnvelope::Control(payload) => {

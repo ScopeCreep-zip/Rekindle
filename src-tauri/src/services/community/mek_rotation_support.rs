@@ -26,7 +26,6 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::id::PseudonymKey;
 use tauri::Manager;
 
-use crate::channels::CommunityEvent;
 use crate::state::AppState;
 
 pub(crate) fn lookup_mek(
@@ -88,14 +87,16 @@ pub(crate) fn emit_rotation_event(
     channel_id: Option<&str>,
     generation: u64,
 ) {
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         app_handle,
-        "community-event",
-        &CommunityEvent::MekRotated {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.map(ToOwned::to_owned),
-            new_generation: generation,
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Crypto(
+            rekindle_types::subscription_events::CryptoEvent::MekRotated {
+                community: community_id.to_string(),
+                channel: channel_id.map(ToOwned::to_owned),
+                generation,
+                rotator_pseudonym: None,
+            },
+        ),
     );
 }
 

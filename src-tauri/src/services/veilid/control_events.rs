@@ -16,7 +16,6 @@ pub(crate) async fn handle_control_events_and_threads(
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -57,14 +56,17 @@ pub(crate) async fn handle_control_events_and_threads(
                 community = %community_id,
                 "MEKRotated: v2.0 uses invite-time MEK distribution — vault read skipped"
             );
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MekRotated {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    new_generation,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Crypto(
+                    rekindle_types::subscription_events::CryptoEvent::MekRotated {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        generation: new_generation,
+                        // The gossip payload names no rotator.
+                        rotator_pseudonym: None,
+                    },
+                ),
             );
         }
         ControlPayload::KickedNotification => {
@@ -121,31 +123,39 @@ pub(crate) async fn handle_control_events_and_threads(
             crate::event_dispatch::emit_live(
                 app_handle,
                 "community-event",
-                &CommunityEvent::SystemMessage {
-                    community_id: community_id.to_string(),
-                    body,
-                    timestamp,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::System(
+                    rekindle_types::subscription_events::SystemEvent::Announcement {
+                        // Tier 1's announcement is optionally global;
+                        // a gossiped system message always has one.
+                        community: Some(community_id.to_string()),
+                        body,
+                        timestamp,
+                    },
+                ),
             );
         }
         ControlPayload::RaidAlert { active } => {
             crate::event_dispatch::emit_live(
                 app_handle,
                 "community-event",
-                &CommunityEvent::RaidAlert {
-                    community_id: community_id.to_string(),
-                    active,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::System(
+                    rekindle_types::subscription_events::SystemEvent::RaidAlert {
+                        community: community_id.to_string(),
+                        active,
+                    },
+                ),
             );
         }
         ControlPayload::ChannelLockdown { locked } => {
             crate::event_dispatch::emit_live(
                 app_handle,
                 "community-event",
-                &CommunityEvent::ChannelLockdown {
-                    community_id: community_id.to_string(),
-                    locked,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::System(
+                    rekindle_types::subscription_events::SystemEvent::ChannelLockdown {
+                        community: community_id.to_string(),
+                        locked,
+                    },
+                ),
             );
         }
         other => {

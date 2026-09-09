@@ -77,31 +77,6 @@ export function reduceMessages(event: CommunityEvent): boolean {
       }, 5000);
     }
     return true;
-  } else if (event.type === "systemMessage") {
-    const { communityId, body, timestamp } = event.data;
-    const activeChannel = communityState.activeChannel;
-    if (activeChannel && communityState.activeCommunity === communityId) {
-      const sysMsg: Message = {
-        id: Date.now(),
-        senderId: "__system__",
-        body,
-        timestamp,
-        isOwn: false,
-      };
-      setCommunityState("channelMessages", activeChannel, (prev) => [...(prev ?? []), sysMsg]);
-    }
-    return true;
-  } else if (event.type === "syncComplete") {
-    // Sync complete — refresh channel messages from backend
-    const { communityId, channelId } = event.data;
-    if (communityState.activeCommunity === communityId && communityState.activeChannel === channelId) {
-      commands.getChannelMessages(channelId, 100).then((msgs) => {
-        setCommunityState("channelMessages", channelId, transformMessages(msgs));
-      }).catch((e) => {
-        console.error("Failed to refresh messages after sync:", e);
-      });
-    }
-    return true;
   } else if (event.type === "attachmentDownloaded") {
     const { communityId, channelId, attachmentId, localPath } = event.data;
     const messages = communityState.channelMessages[channelId];
@@ -238,5 +213,89 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
     applyPinned(s.messagePinned.channel, s.messagePinned.messageId, true);
   } else if ("messageUnpinned" in s) {
     applyPinned(s.messageUnpinned.channel, s.messageUnpinned.messageId, false);
+  }
+}
+
+/// System-level community signals on the daemon vocabulary.
+///
+/// Bodies moved from the `{ type, data }` cases they replaced;
+/// `SystemMessage` became `Announcement` and `SyncComplete` became
+/// `SyncReceived`, which Tier 1 already had.
+export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): void {
+  if (!("system" in event)) return;
+  const s = event.system;
+
+  if ("announcement" in s) {
+    const { community, body, timestamp } = s.announcement;
+    const activeChannel = communityState.activeChannel;
+    if (activeChannel && community !== null && communityState.activeCommunity === community) {
+      const sysMsg: Message = {
+        id: Date.now(),
+        senderId: "__system__",
+        body,
+        timestamp,
+        isOwn: false,
+      };
+      setCommunityState("channelMessages", activeChannel, (prev) => [...(prev ?? []), sysMsg]);
+    }
+    return;
+  }
+
+  if ("syncReceived" in s) {
+    // Sync complete — refresh channel messages from backend
+    const { community, channel } = s.syncReceived;
+    if (
+      communityState.activeCommunity === community &&
+      communityState.activeChannel === channel
+    ) {
+      commands
+        .getChannelMessages(channel, 100)
+        .then((msgs) => {
+          setCommunityState("channelMessages", channel, transformMessages(msgs));
+        })
+        .catch((e) => {
+          console.error("Failed to refresh messages after sync:", e);
+        });
+    }
+    return;
+  }
+
+  if ("raidDetected" in s) {
+    // Architecture §20.6 — this peer's sliding window tripped the
+    // policy threshold; surface a moderator banner via the toast
+    // layer. The user can then take the spec-listed actions (pause
+    // invites, ban floods, raise verification).
+    const { joinsInWindow, maxJoinsPerInterval, joinIntervalSeconds } = s.raidDetected;
+    addToast(
+      `Raid detected: ${joinsInWindow} joins in the last ${joinIntervalSeconds}s ` +
+        `(threshold ${maxJoinsPerInterval}). Consider pausing invites.`,
+      "error",
+    );
+    return;
+  }
+
+  if ("autoModAlert" in s) {
+    addToast(`AutoMod alert: ${s.autoModAlert.ruleName}`, "info");
+    return;
+  }
+
+  if ("raidAlert" in s) {
+    // Architecture §17.4 — raid alert lives in store; CommunityWindow
+    // renders a banner overlay (`role="alert"`) for higher visibility
+    // than a transient toast. The flag persists until the backend
+    // emits `active: false` (or the user clears it client-side via
+    // `dismissRaidAlertLocal`).
+    const { community, active } = s.raidAlert;
+    setCommunityState("communities", community, "raidAlertActive", active);
+    return;
+  }
+
+  if ("channelLockdown" in s) {
+    const { community, locked } = s.channelLockdown;
+    const name = communityState.communities[community]?.name ?? community;
+    addToast(
+      locked ? `Channels locked in ${name}` : `Channel lockdown lifted in ${name}`,
+      "info",
+    );
   }
 }

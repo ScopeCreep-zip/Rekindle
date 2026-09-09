@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use rekindle_presence::{GossipOverlayPlan, GossipOverlaySnapshot, OnlineMember};
 
-use crate::channels::CommunityEvent;
 use crate::state::{AppState, GossipOverlay};
 use crate::state_helpers;
 
@@ -113,18 +112,21 @@ pub(super) fn emit_member_presence_offline(
     pseudonym_key: &str,
 ) {
     if let Some(app_handle) = state_helpers::app_handle(state) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             &app_handle,
-            "community-event",
-            &CommunityEvent::MemberPresenceChanged {
-                community_id: community_id.to_string(),
-                pseudonym_key: pseudonym_key.to_string(),
-                status: "offline".to_string(),
-                game_name: None,
-                game_id: None,
-                elapsed_seconds: None,
-                server_address: None,
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Presence(
+                rekindle_types::subscription_events::PresenceEvent::CommunityMemberChanged {
+                    community: community_id.to_string(),
+                    pseudonym: pseudonym_key.to_string(),
+                    // Status only: the overlay timed the member out, it
+                    // did not look at what they were playing. Leaving
+                    // `game` unobserved is what stops this from
+                    // clearing a game a gossip row had set.
+                    snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(
+                        "offline",
+                    ),
+                },
+            ),
         );
     }
 }

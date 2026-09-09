@@ -23,60 +23,6 @@ export function reduceMembership(event: CommunityEvent): boolean {
     // with the resolved inline_data_base64 instead of `:emojiname:`.
     void handleLoadExpressions(event.data.communityId);
     return true;
-  } else if (event.type === "raidDetected") {
-    // Architecture §20.6 — backend's per-community sliding window
-    // tripped the policy threshold; surface a moderator banner via
-    // the toast layer. The user can then take the spec-listed
-    // actions (pause invites, ban floods, raise verification).
-    const { joinsInWindow, maxJoinsPerInterval, joinIntervalSeconds } = event.data;
-    addToast(
-      `Raid detected: ${joinsInWindow} joins in the last ${joinIntervalSeconds}s ` +
-        `(threshold ${maxJoinsPerInterval}). Consider pausing invites.`,
-      "error",
-    );
-    return true;
-  } else if (event.type === "autoModAlert") {
-    addToast(`AutoMod alert: ${event.data.ruleName}`, "info");
-    return true;
-  } else if (event.type === "memberPresenceChanged") {
-    const { communityId, pseudonymKey, status } = event.data;
-    const community = communityState.communities[communityId];
-    if (community) {
-      const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
-      if (idx >= 0) {
-        setCommunityState("communities", communityId, "members", idx, "status", status);
-        // A member that just went offline is no longer "in" any channel —
-        // clear their location so the channel presence badge stops counting
-        // them without waiting for the next full members re-fetch.
-        if (status === "offline") {
-          setCommunityState("communities", communityId, "members", idx, "location", null);
-        }
-        const gameInfo = event.data.gameName
-          ? {
-              gameName: event.data.gameName,
-              gameId: event.data.gameId ?? null,
-              startedAt: event.data.elapsedSeconds ?? null,
-              serverAddress: event.data.serverAddress ?? null,
-            }
-          : null;
-        setCommunityState("communities", communityId, "members", idx, "gameInfo", gameInfo);
-      }
-    }
-    return true;
-  } else if (event.type === "raidAlert") {
-    // Architecture §17.4 — raid alert lives in store; CommunityWindow
-    // renders a banner overlay (`role="alert"`) for higher visibility
-    // than a transient toast. The flag persists until the backend
-    // emits `active: false` (or the user clears it client-side via
-    // `dismissRaidAlertLocal`).
-    const { communityId, active } = event.data;
-    setCommunityState("communities", communityId, "raidAlertActive", active);
-    return true;
-  } else if (event.type === "channelLockdown") {
-    const { communityId, locked } = event.data;
-    const name = communityState.communities[communityId]?.name ?? communityId;
-    addToast(locked ? `Channels locked in ${name}` : `Channel lockdown lifted in ${name}`, "info");
-    return true;
   }
   return false;
 }

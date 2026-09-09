@@ -23,7 +23,6 @@ use rekindle_mek_rotation::{
 };
 use rekindle_types::id::PseudonymKey;
 
-use crate::channels::CommunityEvent;
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -271,19 +270,23 @@ impl MekDistributeDeps for MekAdapter {
                 channel_id,
                 new_generation,
                 ..
-            } => CommunityEvent::MekRotated {
-                community_id,
-                channel_id: Some(channel_id),
-                new_generation,
+            } => rekindle_types::subscription_events::CryptoEvent::MekRotated {
+                community: community_id,
+                channel: Some(channel_id),
+                generation: new_generation,
+                // The rotation-started signal names no rotator; the
+                // peer-to-peer transfer that follows carries it.
+                rotator_pseudonym: None,
             },
             MekRotationEvent::RotationComplete {
                 community_id,
                 channel_id,
                 generation,
-            } => CommunityEvent::MekRotated {
-                community_id,
-                channel_id: Some(channel_id),
-                new_generation: generation,
+            } => rekindle_types::subscription_events::CryptoEvent::MekRotated {
+                community: community_id,
+                channel: Some(channel_id),
+                generation,
+                rotator_pseudonym: None,
             },
             // RotationFailed + MekDelivered have no current src-tauri
             // CommunityEvent counterpart — log instead. (Future:
@@ -302,23 +305,26 @@ impl MekDistributeDeps for MekAdapter {
                 );
                 return;
             }
+            // Was trace-only because the desktop's `CommunityEvent` had
+            // no counterpart. Tier 1 has carried `MekTransferred` all
+            // along, so the event is emitted now rather than dropped —
+            // a CLI can show which peer supplied a key.
             MekRotationEvent::MekDelivered {
                 community_id,
                 channel_id,
                 generation,
                 sender_pseudonym_hex,
-            } => {
-                tracing::trace!(
-                    community = %community_id,
-                    channel = %channel_id,
-                    generation,
-                    sender = %sender_pseudonym_hex,
-                    "MEK delivered from peer"
-                );
-                return;
-            }
+            } => rekindle_types::subscription_events::CryptoEvent::MekTransferred {
+                community: community_id,
+                channel: Some(channel_id),
+                generation,
+                sender_pseudonym: sender_pseudonym_hex,
+            },
         };
-        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+        crate::event_dispatch::emit_subscription(
+            &self.app_handle,
+            &rekindle_types::subscription_events::SubscriptionEvent::Crypto(mapped),
+        );
     }
 
     fn current_lamport(&self, community_id: &str) -> u64 {

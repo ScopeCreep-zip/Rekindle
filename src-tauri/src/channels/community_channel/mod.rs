@@ -31,26 +31,6 @@ pub enum CommunityEvent {
         community_id: String,
         expression_id: String,
     },
-    /// Architecture §20.6 — peer-side raid detector. Emitted by every
-    /// peer that observes the join rate exceeding
-    /// `CommunityPolicy.max_joins_per_interval` within
-    /// `CommunityPolicy.join_interval_seconds`. Moderators in that
-    /// client get a banner / toast and may pause invites or ban floods
-    /// (the spec lists those as the moderator-side responses).
-    #[serde(rename_all = "camelCase")]
-    RaidDetected {
-        community_id: String,
-        joins_in_window: u32,
-        max_joins_per_interval: u32,
-        join_interval_seconds: u32,
-    },
-    #[serde(rename_all = "camelCase")]
-    MekRotated {
-        community_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        channel_id: Option<String>,
-        new_generation: u64,
-    },
     /// A queued channel message was eventually delivered after retry.
     #[serde(rename_all = "camelCase")]
     ChannelMessageDelivered {
@@ -126,50 +106,6 @@ pub enum CommunityEvent {
         image_url: Option<String>,
         site_name: Option<String>,
         fetched_at: u64,
-    },
-    /// A member's presence status changed.
-    #[serde(rename_all = "camelCase")]
-    MemberPresenceChanged {
-        community_id: String,
-        pseudonym_key: String,
-        status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        game_name: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        game_id: Option<u32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        elapsed_seconds: Option<u32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_address: Option<String>,
-    },
-    /// Local AutoMod alert for moderators on this client.
-    #[serde(rename_all = "camelCase")]
-    AutoModAlert {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-        rule_name: String,
-    },
-    /// System message (join/leave/kick/ban events posted inline in chat).
-    #[serde(rename_all = "camelCase")]
-    SystemMessage {
-        community_id: String,
-        body: String,
-        timestamp: u64,
-    },
-    /// Raid alert broadcast — owners/admins should take action.
-    #[serde(rename_all = "camelCase")]
-    RaidAlert { community_id: String, active: bool },
-    /// Channel lockdown broadcast — non-admins should restrict sending.
-    #[serde(rename_all = "camelCase")]
-    ChannelLockdown { community_id: String, locked: bool },
-    /// Sync response received — channel messages were merged from an archiver.
-    /// Frontend should refresh the channel's message list.
-    #[serde(rename_all = "camelCase")]
-    SyncComplete {
-        community_id: String,
-        channel_id: String,
-        message_count: usize,
     },
     /// A member joined a voice channel.
     #[serde(rename_all = "camelCase")]

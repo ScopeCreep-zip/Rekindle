@@ -111,7 +111,9 @@ export function subscribeChatPresenceEvents(
 export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
     const { key, snapshot, isSelf } = subject(event);
-    if (isSelf || snapshot.status === null) return;
+    if (isSelf) return;
+    // Nothing observed that this view renders.
+    if (snapshot.status === null && snapshot.game === null) return;
 
     // A community member event names its own community, so only that
     // one needs scanning. A friend event carries no community, so every
@@ -126,14 +128,37 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
       const community = communityState.communities[communityId];
       if (!community) continue;
       const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
-      if (memberIdx >= 0) {
+      if (memberIdx < 0) continue;
+
+      if (snapshot.status !== null) {
         setCommunityState(
-          "communities",
-          communityId,
-          "members",
-          memberIdx,
-          "status",
-          snapshot.status,
+          "communities", communityId, "members", memberIdx, "status", snapshot.status,
+        );
+        // A member that just went offline is no longer "in" any channel —
+        // clear their location so the channel presence badge stops counting
+        // them without waiting for the next full members re-fetch.
+        if (snapshot.status === "offline") {
+          setCommunityState(
+            "communities", communityId, "members", memberIdx, "location", null,
+          );
+        }
+      }
+
+      // Only when a game was actually observed: a status-only ping
+      // must not clear a game the member is still playing.
+      if (snapshot.game !== null) {
+        const name = gameName(snapshot);
+        const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
+        setCommunityState(
+          "communities", communityId, "members", memberIdx, "gameInfo",
+          name === null
+            ? null
+            : {
+                gameName: name,
+                gameId: playing?.gameId ?? null,
+                startedAt: playing?.elapsedSeconds ?? null,
+                serverAddress: playing?.serverAddress ?? null,
+              },
         );
       }
     }

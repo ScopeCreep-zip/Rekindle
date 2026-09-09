@@ -342,15 +342,16 @@ pub(super) fn emit_automod_alert(
         rekindle_governance::permissions::has_moderation_capability(perms)
     };
     if can_moderate {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             app_handle,
-            "community-event",
-            &crate::channels::CommunityEvent::AutoModAlert {
-                community_id: community_id.to_string(),
-                channel_id: channel_id.to_string(),
-                message_id: message_id.to_string(),
-                rule_name: rule_name.to_string(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::System(
+                rekindle_types::subscription_events::SystemEvent::AutoModAlert {
+                    community: community_id.to_string(),
+                    channel: channel_id.to_string(),
+                    message_id: message_id.to_string(),
+                    rule_name: rule_name.to_string(),
+                },
+            ),
         );
     }
 }

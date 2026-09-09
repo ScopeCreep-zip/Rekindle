@@ -1,4 +1,5 @@
 import type { CommunityEvent } from "../../ipc/channels";
+import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
@@ -56,28 +57,7 @@ function mirrorRosterAdd(
 /// Voice / stage / soundboard slice of the community event dispatcher.
 /// Returns `true` when the event was consumed.
 export function reduceVoice(event: CommunityEvent): boolean {
-  if (event.type === "mekRotated") {
-    const { communityId, channelId, newGeneration } = event.data;
-    if (communityState.communities[communityId]) {
-      if (channelId) {
-        const idx = communityState.communities[communityId].channels.findIndex((channel) => channel.id === channelId);
-        if (idx >= 0) {
-          setCommunityState("communities", communityId, "channels", idx, "mekGeneration", newGeneration);
-        }
-        // Architecture §7.2 + §10.7 — voice MEK rotates on every
-        // join/leave for forward+backward secrecy. Surface a toast
-        // when it's the channel the user is actively connected to
-        // so they have a visible cue that keys advanced (e.g., a
-        // new speaker just joined the stage).
-        if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
-          announce("Voice keys rotated", "polite");
-        }
-      } else {
-        setCommunityState("communities", communityId, "mekGeneration", newGeneration);
-      }
-    }
-    return true;
-  } else if (event.type === "voiceJoin") {
+  if (event.type === "voiceJoin") {
     const { communityId, channelId, pseudonymKey, displayName } = event.data;
     setCommunityState("voiceChannels", channelId, (prev) => {
       const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
@@ -255,4 +235,33 @@ export function reduceVoice(event: CommunityEvent): boolean {
     return true;
   }
   return false;
+}
+
+/// MEK rotation on the daemon vocabulary.
+export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): void {
+  if (!("crypto" in event)) return;
+  const c = event.crypto;
+  if (!("mekRotated" in c)) return;
+
+  const { community, channel, generation } = c.mekRotated;
+  if (!communityState.communities[community]) return;
+
+  if (channel === null) {
+    setCommunityState("communities", community, "mekGeneration", generation);
+    return;
+  }
+
+  const idx = communityState.communities[community].channels.findIndex(
+    (ch) => ch.id === channel,
+  );
+  if (idx >= 0) {
+    setCommunityState("communities", community, "channels", idx, "mekGeneration", generation);
+  }
+  // Architecture §7.2 + §10.7 — voice MEK rotates on every join/leave
+  // for forward+backward secrecy. Surface a cue when it is the channel
+  // the user is actively connected to, so they know keys advanced
+  // (e.g. a new speaker just joined the stage).
+  if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
+    announce("Voice keys rotated", "polite");
+  }
 }

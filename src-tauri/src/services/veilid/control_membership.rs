@@ -21,7 +21,6 @@ pub(super) fn handle_membership_payload(
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -132,15 +131,16 @@ pub(super) fn handle_membership_payload(
                 }
             };
             if let Some(alert) = alert {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_subscription(
                     app_handle,
-                    "community-event",
-                    &CommunityEvent::RaidDetected {
-                        community_id: community_id.to_string(),
-                        joins_in_window: alert.joins_in_window,
-                        max_joins_per_interval: alert.max_joins_per_interval,
-                        join_interval_seconds: alert.join_interval_seconds,
-                    },
+                    &rekindle_types::subscription_events::SubscriptionEvent::System(
+                        rekindle_types::subscription_events::SystemEvent::RaidDetected {
+                            community: community_id.to_string(),
+                            joins_in_window: alert.joins_in_window,
+                            max_joins_per_interval: alert.max_joins_per_interval,
+                            join_interval_seconds: alert.join_interval_seconds,
+                        },
+                    ),
                 );
                 tracing::warn!(
                     community = %community_id,

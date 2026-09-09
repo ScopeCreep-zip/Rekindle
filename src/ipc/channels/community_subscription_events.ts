@@ -48,13 +48,68 @@ export type MembershipEvent =
 /** System-level signals from the daemon vocabulary. */
 export type SystemEvent =
   | { kicked: { community: string } }
-  | { announcement: Record<string, unknown> }
-  | { raidAlert: Record<string, unknown> }
-  | { channelLockdown: Record<string, unknown> }
+  /** `community` is null for a device-wide announcement. */
+  | { announcement: { community: string | null; body: string; timestamp: number } }
+  /** A moderator's decision, gossiped to everyone. */
+  | { raidAlert: { community: string; active: boolean } }
+  /** **This peer's** own observation — see `raidAlert` for the decision. */
+  | {
+      raidDetected: {
+        community: string;
+        joinsInWindow: number;
+        maxJoinsPerInterval: number;
+        joinIntervalSeconds: number;
+      };
+    }
+  | {
+      autoModAlert: {
+        community: string;
+        channel: string;
+        messageId: string;
+        ruleName: string;
+      };
+    }
+  | { channelLockdown: { community: string; locked: boolean } }
   | { bootstrapRequested: Record<string, unknown> }
   | { bootstrapReceived: Record<string, unknown> }
   | { syncRequested: Record<string, unknown> }
-  | { syncReceived: Record<string, unknown> };
+  | { syncReceived: { community: string; channel: string; messageCount: number } }
+  | { auditChainBroken: { cursor: number } };
+
+/** Cryptographic key events from the daemon vocabulary. */
+export type CryptoEvent =
+  | {
+      mekRotated: {
+        community: string;
+        /** `null` for the community-wide key rather than a channel's. */
+        channel: string | null;
+        generation: number;
+        rotatorPseudonym: string | null;
+      };
+    }
+  | {
+      mekRequested: {
+        community: string;
+        channel: string;
+        neededGeneration: number;
+        requesterPseudonym: string;
+      };
+    }
+  | {
+      mekTransferred: {
+        community: string;
+        channel: string | null;
+        generation: number;
+        senderPseudonym: string;
+      };
+    }
+  | { adminKeypairGranted: { community: string } }
+  | { slotKeypairGranted: { community: string; slotIndex: number; segmentIndex: number } }
+  | { pqBundlePublished: { subkey: number; kind: string } };
+
+// Community member presence is **not** in the union below: it is a
+// `PresenceEvent`, which the backend routes to `presence-event`. See
+// `subscribeCommunityPresenceEvents` in `presence-events.handlers.ts`.
 
 /** A role, as Tier 1's `RoleDisplay`. */
 export interface RoleDisplay {
@@ -235,7 +290,7 @@ export type CommunitySubscriptionEvent =
   | { governance: GovernanceEvent }
   | { social: SocialEvent }
   | { channelMessage: ChannelMessageEvent }
-  | { crypto: Record<string, unknown> }
+  | { crypto: CryptoEvent }
   | { unreadChanged: Record<string, unknown> };
 
 export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;

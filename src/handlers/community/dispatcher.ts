@@ -2,8 +2,12 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeCommunityEvents } from "../../ipc/channels";
 import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
-import { reduceMessages, reduceSubscriptionMessages } from "./dispatcher_messages";
-import { reduceVoice } from "./dispatcher_voice";
+import {
+  reduceMessages,
+  reduceSubscriptionMessages,
+  reduceSubscriptionSystem,
+} from "./dispatcher_messages";
+import { reduceVoice, reduceSubscriptionCrypto } from "./dispatcher_voice";
 import { reduceSubscriptionContent } from "./dispatcher_content";
 
 /// Central community event dispatcher. Each incoming `CommunityEvent`
@@ -22,6 +26,8 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       // because the daemon families are disjoint by construction.
       reduceSubscriptionMembership(event);
       reduceSubscriptionMessages(event);
+      reduceSubscriptionSystem(event);
+      reduceSubscriptionCrypto(event);
       reduceSubscriptionContent(event);
       return;
     }
