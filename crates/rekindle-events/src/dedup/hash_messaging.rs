@@ -97,31 +97,38 @@ fn hash_typing_context(h: &mut blake3::Hasher, ctx: &TypingContext) {
 
 pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
     let now_bucket = rekindle_utils::timestamp_secs() / 30; // 30-second bucketing
+                                                            // Every variant hashes subject + status + game identity + bucket.
+                                                            // `elapsed_seconds` is deliberately excluded: it advances on every
+                                                            // scan, so folding it in would give each tick a distinct hash and
+                                                            // dedup would never fire. Game *identity* is what makes a new
+                                                            // event; the elapsed count rides along on whichever emission wins.
+    let snapshot = p.snapshot();
     match p {
         PresenceEvent::CommunityMemberChanged {
             community,
             pseudonym,
-            status,
             ..
         } => {
             h.update(b"community|");
             h.update(community.as_bytes());
             h.update(b"|");
             h.update(pseudonym.as_bytes());
-            h.update(b"|");
-            h.update(status.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
         }
-        PresenceEvent::FriendChanged {
-            peer_key, status, ..
-        } => {
+        PresenceEvent::SelfChanged { public_key, .. } => {
+            h.update(b"self|");
+            h.update(public_key.as_bytes());
+        }
+        PresenceEvent::FriendChanged { peer_key, .. } => {
             h.update(b"friend|");
             h.update(peer_key.as_bytes());
-            h.update(b"|");
-            h.update(status.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
         }
     }
+    h.update(b"|");
+    h.update(snapshot.status.as_deref().unwrap_or("").as_bytes());
+    h.update(b"|");
+    h.update(snapshot.game_name().unwrap_or("").as_bytes());
+    h.update(b"|");
+    h.update(&snapshot.game_id().unwrap_or(0).to_le_bytes());
+    h.update(b"|");
+    h.update(&now_bucket.to_le_bytes());
 }

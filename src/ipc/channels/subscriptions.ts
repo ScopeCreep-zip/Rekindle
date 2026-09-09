@@ -1,6 +1,9 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatEvent } from "./chat_events";
-import type { PresenceEvent } from "./presence_events";
+import type {
+  PresenceEvent,
+  PresenceSubscriptionEvent,
+} from "./presence_events";
 import type { VoiceEvent } from "./voice_events";
 import type { CommunityEvent } from "./community_events";
 import type { NotificationEvent, NetworkStatusEvent } from "./notification_events";
@@ -28,11 +31,19 @@ export function subscribeChatEvents(
   });
 }
 
+/**
+ * Subscribe to presence changes.
+ *
+ * The backend emits the whole `SubscriptionEvent`, so the payload is
+ * wrapped in a `presence` key — the same envelope every channel carries,
+ * because a channel like `community-event` multiplexes several families.
+ * Unwrapped here so callers see just the presence event.
+ */
 export function subscribePresenceEvents(
   onEvent: (event: PresenceEvent) => void,
 ): Promise<UnlistenFn> {
-  return safeListen<PresenceEvent>("presence-event", (event) => {
-    onEvent(event.payload);
+  return safeListen<PresenceSubscriptionEvent>("presence-event", (event) => {
+    onEvent(event.payload.presence);
   });
 }
 

@@ -25,7 +25,7 @@ pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
 pub use network::NetworkEvent;
-pub use presence::PresenceEvent;
+pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use social::SocialEvent;
 pub use system::SystemEvent;
 pub use typing::{TypingContext, TypingEvent};
@@ -36,7 +36,13 @@ use serde::{Deserialize, Serialize};
 /// Top-level subscription event. Every signal the subscription manager
 /// emits is one of these. Consumers receive them via
 /// `SubscriptionManager::subscribe()`.
+/// Externally tagged and `camelCase` on purpose. This type crosses two
+/// wires: postcard on the daemon IPC socket (`ipc/framing.rs`), which
+/// cannot decode an internally/adjacently tagged enum, and JSON to the
+/// Tauri webview, which wants the project's camelCase convention.
+/// External tagging is the one representation that satisfies both.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SubscriptionEvent {
     /// Channel message lifecycle (new, edited, deleted, pinned, thread).
     ChannelMessage(ChannelMessageEvent),
@@ -132,7 +138,9 @@ impl SubscriptionEvent {
             },
             Self::Presence(e) => match e {
                 PresenceEvent::CommunityMemberChanged { community, .. } => Some(community),
-                PresenceEvent::FriendChanged { .. } => None,
+                // Neither is community-scoped: a DM peer's presence and
+                // our own belong to the device, not to one community.
+                PresenceEvent::FriendChanged { .. } | PresenceEvent::SelfChanged { .. } => None,
             },
             Self::Membership(e) => Some(match e {
                 MembershipEvent::JoinRequested { community, .. }

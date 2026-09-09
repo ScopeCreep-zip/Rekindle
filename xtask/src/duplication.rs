@@ -284,32 +284,19 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
         ],
         "Tier 1's is what the CLI renders; src-tauri's is what the Tauri \
          frontend renders, and carries icon/banner hashes the CLI has no \
-         use for. See the PresenceEvent entry — same finding.",
-    ),
-    (
-        &[
-            "rekindle (src-tauri)::PresenceEvent",
-            "rekindle-types::PresenceEvent",
-        ],
-        "THE FINDING, recorded once here. src-tauri never references \
-         `SubscriptionEvent` at all: the Tauri frontend gets \
-         `channels::presence_channel::PresenceEvent` \
-         (FriendOnline/FriendOffline/StatusChanged/GameChanged, \
-         Serialize-only) while the CLI gets \
-         `rekindle_types::subscription_events::PresenceEvent` \
-         (CommunityMemberChanged/FriendChanged, round-trippable). Two \
-         event vocabularies, one per frontend — which contradicts \
-         'the daemon is the substrate, frontends are interchangeable'. \
-         Converging them means routing src-tauri's ~150 emit sites \
-         through the subscription stream; that is an architecture \
-         change with its own plan, not a duplicate to collapse here.",
+         use for. Same shape as the voice-event split below.",
     ),
     (
         &[
             "rekindle (src-tauri)::VoiceEvent",
             "rekindle-types::VoiceEvent",
         ],
-        "Same finding as PresenceEvent — see that entry.",
+        "Two event vocabularies, one per frontend: src-tauri's is \
+         Serialize-only for the Tauri webview, Tier 1's is the \
+         round-trippable one the CLI subscribes to. Presence has \
+         already been converged onto Tier 1 \
+         (`PresenceEvent`/`PresenceSnapshot`); voice is the same \
+         work and has not been done yet.",
     ),
     (
         &["rekindle-protocol::GameInfo", "rekindle-types::GameInfo"],

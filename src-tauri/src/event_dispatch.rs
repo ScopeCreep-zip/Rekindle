@@ -44,6 +44,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
+use rekindle_types::subscription_events::SubscriptionEvent;
 
 /// Wire shape persisted in the journal. The `channel` lets the frontend
 /// route the payload to the same listener that would have received it
@@ -162,6 +163,46 @@ pub fn emit_live<P: Serialize + ?Sized>(app: &AppHandle, channel: &str, payload:
             channel,
             "emit_live: SharedState not registered yet — event dropped"
         );
+    }
+}
+
+/// Emit a daemon-vocabulary event to the webview.
+///
+/// The CLI receives `SubscriptionEvent` over IPC; this puts the *same*
+/// value on the Tauri channel, so both frontends observe one event for
+/// one action. Today they do not: src-tauri never references
+/// `SubscriptionEvent` at all, and the webview gets a parallel
+/// `channels::*Event` vocabulary — which is why the desktop is a second
+/// implementation rather than a frontend over the daemon.
+///
+/// This is an addition, not a migration. `emit_live` and
+/// `emit_journaled` keep working untouched and emitters move onto this
+/// one family at a time; the channel names are unchanged, so the
+/// frontend's `listen()` calls do not move — only the payload shape
+/// converges.
+pub fn emit_subscription(app: &AppHandle, event: &SubscriptionEvent) {
+    emit_live(app, channel_for(event), event);
+}
+
+/// Which Tauri channel a daemon event belongs on.
+///
+/// The mapping is many-to-one on purpose: the daemon's vocabulary is
+/// finer-grained than the webview's four content channels, and
+/// collapsing here means the frontend keeps the listeners it already
+/// has.
+fn channel_for(event: &SubscriptionEvent) -> &'static str {
+    match event {
+        SubscriptionEvent::Presence(_) => "presence-event",
+        SubscriptionEvent::Voice(_) => "voice-event",
+        SubscriptionEvent::ChannelMessage(_) | SubscriptionEvent::Typing(_) => "chat-event",
+        SubscriptionEvent::Membership(_)
+        | SubscriptionEvent::Governance(_)
+        | SubscriptionEvent::Crypto(_)
+        | SubscriptionEvent::UnreadChanged { .. } => "community-event",
+        SubscriptionEvent::Friend(_)
+        | SubscriptionEvent::Social(_)
+        | SubscriptionEvent::System(_) => "notification-event",
+        SubscriptionEvent::Network(_) => "network-status",
     }
 }
 

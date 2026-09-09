@@ -8,6 +8,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use rekindle_types::subscription_events::PresenceSnapshot;
+
 /// Combined subscription state. One instance per `SubscriptionManager`.
 #[derive(Debug, Default)]
 pub struct SubscriptionState {
@@ -206,6 +208,24 @@ pub struct PresenceInfo {
     pub last_seen: Instant,
 }
 
+impl Default for PresenceInfo {
+    /// A row for a peer we have observed *something* about but whose
+    /// status we have not been told yet.
+    ///
+    /// "offline" rather than "online": a snapshot that carries only a
+    /// game observation creates this row, and treating an unstated
+    /// status as online would put a peer in the member list on the
+    /// strength of a game scan alone.
+    fn default() -> Self {
+        Self {
+            status: "offline".to_string(),
+            game_name: None,
+            game_id: None,
+            last_seen: Instant::now(),
+        }
+    }
+}
+
 impl PresenceInfo {
     /// Whether this presence entry has expired.
     pub fn is_expired(&self) -> bool {
@@ -233,37 +253,35 @@ pub struct PresenceState {
 
 impl PresenceState {
     /// Update community member presence.
-    pub fn set_member(
-        &mut self,
-        community: &str,
-        pseudonym: &str,
-        status: &str,
-        game_name: Option<&str>,
-        game_id: Option<u32>,
-    ) {
+    /// Merge one observation into a member's presence.
+    ///
+    /// Merging, not replacing: a snapshot carries only what its emitter
+    /// looked at. The gossip overlay reports "online"/"offline" with no
+    /// game observation at all, so a replacing write cleared the game of
+    /// every member the moment they were seen — the row said idle while
+    /// the peer was still playing.
+    pub fn set_member(&mut self, community: &str, pseudonym: &str, snapshot: &PresenceSnapshot) {
         let key = (community.to_string(), pseudonym.to_string());
-        self.members.insert(
-            key,
-            PresenceInfo {
-                status: status.to_string(),
-                game_name: game_name.map(String::from),
-                game_id,
-                last_seen: Instant::now(),
-            },
-        );
+        Self::merge_into(self.members.entry(key).or_default(), snapshot);
+    }
+
+    /// Apply the observed fields of `snapshot` onto `info`.
+    fn merge_into(info: &mut PresenceInfo, snapshot: &PresenceSnapshot) {
+        if let Some(ref status) = snapshot.status {
+            info.status.clone_from(status);
+        }
+        if let Some(ref game) = snapshot.game {
+            info.game_name = game.game_name().map(String::from);
+            info.game_id = game.game_id();
+        }
+        info.last_seen = Instant::now();
     }
 
     /// Update friend/DM peer presence.
-    pub fn set_friend(&mut self, peer_key: &str, status: &str, game_name: Option<&str>) {
-        self.friends.insert(
-            peer_key.to_string(),
-            PresenceInfo {
-                status: status.to_string(),
-                game_name: game_name.map(String::from),
-                game_id: None,
-                last_seen: Instant::now(),
-            },
-        );
+    /// Merge one observation into a friend's presence. See [`Self::set_member`].
+    pub fn set_friend(&mut self, peer_key: &str, snapshot: &PresenceSnapshot) {
+        let entry = self.friends.entry(peer_key.to_string()).or_default();
+        Self::merge_into(entry, snapshot);
     }
 
     /// Get all active member presences for a community (auto-filters expired).

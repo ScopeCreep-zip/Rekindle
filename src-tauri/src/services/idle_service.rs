@@ -380,14 +380,17 @@ fn emit_status_change(app_handle: &tauri::AppHandle, state: &Arc<AppState>, stat
         UserStatus::Busy => "busy",
         UserStatus::Offline | UserStatus::Invisible => "offline",
     };
-    crate::event_dispatch::emit_live(
+    // Our own status, on the daemon vocabulary: the idle timer observed
+    // the status and nothing about the game, so `game` stays unobserved
+    // and the auto-away does not clear a running game.
+    crate::event_dispatch::emit_subscription(
         app_handle,
-        "presence-event",
-        &crate::channels::PresenceEvent::StatusChanged {
-            public_key: pk,
-            status: status_str.to_string(),
-            status_message: None,
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Presence(
+            rekindle_types::subscription_events::PresenceEvent::SelfChanged {
+                public_key: pk,
+                snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(status_str),
+            },
+        ),
     );
 }
 

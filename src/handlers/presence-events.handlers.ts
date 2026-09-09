@@ -1,62 +1,99 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribePresenceEvents } from "../ipc/channels";
+import type {
+  PresenceEvent,
+  PresenceSnapshot,
+} from "../ipc/channels/presence_events";
+import { gameName } from "../ipc/channels/presence_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
 import { transformGameInfo } from "../utils/transformers";
 
+/**
+ * Who the event is about, and what was observed about them.
+ *
+ * The four old event kinds (friendOnline / friendOffline / statusChanged
+ * / gameChanged) collapsed into three subjects plus one snapshot, so
+ * every handler below asks the same two questions instead of switching
+ * on a kind and then re-deriving the key from a differently-named field.
+ */
+function subject(event: PresenceEvent): {
+  key: string;
+  snapshot: PresenceSnapshot;
+  isSelf: boolean;
+} {
+  if ("friendChanged" in event) {
+    return {
+      key: event.friendChanged.peerKey,
+      snapshot: event.friendChanged.snapshot,
+      isSelf: false,
+    };
+  }
+  if ("selfChanged" in event) {
+    return {
+      key: event.selfChanged.publicKey,
+      snapshot: event.selfChanged.snapshot,
+      isSelf: true,
+    };
+  }
+  return {
+    key: event.communityMemberChanged.pseudonym,
+    snapshot: event.communityMemberChanged.snapshot,
+    isSelf: false,
+  };
+}
+
+/**
+ * Apply the observed fields of a snapshot to one friend row.
+ *
+ * Only what was observed: `status: null` means the emitter never looked
+ * at the status, so leaving it alone is what stops a game update from
+ * knocking a friend offline (and a status update from clearing a game).
+ */
+function applyToFriend(publicKey: string, snapshot: PresenceSnapshot): void {
+  if (!friendsState.friends[publicKey]) return;
+
+  if (snapshot.status !== null) {
+    setFriendsState("friends", publicKey, "status", snapshot.status as UserStatus);
+    if (snapshot.status === "offline") {
+      setFriendsState("friends", publicKey, "lastSeenAt", Date.now());
+    }
+  }
+  if (snapshot.statusMessage !== null) {
+    setFriendsState("friends", publicKey, "statusMessage", snapshot.statusMessage);
+  }
+  if (snapshot.game !== null) {
+    const name = gameName(snapshot);
+    if (name === null) {
+      setFriendsState("friends", publicKey, "gameInfo", null);
+    } else {
+      const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
+      setFriendsState(
+        "friends",
+        publicKey,
+        "gameInfo",
+        transformGameInfo({
+          gameName: name,
+          gameId: playing?.gameId ?? null,
+          elapsedSeconds: playing?.elapsedSeconds ?? null,
+          serverAddress: playing?.serverAddress ?? null,
+        }),
+      );
+    }
+  }
+}
+
 export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    switch (event.type) {
-      case "friendOnline": {
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState("friends", event.data.publicKey, "status", "online");
-        }
-        break;
-      }
-      case "friendOffline": {
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState("friends", event.data.publicKey, "status", "offline");
-          setFriendsState("friends", event.data.publicKey, "lastSeenAt", Date.now());
-        }
-        break;
-      }
-      case "statusChanged": {
-        // Sync own status when auto-away changes it from the backend
-        if (event.data.publicKey === authState.publicKey) {
-          setAuthState("status", event.data.status as UserStatus);
-        }
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState(
-            "friends",
-            event.data.publicKey,
-            "status",
-            event.data.status as UserStatus,
-          );
-          if (event.data.statusMessage !== undefined) {
-            setFriendsState(
-              "friends",
-              event.data.publicKey,
-              "statusMessage",
-              event.data.statusMessage,
-            );
-          }
-        }
-        break;
-      }
-      case "gameChanged": {
-        if (friendsState.friends[event.data.publicKey]) {
-          const { gameName, gameId, elapsedSeconds, serverAddress } = event.data;
-          if (gameName) {
-            setFriendsState("friends", event.data.publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds, serverAddress }));
-          } else {
-            setFriendsState("friends", event.data.publicKey, "gameInfo", null);
-          }
-        }
-        break;
-      }
+    const { key, snapshot, isSelf } = subject(event);
+
+    // Sync own status when auto-away changes it from the backend.
+    if ((isSelf || key === authState.publicKey) && snapshot.status !== null) {
+      setAuthState("status", snapshot.status as UserStatus);
     }
+    if (!isSelf) applyToFriend(key, snapshot);
   });
 }
 
@@ -65,48 +102,39 @@ export function subscribeChatPresenceEvents(
   setPeerStatus: (s: UserStatus) => void,
 ): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    switch (event.type) {
-      case "friendOnline": {
-        if (event.data.publicKey === peerId) setPeerStatus("online");
-        break;
-      }
-      case "friendOffline": {
-        if (event.data.publicKey === peerId) setPeerStatus("offline");
-        break;
-      }
-      case "statusChanged": {
-        if (event.data.publicKey === peerId) {
-          setPeerStatus(event.data.status as UserStatus);
-        }
-        break;
-      }
-    }
+    const { key, snapshot, isSelf } = subject(event);
+    if (isSelf || key !== peerId || snapshot.status === null) return;
+    setPeerStatus(snapshot.status as UserStatus);
   });
 }
 
 export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    const key =
-      event.type === "friendOnline" || event.type === "friendOffline"
-        ? event.data.publicKey
-        : event.type === "statusChanged"
-          ? event.data.publicKey
-          : null;
-    if (!key) return;
-    const newStatus =
-      event.type === "friendOnline"
-        ? "online"
-        : event.type === "friendOffline"
-          ? "offline"
-          : event.type === "statusChanged"
-            ? event.data.status
-            : null;
-    if (!newStatus) return;
-    for (const communityId of Object.keys(communityState.communities)) {
+    const { key, snapshot, isSelf } = subject(event);
+    if (isSelf || snapshot.status === null) return;
+
+    // A community member event names its own community, so only that
+    // one needs scanning. A friend event carries no community, so every
+    // community is searched for a member with that key — the same peer
+    // can be both a friend and a co-member.
+    const communityIds =
+      "communityMemberChanged" in event
+        ? [event.communityMemberChanged.community]
+        : Object.keys(communityState.communities);
+
+    for (const communityId of communityIds) {
       const community = communityState.communities[communityId];
+      if (!community) continue;
       const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
       if (memberIdx >= 0) {
-        setCommunityState("communities", communityId, "members", memberIdx, "status", newStatus);
+        setCommunityState(
+          "communities",
+          communityId,
+          "members",
+          memberIdx,
+          "status",
+          snapshot.status,
+        );
       }
     }
   });
@@ -116,40 +144,8 @@ export function subscribeProfilePresenceEvents(
   publicKey: string,
 ): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
-    switch (event.type) {
-      case "friendOnline": {
-        if (event.data.publicKey === publicKey && friendsState.friends[publicKey]) {
-          setFriendsState("friends", publicKey, "status", "online");
-        }
-        break;
-      }
-      case "friendOffline": {
-        if (event.data.publicKey === publicKey && friendsState.friends[publicKey]) {
-          setFriendsState("friends", publicKey, "status", "offline");
-          setFriendsState("friends", publicKey, "lastSeenAt", Date.now());
-        }
-        break;
-      }
-      case "statusChanged": {
-        if (event.data.publicKey === publicKey && friendsState.friends[publicKey]) {
-          setFriendsState("friends", publicKey, "status", event.data.status as UserStatus);
-          if (event.data.statusMessage !== undefined) {
-            setFriendsState("friends", publicKey, "statusMessage", event.data.statusMessage);
-          }
-        }
-        break;
-      }
-      case "gameChanged": {
-        if (event.data.publicKey === publicKey && friendsState.friends[publicKey]) {
-          const { gameName, gameId, elapsedSeconds, serverAddress } = event.data;
-          if (gameName) {
-            setFriendsState("friends", publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds, serverAddress }));
-          } else {
-            setFriendsState("friends", publicKey, "gameInfo", null);
-          }
-        }
-        break;
-      }
-    }
+    const { key, snapshot, isSelf } = subject(event);
+    if (isSelf || key !== publicKey) return;
+    applyToFriend(publicKey, snapshot);
   });
 }

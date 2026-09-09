@@ -279,8 +279,17 @@ impl DmPayload {
                 };
                 SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
                     peer_key: sender_key.into(),
-                    status: status_str.into(),
-                    game_name: game_info.map(|g| g.game_name),
+                    snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(
+                        status_str,
+                    )
+                    .with_game(
+                        rekindle_types::subscription_events::GameActivity::from_parts(
+                            game_info.map(|g| g.game_name),
+                            None,
+                            None,
+                            None,
+                        ),
+                    ),
                 })
             }
         })

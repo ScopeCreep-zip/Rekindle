@@ -82,24 +82,14 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
         SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {
             community,
             pseudonym,
-            status,
-            game_name,
-            game_id,
+            snapshot,
         }) => {
-            state
-                .presence
-                .set_member(community, pseudonym, status, game_name.as_deref(), *game_id);
+            state.presence.set_member(community, pseudonym, snapshot);
         }
 
         // ── Presence: friend/DM peer ────────────────────────────
-        SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
-            peer_key,
-            status,
-            game_name,
-        }) => {
-            state
-                .presence
-                .set_friend(peer_key, status, game_name.as_deref());
+        SubscriptionEvent::Presence(PresenceEvent::FriendChanged { peer_key, snapshot }) => {
+            state.presence.set_friend(peer_key, snapshot);
         }
 
         // ── Voice: join ─────────────────────────────────────────
@@ -194,7 +184,12 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
             state.presence.remove_dm_peer(peer_key);
         }
 
-        // All other events have no state side-effects
+        // All other events have no state side-effects.
+        //
+        // `PresenceEvent::SelfChanged` lands here deliberately: our own
+        // presence is not a peer row. Nothing in `PresenceState` tracks
+        // us, and inserting ourselves would put us in
+        // `community_members()`. Frontends read it off the event.
         _ => {}
     }
 

@@ -40,21 +40,21 @@ pub async fn emit_friends_presence_inner(
     };
     for (key, status) in friends {
         if status != UserStatus::Offline {
-            crate::event_dispatch::emit_live(
+            // One event, not two. The old pair said "online" and then
+            // said the status separately, so a frontend that applied
+            // both saw the friend flip to a generic online state before
+            // settling — and the two could interleave with a third
+            // friend's pair. `FriendChanged` carries the status itself.
+            crate::event_dispatch::emit_subscription(
                 &app,
-                "presence-event",
-                &crate::channels::PresenceEvent::FriendOnline {
-                    public_key: key.clone(),
-                },
-            );
-            crate::event_dispatch::emit_live(
-                &app,
-                "presence-event",
-                &crate::channels::PresenceEvent::StatusChanged {
-                    public_key: key,
-                    status: format!("{status:?}").to_lowercase(),
-                    status_message: None,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Presence(
+                    rekindle_types::subscription_events::PresenceEvent::FriendChanged {
+                        peer_key: key,
+                        snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(
+                            format!("{status:?}").to_lowercase(),
+                        ),
+                    },
+                ),
             );
         }
     }

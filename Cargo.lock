@@ -7860,6 +7860,7 @@ name = "rekindle-types"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "postcard",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

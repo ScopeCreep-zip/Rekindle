@@ -258,8 +258,9 @@ impl FriendPresenceDeps for PresenceAdapter {
     }
 
     fn emit(&self, event: FriendPresenceEvent) {
-        let payload = map_event(event);
-        crate::event_dispatch::emit_live(&self.app_handle, "presence-event", &payload);
+        let payload =
+            rekindle_types::subscription_events::SubscriptionEvent::Presence(map_event(event));
+        crate::event_dispatch::emit_subscription(&self.app_handle, &payload);
     }
 
     // ---- Friend-sync surface (22.c-REDO) ----

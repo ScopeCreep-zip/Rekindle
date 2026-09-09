@@ -32,9 +32,10 @@ impl DaemonPresenceAdapter {
             PresenceEvent::CommunityMemberChanged {
                 community: community_id.to_string(),
                 pseudonym: pseudonym_key.to_string(),
-                status: "online".to_string(),
-                game_name: None,
-                game_id: None,
+                // Status only: the overlay saw the member, not what
+                // they are playing. Leaving `game` unobserved is what
+                // stops this from clearing a game the gossip row set.
+                snapshot: rekindle_types::subscription_events::PresenceSnapshot::status("online"),
             },
         ));
     }
@@ -45,9 +46,7 @@ impl DaemonPresenceAdapter {
             PresenceEvent::CommunityMemberChanged {
                 community: community_id.to_string(),
                 pseudonym: pseudonym_key.to_string(),
-                status: "offline".to_string(),
-                game_name: None,
-                game_id: None,
+                snapshot: rekindle_types::subscription_events::PresenceSnapshot::status("offline"),
             },
         ));
     }

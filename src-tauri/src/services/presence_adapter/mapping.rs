@@ -9,7 +9,8 @@
 
 use rekindle_presence::{FriendPresenceEvent, GameInfoSnapshot, UserStatusKind};
 
-use crate::channels::PresenceEvent;
+use rekindle_types::subscription_events::{GameActivity, PresenceEvent, PresenceSnapshot};
+
 use crate::state::{GameInfoState, UserStatus};
 
 pub(super) fn to_crate_status(status: UserStatus) -> UserStatusKind {
@@ -42,25 +43,35 @@ pub(super) fn from_crate_game_info(snapshot: GameInfoSnapshot) -> GameInfoState 
     }
 }
 
+/// Project a crate-side friend presence event onto the daemon vocabulary.
+///
+/// Four variants collapse to one subject plus an observation. Online and
+/// offline are statuses, not separate kinds of event; a game change
+/// leaves `status` unobserved so it cannot overwrite a status the peer
+/// never restated, and vice versa.
 pub(super) fn map_event(event: FriendPresenceEvent) -> PresenceEvent {
-    match event {
-        FriendPresenceEvent::FriendOnline { friend_key } => PresenceEvent::FriendOnline {
-            public_key: friend_key,
-        },
-        FriendPresenceEvent::FriendOffline { friend_key } => PresenceEvent::FriendOffline {
-            public_key: friend_key,
-        },
-        FriendPresenceEvent::StatusChanged { friend_key, status } => PresenceEvent::StatusChanged {
-            public_key: friend_key,
-            status: status.as_wire_str().to_string(),
-            status_message: None,
-        },
-        FriendPresenceEvent::GameChanged { friend_key, game } => PresenceEvent::GameChanged {
-            public_key: friend_key,
-            game_name: game.as_ref().map(|g| g.game_name.clone()),
-            game_id: game.as_ref().map(|g| g.game_id),
-            elapsed_seconds: game.as_ref().map(|g| g.elapsed_seconds),
-            server_address: game.as_ref().and_then(|g| g.server_address.clone()),
-        },
+    let (friend_key, snapshot) = match event {
+        FriendPresenceEvent::FriendOnline { friend_key } => {
+            (friend_key, PresenceSnapshot::status("online"))
+        }
+        FriendPresenceEvent::FriendOffline { friend_key } => {
+            (friend_key, PresenceSnapshot::status("offline"))
+        }
+        FriendPresenceEvent::StatusChanged { friend_key, status } => {
+            (friend_key, PresenceSnapshot::status(status.as_wire_str()))
+        }
+        FriendPresenceEvent::GameChanged { friend_key, game } => (
+            friend_key,
+            PresenceSnapshot::game(GameActivity::from_parts(
+                game.as_ref().map(|g| g.game_name.clone()),
+                game.as_ref().map(|g| g.game_id),
+                game.as_ref().map(|g| g.elapsed_seconds),
+                game.as_ref().and_then(|g| g.server_address.clone()),
+            )),
+        ),
+    };
+    PresenceEvent::FriendChanged {
+        peer_key: friend_key,
+        snapshot,
     }
 }

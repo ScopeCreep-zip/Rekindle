@@ -15,4 +15,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+postcard = { version = "1", features = ["use-std"] }
 serde_json = { workspace = true }

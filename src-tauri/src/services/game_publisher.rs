@@ -18,8 +18,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rekindle_game_detect::{DetectedGame, GameDetectorPublisher};
 
-use crate::channels::PresenceEvent;
 use crate::state::{AppState, GameInfoState, SharedState, UserStatus};
+use rekindle_types::subscription_events::{
+    GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
+};
+
 use crate::state_helpers;
 
 pub struct GamePublisher {
@@ -52,14 +55,20 @@ impl GameDetectorPublisher for GamePublisher {
         }
 
         // 2. Emit presence event to frontend.
-        let event = PresenceEvent::GameChanged {
+        // First emitter on the daemon vocabulary (plan 4.1). Same
+        // channel, same five facts — the webview's listener is
+        // unchanged; what converges is the payload, so a CLI and the
+        // desktop now observe one event for one action.
+        let event = SubscriptionEvent::Presence(PresenceEvent::SelfChanged {
             public_key: state_helpers::owner_key_or_default(&self.state),
-            game_name: game_info.as_ref().map(|g| g.game_name.clone()),
-            game_id: game_info.as_ref().map(|g| g.game_id),
-            elapsed_seconds: game_info.as_ref().map(|g| g.elapsed_seconds),
-            server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
-        };
-        crate::event_dispatch::emit_live(&self.app_handle, "presence-event", &event);
+            snapshot: PresenceSnapshot::game(GameActivity::from_parts(
+                game_info.as_ref().map(|g| g.game_name.clone()),
+                game_info.as_ref().map(|g| g.game_id),
+                game_info.as_ref().map(|g| g.elapsed_seconds),
+                game_info.as_ref().and_then(|g| g.server_address.clone()),
+            )),
+        });
+        crate::event_dispatch::emit_subscription(&self.app_handle, &event);
 
         // 3. Publish game info to DHT profile subkey 4.
         let game_bytes = serde_json::to_vec(&game_info).unwrap_or_default();
