@@ -430,6 +430,88 @@ order below makes each step independently shippable.
 
 ### 4.1 One event vocabulary (do this first)
 
+**STATUS — four of five families landed.** Commits e559b4d (presence),
+282180c (voice), 8d5bc5e (notifications + network), ca40160 (calls,
+friends, DMs). `src-tauri/src/channels/` is down from five modules to
+two, and every migration turned up the same defect class the audit
+predicted: Tier 1 could not express what the desktop carried.
+
+| family | what Tier 1 was missing | fixed by |
+|---|---|---|
+| presence | our own presence; `elapsed_seconds`, `server_address`, `status_message`, `game_id` | `SelfChanged` + one `PresenceSnapshot` for all three subjects |
+| voice | the whole local session (device, speaking, quality, drops); **any way to name a DM call** | 5 local-session variants + `VoiceScope` |
+| notification | the entire family — a CLI could not ring, alert, or prompt | new Tier 1 `NotificationEvent` |
+| network | `attachment_state`, `has_route` | added to `AttachmentChanged` |
+| call | the entire subsystem — the audit's largest CLI gap | new Tier 1 `CallEvent`, 12 variants for the desktop's 16 |
+| friend | `Added`; `display_name` on `Accepted` | added |
+| DM | `decryption_failed`, `automod_blurred`, `conversation_id`, `server_message_id`, `reply_to_id` | added |
+
+Defects fixed in passing, each found by the migration rather than
+looked for:
+
+- `PresenceState::set_member` replaced the whole row, so a status-only
+  gossip "online" cleared the game of every member it saw. Both setters
+  merge now.
+- `emit_presence` sent two events for one fact, so a frontend applying
+  both saw a flip through a generic online state.
+- `callEnded` never cleared `activeGroupCall`, leaving the group panel
+  up after a group call ended. One merged `ended` arm clears all slots.
+- The drop-telemetry loop and the mute shortcut emitted events outside
+  any call, with no session to attribute them to.
+- Dedup hashed monotonic counters (packet counts, drop totals), making
+  every report unique and defeating the dedup outright.
+
+**Wire constraint, learned the hard way.** `SubscriptionEvent` crosses
+the daemon IPC as **postcard** (`rekindle-node/src/ipc/framing.rs`),
+which is not self-describing: `#[serde(flatten)]` and `tag = "..."`
+enums both fail there at *runtime*. The first presence draft used both.
+Every family now carries a `postcard_round_trips_every_variant` test —
+verified to fail with `SerializeSeqLengthUnknown` against a planted
+`flatten`, not assumed from documentation — and a
+`json_shape_is_what_the_webview_parses` test pinning the exact literals
+the TS types are written against.
+
+**Remaining: the community family.** 60 variants across 78 emit sites in
+`channels/community_channel/`, against 44 Tier 1 variants spread over
+membership / governance / crypto / social. Roughly twice the chat
+family. Sub-families, in the order they should be taken:
+
+1. membership (11) — `MemberJoined`, `MemberRemoved`, `Kicked`,
+   `MemberRolesChanged`, `MemberTimedOut`, `MembersRefreshed`,
+   `MemberDiscovered`, `JoinAccepted`, `JoinRejected`, `JoinProgress`,
+   `OnboardingComplete`
+2. governance (8) — `RolesChanged`, `ChannelsUpdated`,
+   `CommunityUpdated`, `Invite{Created,Used,Revoked}`,
+   `GovernanceUpdated`, `ChannelOverwriteChanged`
+3. social (14) — reactions, pins, message edit/delete, threads, events,
+   game servers
+4. voice signalling (11) — `VoiceJoin`, `VoiceLeave`, `VoiceRoster`,
+   `VoiceJoinHandshake`, `VoicePeerConfirmed`, `VoiceMediaReady`,
+   `VoiceModeSwitch`, `StageUpdate`, `SpeakRequest`, `SpeakResponse`.
+   Distinct from the `VoiceEvent` family already converged, which is
+   local session state; these are community channel signalling.
+5. crypto (1) — `MekRotated`
+6. the rest (15) — `ExpressionAssetReady`, `LinkPreviewReceived`,
+   `AttachmentDownloaded`, `SoundboardPlay`, `AutoModAlert`,
+   `RaidDetected`/`RaidAlert`, `ChannelLockdown`, `SystemMessage`,
+   `SyncComplete`, `ChannelMessage{Delivered,DeliveryFailed}`,
+   `ChannelTyping`, `MemberPresenceChanged`
+
+**Also still open: community channel messages.**
+`ChatEvent::MessageReceived` survives for them. Tier 1's
+`ChannelMessageEvent::New` needs `community`, `sequence` and
+`reply_to_sequence`; the desktop's five emitters have none of those, and
+`SentChannelMessageEcho` carries no community id. Merging into
+`DirectMessageReceived` was tried and reverted — it drives
+`increment_dm`, so channel messages would have counted as DM unread, and
+the two kinds are indistinguishable from `conversation_id` alone. The
+fix is threading `community_id` to those five emitters, a change to
+`SentChannelMessageEcho` and its callers.
+
+---
+
+#### Original plan text
+
 The event split is what makes the command gap self-perpetuating: every
 new desktop feature invents a Tauri-only event, so the daemon never
 needs the command. Fix the vocabulary and the surface follows.
