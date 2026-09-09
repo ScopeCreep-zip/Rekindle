@@ -200,6 +200,25 @@ pub struct EventRSVP {
     pub status: String,
 }
 
+/// One registry segment of a community (architecture §15, Plate Gates).
+///
+/// Tier 1 because both `rekindle-presence` (Tier 5, scanning member
+/// rows) and `rekindle-governance-runtime` (Tier 6, expanding segments)
+/// need it, and Tier 5 cannot depend on Tier 6. They had a copy each,
+/// differing only in `governance_key` — which meant the desktop's
+/// presence adapter mapped the Tier-6 descriptor into the Tier-5 one
+/// field by field and *dropped* the governance key on the way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SegmentDescriptor {
+    /// 0 for the genesis segment; 1.. for each Plate Gate expansion.
+    pub segment_index: u32,
+    /// SMPL member-registry record for this segment.
+    pub registry_key: String,
+    /// SMPL governance record for this segment. Empty for readers that
+    /// only scan presence rows and never merge governance.
+    pub governance_key: String,
+}
+
 /// A community member currently believed online, with what we need to
 /// reach them and how fresh that belief is.
 ///
@@ -210,7 +229,7 @@ pub struct EventRSVP {
 /// registry row and then dropped them on the floor at the mesh
 /// boundary. A daemon client could not show where a member was focused
 /// or when they were last active, and nothing said why.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OnlineMember {
     /// Veilid private route blob for reaching this member. May be empty:
     /// liveness (being in `online_members`) is decoupled from

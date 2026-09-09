@@ -11,7 +11,7 @@ use std::hash::BuildHasher;
 
 use rekindle_types::presence::MemberPresence;
 
-use crate::deps::OnlineMemberSnapshot;
+use crate::deps::OnlineMember;
 
 /// SMPL LOCAL subkeys per segment record (architecture §15.5).
 /// Adapters pump 0..SUBKEYS_PER_SEGMENT through `get_dht_value`
@@ -67,7 +67,7 @@ pub enum ClassifiedRow {
 pub struct AcceptedRow {
     pub pseudonym_hex: String,
     pub presence: MemberPresence,
-    pub online_member: Option<OnlineMemberSnapshot>,
+    pub online_member: Option<OnlineMember>,
 }
 
 /// Parse + verify + classify a single registry-subkey payload.
@@ -129,13 +129,13 @@ pub fn parse_and_classify_row<S: BuildHasher>(
     // first write; gating liveness on it made freshly-joined, actively-
     // heartbeating members invisible to every peer until their route
     // landed (seconds-to-never). Route travels in
-    // `OnlineMemberSnapshot.route_blob` (may be empty) for the separate
+    // `OnlineMember.route_blob` (may be empty) for the separate
     // reachability consumers (DM / MEK delivery), which check it there.
     let is_offline = presence.status == "offline" || presence.last_heartbeat <= stale_cutoff;
     let online_member = if is_offline {
         None
     } else {
-        Some(OnlineMemberSnapshot {
+        Some(OnlineMember {
             route_blob: presence.route_blob.clone(),
             status: presence.status.clone(),
             last_seen: now_secs,

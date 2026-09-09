@@ -40,15 +40,7 @@ pub const MAX_SEGMENTS: u32 = 8;
 // crate by hand.
 use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
 
-/// One row of the segments table — combines the implicit segment 0
-/// (from `CommunityMembership.governance_key + member_registry_key`)
-/// with each `SegmentAdded` entry merged from governance.
-#[derive(Debug, Clone)]
-pub struct SegmentDescriptor {
-    pub segment_index: u32,
-    pub registry_key: String,
-    pub governance_key: String,
-}
+pub use rekindle_types::presence::SegmentDescriptor;
 
 /// Snapshot all segments for a community: the implicit segment 0 + every
 /// `SegmentAdded` discovered in the merged governance state. Sorted by

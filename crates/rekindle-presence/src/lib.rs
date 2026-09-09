@@ -29,7 +29,7 @@ pub use community::{
 };
 pub use deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, FriendPresenceDeps, FriendPresenceEvent,
-    GameInfoSnapshot, OnlineMemberSnapshot, PresenceCredentials, PresenceError, SegmentDescriptor,
+    GameInfoSnapshot, OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor,
     SelfPresenceSnapshot, SetFriendStatusOutcome, VoicePresenceRow,
 };
 pub use friend::{

@@ -93,13 +93,10 @@ pub(super) fn segment_descriptors(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Vec<SegmentDescriptor> {
+    // One `SegmentDescriptor` now, so this is the value itself. The map
+    // that used to be here rebuilt the struct field by field and
+    // dropped `governance_key` on the way.
     crate::services::community::segments::segment_descriptors(state, community_id)
-        .into_iter()
-        .map(|d| SegmentDescriptor {
-            segment_index: d.segment_index,
-            registry_key: d.registry_key,
-        })
-        .collect()
 }
 
 // ---- Per-community read shortcuts used by community_deps.rs ----

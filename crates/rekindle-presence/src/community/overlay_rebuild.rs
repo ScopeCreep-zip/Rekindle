@@ -18,7 +18,7 @@ use std::collections::{HashMap, VecDeque};
 
 use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
-use crate::deps::OnlineMemberSnapshot;
+use crate::deps::OnlineMember;
 
 /// Snapshot of the prior gossip overlay state — `lamport_counter`
 /// is preserved across the rebuild + `pending_mesh_broadcasts` is
@@ -37,8 +37,8 @@ pub struct GossipOverlaySnapshot {
 /// flags update together.
 #[derive(Debug)]
 pub struct GossipOverlayPlan {
-    pub peers: HashMap<String, OnlineMemberSnapshot>,
-    pub online_members: HashMap<String, OnlineMemberSnapshot>,
+    pub peers: HashMap<String, OnlineMember>,
+    pub online_members: HashMap<String, OnlineMember>,
     pub lamport_counter: u64,
     pub needs_initial_sync: bool,
     pub remaining_pending: VecDeque<SignedEnvelope>,
@@ -71,8 +71,8 @@ pub struct GossipRebuildOutcome {
 #[must_use]
 pub fn compute_rebuild_plan<S1, S2>(
     prior: GossipOverlaySnapshot,
-    selected: HashMap<String, OnlineMemberSnapshot, S1>,
-    online_members: HashMap<String, OnlineMemberSnapshot, S2>,
+    selected: HashMap<String, OnlineMember, S1>,
+    online_members: HashMap<String, OnlineMember, S2>,
 ) -> GossipRebuildOutcome
 where
     S1: std::hash::BuildHasher,
@@ -99,9 +99,8 @@ where
     // stores. The generic `S1`/`S2` accept any hasher at the call
     // site (orchestrator hands in standard `HashMap`s today, but
     // tests can use ahash etc).
-    let peers: HashMap<String, OnlineMemberSnapshot> = selected.into_iter().collect();
-    let online_members: HashMap<String, OnlineMemberSnapshot> =
-        online_members.into_iter().collect();
+    let peers: HashMap<String, OnlineMember> = selected.into_iter().collect();
+    let online_members: HashMap<String, OnlineMember> = online_members.into_iter().collect();
     let plan = GossipOverlayPlan {
         peers,
         online_members,
@@ -121,8 +120,8 @@ where
 mod tests {
     use super::*;
 
-    fn snapshot(blob: &[u8]) -> OnlineMemberSnapshot {
-        OnlineMemberSnapshot {
+    fn snapshot(blob: &[u8]) -> OnlineMember {
+        OnlineMember {
             route_blob: blob.to_vec(),
             status: "online".to_string(),
             last_seen: 0,

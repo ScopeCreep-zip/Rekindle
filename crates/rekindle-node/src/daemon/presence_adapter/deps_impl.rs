@@ -13,8 +13,8 @@ use rekindle_presence::community::{
     EventRsvpEntry, GossipOverlayPlan, GossipOverlaySnapshot, MemberProfileSnapshot,
 };
 use rekindle_presence::deps::{
-    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMemberSnapshot, PresenceCredentials,
-    PresenceError, SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
+    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
+    SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
 };
 use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
@@ -198,7 +198,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     fn extend_online_with_recent_gossip(
         &self,
         community_id: &str,
-        online_members: &mut HashMap<String, OnlineMemberSnapshot>,
+        online_members: &mut HashMap<String, OnlineMember>,
         my_pseudonym: &str,
         eviction_threshold_secs: u64,
     ) {
@@ -213,7 +213,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     fn gossip_offline_diff(
         &self,
         community_id: &str,
-        online_members: &HashMap<String, OnlineMemberSnapshot>,
+        online_members: &HashMap<String, OnlineMember>,
         my_pseudonym: &str,
     ) -> Vec<String> {
         self.gossip_offline_diff_impl(community_id, online_members, my_pseudonym)

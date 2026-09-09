@@ -19,8 +19,8 @@ use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvel
 
 use crate::community::{GossipOverlayPlan, GossipOverlaySnapshot};
 use crate::deps::{
-    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMemberSnapshot, PresenceCredentials,
-    PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
+    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
+    SegmentDescriptor, SelfPresenceSnapshot,
 };
 
 pub use state::MockState;
@@ -354,7 +354,7 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn extend_online_with_recent_gossip(
         &self,
         community_id: &str,
-        online_members: &mut HashMap<String, OnlineMemberSnapshot>,
+        online_members: &mut HashMap<String, OnlineMember>,
         my_pseudonym: &str,
         eviction_threshold_secs: u64,
     ) {
@@ -376,7 +376,7 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn gossip_offline_diff(
         &self,
         community_id: &str,
-        online_members: &HashMap<String, OnlineMemberSnapshot>,
+        online_members: &HashMap<String, OnlineMember>,
         my_pseudonym: &str,
     ) -> Vec<String> {
         let mut st = self.state.lock();

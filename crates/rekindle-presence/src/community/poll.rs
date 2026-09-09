@@ -346,7 +346,7 @@ mod tests {
     use super::*;
     use crate::community::test_fixture::{MockCommunityDeps, MockState};
     use crate::community::GossipOverlaySnapshot;
-    use crate::deps::{OnlineMemberSnapshot, PresenceCredentials, SegmentDescriptor};
+    use crate::deps::{OnlineMember, PresenceCredentials, SegmentDescriptor};
 
     fn creds_with(my_subkey: u32, my_segment: u32) -> PresenceCredentials {
         PresenceCredentials {
@@ -358,8 +358,8 @@ mod tests {
         }
     }
 
-    fn online_member(route: &[u8]) -> OnlineMemberSnapshot {
-        OnlineMemberSnapshot {
+    fn online_member(route: &[u8]) -> OnlineMember {
+        OnlineMember {
             route_blob: route.to_vec(),
             status: "online".to_string(),
             last_seen: 0,
@@ -371,6 +371,8 @@ mod tests {
         state.registry_open_result = Some("registry-key".to_string());
         state.presence_credentials = Some(creds_with(7, 0));
         state.segments = vec![SegmentDescriptor {
+            // Scan-only fixture: presence never merges governance.
+            governance_key: String::new(),
             segment_index: 0,
             registry_key: "reg0".to_string(),
         }];

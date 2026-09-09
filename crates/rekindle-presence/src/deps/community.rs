@@ -337,7 +337,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     fn extend_online_with_recent_gossip(
         &self,
         community_id: &str,
-        online_members: &mut HashMap<String, OnlineMemberSnapshot>,
+        online_members: &mut HashMap<String, OnlineMember>,
         my_pseudonym: &str,
         eviction_threshold_secs: u64,
     );
@@ -349,7 +349,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     fn gossip_offline_diff(
         &self,
         community_id: &str,
-        online_members: &HashMap<String, OnlineMemberSnapshot>,
+        online_members: &HashMap<String, OnlineMember>,
         my_pseudonym: &str,
     ) -> Vec<String>;
 
@@ -441,11 +441,7 @@ pub struct PresenceCredentials {
 }
 
 /// Plate Gate segment descriptor (architecture §15.5).
-#[derive(Debug, Clone)]
-pub struct SegmentDescriptor {
-    pub segment_index: u32,
-    pub registry_key: String,
-}
+pub use rekindle_types::presence::SegmentDescriptor;
 
 /// Presence-derived voice membership view of one community member,
 /// handed from the registry scan to the voice roster reconcile
@@ -473,17 +469,13 @@ pub struct VoicePresenceRow {
 /// the roster — `location` is filled by the orchestrator after the
 /// scan (decrypting the MEK-bounded `SessionExtras`), so it defaults to
 /// `None` on the bare classifier output.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct OnlineMemberSnapshot {
-    pub route_blob: Vec<u8>,
-    pub status: String,
-    pub last_seen: u64,
-    /// Where this member is focused (text/voice channel), if shared.
-    pub location: Option<rekindle_types::presence::SessionLocation>,
-    /// Member's self-reported last-active (already coarsened per their
-    /// policy); drives last-seen on the read side.
-    pub last_active: u64,
-}
+// The online-member row is `rekindle_types::presence::OnlineMember`.
+// This crate declared an identical five-field copy under a second name,
+// which cost three hand-written identity converters in the src-tauri
+// adapter alone (`online_member_from_state`,
+// `state_online_from_snapshot`) — field-for-field copies that existed
+// only because the two names were two types.
+pub use rekindle_types::presence::OnlineMember;
 
 /// Per-community profile fields the presence write path needs.
 #[derive(Debug, Clone, Default)]

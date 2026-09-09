@@ -8,7 +8,7 @@ use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::GossipOverlaySnapshot;
-use crate::deps::{OnlineMemberSnapshot, PresenceCredentials, SegmentDescriptor};
+use crate::deps::{OnlineMember, PresenceCredentials, SegmentDescriptor};
 
 #[derive(Default)]
 pub struct MockState {
@@ -35,7 +35,7 @@ pub struct MockState {
     /// inject into the orchestrator's `online_members` map — drives
     /// the `online_count > 0` gate that controls the stale-sync
     /// retry block.
-    pub inject_online: HashMap<String, OnlineMemberSnapshot>,
+    pub inject_online: HashMap<String, OnlineMember>,
     // ---- Call-recording side ----
     pub sent_envelopes: Vec<(String, CommunityEnvelope)>,
     pub pending_syncs: Vec<(String, String, u32)>,

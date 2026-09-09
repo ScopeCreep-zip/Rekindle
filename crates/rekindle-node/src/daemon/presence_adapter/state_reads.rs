@@ -103,13 +103,15 @@ impl DaemonPresenceAdapter {
             .read()
             .as_ref()
             .and_then(|s| s.community(community_id))
-            .map(|m| m.registry_key.clone());
+            .map(|m| (m.registry_key.clone(), m.governance_key.clone()));
 
         let mut out = Vec::new();
-        if let Some(registry_key) = primary {
+        if let Some((registry_key, governance_key)) = primary {
             out.push(SegmentDescriptor {
                 segment_index: 0,
                 registry_key,
+                // Segment 0's governance record is the community's own.
+                governance_key,
             });
         }
         if let Some(state) = self.ctx.community_runtime.governance_state(community_id) {
@@ -120,6 +122,9 @@ impl DaemonPresenceAdapter {
                 out.push(SegmentDescriptor {
                     segment_index: seg.segment_index,
                     registry_key: seg.registry_key.clone(),
+                    // Carried rather than dropped: the merged segment
+                    // entry has it, and the type can now hold it.
+                    governance_key: seg.governance_key.clone(),
                 });
             }
         }

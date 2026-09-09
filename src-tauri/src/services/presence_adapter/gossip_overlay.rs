@@ -4,19 +4,19 @@
 //! `crates/rekindle-presence/src/community/overlay_rebuild.rs`
 //! per Invariant 7.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use rekindle_presence::{GossipOverlayPlan, GossipOverlaySnapshot, OnlineMemberSnapshot};
+use rekindle_presence::{GossipOverlayPlan, GossipOverlaySnapshot, OnlineMember};
 
 use crate::channels::CommunityEvent;
-use crate::state::{AppState, GossipOverlay, OnlineMember};
+use crate::state::{AppState, GossipOverlay};
 use crate::state_helpers;
 
 pub(super) fn extend_online_with_recent_gossip(
     state: &Arc<AppState>,
     community_id: &str,
-    online_members: &mut HashMap<String, OnlineMemberSnapshot>,
+    online_members: &mut HashMap<String, OnlineMember>,
     my_pseudonym: &str,
     eviction_threshold_secs: u64,
 ) {
@@ -34,7 +34,7 @@ pub(super) fn extend_online_with_recent_gossip(
             && pk != my_pseudonym
             && member.last_seen > eviction_cutoff
         {
-            online_members.insert(pk.clone(), online_member_from_state(member));
+            online_members.insert(pk.clone(), member.clone());
         }
     }
 }
@@ -42,7 +42,7 @@ pub(super) fn extend_online_with_recent_gossip(
 pub(super) fn gossip_offline_diff(
     state: &Arc<AppState>,
     community_id: &str,
-    online_members: &HashMap<String, OnlineMemberSnapshot>,
+    online_members: &HashMap<String, OnlineMember>,
     my_pseudonym: &str,
 ) -> Vec<String> {
     let communities = state.communities.read();
@@ -96,23 +96,14 @@ pub(super) fn apply_gossip_rebuild_plan(
     let Some(cs) = communities.get_mut(community_id) else {
         return;
     };
-    let peers: HashMap<String, OnlineMember> = plan
-        .peers
-        .into_iter()
-        .map(|(k, v)| (k, state_online_from_snapshot(v)))
-        .collect();
-    let online_members: HashMap<String, OnlineMember> = plan
-        .online_members
-        .into_iter()
-        .map(|(k, v)| (k, state_online_from_snapshot(v)))
-        .collect();
-    let remaining: VecDeque<_> = plan.remaining_pending;
+    // The plan's maps are already the state's maps: one `OnlineMember`
+    // type now, so there is nothing to convert between them.
     cs.gossip = Some(GossipOverlay {
-        peers,
-        online_members,
+        peers: plan.peers,
+        online_members: plan.online_members,
         lamport_counter: plan.lamport_counter,
         needs_initial_sync: plan.needs_initial_sync,
-        pending_mesh_broadcasts: remaining,
+        pending_mesh_broadcasts: plan.remaining_pending,
     });
 }
 
@@ -135,25 +126,5 @@ pub(super) fn emit_member_presence_offline(
                 server_address: None,
             },
         );
-    }
-}
-
-fn online_member_from_state(state_member: &OnlineMember) -> OnlineMemberSnapshot {
-    OnlineMemberSnapshot {
-        route_blob: state_member.route_blob.clone(),
-        status: state_member.status.clone(),
-        last_seen: state_member.last_seen,
-        location: state_member.location.clone(),
-        last_active: state_member.last_active,
-    }
-}
-
-fn state_online_from_snapshot(snapshot: OnlineMemberSnapshot) -> OnlineMember {
-    OnlineMember {
-        route_blob: snapshot.route_blob,
-        status: snapshot.status,
-        last_seen: snapshot.last_seen,
-        location: snapshot.location,
-        last_active: snapshot.last_active,
     }
 }

@@ -11,8 +11,7 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use rekindle_presence::{
     CommunityPresenceDeps, DiscoveredMemberRow, GossipOverlayPlan, GossipOverlaySnapshot,
-    OnlineMemberSnapshot, PresenceCredentials, PresenceError, SegmentDescriptor,
-    SelfPresenceSnapshot,
+    OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
 };
 use rekindle_protocol::dht::community::channel_record::{self, ChannelMessage};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
@@ -443,7 +442,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
     fn extend_online_with_recent_gossip(
         &self,
         community_id: &str,
-        online_members: &mut HashMap<String, OnlineMemberSnapshot>,
+        online_members: &mut HashMap<String, OnlineMember>,
         my_pseudonym: &str,
         eviction_threshold_secs: u64,
     ) {
@@ -459,7 +458,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
     fn gossip_offline_diff(
         &self,
         community_id: &str,
-        online_members: &HashMap<String, OnlineMemberSnapshot>,
+        online_members: &HashMap<String, OnlineMember>,
         my_pseudonym: &str,
     ) -> Vec<String> {
         super::gossip_overlay::gossip_offline_diff(

@@ -167,9 +167,7 @@ pub(super) fn apply_member_profile_updates(
             return;
         };
         for (key, snapshot) in updates {
-            community
-                .member_profiles
-                .insert(key, snapshot_from_crate(snapshot));
+            community.member_profiles.insert(key, snapshot);
         }
     }
     if emit_refreshed {
@@ -193,20 +191,5 @@ fn snapshot_to_crate(local: &MemberProfileSnapshot) -> rekindle_presence::Member
         avatar_ref: local.avatar_ref.clone(),
         banner_ref: local.banner_ref.clone(),
         location: local.location.clone(),
-    }
-}
-
-fn snapshot_from_crate(
-    snapshot: rekindle_presence::MemberProfileSnapshot,
-) -> MemberProfileSnapshot {
-    MemberProfileSnapshot {
-        display_name: snapshot.display_name,
-        bio: snapshot.bio,
-        pronouns: snapshot.pronouns,
-        theme_color: snapshot.theme_color,
-        badges: snapshot.badges,
-        avatar_ref: snapshot.avatar_ref,
-        banner_ref: snapshot.banner_ref,
-        location: snapshot.location,
     }
 }

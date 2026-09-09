@@ -24,6 +24,4 @@ type rekindle-crypto::PreKeyBundle rekindle-protocol::PreKeyBundle
 type rekindle-crypto::SignalSessionManager rekindle-transport::SignalSessionManager
 type rekindle-dm::GroupDmParticipant rekindle-transport::GroupDmParticipant
 type rekindle-gossip::GossipError rekindle-types::GossipError
-type rekindle-governance-runtime::OnlineMemberSnapshot rekindle-presence::OnlineMemberSnapshot
-type rekindle-governance-runtime::SegmentDescriptor rekindle-presence::SegmentDescriptor
 type rekindle-protocol::MekTransferPayload rekindle-transport::MekTransferPayload

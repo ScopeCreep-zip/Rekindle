@@ -11,14 +11,14 @@
 use std::collections::HashMap;
 
 use rekindle_presence::community::{GossipOverlayPlan, GossipOverlaySnapshot};
-use rekindle_presence::deps::OnlineMemberSnapshot;
+use rekindle_presence::deps::OnlineMember;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
 use super::DaemonPresenceAdapter;
 
 /// Convert the crate's snapshots into the mesh's own member type.
 fn to_mesh_members(
-    from: HashMap<String, OnlineMemberSnapshot>,
+    from: HashMap<String, OnlineMember>,
 ) -> HashMap<String, rekindle_transport::OnlineMember> {
     from.into_iter()
         .map(|(pseudonym, snapshot)| {
@@ -77,7 +77,7 @@ impl DaemonPresenceAdapter {
     }
 
     /// The live online set, read straight from the mesh.
-    fn online_from_mesh(&self, community_id: &str) -> HashMap<String, OnlineMemberSnapshot> {
+    fn online_from_mesh(&self, community_id: &str) -> HashMap<String, OnlineMember> {
         let guard = self.ctx.subscriptions.read();
         let Some(manager) = guard.as_ref() else {
             return HashMap::new();
@@ -91,7 +91,7 @@ impl DaemonPresenceAdapter {
             .map(|(pseudonym, member)| {
                 (
                     pseudonym.clone(),
-                    OnlineMemberSnapshot {
+                    OnlineMember {
                         route_blob: member.route_blob.clone(),
                         status: member.status.clone(),
                         last_seen: member.last_seen,
@@ -117,7 +117,7 @@ impl DaemonPresenceAdapter {
     pub(super) fn extend_online_impl(
         &self,
         community_id: &str,
-        online_members: &mut HashMap<String, OnlineMemberSnapshot>,
+        online_members: &mut HashMap<String, OnlineMember>,
         my_pseudonym: &str,
         eviction_threshold_secs: u64,
     ) {
@@ -137,7 +137,7 @@ impl DaemonPresenceAdapter {
     pub(super) fn gossip_offline_diff_impl(
         &self,
         community_id: &str,
-        online_members: &HashMap<String, OnlineMemberSnapshot>,
+        online_members: &HashMap<String, OnlineMember>,
         my_pseudonym: &str,
     ) -> Vec<String> {
         self.online_from_mesh(community_id)
