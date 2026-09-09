@@ -5,19 +5,6 @@ import type { Codec, ScalabilityMode, SessionVideoConfig } from "../commands/typ
 /// `| CommunityVideoEvent`) so neither module approaches the size cap.
 export type CommunityVideoEvent =
   | {
-      // Architecture §10.6 — receiver bandwidth ack drives encoder bitrate.
-      type: "videoFrameAck";
-      data: {
-        communityId: string;
-        senderPseudonym: string;
-        channelId: string;
-        streamId: string;
-        lastFrameSeq: number;
-        kbps: number;
-        lossQ8: number;
-      };
-    }
-  | {
       // Architecture §10.6 — receiver requests an I-frame.
       type: "videoKeyframeRequest";
       data: {
@@ -25,36 +12,6 @@ export type CommunityVideoEvent =
         senderPseudonym: string;
         channelId: string;
         streamId: string;
-      };
-    }
-  | {
-      // Architecture §10.6 — out-of-band bandwidth advertisement.
-      type: "videoBandwidthEstimate";
-      data: {
-        communityId: string;
-        senderPseudonym: string;
-        channelId: string;
-        kbps: number;
-        windowSecs: number;
-        lossQ8: number;
-      };
-    }
-  | {
-      // Architecture §10.6 — peer's capability advertisement,
-      // direction-split into encode + decode codec lists (WebView
-      // engines are asymmetric — Apple WebKit: H.264 hw encode,
-      // broader decode).
-      type: "videoMediaCapabilities";
-      data: {
-        communityId: string;
-        senderPseudonym: string;
-        channelId: string;
-        maxPixelCount: number;
-        maxFps: number;
-        encodeCodecs: Codec[];
-        decodeCodecs: Codec[];
-        supportsOptimizeForLatency: boolean;
-        supportedScalabilityModes: ScalabilityMode[];
       };
     }
   | {

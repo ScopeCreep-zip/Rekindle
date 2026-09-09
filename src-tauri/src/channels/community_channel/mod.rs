@@ -5,9 +5,8 @@ mod dto;
 pub use dto::NativeVideoErrorEvent;
 pub use dto::{
     EventInfoDto, EventRsvpInfoDto, GameServerInfoDto, RoleDto, ThreadInfoDto,
-    VideoBandwidthEstimateEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
-    VideoEnvelopeRejectedEvent, VideoFrameAckEvent, VideoKeyframeRequestEvent,
-    VideoMediaCapabilitiesEvent, VideoSessionConfigEvent, VideoTopologyChangeEvent,
+    VideoBitrateTargetEvent, VideoCodecIncompatibleEvent, VideoEnvelopeRejectedEvent,
+    VideoKeyframeRequestEvent, VideoSessionConfigEvent, VideoTopologyChangeEvent,
 };
 
 /// Events streamed from Rust to the frontend for community operations.
@@ -37,28 +36,17 @@ pub enum CommunityEvent {
         channel_id: String,
         message_id: String,
     },
-    /// Architecture §10.9: a member triggered a soundboard sound in a
-    /// voice channel. The frontend looks up the expression in the local
-    /// cache and plays the audio.
-    #[serde(rename_all = "camelCase")]
-    SoundboardPlay {
-        community_id: String,
-        channel_id: String,
-        expression_id: String,
-        actor_pseudonym: String,
-    },
-    /// Architecture §10.6 receiver acknowledgement (see
-    /// [`VideoFrameAckEvent`]).
-    VideoFrameAck(VideoFrameAckEvent),
     /// Architecture §10.6 — receiver requests an I-frame (see
     /// [`VideoKeyframeRequestEvent`]).
+    ///
+    /// The only receiver-feedback message that reaches a frontend, and
+    /// only because the webview may own the encoder: `FrameAck`,
+    /// `BandwidthEstimate` and `MediaCapabilities` used to sit beside
+    /// it here and were read by nothing — the backend consumes them in
+    /// `apply_bitrate_feedback` / `on_peer_caps_received`. When the
+    /// encoder moves behind the daemon this one follows them.
+    /// See `docs/plans/video-media-engine.md`.
     VideoKeyframeRequest(VideoKeyframeRequestEvent),
-    /// Architecture §10.6 — receiver bandwidth advertisement (see
-    /// [`VideoBandwidthEstimateEvent`]).
-    VideoBandwidthEstimate(VideoBandwidthEstimateEvent),
-    /// Architecture §10.6 line 4084 — peer capability advertisement
-    /// (see [`VideoMediaCapabilitiesEvent`]).
-    VideoMediaCapabilities(VideoMediaCapabilitiesEvent),
     /// Architecture §10.6 — backend-negotiated per-call video config
     /// (see [`VideoSessionConfigEvent`]).
     VideoSessionConfig(VideoSessionConfigEvent),

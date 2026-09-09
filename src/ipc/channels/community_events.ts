@@ -367,16 +367,4 @@ export type CommunityEvent =
         localPath: string;
       };
     }
-  | {
-      // Architecture §10.9 — peer triggered a soundboard sound in a
-      // voice channel. Frontend looks up the cached expression by
-      // `expressionId` and plays the audio at `soundMeta.volume`.
-      type: "soundboardPlay";
-      data: {
-        communityId: string;
-        channelId: string;
-        expressionId: string;
-        actorPseudonym: string;
-      };
-    }
   | CommunityVideoEvent;

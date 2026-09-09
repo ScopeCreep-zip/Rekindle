@@ -88,32 +88,6 @@ export function reduceVoice(event: CommunityEvent): boolean {
       "error",
     );
     return true;
-  } else if (event.type === "soundboardPlay") {
-    // Architecture §10.9 — peer triggered a soundboard sound. The
-    // backend already gated permissions, rate-limit, and cooldown;
-    // we look up the cached expression and play it locally.
-    const { communityId, channelId, expressionId } = event.data;
-    if (!settingsState.soundEnabled) return true;
-    if (voiceState.isDeafened) return true;
-    const community = communityState.communities[communityId];
-    if (!community) return true;
-    const expression = (community.expressions ?? []).find((e) => e.id === expressionId);
-    const dataUrl = expression?.inlineDataUrl;
-    if (!dataUrl) return true;
-    const _ = channelId;
-    try {
-      const audio = new Audio(dataUrl);
-      const exprVolume = expression?.soundMeta?.volume;
-      const expr = typeof exprVolume === "number" ? Math.min(Math.max(exprVolume, 0), 1) : 1.0;
-      const out = Math.min(Math.max(voiceState.outputVolume, 0), 1);
-      audio.volume = expr * out;
-      void audio.play().catch((e) => {
-        console.warn("soundboard playback failed:", e);
-      });
-    } catch (e) {
-      console.warn("soundboard playback failed:", e);
-    }
-    return true;
   }
   return false;
 }
@@ -162,6 +136,35 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
 /// former — a DM call has no community channel state to update.
 export function reduceSubscriptionVoice(event: VoiceSubscriptionEvent): void {
   const v = event.voice;
+
+if ("soundboardPlayed" in v) {
+    // Architecture §10.9 — peer triggered a soundboard sound. The
+    // backend already gated permissions, rate-limit, and cooldown;
+    // we look up the cached expression and play it locally.
+    const { scope, expressionId } = v.soundboardPlayed;
+    if (!("community" in scope)) return;
+    const community = scope.community.community;
+    if (!settingsState.soundEnabled) return;
+    if (voiceState.isDeafened) return;
+    const c = communityState.communities[community];
+    if (!c) return;
+    const expression = (c.expressions ?? []).find((e) => e.id === expressionId);
+    const dataUrl = expression?.inlineDataUrl;
+    if (!dataUrl) return;
+    try {
+      const audio = new Audio(dataUrl);
+      const exprVolume = expression?.soundMeta?.volume;
+      const expr = typeof exprVolume === "number" ? Math.min(Math.max(exprVolume, 0), 1) : 1.0;
+      const out = Math.min(Math.max(voiceState.outputVolume, 0), 1);
+      audio.volume = expr * out;
+      void audio.play().catch((e) => {
+        console.warn("soundboard playback failed:", e);
+      });
+    } catch (e) {
+      console.warn("soundboard playback failed:", e);
+    }
+    return;
+  }
 
   if ("joined" in v) {
     const { scope, pseudonym, displayName } = v.joined;

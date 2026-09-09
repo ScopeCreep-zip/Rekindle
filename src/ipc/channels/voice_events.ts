@@ -76,6 +76,18 @@ export type VoiceEvent =
       };
     }
   | { speakRequested: { scope: VoiceScope; requesterPseudonym: string } }
+  /**
+   * Architecture §10.9 — a member fired a soundboard expression. The
+   * audio bytes are not carried; the expression is looked up by id in
+   * the local cache.
+   */
+  | {
+      soundboardPlayed: {
+        scope: VoiceScope;
+        expressionId: string;
+        actorPseudonym: string;
+      };
+    }
   | {
       speakResponded: {
         scope: VoiceScope;

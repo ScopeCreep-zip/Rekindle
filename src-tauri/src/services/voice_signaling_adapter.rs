@@ -9,7 +9,6 @@
 
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 
-use crate::channels::CommunityEvent;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -547,12 +546,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 expression_id,
                 actor_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::SoundboardPlay {
-                        community_id,
-                        channel_id,
+                    VoiceEvent::SoundboardPlayed {
+                        scope: community_scope(community_id, channel_id),
                         expression_id,
                         actor_pseudonym,
                     },

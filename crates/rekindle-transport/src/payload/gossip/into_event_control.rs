@@ -296,7 +296,17 @@ pub fn control_into_event(
         | ControlPayload::SystemMessage { .. }
         | ControlPayload::RaidAlert { .. }
         | ControlPayload::ChannelLockdown { .. }
-        | ControlPayload::KickedNotification => control_into_event_rest(payload, community, sender),
+        | ControlPayload::KickedNotification
+        // Stage signalling. These are gossiped decisions every member
+        // observes, not local session state — the desktop surfaced them
+        // and the daemon dropped them, so a TUI could not render a
+        // stage at all.
+        | ControlPayload::StageUpdate { .. }
+        | ControlPayload::SpeakRequest { .. }
+        | ControlPayload::SpeakResponse { .. }
+        | ControlPayload::SoundboardPlay { .. } => {
+            control_into_event_rest(payload, community, sender)
+        }
 
         // ── Not subscription events ──────────────────────────
         //
@@ -310,13 +320,9 @@ pub fn control_into_event(
         | ControlPayload::RequestSegmentExpansion { .. }
         | ControlPayload::VoiceJoinAck { .. }
         | ControlPayload::VoiceJoinConfirmed { .. }
-        | ControlPayload::StageUpdate { .. }
-        | ControlPayload::SpeakRequest { .. }
-        | ControlPayload::SpeakResponse { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }
-        | ControlPayload::SoundboardPlay { .. }
         | ControlPayload::VideoFragment(_)
         | ControlPayload::VideoParityFragment(_)
         | ControlPayload::FrameAck { .. }

@@ -208,8 +208,12 @@ impl VideoDeps for VideoAdapter {
             }
             _ => {}
         }
-        let mapped = map_video_event(event);
-        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+        // `None` for the receiver-feedback events: they are consumed
+        // above by `apply_bitrate_feedback` / `on_peer_caps_received`
+        // and no frontend reads them. See `map_video_event`.
+        if let Some(mapped) = map_video_event(event) {
+            crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+        }
     }
 }
 
@@ -297,31 +301,33 @@ fn bitrate_feedback_step(
     Some(rekindle_video::encoder_target_kbps(next, share_q10))
 }
 
-fn map_video_event(event: VideoEvent) -> CommunityEvent {
-    match event {
+/// Translate a `VideoEvent` into the frontend payload, or `None` when
+/// the frontend has no use for it.
+///
+/// Three variants return `None`: `FrameAck`, `BandwidthEstimate` and
+/// `MediaCapabilities`. All three are **receiver feedback the backend
+/// consumes itself** — the first two in `apply_bitrate_feedback`, the
+/// third in `video_session::on_peer_caps_received`, both of which run in
+/// `emit_event` before this mapper. They were declared in
+/// `community_video_events.ts` and read by no handler, so emitting them
+/// serialised a payload per ack to be dropped on arrival.
+///
+/// This is the rule the architecture already applies to audio: feedback
+/// plumbing stays inside whichever process owns the codec. See
+/// `docs/plans/video-media-engine.md`.
+fn map_video_event(event: VideoEvent) -> Option<CommunityEvent> {
+    Some(match event {
         // Phase 11 Tier 1 — frames are routed to the per-community
         // `ipc::Channel` in `emit_event` before this mapper runs, so a
         // `FrameReady` here means the dispatch invariant was violated.
         VideoEvent::FrameReady { .. } => {
             unreachable!("FrameReady is forwarded to the video ipc::Channel in emit_event")
         }
-        VideoEvent::FrameAck {
-            community_id,
-            sender_pseudonym,
-            channel_id,
-            stream_id,
-            last_frame_seq,
-            kbps,
-            loss_q8,
-        } => CommunityEvent::VideoFrameAck(crate::channels::VideoFrameAckEvent {
-            community_id,
-            sender_pseudonym,
-            channel_id,
-            stream_id: hex::encode(stream_id),
-            last_frame_seq,
-            kbps,
-            loss_q8,
-        }),
+        // Receiver feedback the backend consumes itself — see the doc
+        // comment above. No frontend reads any of the three.
+        VideoEvent::FrameAck { .. }
+        | VideoEvent::BandwidthEstimate { .. }
+        | VideoEvent::MediaCapabilities { .. } => return None,
         VideoEvent::KeyframeRequest {
             community_id,
             sender_pseudonym,
@@ -332,21 +338,6 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             sender_pseudonym,
             channel_id,
             stream_id: hex::encode(stream_id),
-        }),
-        VideoEvent::BandwidthEstimate {
-            community_id,
-            sender_pseudonym,
-            channel_id,
-            kbps,
-            window_secs,
-            loss_q8,
-        } => CommunityEvent::VideoBandwidthEstimate(crate::channels::VideoBandwidthEstimateEvent {
-            community_id,
-            sender_pseudonym,
-            channel_id,
-            kbps,
-            window_secs,
-            loss_q8,
         }),
         VideoEvent::TopologyChange {
             community_id,
@@ -365,27 +356,6 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             reason,
             lamport,
         }),
-        VideoEvent::MediaCapabilities {
-            community_id,
-            sender_pseudonym,
-            channel_id,
-            max_pixel_count,
-            max_fps,
-            encode_codecs,
-            decode_codecs,
-            supports_optimize_for_latency,
-            supported_scalability_modes,
-        } => CommunityEvent::VideoMediaCapabilities(crate::channels::VideoMediaCapabilitiesEvent {
-            community_id,
-            sender_pseudonym,
-            channel_id,
-            max_pixel_count,
-            max_fps,
-            encode_codecs,
-            decode_codecs,
-            supports_optimize_for_latency,
-            supported_scalability_modes,
-        }),
         // Phase F — surface the asymmetric-drop case to the UI so
         // sender-side and receiver-side observers both see the same
         // verification failure. The frontend listens on
@@ -400,7 +370,7 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             sender_pseudonym,
             reason,
         }),
-    }
+    })
 }
 
 // ── Free-fn facades (preserve pre-Phase-16 signatures) ───────────────

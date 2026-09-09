@@ -184,6 +184,21 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
             // that is a new request rather than a duplicate.
             h.update(&now_bucket.to_le_bytes());
         }
+        VoiceEvent::SoundboardPlayed {
+            expression_id,
+            actor_pseudonym,
+            ..
+        } => {
+            // No time bucket: the same member firing the same sound
+            // twice is two plays, not a duplicate — that is the whole
+            // point of a soundboard.
+            h.update(b"soundboard|");
+            h.update(expression_id.as_bytes());
+            h.update(b"|");
+            h.update(actor_pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&rekindle_utils::timestamp_ms().to_le_bytes());
+        }
         VoiceEvent::SpeakResponded {
             requester_pseudonym,
             granted,

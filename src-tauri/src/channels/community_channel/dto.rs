@@ -108,22 +108,7 @@ impl From<&rekindle_protocol::dht::community::types::RoleEntryV2> for RoleDto {
 // conversion. The frontend TS contract (`src/ipc/channels.ts`) is
 // untouched.
 
-use rekindle_types::video::{Codec, ScalabilityMode};
 use rekindle_video::SessionVideoConfig;
-
-/// Architecture §10.6 receiver acknowledgement — surfaces upstream
-/// kbps so the encoder can adapt VP9 bitrate.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoFrameAckEvent {
-    pub community_id: String,
-    pub sender_pseudonym: String,
-    pub channel_id: String,
-    pub stream_id: String,
-    pub last_frame_seq: u32,
-    pub kbps: u32,
-    pub loss_q8: u8,
-}
 
 /// Architecture §10.6 — receiver requests an I-frame.
 #[derive(Debug, Clone, Serialize)]
@@ -133,39 +118,6 @@ pub struct VideoKeyframeRequestEvent {
     pub sender_pseudonym: String,
     pub channel_id: String,
     pub stream_id: String,
-}
-
-/// Architecture §10.6 — receiver advertises measured bandwidth
-/// outside of a frame round-trip.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoBandwidthEstimateEvent {
-    pub community_id: String,
-    pub sender_pseudonym: String,
-    pub channel_id: String,
-    pub kbps: u32,
-    pub window_secs: u8,
-    pub loss_q8: u8,
-}
-
-/// Architecture §10.6 line 4084 — peer's capability advertisement,
-/// direction-split into encode + decode codec lists (WebView
-/// engines are asymmetric; see `rekindle_video::MediaCapabilities`).
-/// Typed codec / scalability-mode lists let the frontend store
-/// reconcile against the typed `Codec` / `ScalabilityMode` enums
-/// without parsing strings.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoMediaCapabilitiesEvent {
-    pub community_id: String,
-    pub sender_pseudonym: String,
-    pub channel_id: String,
-    pub max_pixel_count: u32,
-    pub max_fps: u8,
-    pub encode_codecs: Vec<Codec>,
-    pub decode_codecs: Vec<Codec>,
-    pub supports_optimize_for_latency: bool,
-    pub supported_scalability_modes: Vec<ScalabilityMode>,
 }
 
 /// Architecture §10.6 — backend-negotiated per-call video config.

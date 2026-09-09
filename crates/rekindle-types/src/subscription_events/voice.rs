@@ -179,6 +179,17 @@ pub enum VoiceEvent {
         requester_pseudonym: String,
     },
 
+    /// A member triggered a soundboard expression in a voice channel.
+    ///
+    /// Architecture §10.9 — gossiped to every participant, who plays the
+    /// cached audio locally. The audio bytes are not carried here; the
+    /// expression is looked up by id in the local cache.
+    SoundboardPlayed {
+        scope: VoiceScope,
+        expression_id: String,
+        actor_pseudonym: String,
+    },
+
     /// A moderator granted or denied a speak request.
     SpeakResponded {
         scope: VoiceScope,
@@ -253,6 +264,7 @@ impl VoiceEvent {
             | Self::StageUpdated { scope, .. }
             | Self::SpeakRequested { scope, .. }
             | Self::SpeakResponded { scope, .. }
+            | Self::SoundboardPlayed { scope, .. }
             | Self::LocalJoined { scope }
             | Self::SpeakingChanged { scope, .. }
             | Self::PacketsDropped { scope, .. }

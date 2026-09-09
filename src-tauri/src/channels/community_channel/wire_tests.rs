@@ -14,34 +14,6 @@ use serde_json::json;
 use super::*;
 
 #[test]
-fn video_frame_ack_wire() {
-    let ev = CommunityEvent::VideoFrameAck(VideoFrameAckEvent {
-        community_id: "c1".into(),
-        sender_pseudonym: "p1".into(),
-        channel_id: "ch1".into(),
-        stream_id: "s1".into(),
-        last_frame_seq: 42,
-        kbps: 800,
-        loss_q8: 3,
-    });
-    assert_eq!(
-        serde_json::to_value(&ev).unwrap(),
-        json!({
-            "type": "videoFrameAck",
-            "data": {
-                "communityId": "c1",
-                "senderPseudonym": "p1",
-                "channelId": "ch1",
-                "streamId": "s1",
-                "lastFrameSeq": 42,
-                "kbps": 800,
-                "lossQ8": 3
-            }
-        })
-    );
-}
-
-#[test]
 fn video_keyframe_request_wire() {
     let ev = CommunityEvent::VideoKeyframeRequest(VideoKeyframeRequestEvent {
         community_id: "c1".into(),
@@ -58,64 +30,6 @@ fn video_keyframe_request_wire() {
                 "senderPseudonym": "p1",
                 "channelId": "ch1",
                 "streamId": "s1"
-            }
-        })
-    );
-}
-
-#[test]
-fn video_bandwidth_estimate_wire() {
-    let ev = CommunityEvent::VideoBandwidthEstimate(VideoBandwidthEstimateEvent {
-        community_id: "c1".into(),
-        sender_pseudonym: "p1".into(),
-        channel_id: "ch1".into(),
-        kbps: 1200,
-        window_secs: 2,
-        loss_q8: 0,
-    });
-    assert_eq!(
-        serde_json::to_value(&ev).unwrap(),
-        json!({
-            "type": "videoBandwidthEstimate",
-            "data": {
-                "communityId": "c1",
-                "senderPseudonym": "p1",
-                "channelId": "ch1",
-                "kbps": 1200,
-                "windowSecs": 2,
-                "lossQ8": 0
-            }
-        })
-    );
-}
-
-#[test]
-fn video_media_capabilities_wire() {
-    let ev = CommunityEvent::VideoMediaCapabilities(VideoMediaCapabilitiesEvent {
-        community_id: "c1".into(),
-        sender_pseudonym: "p1".into(),
-        channel_id: "ch1".into(),
-        max_pixel_count: 409_920,
-        max_fps: 15,
-        encode_codecs: vec![Codec::Vp9],
-        decode_codecs: vec![Codec::Vp8, Codec::Vp9],
-        supports_optimize_for_latency: false,
-        supported_scalability_modes: vec![ScalabilityMode::Flat],
-    });
-    assert_eq!(
-        serde_json::to_value(&ev).unwrap(),
-        json!({
-            "type": "videoMediaCapabilities",
-            "data": {
-                "communityId": "c1",
-                "senderPseudonym": "p1",
-                "channelId": "ch1",
-                "maxPixelCount": 409_920,
-                "maxFps": 15,
-                "encodeCodecs": ["vp9"],
-                "decodeCodecs": ["vp8", "vp9"],
-                "supportsOptimizeForLatency": false,
-                "supportedScalabilityModes": ["flat"]
             }
         })
     );

@@ -197,6 +197,49 @@ pub fn control_into_event_rest(
                 .collect(),
         }),
 
+        // ── Stage signalling ────────────────────────────────
+        ControlPayload::StageUpdate {
+            channel_id,
+            topic,
+            speakers,
+            moderator_pseudonym,
+            ..
+        } => SubscriptionEvent::Voice(VoiceEvent::StageUpdated {
+            scope: scope(c(), channel_id),
+            topic,
+            speakers,
+            moderator_pseudonym,
+        }),
+        ControlPayload::SpeakRequest {
+            channel_id,
+            requester_pseudonym,
+            ..
+        } => SubscriptionEvent::Voice(VoiceEvent::SpeakRequested {
+            scope: scope(c(), channel_id),
+            requester_pseudonym,
+        }),
+        ControlPayload::SpeakResponse {
+            channel_id,
+            requester_pseudonym,
+            granted,
+            moderator_pseudonym,
+            ..
+        } => SubscriptionEvent::Voice(VoiceEvent::SpeakResponded {
+            scope: scope(c(), channel_id),
+            requester_pseudonym,
+            granted,
+            moderator_pseudonym,
+        }),
+        ControlPayload::SoundboardPlay {
+            channel_id,
+            expression_id,
+            actor_pseudonym,
+        } => SubscriptionEvent::Voice(VoiceEvent::SoundboardPlayed {
+            scope: scope(c(), channel_id),
+            expression_id,
+            actor_pseudonym,
+        }),
+
         // ── Admin delegation ────────────────────────────────
         ControlPayload::AdminKeypairGrant { .. } => {
             SubscriptionEvent::Crypto(CryptoEvent::AdminKeypairGranted { community: c() })
