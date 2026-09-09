@@ -309,6 +309,96 @@ This is independent of the engine and can be done on its own. Stereo is
 a separate question (2× the bitrate for a marginal gain on speech;
 Discord defaults mono for voice channels too).
 
+### The transport assumption was wrong — and it is fixable without touching anonymity
+
+The first pass here concluded the bitrate ceiling was a physics cost of
+3-hop routing and framed the resolution gap as a product tradeoff. That
+was under-researched. Digging into Veilid properly, and into who has
+actually shipped realtime media over onion routing, says otherwise.
+
+**The prior art.** Session/Oxen hit exactly this wall and named the
+cause: *"traditional onion routing uses TCP, which pretty much
+precludes real-time voice communications since most good VOIP protocols
+use UDP."* Their fix was not fewer hops — it was
+[Lokinet, which onion-routes **UDP**](https://getsession.org/blog/calls-on-session),
+after which "the latency is similar or better than an international
+phone call." Their newer Session Router is a rewrite explicitly
+"designed to support high quality voice and video calls."
+
+So the variable that decides whether realtime media works over onion
+routing is **datagram vs stream transport**, not hop count. Anonymity
+and realtime are not the things in tension.
+
+**What Veilid gives us.** `Sequencing::PreferUnordered` selects
+unordered — datagram-class — transport where available. It is
+**orthogonal to `hop_count`**, and our own config says so:
+`rekindle-types/src/config.rs:14` — *"`hop_count` is never lowered per
+data class; only `stability`/`sequencing` vary."*
+
+**What we actually do.** The send side is right. `frame_sender.rs:49`
+builds voice's routing context with `Stability::LowLatency` and
+`Sequencing::PreferUnordered` at `ANONYMITY_HOP_FLOOR`.
+
+The **receive** side is not. Every inbound private route comes from
+`api.new_private_route()` (`services/veilid/network.rs:406`), which is
+`new_custom_private_route(PrivateSpec::default())` — and
+`PrivateSpec` derives `Default`, so that is
+**`Stability::Reliable` + `Sequencing::PreferOrdered`**.
+
+Reading `route_spec_store/route_allocate.rs` for what those do when
+allocating a route:
+
+- **Sequencing filters and sorts relays.** `has_sequencing_matched_dial_info`
+  excludes incompatible nodes (line 527), and `PreferOrdered`
+  *prioritises* relays that can do ordered — i.e. TCP/WS-capable
+  (line 669). `PreferUnordered` "doesn't care", so it takes whatever is
+  fastest.
+- **Stability sorts relays.** `Stability::LowLatency` sorts by
+  `cmp_fastest_reliable(..., |ls| ls.tm90)` — the trimmed mean of the
+  lowest 90 % of measured latencies. `Stability::Reliable` sorts by
+  `cmp_oldest_reliable` — **longest uptime, regardless of speed**.
+
+So the route every peer uses to send us voice and video is built from
+the **oldest** relays with **TCP-preferred** dial info. Half the media
+path is tuned for realtime and the other half is tuned as though it
+were a file transfer. That is the Tor-class property Session identified
+as fatal, sitting on our receive path.
+
+Veilid's own API doc says it outright: *"Faster connections may be
+possible with `Stability::LowLatency`, and `Sequencing::PreferUnordered`
+at the expense of some loss of messages"* (`api.rs:390`). Lossy is
+correct for media — that is what FEC and the jitter buffer are for.
+
+**The fix, and its cost to safety: none.** Allocate a media-class
+inbound private route with `PrivateSpec { hop_count: <unchanged>,
+stability: LowLatency, sequencing: PreferUnordered, .. }`. Hop count is
+untouched, so anonymity is untouched. It completes the datagram path
+the send side already asks for.
+
+**Related, already recorded and now due.** `config.rs:122-131` notes
+`route_hop_count: 1` for inbound (compiled paths are safety(3) +
+private(1) = 4 hops, so the §8 target holds) and says 3-hop inbound
+"was tried and reverted pre-0.5.4 because route round-trip testing
+exhausted the relay pool; 0.5.4's *simplified route testing* removes
+that mechanism, so `3` is worth re-testing". We are on **0.5.7**. That
+re-test would *raise* anonymity, and belongs in the same experiment.
+
+**Further avenue, not yet verified.** Tor shipped
+[Conflux (proposal 329)](https://spec.torproject.org/proposals/329-traffic-splitting.html)
+in 0.4.8 — splitting traffic across two circuits on top of
+[RTT congestion control (proposal 324)](https://spec.torproject.org/proposals/324-rtt-congestion-control.html),
+"rebalancing traffic over multiple paths, optimizing for either
+throughput or latency". `SafetySpec` has a `preferred_route` field and
+the route spec store manages route *sets*, so the primitive may exist
+to do the same across two Veilid routes. I have not verified this and
+it should not be assumed.
+
+**What this means for the numbers.** `VIDEO_MAX_KBPS = 600` was
+measured against a receive path built from the oldest, ordered-preferring
+relays. It is not a measurement of what Veilid can do — it is a
+measurement of what a misconfigured route does. The ceiling must be
+re-derived after the route fix before any quality target is set.
+
 ### Video — two separable problems
 
 **1. Quality per bit — the engine fixes this, and this is the real
