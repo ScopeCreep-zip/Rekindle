@@ -255,30 +255,15 @@ pub use rekindle_records::lifecycle::CommunityRecords;
 // (`community::rsvp_aggregate`). The copy here was byte-identical.
 pub use rekindle_presence::EventRsvpEntry;
 
-/// Per-community profile snapshot aggregated from a peer's presence subkey.
+/// Per-community profile snapshot aggregated from a peer's presence
+/// subkey.
 ///
-/// The presence poll (`presence/poll.rs::presence_poll_tick`) writes one
-/// entry per discovered member into `CommunityState.member_profiles`.
-/// `get_community_members` joins this map with the SQLite membership rows so
-/// the popup can render `bio` / `pronouns` / `theme_color` / `badges`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MemberProfileSnapshot {
-    /// Mirror of `MemberPresence.display_name` so mention-resolution
-    /// (architecture §28.5) can map `@name` → pseudonym hex without a
-    /// SQLite round-trip on every send.
-    pub display_name: Option<String>,
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
-    pub theme_color: Option<u32>,
-    pub badges: Vec<String>,
-    pub avatar_ref: Option<String>,
-    pub banner_ref: Option<String>,
-    /// Last-known focused channel (from the member's decoded
-    /// `session.location`). Cached only to gate `MembersRefreshed` on a
-    /// channel move; the live roster value is read from the gossip
-    /// online overlay, not from here.
-    pub location: Option<rekindle_types::presence::SessionLocation>,
-}
+/// Declared by `rekindle-presence`, which owns the diffing that produces
+/// it (`community::profile_diff`). The copy here had the same eight
+/// fields and the same derives — `get_community_members` joins the map
+/// with SQLite membership rows so the popup can render `bio` /
+/// `pronouns` / `theme_color` / `badges`.
+pub use rekindle_presence::MemberProfileSnapshot;
 
 /// A role definition cached from merged governance state.
 #[derive(Debug, Clone, Serialize, Deserialize)]

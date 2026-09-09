@@ -26,13 +26,26 @@ use crate::peer_select::sort_peers_by_reliability;
 /// tests + tracing can reference it.
 pub const MAX_PENDING_MESH: usize = 100;
 
-/// Encode + sign the envelope, insert the dedup key, bump the
-/// community lamport counter, then fan out via `send_to_mesh_raw`.
-pub async fn send_to_mesh<D: GossipDeps>(
-    deps: Arc<D>,
+/// Sign one envelope as our community pseudonym, record it in the dedup
+/// cache, and advance the community's Lamport counter.
+///
+/// Every gossip send does exactly these four things before it differs.
+/// `send_to_mesh` and `send_to_channel_peers` had them written out
+/// twice, identically — a shared *prefix* rather than a shared body,
+/// which is why `cargo xtask check-duplicate-bodies` cannot see it: the
+/// two functions diverge in their tails (overlay fan-out versus a fixed
+/// roster) so their normalised bodies differ.
+///
+/// Returns the signed envelope for the caller to fan out. The caller
+/// owns the fan-out because that is the only part that legitimately
+/// differs — `send_to_channel_peers` additionally forces `ttl = 0` so
+/// honest receivers never gossip-forward channel media past the roster
+/// the sender addressed (architecture §10.6).
+fn sign_and_record<D: GossipDeps>(
+    deps: &Arc<D>,
     community_id: &str,
     envelope: &CommunityEnvelope,
-) -> Result<(), GossipError> {
+) -> Result<SignedEnvelope, GossipError> {
     let my_pseudonym_key = deps.my_pseudonym_key(community_id);
     let identity_secret = deps
         .identity_secret()
@@ -55,6 +68,17 @@ pub async fn send_to_mesh<D: GossipDeps>(
     deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &dedup_key);
     deps.increment_lamport(community_id);
 
+    Ok(signed)
+}
+
+/// Encode + sign the envelope, insert the dedup key, bump the
+/// community lamport counter, then fan out via `send_to_mesh_raw`.
+pub async fn send_to_mesh<D: GossipDeps>(
+    deps: Arc<D>,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<(), GossipError> {
+    let signed = sign_and_record(&deps, community_id, envelope)?;
     send_to_mesh_raw(deps, community_id, signed);
     Ok(())
 }
@@ -74,30 +98,10 @@ pub async fn send_to_channel_peers<D: GossipDeps>(
     envelope: &CommunityEnvelope,
     peers: Vec<PeerInfo>,
 ) -> Result<(), GossipError> {
-    let my_pseudonym_key = deps.my_pseudonym_key(community_id);
-    let identity_secret = deps
-        .identity_secret()
-        .ok_or(GossipError::IdentityNotLoaded)?;
-
-    let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(
-        &identity_secret,
-        community_id,
-    );
-    let envelope_bytes = encode_community_envelope(envelope)
-        .map_err(|e| GossipError::EncodeFailed(e.to_string()))?;
-    let mut signed = envelope::sign_envelope(
-        &signing_key,
-        community_id,
-        &my_pseudonym_key,
-        &envelope_bytes,
-    );
+    let mut signed = sign_and_record(&deps, community_id, envelope)?;
     // ttl = 0 — honest receivers must never gossip-forward channel
     // media beyond the roster the sender addressed.
     signed.ttl = 0;
-
-    let dedup_key = extract_mesh_dedup_key(envelope);
-    deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &dedup_key);
-    deps.increment_lamport(community_id);
 
     if peers.is_empty() {
         tracing::debug!(

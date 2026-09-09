@@ -6,8 +6,7 @@
 use std::collections::HashMap;
 
 use rekindle_channel::deps::{
-    ChannelInfoSnapshot, ChannelWriteContext, MemberProfileSnapshot, RoleSnapshot,
-    ThreadStateSnapshot,
+    ChannelInfoSnapshot, ChannelWriteContext, MemberMentionView, RoleSnapshot, ThreadStateSnapshot,
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_governance::permissions::compute_permissions;
@@ -117,10 +116,10 @@ pub(super) fn member_profile_impl(
     adapter: &ChannelAdapter,
     community_id: &str,
     pseudonym_hex: &str,
-) -> MemberProfileSnapshot {
+) -> MemberMentionView {
     let communities = adapter.state.communities.read();
     let Some(community) = communities.get(community_id) else {
-        return MemberProfileSnapshot::default();
+        return MemberMentionView::default();
     };
     let display_name = community
         .member_profiles
@@ -131,7 +130,7 @@ pub(super) fn member_profile_impl(
         .get(pseudonym_hex)
         .cloned()
         .unwrap_or_default();
-    MemberProfileSnapshot {
+    MemberMentionView {
         display_name,
         role_ids,
     }
@@ -140,7 +139,7 @@ pub(super) fn member_profile_impl(
 pub(super) fn list_member_profiles_impl(
     adapter: &ChannelAdapter,
     community_id: &str,
-) -> HashMap<String, MemberProfileSnapshot> {
+) -> HashMap<String, MemberMentionView> {
     let communities = adapter.state.communities.read();
     let Some(community) = communities.get(community_id) else {
         return HashMap::new();
@@ -156,7 +155,7 @@ pub(super) fn list_member_profiles_impl(
                 .unwrap_or_default();
             (
                 pseudonym_hex.clone(),
-                MemberProfileSnapshot {
+                MemberMentionView {
                     display_name: profile.display_name.clone(),
                     role_ids,
                 },

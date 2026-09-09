@@ -137,7 +137,7 @@ pub struct ThreadInfoSnapshot {
 /// Member-profile lookup result — display name + role ids the local
 /// user holds. Used by mention-resolution + notification routing.
 #[derive(Debug, Clone, Default)]
-pub struct MemberProfileSnapshot {
+pub struct MemberMentionView {
     pub display_name: Option<String>,
     pub role_ids: Vec<u32>,
 }
@@ -239,12 +239,12 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn thread_state(&self, community_id: &str, thread_id: &str) -> Option<ThreadStateSnapshot>;
 
     fn slot_seed_bytes(&self, community_id: &str) -> Option<[u8; 32]>;
-    fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberProfileSnapshot;
+    fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberMentionView;
 
     /// All known member profiles for a community, keyed by pseudonym
     /// hex. Used by mention resolve_to_wire to map display names back
     /// to pseudonyms.
-    fn list_member_profiles(&self, community_id: &str) -> HashMap<String, MemberProfileSnapshot>;
+    fn list_member_profiles(&self, community_id: &str) -> HashMap<String, MemberMentionView>;
     fn community_roles(&self, community_id: &str) -> Vec<RoleSnapshot>;
     fn compute_my_permissions(&self, community_id: &str) -> u64;
 

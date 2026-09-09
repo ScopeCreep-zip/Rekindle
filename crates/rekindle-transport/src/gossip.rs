@@ -7,8 +7,6 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-
 use rekindle_gossip::rate_limit::TokenBucket;
 
 // ── Dedup cache ──────────────────────────────────────────────────────
@@ -166,16 +164,7 @@ pub enum GossipAdmission {
     LamportDrift,
 }
 
-/// An online community member with their route data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OnlineMember {
-    /// Veilid private route blob for reaching this member.
-    pub route_blob: Vec<u8>,
-    /// Last advertised status string.
-    pub status: String,
-    /// Timestamp (seconds since epoch) of last valid contact.
-    pub last_seen: u64,
-}
+pub use rekindle_types::presence::OnlineMember;
 
 impl GossipMesh {
     pub fn new(community_id: String) -> Self {

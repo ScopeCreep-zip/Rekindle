@@ -28,6 +28,12 @@ fn to_mesh_members(
                     route_blob: snapshot.route_blob,
                     status: snapshot.status,
                     last_seen: snapshot.last_seen,
+                    // Carried through rather than dropped: the snapshot
+                    // decoded both off the registry row, and a daemon
+                    // client needs them to show where a member is
+                    // focused and when they were last active.
+                    location: snapshot.location,
+                    last_active: snapshot.last_active,
                 },
             )
         })

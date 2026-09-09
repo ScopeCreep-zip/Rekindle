@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use rekindle_channel::deps::{
     ChannelEntryItem, ChannelInfoSnapshot, ChannelMek, ChannelMessageRow, ChannelMessagingDeps,
-    ChannelSendOutcome, ChannelWriteContext, MemberProfileSnapshot, PendingChannelWrite,
+    ChannelSendOutcome, ChannelWriteContext, MemberMentionView, PendingChannelWrite,
     PseudonymCredentials, RoleSnapshot, SentChannelMessageEcho, ThreadInfoSnapshot,
     ThreadStateSnapshot,
 };
@@ -139,11 +139,11 @@ impl ChannelMessagingDeps for ChannelAdapter {
         hex::decode(seed_hex).ok().and_then(|b| b.try_into().ok())
     }
 
-    fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberProfileSnapshot {
+    fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberMentionView {
         state_reads::member_profile_impl(self, community_id, pseudonym_hex)
     }
 
-    fn list_member_profiles(&self, community_id: &str) -> HashMap<String, MemberProfileSnapshot> {
+    fn list_member_profiles(&self, community_id: &str) -> HashMap<String, MemberMentionView> {
         state_reads::list_member_profiles_impl(self, community_id)
     }
 

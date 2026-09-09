@@ -83,6 +83,11 @@ impl DaemonGossipAdapter {
                     route_blob: route_blob.to_vec(),
                     status: status.to_string(),
                     last_seen,
+                    // A gossip observation carries neither: `location`
+                    // and `last_active` come off the member's signed
+                    // registry row, which the presence poll decodes and
+                    // `to_mesh_members` now carries through.
+                    ..OnlineMember::default()
                 },
             );
         }

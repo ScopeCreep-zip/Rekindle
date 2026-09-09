@@ -9,9 +9,7 @@
 # DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
 # deliberate and permanent — those carry a reason; this file does not.
 type rekindle (src-tauri)::CommunityDetail rekindle-types::CommunityDetail
-type rekindle (src-tauri)::MemberProfileSnapshot rekindle-channel::MemberProfileSnapshot rekindle-presence::MemberProfileSnapshot
 type rekindle (src-tauri)::Message rekindle-node::Message
-type rekindle (src-tauri)::OnlineMember rekindle-transport::OnlineMember
 type rekindle (src-tauri)::PendingFriendRequest rekindle-transport::PendingFriendRequest
 type rekindle (src-tauri)::PresenceEvent rekindle-types::PresenceEvent
 type rekindle (src-tauri)::RoleDto rekindle-protocol::RoleDto
