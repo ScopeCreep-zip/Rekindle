@@ -19,10 +19,10 @@
 //! - `admin.rs`     — Agent*, Policy, Subscribe, Unsubscribe, Network*
 
 mod admin;
-mod channel;
+pub(crate) mod channel;
 pub(crate) mod community;
 mod context;
-mod governance;
+pub(crate) mod governance;
 mod identity;
 mod keys;
 mod lifecycle;

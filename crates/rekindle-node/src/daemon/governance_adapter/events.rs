@@ -15,6 +15,8 @@
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
+use rekindle_types::display::CategoryDisplay;
+
 use super::DaemonGovernanceAdapter;
 
 impl DaemonGovernanceAdapter<'_> {
@@ -31,21 +33,46 @@ impl DaemonGovernanceAdapter<'_> {
             // are the same signal to a client: re-read roles.
             GovernanceRuntimeEvent::RolesChanged { community_id }
             | GovernanceRuntimeEvent::MemberRolesChanged { community_id, .. } => {
+                // The event carries the new table rather than asking
+                // the client to re-read it — the merged state is right
+                // here, and `role_displays` is the same builder the
+                // `role list` command uses, so both render identically.
                 Some(GovernanceEvent::RolesChanged {
                     community: community_id.clone(),
+                    roles: crate::daemon::dispatch::governance::role_displays(
+                        self.ctx,
+                        community_id,
+                    ),
                 })
             }
             GovernanceRuntimeEvent::ChannelsUpdated { community_id } => {
                 Some(GovernanceEvent::ChannelsChanged {
                     community: community_id.clone(),
+                    channels: crate::daemon::dispatch::channel::channel_overviews(
+                        self.ctx,
+                        community_id,
+                    ),
+                    categories: self.category_displays(community_id),
                 })
             }
             GovernanceRuntimeEvent::CommunityCreated { community_id, .. }
             | GovernanceRuntimeEvent::CommunityJoined { community_id, .. }
             | GovernanceRuntimeEvent::JoinAccepted { community_id }
             | GovernanceRuntimeEvent::SegmentAdded { community_id, .. } => {
+                // `metadata` is itself optional — a community that has
+                // never had a metadata entry merged has none — so this
+                // flattens rather than nesting two `Option`s.
+                let meta = self
+                    .ctx
+                    .community_runtime
+                    .governance_state(community_id)
+                    .and_then(|gov| gov.metadata.clone());
                 Some(GovernanceEvent::MetadataChanged {
                     community: community_id.clone(),
+                    name: meta.as_ref().map(|m| m.name.clone()),
+                    description: meta.as_ref().and_then(|m| m.description.clone()),
+                    icon_hash: meta.as_ref().and_then(|m| m.icon_hash.clone()),
+                    banner_hash: meta.and_then(|m| m.banner_hash),
                 })
             }
             _ => None,
@@ -70,5 +97,29 @@ impl DaemonGovernanceAdapter<'_> {
         let _ = manager
             .event_sender()
             .send(SubscriptionEvent::Governance(governance_event));
+    }
+
+    /// Categories for a community, sorted by position then id.
+    ///
+    /// There is no `category list` command to share a builder with, so
+    /// this is the one place the projection lives; `ChannelsChanged`
+    /// carries it beside the channel tree because a channel's
+    /// `category_id` is meaningless to a client that has not seen the
+    /// categories.
+    fn category_displays(&self, community_id: &str) -> Vec<CategoryDisplay> {
+        let Some(gov) = self.ctx.community_runtime.governance_state(community_id) else {
+            return Vec::new();
+        };
+        let mut out: Vec<CategoryDisplay> = gov
+            .categories
+            .iter()
+            .map(|(id, category)| CategoryDisplay {
+                id: hex::encode(id.0),
+                name: category.name.clone(),
+                sort_order: i32::try_from(category.position).unwrap_or(i32::MAX),
+            })
+            .collect();
+        out.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.id.cmp(&b.id)));
+        out
     }
 }

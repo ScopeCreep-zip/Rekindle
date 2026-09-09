@@ -195,15 +195,7 @@ impl SubscriptionEvent {
             // `None` for a DM call and for device changes, both of
             // which belong to no community.
             Self::Voice(e) => e.community(),
-            Self::Governance(e) => Some(match e {
-                GovernanceEvent::MetadataChanged { community }
-                | GovernanceEvent::ChannelsChanged { community }
-                | GovernanceEvent::RolesChanged { community }
-                | GovernanceEvent::BansChanged { community }
-                | GovernanceEvent::InvitesChanged { community }
-                | GovernanceEvent::ChannelPermissionsChanged { community, .. }
-                | GovernanceEvent::GovernanceSubkeyUpdated { community, .. } => community,
-            }),
+            Self::Governance(e) => Some(e.community()),
             Self::Social(e) => Some(match e {
                 SocialEvent::ReactionAdded { community, .. }
                 | SocialEvent::ReactionRemoved { community, .. }

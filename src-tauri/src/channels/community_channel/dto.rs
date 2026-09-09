@@ -5,32 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Channel snapshot variant emitted in `ChannelsUpdated`. Mirrors
-/// the TS type at `src/ipc/channels.ts::channelsUpdated` exactly so
-/// the frontend handler can consume without an extra transformer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelsUpdatedChannelDto {
-    pub id: String,
-    pub name: String,
-    pub channel_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category_id: Option<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub topic: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub slowmode_seconds: Option<u32>,
-}
-
-/// Category snapshot variant emitted in `ChannelsUpdated`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelsUpdatedCategoryDto {
-    pub id: String,
-    pub name: String,
-    pub sort_order: i32,
-}
-
 /// Event info DTO for frontend consumption (architecture §21).
 ///
 /// Type alias for the canonical wire/in-memory shape defined in

@@ -8,7 +8,6 @@ use std::sync::Arc;
 use rekindle_governance_runtime as gov_rt;
 use rekindle_types::permissions;
 
-use crate::channels::community_channel::CommunityEvent;
 use crate::commands::community::helpers::{
     hex_to_id_16, random_16_bytes, random_nonce, require_permission,
 };
@@ -198,18 +197,19 @@ pub async fn create_community_invite_inner(
 
     if let Some(app) = state_helpers::app_handle(state) {
         let created_by = state_helpers::current_owner_key(state).unwrap_or_default();
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             &app,
-            "community-event",
-            &CommunityEvent::InviteCreated {
-                community_id: cid.clone(),
-                code_hash: code_hash.clone(),
-                created_by,
-                max_uses,
-                uses: 0,
-                expires_at,
-                created_at: rekindle_utils::timestamp_secs(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::InviteCreated {
+                    community: cid.clone(),
+                    code_hash: code_hash.clone(),
+                    created_by,
+                    max_uses,
+                    uses: 0,
+                    expires_at,
+                    created_at: rekindle_utils::timestamp_secs(),
+                },
+            ),
         );
     }
 
@@ -238,13 +238,14 @@ pub async fn revoke_community_invite_inner(
     .await?;
 
     if let Some(app) = state_helpers::app_handle(state) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             &app,
-            "community-event",
-            &CommunityEvent::InviteRevoked {
-                community_id: community_id.clone(),
-                code_hash: code_hash.clone(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::InviteRevoked {
+                    community: community_id.clone(),
+                    code_hash: code_hash.clone(),
+                },
+            ),
         );
     }
     Ok(())

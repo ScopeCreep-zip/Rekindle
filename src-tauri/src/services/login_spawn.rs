@@ -83,12 +83,13 @@ pub(super) fn spawn_login_services(
             // Emit GovernanceUpdated for each community so the frontend refreshes
             let community_ids: Vec<String> = bg_state.communities.read().keys().cloned().collect();
             for cid in &community_ids {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_subscription(
                     &bg_app,
-                    "community-event",
-                    &crate::channels::CommunityEvent::GovernanceUpdated {
-                        community_id: cid.clone(),
-                    },
+                    &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                        rekindle_types::subscription_events::GovernanceEvent::GovernanceRebuilt {
+                            community: cid.clone(),
+                        },
+                    ),
                 );
             }
             // Also emit MembersRefreshed so the frontend re-fetches members

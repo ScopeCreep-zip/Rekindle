@@ -4,11 +4,10 @@ mod dto;
 #[cfg(target_os = "linux")]
 pub use dto::NativeVideoErrorEvent;
 pub use dto::{
-    ChannelsUpdatedCategoryDto, ChannelsUpdatedChannelDto, EventInfoDto, EventRsvpInfoDto,
-    GameServerInfoDto, RoleDto, ThreadInfoDto, VideoBandwidthEstimateEvent,
-    VideoBitrateTargetEvent, VideoCodecIncompatibleEvent, VideoEnvelopeRejectedEvent,
-    VideoFrameAckEvent, VideoKeyframeRequestEvent, VideoMediaCapabilitiesEvent,
-    VideoSessionConfigEvent, VideoTopologyChangeEvent,
+    EventInfoDto, EventRsvpInfoDto, GameServerInfoDto, RoleDto, ThreadInfoDto,
+    VideoBandwidthEstimateEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
+    VideoEnvelopeRejectedEvent, VideoFrameAckEvent, VideoKeyframeRequestEvent,
+    VideoMediaCapabilitiesEvent, VideoSessionConfigEvent, VideoTopologyChangeEvent,
 };
 
 /// One voice-roster participant as shipped to the frontend.
@@ -51,12 +50,6 @@ pub enum CommunityEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         channel_id: Option<String>,
         new_generation: u64,
-    },
-    /// Channel permission overwrites were changed (server-side enforcement).
-    #[serde(rename_all = "camelCase")]
-    ChannelOverwriteChanged {
-        community_id: String,
-        channel_id: String,
     },
     /// A message was edited in a channel.
     #[serde(rename_all = "camelCase")]
@@ -297,10 +290,6 @@ pub enum CommunityEvent {
         channel_id: String,
         message_count: usize,
     },
-    /// CRDT governance state was rebuilt from DHT. Frontend should re-fetch
-    /// community details (channels, roles, members, permissions).
-    #[serde(rename_all = "camelCase")]
-    GovernanceUpdated { community_id: String },
     /// A member joined a voice channel.
     #[serde(rename_all = "camelCase")]
     VoiceJoin {
@@ -400,66 +389,6 @@ pub enum CommunityEvent {
         channel_id: String,
         attachment_id: String,
         local_path: String,
-    },
-    /// Architecture §6 — emitted after any role mutation
-    /// (RoleDefinition, RoleArchived, RolePermissionUpdate). The full
-    /// merged role list is included so the receiver can replace its
-    /// `roles` array atomically without a refetch.
-    #[serde(rename_all = "camelCase")]
-    RolesChanged {
-        community_id: String,
-        roles: Vec<RoleDto>,
-    },
-    /// Architecture §6 — emitted after any channel/category mutation
-    /// (ChannelCreated, ChannelArchived, ChannelUpdated, CategoryCreated,
-    /// CategoryArchived, CategoryUpdated). Carries snapshots of the
-    /// merged channel + category lists so receivers can re-render the
-    /// channel tree in one atomic update.
-    #[serde(rename_all = "camelCase")]
-    ChannelsUpdated {
-        community_id: String,
-        channels: Vec<ChannelsUpdatedChannelDto>,
-        categories: Vec<ChannelsUpdatedCategoryDto>,
-    },
-    /// Architecture §32 Phase 5 W15 — emitted after `update_community_info`
-    /// persists. Carries the new name/description/icon/banner so the
-    /// buddy-list and community window can refresh without a full
-    /// `getCommunityDetails` round-trip.
-    #[serde(rename_all = "camelCase")]
-    CommunityUpdated {
-        community_id: String,
-        name: Option<String>,
-        description: Option<String>,
-        icon_hash: Option<String>,
-        banner_hash: Option<String>,
-    },
-    /// Architecture §16 — emitted after `create_community_invite`
-    /// successfully persists. Carries the new invite metadata (the
-    /// raw code is only returned synchronously to the creator).
-    #[serde(rename_all = "camelCase")]
-    InviteCreated {
-        community_id: String,
-        code_hash: String,
-        created_by: String,
-        max_uses: Option<u32>,
-        uses: u32,
-        expires_at: Option<u64>,
-        created_at: u64,
-    },
-    /// Architecture §16 — emitted when a peer's `MemberJoinRequest`
-    /// validates an invite. Increments the InvitesTab "uses" counter
-    /// without a refetch.
-    #[serde(rename_all = "camelCase")]
-    InviteUsed {
-        community_id: String,
-        code_hash: String,
-        new_use_count: u32,
-    },
-    /// Architecture §16 — emitted after `revoke_community_invite`.
-    #[serde(rename_all = "camelCase")]
-    InviteRevoked {
-        community_id: String,
-        code_hash: String,
     },
 }
 

@@ -1,5 +1,9 @@
 import type { CommunityEvent } from "../../ipc/channels";
-import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_events";
+import type {
+  CommunitySubscriptionEvent,
+  GovernanceEvent,
+} from "../../ipc/channels/community_subscription_events";
+import type { InviteDto } from "../../ipc/commands/dto";
 import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
@@ -30,49 +34,6 @@ export function reduceMembership(event: CommunityEvent): boolean {
         `(threshold ${maxJoinsPerInterval}). Consider pausing invites.`,
       "error",
     );
-    return true;
-  } else if (event.type === "rolesChanged") {
-    const { communityId, roles } = event.data;
-    if (communityState.communities[communityId]) {
-      setCommunityState("communities", communityId, "roles", roles);
-    }
-    return true;
-  } else if (event.type === "channelOverwriteChanged") {
-    const { communityId } = event.data;
-    if (communityState.communities[communityId]) {
-      commands.getCommunityDetails().then((details) => {
-        const detail = details.find((d: { id: string }) => d.id === communityId);
-        if (detail) {
-          setCommunityState("communities", communityId, "roles", detail.roles);
-        }
-      }).catch(() => {});
-    }
-    return true;
-  } else if (event.type === "governanceUpdated") {
-    // CRDT governance state changed — refresh community details + members
-    const { communityId } = event.data;
-    commands.getCommunityDetails().then((details) => {
-      const detail = details.find((c: { id: string }) => c.id === communityId);
-      if (detail) {
-        setCommunityState("communities", communityId, "name", detail.name);
-        setCommunityState("communities", communityId, "description", detail.description ?? null);
-        setCommunityState("communities", communityId, "roles", detail.roles ?? []);
-        setCommunityState("communities", communityId, "channels",
-          detail.channels.map(transformChannel));
-        setCommunityState("communities", communityId, "categories", detail.categories ?? []);
-        setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0]);
-        setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
-      }
-    }).catch(() => {});
-    // Also refresh members so the member list shows up
-    commands.getCommunityMembers(communityId).then((members) => {
-      setCommunityState("communities", communityId, "members", members.map(transformMember));
-    }).catch(() => {});
-    void handleLoadExpressions(communityId);
-    void handleLoadAutoModRules(communityId);
-    if (communityState.activeCommunity === communityId && communityState.activeChannel) {
-      void handleLoadChannelThreads(communityId, communityState.activeChannel);
-    }
     return true;
   } else if (event.type === "autoModAlert") {
     addToast(`AutoMod alert: ${event.data.ruleName}`, "info");
@@ -136,6 +97,10 @@ export function reduceSubscriptionMembership(
         setCommunityState("activeChannel", null);
       }
     }
+    return;
+  }
+  if ("governance" in event) {
+    applyGovernanceEvent(event.governance);
     return;
   }
   if (!("membership" in event)) return;
@@ -265,5 +230,188 @@ export function reduceSubscriptionMembership(
 
   if ("joinRejected" in m) {
     addToast(`Join rejected: ${m.joinRejected.reason}`, "error");
+  }
+}
+
+/// Governance events on the daemon vocabulary.
+///
+/// These carry the new state inline rather than telling the client to
+/// re-read it — see the note on Tier 1's `GovernanceEvent`. The one
+/// exception is `governanceRebuilt`, which changes channels, roles,
+/// members and permissions together and so still triggers a re-read.
+function applyGovernanceEvent(g: GovernanceEvent): void {
+  if ("rolesChanged" in g) {
+    const { community, roles } = g.rolesChanged;
+    if (communityState.communities[community]) {
+      // The store keeps `permissions` as a string and
+      // `utils/permissions.ts` parses it with `BigInt(...)`. Tier 1
+      // sends a JSON number, which is exact today but is the shape
+      // that loses low bits once permission bits pass 2^53 — so the
+      // string form is preserved here rather than widening every
+      // permission check to accept a number.
+      setCommunityState(
+        "communities",
+        community,
+        "roles",
+        roles.map((r) => ({
+          ...r,
+          permissions: String(r.permissions),
+          // The store uses `undefined` for absent, Tier 1 uses `null`.
+          exclusionGroup: r.exclusionGroup ?? undefined,
+        })),
+      );
+    }
+    return;
+  }
+
+  if ("channelsChanged" in g) {
+    const { community, channels, categories } = g.channelsChanged;
+    const c = communityState.communities[community];
+    if (!c) return;
+    // Preserve unread counts from existing channels
+    const unreadMap: Record<string, number> = {};
+    for (const ch of c.channels) {
+      unreadMap[ch.id] = ch.unreadCount;
+    }
+    setCommunityState(
+      "communities",
+      community,
+      "channels",
+      channels.map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        // Tier 1 calls it `kind`; the store calls it `type`.
+        type: ch.kind as "text" | "voice" | "announcement",
+        unreadCount: unreadMap[ch.id] ?? 0,
+        categoryId: ch.categoryId ?? undefined,
+        topic: ch.topic,
+        slowmodeSeconds: ch.slowmodeSeconds ?? undefined,
+      })),
+    );
+    setCommunityState(
+      "communities",
+      community,
+      "categories",
+      categories.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        sortOrder: cat.sortOrder,
+      })),
+    );
+    return;
+  }
+
+  if ("metadataChanged" in g) {
+    const { community, name, description, iconHash, bannerHash } = g.metadataChanged;
+    if (name !== null) {
+      setCommunityState("communities", community, "name", name);
+    }
+    if (description !== null) {
+      setCommunityState("communities", community, "description", description);
+    }
+    // Architecture §32 Phase 5 W15 — when the icon/banner hash changes
+    // the cached data URL is stale; clear it and re-resolve through the
+    // local cache so the buddy-list icon updates.
+    if (iconHash !== null) {
+      setCommunityState("communities", community, "iconHash", iconHash);
+    }
+    if (bannerHash !== null) {
+      setCommunityState("communities", community, "bannerHash", bannerHash);
+    }
+    if (iconHash !== null || bannerHash !== null) {
+      void handleResolveCommunityImageDataUrls(community);
+    }
+    return;
+  }
+
+  if ("inviteCreated" in g) {
+    const inv = g.inviteCreated;
+    const invite: InviteDto = {
+      codeHash: inv.codeHash,
+      createdBy: inv.createdBy,
+      maxUses: inv.maxUses,
+      uses: inv.uses,
+      expiresAt: inv.expiresAt,
+      createdAt: inv.createdAt,
+    };
+    // Deduplicate: the optimistic insert from handleCreateCommunityInvite
+    // may already be present.
+    setCommunityState("communityInvites", inv.community, (prev) => {
+      const existing = prev ?? [];
+      if (existing.some((x) => x.codeHash === invite.codeHash)) return existing;
+      // Replace the "pending" optimistic entry if present
+      const filtered = existing.filter((x) => x.codeHash !== "pending");
+      return [invite, ...filtered];
+    });
+    return;
+  }
+
+  if ("inviteRevoked" in g) {
+    const { community, codeHash } = g.inviteRevoked;
+    setCommunityState("communityInvites", community, (prev) =>
+      (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
+    );
+    return;
+  }
+
+  if ("inviteUsed" in g) {
+    const { community, codeHash, uses } = g.inviteUsed;
+    setCommunityState("communityInvites", community, (prev) =>
+      (prev ?? []).map((inv) => (inv.codeHash === codeHash ? { ...inv, uses } : inv)),
+    );
+    return;
+  }
+
+  if ("channelPermissionsChanged" in g) {
+    const { community } = g.channelPermissionsChanged;
+    if (!communityState.communities[community]) return;
+    commands
+      .getCommunityDetails()
+      .then((details) => {
+        const detail = details.find((d: { id: string }) => d.id === community);
+        if (detail) {
+          setCommunityState("communities", community, "roles", detail.roles);
+        }
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if ("governanceRebuilt" in g) {
+    // A CRDT rebuild moves everything at once, so this is the one
+    // governance event with no payload and a full re-read.
+    const { community } = g.governanceRebuilt;
+    commands
+      .getCommunityDetails()
+      .then((details) => {
+        const detail = details.find((c: { id: string }) => c.id === community);
+        if (detail) {
+          setCommunityState("communities", community, "name", detail.name);
+          setCommunityState("communities", community, "description", detail.description ?? null);
+          setCommunityState("communities", community, "roles", detail.roles ?? []);
+          setCommunityState(
+            "communities",
+            community,
+            "channels",
+            detail.channels.map(transformChannel),
+          );
+          setCommunityState("communities", community, "categories", detail.categories ?? []);
+          setCommunityState("communities", community, "myRoleIds", detail.myRoleIds ?? [0]);
+          setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
+        }
+      })
+      .catch(() => {});
+    // Also refresh members so the member list shows up
+    commands
+      .getCommunityMembers(community)
+      .then((members) => {
+        setCommunityState("communities", community, "members", members.map(transformMember));
+      })
+      .catch(() => {});
+    void handleLoadExpressions(community);
+    void handleLoadAutoModRules(community);
+    if (communityState.activeCommunity === community && communityState.activeChannel) {
+      void handleLoadChannelThreads(community, communityState.activeChannel);
+    }
   }
 }

@@ -360,8 +360,6 @@ pub async fn update_community_info_inner(
     icon_hash: Option<String>,
     banner_hash: Option<String>,
 ) -> Result<(), String> {
-    use crate::channels::CommunityEvent;
-
     let owner_key = state_helpers::current_owner_key(state)?;
 
     let (current_name, current_description, current_icon, current_banner) = {
@@ -456,16 +454,17 @@ pub async fn update_community_info_inner(
     .await?;
 
     if let Some(app) = state_helpers::app_handle(state) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             &app,
-            "community-event",
-            &CommunityEvent::CommunityUpdated {
-                community_id: cid.clone(),
-                name: name.clone(),
-                description: description.clone(),
-                icon_hash: icon_hash.clone(),
-                banner_hash: banner_hash.clone(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::MetadataChanged {
+                    community: cid.clone(),
+                    name: name.clone(),
+                    description: description.clone(),
+                    icon_hash: icon_hash.clone(),
+                    banner_hash: banner_hash.clone(),
+                },
+            ),
         );
     }
 

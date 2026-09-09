@@ -21,13 +21,12 @@ pub(crate) async fn handle_control_events_and_threads(
 
     match payload {
         ControlPayload::ChannelOverwriteChanged { channel_id } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ChannelOverwriteChanged {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Governance(rekindle_types::subscription_events::GovernanceEvent::ChannelPermissionsChanged {
+                    community: community_id.to_string(),
+                    channel: channel_id,
+                }),
             );
         }
         payload @ (ControlPayload::MessagePinned { .. }

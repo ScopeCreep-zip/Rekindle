@@ -56,6 +56,9 @@ pub(crate) fn channel_overviews(
             // v1.0 per-member DhtLog spine. Nothing writes one any more.
             log_key: None,
             sort_order: u16::try_from(channel.position).unwrap_or(u16::MAX),
+            // Held in the merged CRDT state; the CLI could not show a
+            // slowmode channel as rate-limited without it.
+            slowmode_seconds: channel.slowmode_seconds,
         })
         .collect();
     out.sort_by(|a, b| {

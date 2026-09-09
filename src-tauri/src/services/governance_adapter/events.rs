@@ -6,35 +6,34 @@
 
 use rekindle_governance_runtime::{GovernanceRuntimeEvent, JoinStageStatus};
 
-use crate::channels::community_channel::CommunityEvent;
-use crate::event_dispatch::emit_live;
-
 use super::{snapshot_channels_and_categories, snapshot_roles, GovernanceAdapter};
 
 pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRuntimeEvent) {
     match event {
         GovernanceRuntimeEvent::RolesChanged { community_id } => {
             let roles = snapshot_roles(&adapter.state, &community_id);
-            emit_live(
+            crate::event_dispatch::emit_subscription(
                 &adapter.app_handle,
-                "community-event",
-                &CommunityEvent::RolesChanged {
-                    community_id,
-                    roles,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                    rekindle_types::subscription_events::GovernanceEvent::RolesChanged {
+                        community: community_id,
+                        roles,
+                    },
+                ),
             );
         }
         GovernanceRuntimeEvent::ChannelsUpdated { community_id } => {
             let (channels, categories) =
                 snapshot_channels_and_categories(&adapter.state, &community_id);
-            emit_live(
+            crate::event_dispatch::emit_subscription(
                 &adapter.app_handle,
-                "community-event",
-                &CommunityEvent::ChannelsUpdated {
-                    community_id,
-                    channels,
-                    categories,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                    rekindle_types::subscription_events::GovernanceEvent::ChannelsChanged {
+                        community: community_id,
+                        channels,
+                        categories,
+                    },
+                ),
             );
         }
         GovernanceRuntimeEvent::CommunityCreated { community_id, name } => {

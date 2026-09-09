@@ -8,7 +8,7 @@ import type {
   VoiceEvent,
   VoiceSubscriptionEvent,
 } from "./voice_events";
-import type { AnyCommunityEvent } from "./community_events";
+import type { AnyCommunityEvent } from "./community_subscription_events";
 import type {
   NetworkStatusEvent,
   NetworkSubscriptionEvent,

@@ -51,6 +51,16 @@ pub struct ChannelOverviewDisplay {
     pub mek_generation: u64,
     pub log_key: Option<String>,
     pub sort_order: u16,
+    /// Minimum seconds between a member's messages, when slowmode is on.
+    pub slowmode_seconds: Option<u32>,
+}
+
+/// Channel category, for grouping the channel tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryDisplay {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i32,
 }
 
 /// Decrypted channel message for history display.
@@ -106,6 +116,18 @@ pub struct DmMessageDisplay {
 // ── Roles ───────────────────────────────────────────────────────────────
 
 /// Role info for display.
+///
+/// `permissions` stays a plain `u64` deliberately. src-tauri's `RoleDto`
+/// encodes the same field as a JSON *string*, guarding against
+/// JavaScript's 53-bit integer precision — but that guard's deserializer
+/// is `#[serde(untagged)]`, which needs `deserialize_any` and so cannot
+/// decode under postcard, the daemon IPC format. Applying it here would
+/// break the CLI the way `#[serde(flatten)]` did.
+///
+/// It is also not needed yet: `permissions::ALL` is `(1 << 51) - 1`,
+/// below JavaScript's `2^53 - 1`, so no bit is lost today. **Two bits of
+/// headroom.** Whoever adds permission bit 53 has to solve the JSON
+/// encoding here without reaching for `untagged`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleDisplay {
     pub id: u32,
@@ -113,6 +135,15 @@ pub struct RoleDisplay {
     pub color: u32,
     pub permissions: u64,
     pub position: i32,
+    /// Show members with this role in a separate sidebar group.
+    pub hoist: bool,
+    /// Whether `@role` pings everyone holding it.
+    pub mentionable: bool,
+    /// Members may take this role themselves, without a moderator.
+    pub self_assignable: bool,
+    /// Architecture §19.4 — when set, only one role per group may be
+    /// active per member.
+    pub exclusion_group: Option<String>,
 }
 
 // ── Status ──────────────────────────────────────────────────────────────

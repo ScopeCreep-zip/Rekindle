@@ -7,7 +7,7 @@ import type {
   SessionVideoConfig,
 } from "../../../ipc/commands";
 import { subscribeCommunityEvents } from "../../../ipc/channels";
-import { isLegacyCommunityEvent } from "../../../ipc/channels/community_events";
+import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";

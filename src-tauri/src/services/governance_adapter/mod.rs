@@ -19,12 +19,10 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
-use crate::channels::community_channel::{
-    ChannelsUpdatedCategoryDto, ChannelsUpdatedChannelDto, RoleDto,
-};
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_types::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
 
 pub mod deps_impl;
 mod dht;
@@ -295,21 +293,34 @@ pub fn decrypt_channel_message(
 
 // ---------- Free helpers used by `emit_event` ----------
 
-pub(super) fn snapshot_roles(state: &Arc<AppState>, community_id: &str) -> Vec<RoleDto> {
+pub(super) fn snapshot_roles(state: &Arc<AppState>, community_id: &str) -> Vec<RoleDisplay> {
     let communities = state.communities.read();
     communities
         .get(community_id)
-        .map(|community| community.roles.iter().map(RoleDto::from).collect())
+        .map(|community| {
+            community
+                .roles
+                .iter()
+                .map(|def| RoleDisplay {
+                    id: def.id,
+                    name: def.name.clone(),
+                    color: def.color,
+                    permissions: def.permissions,
+                    position: def.position,
+                    hoist: def.hoist,
+                    mentionable: def.mentionable,
+                    self_assignable: def.self_assignable,
+                    exclusion_group: def.exclusion_group.clone(),
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 pub(super) fn snapshot_channels_and_categories(
     state: &Arc<AppState>,
     community_id: &str,
-) -> (
-    Vec<ChannelsUpdatedChannelDto>,
-    Vec<ChannelsUpdatedCategoryDto>,
-) {
+) -> (Vec<ChannelOverviewDisplay>, Vec<CategoryDisplay>) {
     let communities = state.communities.read();
     let Some(community) = communities.get(community_id) else {
         return (Vec::new(), Vec::new());
@@ -317,19 +328,27 @@ pub(super) fn snapshot_channels_and_categories(
     let channels = community
         .channels
         .iter()
-        .map(|channel| ChannelsUpdatedChannelDto {
+        .enumerate()
+        .map(|(index, channel)| ChannelOverviewDisplay {
             id: channel.id.clone(),
             name: channel.name.clone(),
-            channel_type: channel.channel_type.to_string(),
+            kind: channel.channel_type.to_string(),
             category_id: channel.category_id.clone(),
             topic: channel.topic.clone(),
+            mek_generation: channel.mek_generation,
+            log_key: channel.message_record_key.clone(),
+            // `ChannelInfo` carries no ordinal of its own, but
+            // `state_helpers::governance` sorts this Vec by the CRDT
+            // `position` (then name) before storing it, so the index is
+            // the display order rather than an arbitrary one.
+            sort_order: u16::try_from(index).unwrap_or(u16::MAX),
             slowmode_seconds: channel.slowmode_seconds,
         })
         .collect();
     let categories = community
         .categories
         .iter()
-        .map(|category| ChannelsUpdatedCategoryDto {
+        .map(|category| CategoryDisplay {
             id: category.id.clone(),
             name: category.name.clone(),
             sort_order: category.sort_order,

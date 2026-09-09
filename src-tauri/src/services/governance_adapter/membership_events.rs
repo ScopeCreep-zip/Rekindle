@@ -18,7 +18,6 @@ use rekindle_governance_runtime::membership_events::{
 };
 use rekindle_secrets::sync_key::SyncKey;
 
-use crate::channels::community_channel::CommunityEvent;
 use crate::db::DbPool;
 use crate::services::cross_device_sync::{
     open_personal_sync_record, read_read_state, write_read_state,
@@ -432,14 +431,15 @@ impl MembershipEventDeps for GovernanceAdapter {
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_subscription(
                     &app_for_emit,
-                    "community-event",
-                    &CommunityEvent::InviteUsed {
-                        community_id: cid_for_emit,
-                        code_hash: code_hash_for_emit,
-                        new_use_count: u32::try_from(new_use_count).unwrap_or(u32::MAX),
-                    },
+                    &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                        rekindle_types::subscription_events::GovernanceEvent::InviteUsed {
+                            community: cid_for_emit,
+                            code_hash: code_hash_for_emit,
+                            uses: u32::try_from(new_use_count).unwrap_or(u32::MAX),
+                        },
+                    ),
                 );
             }
             Ok(())

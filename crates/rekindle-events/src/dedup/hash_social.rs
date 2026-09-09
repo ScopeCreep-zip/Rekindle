@@ -4,26 +4,87 @@
 use rekindle_types::subscription_events::{GovernanceEvent, SocialEvent};
 
 pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
+    // Community first, since every variant has one.
+    h.update(g.community().as_bytes());
+    h.update(b"|");
     match g {
-        GovernanceEvent::MetadataChanged { community } => {
+        // The payload variants hash their *contents*, not just the
+        // community: two role-table changes in a row are two events,
+        // and hashing the community alone would dedup the second away
+        // and leave the UI on the stale table.
+        GovernanceEvent::MetadataChanged {
+            name,
+            description,
+            icon_hash,
+            banner_hash,
+            ..
+        } => {
             h.update(b"meta|");
-            h.update(community.as_bytes());
+            for field in [name, description, icon_hash, banner_hash] {
+                h.update(field.as_deref().unwrap_or("\u{0}").as_bytes());
+                h.update(b"|");
+            }
         }
-        GovernanceEvent::ChannelsChanged { community } => {
+        GovernanceEvent::ChannelsChanged {
+            channels,
+            categories,
+            ..
+        } => {
             h.update(b"channels|");
-            h.update(community.as_bytes());
+            for c in channels {
+                h.update(c.id.as_bytes());
+                h.update(c.name.as_bytes());
+                h.update(&c.sort_order.to_le_bytes());
+                h.update(&c.slowmode_seconds.unwrap_or(u32::MAX).to_le_bytes());
+                h.update(b",");
+            }
+            h.update(b"|");
+            for c in categories {
+                h.update(c.id.as_bytes());
+                h.update(c.name.as_bytes());
+                h.update(&c.sort_order.to_le_bytes());
+                h.update(b",");
+            }
         }
-        GovernanceEvent::RolesChanged { community } => {
+        GovernanceEvent::RolesChanged { roles, .. } => {
             h.update(b"roles|");
-            h.update(community.as_bytes());
+            for r in roles {
+                h.update(&r.id.to_le_bytes());
+                h.update(r.name.as_bytes());
+                h.update(&r.permissions.to_le_bytes());
+                h.update(&r.position.to_le_bytes());
+                h.update(&[
+                    u8::from(r.hoist),
+                    u8::from(r.mentionable),
+                    u8::from(r.self_assignable),
+                ]);
+                h.update(r.exclusion_group.as_deref().unwrap_or("").as_bytes());
+                h.update(b",");
+            }
         }
-        GovernanceEvent::BansChanged { community } => {
-            h.update(b"bans|");
-            h.update(community.as_bytes());
+        GovernanceEvent::BansChanged { .. } => {
+            h.update(b"bans");
         }
-        GovernanceEvent::InvitesChanged { community } => {
-            h.update(b"invites|");
-            h.update(community.as_bytes());
+        GovernanceEvent::InviteCreated { code_hash, .. } => {
+            h.update(b"invite_new|");
+            h.update(code_hash.as_bytes());
+        }
+        GovernanceEvent::InviteUsed {
+            code_hash, uses, ..
+        } => {
+            // The use count is part of the identity: consecutive
+            // redemptions of one invite are distinct events.
+            h.update(b"invite_used|");
+            h.update(code_hash.as_bytes());
+            h.update(b"|");
+            h.update(&uses.to_le_bytes());
+        }
+        GovernanceEvent::InviteRevoked { code_hash, .. } => {
+            h.update(b"invite_rev|");
+            h.update(code_hash.as_bytes());
+        }
+        GovernanceEvent::GovernanceRebuilt { .. } => {
+            h.update(b"rebuilt");
         }
         GovernanceEvent::ChannelPermissionsChanged { community, channel } => {
             h.update(b"perms|");

@@ -31,6 +31,13 @@ pub(crate) fn role_displays(
             color: role.color,
             permissions: role.permissions,
             position: i32::try_from(role.position).unwrap_or(i32::MAX),
+            // All four live in the merged CRDT state and were simply
+            // not being read, so the CLI rendered every role as
+            // non-hoisted, non-mentionable and ungrouped.
+            hoist: role.hoist,
+            mentionable: role.mentionable,
+            self_assignable: role.self_assignable,
+            exclusion_group: role.exclusion_group.clone(),
         })
         .collect();
     out.sort_by_key(|r| r.id);
