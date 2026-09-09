@@ -282,6 +282,89 @@ did — a Tier-1 event family cannot depend upward on Tier 7.
 
 ---
 
+## Quality parity with Discord and comparable services
+
+Requirement added after the transport decision. It splits cleanly into
+two problems with very different answers, and conflating them would
+produce a wrong plan.
+
+### Where we actually are
+
+| | ours | Discord |
+|---|---|---|
+| voice codec | Opus 48 kHz **mono, 32 kbps** (`voice/src/codec.rs:61`) | Opus 48 kHz, **64 kbps default**, 96/128/256/384 with boost, adapts to 8 kbps under congestion |
+| video | **854×480 @ 15 fps**, VP9 (`MediaCapabilities::interim_default`) | 720p30 standard, higher with Nitro |
+| video bitrate | 350 kbps start, 600 kbps ceiling (`budget.rs`) | ~2.5 Mbps class |
+| media path | **3-hop anonymous Veilid route**, "never Unsafe" (`voice/src/transport.rs:142`) | direct UDP / their SFU, no anonymity |
+
+### Voice — parity is achievable and cheap
+
+Discord's default is 64 kbps Opus; we run 32 kbps mono. The comment at
+`codec.rs:57` gives the reason — "reduces P2P relay load" — which was
+sound, but the cost is small in context: +32 kbps is ~9 % of the
+350 kbps *video* start budget, and `OpusCodec::set_bitrate` already
+exists for adaptive use.
+
+This is independent of the engine and can be done on its own. Stereo is
+a separate question (2× the bitrate for a marginal gain on speech;
+Discord defaults mono for voice channels too).
+
+### Video — two separable problems
+
+**1. Quality per bit — the engine fixes this, and this is the real
+argument for doing it.**
+
+Our own dependency comment already says what the webview costs us:
+
+> "Native camera capture + vp8enc realtime CBR — replaces the webview
+> encode path on Linux (**WebKitGTK's VP9 rides libvpx GOOD-deadline,
+> no true CBR**)."
+> — `src-tauri/Cargo.toml`
+
+A realtime call wants `deadline=REALTIME` and `end-usage=cbr`, which is
+exactly what the GStreamer pipeline sets and what WebCodecs does not
+give us. At 350–600 kbps a quality-deadline non-CBR encoder overshoots
+and undershoots the target and looks materially worse than a properly
+rate-controlled one at the same bitrate.
+
+So the engine is not only architectural tidiness — **it is the quality
+fix**, and it applies to macOS and Windows, which today have no native
+path at all. That is parity work that costs no extra bandwidth.
+
+**2. Absolute bitrate — bounded by anonymity, not by the codec.**
+
+The 600 kbps ceiling is not arbitrary. `budget.rs` records the
+measurement: sized for "sustained 480p15 over a 3-hop Veilid Safe
+route", after 1200 kbps "saturated the egress the unpaced voice stream
+shares, starving audio".
+
+Discord does not pay that cost — it runs direct UDP or its own SFU with
+no per-frame anonymity. Published Tor research puts three-hop onion
+routing at roughly +83 ms latency with throughput constrained by relay
+congestion, and describes realtime HD over standard three-hop circuits
+as challenging.
+
+**So Discord-class resolution and per-frame anonymity are in tension,
+and that is a product decision rather than an engineering one.** The
+honest options, none of which should be chosen silently:
+
+- **Keep 3-hop, take the quality win from (1).** Better 480p, possibly
+  540p/24, at the same bitrate. No privacy change.
+- **Mutual-aid SFU.** Relay through one community peer instead of a
+  3-hop onion per pair — the `TopologyChange.relay_host_pseudonym`
+  machinery already exists. Fewer hops, more throughput, and the relay
+  peer learns who is in the call.
+- **Lower hop count for media only.** Directly contradicts
+  `transport.rs:143` — "anonymous on every voice frame, never Unsafe" —
+  so it would be reversing a stated commitment, not tuning a constant.
+
+My recommendation: do (1), which is free, and treat the resolution gap
+as an explicit, documented product tradeoff rather than a defect. Claim
+"480p30 anonymous" rather than "720p30 like Discord", because the
+second is not reachable without giving something up.
+
+---
+
 ## Sequencing and risk
 
 Step 0 is a deletion and lands alone. Step 1 is confined to one match
