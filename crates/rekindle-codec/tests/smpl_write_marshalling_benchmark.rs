@@ -1,3 +1,8 @@
+#![allow(
+    clippy::print_stdout,
+    reason = "a benchmark whose output IS its result; stdout is where cargo test --nocapture shows it"
+)]
+
 //! Architecture §32 Phase 7 Week 26 — SMPL write latency target:
 //! "<500ms P95" (line 4145).
 //!

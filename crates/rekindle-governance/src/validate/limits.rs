@@ -1,3 +1,8 @@
+#![allow(
+    clippy::match_same_arms,
+    reason = "arms are grouped by meaning, not by body: each carries the rule it encodes, and merging identical bodies would delete the comment explaining why that case exists"
+)]
+
 //! Shape/quantity limits for expressions, onboarding, and soundboard
 //! metadata. Enforced at the reader-validates layer so a tampered
 //! governance entry that exceeds a cap is dropped on the floor by

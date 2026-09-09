@@ -127,9 +127,12 @@ mod tests {
     fn distinct_types_not_mixable() {
         // This is a compile-time guarantee — these are different types.
         // If someone tries to pass ChannelId where RoleId is expected, it won't compile.
-        let _ch = ChannelId([1u8; 16]);
-        let _role = RoleId([1u8; 16]);
-        // Even though the bytes are identical, they are not the same type.
+        let ch = ChannelId([1u8; 16]);
+        let role = RoleId([1u8; 16]);
+        // Identical bytes, different types: the newtypes are the whole
+        // point, so assert on the bytes rather than binding and
+        // discarding — a discarded binding proves nothing at runtime.
+        assert_eq!(ch.0, role.0);
     }
 
     #[test]

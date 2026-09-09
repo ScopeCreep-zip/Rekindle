@@ -40,6 +40,11 @@ pub fn verify_merkle_root(offer: &AttachmentOffer) -> Result<(), FilesError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        reason = "test fixture: the constants are compile-time known and well inside range; a fallible conversion here would add noise without adding safety"
+    )]
+
     use super::*;
     use crate::chunker::{Chunker, CHUNK_SIZE_BYTES};
 

@@ -1,6 +1,6 @@
 //! `merge` onboarding CRDT apply rules.
 
-use super::*;
+use super::{GovernanceEntry, GovernanceState, OnboardingState, WelcomeScreenState};
 
 pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
@@ -13,7 +13,7 @@ pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceSt
             guide_steps,
             lamport,
         } => {
-            let existing_lamport = state.onboarding.as_ref().map(|o| o.lamport).unwrap_or(0);
+            let existing_lamport = state.onboarding.as_ref().map_or(0, |o| o.lamport);
             if *lamport > existing_lamport {
                 state.onboarding = Some(OnboardingState {
                     enabled: *enabled,
@@ -32,11 +32,7 @@ pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceSt
             channels,
             lamport,
         } => {
-            let existing_lamport = state
-                .welcome_screen
-                .as_ref()
-                .map(|w| w.lamport)
-                .unwrap_or(0);
+            let existing_lamport = state.welcome_screen.as_ref().map_or(0, |w| w.lamport);
             if *lamport > existing_lamport {
                 state.welcome_screen = Some(WelcomeScreenState {
                     description: description.clone(),

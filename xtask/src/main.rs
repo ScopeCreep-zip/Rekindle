@@ -69,6 +69,8 @@ enum Command {
     CheckFrontendDuplication,
     /// Rewrite `xtask/known-duplication.txt` from the current tree.
     BaselineDuplication,
+    /// Verify every workspace member inherits `[workspace.lints]`.
+    CheckWorkspaceLints,
     /// One-shot helper: add `reason = "TODO: justify"` to bare allows.
     RetrofitAllowReasons {
         /// Print what would change without writing files.
@@ -117,6 +119,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "frontend-duplication",
                     Box::new(|| duplication::check_frontend_duplication(&root)),
                 ),
+                (
+                    "workspace-lints",
+                    Box::new(|| duplication::check_workspace_lints(&root)),
+                ),
             ] {
                 println!("\n── xtask: {label}");
                 if let Err(e) = runner() {
@@ -139,6 +145,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),
         Command::BaselineDuplication => duplication::write_baseline(&root),
+        Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
         Command::RetrofitAllowReasons { dry_run } => retrofit_allow_reasons(&root, *dry_run),
     }
 }

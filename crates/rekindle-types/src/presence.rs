@@ -353,7 +353,7 @@ mod tests {
             display_name: Some("FireStarter92".into()),
             status: "online".into(),
             route_blob: vec![1, 2, 3],
-            last_heartbeat: 1710000000,
+            last_heartbeat: 1_710_000_000,
             ..Default::default()
         };
         let json = serde_json::to_string(&presence).unwrap();

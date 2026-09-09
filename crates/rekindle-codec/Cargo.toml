@@ -5,6 +5,9 @@ edition = "2021"
 description = "Signed envelope construction, verification, dedup, and serialization for Rekindle v2.0"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 rekindle-secrets = { path = "../rekindle-secrets" }

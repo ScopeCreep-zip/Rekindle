@@ -5,6 +5,9 @@ edition = "2021"
 description = "Cryptographic security boundary for Rekindle — all secret key material lives here"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 blake3 = "1"

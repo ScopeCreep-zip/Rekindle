@@ -324,17 +324,14 @@ impl GovernanceState {
     /// RoleAssignment / RoleUnassignment entries: a writer can only act on a
     /// target whose max position is strictly less than the writer's.
     pub fn member_max_position(&self, member: &PseudonymKey) -> u32 {
-        self.role_assignments
-            .get(member)
-            .map(|role_ids| {
-                role_ids
-                    .iter()
-                    .filter_map(|rid| self.roles.get(rid))
-                    .map(|role| role.position)
-                    .max()
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0)
+        self.role_assignments.get(member).map_or(0, |role_ids| {
+            role_ids
+                .iter()
+                .filter_map(|rid| self.roles.get(rid))
+                .map(|role| role.position)
+                .max()
+                .unwrap_or(0)
+        })
     }
 }
 

@@ -5,7 +5,11 @@
 //! system go through `compute_permissions()`.
 
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
-use rekindle_types::permissions::*;
+use rekindle_types::permissions::{
+    ADMINISTRATOR, ALL, ATTACH_FILES, BAN_MEMBERS, CONNECT, DEAFEN_MEMBERS, EMBED_LINKS,
+    MANAGE_COMMUNITY, MANAGE_MESSAGES, MENTION_EVERYONE, MUTE_MEMBERS, PRIORITY_SPEAKER,
+    READ_HISTORY, SEND_MESSAGES, SPEAK, STREAM, TIMEOUT_MEMBERS, USE_VOICE_ACTIVITY, VIEW_CHANNELS,
+};
 
 use crate::state::GovernanceState;
 
@@ -35,8 +39,7 @@ pub fn compute_permissions(
     let mut perms = state
         .roles
         .get(&everyone_role_id)
-        .map(|r| r.permissions)
-        .unwrap_or(0);
+        .map_or(0, |r| r.permissions);
 
     // Step 2: OR all of member's assigned role permissions
     if let Some(member_roles) = state.role_assignments.get(member) {
@@ -116,7 +119,13 @@ pub fn compute_permissions(
 }
 
 fn hex_encode_pseudonym(key: &PseudonymKey) -> String {
-    key.0.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write as _;
+    key.0.iter().fold(String::with_capacity(64), |mut acc, b| {
+        // `write!` into one buffer rather than `format!` per byte: the
+        // latter allocates a String for every one of the 32 bytes.
+        let _ = write!(acc, "{b:02x}");
+        acc
+    })
 }
 
 /// Whether `perms` carries any moderation capability.
@@ -157,6 +166,7 @@ pub fn has_all_capabilities(perms: u64, mask: u64) -> bool {
 mod tests {
     use super::*;
     use crate::state::{GovernanceState, RoleState, TimeoutState};
+    use rekindle_types::permissions::{BYPASS_SLOWMODE, DEFAULT_EVERYONE};
     use std::collections::{HashMap, HashSet};
 
     fn pseudo(b: u8) -> PseudonymKey {

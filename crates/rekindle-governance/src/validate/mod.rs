@@ -1,3 +1,8 @@
+#![allow(
+    clippy::match_same_arms,
+    reason = "arms are grouped by meaning, not by body: each carries the rule it encodes, and merging identical bodies would delete the comment explaining why that case exists"
+)]
+
 //! Reader-validates: check if a writer had permission for a governance entry.
 //!
 //! Every peer independently validates incoming governance entries against the
@@ -126,7 +131,7 @@ pub fn validate_write(
             if !has(perms, MANAGE_ROLES) {
                 return false;
             }
-            let role_position = state.roles.get(role_id).map(|r| r.position).unwrap_or(0);
+            let role_position = state.roles.get(role_id).map_or(0, |r| r.position);
             role_position < state.member_max_position(writer)
         }
 
@@ -343,8 +348,7 @@ fn can_self_assign_role(
         && state
             .roles
             .get(role_id)
-            .map(|role| role.self_assignable)
-            .unwrap_or(false)
+            .is_some_and(|role| role.self_assignable)
 }
 
 #[cfg(test)]

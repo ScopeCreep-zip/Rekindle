@@ -14,6 +14,9 @@ categories = ["asynchronous", "database"]
 # (see src/lib.rs); applying our stricter pedantic set would mean editing the
 # verbatim copy, defeating the point of vendoring it unchanged.
 
+[lints]
+workspace = true
+
 [dependencies]
 # Features for rusqlite are supplied by the CONSUMER crates' own direct
 # rusqlite dependency (cargo unifies features across the graph), so this

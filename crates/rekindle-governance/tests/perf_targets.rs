@@ -1,3 +1,9 @@
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a perf test whose measurement IS its output; cargo test --nocapture is where it is read"
+)]
+
 //! Architecture §32 Phase 7 / Week 26 performance targets, encoded as
 //! regression-guard tests.
 //!
@@ -75,11 +81,9 @@ fn merge_10k_entries_completes_within_budget() {
     // accidental order-of-magnitude regressions.
     assert!(
         elapsed.as_millis() < 200,
-        "merge of {ENTRY_COUNT} governance entries took {:?} — exceeds 200ms regression budget",
-        elapsed
+        "merge of {ENTRY_COUNT} governance entries took {elapsed:?} — exceeds 200ms regression budget"
     );
     eprintln!(
-        "[perf] merge({ENTRY_COUNT} entries) elapsed = {:?} (spec target <10ms in release)",
-        elapsed
+        "[perf] merge({ENTRY_COUNT} entries) elapsed = {elapsed:?} (spec target <10ms in release)"
     );
 }

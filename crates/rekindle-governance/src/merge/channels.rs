@@ -1,6 +1,6 @@
 //! `merge` channels CRDT apply rules.
 
-use super::*;
+use super::{CategoryState, ChannelState, GovernanceEntry, GovernanceState, OverwriteState};
 
 pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
@@ -118,7 +118,7 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             lamport,
         } => {
             let key = (*channel_id, target_id.clone());
-            let existing_lamport = state.overwrites.get(&key).map(|o| o.lamport).unwrap_or(0);
+            let existing_lamport = state.overwrites.get(&key).map_or(0, |o| o.lamport);
             if *lamport > existing_lamport {
                 state.overwrites.insert(
                     key,
@@ -144,8 +144,7 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             let prev = state
                 .channel_segment_records
                 .get(&key)
-                .map(|s| s.linked_lamport)
-                .unwrap_or(0);
+                .map_or(0, |s| s.linked_lamport);
             if entry_lamport >= prev {
                 state.channel_segment_records.insert(
                     key,

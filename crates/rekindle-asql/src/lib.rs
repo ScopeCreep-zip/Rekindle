@@ -426,9 +426,15 @@ where
     result_receiver
         .await
         .expect(BUG_TEXT)
-        .map(|_| Connection { sender })
+        .map(|()| Connection { sender })
 }
 
+// The receiver is owned for the whole thread lifetime, not borrowed:
+// `event_loop` runs on its own thread and outlives every caller frame.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "owned for the spawned thread's lifetime; a borrow would tie it to the caller's frame"
+)]
 fn event_loop(mut conn: rusqlite::Connection, receiver: Receiver<Message>) {
     while let Ok(message) = receiver.recv() {
         match message {

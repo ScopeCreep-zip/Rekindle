@@ -90,6 +90,11 @@ pub fn merkle_root_of(chunk_hashes: &[[u8; 32]]) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        reason = "test fixture: the constants are compile-time known and well inside range; a fallible conversion here would add noise without adding safety"
+    )]
+
     use super::*;
 
     #[test]

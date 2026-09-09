@@ -5,6 +5,9 @@ edition = "2021"
 description = "Lost Cargo file sharing — chunking, Merkle, FEK, local cache for Rekindle v2.0"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 rekindle-crypto = { path = "../rekindle-crypto" }

@@ -1,6 +1,9 @@
 //! `merge` moderation CRDT apply rules.
 
-use super::*;
+use super::{
+    AdmissionDecision, AutoModRuleState, GovernanceEntry, GovernanceState, PendingMemberState,
+    PseudonymKey, TimeoutState,
+};
 
 pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
@@ -30,7 +33,7 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
             lamport,
             ..
         } => {
-            let existing_lamport = state.timeouts.get(target).map(|t| t.lamport).unwrap_or(0);
+            let existing_lamport = state.timeouts.get(target).map_or(0, |t| t.lamport);
             if *lamport > existing_lamport {
                 state.timeouts.insert(
                     target.clone(),
@@ -44,7 +47,7 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
         }
 
         GovernanceEntry::RemoveTimeoutEntry { target, lamport } => {
-            let existing_lamport = state.timeouts.get(target).map(|t| t.lamport).unwrap_or(0);
+            let existing_lamport = state.timeouts.get(target).map_or(0, |t| t.lamport);
             if *lamport > existing_lamport {
                 state.timeouts.remove(target);
             }
@@ -67,11 +70,7 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
             action,
             lamport,
         } => {
-            let existing_lamport = state
-                .automod_rules
-                .get(rule_id)
-                .map(|r| r.lamport)
-                .unwrap_or(0);
+            let existing_lamport = state.automod_rules.get(rule_id).map_or(0, |r| r.lamport);
             if *lamport > existing_lamport {
                 state.automod_rules.insert(
                     *rule_id,
@@ -120,7 +119,7 @@ pub(super) fn apply_admission(entry: &GovernanceEntry, state: &mut GovernanceSta
                 });
             // Later request from the same pseudonym refreshes the name.
             if *lamport >= slot.lamport {
-                slot.display_name = display_name.clone();
+                slot.display_name.clone_from(display_name);
                 slot.lamport = *lamport;
             }
         }

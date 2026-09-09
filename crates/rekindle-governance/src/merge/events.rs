@@ -1,6 +1,6 @@
 //! `merge` events CRDT apply rules.
 
-use super::*;
+use super::{EventState, GovernanceEntry, GovernanceState, PseudonymKey, ThreadState};
 
 pub(super) fn apply_events(
     author: &PseudonymKey,
@@ -83,7 +83,7 @@ pub(super) fn apply_events(
             status,
             lamport,
         } => {
-            let existing_lamport = state.events.get(event_id).map(|e| e.lamport).unwrap_or(0);
+            let existing_lamport = state.events.get(event_id).map_or(0, |e| e.lamport);
             if *lamport > existing_lamport {
                 state.events.insert(
                     *event_id,

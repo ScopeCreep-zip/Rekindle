@@ -1,3 +1,9 @@
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a perf test whose measurement IS its output; cargo test --nocapture is where it is read"
+)]
+
 //! Architecture §32 Phase 7 Week 26 — memory budget:
 //! "Memory usage: target <200MB per community" (line 4148).
 //!

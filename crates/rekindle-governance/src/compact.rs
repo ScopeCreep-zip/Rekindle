@@ -358,7 +358,7 @@ fn max_lamport(
     entries
         .iter()
         .filter(|e| pred(e))
-        .map(|e| e.lamport())
+        .map(rekindle_types::governance::GovernanceEntry::lamport)
         .max()
 }
 

@@ -5,6 +5,9 @@ edition = "2021"
 description = "DHT record lifecycle, SMPL sizing, and write retry for Rekindle v2.0"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 tokio = { workspace = true }

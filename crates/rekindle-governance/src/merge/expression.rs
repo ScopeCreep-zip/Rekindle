@@ -1,6 +1,6 @@
 //! `merge` expression CRDT apply rules.
 
-use super::*;
+use super::{ExpressionState, GovernanceEntry, GovernanceState};
 
 pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
@@ -26,8 +26,7 @@ pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceSt
             let existing_lamport = state
                 .expressions
                 .get(expression_id)
-                .map(|expr| expr.lamport)
-                .unwrap_or(0);
+                .map_or(0, |expr| expr.lamport);
             if *lamport > removed_lamport && *lamport > existing_lamport {
                 state.expressions.insert(
                     *expression_id,

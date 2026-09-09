@@ -18,7 +18,12 @@
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use crate::state::*;
+use crate::state::{
+    AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
+    EventState, ExpressionState, GovernanceState, InviteState, MetadataState, OnboardingState,
+    OverwriteState, PendingMemberState, RoleState, SegmentState, ThreadState, TimeoutState,
+    WelcomeScreenState,
+};
 use crate::validate::validate_write;
 
 /// A single entry tagged with its author's pseudonym.
@@ -114,7 +119,7 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         | G::EventCreated { .. }
         | G::EventArchived { .. } => apply_events(author, entry, state),
         G::ExpressionAdded { .. } | G::ExpressionRemoved { .. } | G::AttachmentPinned { .. } => {
-            apply_expression(entry, state)
+            apply_expression(entry, state);
         }
         G::BanEntry { .. }
         | G::UnbanEntry { .. }

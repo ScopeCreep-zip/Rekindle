@@ -5,6 +5,9 @@ edition = "2021"
 description = "Shared type definitions for Rekindle community system"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 hex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

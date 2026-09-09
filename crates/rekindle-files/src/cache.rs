@@ -78,9 +78,8 @@ impl ChunkCache {
                 continue;
             }
             let fanout_path = fanout_entry.path();
-            let inner = match std::fs::read_dir(&fanout_path) {
-                Ok(it) => it,
-                Err(_) => continue,
+            let Ok(inner) = std::fs::read_dir(&fanout_path) else {
+                continue;
             };
             for attach_entry in inner {
                 let attach_entry = attach_entry
@@ -92,9 +91,8 @@ impl ChunkCache {
                 let Ok(attachment_id) = parse_attachment_id_hex(hex_name) else {
                     continue;
                 };
-                let chunks = match std::fs::read_dir(&attach_path) {
-                    Ok(it) => it,
-                    Err(_) => continue,
+                let Ok(chunks) = std::fs::read_dir(&attach_path) else {
+                    continue;
                 };
                 for chunk_entry in chunks {
                     let chunk_entry = chunk_entry
@@ -222,7 +220,7 @@ impl ChunkCache {
         chunk_count: u32,
     ) -> Result<AttachmentBitmap, FilesError> {
         let mut bm = AttachmentBitmap::new(chunk_count);
-        for (key, _) in self.lru.iter() {
+        for (key, _) in &self.lru {
             if key.0 == attachment_id && key.1 < chunk_count && !bm.set(key.1) {
                 return Err(FilesError::ChunkIndexOutOfRange {
                     index: key.1,
@@ -271,7 +269,7 @@ impl ChunkCache {
     /// Statistics aggregated per attachment (chunk count + total bytes).
     pub fn stats_per_attachment(&self) -> HashMap<Uuid, (u32, u64)> {
         let mut out: HashMap<Uuid, (u32, u64)> = HashMap::new();
-        for ((id, _idx), size) in self.lru.iter() {
+        for ((id, _idx), size) in &self.lru {
             let entry = out.entry(*id).or_insert((0, 0));
             entry.0 += 1;
             entry.1 = entry.1.saturating_add(*size);

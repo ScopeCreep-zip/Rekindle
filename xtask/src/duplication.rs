@@ -705,3 +705,69 @@ pub fn collect_frontend_duplication(root: &Path) -> Result<Vec<Offender>> {
 
     Ok(offenders)
 }
+
+// ────────────────────────────────────────────────────────────────
+// check-workspace-lints
+// ────────────────────────────────────────────────────────────────
+
+/// Fail when a workspace member does not inherit `[workspace.lints]`.
+///
+/// CLAUDE.md states a zero-warnings policy backed by `deny(warnings)` in
+/// the workspace lints — but that only applies to crates that opt in
+/// with `[lints] workspace = true`. Eight did not, and nobody noticed
+/// because the build was green: their warnings simply were not denied.
+/// Among them was `rekindle-secrets`, the crate the architecture calls
+/// "the **sole crate** that handles raw key material" and the sole
+/// security boundary.
+///
+/// A policy that a new crate can skip by omission is not a policy, so
+/// this closes it by construction.
+pub fn check_workspace_lints(root: &Path) -> Result<()> {
+    let mut offenders = Vec::new();
+    let mut dirs: Vec<PathBuf> = walk_source_files(&root.join("crates"), &["toml"])?
+        .into_iter()
+        .filter(|p| p.file_name().is_some_and(|n| n == "Cargo.toml"))
+        .collect();
+    for extra in ["src-tauri/Cargo.toml", "xtask/Cargo.toml"] {
+        let p = root.join(extra);
+        if p.exists() {
+            dirs.push(p);
+        }
+    }
+
+    for manifest in dirs {
+        let Ok(text) = std::fs::read_to_string(&manifest) else {
+            continue;
+        };
+        // `[lints]` followed (before the next section) by `workspace = true`.
+        let inherits = text.split("[lints]").nth(1).is_some_and(|rest| {
+            rest.split('[')
+                .next()
+                .is_some_and(|body| body.contains("workspace = true"))
+        });
+        if !inherits {
+            let rel = manifest
+                .strip_prefix(root)
+                .unwrap_or(&manifest)
+                .display()
+                .to_string();
+            offenders.push(rel);
+        }
+    }
+
+    if offenders.is_empty() {
+        return Ok(());
+    }
+    for o in &offenders {
+        println!("  ✗ {o} does not inherit [workspace.lints]");
+    }
+    Err(anyhow!(
+        "{} crate(s) opt out of the workspace lints.\n\
+         Add:\n\
+         \n    [lints]\n    workspace = true\n\n\
+         `deny(warnings)` only reaches crates that ask for it, so an \
+         omission here silently exempts a whole crate from the \
+         zero-warnings policy.",
+        offenders.len()
+    ))
+}

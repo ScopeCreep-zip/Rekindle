@@ -9,8 +9,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::ChannelId;
-
 /// Typed session state. Decoupled from routing — a session is "live"
 /// on a fresh heartbeat regardless of `route_blob`. This is the local
 /// working form; on the wire `location`/`activity` are stripped from

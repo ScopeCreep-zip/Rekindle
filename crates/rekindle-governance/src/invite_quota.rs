@@ -71,6 +71,11 @@ pub fn check_max_uses_cap(max_uses: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        reason = "test fixture: the constants are compile-time known and well inside range; a fallible conversion here would add noise without adding safety"
+    )]
+
     use std::collections::HashMap;
 
     use super::*;

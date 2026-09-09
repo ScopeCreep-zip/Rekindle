@@ -5,6 +5,9 @@ edition = "2021"
 description = "Pure CRDT merge engine for Rekindle v2.0 flat governance — NO I/O, NO async"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }

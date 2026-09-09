@@ -161,7 +161,7 @@ mod tests {
             message_id: MessageId([7u8; 16]),
             content: vec![0xDE, 0xAD],
             mek_generation: 3,
-            timestamp: 1710000000,
+            timestamp: 1_710_000_000,
             lamport: 100,
             sequence: 5,
             reply_to: None,

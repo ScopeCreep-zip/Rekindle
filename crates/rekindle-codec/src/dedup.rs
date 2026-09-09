@@ -129,7 +129,7 @@ pub fn extract_dedup_key(signed: &SignedEnvelope) -> String {
 
         // Check for governance entry type + lamport (unique per author per lamport)
         if let Some(entry_type) = value.get("type").and_then(|v| v.as_str()) {
-            if let Some(lamport) = value.get("lamport").and_then(|v| v.as_u64()) {
+            if let Some(lamport) = value.get("lamport").and_then(serde_json::Value::as_u64) {
                 return format!("{entry_type}:{lamport}");
             }
         }

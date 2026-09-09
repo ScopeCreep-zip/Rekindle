@@ -75,6 +75,16 @@ pub enum GovernanceEntry {
         position: Option<u32>,
         slowmode_seconds: Option<u32>,
         nsfw: Option<bool>,
+        /// Three states, not two: `None` leaves the category alone,
+        /// `Some(None)` clears it, `Some(Some(id))` moves the channel.
+        /// The same shape `ExclusionGroupEdit` models as an enum — which
+        /// is what this should become, but the field is a Cap'n Proto
+        /// union arm, so changing its type is a schema migration rather
+        /// than a refactor.
+        #[allow(
+            clippy::option_option,
+            reason = "unchanged / clear / set, encoded in a Cap'n Proto union arm; converging on an ExclusionGroupEdit-style enum is a schema change"
+        )]
         category_id: Option<Option<CategoryId>>,
         lamport: u64,
     },

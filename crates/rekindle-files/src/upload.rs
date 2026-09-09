@@ -428,6 +428,11 @@ fn timestamp_now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        reason = "test fixture: the constants are compile-time known and well inside range; a fallible conversion here would add noise without adding safety"
+    )]
+
     use super::*;
     use crate::test_mock::MockDeps;
 

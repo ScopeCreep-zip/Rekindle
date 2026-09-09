@@ -112,6 +112,10 @@ impl ActivityByHour {
 /// overhead, not exact disk page counts.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(
+    clippy::struct_field_names,
+    reason = "the shared postfix is the unit — every field is a byte count, and dropping it would leave `total`/`message`/`metadata` saying nothing about what they measure. The names are also the camelCase wire contract the analytics view renders."
+)]
 pub struct StorageUsage {
     pub total_bytes: u64,
     pub message_bytes: u64,

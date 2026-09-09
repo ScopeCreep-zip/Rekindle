@@ -206,9 +206,10 @@ impl SubscriptionEvent {
                 // Audit chain breakage is a local-device event, not community-scoped.
                 SystemEvent::AuditChainBroken { .. } => None,
             },
-            Self::Network(_) => None,
-            Self::UnreadChanged { .. } => None,
-            Self::Friend(_) => None,
+            // Not community-scoped: a friend event, a network state
+            // change and an unread bump all belong to the device, not
+            // to one community.
+            Self::Network(_) | Self::UnreadChanged { .. } | Self::Friend(_) => None,
         }
     }
 }
@@ -266,15 +267,12 @@ impl SubscriptionFilter {
 
         // Community scope check
         if let Some(ref scope) = self.community_scope {
-            match event.community() {
-                Some(community) => {
-                    if community != scope {
-                        return false;
-                    }
-                }
-                None => {
-                    // Global events (friend, network, unread) pass community filters
-                    // — they're relevant regardless of community scope.
+            // `if let` rather than `match`: only the Some arm acts.
+            // Global events (friend, network, unread) have no community
+            // and pass every community filter.
+            if let Some(community) = event.community() {
+                if community != scope {
+                    return false;
                 }
             }
         }

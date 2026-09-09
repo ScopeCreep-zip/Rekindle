@@ -1,6 +1,9 @@
 //! `merge` community CRDT apply rules.
 
-use super::*;
+use super::{
+    CommunityPolicyState, GovernanceEntry, GovernanceState, InviteState, MetadataState,
+    PseudonymKey, SegmentState,
+};
 
 pub(super) fn apply_community(
     author: &PseudonymKey,
@@ -15,7 +18,7 @@ pub(super) fn apply_community(
             banner_hash,
             lamport,
         } => {
-            let existing_lamport = state.metadata.as_ref().map(|m| m.lamport).unwrap_or(0);
+            let existing_lamport = state.metadata.as_ref().map_or(0, |m| m.lamport);
             if *lamport > existing_lamport {
                 state.metadata = Some(MetadataState {
                     name: name.clone().unwrap_or_default(),
@@ -78,11 +81,7 @@ pub(super) fn apply_community(
             join_interval_seconds,
             lamport,
         } => {
-            let existing_lamport = state
-                .community_policy
-                .as_ref()
-                .map(|p| p.lamport)
-                .unwrap_or(0);
+            let existing_lamport = state.community_policy.as_ref().map_or(0, |p| p.lamport);
             if *lamport > existing_lamport {
                 state.community_policy = Some(CommunityPolicyState {
                     policy_text: policy_text.clone(),

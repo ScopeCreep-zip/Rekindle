@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    reason = "property test: segment counts are proptest-bounded well under u32::MAX"
+)]
+
 //! Property-based convergence tests for the CRDT merge engine.
 
 use super::*;

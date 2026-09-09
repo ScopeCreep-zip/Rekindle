@@ -1,6 +1,6 @@
 //! `merge` roles CRDT apply rules.
 
-use super::*;
+use super::{GovernanceEntry, GovernanceState, RoleState};
 
 pub(super) fn apply_roles(entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
@@ -16,7 +16,7 @@ pub(super) fn apply_roles(entry: &GovernanceEntry, state: &mut GovernanceState) 
             exclusion_group,
             lamport,
         } => {
-            let existing_lamport = state.roles.get(role_id).map(|r| r.lamport).unwrap_or(0);
+            let existing_lamport = state.roles.get(role_id).map_or(0, |r| r.lamport);
             if *lamport > existing_lamport {
                 state.roles.insert(
                     *role_id,

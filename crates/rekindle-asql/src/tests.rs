@@ -107,7 +107,7 @@ async fn close_call_test() -> Result<()> {
 }
 
 #[tokio::test]
-#[should_panic]
+#[should_panic(expected = "database connection should be open")]
 async fn close_call_unwrap_test() {
     let conn = Connection::open_in_memory().await.unwrap();
 
