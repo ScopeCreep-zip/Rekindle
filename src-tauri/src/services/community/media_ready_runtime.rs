@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use rekindle_voice::media_ready::MediaReadyInputs;
 
-use crate::channels::CommunityEvent;
 use crate::state::AppState;
 
 /// Mutate one (community, channel) slot's bring-up inputs; on a derived
@@ -108,11 +107,18 @@ pub fn note_pre_ready_drop(state: &Arc<AppState>) -> u64 {
 }
 
 fn emit(state: &Arc<AppState>, community_id: &str, channel_id: &str, ready: bool, reason: String) {
-    let event = CommunityEvent::VoiceMediaReady {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        ready,
-        reason,
-    };
-    crate::event_dispatch::emit_now(state, "community-event", &event);
+    let event = rekindle_types::subscription_events::SubscriptionEvent::Voice(
+        rekindle_types::subscription_events::VoiceEvent::MediaReady {
+            scope: rekindle_types::subscription_events::VoiceScope::Community {
+                community: community_id.to_string(),
+                channel: channel_id.to_string(),
+            },
+            ready,
+            reason,
+        },
+    );
+    // `emit_now` rather than `emit_voice`: this runs off the state
+    // handle, not an `AppHandle`, and the channel name has to be
+    // spelled out here. It matches what `channel_for` would pick.
+    crate::event_dispatch::emit_now(state, "voice-event", &event);
 }

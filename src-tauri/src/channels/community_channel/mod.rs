@@ -10,14 +10,6 @@ pub use dto::{
     VideoMediaCapabilitiesEvent, VideoSessionConfigEvent, VideoTopologyChangeEvent,
 };
 
-/// One voice-roster participant as shipped to the frontend.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VoiceRosterParticipantEvent {
-    pub pseudonym_key: String,
-    pub display_name: Option<String>,
-}
-
 /// Events streamed from Rust to the frontend for community operations.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
@@ -99,97 +91,6 @@ pub enum CommunityEvent {
         image_url: Option<String>,
         site_name: Option<String>,
         fetched_at: u64,
-    },
-    /// A member joined a voice channel.
-    #[serde(rename_all = "camelCase")]
-    VoiceJoin {
-        community_id: String,
-        channel_id: String,
-        pseudonym_key: String,
-        route_blob: Vec<u8>,
-        /// Name carried by the join handshake — render without waiting
-        /// for the registry scan.
-        display_name: Option<String>,
-    },
-    /// A member left a voice channel.
-    #[serde(rename_all = "camelCase")]
-    VoiceLeave {
-        community_id: String,
-        channel_id: String,
-        pseudonym_key: String,
-    },
-    /// Full voice-channel roster sent to a joiner so it sees everyone
-    /// already present (decoupled from MEK-decrypt). §10.1/§10.5.
-    #[serde(rename_all = "camelCase")]
-    VoiceRoster {
-        community_id: String,
-        channel_id: String,
-        participants: Vec<VoiceRosterParticipantEvent>,
-    },
-    /// Local three-way voice join handshake progressed
-    /// ("seen" | "connected"). `peer`/`display_name` identify the
-    /// member whose evidence drove the transition.
-    #[serde(rename_all = "camelCase")]
-    VoiceJoinHandshake {
-        community_id: String,
-        channel_id: String,
-        state: String,
-        peer: Option<String>,
-        display_name: Option<String>,
-    },
-    /// A joiner completed its handshake (transport-ready) — the UI
-    /// renders them solid instead of pending.
-    #[serde(rename_all = "camelCase")]
-    VoicePeerConfirmed {
-        community_id: String,
-        channel_id: String,
-        pseudonym_key: String,
-    },
-    /// Media-ready gate state for the active voice/video session
-    /// (WebRTC "transport before RTP" analog). Emitted on every
-    /// (ready, reason) transition; `reason` names the next blocker
-    /// ("handshake-announced" → … → "ready"). The frontend disables
-    /// camera/screen-share until `ready` and the backend hard-rejects
-    /// video egress.
-    #[serde(rename_all = "camelCase")]
-    VoiceMediaReady {
-        community_id: String,
-        channel_id: String,
-        ready: bool,
-        reason: String,
-    },
-    /// Voice channel mode switched (mesh ↔ MCU).
-    #[serde(rename_all = "camelCase")]
-    VoiceModeSwitch {
-        community_id: String,
-        channel_id: String,
-        mode: String,
-        host_pseudonym: Option<String>,
-    },
-    /// Stage channel speaker/topic update.
-    #[serde(rename_all = "camelCase")]
-    StageUpdate {
-        community_id: String,
-        channel_id: String,
-        topic: Option<String>,
-        speakers: Vec<String>,
-        moderator_pseudonym: String,
-    },
-    /// Local moderator-facing notification for a speak request.
-    #[serde(rename_all = "camelCase")]
-    SpeakRequest {
-        community_id: String,
-        channel_id: String,
-        requester_pseudonym: String,
-    },
-    /// Response to our stage speak request.
-    #[serde(rename_all = "camelCase")]
-    SpeakResponse {
-        community_id: String,
-        channel_id: String,
-        requester_pseudonym: String,
-        granted: bool,
-        moderator_pseudonym: String,
     },
     /// Lost Cargo: a download finished — `local_path` is the on-disk file.
     /// Frontend updates the message bubble's "Download" button to "Open".

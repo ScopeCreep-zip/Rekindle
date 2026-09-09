@@ -68,6 +68,15 @@ impl VoiceScope {
     }
 }
 
+/// One participant in a voice roster.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceParticipant {
+    pub pseudonym_key: String,
+    /// Absent when the roster row carried no name to resolve.
+    pub display_name: Option<String>,
+}
+
 /// Voice channel activity, and the local session's own state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -80,6 +89,14 @@ pub enum VoiceEvent {
         /// Carried when the joiner is known to us by name. Gossip
         /// supplies only the pseudonym; a local join supplies both.
         display_name: Option<String>,
+        /// The joiner's private-route blob, when their announcement
+        /// carried one.
+        ///
+        /// The desktop ignores it — its voice transport resolves the
+        /// route separately — but a CLI voice client has no other way
+        /// to reach the peer, so dropping it here would make one
+        /// impossible to build.
+        route_blob: Option<Vec<u8>>,
     },
     /// A member left a voice channel.
     /// Triggered by: gossip `ControlPayload::VoiceLeave`.
@@ -110,9 +127,64 @@ pub enum VoiceEvent {
     },
     /// Full voice roster update (authoritative participant list).
     /// Triggered by: gossip `ControlPayload::VoiceRoster`.
+    ///
+    /// Architecture §10.1/§10.5 — a present member's catch-up roster,
+    /// telling a joiner about everyone already in the channel,
+    /// including those whose `Joined` we never received. It carries the
+    /// participants rather than a count for exactly that reason: a
+    /// count cannot seed a roster.
     RosterUpdated {
         scope: VoiceScope,
-        participant_count: usize,
+        participants: Vec<VoiceParticipant>,
+    },
+
+    /// Progress through the three-leg voice join handshake.
+    JoinHandshake {
+        scope: VoiceScope,
+        /// Which leg — e.g. `"offered"`, `"answered"`, `"confirmed"`.
+        state: String,
+        /// The peer this leg concerns, when it names one.
+        peer: Option<String>,
+        display_name: Option<String>,
+    },
+
+    /// A peer completed the handshake and is transport-ready.
+    ///
+    /// RFC 5104 FIR semantics on the video side: a newly-confirmed peer
+    /// needs a full intra frame to start decoding.
+    PeerConfirmed {
+        scope: VoiceScope,
+        pseudonym: String,
+    },
+
+    /// Whether our media path for this call is ready to carry audio.
+    MediaReady {
+        scope: VoiceScope,
+        ready: bool,
+        /// Why — e.g. `"roster_non_empty"`, `"awaiting_peers"`.
+        reason: String,
+    },
+
+    /// Stage-mode state: who may speak, and the current topic.
+    StageUpdated {
+        scope: VoiceScope,
+        topic: Option<String>,
+        speakers: Vec<String>,
+        moderator_pseudonym: String,
+    },
+
+    /// A listener asked to speak on stage.
+    SpeakRequested {
+        scope: VoiceScope,
+        requester_pseudonym: String,
+    },
+
+    /// A moderator granted or denied a speak request.
+    SpeakResponded {
+        scope: VoiceScope,
+        requester_pseudonym: String,
+        granted: bool,
+        moderator_pseudonym: String,
     },
 
     // ── Local session state ──────────────────────────────────────
@@ -175,6 +247,12 @@ impl VoiceEvent {
             | Self::MuteChanged { scope, .. }
             | Self::DeafenChanged { scope, .. }
             | Self::RosterUpdated { scope, .. }
+            | Self::JoinHandshake { scope, .. }
+            | Self::PeerConfirmed { scope, .. }
+            | Self::MediaReady { scope, .. }
+            | Self::StageUpdated { scope, .. }
+            | Self::SpeakRequested { scope, .. }
+            | Self::SpeakResponded { scope, .. }
             | Self::LocalJoined { scope }
             | Self::SpeakingChanged { scope, .. }
             | Self::PacketsDropped { scope, .. }
@@ -231,7 +309,10 @@ mod tests {
     fn community_scope_reports_its_community() {
         let event = VoiceEvent::RosterUpdated {
             scope: community_scope(),
-            participant_count: 3,
+            participants: vec![VoiceParticipant {
+                pseudonym_key: "p".into(),
+                display_name: Some("Ada".into()),
+            }],
         };
         assert_eq!(event.community(), Some("c"));
         assert_eq!(event.scope().unwrap().session_key(), "ch");
@@ -246,6 +327,7 @@ mod tests {
                 scope: community_scope(),
                 pseudonym: "p".into(),
                 display_name: Some("Ada".into()),
+                route_blob: Some(vec![1, 2, 3]),
             },
             VoiceEvent::Left {
                 scope: community_scope(),
@@ -268,7 +350,41 @@ mod tests {
             },
             VoiceEvent::RosterUpdated {
                 scope: community_scope(),
-                participant_count: 4,
+                participants: vec![VoiceParticipant {
+                    pseudonym_key: "p".into(),
+                    display_name: None,
+                }],
+            },
+            VoiceEvent::JoinHandshake {
+                scope: community_scope(),
+                state: "offered".into(),
+                peer: Some("p".into()),
+                display_name: None,
+            },
+            VoiceEvent::PeerConfirmed {
+                scope: community_scope(),
+                pseudonym: "p".into(),
+            },
+            VoiceEvent::MediaReady {
+                scope: community_scope(),
+                ready: true,
+                reason: "roster_non_empty".into(),
+            },
+            VoiceEvent::StageUpdated {
+                scope: community_scope(),
+                topic: Some("AMA".into()),
+                speakers: vec!["p".into()],
+                moderator_pseudonym: "m".into(),
+            },
+            VoiceEvent::SpeakRequested {
+                scope: community_scope(),
+                requester_pseudonym: "p".into(),
+            },
+            VoiceEvent::SpeakResponded {
+                scope: community_scope(),
+                requester_pseudonym: "p".into(),
+                granted: true,
+                moderator_pseudonym: "m".into(),
             },
             VoiceEvent::LocalJoined {
                 scope: VoiceScope::Dm {
@@ -323,10 +439,11 @@ mod tests {
             },
             pseudonym: "p".into(),
             display_name: None,
+            route_blob: None,
         };
         assert_eq!(
             serde_json::to_string(&dm).unwrap(),
-            r#"{"joined":{"scope":{"dm":{"peerKey":"peer"}},"pseudonym":"p","displayName":null}}"#
+            r#"{"joined":{"scope":{"dm":{"peerKey":"peer"}},"pseudonym":"p","displayName":null,"routeBlob":null}}"#
         );
     }
 }

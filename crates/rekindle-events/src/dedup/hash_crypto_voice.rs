@@ -136,11 +136,63 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
             h.update(b"|");
             h.update(&[u8::from(*deafened)]);
         }
-        VoiceEvent::RosterUpdated {
-            participant_count, ..
-        } => {
+        VoiceEvent::RosterUpdated { participants, .. } => {
+            // Membership, not just the count: two rosters of the same
+            // size with different people in them are different rosters,
+            // and hashing the count alone would dedup the second away.
             h.update(b"roster|");
-            h.update(&(*participant_count as u64).to_le_bytes());
+            for p in participants {
+                h.update(p.pseudonym_key.as_bytes());
+                h.update(b",");
+            }
+        }
+        VoiceEvent::JoinHandshake { state, peer, .. } => {
+            h.update(b"handshake|");
+            h.update(state.as_bytes());
+            h.update(b"|");
+            h.update(peer.as_deref().unwrap_or("").as_bytes());
+        }
+        VoiceEvent::PeerConfirmed { pseudonym, .. } => {
+            h.update(b"peer_ok|");
+            h.update(pseudonym.as_bytes());
+        }
+        VoiceEvent::MediaReady { ready, reason, .. } => {
+            h.update(b"media_ready|");
+            h.update(&[u8::from(*ready)]);
+            h.update(b"|");
+            h.update(reason.as_bytes());
+        }
+        VoiceEvent::StageUpdated {
+            topic, speakers, ..
+        } => {
+            h.update(b"stage|");
+            h.update(topic.as_deref().unwrap_or("").as_bytes());
+            h.update(b"|");
+            for s in speakers {
+                h.update(s.as_bytes());
+                h.update(b",");
+            }
+        }
+        VoiceEvent::SpeakRequested {
+            requester_pseudonym,
+            ..
+        } => {
+            h.update(b"speak_req|");
+            h.update(requester_pseudonym.as_bytes());
+            h.update(b"|");
+            // Bucketed: a listener may re-request after a denial, and
+            // that is a new request rather than a duplicate.
+            h.update(&now_bucket.to_le_bytes());
+        }
+        VoiceEvent::SpeakResponded {
+            requester_pseudonym,
+            granted,
+            ..
+        } => {
+            h.update(b"speak_res|");
+            h.update(requester_pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&[u8::from(*granted)]);
         }
         VoiceEvent::LocalJoined { .. } => {
             h.update(b"localjoin|");

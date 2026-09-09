@@ -33,7 +33,7 @@ pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use social::SocialEvent;
 pub use system::SystemEvent;
 pub use typing::{TypingContext, TypingEvent};
-pub use voice::{VoiceEvent, VoiceScope};
+pub use voice::{VoiceEvent, VoiceParticipant, VoiceScope};
 
 use serde::{Deserialize, Serialize};
 

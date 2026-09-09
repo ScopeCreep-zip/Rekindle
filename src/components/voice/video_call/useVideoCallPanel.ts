@@ -6,7 +6,7 @@ import type {
   DmVideoFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
-import { subscribeCommunityEvents } from "../../../ipc/channels";
+import { subscribeCommunityEvents, subscribeVoiceEvents } from "../../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
@@ -50,6 +50,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   const [screenCapture, setScreenCapture] = createSignal<MediaStream | null>(null);
 
   let unlistenCommunity: Promise<UnlistenFn> | null = null;
+  let unlistenVoice: Promise<UnlistenFn> | null = null;
   /** Phase 11 Tier 1 — high-throughput video frames arrive on a dedicated
    *  per-stream `ipc::Channel` (registered with the backend on mount),
    *  not the shared event bus. DM mode keys by peer pubkey; community mode
@@ -211,19 +212,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           );
         } else if (event.type === "videoKeyframeRequest") {
           sender.forceKeyframe(event.data.streamId);
-        } else if (event.type === "voicePeerConfirmed") {
-          // Three-way handshake leg 3 landed: the joiner is
-          // transport-ready. RFC 5104 FIR semantics — a new member
-          // needs a full intra to start decoding; force one on every
-          // active local stream so their tiles light up immediately
-          // instead of waiting out the keyframe cadence.
-          if (event.data.channelId === props.channelId) {
-            if (ctx.nativeStreamId) {
-              void commands.forceNativeKeyframes();
-            } else {
-              sender.forceKeyframeAll();
-            }
-          }
         } else if (event.type === "videoBitrateTarget") {
           // Phase 4 — the BACKEND owns the bitrate policy now (AIMD
           // over FrameAck/BandwidthEstimate feedback with the audio
@@ -244,6 +232,24 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
             setCameraOn(false);
             setError(`Camera stopped: ${event.data.message}`);
           }
+        }
+      });
+      // Peer-confirmed moved to the voice family, which the backend
+      // routes to `voice-event` — it is voice signalling, not a
+      // community-channel signal.
+      unlistenVoice = subscribeVoiceEvents((event) => {
+        if (!("peerConfirmed" in event)) return;
+        const { scope } = event.peerConfirmed;
+        if (!("community" in scope) || scope.community.channel !== props.channelId) return;
+        // Three-way handshake leg 3 landed: the joiner is
+        // transport-ready. RFC 5104 FIR semantics — a new member
+        // needs a full intra to start decoding; force one on every
+        // active local stream so their tiles light up immediately
+        // instead of waiting out the keyframe cadence.
+        if (ctx.nativeStreamId) {
+          void commands.forceNativeKeyframes();
+        } else {
+          sender.forceKeyframeAll();
         }
       });
       if (!isE2E) {
@@ -298,6 +304,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     document.removeEventListener("visibilitychange", onPlayoutVisibilityChange);
     cancelPlayout();
     unlistenCommunity?.then((unlisten) => unlisten());
+    unlistenVoice?.then((unlisten) => unlisten());
     if (communityFrameChannel && props.mode === "community") {
       void commands.unregisterCommunityVideoChannel(props.communityId);
     }

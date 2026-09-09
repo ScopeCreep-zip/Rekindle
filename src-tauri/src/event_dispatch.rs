@@ -182,6 +182,11 @@ pub fn emit_live<P: Serialize + ?Sized>(app: &AppHandle, channel: &str, payload:
 /// one family at a time; the channel names are unchanged, so the
 /// frontend's `listen()` calls do not move — only the payload shape
 /// converges.
+/// Emit a voice event.
+pub fn emit_voice(app: &AppHandle, event: rekindle_types::subscription_events::VoiceEvent) {
+    emit_subscription(app, &SubscriptionEvent::Voice(event));
+}
+
 /// Emit a community membership event.
 ///
 /// Thin wrapper over [`emit_subscription`], as for calls and

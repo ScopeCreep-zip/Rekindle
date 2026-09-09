@@ -26,13 +26,64 @@ export type VoiceScope =
   | { community: { community: string; channel: string } }
   | { dm: { peerKey: string } };
 
+/** One participant in a voice roster. */
+export interface VoiceParticipant {
+  pseudonymKey: string;
+  displayName: string | null;
+}
+
 export type VoiceEvent =
-  | { joined: { scope: VoiceScope; pseudonym: string; displayName: string | null } }
+  | {
+      joined: {
+        scope: VoiceScope;
+        pseudonym: string;
+        displayName: string | null;
+        /**
+         * The joiner's private-route blob. The desktop ignores it — its
+         * transport resolves the route separately — but a CLI voice
+         * client has no other way to reach the peer.
+         */
+        routeBlob: number[] | null;
+      };
+    }
   | { left: { scope: VoiceScope; pseudonym: string } }
   | { modeChanged: { scope: VoiceScope; mode: string; hostPseudonym: string | null } }
   | { muteChanged: { scope: VoiceScope; targetPseudonym: string; muted: boolean } }
   | { deafenChanged: { scope: VoiceScope; targetPseudonym: string; deafened: boolean } }
-  | { rosterUpdated: { scope: VoiceScope; participantCount: number } }
+  /**
+   * A present member's catch-up roster (§10.1/§10.5). Carries the
+   * participants, not a count: its whole purpose is telling a joiner
+   * *who* is already in the channel.
+   */
+  | { rosterUpdated: { scope: VoiceScope; participants: VoiceParticipant[] } }
+  | {
+      joinHandshake: {
+        scope: VoiceScope;
+        /** `"announced"` | `"seen"` | `"connected"`. */
+        state: string;
+        peer: string | null;
+        displayName: string | null;
+      };
+    }
+  | { peerConfirmed: { scope: VoiceScope; pseudonym: string } }
+  | { mediaReady: { scope: VoiceScope; ready: boolean; reason: string } }
+  | {
+      stageUpdated: {
+        scope: VoiceScope;
+        topic: string | null;
+        speakers: string[];
+        moderatorPseudonym: string;
+      };
+    }
+  | { speakRequested: { scope: VoiceScope; requesterPseudonym: string } }
+  | {
+      speakResponded: {
+        scope: VoiceScope;
+        requesterPseudonym: string;
+        granted: boolean;
+        moderatorPseudonym: string;
+      };
+    }
   /** **We** joined a call and the audio pipeline is running. */
   | { localJoined: { scope: VoiceScope } }
   | { speakingChanged: { scope: VoiceScope; pseudonym: string; speaking: boolean } }

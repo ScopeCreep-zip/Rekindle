@@ -1,5 +1,6 @@
 import type { CommunityEvent } from "../../ipc/channels";
 import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
+import type { VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
@@ -57,127 +58,7 @@ function mirrorRosterAdd(
 /// Voice / stage / soundboard slice of the community event dispatcher.
 /// Returns `true` when the event was consumed.
 export function reduceVoice(event: CommunityEvent): boolean {
-  if (event.type === "voiceJoin") {
-    const { communityId, channelId, pseudonymKey, displayName } = event.data;
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
-      if (state.participants.includes(pseudonymKey)) return state;
-      return { ...state, participants: [...state.participants, pseudonymKey] };
-    });
-    mirrorRosterAdd(communityId, channelId, [{ pseudonymKey, displayName }]);
-    return true;
-  } else if (event.type === "voiceRoster") {
-    // §10.1/§10.5 — a present member's catch-up roster. Tells a joiner
-    // about everyone already in the channel (including members that
-    // joined before us, whose VoiceJoin we never received).
-    const { communityId, channelId, participants } = event.data;
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
-      const merged = Array.from(
-        new Set([...state.participants, ...participants.map((p) => p.pseudonymKey)]),
-      );
-      return { ...state, participants: merged };
-    });
-    mirrorRosterAdd(communityId, channelId, participants);
-    return true;
-  } else if (event.type === "voiceJoinHandshake") {
-    // Local three-way join progress: announced → seen → connected.
-    const { channelId, state } = event.data;
-    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
-      if (state === "seen" || state === "connected") {
-        setVoiceState("joinHandshake", state);
-        if (state === "connected") {
-          announce("Voice channel connected", "polite");
-        }
-      }
-    }
-    return true;
-  } else if (event.type === "voiceMediaReady") {
-    // Backend media-ready gate transition. The control bar disables
-    // camera/screen-share until ready; the camera effect in
-    // useVideoCallPanel re-fires when this flips true.
-    const { channelId, ready, reason } = event.data;
-    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
-      setVoiceState("mediaReady", { ready, reason });
-    }
-    return true;
-  } else if (event.type === "voicePeerConfirmed") {
-    // A joiner finished its handshake — render them solid.
-    const { channelId, pseudonymKey } = event.data;
-    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
-      setVoiceState("participants", (prev) =>
-        prev.map((p) => (p.publicKey === pseudonymKey ? { ...p, isConfirmed: true } : p)),
-      );
-    }
-    return true;
-  } else if (event.type === "voiceLeave") {
-    const { channelId, pseudonymKey } = event.data;
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      if (!prev) return prev;
-      return { ...prev, participants: prev.participants.filter((p) => p !== pseudonymKey) };
-    });
-    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
-      setVoiceState("participants", (prev) => prev.filter((p) => p.publicKey !== pseudonymKey));
-    }
-    return true;
-  } else if (event.type === "voiceModeSwitch") {
-    const { channelId, mode, hostPseudonym } = event.data;
-    // Update voice channel state
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
-      return { ...state, mode: mode as "mesh" | "mcu", hostPseudonym };
-    });
-    // Trigger the Rust set_voice_mode command so our local transport/MCU loop updates
-    commands.setVoiceMode(mode, hostPseudonym ?? undefined).catch((e) => {
-      console.error("Failed to set voice mode:", e);
-    });
-    return true;
-  } else if (event.type === "stageUpdate") {
-    const { communityId, channelId, topic, speakers, moderatorPseudonym } = event.data;
-    setCommunityState("communities", communityId, "channels",
-      (channel) => channel.id === channelId,
-      (channel) => ({
-        ...channel,
-        topic: topic ?? channel.topic,
-        stageSpeakers: speakers,
-        stageModerator: moderatorPseudonym,
-      }),
-    );
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
-      return {
-        ...state,
-        mode: "mcu",
-        speakers,
-        moderatorPseudonym,
-        topic: topic ?? state.topic ?? null,
-      };
-    });
-    void refreshStageHandRaises(communityId, channelId);
-    return true;
-  } else if (event.type === "speakRequest") {
-    const { channelId, requesterPseudonym } = event.data;
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
-      const pendingRequests = state.pendingRequests ?? [];
-      if (pendingRequests.includes(requesterPseudonym)) return state;
-      return { ...state, pendingRequests: [...pendingRequests, requesterPseudonym] };
-    });
-    addToast(`Speak request from ${requesterPseudonym.slice(0, 12)}`, "info");
-    return true;
-  } else if (event.type === "speakResponse") {
-    const { communityId, channelId, requesterPseudonym, granted } = event.data;
-    setCommunityState("voiceChannels", channelId, (prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        pendingRequests: (prev.pendingRequests ?? []).filter((value) => value !== requesterPseudonym),
-      };
-    });
-    void refreshStageHandRaises(communityId, channelId);
-    addToast(granted ? "Request to speak approved" : "Request to speak denied", granted ? "success" : "info");
-    return true;
-  } else if (event.type === "videoSessionConfig") {
+  if (event.type === "videoSessionConfig") {
     // Phase B / C — backend negotiated a new room-wide encoder +
     // decoder shape. Cache it; both the WebCodecs encoder
     // (video_sender.ts) and decoder (useVideoCallPanel.ts) read from
@@ -263,5 +144,195 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
   // (e.g. a new speaker just joined the stage).
   if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
     announce("Voice keys rotated", "polite");
+  }
+}
+
+// ── Daemon vocabulary ──────────────────────────────────────────────
+//
+// Each body is the `{ type, data }` case it replaced. Only the
+// destructuring changed: `communityId`/`channelId` come out of the
+// scope, and the roster's participants carry `displayName: string |
+// null` where the old DTO had `string | undefined`.
+
+/// Voice signalling on the daemon vocabulary.
+///
+/// Arrives on `voice-event`, not `community-event`: `VoiceEvent` is one
+/// family and the backend routes the whole of it there. `scope` tells a
+/// community call from a DM call, and this reducer only handles the
+/// former — a DM call has no community channel state to update.
+export function reduceSubscriptionVoice(event: VoiceSubscriptionEvent): void {
+  const v = event.voice;
+
+  if ("joined" in v) {
+    const { scope, pseudonym, displayName } = v.joined;
+    if (!("community" in scope)) return;
+    const { community, channel } = scope.community;
+    setCommunityState("voiceChannels", channel, (prev) => {
+      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+      if (state.participants.includes(pseudonym)) return state;
+      return { ...state, participants: [...state.participants, pseudonym] };
+    });
+    mirrorRosterAdd(community, channel, [
+      { pseudonymKey: pseudonym, displayName },
+    ]);
+    return;
+  }
+
+  if ("rosterUpdated" in v) {
+    // §10.1/§10.5 — a present member's catch-up roster. Tells a joiner
+    // about everyone already in the channel (including members that
+    // joined before us, whose `joined` we never received).
+    const { scope, participants } = v.rosterUpdated;
+    if (!("community" in scope)) return;
+    const { community, channel } = scope.community;
+    setCommunityState("voiceChannels", channel, (prev) => {
+      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+      const merged = Array.from(
+        new Set([...state.participants, ...participants.map((p) => p.pseudonymKey)]),
+      );
+      return { ...state, participants: merged };
+    });
+    mirrorRosterAdd(
+      community,
+      channel,
+      participants.map((p) => ({
+        pseudonymKey: p.pseudonymKey,
+        displayName: p.displayName,
+      })),
+    );
+    return;
+  }
+
+  if ("joinHandshake" in v) {
+    // Local three-way join progress: announced → seen → connected.
+    const { scope, state } = v.joinHandshake;
+    if (!("community" in scope)) return;
+    const channel = scope.community.channel;
+    if (voiceState.activeCallType !== "community" || voiceState.channelId !== channel) return;
+    if (state === "seen" || state === "connected") {
+      setVoiceState("joinHandshake", state);
+      if (state === "connected") {
+        announce("Voice channel connected", "polite");
+      }
+    }
+    return;
+  }
+
+  if ("mediaReady" in v) {
+    // Backend media-ready gate transition. The control bar disables
+    // camera/screen-share until ready; the camera effect in
+    // useVideoCallPanel re-fires when this flips true.
+    const { scope, ready, reason } = v.mediaReady;
+    if (!("community" in scope)) return;
+    const channel = scope.community.channel;
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
+      setVoiceState("mediaReady", { ready, reason });
+    }
+    return;
+  }
+
+  if ("peerConfirmed" in v) {
+    // A joiner finished its handshake — render them solid.
+    const { scope, pseudonym } = v.peerConfirmed;
+    if (!("community" in scope)) return;
+    const channel = scope.community.channel;
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
+      setVoiceState("participants", (prev) =>
+        prev.map((p) => (p.publicKey === pseudonym ? { ...p, isConfirmed: true } : p)),
+      );
+    }
+    return;
+  }
+
+  if ("left" in v) {
+    const { scope, pseudonym } = v.left;
+    if (!("community" in scope)) return;
+    const channel = scope.community.channel;
+    setCommunityState("voiceChannels", channel, (prev) => {
+      if (!prev) return prev;
+      return { ...prev, participants: prev.participants.filter((p) => p !== pseudonym) };
+    });
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
+      setVoiceState("participants", (prev) => prev.filter((p) => p.publicKey !== pseudonym));
+    }
+    return;
+  }
+
+  if ("modeChanged" in v) {
+    const { scope, mode, hostPseudonym } = v.modeChanged;
+    if (!("community" in scope)) return;
+    const channel = scope.community.channel;
+    // Update voice channel state
+    setCommunityState("voiceChannels", channel, (prev) => {
+      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+      return { ...state, mode: mode as "mesh" | "mcu", hostPseudonym };
+    });
+    // Trigger the Rust set_voice_mode command so our local transport/MCU loop updates
+    commands.setVoiceMode(mode, hostPseudonym ?? undefined).catch((e) => {
+      console.error("Failed to set voice mode:", e);
+    });
+    return;
+  }
+
+  if ("stageUpdated" in v) {
+    const { scope, topic, speakers, moderatorPseudonym } = v.stageUpdated;
+    if (!("community" in scope)) return;
+    const { community, channel } = scope.community;
+    setCommunityState(
+      "communities", community, "channels",
+      (ch) => ch.id === channel,
+      (ch) => ({
+        ...ch,
+        topic: topic ?? ch.topic,
+        stageSpeakers: speakers,
+        stageModerator: moderatorPseudonym,
+      }),
+    );
+    setCommunityState("voiceChannels", channel, (prev) => {
+      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+      return {
+        ...state,
+        mode: "mcu",
+        speakers,
+        moderatorPseudonym,
+        topic: topic ?? state.topic ?? null,
+      };
+    });
+    void refreshStageHandRaises(community, channel);
+    return;
+  }
+
+  if ("speakRequested" in v) {
+    const { scope, requesterPseudonym } = v.speakRequested;
+    if (!("community" in scope)) return;
+    const channel = scope.community.channel;
+    setCommunityState("voiceChannels", channel, (prev) => {
+      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+      const pendingRequests = state.pendingRequests ?? [];
+      if (pendingRequests.includes(requesterPseudonym)) return state;
+      return { ...state, pendingRequests: [...pendingRequests, requesterPseudonym] };
+    });
+    addToast(`Speak request from ${requesterPseudonym.slice(0, 12)}`, "info");
+    return;
+  }
+
+  if ("speakResponded" in v) {
+    const { scope, requesterPseudonym, granted } = v.speakResponded;
+    if (!("community" in scope)) return;
+    const { community, channel } = scope.community;
+    setCommunityState("voiceChannels", channel, (prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        pendingRequests: (prev.pendingRequests ?? []).filter(
+          (value) => value !== requesterPseudonym,
+        ),
+      };
+    });
+    void refreshStageHandRaises(community, channel);
+    addToast(
+      granted ? "Request to speak approved" : "Request to speak denied",
+      granted ? "success" : "info",
+    );
   }
 }

@@ -7,7 +7,7 @@
 //! (voice_join / voice_leave / stage_update / etc.) consume this trait
 //! via `Arc<dyn VoiceSignalingDeps>`.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 
 use crate::channels::CommunityEvent;
 use std::sync::Arc;
@@ -21,6 +21,13 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::db::DbPool;
 use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
+
+/// The nine voice-signalling emits below all name the same kind of
+/// scope; spelling out `VoiceScope::Community` at each one cost four
+/// lines apiece and pushed this file past the size ceiling.
+fn community_scope(community: String, channel: String) -> VoiceScope {
+    VoiceScope::Community { community, channel }
+}
 
 pub struct VoiceSignalingAdapter {
     state: Arc<AppState>,
@@ -346,15 +353,13 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 route_blob,
                 display_name,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::VoiceJoin {
-                        community_id,
-                        channel_id,
-                        pseudonym_key,
-                        route_blob,
+                    rekindle_types::subscription_events::VoiceEvent::Joined {
+                        scope: community_scope(community_id, channel_id),
+                        pseudonym: pseudonym_key,
                         display_name,
+                        route_blob: Some(route_blob),
                     },
                 );
             }
@@ -419,12 +424,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                         |i| i.handshake = hs,
                     );
                 }
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::VoiceJoinHandshake {
-                        community_id,
-                        channel_id,
+                    rekindle_types::subscription_events::VoiceEvent::JoinHandshake {
+                        scope: community_scope(community_id, channel_id),
                         state,
                         peer,
                         display_name,
@@ -436,13 +439,11 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 pseudonym_key,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::VoicePeerConfirmed {
-                        community_id,
-                        channel_id,
-                        pseudonym_key,
+                    rekindle_types::subscription_events::VoiceEvent::PeerConfirmed {
+                        scope: community_scope(community_id, channel_id),
+                        pseudonym: pseudonym_key,
                     },
                 );
             }
@@ -451,13 +452,11 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 pseudonym_key,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::VoiceLeave {
-                        community_id,
-                        channel_id,
-                        pseudonym_key,
+                    rekindle_types::subscription_events::VoiceEvent::Left {
+                        scope: community_scope(community_id, channel_id),
+                        pseudonym: pseudonym_key,
                     },
                 );
             }
@@ -466,19 +465,15 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 participants,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::VoiceRoster {
-                        community_id,
-                        channel_id,
+                    rekindle_types::subscription_events::VoiceEvent::RosterUpdated {
+                        scope: community_scope(community_id, channel_id),
                         participants: participants
                             .into_iter()
-                            .map(|p| {
-                                crate::channels::community_channel::VoiceRosterParticipantEvent {
-                                    pseudonym_key: p.pseudonym_key,
-                                    display_name: p.display_name,
-                                }
+                            .map(|p| rekindle_types::subscription_events::VoiceParticipant {
+                                pseudonym_key: p.pseudonym_key,
+                                display_name: p.display_name,
                             })
                             .collect(),
                     },
@@ -490,12 +485,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 mode,
                 host_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::VoiceModeSwitch {
-                        community_id,
-                        channel_id,
+                    rekindle_types::subscription_events::VoiceEvent::ModeChanged {
+                        scope: community_scope(community_id, channel_id),
                         mode,
                         host_pseudonym,
                     },
@@ -508,12 +501,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 speakers,
                 moderator_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::StageUpdate {
-                        community_id,
-                        channel_id,
+                    rekindle_types::subscription_events::VoiceEvent::StageUpdated {
+                        scope: community_scope(community_id, channel_id),
                         topic,
                         speakers,
                         moderator_pseudonym,
@@ -525,12 +516,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 requester_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::SpeakRequest {
-                        community_id,
-                        channel_id,
+                    rekindle_types::subscription_events::VoiceEvent::SpeakRequested {
+                        scope: community_scope(community_id, channel_id),
                         requester_pseudonym,
                     },
                 );
@@ -542,12 +531,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 granted,
                 moderator_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_voice(
                     &self.app_handle,
-                    "community-event",
-                    CommunityEvent::SpeakResponse {
-                        community_id,
-                        channel_id,
+                    rekindle_types::subscription_events::VoiceEvent::SpeakResponded {
+                        scope: community_scope(community_id, channel_id),
                         requester_pseudonym,
                         granted,
                         moderator_pseudonym,

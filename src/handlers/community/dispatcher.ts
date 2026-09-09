@@ -1,5 +1,5 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeCommunityEvents } from "../../ipc/channels";
+import { subscribeCommunityEvents, subscribeVoiceEvents } from "../../ipc/channels";
 import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
 import {
@@ -8,7 +8,11 @@ import {
   reduceSubscriptionSystem,
   reduceSubscriptionTyping,
 } from "./dispatcher_messages";
-import { reduceVoice, reduceSubscriptionCrypto } from "./dispatcher_voice";
+import {
+  reduceVoice,
+  reduceSubscriptionCrypto,
+  reduceSubscriptionVoice,
+} from "./dispatcher_voice";
 import { reduceSubscriptionContent } from "./dispatcher_content";
 
 /// Central community event dispatcher. Each incoming `CommunityEvent`
@@ -36,5 +40,17 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
     if (reduceMembership(event)) return;
     if (reduceMessages(event)) return;
     reduceVoice(event);
+  });
+}
+
+/// Community voice signalling, on the `voice-event` channel.
+///
+/// Separate from the community-event dispatcher because `VoiceEvent` is
+/// one Tier 1 family and the backend routes all of it to `voice-event`.
+/// The reducer filters to community-scoped calls; DM calls carry no
+/// community channel state to update.
+export function subscribeCommunityVoiceEvents(): Promise<UnlistenFn> {
+  return subscribeVoiceEvents((event) => {
+    reduceSubscriptionVoice({ voice: event });
   });
 }

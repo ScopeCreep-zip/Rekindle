@@ -291,34 +291,6 @@ export type CommunityEvent =
       };
     }
   | {
-      type: "stageUpdate";
-      data: {
-        communityId: string;
-        channelId: string;
-        topic: string | null;
-        speakers: string[];
-        moderatorPseudonym: string;
-      };
-    }
-  | {
-      type: "speakRequest";
-      data: {
-        communityId: string;
-        channelId: string;
-        requesterPseudonym: string;
-      };
-    }
-  | {
-      type: "speakResponse";
-      data: {
-        communityId: string;
-        channelId: string;
-        requesterPseudonym: string;
-        granted: boolean;
-        moderatorPseudonym: string;
-      };
-    }
-  | {
       type: "channelsUpdated";
       data: {
         communityId: string;
@@ -393,71 +365,6 @@ export type CommunityEvent =
         channelId: string;
         attachmentId: string;
         localPath: string;
-      };
-    }
-  | {
-      type: "voiceJoin";
-      data: {
-        communityId: string;
-        channelId: string;
-        pseudonymKey: string;
-        routeBlob: number[];
-        displayName: string | null;
-      };
-    }
-  | {
-      type: "voiceLeave";
-      data: {
-        communityId: string;
-        channelId: string;
-        pseudonymKey: string;
-      };
-    }
-  | {
-      type: "voiceRoster";
-      data: {
-        communityId: string;
-        channelId: string;
-        participants: { pseudonymKey: string; displayName: string | null }[];
-      };
-    }
-  | {
-      type: "voiceJoinHandshake";
-      data: {
-        communityId: string;
-        channelId: string;
-        state: string;
-        peer: string | null;
-        displayName: string | null;
-      };
-    }
-  | {
-      type: "voicePeerConfirmed";
-      data: {
-        communityId: string;
-        channelId: string;
-        pseudonymKey: string;
-      };
-    }
-  | {
-      // Media-ready gate state for the active voice/video session
-      // (WebRTC "transport before RTP" analog). `reason` names the
-      // next blocker; camera/screen-share stay disabled until ready.
-      type: "voiceMediaReady";
-      data: {
-        communityId: string;
-        channelId: string;
-        ready: boolean;
-        reason: string;
-      };
-    }
-  | {
-      type: "voiceModeSwitch";
-      data: {
-        communityId: string;
-        channelId: string;
-        mode: string;
-        hostPseudonym: string | null;
       };
     }
   | {

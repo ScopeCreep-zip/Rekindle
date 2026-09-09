@@ -81,6 +81,10 @@ pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {
             scope: scope.clone(),
             pseudonym: peer_pubkey,
             display_name: Some(display_name),
+            // The session-level join fires on the first received voice
+            // packet, by which point the route is already resolved —
+            // the blob rides the gossip announcement instead.
+            route_blob: None,
         },
         VoiceSessionEvent::UserLeft { peer_pubkey } => VoiceEvent::Left {
             scope: scope.clone(),
@@ -154,6 +158,9 @@ pub(super) fn emit_local_joined_impl(
             scope: scope.clone(),
             pseudonym: public_key.to_string(),
             display_name: Some(display_name.to_string()),
+            // This is us joining our own call; nobody needs a route to
+            // reach us from this event.
+            route_blob: None,
         },
         VoiceEvent::ConnectionQuality {
             scope: scope.clone(),

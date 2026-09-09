@@ -31,9 +31,14 @@ use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
 
-/// A voice channel participant.
+/// One row in the TUI's voice participant list.
+///
+/// Named `...Row`, not `VoiceParticipant`, to stay distinct from
+/// `rekindle_types::subscription_events::VoiceParticipant`, which is the
+/// wire roster entry. This one carries view state (mute, deafen) that
+/// the wire entry does not.
 #[derive(Debug, Clone)]
-pub struct VoiceParticipant {
+pub struct VoiceParticipantRow {
     /// Pseudonym key.
     pub pseudonym_key: String,
     /// Display name.
@@ -51,7 +56,7 @@ pub struct VoiceSessionView {
     /// Voice channel ID.
     channel: String,
     /// Participants in the voice session.
-    participants: Vec<VoiceParticipant>,
+    participants: Vec<VoiceParticipantRow>,
     /// Whether we are muted.
     self_muted: bool,
     /// Whether we are deafened.
@@ -220,7 +225,7 @@ impl View for VoiceSessionView {
                     .iter()
                     .any(|p| p.pseudonym_key == *pseudonym)
                 {
-                    self.participants.push(VoiceParticipant {
+                    self.participants.push(VoiceParticipantRow {
                         pseudonym_key: pseudonym.clone(),
                         display_name: helpers::abbreviate_key(pseudonym),
                         muted: false,
