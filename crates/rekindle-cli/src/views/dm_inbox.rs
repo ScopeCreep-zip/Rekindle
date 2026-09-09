@@ -308,6 +308,8 @@ impl View for DmInboxView {
             timestamp,
             sender_name,
             body,
+            decryption_failed,
+            ..
         }) = event
         {
             let display_msg = DmMessageDisplay {
@@ -315,7 +317,15 @@ impl View for DmInboxView {
                 sender_name: sender_name
                     .clone()
                     .unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
-                body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
+                // A failed decrypt is not a pending one. Without this
+                // flag the two were indistinguishable here, and a
+                // permanently undecryptable message sat forever as
+                // "(decrypting...)".
+                body: if *decryption_failed {
+                    "(could not decrypt)".to_string()
+                } else {
+                    body.clone().unwrap_or_else(|| "(decrypting...)".into())
+                },
                 timestamp: *timestamp,
                 is_self: false,
             };

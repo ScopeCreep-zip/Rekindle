@@ -16,7 +16,6 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::state::AppState;
 
@@ -107,10 +106,9 @@ pub(super) async fn handle_call_signaling_payload(
                     )
                     .await;
                 }
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_call(
                     app_handle,
-                    "chat-event",
-                    &ChatEvent::CallEnded {
+                    rekindle_types::subscription_events::CallEvent::Ended {
                         call_id: call_id.clone(),
                         reason: reason.clone(),
                     },
@@ -134,10 +132,9 @@ pub(super) async fn handle_call_signaling_payload(
         } => {
             let known = state.active_calls.contains(&call_id);
             if known {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_call(
                     app_handle,
-                    "chat-event",
-                    &ChatEvent::CallMediaStateChanged {
+                    rekindle_types::subscription_events::CallEvent::MediaStateChanged {
                         call_id,
                         audio,
                         video,
@@ -165,10 +162,9 @@ pub(super) async fn handle_call_signaling_payload(
                     emoji.len(),
                 );
             } else if state.active_calls.contains(&call_id) {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_call(
                     app_handle,
-                    "chat-event",
-                    &ChatEvent::CallReactionReceived {
+                    rekindle_types::subscription_events::CallEvent::ReactionReceived {
                         call_id,
                         sender: sender_hex.to_string(),
                         emoji,

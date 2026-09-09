@@ -35,7 +35,8 @@ fn dedup_suppresses_duplicate() {
     let mut dedup = EventDedup::new(100, 300);
     let event = SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: "abc123".into(),
-        dm_log_key: "log1".into(),
+        dm_log_key: Some("log1".into()),
+        display_name: None,
     });
     assert!(dedup.check(&event)); // first: emit
     assert!(!dedup.check(&event)); // second: suppress

@@ -17,7 +17,6 @@ use rekindle_calls::CallError;
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
 use super::CallsAdapter;
-use crate::channels::ChatEvent;
 use crate::state_helpers;
 
 #[async_trait]
@@ -181,10 +180,9 @@ impl CallSignalingDeps for CallsAdapter {
                     },
                 );
             }
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_call(
                 &app,
-                "chat-event",
-                &ChatEvent::CallTimedOut { call_id },
+                rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
             );
         });
         self.state.background_handles.lock().push(handle);
@@ -243,10 +241,9 @@ impl CallSignalingDeps for CallsAdapter {
                 );
             }
 
-            crate::event_dispatch::dispatch(
+            crate::event_dispatch::emit_call(
                 &app,
-                "chat-event",
-                ChatEvent::CallMissed {
+                rekindle_types::subscription_events::CallEvent::Missed {
                     call_id: call_id.clone(),
                     from: peer_pubkey.clone(),
                 },
@@ -303,14 +300,17 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
                 expires_at_ms,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::IncomingCall {
+                    rekindle_types::subscription_events::CallEvent::Incoming {
                         call_id: call_id.clone(),
                         from: from_public_key.clone(),
                         display_name: from_display_name.clone(),
                         kind: kind_str(kind),
+                        // A 1:1 call lists nobody: the caller is
+                        // already `from`, and the callee is us.
+                        participants: Vec::new(),
+                        is_group: false,
                         expires_at_ms,
                     },
                 );
@@ -327,10 +327,9 @@ impl CallSignalingDeps for CallsAdapter {
                 );
             }
             CallSignalEvent::CallRinging { call_id, .. } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    ChatEvent::CallRinging { call_id },
+                    rekindle_types::subscription_events::CallEvent::Ringing { call_id },
                 );
             }
             CallSignalEvent::CallConnected {
@@ -339,41 +338,43 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
             } => {
                 let display_name = self.display_name_with_fallback(&peer_public_key);
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::CallConnected {
+                    rekindle_types::subscription_events::CallEvent::Connected {
                         call_id,
-                        kind: kind_str(kind),
-                        peer_key: peer_public_key,
-                        peer_display_name: display_name,
-                        expected_local_camera: matches!(kind, CallKind::Video),
+                        direct: Some(rekindle_types::subscription_events::DirectCallInfo {
+                            kind: kind_str(kind),
+                            peer_key: peer_public_key,
+                            peer_display_name: display_name,
+                            expected_local_camera: matches!(kind, CallKind::Video),
+                        }),
                     },
                 );
             }
             CallSignalEvent::CallDeclined {
                 call_id, reason, ..
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    ChatEvent::CallDeclined { call_id, reason },
+                    rekindle_types::subscription_events::CallEvent::Declined { call_id, reason },
                 );
             }
+            // One arm for both: a call ending is the same fact
+            // whether it had two participants or ten, and the desktop's
+            // two variants had identical fields.
             CallSignalEvent::CallEnded {
                 call_id, reason, ..
-            } => {
-                crate::event_dispatch::dispatch(
+            }
+            | CallSignalEvent::GroupCallEnded { call_id, reason } => {
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    ChatEvent::CallEnded { call_id, reason },
+                    rekindle_types::subscription_events::CallEvent::Ended { call_id, reason },
                 );
             }
             CallSignalEvent::CallTimedOut { call_id, .. } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    ChatEvent::CallTimedOut { call_id },
+                    rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
                 );
             }
             CallSignalEvent::CallMissed {
@@ -381,10 +382,9 @@ impl CallSignalingDeps for CallsAdapter {
                 peer_public_key,
                 ..
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::CallMissed {
+                    rekindle_types::subscription_events::CallEvent::Missed {
                         call_id,
                         from: peer_public_key,
                     },
@@ -395,14 +395,18 @@ impl CallSignalingDeps for CallsAdapter {
                 peer_display_name,
                 reason,
             } => {
-                crate::event_dispatch::dispatch(
+                // Not a call event: focusing a conversation is a
+                // channel-scoped UI hint, and it fires for accepted
+                // friend requests too, not only for calls.
+                crate::event_dispatch::emit_subscription(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::ConversationFocusRequested {
-                        peer_key: peer_public_key,
-                        display_name: peer_display_name,
-                        reason,
-                    },
+                    &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                        rekindle_types::subscription_events::ChannelMessageEvent::ConversationFocusRequested {
+                            peer_key: peer_public_key,
+                            display_name: peer_display_name,
+                            reason,
+                        },
+                    ),
                 );
             }
             CallSignalEvent::CallStarted {
@@ -412,10 +416,9 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
                 expires_at_ms,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::CallStarted {
+                    rekindle_types::subscription_events::CallEvent::Started {
                         call_id,
                         kind: kind_str(kind),
                         peer_key: peer_public_key,
@@ -432,15 +435,15 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
                 expires_at_ms,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::IncomingGroupCall {
+                    rekindle_types::subscription_events::CallEvent::Incoming {
                         call_id: call_id.clone(),
                         from: initiator_public_key.clone(),
                         display_name: initiator_display_name.clone(),
                         kind: kind_u8_str(kind),
                         participants,
+                        is_group: true,
                         expires_at_ms,
                     },
                 );
@@ -457,20 +460,23 @@ impl CallSignalingDeps for CallsAdapter {
                 );
             }
             CallSignalEvent::GroupCallConnected { call_id } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    ChatEvent::GroupCallConnected { call_id },
+                    // No peer: a group call has no single other end,
+                    // and the signal carries only the id.
+                    rekindle_types::subscription_events::CallEvent::Connected {
+                        call_id,
+                        direct: None,
+                    },
                 );
             }
             CallSignalEvent::GroupCallParticipantJoined {
                 call_id,
                 peer_public_key,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::GroupCallParticipantJoined {
+                    rekindle_types::subscription_events::CallEvent::ParticipantJoined {
                         call_id,
                         participant_pubkey: peer_public_key,
                     },
@@ -481,21 +487,13 @@ impl CallSignalingDeps for CallsAdapter {
                 peer_public_key,
                 reason,
             } => {
-                crate::event_dispatch::dispatch(
+                crate::event_dispatch::emit_call(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::GroupCallParticipantLeft {
+                    rekindle_types::subscription_events::CallEvent::ParticipantLeft {
                         call_id,
                         participant_pubkey: peer_public_key,
                         reason,
                     },
-                );
-            }
-            CallSignalEvent::GroupCallEnded { call_id, reason } => {
-                crate::event_dispatch::dispatch(
-                    &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::GroupCallEnded { call_id, reason },
                 );
             }
         }

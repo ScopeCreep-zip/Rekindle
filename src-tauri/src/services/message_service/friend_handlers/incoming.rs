@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
@@ -197,11 +196,13 @@ pub(crate) async fn handle_friend_request_full(
         );
         return;
     }
-    let event = ChatEvent::FriendRequest {
-        from: req.sender_hex.to_string(),
-        display_name: req.display_name.to_string(),
-        message: req.message.to_string(),
-    };
+    let event = rekindle_types::subscription_events::SubscriptionEvent::Friend(
+        rekindle_types::subscription_events::FriendEvent::RequestReceived {
+            from_key: req.sender_hex.to_string(),
+            display_name: req.display_name.to_string(),
+            message: req.message.to_string(),
+        },
+    );
     crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
 
     // B10/P3.4 — try the ACK send immediately; if it fails (peer offline,
@@ -310,10 +311,13 @@ pub(crate) async fn handle_friend_accept_full(
     }
     let display_name = state_helpers::friend_display_name(state, a.sender_hex)
         .unwrap_or_else(|| a.sender_hex.to_string());
-    let event = ChatEvent::FriendRequestAccepted {
-        from: a.sender_hex.to_string(),
-        display_name,
-    };
+    let event = rekindle_types::subscription_events::SubscriptionEvent::Friend(
+        rekindle_types::subscription_events::FriendEvent::Accepted {
+            peer_key: a.sender_hex.to_string(),
+            dm_log_key: None,
+            display_name: Some(display_name),
+        },
+    );
     crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
 }
 

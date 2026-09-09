@@ -202,6 +202,14 @@ impl DmPayload {
                     timestamp,
                     sender_name: None, // enriched from friend list by SubscriptionManager
                     body: Some(String::from_utf8_lossy(&body).to_string()),
+                    // The frame decrypted — reaching this arm is the
+                    // proof — so neither flag is set here. Automod runs
+                    // above this layer.
+                    decryption_failed: false,
+                    automod_blurred: false,
+                    conversation_id: sender_key.into(),
+                    server_message_id: None,
+                    reply_to_id: None,
                 })
             }
             Self::Typing { typing } => {
@@ -232,7 +240,10 @@ impl DmPayload {
             }),
             Self::FriendAccept { .. } => SubscriptionEvent::Friend(FriendEvent::Accepted {
                 peer_key: sender_key.into(),
-                dm_log_key: String::new(),
+                dm_log_key: None,
+                // The DM payload carries no name; the desktop resolves
+                // it from its friend row instead.
+                display_name: None,
             }),
             Self::FriendReject => SubscriptionEvent::Friend(FriendEvent::Rejected {
                 peer_key: sender_key.into(),

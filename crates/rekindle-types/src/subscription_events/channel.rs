@@ -57,5 +57,55 @@ pub enum ChannelMessageEvent {
         sender_name: Option<String>,
         /// Decrypted plaintext body. Always Some for DMs (Signal decrypts inline).
         body: Option<String>,
+        /// Decryption failed — the body is a placeholder, not content.
+        /// A frontend must not render it as the peer's words.
+        decryption_failed: bool,
+        /// Automod matched, so the body should render blurred behind a
+        /// reveal. Distinct from `decryption_failed`: the text is real.
+        automod_blurred: bool,
+        /// Which conversation this belongs to, for routing to a window.
+        ///
+        /// For a DM this equals `peer_key`. It exists separately because
+        /// the desktop routes its chat windows on it, and a group DM's
+        /// conversation is its record key rather than any one peer.
+        conversation_id: String,
+        /// The sender's own id for the message, for dedup and acks.
+        server_message_id: Option<String>,
+        /// The message this replies to, if any.
+        reply_to_id: Option<String>,
+    },
+
+    /// A direct message we sent was acknowledged by the peer.
+    DirectMessageAcknowledged {
+        /// The send timestamp in milliseconds, which is what a DM's
+        /// local echo is keyed on — a DM has no server-assigned id, so
+        /// this is a `u64` rather than the `String` that
+        /// `server_message_id` uses for channel messages.
+        message_id: u64,
+    },
+
+    /// We were invited into a direct conversation — a per-peer DM log,
+    /// or a group DM.
+    DirectConversationInvited {
+        /// Who invited us.
+        from: String,
+        /// The conversation's DHT record.
+        record_key: String,
+        /// The initiator's pseudonym within the conversation.
+        initiator_pseudonym: String,
+        is_group: bool,
+    },
+
+    /// Something happened that should bring a conversation to the
+    /// front — an incoming call, an accepted friend request.
+    ///
+    /// A UI hint rather than a protocol fact, but one every frontend
+    /// wants: a TUI raises the pane, the desktop focuses the window.
+    ConversationFocusRequested {
+        peer_key: String,
+        display_name: String,
+        /// Why focus was requested, for a frontend that wants to
+        /// distinguish (or ignore) some causes.
+        reason: String,
     },
 }

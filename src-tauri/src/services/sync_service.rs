@@ -154,12 +154,13 @@ async fn expire_stale_requests(
 
     for pk in &expired_pending {
         state.friends.write().remove(pk);
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             app_handle,
-            "chat-event",
-            &crate::channels::ChatEvent::FriendRemoved {
-                public_key: pk.clone(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+                rekindle_types::subscription_events::FriendEvent::Removed {
+                    peer_key: pk.clone(),
+                },
+            ),
         );
     }
     if !expired_pending.is_empty() {

@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use crate::channels::ChatEvent;
 use crate::commands::chat::Message;
 use crate::db::{self, DbPool};
 use crate::db_helpers::db_call;
@@ -47,10 +46,12 @@ pub async fn send_dm_inner(
         tracing::warn!(error = %e, "DM send failed — message persisted locally");
     }
 
-    let ack = ChatEvent::MessageAck {
-        message_id: timestamp.cast_unsigned(),
-    };
-    crate::event_dispatch::emit_live(&app, "chat-event", &ack);
+    let ack = rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+        rekindle_types::subscription_events::ChannelMessageEvent::DirectMessageAcknowledged {
+            message_id: timestamp.cast_unsigned(),
+        },
+    );
+    crate::event_dispatch::emit_subscription(&app, &ack);
 
     Ok(())
 }

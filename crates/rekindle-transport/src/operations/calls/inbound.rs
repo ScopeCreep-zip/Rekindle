@@ -3,9 +3,9 @@
 //! These mirror the local actions but are driven by inbound
 //! envelopes / timer firings. The W16.7 receive dispatch pulls
 //! (call_id, sender, payload) out of the wire envelope, builds the
-//! appropriate CallEvent, and calls the matching dispatch helper.
+//! appropriate CallInput, and calls the matching dispatch helper.
 
-use rekindle_calls::{CallEvent, CallKind};
+use rekindle_calls::{CallInput, CallKind};
 use rekindle_types::notification::TransportNotification;
 use rekindle_utils::timestamp_ms;
 use tracing::{debug, warn};
@@ -25,7 +25,7 @@ impl CallRuntime {
         peer_x25519_pub: [u8; 32],
         expires_at_ms: u64,
     ) {
-        let event = CallEvent::InviteReceived {
+        let event = CallInput::InviteReceived {
             call_id,
             from,
             from_display_name,
@@ -45,7 +45,7 @@ impl CallRuntime {
         from: String,
         peer_x25519_pub: [u8; 32],
     ) {
-        let event = CallEvent::AcceptReceived {
+        let event = CallInput::AcceptReceived {
             call_id,
             from,
             peer_x25519_pub,
@@ -56,7 +56,7 @@ impl CallRuntime {
 
     /// W16.7 entry: an inbound CallDecline arrived (caller-side).
     pub async fn handle_decline_received(&self, call_id: String, reason: String) {
-        let event = CallEvent::DeclineReceived { call_id, reason };
+        let event = CallInput::DeclineReceived { call_id, reason };
         let effects = self.inner.state_machine.lock().apply(event);
         self.interpret_effects(effects).await;
     }
@@ -64,28 +64,28 @@ impl CallRuntime {
     /// W16.7 entry: an inbound CallRinging arrived (caller-side
     /// alerting hint).
     pub async fn handle_ringing_received(&self, call_id: String) {
-        let event = CallEvent::RingingReceived { call_id };
+        let event = CallInput::RingingReceived { call_id };
         let effects = self.inner.state_machine.lock().apply(event);
         self.interpret_effects(effects).await;
     }
 
     /// W16.7 entry: an inbound CallEnd arrived from either side.
     pub async fn handle_end_received(&self, call_id: String, reason: String) {
-        let event = CallEvent::EndReceived { call_id, reason };
+        let event = CallInput::EndReceived { call_id, reason };
         let effects = self.inner.state_machine.lock().apply(event);
         self.interpret_effects(effects).await;
     }
 
     /// W16.7 entry: voice transport finished bringing up audio.
     pub async fn handle_voice_transport_up(&self, call_id: String) {
-        let event = CallEvent::VoiceTransportUp { call_id };
+        let event = CallInput::VoiceTransportUp { call_id };
         let effects = self.inner.state_machine.lock().apply(event);
         self.interpret_effects(effects).await;
     }
 
     /// W16.7 entry: voice transport failed mid-call.
     pub async fn handle_voice_transport_down(&self, call_id: String, reason: String) {
-        let event = CallEvent::VoiceTransportDown { call_id, reason };
+        let event = CallInput::VoiceTransportDown { call_id, reason };
         let effects = self.inner.state_machine.lock().apply(event);
         self.interpret_effects(effects).await;
     }
@@ -211,7 +211,7 @@ impl CallRuntime {
     }
 
     /// W16.5b — receive-side handler for `InboundCall::CallInvite`.
-    /// Drives the state machine with `CallEvent::InviteReceived`,
+    /// Drives the state machine with `CallInput::InviteReceived`,
     /// interprets resulting effects (PersistCallState, SpawnIncomingTimer,
     /// Notify(IncomingCall)), and synthesizes the synchronous
     /// `CallResponse::CallRinging` reply.
@@ -250,7 +250,7 @@ impl CallRuntime {
         peer_pub.copy_from_slice(&invite.initiator_x25519_pub);
 
         let now = timestamp_ms();
-        let event = CallEvent::InviteReceived {
+        let event = CallInput::InviteReceived {
             call_id: invite.call_id.clone(),
             from: sender_pubkey.to_string(),
             from_display_name: sender_display_name.to_string(),

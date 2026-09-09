@@ -7,7 +7,7 @@
 //! state ping (`send_call_media_state`, `send_call_reaction`).
 //!
 //! Each method:
-//! 1. Constructs a [`CallEvent`] for the change.
+//! 1. Constructs a [`CallInput`] for the change.
 //! 2. Drives the state machine via `apply` (returns `Vec<Effect>`).
 //! 3. Interprets effects: serializes envelope sends through
 //!    [`EnvelopeQueue`], spawns timers, persists state via
@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_calls::{CallEvent, CallKind, CallStateMachine};
+use rekindle_calls::{CallInput, CallKind, CallStateMachine};
 use rekindle_utils::timestamp_ms;
 use tokio::task::JoinHandle;
 use tracing::debug;
@@ -178,8 +178,8 @@ impl CallRuntime {
             // machine no-ops if the call has already left
             // Outgoing/Incoming.
             let event = match kind {
-                TimerKind::Dialing => CallEvent::LocalDialingTimeout { call_id: cid },
-                TimerKind::Incoming => CallEvent::LocalIncomingTimeout { call_id: cid },
+                TimerKind::Dialing => CallInput::LocalDialingTimeout { call_id: cid },
+                TimerKind::Incoming => CallInput::LocalIncomingTimeout { call_id: cid },
             };
             let effects = runtime.inner.state_machine.lock().apply(event);
             runtime.interpret_effects(effects).await;

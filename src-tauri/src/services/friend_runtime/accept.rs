@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use crate::channels::ChatEvent;
 use crate::db::{self, DbPool};
 use crate::db_helpers::db_call;
 use crate::services;
@@ -214,13 +213,17 @@ pub async fn accept_request_inner(
         }
     }
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         &app,
-        "chat-event",
-        &ChatEvent::FriendRequestAccepted {
-            from: public_key.clone(),
-            display_name: display_name.clone(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Accepted {
+                peer_key: public_key.clone(),
+                // The acceptance itself does not establish the log; the
+                // caller wires it separately.
+                dm_log_key: None,
+                display_name: Some(display_name.clone()),
+            },
+        ),
     );
 
     crate::audit_repo::append_async(

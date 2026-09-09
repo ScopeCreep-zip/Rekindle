@@ -1,6 +1,7 @@
 import { Component, onMount, onCleanup, createMemo, createSignal, createEffect, Show } from "solid-js";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatEvent } from "../ipc/channels";
+import { isLegacy } from "../ipc/channels/chat_events";
 import Titlebar from "../components/titlebar/Titlebar";
 import MessageList from "../components/chat/MessageList";
 import MessageInput from "../components/chat/MessageInput";
@@ -97,7 +98,14 @@ const ChatWindow: Component = () => {
     // queueMicrotask ensures handleIncomingMessage has already updated the store.
     const directUnsub = await listen<ChatEvent>("chat-event", (event) => {
       const p = event.payload;
-      if (p.type === "messageReceived" && p.data.conversationId === peerId) {
+      // DMs now arrive on the daemon vocabulary; the legacy envelope
+      // carries community channel messages, which this window ignores.
+      if (
+        !isLegacy(p) &&
+        "channelMessage" in p &&
+        "directMessageReceived" in p.channelMessage &&
+        p.channelMessage.directMessageReceived.conversationId === peerId
+      ) {
         queueMicrotask(syncMessages);
       }
     });

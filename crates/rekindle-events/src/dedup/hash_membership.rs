@@ -158,6 +158,10 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"acc|");
             h.update(peer_key.as_bytes());
         }
+        FriendEvent::Added { peer_key, .. } => {
+            h.update(b"add|");
+            h.update(peer_key.as_bytes());
+        }
         FriendEvent::Rejected { peer_key } => {
             h.update(b"rej|");
             h.update(peer_key.as_bytes());

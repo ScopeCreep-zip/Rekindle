@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use rekindle_calls::{CallEvent, Effect};
+use rekindle_calls::{CallInput, Effect};
 use rekindle_utils::timestamp_ms;
 use tracing::{debug, warn};
 
@@ -45,7 +45,7 @@ impl CallRuntime {
                 // (5–10 s budget; matches SIP 100-Trying / 180-Ringing).
                 // Receiver replies synchronously inside `app_call_reply`
                 // with `CallResponse::CallRinging { call_id }`. Failures
-                // map to `CallEvent::LocalUnreachable` so the caller's
+                // map to `CallInput::LocalUnreachable` so the caller's
                 // UI surfaces "peer unreachable" within ~10 s instead
                 // of waiting for the 30 s ring timer.
                 self.dispatch_call_invite(
@@ -114,7 +114,7 @@ impl CallRuntime {
                         call_id,
                         peer, reason, "voice session start failed; tearing down call"
                     );
-                    let event = CallEvent::VoiceTransportDown {
+                    let event = CallInput::VoiceTransportDown {
                         call_id: call_id.clone(),
                         reason,
                     };
@@ -231,11 +231,11 @@ impl CallRuntime {
     ///
     /// On success, the receiver's `on_call` handler returns
     /// `CallResponse::CallRinging { call_id }`; we drive
-    /// `CallEvent::RingingReceived` so the caller's UI flips
+    /// `CallInput::RingingReceived` so the caller's UI flips
     /// "Calling…" → "Ringing…" on real evidence.
     ///
     /// On failure, we classify the transport error and drive
-    /// `CallEvent::LocalUnreachable { reason }` so the state machine
+    /// `CallInput::LocalUnreachable { reason }` so the state machine
     /// drops the Outgoing state, cancels the dialing timer, and emits
     /// `TransportNotification::CallUnreachable` for the UI.
     async fn dispatch_call_invite(
@@ -280,7 +280,7 @@ impl CallRuntime {
                 // Parse the receiver's CallResponse::CallRinging.
                 match postcard::from_bytes::<CallResponse>(&reply_bytes) {
                     Ok(CallResponse::CallRinging(ringing)) if ringing.call_id == call_id => {
-                        let event = CallEvent::RingingReceived {
+                        let event = CallInput::RingingReceived {
                             call_id: call_id.to_string(),
                         };
                         let effects = self.inner.state_machine.lock().apply(event);
@@ -307,10 +307,10 @@ impl CallRuntime {
         }
     }
 
-    /// Helper: feed `CallEvent::LocalUnreachable` into the state machine
+    /// Helper: feed `CallInput::LocalUnreachable` into the state machine
     /// and interpret resulting effects.
     async fn feed_unreachable(&self, call_id: &str, reason: &str) {
-        let event = CallEvent::LocalUnreachable {
+        let event = CallInput::LocalUnreachable {
             call_id: call_id.to_string(),
             reason: reason.to_string(),
         };

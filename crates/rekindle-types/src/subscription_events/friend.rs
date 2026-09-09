@@ -22,11 +22,28 @@ pub enum FriendEvent {
     /// Triggered by: `DmPayload::FriendAccept`, DHT watch on friend inbox (Accepted status).
     Accepted {
         peer_key: String,
-        dm_log_key: String,
+        /// The shared DM log spine, when the acceptance established one.
+        /// `Option` rather than an empty string: the DM-payload path
+        /// genuinely does not carry it, and `String::new()` there was
+        /// indistinguishable from a real-but-empty key.
+        dm_log_key: Option<String>,
+        /// The accepter's display name, when the acceptance carried it.
+        /// The desktop's parallel event always had this and Tier 1 did
+        /// not, so a CLI saw an acceptance from a bare key.
+        display_name: Option<String>,
     },
     /// A friend request was rejected.
     /// Triggered by: `DmPayload::FriendReject`, DHT watch on friend inbox (Rejected status).
     Rejected { peer_key: String },
+    /// A friend row was added to our list — the point at which the
+    /// friend becomes renderable, as distinct from [`Self::Accepted`],
+    /// which is the protocol acknowledgement that precedes it.
+    Added {
+        peer_key: String,
+        display_name: String,
+        /// Serialized `FriendshipState` — "pending", "active", etc.
+        friendship_state: String,
+    },
     /// A friend removed us.
     /// Triggered by: `DmPayload::Unfriend`.
     Removed { peer_key: String },

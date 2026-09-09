@@ -1,6 +1,8 @@
 //! Content hashers for network transport and system-level events.
 
-use rekindle_types::subscription_events::{NetworkEvent, NotificationEvent, SystemEvent};
+use rekindle_types::subscription_events::{
+    CallEvent, NetworkEvent, NotificationEvent, SystemEvent,
+};
 
 pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
     match n {
@@ -182,4 +184,69 @@ pub(super) fn hash_notification(h: &mut blake3::Hasher, n: &NotificationEvent) {
             h.update(call_id.as_bytes());
         }
     }
+}
+
+pub(super) fn hash_call(h: &mut blake3::Hasher, c: &CallEvent) {
+    // Call id plus the lifecycle step. A call moves through each step
+    // once, so the pair is the identity of the signal — no time bucket
+    // is needed and none is wanted: a re-ring for the same call is the
+    // duplicate this suppresses.
+    h.update(c.call_id().as_bytes());
+    h.update(b"|");
+    match c {
+        CallEvent::Incoming { .. } => h.update(b"incoming"),
+        CallEvent::Ringing { .. } => h.update(b"ringing"),
+        CallEvent::Started { .. } => h.update(b"started"),
+        CallEvent::Connected { .. } => h.update(b"connected"),
+        CallEvent::Declined { reason, .. } => {
+            h.update(b"declined|");
+            h.update(reason.as_bytes())
+        }
+        CallEvent::Missed { .. } => h.update(b"missed"),
+        CallEvent::TimedOut { .. } => h.update(b"timedout"),
+        CallEvent::Ended { reason, .. } => {
+            h.update(b"ended|");
+            h.update(reason.as_bytes())
+        }
+        // Media toggles and reactions repeat within one call, so they
+        // carry their payload into the hash — two different reactions
+        // are two events, not a duplicate.
+        CallEvent::MediaStateChanged {
+            audio,
+            video,
+            screen,
+            timestamp_ms,
+            ..
+        } => {
+            h.update(b"media|");
+            h.update(&[u8::from(*audio), u8::from(*video), u8::from(*screen)]);
+            h.update(&timestamp_ms.to_le_bytes())
+        }
+        CallEvent::ReactionReceived {
+            sender,
+            emoji,
+            timestamp_ms,
+            ..
+        } => {
+            h.update(b"reaction|");
+            h.update(sender.as_bytes());
+            h.update(emoji.as_bytes());
+            h.update(&timestamp_ms.to_le_bytes())
+        }
+        CallEvent::ParticipantJoined {
+            participant_pubkey, ..
+        } => {
+            h.update(b"pjoin|");
+            h.update(participant_pubkey.as_bytes())
+        }
+        CallEvent::ParticipantLeft {
+            participant_pubkey,
+            reason,
+            ..
+        } => {
+            h.update(b"pleft|");
+            h.update(participant_pubkey.as_bytes());
+            h.update(reason.as_bytes())
+        }
+    };
 }

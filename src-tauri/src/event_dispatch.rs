@@ -180,6 +180,15 @@ pub fn emit_live<P: Serialize + ?Sized>(app: &AppHandle, channel: &str, payload:
 /// one family at a time; the channel names are unchanged, so the
 /// frontend's `listen()` calls do not move — only the payload shape
 /// converges.
+/// Emit a call-signalling event.
+///
+/// Rides the `chat-event` channel, which is where the desktop's call UI
+/// already listens — the family is separate in Tier 1, the transport is
+/// shared. See [`channel_for`].
+pub fn emit_call(app: &AppHandle, event: rekindle_types::subscription_events::CallEvent) {
+    emit_subscription(app, &SubscriptionEvent::Call(event));
+}
+
 /// Emit a device-level notification.
 ///
 /// Thin wrapper over [`emit_subscription`] so the ~20 notification call
@@ -206,13 +215,20 @@ fn channel_for(event: &SubscriptionEvent) -> &'static str {
     match event {
         SubscriptionEvent::Presence(_) => "presence-event",
         SubscriptionEvent::Voice(_) => "voice-event",
-        SubscriptionEvent::ChannelMessage(_) | SubscriptionEvent::Typing(_) => "chat-event",
+        SubscriptionEvent::ChannelMessage(_)
+        | SubscriptionEvent::Typing(_)
+        // Calls ride the chat channel because that is where the
+        // desktop's call UI already listens, and friend roster changes
+        // because that is where the friend store listens. The channel
+        // is transport, not taxonomy — the families stay distinct.
+        | SubscriptionEvent::Call(_)
+        | SubscriptionEvent::Friend(_) => "chat-event",
         SubscriptionEvent::Membership(_)
         | SubscriptionEvent::Governance(_)
         | SubscriptionEvent::Crypto(_)
         | SubscriptionEvent::UnreadChanged { .. } => "community-event",
-        SubscriptionEvent::Friend(_)
-        | SubscriptionEvent::Social(_)
+
+        SubscriptionEvent::Social(_)
         | SubscriptionEvent::Notification(_)
         | SubscriptionEvent::System(_) => "notification-event",
         SubscriptionEvent::Network(_) => "network-status",

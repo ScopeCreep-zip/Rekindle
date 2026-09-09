@@ -24,7 +24,6 @@ use veilid_core::{
 
 use crate::services::message_service;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -234,20 +233,19 @@ impl DmDeps for DmAdapter {
                 body,
                 timestamp_ms,
             } => {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_subscription(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::MessageReceived {
-                        from: sender_pseudonym,
-                        body,
+                    &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(rekindle_types::subscription_events::ChannelMessageEvent::DirectMessageReceived {
+                        peer_key: sender_pseudonym,
+                        body: Some(body),
                         decryption_failed: false,
                         automod_blurred: false,
                         timestamp: timestamp_ms,
                         conversation_id: record_key,
                         server_message_id: None,
                         reply_to_id: None,
-                        sender_display_name: None,
-                    },
+                        sender_name: None,
+                    }),
                 );
             }
             DmEvent::InviteReceived {
@@ -256,15 +254,14 @@ impl DmDeps for DmAdapter {
                 sender_public_key_hex,
                 is_group,
             } => {
-                crate::event_dispatch::emit_live(
+                crate::event_dispatch::emit_subscription(
                     &self.app_handle,
-                    "chat-event",
-                    &ChatEvent::DirectMessageInvite {
+                    &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(rekindle_types::subscription_events::ChannelMessageEvent::DirectConversationInvited {
                         from: sender_public_key_hex,
                         record_key,
                         initiator_pseudonym: sender_pseudonym,
                         is_group,
-                    },
+                    }),
                 );
             }
             DmEvent::InviteDeclined { record_key, reason } => {

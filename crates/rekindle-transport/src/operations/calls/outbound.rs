@@ -1,7 +1,7 @@
 //! Local user actions: start, accept, decline, end a call, and mid-call
 //! media-state / reaction pings.
 
-use rekindle_calls::{fresh_keypair, CallEvent, CallKind, CallStatus};
+use rekindle_calls::{fresh_keypair, CallInput, CallKind, CallStatus};
 use rekindle_utils::timestamp_ms;
 
 use super::util::generate_call_id;
@@ -25,7 +25,7 @@ impl CallRuntime {
         let now = timestamp_ms();
         let expires_at_ms = now + RING_DURATION_MS;
 
-        let event = CallEvent::LocalStartCall {
+        let event = CallInput::LocalStartCall {
             call_id: call_id.clone(),
             peer: peer.to_string(),
             peer_display_name: peer_display_name.to_string(),
@@ -62,7 +62,7 @@ impl CallRuntime {
         }
 
         let (sk, pk) = fresh_keypair();
-        let event = CallEvent::LocalAccept {
+        let event = CallInput::LocalAccept {
             call_id: call_id.into(),
             my_x25519_secret: sk,
             my_x25519_pub: pk,
@@ -74,7 +74,7 @@ impl CallRuntime {
 
     /// User clicked Decline on the IncomingCallModal.
     pub async fn decline_dm_call(&self, call_id: &str, reason: &str) -> Result<(), CallError> {
-        let event = CallEvent::LocalDecline {
+        let event = CallInput::LocalDecline {
             call_id: call_id.into(),
             reason: reason.into(),
         };
@@ -90,7 +90,7 @@ impl CallRuntime {
     /// (cancel before peer accepts), Connecting / Active (mid-call
     /// hangup).
     pub async fn end_dm_call(&self, call_id: &str, reason: &str) -> Result<(), CallError> {
-        let event = CallEvent::LocalCancel {
+        let event = CallInput::LocalCancel {
             call_id: call_id.into(),
             reason: reason.into(),
         };

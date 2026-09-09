@@ -7,6 +7,7 @@
 //! Every [`ControlPayload`], [`GossipPayload`], and [`DmPayload`] variant
 //! maps to exactly one event. No Veilid types cross this boundary.
 
+mod call;
 mod channel;
 mod crypto;
 mod friend;
@@ -20,6 +21,7 @@ mod system;
 mod typing;
 mod voice;
 
+pub use call::{CallEvent, DirectCallInfo};
 pub use channel::ChannelMessageEvent;
 pub use crypto::{CryptoEvent, PqBundleKind};
 pub use friend::FriendEvent;
@@ -64,6 +66,10 @@ pub enum SubscriptionEvent {
     Governance(GovernanceEvent),
     /// Social features (reactions, pins, threads, events, game servers).
     Social(SocialEvent),
+    /// Call signalling — ring, answer, decline, media state. Not a
+    /// message: it shared the desktop's chat channel only because that
+    /// was the one channel available to put it on.
+    Call(CallEvent),
     /// Device-level notifications to surface to the user — an
     /// incoming call, an app update, a message worth a sound.
     Notification(NotificationEvent),
@@ -99,6 +105,7 @@ pub enum EventCategory {
     Voice,
     Governance,
     Social,
+    Call,
     Notification,
     Network,
     System,
@@ -118,6 +125,7 @@ impl SubscriptionEvent {
             Self::Voice(_) => EventCategory::Voice,
             Self::Governance(_) => EventCategory::Governance,
             Self::Social(_) => EventCategory::Social,
+            Self::Call(_) => EventCategory::Call,
             Self::Notification(_) => EventCategory::Notification,
             Self::Network(_) => EventCategory::Network,
             Self::System(_) => EventCategory::System,
@@ -133,7 +141,12 @@ impl SubscriptionEvent {
                 ChannelMessageEvent::New { community, .. }
                 | ChannelMessageEvent::Edited { community, .. }
                 | ChannelMessageEvent::Deleted { community, .. } => Some(community),
-                ChannelMessageEvent::DirectMessageReceived { .. } => None,
+                // Direct-conversation events belong to a peer, not a
+                // community.
+                ChannelMessageEvent::DirectMessageReceived { .. }
+                | ChannelMessageEvent::DirectMessageAcknowledged { .. }
+                | ChannelMessageEvent::DirectConversationInvited { .. }
+                | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },
             Self::Typing(e) => match e {
                 TypingEvent::Started { context, .. } | TypingEvent::Stopped { context, .. } => {
@@ -223,7 +236,9 @@ impl SubscriptionEvent {
             // where it has one, but the family as a whole is
             // device-scoped — a call and an app update belong to
             // no community.
-            Self::Network(_)
+            // A call belongs to its participants, not to a community.
+            Self::Call(_)
+            | Self::Network(_)
             | Self::Notification(_)
             | Self::UnreadChanged { .. }
             | Self::Friend(_) => None,

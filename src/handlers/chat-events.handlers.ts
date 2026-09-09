@@ -2,6 +2,8 @@ import { batch } from "solid-js";
 import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
+import { isLegacy } from "../ipc/channels/chat_events";
+import type { FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { setNotificationState } from "../stores/notification.store";
 import { communityState, setCommunityState } from "../stores/community.store";
@@ -44,99 +46,129 @@ function applyMessageAck(messageId: number): void {
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
-    switch (event.type) {
-      case "messageReceived": {
+    // Legacy envelope: community channel messages only.
+    if (isLegacy(event)) {
+      batch(() => {
+        const senderId = event.data.from;
+        if (friendsState.friends[senderId]) {
+          setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
+        }
+      });
+      return;
+    }
+
+    if ("channelMessage" in event) {
+      const msg = event.channelMessage;
+      if ("directMessageReceived" in msg) {
+        const senderId = msg.directMessageReceived.peerKey;
         batch(() => {
-          const senderId = event.data.from;
           if (friendsState.friends[senderId]) {
             setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
           }
         });
-        break;
+      } else if ("directMessageAcknowledged" in msg) {
+        applyMessageAck(msg.directMessageAcknowledged.messageId);
       }
-      case "typingIndicator": {
-        handleTypingIndicator(event.data.from, event.data.typing);
-        break;
+      return;
+    }
+
+    if ("typing" in event) {
+      const t = event.typing;
+      const started = "started" in t;
+      const inner = started ? t.started : t.stopped;
+      if ("dm" in inner.context) {
+        handleTypingIndicator(inner.context.dm.peerKey, started);
       }
-      case "friendRequest": {
-        // Update display name if sender is already a friend (bidirectional add)
-        if (friendsState.friends[event.data.from]) {
-          setFriendsState("friends", event.data.from, "displayName", event.data.displayName);
-        }
-        const exists = friendsState.pendingRequests.some(
-          (r) => r.publicKey === event.data.from,
-        );
-        if (!exists) {
-          setFriendsState("pendingRequests", (reqs) => [
-            ...reqs,
-            {
-              publicKey: event.data.from,
-              displayName: event.data.displayName,
-              message: event.data.message,
-            },
-          ]);
-        }
-        break;
-      }
-      case "friendRequestAccepted": {
-        // Use reconcile to force SolidJS to diff and fire all changed signals.
-        // Plain nested setters (setStore("friends", key, "prop", val)) can miss
-        // memo recomputation when the memo iterates via Object.values().
-        const accepted = friendsState.friends[event.data.from];
-        if (accepted) {
-          setFriendsState("friends", event.data.from, reconcile({
-            ...accepted,
-            friendshipState: "accepted" as const,
-            displayName: event.data.displayName || accepted.displayName,
-          }));
-        }
-        handleRefreshFriends();
-        break;
-      }
-      case "friendAdded": {
-        setFriendsState("friends", event.data.publicKey,
-          transformNewFriend(event.data.publicKey, event.data.displayName, event.data.friendshipState),
-        );
-        break;
-      }
-      case "friendRequestRejected": {
-        // Remove the pending-out friend from the list
-        if (friendsState.friends[event.data.from]) {
-          const next = { ...friendsState.friends };
-          delete next[event.data.from];
-          setFriendsState("friends", reconcile(next));
-        }
-        const truncatedKey = event.data.from.slice(0, 8);
-        setNotificationState("notifications", (prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "system",
-            title: "Friend Request Declined",
-            body: `Your friend request was declined by ${truncatedKey}...`,
-            timestamp: Date.now(),
-            read: false,
-          },
-        ]);
-        setNotificationState("unreadCount", (c) => c + 1);
-        break;
-      }
-      case "friendRemoved": {
-        const next = { ...friendsState.friends };
-        delete next[event.data.publicKey];
-        setFriendsState("friends", reconcile(next));
-        break;
-      }
-      case "friendRequestDelivered": {
-        // Optional: could show a delivery indicator on the pending friend
-        break;
-      }
-      case "messageAck": {
-        applyMessageAck(event.data.messageId);
-        break;
-      }
+      return;
+    }
+
+    if ("friend" in event) {
+      applyFriendEvent(event.friend);
     }
   });
+}
+
+/** Apply one friend-lifecycle event to the friends and notification stores. */
+function applyFriendEvent(friend: FriendEvent): void {
+  if ("requestReceived" in friend) {
+    const { fromKey, displayName, message } = friend.requestReceived;
+    // Update display name if sender is already a friend (bidirectional add)
+    if (friendsState.friends[fromKey]) {
+      setFriendsState("friends", fromKey, "displayName", displayName);
+    }
+    const exists = friendsState.pendingRequests.some((r) => r.publicKey === fromKey);
+    if (!exists) {
+      setFriendsState("pendingRequests", (reqs) => [
+        ...reqs,
+        { publicKey: fromKey, displayName, message },
+      ]);
+    }
+    return;
+  }
+
+  if ("accepted" in friend) {
+    // Use reconcile to force SolidJS to diff and fire all changed signals.
+    // Plain nested setters (setStore("friends", key, "prop", val)) can miss
+    // memo recomputation when the memo iterates via Object.values().
+    const { peerKey, displayName } = friend.accepted;
+    const existing = friendsState.friends[peerKey];
+    if (existing) {
+      setFriendsState(
+        "friends",
+        peerKey,
+        reconcile({
+          ...existing,
+          friendshipState: "accepted" as const,
+          displayName: displayName || existing.displayName,
+        }),
+      );
+    }
+    handleRefreshFriends();
+    return;
+  }
+
+  if ("added" in friend) {
+    const { peerKey, displayName, friendshipState } = friend.added;
+    setFriendsState(
+      "friends",
+      peerKey,
+      transformNewFriend(peerKey, displayName, friendshipState),
+    );
+    return;
+  }
+
+  if ("rejected" in friend) {
+    // Remove the pending-out friend from the list
+    const { peerKey } = friend.rejected;
+    if (friendsState.friends[peerKey]) {
+      const next = { ...friendsState.friends };
+      delete next[peerKey];
+      setFriendsState("friends", reconcile(next));
+    }
+    const truncatedKey = peerKey.slice(0, 8);
+    setNotificationState("notifications", (prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: "system",
+        title: "Friend Request Declined",
+        body: `Your friend request was declined by ${truncatedKey}...`,
+        timestamp: Date.now(),
+        read: false,
+      },
+    ]);
+    setNotificationState("unreadCount", (c) => c + 1);
+    return;
+  }
+
+  if ("removed" in friend) {
+    const next = { ...friendsState.friends };
+    delete next[friend.removed.peerKey];
+    setFriendsState("friends", reconcile(next));
+  }
+  // requestAcknowledged / removeAcknowledged / profileKeyRotated need no
+  // store change: delivery receipts and key rotation are handled by the
+  // backend, and the list already reflects the outcome.
 }
 
 export function subscribeDmChatEvents(
@@ -144,31 +176,35 @@ export function subscribeDmChatEvents(
   getOwnKey: () => string,
 ): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
-    switch (event.type) {
-      case "messageReceived": {
-        console.warn("[DM] messageReceived event:", event.data.conversationId, "peerId:", peerId);
-        if (event.data.from === getOwnKey()) break;
-        if (event.data.conversationId === peerId) {
-          batch(() => {
-            handleIncomingMessage(peerId, {
-              id: Date.now(),
-              senderId: event.data.from,
-              body: event.data.body,
-              decryptionFailed: event.data.decryptionFailed,
-              automodBlurred: event.data.automodBlurred,
-              timestamp: event.data.timestamp,
-              isOwn: false,
-            });
-            handleResetUnread(peerId);
-          });
-        }
-        break;
-      }
-      case "typingIndicator": {
-        if (event.data.from === peerId) {
-          handleTypingIndicator(peerId, event.data.typing);
-        }
-        break;
+    // DMs arrive on the daemon vocabulary; the legacy envelope is
+    // community channel messages only, which this window ignores.
+    if (isLegacy(event)) return;
+
+    if ("channelMessage" in event && "directMessageReceived" in event.channelMessage) {
+      const dm = event.channelMessage.directMessageReceived;
+      if (dm.peerKey === getOwnKey()) return;
+      if (dm.conversationId !== peerId) return;
+      batch(() => {
+        handleIncomingMessage(peerId, {
+          id: Date.now(),
+          senderId: dm.peerKey,
+          body: dm.body ?? "",
+          decryptionFailed: dm.decryptionFailed,
+          automodBlurred: dm.automodBlurred,
+          timestamp: dm.timestamp,
+          isOwn: false,
+        });
+        handleResetUnread(peerId);
+      });
+      return;
+    }
+
+    if ("typing" in event) {
+      const t = event.typing;
+      const started = "started" in t;
+      const inner = started ? t.started : t.stopped;
+      if ("dm" in inner.context && inner.context.dm.peerKey === peerId) {
+        handleTypingIndicator(peerId, started);
       }
     }
   });
@@ -178,7 +214,7 @@ export function subscribeCommunityChannelChatEvents(
   getMyPseudonymKey: () => string | null | undefined,
 ): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
-    if (event.type === "messageReceived") {
+    if (isLegacy(event)) {
       const myPseudo = getMyPseudonymKey();
       if (myPseudo && event.data.from === myPseudo) return;
       const channelId = event.data.conversationId;

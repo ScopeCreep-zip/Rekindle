@@ -14,7 +14,6 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::state::AppState;
 
@@ -155,13 +154,19 @@ pub async fn handle_incoming_message(
             );
         }
         MessagePayload::TypingIndicator { typing } => {
-            crate::event_dispatch::emit_live(
+            // Typing is a Tier 1 family of its own, with the peer
+            // carried in the context rather than a bare `from`.
+            let context = rekindle_types::subscription_events::TypingContext::Dm {
+                peer_key: msg.sender_hex.clone(),
+            };
+            let who = msg.sender_hex;
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "chat-event",
-                &ChatEvent::TypingIndicator {
-                    from: msg.sender_hex,
-                    typing,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Typing(if typing {
+                    rekindle_types::subscription_events::TypingEvent::Started { context, who }
+                } else {
+                    rekindle_types::subscription_events::TypingEvent::Stopped { context, who }
+                }),
             );
         }
         MessagePayload::FriendRequest {
@@ -214,10 +219,13 @@ pub async fn handle_incoming_message(
             handle_friend_reject(app_handle, state, pool, &msg.sender_hex);
         }
         MessagePayload::FriendRequestReceived => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "chat-event",
-                &ChatEvent::FriendRequestDelivered { to: msg.sender_hex },
+                &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+                    rekindle_types::subscription_events::FriendEvent::RequestAcknowledged {
+                        peer_key: msg.sender_hex,
+                    },
+                ),
             );
         }
         MessagePayload::ProfileKeyRotated {

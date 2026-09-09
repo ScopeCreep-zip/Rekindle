@@ -1,7 +1,7 @@
 //! W16.5 — Pure-logic call state machine.
 //!
 //! Owns the lifecycle for 1:1 calls: maintains a `HashMap<CallId, CallState>`
-//! and translates [`CallEvent`]s into [`Effect`]s. No async, no I/O, no
+//! and translates [`CallInput`]s into [`Effect`]s. No async, no I/O, no
 //! Veilid — the [`crate::Effect`] consumer (W16.7's `CallRuntime` in
 //! rekindle-transport) interprets effects: sends envelopes via
 //! [`EnvelopeQueue`], spawns ring timers, starts/stops voice sessions,
@@ -53,10 +53,16 @@ use crate::state::{CallKind, CallState, CallStatus};
 /// single observed change: a local user action, an inbound envelope, a
 /// timer firing, or a voice-transport callback.
 ///
+/// Named `CallInput`, not `CallEvent`, to keep it distinct from
+/// `rekindle_types::subscription_events::CallEvent`, which is the
+/// opposite direction: what subscribers *observe* after the machine has
+/// run. Two same-named types with different roles is how a
+/// `MemberPresence` carrying `is_coordinator` outlived the coordinator.
+///
 /// `StaticSecret` cannot derive `Clone` cleanly (it implements
 /// `Clone` via `From`/`Into` only), so events that carry one are
 /// constructed once and consumed by `apply`.
-pub enum CallEvent {
+pub enum CallInput {
     // ── Caller-side ─────────────────────────────────────────────────
     /// User clicked Voice/Video Call. `my_x25519_secret` is the
     /// freshly-generated keypair the caller will use for ECDH; the
@@ -145,7 +151,7 @@ pub enum CallEvent {
     VoiceTransportDown { call_id: String, reason: String },
 }
 
-/// Caller-side call-setup field set for [`CallEvent::LocalStartCall`].
+/// Caller-side call-setup field set for [`CallInput::LocalStartCall`].
 /// Grouped into one owned struct so the `apply` helper takes a single
 /// argument; `StaticSecret` is move-only, so the fields are consumed.
 struct StartCallParams {
@@ -159,7 +165,7 @@ struct StartCallParams {
     started_at_ms: u64,
 }
 
-/// Receiver-side invite field set for [`CallEvent::InviteReceived`].
+/// Receiver-side invite field set for [`CallInput::InviteReceived`].
 /// Grouped into one owned struct so the `apply` helper takes a single
 /// argument.
 struct InviteReceivedParams {
@@ -326,9 +332,9 @@ impl CallStateMachine {
     /// Drive a single event. Returns the side-effects the runtime
     /// should perform. Effects are returned in the order they should
     /// fire.
-    pub fn apply(&mut self, event: CallEvent) -> Vec<Effect> {
+    pub fn apply(&mut self, event: CallInput) -> Vec<Effect> {
         match event {
-            CallEvent::LocalStartCall {
+            CallInput::LocalStartCall {
                 call_id,
                 peer,
                 peer_display_name,
@@ -347,23 +353,23 @@ impl CallStateMachine {
                 expires_at_ms,
                 started_at_ms,
             }),
-            CallEvent::LocalCancel { call_id, reason } => self.apply_local_cancel(&call_id, reason),
-            CallEvent::LocalDialingTimeout { call_id } => {
+            CallInput::LocalCancel { call_id, reason } => self.apply_local_cancel(&call_id, reason),
+            CallInput::LocalDialingTimeout { call_id } => {
                 self.apply_local_dialing_timeout(&call_id)
             }
-            CallEvent::LocalUnreachable { call_id, reason } => {
+            CallInput::LocalUnreachable { call_id, reason } => {
                 self.apply_local_unreachable(&call_id, reason)
             }
-            CallEvent::AcceptReceived {
+            CallInput::AcceptReceived {
                 call_id,
                 from,
                 peer_x25519_pub,
             } => self.apply_accept_received(&call_id, &from, peer_x25519_pub),
-            CallEvent::DeclineReceived { call_id, reason } => {
+            CallInput::DeclineReceived { call_id, reason } => {
                 self.apply_decline_received(&call_id, reason)
             }
-            CallEvent::RingingReceived { call_id } => self.apply_ringing_received(&call_id),
-            CallEvent::InviteReceived {
+            CallInput::RingingReceived { call_id } => self.apply_ringing_received(&call_id),
+            CallInput::InviteReceived {
                 call_id,
                 from,
                 from_display_name,
@@ -380,20 +386,20 @@ impl CallStateMachine {
                 expires_at_ms,
                 received_at_ms,
             }),
-            CallEvent::LocalAccept {
+            CallInput::LocalAccept {
                 call_id,
                 my_x25519_secret,
                 my_x25519_pub,
             } => self.apply_local_accept(&call_id, my_x25519_secret, my_x25519_pub),
-            CallEvent::LocalDecline { call_id, reason } => {
+            CallInput::LocalDecline { call_id, reason } => {
                 self.apply_local_decline(&call_id, reason)
             }
-            CallEvent::LocalIncomingTimeout { call_id } => {
+            CallInput::LocalIncomingTimeout { call_id } => {
                 self.apply_local_incoming_timeout(&call_id)
             }
-            CallEvent::EndReceived { call_id, reason } => self.apply_end_received(&call_id, reason),
-            CallEvent::VoiceTransportUp { call_id } => self.apply_voice_transport_up(&call_id),
-            CallEvent::VoiceTransportDown { call_id, reason } => {
+            CallInput::EndReceived { call_id, reason } => self.apply_end_received(&call_id, reason),
+            CallInput::VoiceTransportUp { call_id } => self.apply_voice_transport_up(&call_id),
+            CallInput::VoiceTransportDown { call_id, reason } => {
                 self.apply_voice_transport_down(&call_id, reason)
             }
         }

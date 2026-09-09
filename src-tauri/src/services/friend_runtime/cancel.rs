@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::{AppState, FriendshipState};
@@ -36,12 +35,13 @@ pub async fn cancel_request_inner(
 
     state.friends.write().remove(&public_key);
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         &app,
-        "chat-event",
-        &ChatEvent::FriendRemoved {
-            public_key: public_key.clone(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Removed {
+                peer_key: public_key.clone(),
+            },
+        ),
     );
 
     tracing::info!(public_key = %public_key, "pending friend request cancelled");

@@ -45,17 +45,19 @@ pub(super) fn handle_direct_message(
     }
 
     // Emit to frontend
-    let event = ChatEvent::MessageReceived {
-        from: sender_hex.to_string(),
-        body: body.to_string(),
-        decryption_failed: false,
-        automod_blurred: false,
-        timestamp: timestamp.cast_unsigned(),
-        conversation_id: sender_hex.to_string(),
-        server_message_id: None, // DMs have no message ID
-        reply_to_id: None,
-        sender_display_name: None, // DMs use friend list for name resolution
-    };
+    let event = rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+        rekindle_types::subscription_events::ChannelMessageEvent::DirectMessageReceived {
+            peer_key: sender_hex.to_string(),
+            body: Some(body.to_string()),
+            decryption_failed: false,
+            automod_blurred: false,
+            timestamp: timestamp.cast_unsigned(),
+            conversation_id: sender_hex.to_string(),
+            server_message_id: None, // DMs have no message ID
+            reply_to_id: None,
+            sender_name: None, // DMs use friend list for name resolution
+        },
+    );
     // Phase 10 — journal + emit so a hard-quit mid-stream client can
     // resume from the last cursor it saw and have this DM replayed.
     crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);

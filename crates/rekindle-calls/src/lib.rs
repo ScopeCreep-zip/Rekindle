@@ -24,7 +24,7 @@ pub use group_state::{GroupCallState, GroupCallStatus};
 pub use signaling::registry::GroupCallSnapshot;
 pub use signaling::{CallRegistry, CallSignalEvent, CallSignalingDeps, GroupCallRegistry};
 pub use state::{CallKind, CallState, CallStatus};
-pub use state_machine::{CallEvent, CallStateMachine, Effect};
+pub use state_machine::{CallInput, CallStateMachine, Effect};
 
 /// Truncate a hex pubkey to a short display form (16 chars + ellipsis).
 /// Used by signaling handlers as the fallback when a friend has no

@@ -219,6 +219,16 @@ impl SubscriptionManager {
                         // its only reader, and this path will need it
                         // back when the enrichment is implemented.
                         body: None,
+                        // A watch fired; nothing was decrypted, so
+                        // there is no failure to report and nothing for
+                        // automod to have matched.
+                        decryption_failed: false,
+                        automod_blurred: false,
+                        // The DM log is per-peer, so the peer key is
+                        // the conversation.
+                        conversation_id: peer_key.clone(),
+                        server_message_id: None,
+                        reply_to_id: None,
                     },
                 ));
                 self.process_event(SubscriptionEvent::UnreadChanged {

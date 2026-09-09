@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
@@ -117,22 +116,24 @@ pub(crate) fn handle_friend_reject(
         crate::friend_repo::fire_delete_friend(state, pool, sender_hex);
         state.friends.write().remove(sender_hex);
 
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             app_handle,
-            "chat-event",
-            &ChatEvent::FriendRemoved {
-                public_key: sender_hex.to_string(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+                rekindle_types::subscription_events::FriendEvent::Removed {
+                    peer_key: sender_hex.to_string(),
+                },
+            ),
         );
     }
 
     // Always emit the rejection notification
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         app_handle,
-        "chat-event",
-        &ChatEvent::FriendRequestRejected {
-            from: sender_hex.to_string(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Rejected {
+                peer_key: sender_hex.to_string(),
+            },
+        ),
     );
 }
 
@@ -190,12 +191,13 @@ pub(crate) async fn handle_unfriended(
         tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
     }
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         app_handle,
-        "chat-event",
-        &ChatEvent::FriendRemoved {
-            public_key: sender_hex.to_string(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Removed {
+                peer_key: sender_hex.to_string(),
+            },
+        ),
     );
 
     tracing::info!(from = %sender_hex, "removed by peer (Unfriended)");
@@ -339,12 +341,14 @@ pub(super) async fn auto_accept_cross_request(
     }
 
     // 5. Emit accepted event
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         app_handle,
-        "chat-event",
-        &ChatEvent::FriendRequestAccepted {
-            from: req.sender_hex.to_string(),
-            display_name: req.display_name.to_string(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Accepted {
+                peer_key: req.sender_hex.to_string(),
+                dm_log_key: None,
+                display_name: Some(req.display_name.to_string()),
+            },
+        ),
     );
 }

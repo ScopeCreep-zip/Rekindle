@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::services;
@@ -53,12 +52,13 @@ pub async fn remove_friend_inner(
         }
     }
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         &app,
-        "chat-event",
-        &ChatEvent::FriendRemoved {
-            public_key: public_key.clone(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Removed {
+                peer_key: public_key.clone(),
+            },
+        ),
     );
 
     tracing::info!(public_key = %public_key, "friend removed");

@@ -31,7 +31,7 @@ use hash_crypto_voice::{hash_crypto, hash_voice};
 use hash_membership::{hash_friend, hash_membership};
 use hash_messaging::{hash_channel_message, hash_presence, hash_typing};
 use hash_social::{hash_governance, hash_social};
-use hash_system::{hash_network, hash_notification, hash_system};
+use hash_system::{hash_call, hash_network, hash_notification, hash_system};
 
 /// Content-addressed event deduplication using Blake3 digests.
 ///
@@ -165,6 +165,7 @@ fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
         SubscriptionEvent::Voice(v) => hash_voice(&mut hasher, v),
         SubscriptionEvent::Governance(g) => hash_governance(&mut hasher, g),
         SubscriptionEvent::Social(s) => hash_social(&mut hasher, s),
+        SubscriptionEvent::Call(c) => hash_call(&mut hasher, c),
         SubscriptionEvent::Notification(n) => hash_notification(&mut hasher, n),
         SubscriptionEvent::Network(n) => hash_network(&mut hasher, n),
         SubscriptionEvent::System(s) => hash_system(&mut hasher, s),
@@ -188,6 +189,7 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Voice(_) => "vo",
         SubscriptionEvent::Governance(_) => "go",
         SubscriptionEvent::Social(_) => "so",
+        SubscriptionEvent::Call(_) => "ca",
         SubscriptionEvent::Notification(_) => "nt",
         SubscriptionEvent::Network(_) => "ne",
         SubscriptionEvent::System(_) => "sy",

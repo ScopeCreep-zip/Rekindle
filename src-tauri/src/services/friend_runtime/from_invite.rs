@@ -8,7 +8,6 @@
 
 use std::sync::Arc;
 
-use crate::channels::ChatEvent;
 use crate::db::{self, DbPool};
 use crate::db_helpers::db_call;
 use crate::services;
@@ -116,14 +115,15 @@ pub async fn add_friend_from_invite_inner(
         tracing::trace!(error = %e, "failed to watch friend DHT after invite add");
     }
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         &app,
-        "chat-event",
-        &ChatEvent::FriendAdded {
-            public_key: blob.public_key.clone(),
-            display_name: blob.display_name.clone(),
-            friendship_state: "pendingOut".to_string(),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Added {
+                peer_key: blob.public_key.clone(),
+                display_name: blob.display_name.clone(),
+                friendship_state: "pendingOut".to_string(),
+            },
+        ),
     );
 
     tracing::info!(public_key = %blob.public_key, "friend added from invite");

@@ -3,9 +3,9 @@
 use super::*;
 use crate::fresh_keypair;
 
-fn fresh_event_local_start(call_id: &str, peer: &str, kind: CallKind) -> CallEvent {
+fn fresh_event_local_start(call_id: &str, peer: &str, kind: CallKind) -> CallInput {
     let (sk, pk) = fresh_keypair();
-    CallEvent::LocalStartCall {
+    CallInput::LocalStartCall {
         call_id: call_id.into(),
         peer: peer.into(),
         peer_display_name: format!("name-of-{peer}"),
@@ -17,9 +17,9 @@ fn fresh_event_local_start(call_id: &str, peer: &str, kind: CallKind) -> CallEve
     }
 }
 
-fn fresh_event_invite_received(call_id: &str, from: &str, kind: CallKind) -> CallEvent {
+fn fresh_event_invite_received(call_id: &str, from: &str, kind: CallKind) -> CallInput {
     let (_, peer_pub) = fresh_keypair();
-    CallEvent::InviteReceived {
+    CallInput::InviteReceived {
         call_id: call_id.into(),
         from: from.into(),
         from_display_name: format!("name-of-{from}"),
@@ -81,7 +81,7 @@ fn local_unreachable_drops_state_emits_notification() {
     // missed_call row (receiver never saw the invite).
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
-    let effects = sm.apply(CallEvent::LocalUnreachable {
+    let effects = sm.apply(CallInput::LocalUnreachable {
         call_id: "c1".into(),
         reason: "timeout".into(),
     });
@@ -108,12 +108,12 @@ fn local_unreachable_after_accept_is_noop() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
     let (_, peer_pub) = fresh_keypair();
-    let _ = sm.apply(CallEvent::AcceptReceived {
+    let _ = sm.apply(CallInput::AcceptReceived {
         call_id: "c1".into(),
         from: "bob".into(),
         peer_x25519_pub: peer_pub,
     });
-    let effects = sm.apply(CallEvent::LocalUnreachable {
+    let effects = sm.apply(CallInput::LocalUnreachable {
         call_id: "c1".into(),
         reason: "timeout".into(),
     });
@@ -133,7 +133,7 @@ fn duplicate_invite_for_same_call_id_dropped() {
 fn outgoing_then_decline_received_transitions_to_dropped() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
-    let effects = sm.apply(CallEvent::DeclineReceived {
+    let effects = sm.apply(CallInput::DeclineReceived {
         call_id: "c1".into(),
         reason: "busy".into(),
     });
@@ -154,7 +154,7 @@ fn outgoing_then_decline_received_transitions_to_dropped() {
 fn dialing_timeout_persists_missed_call() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
-    let effects = sm.apply(CallEvent::LocalDialingTimeout {
+    let effects = sm.apply(CallInput::LocalDialingTimeout {
         call_id: "c1".into(),
     });
     assert!(effects
@@ -174,12 +174,12 @@ fn incoming_timeout_after_accept_does_nothing() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_invite_received("c1", "alice", CallKind::Audio));
     let (sk, pk) = fresh_keypair();
-    let _ = sm.apply(CallEvent::LocalAccept {
+    let _ = sm.apply(CallInput::LocalAccept {
         call_id: "c1".into(),
         my_x25519_secret: sk,
         my_x25519_pub: pk,
     });
-    let effects = sm.apply(CallEvent::LocalIncomingTimeout {
+    let effects = sm.apply(CallInput::LocalIncomingTimeout {
         call_id: "c1".into(),
     });
     assert!(effects.is_empty(), "timeout after accept is a no-op");
@@ -190,7 +190,7 @@ fn end_received_drops_call_in_any_state() {
     // Outgoing case
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
-    let effects = sm.apply(CallEvent::EndReceived {
+    let effects = sm.apply(CallInput::EndReceived {
         call_id: "c1".into(),
         reason: "cancelled".into(),
     });
@@ -202,7 +202,7 @@ fn end_received_drops_call_in_any_state() {
     // Incoming case
     let mut sm2 = CallStateMachine::new();
     let _ = sm2.apply(fresh_event_invite_received("c2", "alice", CallKind::Audio));
-    let effects = sm2.apply(CallEvent::EndReceived {
+    let effects = sm2.apply(CallInput::EndReceived {
         call_id: "c2".into(),
         reason: "caller hung up".into(),
     });
@@ -217,12 +217,12 @@ fn voice_transport_up_transitions_connecting_to_active() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_invite_received("c1", "alice", CallKind::Audio));
     let (sk, pk) = fresh_keypair();
-    let _ = sm.apply(CallEvent::LocalAccept {
+    let _ = sm.apply(CallInput::LocalAccept {
         call_id: "c1".into(),
         my_x25519_secret: sk,
         my_x25519_pub: pk,
     });
-    let effects = sm.apply(CallEvent::VoiceTransportUp {
+    let effects = sm.apply(CallInput::VoiceTransportUp {
         call_id: "c1".into(),
     });
     assert!(effects.iter().any(|e| matches!(
@@ -237,15 +237,15 @@ fn voice_transport_down_active_cleans_up_and_sends_end() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_invite_received("c1", "alice", CallKind::Audio));
     let (sk, pk) = fresh_keypair();
-    let _ = sm.apply(CallEvent::LocalAccept {
+    let _ = sm.apply(CallInput::LocalAccept {
         call_id: "c1".into(),
         my_x25519_secret: sk,
         my_x25519_pub: pk,
     });
-    let _ = sm.apply(CallEvent::VoiceTransportUp {
+    let _ = sm.apply(CallInput::VoiceTransportUp {
         call_id: "c1".into(),
     });
-    let effects = sm.apply(CallEvent::VoiceTransportDown {
+    let effects = sm.apply(CallInput::VoiceTransportDown {
         call_id: "c1".into(),
         reason: "network drop".into(),
     });
@@ -262,14 +262,14 @@ fn voice_transport_down_active_cleans_up_and_sends_end() {
 fn ringing_received_only_during_outgoing() {
     let mut sm = CallStateMachine::new();
     // No outgoing — ringing is a no-op.
-    let effects = sm.apply(CallEvent::RingingReceived {
+    let effects = sm.apply(CallInput::RingingReceived {
         call_id: "c1".into(),
     });
     assert!(effects.is_empty());
 
     // Outgoing — ringing emits notification.
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
-    let effects = sm.apply(CallEvent::RingingReceived {
+    let effects = sm.apply(CallInput::RingingReceived {
         call_id: "c1".into(),
     });
     assert!(effects
@@ -290,7 +290,7 @@ fn has_outgoing_to_returns_true_only_for_outgoing() {
 fn accept_received_for_unknown_call_is_noop() {
     let mut sm = CallStateMachine::new();
     let (_, peer_pub) = fresh_keypair();
-    let effects = sm.apply(CallEvent::AcceptReceived {
+    let effects = sm.apply(CallInput::AcceptReceived {
         call_id: "unknown".into(),
         from: "bob".into(),
         peer_x25519_pub: peer_pub,
@@ -303,7 +303,7 @@ fn accept_received_validates_sender_matches_peer() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
     let (_, attacker_pub) = fresh_keypair();
-    let effects = sm.apply(CallEvent::AcceptReceived {
+    let effects = sm.apply(CallInput::AcceptReceived {
         call_id: "c1".into(),
         from: "carol".into(), // not bob — attacker
         peer_x25519_pub: attacker_pub,
@@ -318,12 +318,12 @@ fn dialing_timeout_after_accept_is_noop() {
     let mut sm = CallStateMachine::new();
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
     let (_, bob_pub) = fresh_keypair();
-    let _ = sm.apply(CallEvent::AcceptReceived {
+    let _ = sm.apply(CallInput::AcceptReceived {
         call_id: "c1".into(),
         from: "bob".into(),
         peer_x25519_pub: bob_pub,
     });
-    let effects = sm.apply(CallEvent::LocalDialingTimeout {
+    let effects = sm.apply(CallInput::LocalDialingTimeout {
         call_id: "c1".into(),
     });
     assert!(effects.is_empty());
@@ -335,25 +335,25 @@ fn full_call_lifecycle_caller_side() {
     let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
     assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Outgoing)));
 
-    let _ = sm.apply(CallEvent::RingingReceived {
+    let _ = sm.apply(CallInput::RingingReceived {
         call_id: "c1".into(),
     });
     assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Outgoing)));
 
     let (_, bob_pub) = fresh_keypair();
-    let _ = sm.apply(CallEvent::AcceptReceived {
+    let _ = sm.apply(CallInput::AcceptReceived {
         call_id: "c1".into(),
         from: "bob".into(),
         peer_x25519_pub: bob_pub,
     });
     assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Connecting)));
 
-    let _ = sm.apply(CallEvent::VoiceTransportUp {
+    let _ = sm.apply(CallInput::VoiceTransportUp {
         call_id: "c1".into(),
     });
     assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Active)));
 
-    let _ = sm.apply(CallEvent::EndReceived {
+    let _ = sm.apply(CallInput::EndReceived {
         call_id: "c1".into(),
         reason: "peer hung up".into(),
     });

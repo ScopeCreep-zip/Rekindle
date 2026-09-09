@@ -55,6 +55,26 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             // Bucketize to 1-second granularity to tolerate clock skew across pathways
             h.update(&(timestamp / 1000).to_le_bytes());
         }
+        ChannelMessageEvent::DirectMessageAcknowledged { message_id } => {
+            h.update(b"dm_ack|");
+            h.update(&message_id.to_le_bytes());
+        }
+        ChannelMessageEvent::DirectConversationInvited {
+            from, record_key, ..
+        } => {
+            h.update(b"dm_invite|");
+            h.update(from.as_bytes());
+            h.update(b"|");
+            h.update(record_key.as_bytes());
+        }
+        ChannelMessageEvent::ConversationFocusRequested {
+            peer_key, reason, ..
+        } => {
+            h.update(b"focus|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(reason.as_bytes());
+        }
     }
 }
 
