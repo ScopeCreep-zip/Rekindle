@@ -8,8 +8,8 @@ use crate::services::friend_runtime::{
     generate_invite_inner, get_blocked_users_inner, get_outgoing_invites_inner,
     get_pending_requests_inner, list_friends_inner, move_friend_to_group_inner,
     reject_request_inner, remove_friend_inner, rename_friend_group_inner,
-    reset_signal_session_inner, unblock_user_inner, BlockedUser, FriendResponse,
-    GenerateInviteResult, PendingFriendRequest,
+    reset_signal_session_inner, set_friend_nickname_inner, unblock_user_inner, BlockedUser,
+    FriendResponse, GenerateInviteResult, PendingFriendRequest,
 };
 
 pub use crate::services::friend_runtime::is_user_blocked;
@@ -207,6 +207,20 @@ pub async fn create_friend_group(
     create_friend_group_inner(state.inner(), pool.inner(), name).await
 }
 
+/// Set (or clear) the local alias shown for one friend.
+///
+/// Distinct from `set_nickname`, which changes the *user's own* display
+/// name. This is the per-friend alias the buddy list renders.
+#[tauri::command]
+pub async fn set_friend_nickname(
+    public_key: String,
+    nickname: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    set_friend_nickname_inner(state.inner(), pool.inner(), &app, public_key, nickname).await
+}
 /// Rename a friend group.
 #[tauri::command]
 pub async fn rename_friend_group(

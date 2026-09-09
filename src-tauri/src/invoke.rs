@@ -38,6 +38,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::friends::get_pending_requests,
         commands::friends::create_friend_group,
         commands::friends::rename_friend_group,
+        commands::friends::set_friend_nickname,
         commands::friends::move_friend_to_group,
         commands::friends::generate_invite,
         commands::friends::add_friend_from_invite,

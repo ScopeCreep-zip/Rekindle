@@ -117,7 +117,7 @@ fn load_layer(path: &Path) -> anyhow::Result<Option<Config>> {
 }
 
 /// Load the admin policy file. Returns `None` if it doesn't exist.
-fn load_policy(path: &Path) -> anyhow::Result<Option<PolicyConfig>> {
+pub(crate) fn load_policy(path: &Path) -> anyhow::Result<Option<PolicyConfig>> {
     match std::fs::read_to_string(path) {
         Ok(contents) => {
             let policy: PolicyConfig = toml::from_str(&contents)

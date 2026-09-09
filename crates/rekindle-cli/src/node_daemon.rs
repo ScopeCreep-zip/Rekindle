@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use rekindle_node::daemon::dispatch::{DaemonContext, PolicyConfig};
+use rekindle_node::daemon::dispatch::DaemonContext;
 use rekindle_node::daemon::handler::DaemonHandler;
 use rekindle_node::daemon::{DaemonLifecycle, DaemonState};
 use rekindle_node::ipc;
@@ -54,11 +54,38 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     tracing::info!(has_identity, "session loaded");
 
     // ── 5. Build transport config and start Veilid node ───────────
-    let transport_config = rekindle_transport::TransportConfig {
+    //
+    // Admin policy is applied here, before the node starts. It used to
+    // be loaded by the CLI, used to validate the CLI's own config, and
+    // then dropped — `DaemonContext` was handed a
+    // `PolicyConfig::default()`, so a policy file changed nothing about
+    // a running daemon. `min_hop_count` is a floor on the safety-route
+    // length, alongside the transport's own `ANONYMITY_HOP_FLOOR`: an
+    // administrator can raise the floor, never lower it.
+    let policy =
+        crate::config::loader::load_policy(std::path::Path::new("/etc/rekindle/policy.toml"))
+            .unwrap_or_default()
+            .unwrap_or_default();
+
+    let mut transport_config = rekindle_transport::TransportConfig {
         storage_dir: paths.veilid_dir.display().to_string(),
         allow_insecure_protected_store: true, // daemon may run headless
         ..rekindle_transport::TransportConfig::default()
     };
+    if let Some(floor) = policy.min_hop_count {
+        for profile in [
+            &mut transport_config.safety.text,
+            &mut transport_config.safety.voice,
+            &mut transport_config.safety.dht,
+            &mut transport_config.safety.rpc,
+        ] {
+            profile.hop_count = profile.hop_count.max(floor);
+        }
+        tracing::info!(
+            min_hop_count = floor,
+            "admin policy raised the safety-route floor"
+        );
+    }
 
     let session_arc = Arc::new(parking_lot::RwLock::new(session));
     let mek_cache = Arc::new(parking_lot::RwLock::new(MekCache::new()));
@@ -159,7 +186,9 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         lifecycle: Arc::clone(&lifecycle),
         session_path: paths.session_file.clone(),
         registry: Arc::clone(&registry),
-        policy: RwLock::new(PolicyConfig::default()),
+        // The policy the daemon actually started under, so
+        // `PolicyReload` merges against reality rather than defaults.
+        policy: RwLock::new(policy),
         config_dir: paths.config_dir.clone(),
         audit: parking_lot::Mutex::new(audit_logger),
         subscriptions: RwLock::new(None),

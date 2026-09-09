@@ -64,6 +64,12 @@ export const accountCommands = {
     invoke<number>("create_friend_group", { name }),
   renameFriendGroup: (groupId: number, name: string) =>
     invoke<void>("rename_friend_group", { groupId, name }),
+
+  /** Set (or clear, with null) the local alias shown for one friend.
+   *  Distinct from `setNickname`, which changes the user's own display
+   *  name — this is the per-friend alias the buddy list renders. */
+  setFriendNickname: (publicKey: string, nickname: string | null) =>
+    invoke<void>("set_friend_nickname", { publicKey, nickname }),
   moveFriendToGroup: (publicKey: string, groupId: number | null) =>
     invoke<void>("move_friend_to_group", { publicKey, groupId }),
   generateInvite: () =>
