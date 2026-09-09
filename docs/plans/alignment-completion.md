@@ -471,31 +471,85 @@ verified to fail with `SerializeSeqLengthUnknown` against a planted
 `json_shape_is_what_the_webview_parses` test pinning the exact literals
 the TS types are written against.
 
-**Remaining: the community family.** 60 variants across 78 emit sites in
-`channels/community_channel/`, against 44 Tier 1 variants spread over
-membership / governance / crypto / social. Roughly twice the chat
-family. Sub-families, in the order they should be taken:
+**The community family — five of six sub-families landed.** Commits
+fb8f439 (membership), 2be7bbb (governance), cad0952 (social), a3ad0f7
+(crypto/system/presence), f8baecf (typing), 5a056fd (voice signalling).
+60 variants down to 6 struct variants plus the 10 video ones.
 
-1. membership (11) — `MemberJoined`, `MemberRemoved`, `Kicked`,
-   `MemberRolesChanged`, `MemberTimedOut`, `MembersRefreshed`,
-   `MemberDiscovered`, `JoinAccepted`, `JoinRejected`, `JoinProgress`,
-   `OnboardingComplete`
-2. governance (8) — `RolesChanged`, `ChannelsUpdated`,
-   `CommunityUpdated`, `Invite{Created,Used,Revoked}`,
-   `GovernanceUpdated`, `ChannelOverwriteChanged`
-3. social (14) — reactions, pins, message edit/delete, threads, events,
-   game servers
-4. voice signalling (11) — `VoiceJoin`, `VoiceLeave`, `VoiceRoster`,
-   `VoiceJoinHandshake`, `VoicePeerConfirmed`, `VoiceMediaReady`,
-   `VoiceModeSwitch`, `StageUpdate`, `SpeakRequest`, `SpeakResponse`.
-   Distinct from the `VoiceEvent` family already converged, which is
-   local session state; these are community channel signalling.
-5. crypto (1) — `MekRotated`
-6. the rest (15) — `ExpressionAssetReady`, `LinkPreviewReceived`,
-   `AttachmentDownloaded`, `SoundboardPlay`, `AutoModAlert`,
-   `RaidDetected`/`RaidAlert`, `ChannelLockdown`, `SystemMessage`,
-   `SyncComplete`, `ChannelMessage{Delivered,DeliveryFailed}`,
-   `ChannelTyping`, `MemberPresenceChanged`
+Each sub-family repeated the pattern: Tier 1 held a fragment of what the
+desktop carried, and the migration is what surfaced it.
+
+| sub-family | what Tier 1 was missing |
+|---|---|
+| membership | `MembersRefreshed`, `MemberDiscovered`, `JoinProgress`; `mek_generation` had to become `Option` |
+| governance | **the payloads themselves** — every variant was `{ community }` alone, "go re-read it" |
+| social | event/thread/server variants carried hand-picked fragments of types Tier 1 already owned |
+| crypto/system | `RaidDetected`, `AutoModAlert` — local observations, distinct from the gossiped decision |
+| voice signalling | 6 variants; `RosterUpdated` carried a count where a roster needs members; `Joined` had nowhere for `route_blob` |
+
+Defects found by migrating, not by looking:
+
+- The daemon's role and channel mappers dropped `hoist`, `mentionable`,
+  `self_assignable`, `exclusion_group` and `slowmode_seconds` — all five
+  sit in the merged CRDT state and were simply not read, so the CLI
+  rendered every role as non-hoisted and ungrouped.
+- `into_event_control_rest` discarded `VoiceJoin`'s `display_name` and
+  `route_blob` under a comment claiming gossip carried neither.
+- `channel_for` routed the whole `ChannelMessage` family to `chat-event`,
+  which would have delivered a community channel-message edit to the
+  chat-window listener. It splits by variant now, and `Typing` by
+  context.
+- `MekDelivered` was trace-only because the desktop had no counterpart;
+  Tier 1 has carried `MekTransferred` all along.
+- `EventInfo` unboxed pushed `SubscriptionEvent` to 352 bytes against a
+  52-byte sibling in `IpcResponse`. Boxed: 168.
+
+### 4.1.a The video family — why it needs the engine
+
+The last sub-family cannot be converged as a vocabulary change, and the
+reason is structural rather than incidental: **the desktop's video
+encoder lives in the webview.**
+
+`new VideoEncoder(...)` in `video_sender.ts:151` on macOS/Windows;
+GStreamer `vp9enc` in `rekindle-video-capture` on Linux. That split is
+already visible in the FIR path — `useVideoCallPanel` branches
+`ctx.nativeStreamId ? forceNativeKeyframes() : sender.forceKeyframeAll()`
+— and `video_adapter.rs:296` documents it outright.
+
+So codec-control messages have to cross the process boundary, and no
+event-vocabulary change fixes that. Three findings pin it down:
+
+- The `VideoCodec` trait the architecture describes **does not exist**.
+  It is a doc comment at `rekindle-video/src/lib.rs:3`; there is no
+  `trait VideoCodec` in the workspace.
+- The daemon has **no video at all** — zero dependencies, and
+  `into_event_control.rs:319-325` drops `VideoFragment`,
+  `VideoParityFragment`, `FrameAck`, `KeyframeRequest`,
+  `BandwidthEstimate`, `MediaCapabilities` and `TopologyChange` into
+  `=> return None`. The same arm also drops `StageUpdate`,
+  `SpeakRequest`, `SpeakResponse` and `SoundboardPlay`, which now have
+  Tier 1 variants the daemon never produces.
+- The daemon IPC cannot carry frames: `BusPayload` is `Request` /
+  `Response(Vec<u8>)` / `Event(SubscriptionEvent)`.
+
+**The full research — our tier model, the vendored Veilid source,
+RFC 7742, RFC 5104 and Jami's counter-evidence — is in
+[`video-media-engine.md`](video-media-engine.md).** Its conclusion, in
+one line: encode moves to the backend, compressed frames stay on the
+wire, and decode is the consumer's business — the shape
+`rekindle-voice` already has for audio. Raw frames cannot cross to a
+webview (1280×720 YUV420 is 1.38 MB/frame, ~20 MB/s per peer at 15 fps),
+which is why the project already ships `encoded_payload_b64` and a JPEG
+self-preview rather than raw.
+
+Two steps from that plan are independent of the engine and land first:
+
+- **Step 0** — stop emitting `VideoFrameAck`, `VideoBandwidthEstimate`
+  and `VideoMediaCapabilities`. Declared in `community_video_events.ts`,
+  read by no handler; the backend already consumes them in
+  `apply_bitrate_feedback`, which runs before `map_video_event`.
+- **Step 1** — make the daemon decode the video and voice payloads it
+  currently drops.
 
 **Also still open: community channel messages.**
 `ChatEvent::MessageReceived` survives for them. Tier 1's
