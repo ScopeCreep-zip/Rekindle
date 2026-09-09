@@ -34,16 +34,13 @@ pub fn control_into_event_rest(
         ControlPayload::EventCreated { event } => {
             SubscriptionEvent::Social(SocialEvent::EventCreated {
                 community: c(),
-                event_id: event.id,
-                title: event.title,
-                start_time: event.start_time,
+                event: Box::new(event),
             })
         }
         ControlPayload::EventUpdated { event } => {
             SubscriptionEvent::Social(SocialEvent::EventUpdated {
                 community: c(),
-                event_id: event.id,
-                title: event.title,
+                event: Box::new(event),
             })
         }
         ControlPayload::EventDeleted { event_id } => {
@@ -77,10 +74,7 @@ pub fn control_into_event_rest(
         ControlPayload::ThreadCreated { thread } => {
             SubscriptionEvent::Social(SocialEvent::ThreadCreated {
                 community: c(),
-                channel: thread.channel_id,
-                thread_id: thread.id,
-                thread_name: thread.name,
-                creator_pseudonym: thread.creator_pseudonym,
+                thread: Box::new(thread),
             })
         }
         ControlPayload::ThreadMessageReceived {
@@ -88,6 +82,7 @@ pub fn control_into_event_rest(
             message_id,
             sender_pseudonym,
             timestamp,
+            reply_to_id,
             ..
         } => SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted {
             community: c(),
@@ -95,6 +90,11 @@ pub fn control_into_event_rest(
             message_id,
             sender_pseudonym,
             timestamp,
+            // The payload carries `ciphertext` and a `mek_generation`,
+            // not a plaintext body — decryption happens above this
+            // layer, so this decoder cannot fill it.
+            body: None,
+            reply_to_id,
         }),
         ControlPayload::ThreadArchived {
             thread_id,
@@ -109,9 +109,7 @@ pub fn control_into_event_rest(
         ControlPayload::GameServerAdded { server } => {
             SubscriptionEvent::Social(SocialEvent::GameServerAdded {
                 community: c(),
-                server_id: server.id,
-                game_id: server.game_id,
-                label: server.label,
+                server: Box::new(server),
             })
         }
         ControlPayload::GameServerRemoved { server_id } => {

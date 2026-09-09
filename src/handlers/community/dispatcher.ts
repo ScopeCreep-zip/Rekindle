@@ -2,9 +2,9 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeCommunityEvents } from "../../ipc/channels";
 import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
-import { reduceMessages } from "./dispatcher_messages";
+import { reduceMessages, reduceSubscriptionMessages } from "./dispatcher_messages";
 import { reduceVoice } from "./dispatcher_voice";
-import { reduceContent } from "./dispatcher_content";
+import { reduceSubscriptionContent } from "./dispatcher_content";
 
 /// Central community event dispatcher. Each incoming `CommunityEvent`
 /// is offered to the topic reducers in turn; the first one that
@@ -17,12 +17,16 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
     // channel while the migration is in progress. Membership has moved
     // across; the rest still arrives as `{ type, data }`.
     if (!isLegacyCommunityEvent(event)) {
+      // Each slice takes the families it owns and ignores the rest;
+      // unlike the legacy reducers these do not report consumption,
+      // because the daemon families are disjoint by construction.
       reduceSubscriptionMembership(event);
+      reduceSubscriptionMessages(event);
+      reduceSubscriptionContent(event);
       return;
     }
     if (reduceMembership(event)) return;
     if (reduceMessages(event)) return;
-    if (reduceVoice(event)) return;
-    reduceContent(event);
+    reduceVoice(event);
   });
 }

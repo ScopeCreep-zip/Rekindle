@@ -288,16 +288,14 @@ impl App {
                 self.load_dashboard_data();
                 Some(Action::Render)
             }
-            SubscriptionEvent::Social(SocialEvent::ThreadCreated {
-                ref thread_name, ..
-            }) => {
+            SubscriptionEvent::Social(SocialEvent::ThreadCreated { ref thread, .. }) => {
                 self.notifications
-                    .push(format!("Thread created: {thread_name}"), ToastLevel::Info);
+                    .push(format!("Thread created: {}", thread.name), ToastLevel::Info);
                 Some(Action::Render)
             }
-            SubscriptionEvent::Social(SocialEvent::EventCreated { ref title, .. }) => {
+            SubscriptionEvent::Social(SocialEvent::EventCreated { ref event, .. }) => {
                 self.notifications
-                    .push(format!("Event created: {title}"), ToastLevel::Info);
+                    .push(format!("Event created: {}", event.title), ToastLevel::Info);
                 Some(Action::Render)
             }
             SubscriptionEvent::Social(SocialEvent::EventReminder {
@@ -311,9 +309,9 @@ impl App {
                 );
                 Some(Action::Render)
             }
-            SubscriptionEvent::Social(SocialEvent::GameServerAdded { ref label, .. }) => {
+            SubscriptionEvent::Social(SocialEvent::GameServerAdded { ref server, .. }) => {
                 self.notifications
-                    .push(format!("Game server added: {label}"), ToastLevel::Info);
+                    .push(format!("Game server added: {}", server.label), ToastLevel::Info);
                 Some(Action::Render)
             }
             SubscriptionEvent::System(SystemEvent::Announcement { ref body, .. }) => {

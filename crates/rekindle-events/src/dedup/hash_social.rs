@@ -172,15 +172,11 @@ pub(super) fn hash_social(h: &mut blake3::Hasher, s: &SocialEvent) {
             h.update(b"|");
             h.update(message_id.as_bytes());
         }
-        SocialEvent::ThreadCreated {
-            community,
-            thread_id,
-            ..
-        } => {
+        SocialEvent::ThreadCreated { community, thread } => {
             h.update(b"thread+|");
             h.update(community.as_bytes());
             h.update(b"|");
-            h.update(thread_id.as_bytes());
+            h.update(thread.id.as_bytes());
         }
         SocialEvent::ThreadMessagePosted {
             community,
@@ -207,25 +203,32 @@ pub(super) fn hash_social(h: &mut blake3::Hasher, s: &SocialEvent) {
             h.update(b"|");
             h.update(&[u8::from(*archived)]);
         }
-        SocialEvent::EventCreated {
-            community,
-            event_id,
-            ..
-        } => {
+        SocialEvent::EventCreated { community, event } => {
             h.update(b"event+|");
             h.update(community.as_bytes());
             h.update(b"|");
-            h.update(event_id.as_bytes());
+            h.update(event.id.as_bytes());
         }
-        SocialEvent::EventUpdated {
-            community,
-            event_id,
-            ..
-        } => {
+        SocialEvent::EventUpdated { community, event } => {
+            // The edited fields are part of the identity: two edits to
+            // one event are two events, and hashing the id alone would
+            // dedup the second away and leave the UI on the first.
+            // `EventInfo` has no revision counter, so the mutable
+            // fields stand in for one.
             h.update(b"event~|");
+            h.update(event.title.as_bytes());
+            h.update(b"|");
+            h.update(event.description.as_bytes());
+            h.update(b"|");
+            h.update(&event.start_time.to_le_bytes());
+            h.update(b"|");
+            h.update(&event.end_time.unwrap_or(0).to_le_bytes());
+            h.update(b"|");
+            h.update(event.status.as_bytes());
+            h.update(b"|");
             h.update(community.as_bytes());
             h.update(b"|");
-            h.update(event_id.as_bytes());
+            h.update(event.id.as_bytes());
         }
         SocialEvent::EventDeleted {
             community,
@@ -264,15 +267,11 @@ pub(super) fn hash_social(h: &mut blake3::Hasher, s: &SocialEvent) {
             h.update(b"|");
             h.update(&minutes_until_start.to_le_bytes());
         }
-        SocialEvent::GameServerAdded {
-            community,
-            server_id,
-            ..
-        } => {
+        SocialEvent::GameServerAdded { community, server } => {
             h.update(b"game+|");
             h.update(community.as_bytes());
             h.update(b"|");
-            h.update(server_id.as_bytes());
+            h.update(server.id.as_bytes());
         }
         SocialEvent::GameServerRemoved {
             community,

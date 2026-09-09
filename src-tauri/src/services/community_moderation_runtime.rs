@@ -77,14 +77,15 @@ pub fn emit_message_deleted_local(
     message_id: &str,
 ) {
     if let Some(app_handle) = state_helpers::app_handle(state) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             &app_handle,
-            "community-event",
-            &crate::channels::CommunityEvent::MessageDeleted {
-                community_id: community_id.to_string(),
-                channel_id: channel_id.to_string(),
-                message_id: message_id.to_string(),
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                rekindle_types::subscription_events::ChannelMessageEvent::Deleted {
+                    community: community_id.to_string(),
+                    channel: channel_id.to_string(),
+                    message_id: message_id.to_string(),
+                },
+            ),
         );
     }
 }

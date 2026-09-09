@@ -51,55 +51,6 @@ pub enum CommunityEvent {
         channel_id: Option<String>,
         new_generation: u64,
     },
-    /// A message was edited in a channel.
-    #[serde(rename_all = "camelCase")]
-    MessageEdited {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-        new_body: String,
-        edited_at: u64,
-    },
-    /// A message was deleted from a channel.
-    #[serde(rename_all = "camelCase")]
-    MessageDeleted {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-    },
-    /// A reaction was added to a message.
-    #[serde(rename_all = "camelCase")]
-    ReactionAdded {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-        emoji: String,
-        reactor_pseudonym: String,
-    },
-    /// A reaction was removed from a message.
-    #[serde(rename_all = "camelCase")]
-    ReactionRemoved {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-        emoji: String,
-        reactor_pseudonym: String,
-    },
-    /// A message was pinned.
-    #[serde(rename_all = "camelCase")]
-    MessagePinned {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-        pinned_by: String,
-    },
-    /// A message was unpinned.
-    #[serde(rename_all = "camelCase")]
-    MessageUnpinned {
-        community_id: String,
-        channel_id: String,
-        message_id: String,
-    },
     /// A queued channel message was eventually delivered after retry.
     #[serde(rename_all = "camelCase")]
     ChannelMessageDelivered {
@@ -190,76 +141,6 @@ pub enum CommunityEvent {
         elapsed_seconds: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         server_address: Option<String>,
-    },
-    /// A community event was created.
-    #[serde(rename_all = "camelCase")]
-    EventCreated {
-        community_id: String,
-        event: EventInfoDto,
-    },
-    /// A community event was updated.
-    #[serde(rename_all = "camelCase")]
-    EventUpdated {
-        community_id: String,
-        event: EventInfoDto,
-    },
-    /// A community event was deleted.
-    #[serde(rename_all = "camelCase")]
-    EventDeleted {
-        community_id: String,
-        event_id: String,
-    },
-    /// Someone RSVPed to a community event.
-    #[serde(rename_all = "camelCase")]
-    EventRsvpChanged {
-        community_id: String,
-        event_id: String,
-        pseudonym_key: String,
-        status: String,
-    },
-    /// A thread was created in a channel.
-    #[serde(rename_all = "camelCase")]
-    ThreadCreated {
-        community_id: String,
-        thread: ThreadInfoDto,
-    },
-    /// A new message in a thread.
-    #[serde(rename_all = "camelCase")]
-    ThreadMessageReceived {
-        community_id: String,
-        thread_id: String,
-        message_id: String,
-        sender_pseudonym: String,
-        body: String,
-        timestamp: u64,
-        reply_to_id: Option<String>,
-    },
-    /// A thread was archived or unarchived.
-    #[serde(rename_all = "camelCase")]
-    ThreadArchived {
-        community_id: String,
-        thread_id: String,
-        archived: bool,
-    },
-    /// A game server was added to the community's favorites.
-    #[serde(rename_all = "camelCase")]
-    GameServerAdded {
-        community_id: String,
-        server: GameServerInfoDto,
-    },
-    /// A game server was removed from the community's favorites.
-    #[serde(rename_all = "camelCase")]
-    GameServerRemoved {
-        community_id: String,
-        server_id: String,
-    },
-    /// An event is starting soon — reminder broadcast.
-    #[serde(rename_all = "camelCase")]
-    EventReminder {
-        community_id: String,
-        event_id: String,
-        title: String,
-        minutes_until_start: u32,
     },
     /// Local AutoMod alert for moderators on this client.
     #[serde(rename_all = "camelCase")]

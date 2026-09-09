@@ -105,15 +105,16 @@ pub(crate) async fn handle_control_events_and_threads(
             title,
             minutes_until_start,
         } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::EventReminder {
-                    community_id: community_id.to_string(),
-                    event_id,
-                    title,
-                    minutes_until_start,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::EventReminder {
+                        community: community_id.to_string(),
+                        event_id,
+                        title,
+                        minutes_until_start,
+                    },
+                ),
             );
         }
         ControlPayload::SystemMessage { body, timestamp } => {
@@ -166,7 +167,6 @@ fn handle_pin_payload(
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -189,15 +189,16 @@ fn handle_pin_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MessagePinned {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    message_id,
-                    pinned_by,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::MessagePinned {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        message_id,
+                        pinned_by,
+                    },
+                ),
             );
         }
         ControlPayload::MessageUnpinned {
@@ -216,14 +217,15 @@ fn handle_pin_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MessageUnpinned {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    message_id,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::MessageUnpinned {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        message_id,
+                    },
+                ),
             );
         }
         _ => {}
@@ -237,7 +239,6 @@ fn handle_thread_payload(
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -269,13 +270,14 @@ fn handle_thread_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ThreadCreated {
-                    community_id: community_id.to_string(),
-                    thread,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::ThreadCreated {
+                        community: community_id.to_string(),
+                        thread: Box::new(thread),
+                    },
+                ),
             );
         }
         ControlPayload::ThreadArchived {
@@ -294,14 +296,15 @@ fn handle_thread_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ThreadArchived {
-                    community_id: community_id.to_string(),
-                    thread_id,
-                    archived,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::ThreadArchiveChanged {
+                        community: community_id.to_string(),
+                        thread_id,
+                        archived,
+                    },
+                ),
             );
         }
         ControlPayload::ThreadMessageReceived {
@@ -346,18 +349,22 @@ fn handle_thread_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ThreadMessageReceived {
-                    community_id: community_id.to_string(),
-                    thread_id,
-                    message_id,
-                    sender_pseudonym,
-                    body,
-                    timestamp,
-                    reply_to_id,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::ThreadMessagePosted {
+                        community: community_id.to_string(),
+                        thread_id,
+                        message_id,
+                        sender_pseudonym,
+                        // Decrypted just above, so the plaintext is real
+                        // here — unlike the gossip decoder, which sees only
+                        // ciphertext and passes `None`.
+                        body: Some(body),
+                        timestamp,
+                        reply_to_id,
+                    },
+                ),
             );
         }
         _ => {}

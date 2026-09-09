@@ -288,15 +288,16 @@ pub async fn set_event_rsvp_inner(
         }),
     )?;
     if let Some(app_handle) = crate::state_helpers::app_handle(state) {
-        crate::event_dispatch::emit_live(
+        crate::event_dispatch::emit_subscription(
             &app_handle,
-            "community-event",
-            &crate::channels::CommunityEvent::EventRsvpChanged {
-                community_id: community_id.clone(),
-                event_id: event_id.clone(),
-                pseudonym_key,
-                status: normalized_status,
-            },
+            &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                rekindle_types::subscription_events::SocialEvent::EventRsvpChanged {
+                    community: community_id.clone(),
+                    event_id: event_id.clone(),
+                    pseudonym: pseudonym_key,
+                    rsvp_status: normalized_status,
+                },
+            ),
         );
     }
     let state_clone = state.clone();

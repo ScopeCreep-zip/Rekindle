@@ -44,7 +44,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
-use rekindle_types::subscription_events::SubscriptionEvent;
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 /// Wire shape persisted in the journal. The `channel` lets the frontend
 /// route the payload to the same listener that would have received it
@@ -227,6 +227,25 @@ fn channel_for(event: &SubscriptionEvent) -> &'static str {
     match event {
         SubscriptionEvent::Presence(_) => "presence-event",
         SubscriptionEvent::Voice(_) => "voice-event",
+        // `ChannelMessage` is the one family that splits by variant, so
+        // its community half is matched here — **before** the
+        // catch-all chat arm below, which would otherwise swallow it
+        // and deliver a channel-message edit to a listener that does
+        // not handle it.
+        SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::New { .. }
+            | ChannelMessageEvent::Edited { .. }
+            | ChannelMessageEvent::Deleted { .. },
+        )
+        | SubscriptionEvent::Membership(_)
+        | SubscriptionEvent::Governance(_)
+        | SubscriptionEvent::Crypto(_)
+        // Social events are community-scoped — reactions, pins,
+        // threads, scheduled events all belong to a channel or a
+        // community, so the community window is where they land.
+        | SubscriptionEvent::Social(_)
+        | SubscriptionEvent::UnreadChanged { .. } => "community-event",
+        // Everything left in `ChannelMessage` is a direct conversation.
         SubscriptionEvent::ChannelMessage(_)
         | SubscriptionEvent::Typing(_)
         // Calls ride the chat channel because that is where the
@@ -235,14 +254,8 @@ fn channel_for(event: &SubscriptionEvent) -> &'static str {
         // is transport, not taxonomy — the families stay distinct.
         | SubscriptionEvent::Call(_)
         | SubscriptionEvent::Friend(_) => "chat-event",
-        SubscriptionEvent::Membership(_)
-        | SubscriptionEvent::Governance(_)
-        | SubscriptionEvent::Crypto(_)
-        | SubscriptionEvent::UnreadChanged { .. } => "community-event",
 
-        SubscriptionEvent::Social(_)
-        | SubscriptionEvent::Notification(_)
-        | SubscriptionEvent::System(_) => "notification-event",
+        SubscriptionEvent::Notification(_) | SubscriptionEvent::System(_) => "notification-event",
         SubscriptionEvent::Network(_) => "network-status",
     }
 }

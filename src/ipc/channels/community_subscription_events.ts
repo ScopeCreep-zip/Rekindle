@@ -10,6 +10,8 @@
  */
 
 import type { CommunityEvent } from "./community_events";
+import type { EventInfo } from "../commands/types";
+import type { GameServer, Thread } from "../../stores/community.store";
 
 /** Membership events from the daemon vocabulary. */
 export type MembershipEvent =
@@ -142,11 +144,97 @@ export type GovernanceEvent =
     }
   | { governanceRebuilt: { community: string } };
 
-/** The daemon-vocabulary families delivered on this channel. */
+/** Social events — reactions, pins, threads, scheduled events, servers. */
+export type SocialEvent =
+  | {
+      reactionAdded: {
+        community: string;
+        channel: string;
+        messageId: string;
+        emoji: string;
+        reactorPseudonym: string;
+      };
+    }
+  | {
+      reactionRemoved: {
+        community: string;
+        channel: string;
+        messageId: string;
+        emoji: string;
+        reactorPseudonym: string;
+      };
+    }
+  | {
+      messagePinned: {
+        community: string;
+        channel: string;
+        messageId: string;
+        pinnedBy: string;
+      };
+    }
+  | { messageUnpinned: { community: string; channel: string; messageId: string } }
+  | { threadCreated: { community: string; thread: Thread } }
+  | {
+      threadMessagePosted: {
+        community: string;
+        threadId: string;
+        messageId: string;
+        senderPseudonym: string;
+        timestamp: number;
+        /** `null` from the gossip decoder, which sees only ciphertext. */
+        body: string | null;
+        replyToId: string | null;
+      };
+    }
+  | { threadArchiveChanged: { community: string; threadId: string; archived: boolean } }
+  | { eventCreated: { community: string; event: EventInfo } }
+  | { eventUpdated: { community: string; event: EventInfo } }
+  | { eventDeleted: { community: string; eventId: string } }
+  | {
+      eventRsvpChanged: {
+        community: string;
+        eventId: string;
+        pseudonym: string;
+        rsvpStatus: string;
+      };
+    }
+  | {
+      eventReminder: {
+        community: string;
+        eventId: string;
+        title: string;
+        minutesUntilStart: number;
+      };
+    }
+  | { gameServerAdded: { community: string; server: GameServer } }
+  | { gameServerRemoved: { community: string; serverId: string } };
+
+/**
+ * Channel-message lifecycle.
+ *
+ * Only the community-channel variants arrive here — the backend routes
+ * the direct-conversation ones to `chat-event`, because those belong to
+ * the chat windows rather than the community window.
+ */
+export type ChannelMessageEvent =
+  | { new: Record<string, unknown> }
+  | {
+      edited: {
+        community: string;
+        channel: string;
+        messageId: string;
+        editedAt: number;
+        body: string;
+      };
+    }
+  | { deleted: { community: string; channel: string; messageId: string } };
+
 export type CommunitySubscriptionEvent =
   | { membership: MembershipEvent }
   | { system: SystemEvent }
   | { governance: GovernanceEvent }
+  | { social: SocialEvent }
+  | { channelMessage: ChannelMessageEvent }
   | { crypto: Record<string, unknown> }
   | { unreadChanged: Record<string, unknown> };
 

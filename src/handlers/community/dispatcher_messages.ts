@@ -1,4 +1,5 @@
 import type { CommunityEvent } from "../../ipc/channels";
+import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
@@ -25,102 +26,6 @@ export function reduceMessages(event: CommunityEvent): boolean {
       siteName,
       fetchedAt,
     });
-    return true;
-  } else if (event.type === "messageEdited") {
-    const { channelId, messageId, newBody, editedAt } = event.data;
-    const msgs = communityState.channelMessages[channelId];
-    if (msgs) {
-      const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-      if (idx >= 0) {
-        setCommunityState("channelMessages", channelId, idx, "body", newBody);
-        setCommunityState("channelMessages", channelId, idx, "editedAt", editedAt);
-      }
-    }
-    return true;
-  } else if (event.type === "messageDeleted") {
-    const { channelId, messageId } = event.data;
-    const msgs = communityState.channelMessages[channelId];
-    if (msgs) {
-      setCommunityState("channelMessages", channelId, (prev) =>
-        prev.filter((m) => m.serverMessageId !== messageId),
-      );
-    }
-    return true;
-  } else if (event.type === "reactionAdded") {
-    const { channelId, messageId, emoji, reactorPseudonym } = event.data;
-    const msgs = communityState.channelMessages[channelId];
-    if (msgs) {
-      const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-      if (idx >= 0) {
-        const msg = msgs[idx];
-        const reactions = msg.reactions ?? [];
-        const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
-        if (existingIdx >= 0) {
-          // Add reactor to existing group
-          const existing = reactions[existingIdx];
-          if (!existing.reactors.includes(reactorPseudonym)) {
-            setCommunityState("channelMessages", channelId, idx, "reactions", existingIdx, {
-              count: existing.count + 1,
-              reactors: [...existing.reactors, reactorPseudonym],
-            });
-          }
-        } else {
-          // New reaction group
-          setCommunityState("channelMessages", channelId, idx, "reactions", [
-            ...reactions,
-            { emoji, count: 1, reactors: [reactorPseudonym] },
-          ]);
-        }
-      }
-    }
-    return true;
-  } else if (event.type === "reactionRemoved") {
-    const { channelId, messageId, emoji, reactorPseudonym } = event.data;
-    const msgs = communityState.channelMessages[channelId];
-    if (msgs) {
-      const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-      if (idx >= 0) {
-        const msg = msgs[idx];
-        const reactions = msg.reactions ?? [];
-        const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
-        if (existingIdx >= 0) {
-          const existing = reactions[existingIdx];
-          const newReactors = existing.reactors.filter((r) => r !== reactorPseudonym);
-          if (newReactors.length === 0) {
-            // Remove entire reaction group
-            setCommunityState("channelMessages", channelId, idx, "reactions",
-              reactions.filter((_, i) => i !== existingIdx),
-            );
-          } else {
-            setCommunityState("channelMessages", channelId, idx, "reactions", existingIdx, {
-              count: newReactors.length,
-              reactors: newReactors,
-            });
-          }
-        }
-      }
-    }
-    return true;
-  } else if (event.type === "messagePinned") {
-    // Pin events are informational — UI can show a toast or update pin state
-    const { channelId, messageId } = event.data;
-    const msgs = communityState.channelMessages[channelId];
-    if (msgs) {
-      const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-      if (idx >= 0) {
-        setCommunityState("channelMessages", channelId, idx, "pinned", true);
-      }
-    }
-    return true;
-  } else if (event.type === "messageUnpinned") {
-    const { channelId, messageId } = event.data;
-    const msgs = communityState.channelMessages[channelId];
-    if (msgs) {
-      const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-      if (idx >= 0) {
-        setCommunityState("channelMessages", channelId, idx, "pinned", false);
-      }
-    }
     return true;
   } else if (event.type === "channelMessageDelivered") {
     const { channelId, messageId } = event.data;
@@ -210,4 +115,128 @@ export function reduceMessages(event: CommunityEvent): boolean {
     return true;
   }
   return false;
+}
+
+// ── Daemon vocabulary ──────────────────────────────────────────────
+//
+// The bodies below are the `{ type, data }` cases they replaced, moved
+// verbatim: only the destructuring changed (`channelId` → `channel`,
+// `newBody` → `body`). Message edits and deletes are
+// `ChannelMessageEvent`; reactions and pins are `SocialEvent`.
+
+function applyEdit(channel: string, messageId: string, body: string, editedAt: number): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+  if (idx >= 0) {
+    setCommunityState("channelMessages", channel, idx, "body", body);
+    setCommunityState("channelMessages", channel, idx, "editedAt", editedAt);
+  }
+}
+
+function applyDelete(channel: string, messageId: string): void {
+  if (!communityState.channelMessages[channel]) return;
+  setCommunityState("channelMessages", channel, (prev) =>
+    prev.filter((m) => m.serverMessageId !== messageId),
+  );
+}
+
+function applyReactionAdded(
+  channel: string,
+  messageId: string,
+  emoji: string,
+  reactor: string,
+): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+  if (idx < 0) return;
+  const reactions = msgs[idx].reactions ?? [];
+  const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
+  if (existingIdx >= 0) {
+    // Add reactor to existing group
+    const existing = reactions[existingIdx];
+    if (!existing.reactors.includes(reactor)) {
+      setCommunityState("channelMessages", channel, idx, "reactions", existingIdx, {
+        count: existing.count + 1,
+        reactors: [...existing.reactors, reactor],
+      });
+    }
+  } else {
+    // New reaction group
+    setCommunityState("channelMessages", channel, idx, "reactions", [
+      ...reactions,
+      { emoji, count: 1, reactors: [reactor] },
+    ]);
+  }
+}
+
+function applyReactionRemoved(
+  channel: string,
+  messageId: string,
+  emoji: string,
+  reactor: string,
+): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+  if (idx < 0) return;
+  const reactions = msgs[idx].reactions ?? [];
+  const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
+  if (existingIdx < 0) return;
+  const existing = reactions[existingIdx];
+  const newReactors = existing.reactors.filter((r) => r !== reactor);
+  if (newReactors.length === 0) {
+    // Remove entire reaction group
+    setCommunityState(
+      "channelMessages",
+      channel,
+      idx,
+      "reactions",
+      reactions.filter((_, i) => i !== existingIdx),
+    );
+  } else {
+    setCommunityState("channelMessages", channel, idx, "reactions", existingIdx, {
+      count: newReactors.length,
+      reactors: newReactors,
+    });
+  }
+}
+
+function applyPinned(channel: string, messageId: string, pinned: boolean): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+  if (idx >= 0) {
+    setCommunityState("channelMessages", channel, idx, "pinned", pinned);
+  }
+}
+
+/// Channel-message and social events on the daemon vocabulary.
+export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {
+  if ("channelMessage" in event) {
+    const m = event.channelMessage;
+    if ("edited" in m) {
+      applyEdit(m.edited.channel, m.edited.messageId, m.edited.body, m.edited.editedAt);
+    } else if ("deleted" in m) {
+      applyDelete(m.deleted.channel, m.deleted.messageId);
+    }
+    return;
+  }
+
+  if (!("social" in event)) return;
+  const s = event.social;
+
+  if ("reactionAdded" in s) {
+    const r = s.reactionAdded;
+    applyReactionAdded(r.channel, r.messageId, r.emoji, r.reactorPseudonym);
+  } else if ("reactionRemoved" in s) {
+    const r = s.reactionRemoved;
+    applyReactionRemoved(r.channel, r.messageId, r.emoji, r.reactorPseudonym);
+  } else if ("messagePinned" in s) {
+    // Pin events are informational — UI can show a toast or update pin state
+    applyPinned(s.messagePinned.channel, s.messagePinned.messageId, true);
+  } else if ("messageUnpinned" in s) {
+    applyPinned(s.messageUnpinned.channel, s.messageUnpinned.messageId, false);
+  }
 }

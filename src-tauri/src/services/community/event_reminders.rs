@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::channels::CommunityEvent;
 use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
@@ -155,15 +154,16 @@ fn emit_reminder(state: &Arc<AppState>, reminder: &PendingReminder) {
         return;
     };
 
-    crate::event_dispatch::emit_live(
+    crate::event_dispatch::emit_subscription(
         &app_handle,
-        "community-event",
-        &CommunityEvent::EventReminder {
-            community_id: reminder.community_id.clone(),
-            event_id: reminder.event_id.clone(),
-            title: reminder.title.clone(),
-            minutes_until_start: u32::try_from(REMINDER_LEAD_SECONDS / 60).unwrap_or(10),
-        },
+        &rekindle_types::subscription_events::SubscriptionEvent::Social(
+            rekindle_types::subscription_events::SocialEvent::EventReminder {
+                community: reminder.community_id.clone(),
+                event_id: reminder.event_id.clone(),
+                title: reminder.title.clone(),
+                minutes_until_start: u32::try_from(REMINDER_LEAD_SECONDS / 60).unwrap_or(10),
+            },
+        ),
     );
 }
 

@@ -11,8 +11,8 @@ pub(super) fn handle_event_payload(
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
     match payload {
         ControlPayload::EventCreated { event } => {
@@ -38,13 +38,12 @@ pub(super) fn handle_event_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::EventDeleted {
-                    community_id: community_id.to_string(),
+                &SubscriptionEvent::Social(SocialEvent::EventDeleted {
+                    community: community_id.to_string(),
                     event_id,
-                },
+                }),
             );
             crate::services::community::wake_event_reminders(state);
         }
@@ -67,15 +66,14 @@ pub(super) fn handle_event_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::EventRsvpChanged {
-                    community_id: community_id.to_string(),
+                &SubscriptionEvent::Social(SocialEvent::EventRsvpChanged {
+                    community: community_id.to_string(),
                     event_id,
-                    pseudonym_key,
-                    status,
-                },
+                    pseudonym: pseudonym_key,
+                    rsvp_status: status,
+                }),
             );
         }
         _ => {}
@@ -89,8 +87,8 @@ pub(super) fn handle_game_server_payload(
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
     match payload {
         ControlPayload::GameServerAdded { server } => {
@@ -115,13 +113,12 @@ pub(super) fn handle_game_server_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::GameServerAdded {
-                    community_id: community_id.to_string(),
-                    server,
-                },
+                &SubscriptionEvent::Social(SocialEvent::GameServerAdded {
+                    community: community_id.to_string(),
+                    server: Box::new(server),
+                }),
             );
         }
         ControlPayload::GameServerRemoved { server_id } => {
@@ -135,13 +132,12 @@ pub(super) fn handle_game_server_payload(
                 )?;
                 Ok(())
             });
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::GameServerRemoved {
-                    community_id: community_id.to_string(),
+                &SubscriptionEvent::Social(SocialEvent::GameServerRemoved {
+                    community: community_id.to_string(),
                     server_id,
-                },
+                }),
             );
         }
         _ => {}
@@ -156,7 +152,7 @@ fn handle_event_upsert(
     event: rekindle_types::event::EventInfo,
     created: bool,
 ) {
-    use crate::channels::CommunityEvent;
+    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
     let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
     let cid = community_id.to_string();
@@ -198,15 +194,15 @@ fn handle_event_upsert(
         Ok(())
     });
     let event_kind = if created {
-        CommunityEvent::EventCreated {
-            community_id: community_id.to_string(),
-            event,
+        SocialEvent::EventCreated {
+            community: community_id.to_string(),
+            event: Box::new(event),
         }
     } else {
-        CommunityEvent::EventUpdated {
-            community_id: community_id.to_string(),
-            event,
+        SocialEvent::EventUpdated {
+            community: community_id.to_string(),
+            event: Box::new(event),
         }
     };
-    crate::event_dispatch::emit_live(app_handle, "community-event", &event_kind);
+    crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Social(event_kind));
 }

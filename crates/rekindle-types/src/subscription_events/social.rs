@@ -1,6 +1,31 @@
 //! Social feature events — reactions, pins, threads, scheduled events, game servers.
+//!
+//! ## Why the event/thread/server variants carry whole types
+//!
+//! They used to carry hand-picked fragments — an event's id, title and
+//! start time, but not its description, location, recurrence or RSVPs.
+//! Both producers already hold the whole thing: the gossip decoder
+//! receives a full `EventInfo` and was destructuring three fields out
+//! of it, and the desktop's `CommunityEvent` shipped the whole DTO,
+//! which is a type alias for this very type. So the fragment was pure
+//! loss on one side and a needless divergence on the other.
+//!
+//! The three are `Box`ed: unboxed, `EventInfo`'s RSVP list and
+//! recurrence rule pushed `SubscriptionEvent` to 352 bytes against a
+//! 52-byte sibling in `IpcResponse`, which clippy rejects as a
+//! size-imbalanced enum. A `Box<T>` serializes identically to `T`, so
+//! neither wire changes.
+//!
+//! ## Wire constraints
+//!
+//! Same as [`super::presence`]: postcard on the daemon IPC, so no
+//! `#[serde(flatten)]` and no `tag = "..."` enums.
 
 use serde::{Deserialize, Serialize};
+
+use crate::event::EventInfo;
+use crate::game_server::GameServerInfo;
+use crate::thread::ThreadInfo;
 
 /// Social feature events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,10 +72,7 @@ pub enum SocialEvent {
     /// Triggered by: gossip `ControlPayload::ThreadCreated`.
     ThreadCreated {
         community: String,
-        channel: String,
-        thread_id: String,
-        thread_name: String,
-        creator_pseudonym: String,
+        thread: Box<ThreadInfo>,
     },
     /// A new message was posted in a thread.
     /// Triggered by: gossip `ControlPayload::ThreadMessage`.
@@ -60,6 +82,15 @@ pub enum SocialEvent {
         message_id: String,
         sender_pseudonym: String,
         timestamp: u64,
+        /// The message text, when the emitter had it in plaintext.
+        ///
+        /// `None` from the gossip decoder, which sees `ciphertext` and
+        /// a `mek_generation` rather than a body — same shape as
+        /// [`super::ChannelMessageEvent::DirectMessageReceived::body`]
+        /// and for the same reason. The desktop decrypts before
+        /// emitting and fills it.
+        body: Option<String>,
+        reply_to_id: Option<String>,
     },
     /// A thread was archived or unarchived.
     /// Triggered by: gossip `ControlPayload::ThreadArchived`.
@@ -74,16 +105,13 @@ pub enum SocialEvent {
     /// Triggered by: gossip `ControlPayload::EventCreated`.
     EventCreated {
         community: String,
-        event_id: String,
-        title: String,
-        start_time: u64,
+        event: Box<EventInfo>,
     },
     /// A community event was updated.
     /// Triggered by: gossip `ControlPayload::EventUpdated`.
     EventUpdated {
         community: String,
-        event_id: String,
-        title: String,
+        event: Box<EventInfo>,
     },
     /// A community event was deleted.
     /// Triggered by: gossip `ControlPayload::EventDeleted`.
@@ -110,9 +138,7 @@ pub enum SocialEvent {
     /// Triggered by: gossip `ControlPayload::GameServerAdded`.
     GameServerAdded {
         community: String,
-        server_id: String,
-        game_id: String,
-        label: String,
+        server: Box<GameServerInfo>,
     },
     /// A game server was removed from the community.
     /// Triggered by: gossip `ControlPayload::GameServerRemoved`.

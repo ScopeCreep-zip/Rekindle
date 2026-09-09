@@ -99,7 +99,6 @@ fn handle_channel_event_payload(
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -112,30 +111,32 @@ fn handle_channel_event_payload(
         } => {
             let new_body =
                 decrypt_edited_message_body(state, community_id, &channel_id, &new_ciphertext);
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MessageEdited {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    message_id,
-                    new_body,
-                    edited_at,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                    rekindle_types::subscription_events::ChannelMessageEvent::Edited {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        message_id,
+                        body: Some(new_body),
+                        edited_at,
+                    },
+                ),
             );
         }
         ControlPayload::MessageDeleted {
             channel_id,
             message_id,
         } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::MessageDeleted {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    message_id,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                    rekindle_types::subscription_events::ChannelMessageEvent::Deleted {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        message_id,
+                    },
+                ),
             );
         }
         ControlPayload::ReactionAdded {
@@ -144,16 +145,17 @@ fn handle_channel_event_payload(
             emoji,
             reactor_pseudonym,
         } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ReactionAdded {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    message_id,
-                    emoji,
-                    reactor_pseudonym,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::ReactionAdded {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        message_id,
+                        emoji,
+                        reactor_pseudonym,
+                    },
+                ),
             );
         }
         ControlPayload::ReactionRemoved {
@@ -162,16 +164,17 @@ fn handle_channel_event_payload(
             emoji,
             reactor_pseudonym,
         } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
-                &CommunityEvent::ReactionRemoved {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    message_id,
-                    emoji,
-                    reactor_pseudonym,
-                },
+                &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                    rekindle_types::subscription_events::SocialEvent::ReactionRemoved {
+                        community: community_id.to_string(),
+                        channel: channel_id,
+                        message_id,
+                        emoji,
+                        reactor_pseudonym,
+                    },
+                ),
             );
         }
         _ => {}
