@@ -194,24 +194,71 @@ Implementations:
 `VideoBitrateTarget` and `VideoKeyframeRequest` currently cross the
 boundary to do.
 
-### Step 3 — a frame transport for the daemon
+### Step 3 — a frame transport for the daemon — **RESOLVED**
 
-The desktop routes frames through Tauri `Channel<T>`, deliberately
-outside the event queue. The daemon has no equivalent — `BusPayload`
-carries only `Request`, `Response(Vec<u8>)` and
-`Event(SubscriptionEvent)`.
+**Decision: a new `BusPayload` variant on the existing Noise bus. Not
+shared memory, not a second socket.**
 
-Adding frames to `Event` would be wrong for the reason
-`event-dispatch.md` already gives: it would put frame-rate traffic
-through the single ordered queue. The daemon needs a `BusPayload::Media`
-variant on its own path, or a separate socket.
+This reverses the option this plan originally leaned toward. Jami uses
+shared memory, so SHM looked like the answer; checking why it uses SHM
+is what changed the conclusion.
 
-**This is the step with a real open question**, and it should not be
-guessed at. Options, with the trade-off stated rather than resolved:
+**Our architecture.** The IPC bus is already
+`Noise_IK_25519_ChaChaPoly_BLAKE2s` over a Unix socket, with UCred
+mixed into the prologue explicitly as anti-confused-deputy protection
+(`daemon-cli.md`). And it **already chunks**: `ipc/noise.rs` sets
+`MAX_NOISE_PLAINTEXT = 65519` and carries application frames up to
+`MAX_FRAME_SIZE = 16 MiB` behind a chunk-count header. A 200 KB
+keyframe needs no new framing code at all.
 
-- a `BusPayload::Frame(Vec<u8>)` variant with its own backpressure
-- a second unix socket per media session
-- a shared-memory ring, which is what Jami does on Linux (SHM sink)
+A shared-memory segment would sit *outside* that boundary — no
+authentication, no UCred binding, no forward secrecy. It would trade
+away the security property the bus was built for.
+
+**Veilid.** Not in this path — daemon↔client IPC is ours. And it offers
+no pattern to borrow: `routing_context.rs` exposes `app_call`,
+`app_message` and DHT record operations. Message-oriented, no stream
+API. No constraint either way.
+
+**External, including the source that pointed the other way.**
+[Jami's SHM sink](https://dl.jami.net/doxygen/daemon/videomanager__interface_8h_source.html)
+is a **raw-frame** path: double-buffered, "avoids copying raw frame
+data multiple times between processes", feeding a native client that
+blits decoded frames. That is zero-copy for *decoded* video.
+
+We do not have that problem, by our own design. We ship **compressed**
+frames, and our own budget bounds them: `VIDEO_MAX_KBPS = 600`, i.e.
+**75 KB/s per stream** (`rekindle-video/src/budget.rs`). Eight
+concurrent streams is 600 KB/s.
+
+ChaCha20-Poly1305 runs at
+[~1.15 GB/s on 8 KB inputs with AVX2](https://github.com/aead/chacha20poly1305),
+~4.2 GB/s on an M3 Pro. 600 KB/s against 1.15 GB/s is **≈0.05 % of one
+core**. Shared memory would be optimising a cost that does not exist,
+and paying for it with the security boundary.
+
+**What still has to be built**, because "reuse the bus" is not "reuse
+the event stream":
+
+- Frames must **not** ride `BusPayload::Event(SubscriptionEvent)`. That
+  is the ordered, deduped, journaled stream that `event-dispatch.md`
+  deliberately keeps frame-rate traffic out of, for the same reason the
+  desktop routes frames through a Tauri `Channel<T>` instead of the
+  event queue.
+- So: a sibling `BusPayload::Media` variant, bypassing the event
+  router's dedup and journal, with its own bounded queue and a
+  drop-oldest policy — a late video frame is worthless, unlike an event.
+- The 100-token/second rate limit in `ipc/server/routing.rs` is applied
+  to **inbound** frames from a client. It does not throttle daemon→client
+  media, but it does bound a client that sends frames, which matters if a
+  frontend ever encodes.
+
+**The one real trade-off, stated rather than hidden:** frames share the
+socket with requests and responses, so a large frame briefly delays a
+control message. It is bounded by frame size — a 200 KB keyframe is
+four 64 KB chunks, sub-millisecond at these rates — and is the price of
+staying inside the authenticated channel. If it ever bites, the fix is a
+second Noise session on the same socket, not shared memory.
 
 ### Step 4 — the vocabulary follows
 
