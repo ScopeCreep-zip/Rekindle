@@ -157,9 +157,21 @@ impl FriendPresenceDeps for PresenceAdapter {
                     PresenceError::InvalidDhtKey(e.to_string())
                 })?;
         let subkey_range: veilid_core::ValueSubkeyRangeSet = subkeys.iter().copied().collect();
-        rc.watch_dht_values(record_key, Some(subkey_range), None, None)
+        let active = rc
+            .watch_dht_values(record_key, Some(subkey_range), None, None)
             .await
-            .map_err(|e| PresenceError::Dht(e.to_string()))
+            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        if active {
+            // A watched record has to be closable, because closing is
+            // what cancels the watch. Registering it here also puts it
+            // in the set `cleanup::close_tracked_records` drains at
+            // logout, so these stop accumulating for the whole session.
+            crate::state_helpers::track_open_records(
+                &self.state,
+                std::slice::from_ref(&dht_record_key.to_string()),
+            );
+        }
+        Ok(active)
     }
 
     fn profile_dht_info(&self) -> Option<(String, Option<String>)> {

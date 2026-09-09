@@ -8,6 +8,8 @@ use std::sync::Arc;
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
 use crate::db::DbPool;
+use rusqlite::OptionalExtension as _;
+
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::services::message_service;
 use crate::state::AppState;
@@ -90,14 +92,45 @@ pub async fn revoke_relay(
     let pseudonym_for_payload = owner_key.clone();
     let pseudonym = owner_key;
     let friend = friend_public_key.to_string();
-    db_call(pool, move |conn| {
+    // Read the route id and delete in ONE db_call: a SELECT-then-DELETE
+    // in two calls can race a concurrent revoke and leak the very id it
+    // was about to read.
+    let route_id: Option<String> = db_call(pool, move |conn| {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT relay_route_id FROM strand_relay_volunteered \
+                 WHERE owner_key = ?1 AND friend_public_key = ?2",
+                rusqlite::params![&pseudonym, &friend],
+                |row| row.get(0),
+            )
+            .optional()?;
         conn.execute(
             "DELETE FROM strand_relay_volunteered WHERE owner_key = ?1 AND friend_public_key = ?2",
             rusqlite::params![pseudonym, friend],
         )?;
-        Ok(())
+        Ok(existing)
     })
     .await?;
+
+    // The route outlives the row unless we say so. `release_private_route`
+    // is local with no network round-trip; an unknown or already-released
+    // id returns InvalidArgument, which is not worth failing a revoke
+    // over — but silently leaking one route per volunteer/revoke cycle is.
+    if let Some(id) = route_id {
+        match (
+            state_helpers::veilid_api(state),
+            id.parse::<veilid_core::RouteId>(),
+        ) {
+            (Some(api), Ok(parsed)) => {
+                if let Err(e) = api.release_private_route(parsed) {
+                    tracing::debug!(route_id = %id, error = %e, "relay route release");
+                }
+            }
+            _ => {
+                tracing::debug!(route_id = %id, "relay route not released — api or id unavailable");
+            }
+        }
+    }
 
     let payload = MessagePayload::RelayWithdraw {
         relay_pseudonym: pseudonym_for_payload,

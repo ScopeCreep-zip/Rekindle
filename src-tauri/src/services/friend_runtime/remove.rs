@@ -89,6 +89,15 @@ pub async fn remove_friend_inner(
             }
         }
 
+        // Unregistering the mapping above does not stop the watch —
+        // it only drops the `dht_key_to_friend` entry. Closing the
+        // record is what cancels it. Deliberately outside the guard:
+        // `close_and_untrack` takes `dht_manager.write()` itself and
+        // parking_lot guards are not reentrant.
+        if let Some(ref dht_key) = dht_key {
+            state_helpers::close_and_untrack(&state_clone, dht_key).await;
+        }
+
         if let Err(e) = services::message_service::push_friend_list_update(&state_clone).await {
             tracing::warn!(error = %e, "failed to update DHT friend list after removal");
         }

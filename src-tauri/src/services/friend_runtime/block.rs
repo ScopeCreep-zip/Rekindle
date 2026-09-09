@@ -69,6 +69,14 @@ pub async fn block_user_inner(
         }
     }
 
+    // Closing the record is what cancels its watch. Blocking someone
+    // while still watching their presence is the worse half of this
+    // defect: the user explicitly cut them off. Outside the guard —
+    // `close_and_untrack` takes `dht_manager.write()` itself.
+    if let Some(ref dht_key) = dht_key {
+        state_helpers::close_and_untrack(&state, dht_key).await;
+    }
+
     {
         let signal = state.signal_manager.read();
         if let Some(handle) = signal.as_ref() {

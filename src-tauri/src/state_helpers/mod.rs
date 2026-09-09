@@ -37,8 +37,8 @@ pub use communities::{
     push_community_channel, set_community_channels,
 };
 pub use dht_records::{
-    collect_and_clear_community_records, store_dht_record, track_open_records, untrack_records,
-    DhtRecordType,
+    close_and_untrack, collect_and_clear_community_records, store_dht_record, track_open_records,
+    untrack_records, DhtRecordType,
 };
 pub use friends::{
     accepted_friend_keys, friend_dht_key, friend_display_name, friend_field, friend_mailbox_key,

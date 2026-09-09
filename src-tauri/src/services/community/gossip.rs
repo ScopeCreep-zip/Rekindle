@@ -18,6 +18,43 @@ use crate::services::gossip_adapter::deps_impl::build_adapter;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
 
+/// Send one envelope to exactly one member.
+///
+/// Distinct from [`send_to_channel_peers`] below, which is bound to the
+/// active voice session — this one takes the peer explicitly and is for
+/// directed replies: answering a specific asker rather than telling the
+/// community. The crate-level fan-out it delegates to forces `ttl = 0`,
+/// so an honest receiver never gossip-forwards the reply onward.
+pub async fn send_to_member(
+    state: &SharedState,
+    pool: &crate::db::DbPool,
+    community_id: &str,
+    peer_pseudonym: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<(), String> {
+    let route_blob = crate::services::community::routes::resolve_member_route(
+        state,
+        pool,
+        community_id,
+        peer_pseudonym,
+    )
+    .await
+    .ok_or_else(|| format!("no route for {peer_pseudonym}"))?;
+
+    let adapter = build_adapter(state).ok_or("app handle / db pool unavailable")?;
+    rekindle_gossip::send_to_channel_peers(
+        Arc::new(adapter),
+        community_id,
+        envelope,
+        vec![rekindle_gossip::PeerInfo {
+            pseudonym_key: peer_pseudonym.to_string(),
+            route_blob,
+        }],
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Sign + dedup + bump lamport + fan out. Returns `Err` if the app
 /// handle / DbPool can't be acquired; transport failures are
 /// best-effort and recorded as reliability + delivery rows inside

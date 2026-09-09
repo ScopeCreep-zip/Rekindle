@@ -58,6 +58,7 @@ pub(crate) fn handle_gossip_control_payloads(
                 app_handle,
                 state,
                 community_id,
+                sender_pseudonym,
                 &channel_id,
                 since_timestamp,
             );

@@ -62,6 +62,29 @@ pub fn track_open_records(state: &Arc<AppState>, keys: &[String]) {
     }
 }
 
+/// Close one DHT record and drop it from the tracking set.
+///
+/// Closing is what cancels the record's watch — veilid-core documents
+/// `close_dht_record` as "the release half of the open/close pair;
+/// cancels the record's watch (in the background)". Unregistering a
+/// friend's `dht_key_to_friend` mapping does not do this: the record
+/// stays open and the watch keeps delivering, so a removed or blocked
+/// peer went on being observed for the life of the process.
+pub async fn close_and_untrack(state: &Arc<AppState>, key: &str) {
+    let rc = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.routing_context.clone())
+    };
+    if let (Some(rc), Ok(parsed)) = (rc, key.parse::<veilid_core::RecordKey>()) {
+        if let Err(e) = rc.close_dht_record(parsed).await {
+            tracing::debug!(key, error = %e, "close friend record");
+        }
+    } else {
+        tracing::debug!(key, "friend record not closed — no node or bad key");
+    }
+    untrack_records(state, std::slice::from_ref(&key.to_string()));
+}
+
 /// Remove multiple DHT record keys from the global tracking set.
 pub fn untrack_records(state: &Arc<AppState>, keys: &[String]) {
     let mut dht_mgr = state.dht_manager.write();
