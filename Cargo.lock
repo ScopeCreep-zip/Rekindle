@@ -7643,6 +7643,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-media-stats"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+]
+
+[[package]]
 name = "rekindle-mek-rotation"
 version = "0.1.0"
 dependencies = [

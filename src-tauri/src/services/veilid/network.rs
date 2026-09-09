@@ -415,6 +415,65 @@ pub(crate) async fn new_private_route_with_retry(
     .ok()
 }
 
+/// Allocate the **media-class** inbound private route.
+///
+/// Same hop count as the general route — `hop_count: 0` resolves to the
+/// configured `default_route_hop_count`, so anonymity is byte-for-byte
+/// unchanged. The only difference is what the relays are selected for.
+///
+/// `PrivateSpec::default()`, which the general route uses, is
+/// `Stability::Reliable` + `Sequencing::PreferOrdered`. Reading
+/// veilid-core's `route_spec_store/route_allocate.rs`, that means the
+/// relays carrying our inbound media are:
+///
+/// - filtered and then *sorted to prefer* ordered — i.e. TCP/WS —
+///   dial info (`has_sequencing_matched_dial_info`, and the
+///   `PreferOrdered` sort at line 669), and
+/// - sorted by `cmp_oldest_reliable`: **longest uptime, regardless of
+///   speed**.
+///
+/// Both are wrong for realtime media, and it is exactly the property
+/// Session identified as fatal when they moved calls off TCP-based
+/// onion routing onto Lokinet's datagram path. `LowLatency` instead
+/// sorts by `tm90` (trimmed mean of the fastest 90 % of samples), and
+/// `PreferUnordered` stops steering the relay choice toward
+/// connection-oriented transports.
+///
+/// veilid-core's own doc for `new_custom_private_route` says it plainly:
+/// "Faster connections may be possible with `Stability::LowLatency`,
+/// and `Sequencing::PreferUnordered` at the expense of some loss of
+/// messages." Lossy is the correct trade here — FEC and the jitter
+/// buffer exist for it, and a late frame is worthless anyway.
+pub(crate) async fn new_media_route_with_retry(
+    state: &Arc<AppState>,
+    attempts: u32,
+) -> Option<veilid_core::RouteBlob> {
+    rekindle_utils::retry::retry_with_backoff(
+        rekindle_utils::retry::RetryPolicy::fixed(attempts, std::time::Duration::from_secs(3)),
+        "media-route-allocate",
+        |e| matches!(e, RouteAllocError::Veilid(_)),
+        || async {
+            let api = state_helpers::veilid_api(state).ok_or(RouteAllocError::ApiGone)?;
+            api.new_custom_private_route(veilid_core::PrivateSpec {
+                // Empty = all available crypto kinds, as the default does.
+                crypto_kinds: Vec::new(),
+                // 0 = the configured `default_route_hop_count`. Identical
+                // to the general route; this experiment changes one thing.
+                hop_count: 0,
+                stability: veilid_core::Stability::LowLatency,
+                sequencing: veilid_core::Sequencing::PreferUnordered,
+            })
+            .await
+            .map_err(RouteAllocError::Veilid)
+        },
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(attempts, error = %e, "media route allocation failed");
+    })
+    .ok()
+}
+
 pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
     let Some(route_blob) = new_private_route_with_retry(state, 5).await else {
         tracing::warn!(

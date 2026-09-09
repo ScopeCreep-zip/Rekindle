@@ -55,7 +55,7 @@ pub use identity::{
 };
 pub use node::{
     api_and_routing_context, app_context, app_handle, friend_list_dht_key,
-    friend_list_owner_keypair, is_attached, our_route_blob, profile_dht_info,
+    friend_list_owner_keypair, is_attached, our_media_route_blob, our_route_blob, profile_dht_info,
     register_background_handle, require_routing_context, require_safe_routing_context,
     routing_context, safe_api_and_routing_context, safe_routing_context, veilid_api,
 };

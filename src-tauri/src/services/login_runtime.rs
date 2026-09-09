@@ -118,6 +118,25 @@ async fn allocate_route_with_retry(
     if let Some(ref mut nh) = *state.node.write() {
         nh.route_blob = Some(route_blob.blob.clone());
     }
+    // Media-class route, allocated alongside. Failure is not fatal:
+    // `media_route_blob()` returns `None` and the voice path falls back
+    // to the general route, which still works — it is just built from
+    // relays chosen for uptime rather than latency.
+    if let Some(media) = services::veilid::new_media_route_with_retry(state, max_attempts).await {
+        let mut rm = state.routing_manager.write();
+        if let Some(ref mut handle) = *rm {
+            handle
+                .manager
+                .set_allocated_media_route(media.route_id.clone(), media.blob.clone());
+        }
+        tracing::info!(
+            blob_len = media.blob.len(),
+            "media-class private route allocated (LowLatency + PreferUnordered)"
+        );
+    } else {
+        tracing::warn!("media route allocation failed — voice falls back to the general route");
+    }
+
     // Notify the frontend immediately about the new route
     services::veilid::emit_network_status(app_handle, state);
     tracing::info!(

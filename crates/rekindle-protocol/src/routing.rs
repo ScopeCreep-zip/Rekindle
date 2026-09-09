@@ -33,6 +33,14 @@ pub struct RoutingManager {
     private_route_id: Option<RouteId>,
     /// Our private route blob (shared with peers for receiving messages).
     pub private_route_blob: Option<Vec<u8>>,
+    /// Media-class inbound route — same hop count, but allocated with
+    /// `Stability::LowLatency` + `Sequencing::PreferUnordered` so the
+    /// relays carrying inbound voice/video are chosen for latency and
+    /// datagram capability rather than uptime and ordered dial info.
+    /// See `services::veilid::network::new_media_route_with_retry`.
+    media_route_id: Option<RouteId>,
+    /// Blob for [`Self::media_route_id`], announced in voice joins.
+    media_route_blob: Option<Vec<u8>>,
 }
 
 impl RoutingManager {
@@ -43,6 +51,8 @@ impl RoutingManager {
             safety_mode,
             private_route_id: None,
             private_route_blob: None,
+            media_route_id: None,
+            media_route_blob: None,
         }
     }
 
@@ -97,6 +107,36 @@ impl RoutingManager {
     /// Get our current private route ID (if allocated).
     pub fn route_id(&self) -> Option<RouteId> {
         self.private_route_id.clone()
+    }
+
+    /// Our media-class route blob, if one has been allocated.
+    ///
+    /// Callers fall back to [`Self::route_blob`] when this is `None`:
+    /// a general route still carries media, just over relays picked for
+    /// the wrong thing.
+    pub fn media_route_blob(&self) -> Option<&Vec<u8>> {
+        self.media_route_blob.as_ref()
+    }
+
+    /// Install an externally-allocated media-class route.
+    pub fn set_allocated_media_route(&mut self, route_id: RouteId, blob: Vec<u8>) {
+        self.media_route_id = Some(route_id);
+        self.media_route_blob = Some(blob);
+    }
+
+    /// Release the media-class route, if allocated.
+    ///
+    /// Separate from [`Self::release_private_route`] because the two
+    /// have independent lifetimes: a dead media route must not take the
+    /// general route down with it.
+    pub fn release_media_route(&mut self) -> Result<(), ProtocolError> {
+        if let Some(route_id) = self.media_route_id.take() {
+            self.api
+                .release_private_route(route_id)
+                .map_err(|e| ProtocolError::RoutingError(format!("release_media_route: {e}")))?;
+        }
+        self.media_route_blob = None;
+        Ok(())
     }
 
     /// Install the route from an externally-allocated `RouteBlob`.

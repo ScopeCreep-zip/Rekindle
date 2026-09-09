@@ -111,6 +111,18 @@ pub fn our_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
         .and_then(|nh| nh.route_blob.clone())
 }
 
+/// Our media-class inbound route blob, if allocated.
+///
+/// `None` falls back to [`our_route_blob`] at the call site — see
+/// `voice_signaling_adapter::our_route_blob`.
+pub fn our_media_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
+    state
+        .routing_manager
+        .read()
+        .as_ref()
+        .and_then(|h| h.manager.media_route_blob().cloned())
+}
+
 /// Friend list DHT key.
 pub fn friend_list_dht_key(state: &Arc<AppState>) -> Option<String> {
     state

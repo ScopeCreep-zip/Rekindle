@@ -13,6 +13,7 @@ members = [
     "crates/rekindle-link-preview",
     "crates/rekindle-dm",
     "crates/rekindle-calls",
+    "crates/rekindle-media-stats",
     "crates/rekindle-video",
     "crates/rekindle-video-capture",
     "crates/rekindle-sync",
