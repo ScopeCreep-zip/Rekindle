@@ -5,6 +5,7 @@ import {
   handleToggleDeafen,
   handleLeaveVoice,
 } from "../../../actions/voice.actions";
+import { q8ToPercent } from "../../../ipc/channels/voice_events";
 import SoundboardPanel from "../SoundboardPanel";
 import ReactionsTray from "../ReactionsTray";
 import {
@@ -35,18 +36,45 @@ const CallControlBar: Component<{
   // sender attaches the moment the gate opens; the tooltip says so.
   const previewOnly = (): boolean =>
     voiceState.activeCallType === "community" && !(voiceState.mediaReady?.ready ?? false);
+
+  // Two halves, and the tooltip says which is which: the receive side
+  // is what OUR buffer dropped, the link side is what the far end
+  // measured about the stream we sent it.
+  const qualityTooltip = (): string => {
+    const rx =
+      `rx drops 5s: ${voiceState.rxOverflowDrops + voiceState.rxLateDrops}, ` +
+      `key drops 5s: ${voiceState.rxMekDrops}, ` +
+      `inbound drops total: ${voiceState.ingressDrops}`;
+    const link = voiceState.link;
+    if (link === null) {
+      return `Connection: ${voiceState.connectionQuality} — ${rx} (no peer report yet)`;
+    }
+    const rtt = link.rttMs === null ? "—" : `${link.rttMs} ms`;
+    return (
+      `Connection: ${voiceState.connectionQuality} — ` +
+      `peer loss ${q8ToPercent(link.lossQ8)}%, ` +
+      `discard ${q8ToPercent(link.discardQ8)}%, ` +
+      `jitter ${link.jitterMs} ms, rtt ${rtt}, ` +
+      `MOS ${link.mosCq.toFixed(1)} (R ${link.rFactor}), ` +
+      `${Math.round(link.bitrateBps / 1000)} kbps — ${rx}`
+    );
+  };
   return (
     <div class="call-control-bar">
       <div
         class="call-control-quality"
-        title={`Connection: ${voiceState.connectionQuality} — rx drops 5s: ${voiceState.rxOverflowDrops + voiceState.rxLateDrops}, key drops 5s: ${voiceState.rxMekDrops}, inbound drops total: ${voiceState.ingressDrops}`}
+        title={qualityTooltip()}
       >
         <span
           class="call-control-quality-dot"
           classList={{
             "call-control-quality-good": voiceState.connectionQuality === "good",
-            "call-control-quality-fair": voiceState.connectionQuality === "fair",
-            "call-control-quality-poor": voiceState.connectionQuality === "poor",
+            "call-control-quality-fair":
+              voiceState.connectionQuality === "fair" ||
+              voiceState.connectionQuality === "recovering",
+            "call-control-quality-poor":
+              voiceState.connectionQuality === "poor" ||
+              voiceState.connectionQuality === "lost",
           }}
           aria-hidden="true"
         />

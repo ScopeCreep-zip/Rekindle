@@ -1,5 +1,7 @@
 import { createStore } from "solid-js/store";
 
+import type { LinkMeasurement } from "../ipc/channels/voice_events";
+
 export interface VoiceParticipant {
   publicKey: string;
   displayName: string;
@@ -24,6 +26,11 @@ export interface VoiceState {
   rxMekDrops: number;
   /** Cumulative inbound voice-channel drops since login. */
   ingressDrops: number;
+  /**
+   * End-to-end measurement of our outbound stream, as the far end
+   * reports it. `null` until the first receiver report arrives.
+   */
+  link: LinkMeasurement | null;
   activeCallType: "dm" | "community" | null;
   inputDevice: string | null;
   outputDevice: string | null;
@@ -60,6 +67,7 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   rxLateDrops: 0,
   rxMekDrops: 0,
   ingressDrops: 0,
+  link: null,
   activeCallType: null,
   inputDevice: null,
   outputDevice: null,

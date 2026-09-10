@@ -24,6 +24,13 @@ use rekindle_channel::AutoModCompiledCache;
 pub struct AppState {
     /// Channel for routing incoming voice packets from the dispatch loop to the receive loop.
     pub voice_packet_tx: Arc<RwLock<Option<mpsc::Sender<rekindle_voice::transport::VoicePacket>>>>,
+    /// Channel for routing incoming RFC 3550 receiver reports from the
+    /// dispatch loop to the **send** loop — the return direction of
+    /// `voice_packet_tx`. Reports tell our sender what our audio looks
+    /// like at each peer, which is the only way it can see loss at all:
+    /// a successful `send()` says nothing about arrival.
+    pub voice_report_tx:
+        Arc<RwLock<Option<mpsc::Sender<rekindle_voice::receiver_report::VoiceReceiverReport>>>>,
     /// Identity (loaded after Stronghold unlock).
     pub identity: Arc<RwLock<Option<IdentityState>>>,
     /// Friends list with presence info.
@@ -268,6 +275,7 @@ impl Default for AppState {
         let (network_ready_tx, network_ready_rx) = tokio::sync::watch::channel(false);
         Self {
             voice_packet_tx: Arc::new(RwLock::new(None)),
+            voice_report_tx: Arc::new(RwLock::new(None)),
             identity: Arc::new(RwLock::new(None)),
             friends: Arc::new(RwLock::new(HashMap::new())),
             communities: Arc::new(RwLock::new(HashMap::new())),

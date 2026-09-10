@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use rekindle_voice::VoiceSessionEvent;
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
+use rekindle_types::subscription_events::{
+    LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceScope,
+};
 
 use crate::state::AppState;
 
@@ -23,6 +25,9 @@ pub struct VoiceQualityCache {
     pub rx_overflow_drops: u64,
     pub rx_late_drops: u64,
     pub rx_mek_drops: u64,
+    /// The send half's end-to-end measurement, from receiver reports.
+    /// `None` until a peer reports.
+    pub link: Option<LinkMeasurement>,
 }
 
 impl Default for VoiceQualityCache {
@@ -32,7 +37,24 @@ impl Default for VoiceQualityCache {
             rx_overflow_drops: 0,
             rx_late_drops: 0,
             rx_mek_drops: 0,
+            link: None,
         }
+    }
+}
+
+/// Project the crate's measurement types onto the flat Tier-1 event
+/// payload. The one place the two representations meet — see
+/// [`LinkMeasurement`]'s note on why they are separate.
+fn project_link(stats: &rekindle_voice::session_deps::SendLinkStats) -> LinkMeasurement {
+    LinkMeasurement {
+        loss_q8: stats.metrics.loss_rate_q8,
+        discard_q8: stats.metrics.discard_rate_q8,
+        jitter_ms: stats.metrics.jitter_ms,
+        rtt_ms: stats.rtt_ms,
+        r_factor: stats.score.r_factor,
+        mos_lq: stats.score.mos_lq,
+        mos_cq: stats.score.mos_cq,
+        bitrate_bps: stats.bitrate_bps,
     }
 }
 
@@ -46,8 +68,14 @@ pub(super) fn merge_quality_event(
     use rekindle_voice::VoiceSessionEvent as E;
     let mut cache = state.voice_quality_cache.lock();
     match event {
-        E::ConnectionQuality { quality } => {
+        E::ConnectionQuality { quality, link } => {
             cache.quality.clone_from(quality);
+            // Only overwrite when this window carried a measurement; a
+            // window with no report should not erase the last known
+            // numbers, or the UI blinks empty between reports.
+            if let Some(stats) = link {
+                cache.link = Some(project_link(stats));
+            }
         }
         E::ReceiveStats {
             rx_overflow_drops,
@@ -69,6 +97,7 @@ pub(super) fn merge_quality_event(
         ingress_drops: state
             .voice_ingress_drops_total
             .load(std::sync::atomic::Ordering::Relaxed),
+        link: cache.link,
     })
 }
 
@@ -169,6 +198,9 @@ pub(super) fn emit_local_joined_impl(
             rx_late_drops: 0,
             rx_mek_drops: 0,
             ingress_drops: 0,
+            // Join-time initial state: no peer has reported yet, so
+            // there is nothing measured to show.
+            link: None,
         },
         VoiceEvent::SpeakingChanged {
             scope: scope.clone(),

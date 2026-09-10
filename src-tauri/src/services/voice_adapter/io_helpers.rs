@@ -2,7 +2,7 @@
 //!
 //! Each helper is a free fn used by exactly one trait method:
 //! `restart_audio_devices`, `resolve_peer_route`, `load_member_names`,
-//! `broadcast_media_capabilities`.
+//! `broadcast_media_capabilities`, `send_receiver_report`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -126,4 +126,31 @@ pub(super) async fn load_community_member_names_impl(
     })
     .await
     .unwrap_or_default()
+}
+
+/// Ship a signed receiver report back to the peer whose stream it
+/// describes, over the transport's cached route for that peer.
+///
+/// Reusing the cached route is the point: a report costs no DHT lookup
+/// and travels the same 3-hop media route as the audio it measures, so
+/// the round trip it reports is the round trip the audio actually
+/// takes.
+pub(super) fn send_receiver_report_impl(
+    transport: Option<Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>>,
+    peer_pubkey_hex: &str,
+    wire: Vec<u8>,
+) {
+    let Some(transport) = transport else {
+        return;
+    };
+    let peer = peer_pubkey_hex.to_string();
+    tauri::async_runtime::spawn(async move {
+        let guard = transport.lock().await;
+        if let Err(e) = guard.send_bytes_to_peer(&peer, wire).await {
+            // Debug, not warn: a peer whose route is not yet resolved
+            // is ordinary early in a call, and a lost report costs the
+            // sender one 5 s window of blindness, not the call.
+            tracing::debug!(peer = %peer, error = %e, "receiver report not delivered");
+        }
+    });
 }

@@ -2,119 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chacha20poly1305::{
-    aead::{Aead, KeyInit},
-    ChaCha20Poly1305, Key, Nonce,
-};
 use serde::{Deserialize, Serialize};
 
 use crate::codec::EncodedFrame;
 use crate::error::VoiceError;
 
-// Wave 13 W13.14 — AEAD audio encryption under the X25519-derived
-// call_key. ChaCha20-Poly1305 chosen for low-CPU (matters for mobile),
-// constant-time (no timing oracles), large nonce space (12 bytes —
-// no birthday attack at audio packet rates), and a Rust ecosystem
-// implementation already used elsewhere in the project's crypto
-// dependencies.
+mod packet;
 
-/// Domain-tag bytes that go into the nonce derivation so a chat or
-/// governance ChaCha20-Poly1305 secret can never collide with a voice
-/// nonce reused (defense-in-depth — the call_key is already
-/// domain-separated by `derive_call_key`'s HKDF info).
-const VOICE_AEAD_DOMAIN: &[u8; 4] = b"vca1";
-
-/// Build a 12-byte nonce from `(sequence, timestamp)`. Each packet
-/// gets a unique nonce because the (sequence, timestamp) pair is
-/// strictly monotonic per call. Sender and receiver reconstruct the
-/// same nonce from the public packet fields — no extra wire bytes.
-fn aead_nonce(sequence: u32, timestamp: u64) -> [u8; 12] {
-    // 4-byte domain tag + 4-byte sequence + 4 low-order bytes of
-    // timestamp. (sequence, timestamp) is monotonic per call so the
-    // resulting 12-byte nonce is unique even if timestamps roll over
-    // every ~50 days at 48 kHz Opus framing — at which point sequence
-    // alone is 32 bits of fresh space.
-    let mut nonce = [0u8; 12];
-    nonce[..4].copy_from_slice(VOICE_AEAD_DOMAIN);
-    nonce[4..8].copy_from_slice(&sequence.to_le_bytes());
-    nonce[8..12].copy_from_slice(&((timestamp & 0xFFFF_FFFF) as u32).to_le_bytes());
-    nonce
-}
-
-fn encrypt_audio(
-    call_key: &[u8; 32],
-    sequence: u32,
-    timestamp: u64,
-    plaintext: &[u8],
-) -> Result<Vec<u8>, VoiceError> {
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(call_key));
-    let nonce = aead_nonce(sequence, timestamp);
-    cipher
-        .encrypt(Nonce::from_slice(&nonce), plaintext)
-        .map_err(|e| VoiceError::Transport(format!("aead encrypt: {e}")))
-}
-
-/// Receive-side decrypt entry point. Made public so receive_loop can
-/// run the decrypt step after signature verification.
-pub fn decrypt_packet_audio(
-    call_key: &[u8; 32],
-    packet: &VoicePacket,
-) -> Result<Vec<u8>, VoiceError> {
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(call_key));
-    let nonce = aead_nonce(packet.sequence, packet.timestamp);
-    cipher
-        .decrypt(Nonce::from_slice(&nonce), packet.audio_data.as_slice())
-        .map_err(|e| VoiceError::Transport(format!("aead decrypt: {e}")))
-}
-
-/// Voice packet for network transmission.
-///
-/// Architecture §10.3 + §26 W26 — `signature` is an Ed25519 signature
-/// by the sender's pseudonym secret over [`signing_bytes`]. Receivers
-/// MUST verify against `sender_key` before mixing/playing the audio,
-/// otherwise any community member could MEK-encrypt audio claiming to
-/// be any other (the MEK is community-shared and authenticates only
-/// "some member encrypted this", not "this specific member").
-#[derive(Clone, Serialize, Deserialize)]
-pub struct VoicePacket {
-    /// Sender public key (32 bytes).
-    pub sender_key: Vec<u8>,
-    /// Sequence number for ordering.
-    pub sequence: u32,
-    /// Timestamp in milliseconds.
-    pub timestamp: u64,
-    /// Opus-encoded audio data (MEK-encrypted ciphertext on the wire
-    /// for community channels; plaintext for 1:1 calls).
-    pub audio_data: Vec<u8>,
-    /// Generation of the channel-media MEK that encrypted
-    /// `audio_data` (0 for 1:1 calls — no MEK). Receivers holding a
-    /// different generation drop the packet and fire the RequestMEK
-    /// cascade instead of feeding garbage to the decoder.
-    #[serde(default)]
-    pub mek_generation: u64,
-    /// 64-byte Ed25519 signature over [`signing_bytes`]. Receivers
-    /// reject packets with an empty or invalid signature.
-    #[serde(default)]
-    pub signature: Vec<u8>,
-}
-
-impl VoicePacket {
-    /// Canonical bytes the sender signs. Domain-tagged so a signature
-    /// for a chat or governance subkey can't be replayed as a voice
-    /// packet (and vice versa).
-    pub fn signing_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            b"rekindle-voice-packet-v1".len() + self.sender_key.len() + 20 + self.audio_data.len(),
-        );
-        out.extend_from_slice(b"rekindle-voice-packet-v1");
-        out.extend_from_slice(&self.sender_key);
-        out.extend_from_slice(&self.sequence.to_le_bytes());
-        out.extend_from_slice(&self.timestamp.to_le_bytes());
-        out.extend_from_slice(&self.mek_generation.to_le_bytes());
-        out.extend_from_slice(&self.audio_data);
-        out
-    }
-}
+use packet::encrypt_audio;
+pub use packet::{decrypt_packet_audio, VoicePacket};
 
 /// Voice channel operating mode.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -285,19 +181,29 @@ impl VoiceTransport {
         self.signing_key = Some(signing_key);
     }
 
-    /// Legacy single-peer connect (wraps `init` + `add_peer`).
+    /// Bind a 1:1 DM call's single remote peer (wraps `init` +
+    /// `add_peer`).
     ///
-    /// Kept for backward compatibility with 1:1 DM voice calls.
-    /// Uses `"default"` as the peer key for the single remote participant.
+    /// `peer_key` is the peer's own identity — the same value inbound
+    /// packets carry as `sender_key`, so the roster is addressable by
+    /// identity in a DM exactly as it is in a community mesh. One
+    /// keying scheme, so anything that learns a peer from a packet
+    /// (receiver reports, route healing) can reach it in either
+    /// topology.
     pub fn connect(
         &mut self,
         sender: Arc<dyn VoiceFrameSender>,
         route_blob: &[u8],
         sender_key: Vec<u8>,
+        peer_key: &str,
     ) {
         self.init(sender, sender_key);
-        self.add_peer("default", route_blob, None);
-        tracing::info!(channel = %self.channel_id, "voice transport connected (legacy single-peer)");
+        self.add_peer(peer_key, route_blob, None);
+        tracing::info!(
+            channel = %self.channel_id,
+            peer = %peer_key,
+            "voice transport connected (1:1)"
+        );
     }
 
     /// Add a peer to the voice mesh. The route blob is imported lazily
@@ -460,6 +366,23 @@ impl VoiceTransport {
         pseudonym_key: &str,
         frame: &EncodedFrame,
     ) -> Result<(), VoiceError> {
+        let data = self.build_packet_data(frame)?;
+        self.send_bytes_to_peer(pseudonym_key, data).await
+    }
+
+    /// Ship already-built wire bytes to one peer's cached route.
+    ///
+    /// Unlike [`Self::send_to_peer`] this neither builds nor signs a
+    /// packet — the caller owns the payload. Used for receiver reports,
+    /// which are signed by the *receiving* side under their own domain
+    /// tag and so cannot go through the packet builder. Reuses the
+    /// cached peer route, so a report costs no DHT lookup and travels
+    /// the same media route as the audio it describes.
+    pub async fn send_bytes_to_peer(
+        &self,
+        pseudonym_key: &str,
+        data: Vec<u8>,
+    ) -> Result<(), VoiceError> {
         let peer = self
             .peers
             .get(pseudonym_key)
@@ -468,14 +391,16 @@ impl VoiceTransport {
             .sender
             .as_ref()
             .ok_or_else(|| VoiceError::Transport("transport not initialized".into()))?;
-
-        let data = self.build_packet_data(frame)?;
         sender.send_voice_frame(&peer.route_blob, data).await
     }
 
-    /// Legacy single-peer send (broadcasts to all peers).
+    /// Send a frame to the whole roster, failing only if every peer
+    /// failed.
     ///
-    /// Kept for backward compatibility — the send loop calls this.
+    /// This is the send loop's normal path in both topologies: a DM
+    /// roster holds one peer, a mesh roster holds all of them, and the
+    /// partial-failure rule is what keeps one dead route from silencing
+    /// a call for everyone else.
     pub async fn send(&self, frame: &EncodedFrame) -> Result<(), VoiceError> {
         if self.peers.is_empty() {
             return Err(VoiceError::NotConnected);

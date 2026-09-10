@@ -12,16 +12,20 @@
 //! The src-tauri facade (lands in 14.i) builds the deps + params and
 //! calls [`run`].
 
+mod quality;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::audio_processing::AudioProcessor;
 use crate::codec::OpusCodec;
+use crate::receiver_report::VoiceReceiverReport;
+use crate::send_loop::quality::PeerLink;
 use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::VoiceTransport;
 use crate::VoiceMode;
@@ -56,6 +60,11 @@ pub struct VoiceSendParams {
     /// Our pseudonym in this community (for stage-speaker check).
     /// `None` for 1:1 calls (no stage gate applies).
     pub our_pseudonym: Option<String>,
+    /// Inbound RFC 3550 receiver reports, routed here by the dispatch
+    /// loop. This is how the send loop learns what its audio looks like
+    /// at the far end — loss, discard, jitter and round trip — none of
+    /// which is derivable from a local `send()` result.
+    pub report_rx: mpsc::Receiver<VoiceReceiverReport>,
 }
 
 struct VoiceSendLoop {
@@ -85,6 +94,12 @@ struct VoiceSendLoop {
     community_id: Option<String>,
     channel_id: String,
     our_pseudonym: Option<String>,
+    report_rx: mpsc::Receiver<VoiceReceiverReport>,
+    /// Per-peer view of our outbound stream, keyed by the reporter's
+    /// pseudonym hex. Only peers we have actually heard from appear
+    /// here: a peer that never reports must keep the local-failure
+    /// classification, not be declared lost for staying quiet.
+    peer_links: HashMap<String, PeerLink>,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -145,6 +160,8 @@ impl VoiceSendLoop {
             community_id: params.community_id,
             channel_id: params.channel_id,
             our_pseudonym: params.our_pseudonym,
+            report_rx: params.report_rx,
+            peer_links: HashMap::new(),
         })
     }
 
@@ -163,6 +180,9 @@ impl VoiceSendLoop {
                         break;
                     };
                     self.process_samples(samples).await;
+                }
+                Some(report) = self.report_rx.recv() => {
+                    self.note_receiver_report(&report);
                 }
             }
         }
@@ -419,48 +439,6 @@ impl VoiceSendLoop {
                 speaking: false,
             });
         }
-    }
-
-    fn report_quality_if_due(&mut self) {
-        if self.last_quality_report.elapsed() < Duration::from_secs(5) {
-            return;
-        }
-
-        let loss_pct_u32 = self
-            .send_failures
-            .saturating_mul(100)
-            .checked_div(self.packets_sent)
-            .and_then(|loss| u32::try_from(loss).ok())
-            .unwrap_or(0);
-        let quality = match loss_pct_u32 {
-            0..5 => "good",
-            5..15 => "fair",
-            _ => "poor",
-        };
-        self.deps
-            .emit_voice_event(VoiceSessionEvent::ConnectionQuality {
-                quality: quality.to_string(),
-            });
-
-        // Update Opus FEC based on measured loss.
-        let loss_i32 = i32::try_from(loss_pct_u32.min(100)).unwrap_or(100);
-        let _ = self.codec.set_packet_loss_perc(loss_i32);
-
-        // Adaptive bitrate based on group size. Cannot hold the tokio
-        // Mutex synchronously, so use try_lock.
-        if let Ok(transport) = self.transport.try_lock() {
-            let peer_count = transport.peer_count();
-            let target_bps = match peer_count {
-                0..=2 => 32000,
-                3..=7 => 24000,
-                _ => 16000,
-            };
-            let _ = self.codec.set_bitrate(target_bps);
-        }
-
-        self.packets_sent = 0;
-        self.send_failures = 0;
-        self.last_quality_report = Instant::now();
     }
 
     fn cleanup(self) {

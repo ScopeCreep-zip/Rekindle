@@ -8,10 +8,6 @@ use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
 use crate::stream_config::{adapt_audio, negotiate_input_config};
 
-// Re-export for backward compatibility — external callers use
-// `rekindle_voice::capture::enumerate_audio_devices()`.
-pub use crate::device::{enumerate_audio_devices, EnumeratedDevices};
-
 const CAPTURE_LABELS: AudioThreadLabels = AudioThreadLabels {
     audio_thread: "audio-capture",
     error_bridge: "capture-error-bridge",

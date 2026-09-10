@@ -7953,6 +7953,7 @@ dependencies = [
  "nnnoiseless",
  "opus",
  "rekindle-crypto",
+ "rekindle-media-stats",
  "rekindle-protocol",
  "rekindle-types",
  "rekindle-utils",

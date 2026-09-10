@@ -220,7 +220,9 @@ fn create_transport_impl(
         if community_id.is_some() {
             transport.init(sender, sender_key);
         } else if let Some(blob) = resolved_peer_route {
-            transport.connect(sender, blob, sender_key);
+            // For a DM call the channel id *is* the peer's public key,
+            // so the roster is keyed by the peer's real identity.
+            transport.connect(sender, blob, sender_key, channel_id);
         } else {
             transport.init(sender, sender_key);
         }
@@ -322,6 +324,33 @@ pub(super) fn spawn_voice_loops_impl(
     let adapter_for_recv: Arc<dyn VoiceSessionDeps> =
         VoiceAdapter::new(state.clone(), app.clone(), pool.clone());
 
+    // Receiver reports must be signed with the same identity the send
+    // side signs packets with (see `build_transport`), or peers reject
+    // them: the community pseudonym for channel voice, the account key
+    // for a 1:1 call. `None` disables reporting rather than emitting
+    // reports nobody will accept.
+    let report_signing_key = if let Some(cid) = voice_community_id.as_deref() {
+        state_helpers::pseudonym_credentials(state, cid)
+            .ok()
+            .map(|(_, signing_key)| signing_key)
+    } else {
+        let secret = *state.identity_secret.lock();
+        secret.map(|bytes| ed25519_dalek::SigningKey::from_bytes(&bytes))
+    };
+    if report_signing_key.is_none() {
+        tracing::warn!(
+            "voice: no signing identity for receiver reports — the send side will fall back to \
+             local send-failure counts for quality"
+        );
+    }
+
+    // The return path: dispatch loop → send loop. Depth 32 is ~2.5
+    // minutes of reports from one peer; a full channel means the send
+    // loop is wedged, and dropping is right because the next report
+    // supersedes the one dropped.
+    let (report_tx, report_rx) = mpsc::channel(32);
+    *state.voice_report_tx.write() = Some(report_tx);
+
     let (send_shutdown_tx, send_shutdown_rx) = mpsc::channel::<()>(1);
     let send_handle = tokio::spawn(rekindle_voice::send_loop::run(
         rekindle_voice::send_loop::VoiceSendParams {
@@ -339,6 +368,7 @@ pub(super) fn spawn_voice_loops_impl(
             our_pseudonym: voice_community_id
                 .as_deref()
                 .and_then(|cid| crate::state_helpers::my_pseudonym_key(state, cid)),
+            report_rx,
         },
     ));
 
@@ -360,6 +390,7 @@ pub(super) fn spawn_voice_loops_impl(
             },
             member_names,
             jitter_base_ms: bundle.jitter_base_ms,
+            report_signing_key,
         },
     ));
 
@@ -428,4 +459,55 @@ pub(super) fn spawn_voice_loops_impl(
         }
     }
     Ok(())
+}
+
+/// Phase B — seed the per-call video session state and force-emit the
+/// current `SessionVideoConfig`, so a late-mounting frontend gets the
+/// policy event without waiting for a membership delta.
+///
+/// Community sessions only: DM video shape is policed by a different
+/// code path and carries no `SessionVideoConfig`.
+pub(super) fn seed_community_media_session(
+    adapter: &VoiceAdapter,
+    community_id: &str,
+    channel_id: &str,
+) {
+    // Seed the media-ready gate BEFORE the config emit below, so its
+    // `session_config_emitted` hook lands on a slot whose other inputs
+    // already reflect reality. MEK presence uses the §10.5 channel-media
+    // resolution (channel key, else community key — stage channels
+    // resolve community by construction).
+    let mek_present =
+        crate::state_helpers::channel_media_mek(&adapter.state, community_id, channel_id).is_some();
+    if !mek_present {
+        // Deterministic acquisition: fire the RequestMEK cascade NOW
+        // instead of waiting for the first undecryptable frame
+        // (fresh-device / missed-rotation edge — the join-triggered
+        // rotation usually delivers first, so this is a cache-hit
+        // no-op).
+        rekindle_voice::VoiceSessionDeps::request_mek_refresh(
+            adapter,
+            community_id,
+            channel_id,
+            0, // "send me your current generation"
+        );
+    }
+    let caps_reported =
+        crate::services::community::video_session::reported_local_caps(&adapter.state).is_some();
+    crate::services::community::media_ready_runtime::update_media_ready(
+        &adapter.state,
+        community_id,
+        channel_id,
+        |i| {
+            i.mek_present = mek_present;
+            i.local_caps_reported = caps_reported;
+        },
+    );
+    if let Err(e) = crate::services::community::video_session::on_local_joined(
+        &adapter.state,
+        community_id,
+        channel_id,
+    ) {
+        tracing::warn!(error = %e, "video_session::on_local_joined failed");
+    }
 }

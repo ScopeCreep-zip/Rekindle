@@ -38,6 +38,10 @@ rekindle-utils = { path = "../rekindle-utils" }
 # (CommunityEnvelope / ControlPayload) + permission bit constants.
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-types = { path = "../rekindle-types" }
+# The single RFC 3550 / RFC 3611 reception model. The jitter buffer used
+# to carry its own copy of the interarrival estimator; one estimator,
+# read by both the adaptive target and the receiver report.
+rekindle-media-stats = { path = "../rekindle-media-stats" }
 
 [dev-dependencies]
 # Phase 7 Week 26 — voice latency benchmark (architecture line 4147,

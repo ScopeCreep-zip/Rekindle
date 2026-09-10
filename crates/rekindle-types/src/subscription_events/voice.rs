@@ -237,13 +237,56 @@ pub enum VoiceEvent {
     /// halves and every emission carries the full picture.
     ConnectionQuality {
         scope: VoiceScope,
-        /// `"good"`, `"fair"`, `"poor"`.
+        /// `"good"`, `"fair"`, `"poor"`, `"lost"`, `"recovering"`.
+        ///
+        /// `lost` and `recovering` are distinct from `poor` on purpose:
+        /// a degraded call and a call that dropped and is coming back
+        /// need different words, and only the second one resolves by
+        /// waiting.
         quality: String,
         rx_overflow_drops: u64,
         rx_late_drops: u64,
         rx_mek_drops: u64,
         ingress_drops: u64,
+        /// What the far end measured about our outbound stream, from
+        /// its RFC 3550 receiver reports. `None` means no peer has
+        /// reported yet, and `quality` came from local send-failure
+        /// counts — which cannot observe network loss at all.
+        link: Option<LinkMeasurement>,
     },
+}
+
+/// One window's end-to-end measurement of an outbound media stream, as
+/// the far end sees it.
+///
+/// A flat projection of `rekindle-media-stats`' `ReceptionMetrics` +
+/// `QualityScore` for the IPC boundary. Deliberately **not** those
+/// types: they are Tier 3 and carry the measurement model (burst/gap
+/// accounting, the tracker's internal state), while Tier 1 may only
+/// hold plain data and must stay postcard-safe. Converge the two and
+/// Tier 1 gains a dependency it is not allowed to have.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkMeasurement {
+    /// Packets that never arrived, Q8 (`0..=255` maps to `0.0..=1.0`).
+    pub loss_q8: u8,
+    /// Packets that arrived unusable — too late, or into a full buffer.
+    /// Separate from loss because the fixes are opposite: loss wants
+    /// FEC, discard wants a deeper buffer.
+    pub discard_q8: u8,
+    /// RFC 3550 interarrival jitter, milliseconds.
+    pub jitter_ms: u32,
+    /// Round trip, when the report's LSR/DLSR echo yielded a
+    /// believable one.
+    pub rtt_ms: Option<u32>,
+    /// G.107 R factor, 0–100.
+    pub r_factor: u8,
+    /// Listening-quality MOS — "does it sound clean".
+    pub mos_lq: f32,
+    /// Conversational-quality MOS — "can you hold a conversation".
+    pub mos_cq: f32,
+    /// The Opus bitrate this measurement led the sender to set.
+    pub bitrate_bps: u32,
 }
 
 impl VoiceEvent {
@@ -425,6 +468,30 @@ mod tests {
                 rx_late_drops: 2,
                 rx_mek_drops: 3,
                 ingress_drops: 4,
+                // Populated: pins `Option<u32>` and `f32` through
+                // postcard, the two shapes in `LinkMeasurement` that a
+                // non-self-describing format could get wrong.
+                link: Some(LinkMeasurement {
+                    loss_q8: 13,
+                    discard_q8: 4,
+                    jitter_ms: 27,
+                    rtt_ms: Some(85),
+                    r_factor: 78,
+                    mos_lq: 4.1,
+                    mos_cq: 3.9,
+                    bitrate_bps: 32_000,
+                }),
+            },
+            // And the pre-first-report case: no peer has reported, so
+            // `quality` came from local send-failure counts.
+            VoiceEvent::ConnectionQuality {
+                scope: community_scope(),
+                quality: "recovering".into(),
+                rx_overflow_drops: 0,
+                rx_late_drops: 0,
+                rx_mek_drops: 0,
+                ingress_drops: 0,
+                link: None,
             },
         ];
         for event in events {

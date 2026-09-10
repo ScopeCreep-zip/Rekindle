@@ -74,7 +74,9 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
       case "excellent": return 4;
       case "good": return 3;
       case "fair": return 2;
+      case "recovering": return 2;
       case "poor": return 1;
+      case "lost": return 0;
       default: return 3;
     }
   };

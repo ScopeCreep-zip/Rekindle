@@ -1,4 +1,5 @@
 use crate::transport::VoicePacket;
+use rekindle_media_stats::{ReceptionMetrics, ReceptionTracker};
 use std::collections::BTreeMap;
 
 /// Lower bound on the adaptive playout target — below this the buffer
@@ -40,13 +41,14 @@ pub struct JitterBuffer {
     /// Config-preset floor — the adaptive target starts here and never
     /// shrinks below it.
     base_delay_ms: u32,
-    /// Smoothed |Δtransit| inter-arrival jitter, in 1/16 ms (Q4) so the
-    /// EWMA `/16` is exact and sub-ms jitter accumulates.
-    jitter_est_q4: u32,
-    /// Wall-clock arrival of the previous pushed packet (for Δarrival).
-    last_arrival: Option<std::time::Instant>,
-    /// `timestamp` of the previous pushed packet (for Δsender-timestamp).
-    last_timestamp_ms: Option<u64>,
+    /// The reception model for this peer: RFC 3550 interarrival jitter
+    /// (which drives the adaptive target below) plus the RFC 3611
+    /// loss/discard/burst-gap split (which the receiver report sends
+    /// back to the sender). The buffer is the only component that sees
+    /// every arrival with its sequence and sender timestamp, so it is
+    /// where the measurement belongs — and keeping one tracker is what
+    /// stops the playout estimate and the reported estimate drifting.
+    reception: ReceptionTracker,
     /// Consecutive 5 s windows with zero late drops — gates the slow
     /// shrink in [`Self::recompute_target`].
     clean_windows: u32,
@@ -78,9 +80,7 @@ impl JitterBuffer {
             buffer: BTreeMap::new(),
             target_delay_ms,
             base_delay_ms: target_delay_ms,
-            jitter_est_q4: 0,
-            last_arrival: None,
-            last_timestamp_ms: None,
+            reception: ReceptionTracker::new(FRAME_MS),
             clean_windows: 0,
             next_playback_seq: 0,
             max_packets: 50,
@@ -97,32 +97,23 @@ impl JitterBuffer {
         let seq = packet.sequence;
         let now = std::time::Instant::now();
 
-        // RFC 3550 inter-arrival jitter: feed the EWMA |Δtransit| from
-        // this packet relative to the previous one, then re-derive the
-        // adaptive target. transit = arrival − sender-timestamp; only
-        // the delta between consecutive transits matters, so a constant
-        // clock offset between the two machines cancels out.
-        if let (Some(la), Some(lts)) = (self.last_arrival, self.last_timestamp_ms) {
-            let arrival_delta_ms =
-                u32::try_from(now.duration_since(la).as_millis()).unwrap_or(u32::MAX);
-            #[allow(
-                clippy::cast_possible_wrap,
-                reason = "ms deltas are far below i64::MAX; wrap is unreachable"
-            )]
-            let ts_delta_ms = packet.timestamp as i64 - lts as i64;
-            self.observe_jitter(arrival_delta_ms, ts_delta_ms);
-            self.recompute_target();
-        }
-        self.last_arrival = Some(now);
-        self.last_timestamp_ms = Some(packet.timestamp);
+        // The tracker wants an arrival clock, not an epoch: transit is
+        // (arrival − sender-timestamp) and only the delta between
+        // consecutive transits matters, so any fixed origin works and a
+        // constant clock offset between the two machines cancels out.
+        // First arrival is that origin — and it resets with the buffer.
+        let origin = *self.first_packet_time.get_or_insert(now);
+        let arrival_ms = u64::try_from(now.duration_since(origin).as_millis()).unwrap_or(u64::MAX);
 
-        // Record first packet time for initial fill
-        if self.first_packet_time.is_none() {
-            self.first_packet_time = Some(now);
-        }
+        // A packet past its playback slot arrived but cannot be played.
+        // RFC 3611 calls that a *discard*, not a loss — the distinction
+        // matters because a discard means our buffer is too shallow
+        // while a loss means the network dropped it, and the two have
+        // opposite fixes.
+        let late = self.initial_fill_done && seq < self.next_playback_seq;
+        self.observe_arrival(seq, packet.timestamp, arrival_ms, !late);
 
-        // Drop packets that are too old (already played)
-        if self.initial_fill_done && seq < self.next_playback_seq {
+        if late {
             self.late_drops += 1;
             tracing::trace!(
                 seq,
@@ -138,10 +129,21 @@ impl JitterBuffer {
         while self.buffer.len() > self.max_packets {
             self.buffer.pop_first();
             self.overflow_drops += 1;
+            // Overflow is the other discard class: it arrived in time
+            // and we threw it away for want of room.
+            self.reception.note_external_discards(1);
             if self.initial_fill_done {
                 self.next_playback_seq += 1;
             }
         }
+    }
+
+    /// The reception model for this peer — RFC 3550 jitter plus the
+    /// RFC 3611 loss/discard/burst-gap split. This is what the receiver
+    /// report sends back to the sender, and it is the same estimate the
+    /// adaptive target is derived from.
+    pub fn reception_metrics(&self) -> ReceptionMetrics {
+        self.reception.metrics()
     }
 
     /// Drain the drop counters (overflow, late) accumulated since the
@@ -153,18 +155,20 @@ impl JitterBuffer {
         drops
     }
 
-    /// Fold one inter-arrival sample into the smoothed jitter estimate.
-    /// `arrival_delta_ms` is the wall-clock gap to the previous packet;
-    /// `ts_delta_ms` is the gap between their sender timestamps. The
-    /// |difference| is the transit-time variation (RFC 3550); the EWMA
-    /// gain is 1/16 (`>> 4`), kept in Q4 so it doesn't truncate to zero.
-    /// Pure (no `Instant`) so it unit-tests deterministically.
-    fn observe_jitter(&mut self, arrival_delta_ms: u32, ts_delta_ms: i64) {
-        let d = (i64::from(arrival_delta_ms) - ts_delta_ms).unsigned_abs();
-        let d_q4 = i64::try_from(d).unwrap_or(i64::MAX).saturating_mul(16);
-        let j = i64::from(self.jitter_est_q4);
-        let next = j + ((d_q4 - j) >> 4);
-        self.jitter_est_q4 = u32::try_from(next.max(0)).unwrap_or(u32::MAX);
+    /// Fold one arrival into the reception model, then re-derive the
+    /// adaptive target from it. Pure in its inputs (no `Instant`), so a
+    /// whole arrival pattern unit-tests deterministically; [`Self::push`]
+    /// supplies the real clock.
+    fn observe_arrival(&mut self, sequence: u32, sender_ms: u64, arrival_ms: u64, usable: bool) {
+        self.reception
+            .on_packet(sequence, sender_ms, arrival_ms, usable);
+        // An interarrival estimate needs two arrivals to exist. Until
+        // then there is nothing to adapt to, and recomputing would
+        // apply the MIN clamp to a base the config set deliberately
+        // lower — `base_from_config_not_hardcoded` pins that.
+        if self.reception.metrics().packets_received > 1 {
+            self.recompute_target();
+        }
     }
 
     /// Re-derive the adaptive target from the smoothed jitter:
@@ -174,7 +178,7 @@ impl JitterBuffer {
     /// clean windows. Mutates only via `set_target_delay_ms` so the
     /// initial-fill / gap-jump windows track it.
     fn recompute_target(&mut self) {
-        let jitter_ms = self.jitter_est_q4 >> 4;
+        let jitter_ms = self.reception.metrics().jitter_ms;
         let headroom = jitter_ms.saturating_mul(JITTER_K_NUM) / JITTER_K_DEN;
         let want = self.base_delay_ms.saturating_add(headroom);
         let clamped = want.clamp(JITTER_MIN_MS.max(self.base_delay_ms), JITTER_MAX_MS);
@@ -320,9 +324,7 @@ impl JitterBuffer {
         self.first_packet_time = None;
         self.gap_misses = 0;
         self.target_delay_ms = self.base_delay_ms;
-        self.jitter_est_q4 = 0;
-        self.last_arrival = None;
-        self.last_timestamp_ms = None;
+        self.reception = ReceptionTracker::new(FRAME_MS);
         self.clean_windows = 0;
     }
 }
@@ -353,20 +355,30 @@ mod tests {
     #[test]
     fn adaptive_target_grows_under_jitter_and_clamps() {
         let mut jb = JitterBuffer::new(40);
-        // Arrival deltas diverging from the 20 ms sender cadence =
-        // jitter. Feed a steady ~30 ms |Δtransit| many times.
-        for _ in 0..50 {
-            jb.observe_jitter(50, 20); // |50-20| = 30 ms jitter
-            jb.recompute_target();
+        // Arrival cadence diverging from the 20 ms sender cadence is
+        // jitter: arrivals 50 ms apart against 20 ms of sender time is a
+        // steady 30 ms |Δtransit|. Sequence advances by one so the walk
+        // sees a clean stream and not loss.
+        let mut sender_ms = 0u64;
+        let mut arrival_ms = 0u64;
+        for seq in 0..50u32 {
+            jb.observe_arrival(seq, sender_ms, arrival_ms, true);
+            sender_ms += 20;
+            arrival_ms += 50;
         }
         let t = jb.target_delay_ms();
         // base 40 + ~2.5×30 ≈ 115, clamped to MAX 120.
         assert!(t > 40 && t <= JITTER_MAX_MS, "grew + clamped: {t}");
+        assert!(
+            jb.reception_metrics().jitter_ms >= 25,
+            "the reported estimate is the same one the target used"
+        );
 
         // Huge jitter clamps at MAX.
-        for _ in 0..50 {
-            jb.observe_jitter(1000, 20);
-            jb.recompute_target();
+        for seq in 50..100u32 {
+            jb.observe_arrival(seq, sender_ms, arrival_ms, true);
+            sender_ms += 20;
+            arrival_ms += 1000;
         }
         assert_eq!(jb.target_delay_ms(), JITTER_MAX_MS);
     }

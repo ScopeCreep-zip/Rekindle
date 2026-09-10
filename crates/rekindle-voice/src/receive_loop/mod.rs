@@ -9,6 +9,8 @@
 //! Pre-Phase-14 this lived in `src-tauri/services/voice/receive_loop.rs`
 //! (463 LoC).
 
+mod quality;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,6 +22,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::codec::{EncodedFrame, OpusCodec};
 use crate::jitter::JitterBuffer;
 use crate::mixer::AudioMixer;
+use crate::receiver_report::SenderEcho;
 use crate::replay_window::VoiceSeqWindow;
 use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::{decrypt_packet_audio, VoicePacket};
@@ -44,6 +47,12 @@ pub struct VoiceReceiveParams {
     /// adaptive controller starts at and never shrinks below. Replaces
     /// the old hardcoded 200 ms.
     pub jitter_base_ms: u32,
+    /// Identity that signs our receiver reports — the community
+    /// pseudonym key for channel voice, the account key for a 1:1 call,
+    /// matching whatever `our_public_key` names and whatever the send
+    /// side signs packets with. `None` disables reporting rather than
+    /// sending reports a peer would reject.
+    pub report_signing_key: Option<ed25519_dalek::SigningKey>,
 }
 
 struct ParticipantDecoder {
@@ -53,6 +62,9 @@ struct ParticipantDecoder {
     /// numbers (replay) at network ingress, before the jitter buffer
     /// sees the packet.
     replay_window: VoiceSeqWindow,
+    /// Newest accepted packet from this peer, for the RFC 3550 LSR/DLSR
+    /// echo that lets *them* compute the round trip.
+    echo: SenderEcho,
     is_speaking: bool,
     last_packet_time: Instant,
 }
@@ -82,6 +94,12 @@ struct VoiceReceiveLoop {
     community_id: Option<String>,
     channel_id: Option<String>,
     member_names: HashMap<String, String>,
+    report_signing_key: Option<ed25519_dalek::SigningKey>,
+    /// Origin for the loop's local millisecond clock. Only differences
+    /// within it are ever used (DLSR is a duration), so the origin is
+    /// arbitrary — it just has to be monotonic and stable for the
+    /// session.
+    origin: Instant,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -124,7 +142,15 @@ impl VoiceReceiveLoop {
             community_id: params.community_id,
             channel_id: params.channel_id,
             member_names: params.member_names,
+            report_signing_key: params.report_signing_key,
+            origin: Instant::now(),
         })
+    }
+
+    /// Local milliseconds since loop start — the clock the LSR/DLSR
+    /// echo measures its own delay in.
+    fn local_ms(&self) -> u64 {
+        u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
     /// Look up a member's display name from the pre-loaded cache.
@@ -279,6 +305,7 @@ impl VoiceReceiveLoop {
                         sender_key.clone(),
                         ParticipantDecoder {
                             codec,
+                            echo: SenderEcho::default(),
                             jitter_buffer: JitterBuffer::new(self.jitter_base_ms),
                             replay_window: VoiceSeqWindow::new(),
                             is_speaking: false,
@@ -293,6 +320,7 @@ impl VoiceReceiveLoop {
             }
         }
 
+        let arrival_local_ms = self.local_ms();
         if let Some(participant) = self.participants.get_mut(&sender_key) {
             // M9.3 — drop replays before the jitter buffer sees them.
             if !participant.replay_window.check_and_insert(packet.sequence) {
@@ -302,6 +330,10 @@ impl VoiceReceiveLoop {
                 );
                 return;
             }
+            // Remember the newest accepted packet so our next report
+            // lets this peer compute the round trip. Before `push`,
+            // which takes ownership.
+            participant.echo.observe(&packet, arrival_local_ms);
             participant.jitter_buffer.push(packet);
             participant.last_packet_time = Instant::now();
 
@@ -479,75 +511,5 @@ impl VoiceReceiveLoop {
                 peer_pubkey: peer_hex,
             });
         }
-    }
-
-    /// Count an undecryptable packet and (debounced, 10s) fire the
-    /// RequestMEK cascade. Drops are surfaced in ReceiveStats — a
-    /// security-relevant drop must never be silent.
-    fn note_mek_drop(
-        &mut self,
-        community_id: &str,
-        channel_id: &str,
-        reason: &'static str,
-        needed_generation: u64,
-    ) {
-        self.mek_drops += 1;
-        self.deps.record_packet_drop();
-        let due = self
-            .last_mek_request
-            .is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
-        if due {
-            tracing::info!(community = %community_id, channel = %channel_id, reason,
-                needed_generation, "requesting channel MEK refresh");
-            self.deps
-                .request_mek_refresh(community_id, channel_id, needed_generation);
-            self.last_mek_request = Some(Instant::now());
-        }
-    }
-
-    fn log_quality_if_due(&mut self) {
-        if self.last_quality_check.elapsed() < Duration::from_secs(5) {
-            return;
-        }
-        // Phase 5 — surface receive-side jitter drops (overflow trims +
-        // late arrivals) so Linux dropouts are attributable from the UI
-        // instead of trace-level logs.
-        let (mut overflow, mut late) = (0u64, 0u64);
-        for participant in self.participants.values_mut() {
-            let (o, l) = participant.jitter_buffer.take_drops();
-            // Late drops in this window mean the adaptive target was too
-            // low — grow it; a clean window advances toward the shrink
-            // gate. (Per-push EWMA handles fast jitter; this is the
-            // slow safety net + controlled shrink.)
-            participant.jitter_buffer.note_window_health(l);
-            overflow += o;
-            late += l;
-        }
-        if overflow > 0 || late > 0 {
-            tracing::warn!(
-                rx_overflow_drops = overflow,
-                rx_late_drops = late,
-                "voice receive-side drops in the last 5s"
-            );
-        }
-        let mek_drops = std::mem::take(&mut self.mek_drops);
-        if mek_drops > 0 {
-            tracing::warn!(
-                rx_mek_drops = mek_drops,
-                "voice packets dropped for MEK reasons in the last 5s"
-            );
-        }
-        self.deps.emit_voice_event(VoiceSessionEvent::ReceiveStats {
-            rx_overflow_drops: overflow,
-            rx_late_drops: late,
-            rx_mek_drops: mek_drops,
-        });
-        tracing::debug!(
-            participants = self.participants.len(),
-            self.packets_received,
-            "voice receive loop stats"
-        );
-        self.packets_received = 0;
-        self.last_quality_check = Instant::now();
     }
 }

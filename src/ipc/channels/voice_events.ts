@@ -105,14 +105,47 @@ export type VoiceEvent =
   | {
       connectionQuality: {
         scope: VoiceScope;
+        /** `"good"` | `"fair"` | `"poor"` | `"lost"` | `"recovering"`. */
         quality: string;
         rxOverflowDrops: number;
         rxLateDrops: number;
         /** Inbound media dropped for MEK reasons (rotation race signal). */
         rxMekDrops: number;
         ingressDrops: number;
+        /**
+         * End-to-end measurement of our OUTBOUND stream as the far end
+         * sees it, from its RFC 3550 receiver reports. `null` until a
+         * peer reports, in which case `quality` came from local
+         * send-failure counts — which cannot see network loss.
+         */
+        link: LinkMeasurement | null;
       };
     };
+
+/** Q8 fixed point: `0..=255` maps to `0.0..=1.0`. */
+export interface LinkMeasurement {
+  /** Packets that never arrived. */
+  lossQ8: number;
+  /** Arrived but unusable — too late, or into a full buffer. */
+  discardQ8: number;
+  /** RFC 3550 interarrival jitter, ms. */
+  jitterMs: number;
+  /** Round trip, ms, when the LSR/DLSR echo yielded a believable one. */
+  rttMs: number | null;
+  /** ITU-T G.107 R factor, 0–100. */
+  rFactor: number;
+  /** Listening-quality MOS — "does it sound clean". */
+  mosLq: number;
+  /** Conversational-quality MOS — "can you hold a conversation". */
+  mosCq: number;
+  /** Opus bitrate this measurement led the sender to set. */
+  bitrateBps: number;
+}
+
+/** Q8 rate as a whole percent, for display. */
+export function q8ToPercent(q8: number): number {
+  return Math.round((q8 * 100) / 255);
+}
 
 /** The full subscription event as emitted on the channel. */
 export type VoiceSubscriptionEvent = { voice: VoiceEvent };

@@ -84,7 +84,7 @@ fn check_device_availability<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Opt
         return None;
     }
 
-    let devices = crate::capture::enumerate_audio_devices();
+    let devices = crate::device::enumerate_audio_devices();
     let input_names: Vec<&str> = devices
         .input_devices
         .iter()

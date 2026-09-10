@@ -1,7 +1,7 @@
 //! Phase 23.C — voice-handler Tauri-runtime orchestration lifted from
 //! `commands/voice.rs`. Hosts:
 //! * `list_audio_devices_inner` — pure DTO mapping over
-//!   `rekindle_voice::capture::enumerate_audio_devices`.
+//!   `rekindle_voice::device::enumerate_audio_devices`.
 //! * `persist_audio_device_prefs` — write the user's selected devices to
 //!   the `preferences.json` Tauri store.
 //! * `apply_stage_audience_gate` — force-mute when joining a Stage channel
@@ -30,7 +30,7 @@ pub struct AudioDevices {
 }
 
 pub fn list_audio_devices_inner() -> AudioDevices {
-    let devices = rekindle_voice::capture::enumerate_audio_devices();
+    let devices = rekindle_voice::device::enumerate_audio_devices();
     AudioDevices {
         input_devices: devices
             .input_devices

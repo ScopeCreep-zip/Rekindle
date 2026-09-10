@@ -37,9 +37,9 @@ pub fn cache_peer_route(state: &Arc<AppState>, peer_key: &str, route_blob: Vec<u
     // 1:1-call healing: call signaling carries no route blobs, so the
     // friend-route machinery (profile subkey-6 watch, conversation
     // header sync, mailbox) is the ONLY source of fresh routes for DM
-    // call media. If a call with this peer is live, push the fresh
-    // blob into the bound voice transport's single legacy "default"
-    // roster slot so frames survive the peer's route rotation.
+    // call media. If a call with this peer is live, push the fresh blob
+    // into their roster slot so frames survive the peer's route
+    // rotation.
     let in_call = state
         .active_calls
         .list_all()
@@ -53,11 +53,12 @@ pub fn cache_peer_route(state: &Arc<AppState>, peer_key: &str, route_blob: Vec<u
                 .map(|h| h.transport.clone())
         };
         if let Some(transport) = transport {
+            let peer = peer_key.to_string();
             tauri::async_runtime::spawn(async move {
                 transport
                     .lock()
                     .await
-                    .refresh_peer_route("default", &route_blob);
+                    .refresh_peer_route(&peer, &route_blob);
             });
         }
     }

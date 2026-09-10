@@ -1,3 +1,5 @@
+mod media;
+
 use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
@@ -24,43 +26,11 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
     let message = msg.message().to_vec();
     tracing::info!(msg_len = message.len(), "app_message received");
 
-    if !message.is_empty() && message[0] == b'V' {
-        let voice_data = &message[1..];
-        match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
-            Ok(packet) => {
-                let tx = state.voice_packet_tx.read().clone();
-                if let Some(tx) = tx {
-                    if tx.try_send(packet).is_err() {
-                        // W14.4 — was trace! (invisible). Channel
-                        // full = real backpressure; surface it.
-                        tracing::warn!("voice packet channel full, dropping packet");
-                        state
-                            .voice_pkt_drops
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    }
-                } else {
-                    // W14.4 — voice_packet_tx is None. Once W14.1's
-                    // permanent-ingress refactor lands this branch
-                    // is unreachable. Until then, the lazy-init
-                    // race (caller-side post-CallAccept) drops
-                    // packets here.
-                    tracing::warn!(
-                        "voice packet arrived before voice session was set up — dropping (W14.1 will fix)"
-                    );
-                    state
-                        .voice_pkt_drops
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-            Err(e) => {
-                // Deserialize / signature verify failure. Could be a
-                // forged packet or a stale-bytes-on-route artifact.
-                tracing::info!(error = %e, "voice packet rejected (deserialize/sig)");
-                state
-                    .voice_pkt_drops
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
+    // Both media fast paths (audio packets and their receiver
+    // reports) live in `media`: verify, `try_send`, return — never
+    // any work on this thread, which is serial across every
+    // app_message the node receives.
+    if media::handle_media_tag(state, &message) {
         return;
     }
 

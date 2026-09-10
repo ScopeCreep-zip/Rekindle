@@ -56,6 +56,9 @@ impl VoiceSessionDeps for VoiceAdapter {
     fn clear_voice_channels(&self) {
         *self.state.voice_packet_tx.write() = None;
         *self.state.voice_packet_rx_staged.lock() = None;
+        // The report channel goes with them — a sender left behind
+        // after the call ends queues reports into a loop that is gone.
+        *self.state.voice_report_tx.write() = None;
     }
 
     fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)> {
@@ -89,6 +92,14 @@ impl VoiceSessionDeps for VoiceAdapter {
             channel_id.to_string(),
             needed_generation,
             my_pseudonym,
+        );
+    }
+
+    fn send_receiver_report(&self, peer_pubkey_hex: &str, wire: Vec<u8>) {
+        io_helpers::send_receiver_report_impl(
+            self.current_shared_transport(),
+            peer_pubkey_hex,
+            wire,
         );
     }
 
@@ -316,53 +327,8 @@ impl VoiceSessionDeps for VoiceAdapter {
             public_key,
             display_name,
         );
-        // Phase B — seed the per-call video session state + force-emit
-        // the current `SessionVideoConfig` so a late-mounting frontend
-        // gets the policy event without waiting for a membership delta.
-        // Only community sessions carry a `SessionVideoConfig` (DM video
-        // shape is policed by a different code path).
         if let Some(community_id) = community_id {
-            // Seed the media-ready gate BEFORE the config emit below so
-            // its `session_config_emitted` hook lands on a slot whose
-            // other inputs already reflect reality. MEK presence uses
-            // the §10.5 channel-media resolution (channel key, else
-            // community key — stage channels resolve community by
-            // construction).
-            let mek_present =
-                crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
-                    .is_some();
-            if !mek_present {
-                // Deterministic acquisition: fire the RequestMEK
-                // cascade NOW instead of waiting for the first
-                // undecryptable frame (fresh-device / missed-rotation
-                // edge — the join-triggered rotation usually delivers
-                // first and this resolves as a cache hit no-op).
-                rekindle_voice::VoiceSessionDeps::request_mek_refresh(
-                    self,
-                    community_id,
-                    channel_id,
-                    0, // "send me your current generation"
-                );
-            }
-            let caps_reported =
-                crate::services::community::video_session::reported_local_caps(&self.state)
-                    .is_some();
-            crate::services::community::media_ready_runtime::update_media_ready(
-                &self.state,
-                community_id,
-                channel_id,
-                |i| {
-                    i.mek_present = mek_present;
-                    i.local_caps_reported = caps_reported;
-                },
-            );
-            if let Err(e) = crate::services::community::video_session::on_local_joined(
-                &self.state,
-                community_id,
-                channel_id,
-            ) {
-                tracing::warn!(error = %e, "video_session::on_local_joined failed");
-            }
+            session_setup::seed_community_media_session(self, community_id, channel_id);
         }
     }
 

@@ -35,6 +35,7 @@ pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" 
 pub mod mixer;
 pub mod playback;
 pub mod receive_loop; // Phase 14 — packet receive → decode → mix → playback pipeline.
+pub mod receiver_report; // RFC 3550 receiver reports — the return path voice never had.
 pub mod replay_window;
 pub mod send_loop; // Phase 14 — capture → process → encode → transport send pipeline.
 pub mod session; // Phase 14.l — voice session orchestrator (start_session port).

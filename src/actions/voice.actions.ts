@@ -74,6 +74,11 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       setVoiceState("rxLateDrops", q.rxLateDrops);
       setVoiceState("rxMekDrops", q.rxMekDrops);
       setVoiceState("ingressDrops", q.ingressDrops);
+      // Keep the last known measurement when a window carried none,
+      // so the readout doesn't blink empty between reports.
+      if (q.link !== null) {
+        setVoiceState("link", q.link);
+      }
     } else if ("deviceChanged" in event) {
       setVoiceState("deviceChangeCount", (prev) => prev + 1);
     } else if ("packetsDropped" in event) {

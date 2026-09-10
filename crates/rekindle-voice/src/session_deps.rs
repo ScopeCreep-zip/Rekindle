@@ -211,6 +211,16 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// debounces calls.
     fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64);
 
+    /// Ship a signed receiver report (`b'R'`-tagged wire bytes, from
+    /// [`crate::receiver_report::VoiceReceiverReport::to_wire`]) back to
+    /// the peer whose stream it describes.
+    ///
+    /// Fire-and-forget, like [`Self::request_mek_refresh`]: the adapter
+    /// owns route resolution and drops the report if the peer's route
+    /// is unknown. A lost report costs the sender one 5 s window of
+    /// blindness, which is never worth blocking the receive path for.
+    fn send_receiver_report(&self, peer_pubkey_hex: &str, wire: Vec<u8>);
+
     /// Returns `true` if `our_pseudonym` is currently a designated
     /// speaker in the stage channel. Used by send_loop's stage gate.
     fn we_are_stage_speaker(
@@ -490,6 +500,28 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     ) -> Option<String>;
 }
 
+/// What the send loop learned about our outbound stream this window,
+/// from the worst-off peer's receiver reports.
+///
+/// Carries the measurement types themselves rather than a flattened
+/// copy, so the send loop and this event cannot disagree about what a
+/// number means. The Tier-1 event projects it to plain scalars at the
+/// adapter boundary, which is where a crossing has to be flat.
+#[derive(Debug, Clone, Copy)]
+pub struct SendLinkStats {
+    /// The far end's reception model — loss and discard kept apart,
+    /// jitter, and the burst/gap split.
+    pub metrics: rekindle_media_stats::ReceptionMetrics,
+    /// G.107 R factor and MOS derived from it, plus the link state.
+    pub score: rekindle_media_stats::QualityScore,
+    /// Round trip, when the report's LSR/DLSR echo yielded a believable
+    /// one.
+    pub rtt_ms: Option<u32>,
+    /// The Opus bitrate this window's measurement led us to set — the
+    /// action taken, recorded alongside the reason for it.
+    pub bitrate_bps: u32,
+}
+
 /// Voice-side events the session/loop modules emit. Mirrors the
 /// existing `VoiceEvent` shape but lives in the crate so the trait
 /// surface is self-contained.
@@ -512,7 +544,14 @@ pub enum VoiceSessionEvent {
     PacketsDropped { count: u64 },
     /// Connection quality summary (every 5 s from send_loop). Quality
     /// is `"good"` / `"fair"` / `"poor"` based on packet loss %.
-    ConnectionQuality { quality: String },
+    ConnectionQuality {
+        quality: String,
+        /// What the far end measured, from its RFC 3550 receiver
+        /// reports. `None` until a report arrives, in which case
+        /// `quality` fell back to local send-failure counts — which
+        /// cannot see network loss at all.
+        link: Option<SendLinkStats>,
+    },
     /// Receive-side health (every 5 s from receive_loop): jitter-buffer
     /// drop counters summed across participants since the last report.
     /// Complements `ConnectionQuality` (a SEND-side loss signal) so the
