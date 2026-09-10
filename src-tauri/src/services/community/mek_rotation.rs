@@ -30,9 +30,31 @@ pub fn spawn_mek_request_with_retry(
         const RETRY_DEADLINE_MS: u64 = 5_000;
         // Snapshot the resolution at spawn so `0` ("send me current")
         // can detect that ANY new key landed.
-        let initial_gen =
-            crate::state_helpers::channel_media_mek(&state, &community_id, &channel_id)
-                .map(|(_, generation)| generation);
+        let initial = crate::state_helpers::channel_media_mek(&state, &community_id, &channel_id);
+        let initial_gen = initial.map(|(_, generation)| generation);
+
+        // Did we ALREADY hold something that satisfies this request
+        // when it was made?
+        //
+        // If so, the caller is not telling us a generation is missing —
+        // it is telling us the bytes we hold at that generation do not
+        // work. That is the channel-MEK split-brain: two peers minted
+        // different keys at the same generation, so both sides "have
+        // generation N" and neither can decrypt the other.
+        //
+        // This distinction is load-bearing. Without it the loop below
+        // sees `current >= needed`, calls it a cache hit, and returns
+        // before sending anything — so the one situation that most
+        // needs a request is the one that never sends one. Observed
+        // live as 625 consecutive `video frame MEK decrypt failed at
+        // matching generation` warnings with zero RequestMEK sent.
+        let already_satisfied_at_spawn = match (needed_generation, initial_gen) {
+            // "Send me your current" is never satisfied up front — the
+            // whole point is to learn whether a newer one exists.
+            (0, _) => false,
+            (needed, Some(generation)) => generation >= needed,
+            (_, None) => false,
+        };
         for cascade_index in 0..max_cascades {
             // Bail early if a satisfying MEK arrived via a concurrent
             // path (parallel rotation broadcast, an MekTransfer reply,
@@ -42,12 +64,19 @@ pub fn spawn_mek_request_with_retry(
             // exact historical generation is gone, which still
             // converges the live stream.
             let resolved =
-                crate::state_helpers::channel_media_mek(&state, &community_id, &channel_id)
-                    .map(|(_, generation)| generation);
-            let cache_hit = match (needed_generation, resolved) {
-                (0, current) => current != initial_gen && current.is_some(),
-                (needed, Some(current)) => current >= needed,
-                (_, None) => false,
+                crate::state_helpers::channel_media_mek(&state, &community_id, &channel_id);
+            let resolved_gen = resolved.map(|(_, generation)| generation);
+            let cache_hit = if already_satisfied_at_spawn {
+                // Only *different key material* can end this request.
+                // A generation check would be satisfied by the very key
+                // that is failing to decrypt.
+                resolved.map(|(key, _)| key) != initial.map(|(key, _)| key) && resolved.is_some()
+            } else {
+                match (needed_generation, resolved_gen) {
+                    (0, current) => current != initial_gen && current.is_some(),
+                    (needed, Some(current)) => current >= needed,
+                    (_, None) => false,
+                }
             };
             if cache_hit {
                 return;
