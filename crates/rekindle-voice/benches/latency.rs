@@ -82,14 +82,16 @@ fn bench_jitter_push_pop(c: &mut Criterion) {
             let mut jb = JitterBuffer::new(60);
             let mut seq = 0u32;
             // Pre-fill so pop has something to return on each call.
+            // ms clock = seq * 20 (one 20 ms frame per packet).
             for _ in 0..3 {
-                jb.push(make_packet(seq));
+                jb.push(make_packet(seq), u64::from(seq) * 20);
                 seq += 1;
             }
             b.iter(|| {
-                jb.push(make_packet(seq));
+                let now_ms = u64::from(seq) * 20;
+                jb.push(make_packet(seq), now_ms);
                 seq = seq.wrapping_add(1);
-                let _ = jb.pop();
+                let _ = jb.pop(now_ms);
             });
         });
 }
@@ -132,14 +134,17 @@ fn bench_e2e_loopback(c: &mut Criterion) {
     // Pre-warm jitter so the first iteration's `pop` returns Some.
     for seq in 0..3 {
         let encoded = encoder.encode(&frame).expect("warmup encode");
-        jb.push(VoicePacket {
-            sender_key: vec![1u8; 32],
-            sequence: seq,
-            timestamp: u64::from(seq) * 20,
-            audio_data: encoded.data,
-            mek_generation: 0,
-            signature: Vec::new(),
-        });
+        jb.push(
+            VoicePacket {
+                sender_key: vec![1u8; 32],
+                sequence: seq,
+                timestamp: u64::from(seq) * 20,
+                audio_data: encoded.data,
+                mek_generation: 0,
+                signature: Vec::new(),
+            },
+            u64::from(seq) * 20,
+        );
     }
     let mut seq = 3u32;
 
@@ -147,17 +152,21 @@ fn bench_e2e_loopback(c: &mut Criterion) {
         .throughput(Throughput::Elements(1))
         .bench_function("loopback", |b| {
             b.iter(|| {
+                let now_ms = u64::from(seq) * 20;
                 let encoded = encoder.encode(&frame).expect("encode");
-                jb.push(VoicePacket {
-                    sender_key: vec![1u8; 32],
-                    sequence: seq,
-                    timestamp: u64::from(seq) * 20,
-                    audio_data: encoded.data,
-                    mek_generation: 0,
-                    signature: Vec::new(),
-                });
+                jb.push(
+                    VoicePacket {
+                        sender_key: vec![1u8; 32],
+                        sequence: seq,
+                        timestamp: u64::from(seq) * 20,
+                        audio_data: encoded.data,
+                        mek_generation: 0,
+                        signature: Vec::new(),
+                    },
+                    now_ms,
+                );
                 seq = seq.wrapping_add(1);
-                if let Some(packet) = jb.pop() {
+                if let Some(packet) = jb.pop(now_ms) {
                     let dec_frame = rekindle_voice::codec::EncodedFrame {
                         data: packet.audio_data,
                         timestamp: packet.timestamp,

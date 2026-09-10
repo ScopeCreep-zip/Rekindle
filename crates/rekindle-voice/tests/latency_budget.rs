@@ -143,14 +143,17 @@ fn measure_pipeline_compute_p95() -> Duration {
     // iteration.
     for seq in 0..3u32 {
         let encoded = encoder.encode(&frame).expect("warmup encode");
-        jb.push(VoicePacket {
-            sender_key: vec![1u8; 32],
-            sequence: seq,
-            timestamp: u64::from(seq) * 20,
-            audio_data: encoded.data,
-            mek_generation: 0,
-            signature: Vec::new(),
-        });
+        jb.push(
+            VoicePacket {
+                sender_key: vec![1u8; 32],
+                sequence: seq,
+                timestamp: u64::from(seq) * 20,
+                audio_data: encoded.data,
+                mek_generation: 0,
+                signature: Vec::new(),
+            },
+            u64::from(seq) * 20,
+        );
     }
     let mut seq: u32 = 3;
 
@@ -158,16 +161,19 @@ fn measure_pipeline_compute_p95() -> Duration {
     for _ in 0..ITERATIONS {
         let start = Instant::now();
         let encoded = encoder.encode(&frame).expect("encode");
-        jb.push(VoicePacket {
-            sender_key: vec![1u8; 32],
-            sequence: seq,
-            timestamp: u64::from(seq) * 20,
-            audio_data: encoded.data,
-            mek_generation: 0,
-            signature: Vec::new(),
-        });
+        jb.push(
+            VoicePacket {
+                sender_key: vec![1u8; 32],
+                sequence: seq,
+                timestamp: u64::from(seq) * 20,
+                audio_data: encoded.data,
+                mek_generation: 0,
+                signature: Vec::new(),
+            },
+            u64::from(seq) * 20,
+        );
         seq = seq.wrapping_add(1);
-        if let Some(packet) = jb.pop() {
+        if let Some(packet) = jb.pop(u64::from(seq) * 20) {
             let dec_frame = EncodedFrame {
                 data: packet.audio_data,
                 timestamp: packet.timestamp,

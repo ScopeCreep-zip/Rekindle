@@ -19,6 +19,16 @@ const FRAME_MS: u32 = 20;
 /// Consecutive clean 5 s windows required before the target may shrink
 /// (prevents collapsing depth on a single quiet window).
 const CLEAN_WINDOWS_TO_SHRINK: u32 = 2;
+/// Upper bound on the tracked reorder span (packets ≈ ×20 ms). Caps how
+/// long the gap jump will wait for a reordered packet before treating
+/// the position as lost — 15 ≈ 300 ms, past which a stall is a worse
+/// experience than concealing the gap, and it stops one pathologically
+/// stale straggler from pinning the window open.
+const REORDER_SPAN_MAX_PACKETS: u32 = 15;
+/// Reorder distances above this are treated as sequence wrap / a peer
+/// resetting its counter, not real reordering — mirrors the reception
+/// tracker's own guard so the two never disagree about what a gap is.
+const REORDER_IMPLAUSIBLE: u32 = 1000;
 
 /// Adaptive jitter buffer for smoothing out network timing variations.
 ///
@@ -58,8 +68,10 @@ pub struct JitterBuffer {
     max_packets: usize,
     /// Whether the initial buffering phase is complete.
     initial_fill_done: bool,
-    /// Timestamp of the first packet arrival (for initial fill timing).
-    first_packet_time: Option<std::time::Instant>,
+    /// Arrival time of the first packet, in the caller's monotonic
+    /// millisecond clock (for initial-fill timing). Resets to `None`
+    /// with the buffer so the fill origin tracks each fresh start.
+    first_arrival_ms: Option<u64>,
     /// Packets discarded by the over-capacity trim since the last
     /// `take_drops` — the receive-side health signal the quality event
     /// surfaces (Phase 5).
@@ -69,6 +81,19 @@ pub struct JitterBuffer {
     /// Consecutive `pop()` misses at the current playback position —
     /// drives the gap jump in [`Self::note_miss_and_maybe_jump`].
     gap_misses: u32,
+    /// Highest sequence number seen so far — the reference the reorder
+    /// span is measured against.
+    highest_seq_seen: Option<u32>,
+    /// Largest recent out-of-order distance, in packets: how far behind
+    /// the highest-seen sequence a packet has arrived. The media route
+    /// runs `Sequencing::PreferUnordered` (UDP-class, low latency but
+    /// reordering), and absorbing that reordering is the jitter buffer's
+    /// job. This sizes the gap-jump window so the jump waits for a
+    /// reordered-but-not-lost packet instead of skipping past it and
+    /// discarding it on arrival — the receiver-side cause of the live
+    /// 86 % discard (proven in `reordered_delivery_reproduces_...`).
+    /// Bounded and decayed so one stale straggler can't pin it.
+    reorder_span: u32,
 }
 
 impl JitterBuffer {
@@ -85,25 +110,47 @@ impl JitterBuffer {
             next_playback_seq: 0,
             max_packets: 50,
             initial_fill_done: false,
-            first_packet_time: None,
+            first_arrival_ms: None,
             overflow_drops: 0,
             late_drops: 0,
             gap_misses: 0,
+            highest_seq_seen: None,
+            reorder_span: 0,
         }
     }
 
     /// Push an incoming packet into the buffer.
-    pub fn push(&mut self, packet: VoicePacket) {
+    ///
+    /// `arrival_ms` is the caller's monotonic millisecond clock at the
+    /// moment the packet arrived (the receive loop's `local_ms()`). The
+    /// buffer keeps no `Instant` of its own, so its timing behavior is
+    /// fully determined by its inputs and unit-tests deterministically.
+    pub fn push(&mut self, packet: VoicePacket, arrival_ms: u64) {
         let seq = packet.sequence;
-        let now = std::time::Instant::now();
 
-        // The tracker wants an arrival clock, not an epoch: transit is
-        // (arrival − sender-timestamp) and only the delta between
-        // consecutive transits matters, so any fixed origin works and a
-        // constant clock offset between the two machines cancels out.
-        // First arrival is that origin — and it resets with the buffer.
-        let origin = *self.first_packet_time.get_or_insert(now);
-        let arrival_ms = u64::try_from(now.duration_since(origin).as_millis()).unwrap_or(u64::MAX);
+        // Record the first arrival as the initial-fill origin — it
+        // resets with the buffer. The tracker itself only ever uses the
+        // delta between consecutive transits, so any fixed clock origin
+        // works: a constant offset between the two machines cancels out.
+        self.first_arrival_ms.get_or_insert(arrival_ms);
+
+        // Track how far out of order the route is delivering. When a
+        // packet lands behind the highest sequence seen, that distance
+        // is how deep the gap jump must wait before it may treat the
+        // position as lost — otherwise it skips reordered-but-in-flight
+        // packets and discards them on arrival. Learned continuously so
+        // the window is already sized by the time a gap opens.
+        match self.highest_seq_seen {
+            Some(hi) if seq > hi => self.highest_seq_seen = Some(seq),
+            Some(hi) if seq < hi => {
+                let dist = hi - seq;
+                if dist <= REORDER_IMPLAUSIBLE {
+                    self.reorder_span = self.reorder_span.max(dist).min(REORDER_SPAN_MAX_PACKETS);
+                }
+            }
+            None => self.highest_seq_seen = Some(seq),
+            _ => {}
+        }
 
         // A packet past its playback slot arrived but cannot be played.
         // RFC 3611 calls that a *discard*, not a loss — the distinction
@@ -203,6 +250,11 @@ impl JitterBuffer {
             self.set_target_delay_ms(bumped);
         } else {
             self.clean_windows = self.clean_windows.saturating_add(1);
+            // Let the reorder window relax one packet per clean 5 s
+            // window: reordering is a route property that outlives any
+            // single burst, so decay slowly rather than dropping the
+            // guard the moment one quiet window passes.
+            self.reorder_span = self.reorder_span.saturating_sub(1);
         }
         self.recompute_target();
     }
@@ -211,10 +263,14 @@ impl JitterBuffer {
     ///
     /// Returns `None` if the initial fill phase hasn't completed yet
     /// or the next expected packet hasn't arrived (packet loss / buffering).
-    pub fn pop(&mut self) -> Option<VoicePacket> {
+    ///
+    /// `now_ms` is the caller's monotonic millisecond clock at this
+    /// playout tick — the same clock passed to [`Self::push`] — used by
+    /// the initial-fill time window.
+    pub fn pop(&mut self, now_ms: u64) -> Option<VoicePacket> {
         // Don't start playback until initial fill is complete
         if !self.initial_fill_done {
-            if !self.check_initial_fill() {
+            if !self.check_initial_fill(now_ms) {
                 return None;
             }
             // Set next_playback_seq to the first available sequence
@@ -245,7 +301,22 @@ impl JitterBuffer {
             return None;
         }
         self.gap_misses += 1;
-        let window_ticks = (self.target_delay_ms / 20).max(1);
+        // Wait at least the adaptive jitter window AND the observed
+        // reorder span before giving up on the missing position: under
+        // `PreferUnordered` the "missing" packet is usually reordered,
+        // not lost, and arrives within `reorder_span` more packets. The
+        // `+1` clears the span itself. This extends only the gap-
+        // recovery wait, never the steady-state playout depth, so it
+        // does not tax the mouth-to-ear budget.
+        // `+2`, not `+1`: under sustained reordering the player runs a
+        // full span behind, and `gap_misses` carries across the boundary
+        // where one reordered block hands off to the next, so a bare
+        // `span + 1` fires exactly at that seam. One extra tick of margin
+        // clears it, at the cost of a single 20 ms tick more concealment
+        // before a genuinely lost position is skipped.
+        let window_ticks = (self.target_delay_ms / FRAME_MS)
+            .max(self.reorder_span + 2)
+            .max(1);
         if self.gap_misses < window_ticks || self.buffer.is_empty() {
             return None;
         }
@@ -269,7 +340,7 @@ impl JitterBuffer {
     /// Completes when either:
     /// - Enough time has elapsed since first packet (`target_delay_ms`)
     /// - Enough packets have accumulated (`target_delay_ms` / 20ms)
-    fn check_initial_fill(&mut self) -> bool {
+    fn check_initial_fill(&mut self, now_ms: u64) -> bool {
         let target_packets = (self.target_delay_ms / 20).max(1) as usize;
 
         if self.buffer.len() >= target_packets {
@@ -277,8 +348,8 @@ impl JitterBuffer {
             return true;
         }
 
-        if let Some(first_time) = self.first_packet_time {
-            if first_time.elapsed().as_millis() >= u128::from(self.target_delay_ms) {
+        if let Some(first_arrival_ms) = self.first_arrival_ms {
+            if now_ms.saturating_sub(first_arrival_ms) >= u64::from(self.target_delay_ms) {
                 self.initial_fill_done = true;
                 return true;
             }
@@ -292,8 +363,18 @@ impl JitterBuffer {
     /// When `pop()` returns `None` (current packet missing), this peeks at
     /// `next_playback_seq + 1` to check if FEC recovery is possible.
     /// Returns the audio data of the next packet if available.
+    ///
+    /// Gated by the reorder span: FEC recovery **advances past** the
+    /// missing position (`advance_after_fec`), so firing it while the
+    /// position could still be filled by a reordered-in-flight packet
+    /// would skip that packet and discard it on arrival — the same
+    /// over-advance the gap jump guards against, via a different door.
+    /// So hold FEC until `gap_misses` has cleared the observed reorder
+    /// span. With no reordering (`reorder_span == 0`) this is `> 0`, so
+    /// FEC still fires on the first miss — the fast single-loss path is
+    /// unchanged; only reordering makes it wait.
     pub fn peek_next_audio_data(&self) -> Option<&[u8]> {
-        if !self.initial_fill_done {
+        if !self.initial_fill_done || self.gap_misses <= self.reorder_span {
             return None;
         }
         let next_seq = self.next_playback_seq.wrapping_add(1);
@@ -321,229 +402,15 @@ impl JitterBuffer {
         self.buffer.clear();
         self.next_playback_seq = 0;
         self.initial_fill_done = false;
-        self.first_packet_time = None;
+        self.first_arrival_ms = None;
         self.gap_misses = 0;
         self.target_delay_ms = self.base_delay_ms;
         self.reception = ReceptionTracker::new(FRAME_MS);
         self.clean_windows = 0;
+        self.highest_seq_seen = None;
+        self.reorder_span = 0;
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_packet(seq: u32) -> VoicePacket {
-        VoicePacket {
-            sender_key: vec![0; 32],
-            sequence: seq,
-            timestamp: u64::from(seq) * 20,
-            audio_data: vec![0; 160],
-            mek_generation: 0,
-            signature: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn base_from_config_not_hardcoded() {
-        // The target starts at the config base (no 200 ms floor), then
-        // MIN-clamps via recompute only once jitter is observed.
-        assert_eq!(JitterBuffer::new(40).target_delay_ms(), 40);
-        assert_eq!(JitterBuffer::new(80).target_delay_ms(), 80);
-    }
-
-    #[test]
-    fn adaptive_target_grows_under_jitter_and_clamps() {
-        let mut jb = JitterBuffer::new(40);
-        // Arrival cadence diverging from the 20 ms sender cadence is
-        // jitter: arrivals 50 ms apart against 20 ms of sender time is a
-        // steady 30 ms |Δtransit|. Sequence advances by one so the walk
-        // sees a clean stream and not loss.
-        let mut sender_ms = 0u64;
-        let mut arrival_ms = 0u64;
-        for seq in 0..50u32 {
-            jb.observe_arrival(seq, sender_ms, arrival_ms, true);
-            sender_ms += 20;
-            arrival_ms += 50;
-        }
-        let t = jb.target_delay_ms();
-        // base 40 + ~2.5×30 ≈ 115, clamped to MAX 120.
-        assert!(t > 40 && t <= JITTER_MAX_MS, "grew + clamped: {t}");
-        assert!(
-            jb.reception_metrics().jitter_ms >= 25,
-            "the reported estimate is the same one the target used"
-        );
-
-        // Huge jitter clamps at MAX.
-        for seq in 50..100u32 {
-            jb.observe_arrival(seq, sender_ms, arrival_ms, true);
-            sender_ms += 20;
-            arrival_ms += 1000;
-        }
-        assert_eq!(jb.target_delay_ms(), JITTER_MAX_MS);
-    }
-
-    #[test]
-    fn late_drops_grow_clean_windows_shrink_never_below_base() {
-        let mut jb = JitterBuffer::new(60);
-        // Late drops bump the target up a step.
-        jb.note_window_health(3);
-        assert!(jb.target_delay_ms() > 60, "late drops grow target");
-        let grown = jb.target_delay_ms();
-        // Two clean windows are required before any shrink; with zero
-        // observed jitter the EWMA floor is the base, so it slow-shrinks
-        // toward 60 but never below.
-        jb.note_window_health(0); // clean_windows = 1, no shrink yet
-        assert_eq!(jb.target_delay_ms(), grown, "one clean window: no shrink");
-        jb.note_window_health(0); // clean_windows = 2, shrink one step
-        assert!(jb.target_delay_ms() < grown && jb.target_delay_ms() >= 60);
-        for _ in 0..10 {
-            jb.note_window_health(0);
-        }
-        assert_eq!(jb.target_delay_ms(), 60, "shrinks to base, not below");
-    }
-
-    #[test]
-    fn test_in_order_playback() {
-        // Use 0ms target delay to skip initial fill (unit test only)
-        let mut jb = JitterBuffer::new(0);
-        jb.push(make_packet(0));
-        jb.push(make_packet(1));
-        jb.push(make_packet(2));
-
-        assert_eq!(jb.pop().unwrap().sequence, 0);
-        assert_eq!(jb.pop().unwrap().sequence, 1);
-        assert_eq!(jb.pop().unwrap().sequence, 2);
-        assert!(jb.pop().is_none());
-    }
-
-    #[test]
-    fn test_out_of_order() {
-        let mut jb = JitterBuffer::new(0);
-        jb.push(make_packet(2));
-        jb.push(make_packet(0));
-        jb.push(make_packet(1));
-
-        assert_eq!(jb.pop().unwrap().sequence, 0);
-        assert_eq!(jb.pop().unwrap().sequence, 1);
-        assert_eq!(jb.pop().unwrap().sequence, 2);
-    }
-
-    #[test]
-    fn test_late_packet_dropped() {
-        let mut jb = JitterBuffer::new(0);
-        jb.push(make_packet(0));
-        jb.pop(); // consume 0, next_playback_seq = 1
-
-        jb.push(make_packet(0)); // late, should be dropped
-        assert_eq!(jb.depth(), 0);
-        assert_eq!(jb.take_drops(), (0, 1), "late drop counted");
-        assert_eq!(jb.take_drops(), (0, 0), "take_drops resets");
-    }
-
-    #[test]
-    fn gap_jump_resumes_from_oldest_buffered() {
-        // The adaptive MIN floor is 40 ms → minimum jump window is 2
-        // ticks (40/20). Instant-arrival test packets vs the 20 ms
-        // sender cadence register as jitter, pinning the target at the
-        // 40 ms floor. So it takes 2 noted misses before the gap jumps.
-        let mut jb = JitterBuffer::new(0);
-        jb.push(make_packet(0));
-        jb.push(make_packet(1));
-        // seq 2 lost; 3 and 4 arrive.
-        jb.push(make_packet(3));
-        jb.push(make_packet(4));
-        assert_eq!(jb.pop().unwrap().sequence, 0);
-        assert_eq!(jb.pop().unwrap().sequence, 1);
-        assert!(jb.pop().is_none(), "seq 2 is lost");
-        assert!(
-            jb.note_miss_and_maybe_jump().is_none(),
-            "within jitter window"
-        );
-        let jumped = jb.note_miss_and_maybe_jump().unwrap();
-        assert_eq!(jumped.sequence, 3, "resumes from oldest buffered");
-        assert_eq!(jb.pop().unwrap().sequence, 4, "stream continues in order");
-    }
-
-    #[test]
-    fn gap_jump_waits_out_the_jitter_window() {
-        // 60ms target → 3 ticks of grace before jumping.
-        let mut jb = JitterBuffer::new(60);
-        for seq in 0..3 {
-            jb.push(make_packet(seq));
-        }
-        while jb.pop().is_some() {}
-        jb.push(make_packet(5)); // seq 3 + 4 lost
-        assert!(jb.note_miss_and_maybe_jump().is_none(), "miss 1: wait");
-        assert!(jb.note_miss_and_maybe_jump().is_none(), "miss 2: wait");
-        let jumped = jb.note_miss_and_maybe_jump().unwrap();
-        assert_eq!(jumped.sequence, 5, "miss 3: jump");
-    }
-
-    #[test]
-    fn fec_advance_unsticks_playback_position() {
-        let mut jb = JitterBuffer::new(0);
-        jb.push(make_packet(0));
-        assert_eq!(jb.pop().unwrap().sequence, 0);
-        // seq 1 lost, 2 buffered → FEC peek sees 2's payload.
-        jb.push(make_packet(2));
-        assert!(jb.pop().is_none());
-        assert!(jb.peek_next_audio_data().is_some());
-        jb.advance_after_fec();
-        assert_eq!(
-            jb.pop().unwrap().sequence,
-            2,
-            "next pop returns the packet FEC peeked, not another conceal"
-        );
-    }
-
-    #[test]
-    fn lost_packet_no_longer_stalls_into_endless_overflow() {
-        // Regression for the live failure: one lost packet pinned
-        // playback while every later arrival was trimmed as overflow
-        // (rx_overflow_drops in the hundreds per 5 s, dead audio).
-        let mut jb = JitterBuffer::new(0);
-        jb.push(make_packet(0));
-        assert_eq!(jb.pop().unwrap().sequence, 0);
-        // seq 1 lost; a long run of later packets arrives.
-        for seq in 2..80 {
-            jb.push(make_packet(seq));
-        }
-        // Playout tick: miss → jump → stream drains in order. The 40 ms
-        // adaptive floor makes the jump window 2 ticks, so the gap is
-        // declared on the second noted miss.
-        assert!(jb.pop().is_none());
-        assert!(
-            jb.note_miss_and_maybe_jump().is_none(),
-            "within jitter window"
-        );
-        assert!(jb.note_miss_and_maybe_jump().is_some());
-        let mut drained = 1;
-        while jb.pop().is_some() {
-            drained += 1;
-        }
-        let (overflow, _) = jb.take_drops();
-        // 78 pushed after the gap; max_packets=50 bounds the buffer, so
-        // pre-jump trims are expected — but everything still buffered
-        // plays out instead of being discarded one-per-arrival forever.
-        assert_eq!(
-            drained + overflow,
-            78,
-            "every packet played or trimmed once"
-        );
-        assert!(drained >= 50, "the surviving window drains fully");
-    }
-
-    #[test]
-    fn test_overflow_trim_counted() {
-        let mut jb = JitterBuffer::new(0);
-        for seq in 0..60 {
-            jb.push(make_packet(seq));
-        }
-        // max_packets = 50 → ten packets trimmed.
-        assert_eq!(jb.depth(), 50);
-        let (overflow, late) = jb.take_drops();
-        assert_eq!(overflow, 10, "overflow trim counted");
-        assert_eq!(late, 0);
-    }
-}
+mod tests;

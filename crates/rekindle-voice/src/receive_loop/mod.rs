@@ -334,7 +334,7 @@ impl VoiceReceiveLoop {
             // lets this peer compute the round trip. Before `push`,
             // which takes ownership.
             participant.echo.observe(&packet, arrival_local_ms);
-            participant.jitter_buffer.push(packet);
+            participant.jitter_buffer.push(packet, arrival_local_ms);
             participant.last_packet_time = Instant::now();
 
             if !participant.is_speaking {
@@ -373,6 +373,11 @@ impl VoiceReceiveLoop {
     fn decode_all_participants(&mut self) -> Vec<(String, Vec<f32>)> {
         let mut streams: Vec<(String, Vec<f32>)> = Vec::new();
 
+        // One playout-tick clock reading, shared by every participant's
+        // jitter buffer this tick — the same monotonic ms clock `push`
+        // stamps arrivals with, so the initial-fill window measures real
+        // elapsed time.
+        let now_ms = self.local_ms();
         let frame_size = self.frame_size;
         let decode_packet = |participant: &mut ParticipantDecoder, packet: VoicePacket| {
             let frame = EncodedFrame {
@@ -394,7 +399,7 @@ impl VoiceReceiveLoop {
         };
 
         for (key, participant) in &mut self.participants {
-            let decoded = match participant.jitter_buffer.pop() {
+            let decoded = match participant.jitter_buffer.pop(now_ms) {
                 Some(packet) => decode_packet(participant, packet),
                 None => {
                     if participant.last_packet_time.elapsed() < Duration::from_secs(2) {

@@ -74,6 +74,13 @@ pub(super) struct PeerLink {
     /// report the same verdict it acted on, rather than recomputing
     /// from a staler window.
     score: QualityScore,
+    /// Wall-clock arrival of the previous report from this peer. Reports
+    /// are generated on a fixed cadence at the far end, so the gap
+    /// between arrivals here measures the RETURN path (B→A): a gap much
+    /// larger than the cadence means our reports are themselves delayed,
+    /// which inflates RTT independently of how promptly our audio
+    /// reached the peer. Part of the Phase 1 RTT decomposition.
+    last_report_at: Option<std::time::Instant>,
 }
 
 impl VoiceSendLoop {
@@ -100,7 +107,25 @@ impl VoiceSendLoop {
                     mos_cq: 0.0,
                     state: LinkState::Good,
                 },
+                last_report_at: None,
             });
+
+        // RTT decomposition (Phase 1): `rtt = (now − lsr) − dlsr`.
+        //   lsr_age = now − lsr  → total elapsed since we sent the packet
+        //     the peer echoed = the A→B audio delay (our clock domain,
+        //     since lsr is our own packet timestamp echoed back).
+        //   dlsr                 → the peer's hold before reporting.
+        //   report_gap           → wall gap since this peer's last report
+        //     = the B→A return-path delay (reports have a fixed cadence).
+        // Together these say which leg inflates a large RTT, so we stop
+        // guessing whether the 8–16 s figure is outbound audio, the
+        // peer's buffer, or a congested report path.
+        let now_ms = rekindle_utils::timestamp_ms();
+        let lsr_age_ms = now_ms.saturating_sub(report.lsr_ms);
+        let report_gap_ms = link
+            .last_report_at
+            .map(|t| u64::try_from(t.elapsed().as_millis()).unwrap_or(u64::MAX));
+        link.last_report_at = Some(std::time::Instant::now());
 
         // Reports carry session totals; the tracker wants this window.
         // `saturating_sub` covers a peer that restarted its session and
@@ -141,6 +166,9 @@ impl VoiceSendLoop {
             burst_pct = q8_pct(report.metrics.burst_density_q8),
             jitter_ms = report.metrics.jitter_ms,
             rtt_ms = ?rtt_ms,
+            lsr_age_ms,
+            dlsr_ms = report.dlsr_ms,
+            report_gap_ms = ?report_gap_ms,
             jb_nominal_ms = report.jb_nominal_ms,
             one_way_ms = one_way,
             r_factor = score.r_factor,

@@ -51,6 +51,10 @@ struct McuLoop {
     encoder: OpusCodec,
     frame_size: usize,
     sequence: u32,
+    /// Origin for the monotonic millisecond clock handed to each
+    /// sender's jitter buffer for arrival stamping and playout timing.
+    /// Only differences within it are used, so the origin is arbitrary.
+    origin: Instant,
 }
 
 pub async fn run(params: McuParams) {
@@ -84,7 +88,14 @@ impl McuLoop {
             encoder,
             frame_size,
             sequence: 0,
+            origin: Instant::now(),
         })
+    }
+
+    /// Local milliseconds since loop start — the monotonic clock the
+    /// per-sender jitter buffers stamp arrivals and time playout with.
+    fn local_ms(&self) -> u64 {
+        u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
     async fn run_loop(mut self) {
@@ -133,17 +144,19 @@ impl McuLoop {
                 }
             }
         }
+        let arrival_ms = self.local_ms();
         if let Some(sender) = self.senders.get_mut(&sender_key) {
-            sender.jitter_buffer.push(packet);
+            sender.jitter_buffer.push(packet, arrival_ms);
             sender.last_packet_time = Instant::now();
         }
     }
 
     async fn tick(&mut self) {
         // 1. Decode one frame from each sender.
+        let now_ms = self.local_ms();
         let mut decoded_streams: Vec<(Vec<u8>, Vec<f32>)> = Vec::new();
         for (key, sender) in &mut self.senders {
-            if let Some(packet) = sender.jitter_buffer.pop() {
+            if let Some(packet) = sender.jitter_buffer.pop(now_ms) {
                 let frame = EncodedFrame {
                     data: packet.audio_data,
                     timestamp: packet.timestamp,

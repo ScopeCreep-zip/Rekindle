@@ -186,6 +186,11 @@ pub struct VoiceEngine {
 
     /// Saved config for creating capture/playback instances.
     config: VoiceConfig,
+
+    /// Origin for the monotonic millisecond arrival clock handed to the
+    /// jitter buffer. Only differences within it matter, so the origin
+    /// is arbitrary — it just has to be stable for the engine's life.
+    origin: std::time::Instant,
 }
 
 impl VoiceEngine {
@@ -207,6 +212,7 @@ impl VoiceEngine {
             device_error_rx: Some(device_error_rx),
             device_error_tx: Some(device_error_tx),
             config,
+            origin: std::time::Instant::now(),
         })
     }
 
@@ -282,7 +288,8 @@ impl VoiceEngine {
 
     /// Process an incoming voice packet from the network.
     pub fn process_incoming(&mut self, packet: transport::VoicePacket) {
-        self.jitter_buffer.push(packet);
+        let arrival_ms = u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.jitter_buffer.push(packet, arrival_ms);
     }
 
     /// Set mute state (flag only — does NOT stop capture device).
