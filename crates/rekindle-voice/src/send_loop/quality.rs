@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use rekindle_media_stats::{LinkState, LinkTracker, QualityScore, ReceptionMetrics};
 
 use super::VoiceSendLoop;
+use crate::codec::{DEFAULT_BITRATE_BPS, MIN_BITRATE_BPS};
 use crate::receiver_report::VoiceReceiverReport;
 use crate::session_deps::{SendLinkStats, VoiceSessionEvent};
 
@@ -214,11 +215,19 @@ impl VoiceSendLoop {
         // Bitrate: group size sets the baseline (a mesh sender pays it
         // once per peer), then a struggling link pulls it down. Cannot
         // hold the tokio Mutex synchronously, so use try_lock.
+        // A mesh sender pays the bitrate once per peer, so the ladder
+        // trades per-stream quality against total egress as the roster
+        // grows. Rungs are relative to the codec default rather than
+        // spelled out, so raising that raises the whole ladder and the
+        // two cannot drift.
         let peer_count = self.transport.try_lock().map(|t| t.peer_count()).ok();
         let baseline = match peer_count {
-            Some(0..=2) | None => 32000,
-            Some(3..=7) => 24000,
-            Some(_) => 16000,
+            // DM, or a mesh small enough to afford full rate.
+            Some(0..=2) | None => DEFAULT_BITRATE_BPS,
+            // Still full mesh (the topology switches to an SFU above
+            // four), so egress is the binding constraint here.
+            Some(3..=7) => DEFAULT_BITRATE_BPS * 3 / 4,
+            Some(_) => DEFAULT_BITRATE_BPS / 2,
         };
         // Backing off on a Poor link trades clarity for arrival: fewer
         // bits per packet means smaller packets, which a congested path
@@ -226,8 +235,10 @@ impl VoiceSendLoop {
         // dropping further — there is nothing left to concede, and it
         // has to be able to recover.
         let target_bps = match worst.as_ref().map(|w| w.score.state) {
-            Some(LinkState::Poor | LinkState::Lost) => (baseline * 2 / 3).max(12000),
-            Some(LinkState::Fair | LinkState::Recovering) => baseline * 5 / 6,
+            Some(LinkState::Poor | LinkState::Lost) => (baseline * 2 / 3).max(MIN_BITRATE_BPS),
+            Some(LinkState::Fair | LinkState::Recovering) => {
+                (baseline * 5 / 6).max(MIN_BITRATE_BPS)
+            }
             Some(LinkState::Good) | None => baseline,
         };
         if peer_count.is_some() {

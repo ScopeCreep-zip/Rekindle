@@ -1,5 +1,19 @@
 use crate::error::VoiceError;
 
+/// Starting Opus bitrate, matching the per-channel default the major
+/// voice services ship. The send loop's group ladder scales down from
+/// here as the mesh grows and a struggling link backs off further, but
+/// never below [`MIN_BITRATE_BPS`].
+pub const DEFAULT_BITRATE_BPS: i32 = 64_000;
+
+/// Floor for every bitrate decision.
+///
+/// Kept well above libopus's "very low bit-rate" region because we run
+/// hard CBR (see [`OpusCodec::new`]): that is where the docs warn CBR
+/// costs noticeable quality, and CBR is a security setting we will not
+/// trade away to save bandwidth.
+pub const MIN_BITRATE_BPS: i32 = 24_000;
+
 /// Opus codec wrapper for encoding and decoding voice frames.
 ///
 /// Wraps `opus::Encoder` and `opus::Decoder` configured for `VoIP`-optimised
@@ -53,19 +67,61 @@ impl OpusCodec {
         let mut encoder = opus::Encoder::new(sample_rate, opus_channels, opus::Application::Voip)
             .map_err(|e| VoiceError::Codec(format!("encoder init failed: {e}")))?;
 
-        // Configure encoder for voice over Veilid:
-        // - 32kbps bitrate: good quality speech, reduces P2P relay load
-        // - In-band FEC: allows partial recovery from packet loss
-        // - 10% expected packet loss: tells Opus to include enough FEC data
+        // Configure encoder for anonymous voice over Veilid.
+        //
+        // 64 kbps matches the default other major services use for a
+        // voice channel; the send loop's group ladder scales it down
+        // from here as the mesh grows.
         encoder
-            .set_bitrate(opus::Bitrate::Bits(32000))
+            .set_bitrate(opus::Bitrate::Bits(DEFAULT_BITRATE_BPS))
             .map_err(|e| VoiceError::Codec(format!("set bitrate failed: {e}")))?;
+
+        // Hard CBR — a SECURITY setting, not a quality one.
+        //
+        // Opus defaults to VBR, where packet size tracks the phoneme
+        // being encoded. That is a published attack on encrypted VoIP:
+        // an observer who never breaks the encryption can recover
+        // phrases from the packet-length sequence alone. RFC 6562
+        // ("Guidelines for the Use of VBR Audio with Secure RTP") is
+        // explicit: applications "conveying highly sensitive
+        // unstructured information SHOULD NOT use codecs in VBR mode",
+        // and a CBR codec "SHOULD be negotiated and used instead, or
+        // the VBR codec SHOULD be operated in a CBR mode".
+        //
+        // We are that application by construction. This project spends
+        // ~75 ms of mouth-to-ear budget on a 3-hop anonymising route
+        // and refuses `SafetySelection::Unsafe` on every frame; leaking
+        // the words through packet sizes afterwards would make that
+        // payment pointless. Constant size carries zero information.
+        //
+        // Note the coupling to the bitrate above: libopus warns hard
+        // CBR "can cause noticeable quality degradation" for LPC/hybrid
+        // modes *at very low bit-rate*. Raising the rate is what makes
+        // CBR cheap here, which is why the two land together and why
+        // the ladder's floor is kept well clear of that region.
+        encoder
+            .set_vbr(false)
+            .map_err(|e| VoiceError::Codec(format!("set CBR failed: {e}")))?;
+
+        // In-band FEC lets the decoder reconstruct a lost frame from
+        // the next one. Under hard CBR the redundancy is taken out of
+        // the frame's fixed budget rather than added to it, so enabling
+        // it costs quality, never packet size — and so cannot reopen
+        // the size channel CBR just closed. The send loop retunes
+        // `packet_loss_perc` from what the far end actually reports;
+        // 10 % is only the pre-first-report starting point.
         encoder
             .set_inband_fec(true)
             .map_err(|e| VoiceError::Codec(format!("set FEC failed: {e}")))?;
         encoder
             .set_packet_loss_perc(10)
             .map_err(|e| VoiceError::Codec(format!("set packet loss percent failed: {e}")))?;
+
+        // DTX is deliberately left off (libopus defaults it off). It
+        // suppresses transmission during silence, which is the same
+        // talk-pattern leak RFC 6562 warns about under VAD — and we
+        // already gate on VAD in the send loop, so enabling DTX would
+        // add nothing but a second copy of that exposure.
 
         let decoder = opus::Decoder::new(sample_rate, opus_channels)
             .map_err(|e| VoiceError::Codec(format!("decoder init failed: {e}")))?;
@@ -197,6 +253,97 @@ impl OpusCodec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hard CBR is a security property, so it is pinned behaviourally
+    /// rather than by asserting we called a setter.
+    ///
+    /// Under VBR, Opus frame length tracks the phoneme being encoded —
+    /// the published attack on encrypted VoIP recovers phrases from the
+    /// length sequence without touching the ciphertext. RFC 6562 says
+    /// such applications SHOULD run the codec in a CBR mode. This feeds
+    /// the encoder wildly different signals (silence, a tone, and
+    /// noise) and asserts the packets come out the same size, which is
+    /// what "carries zero information" actually means.
+    ///
+    /// A regression here is silent and invisible in a call: audio still
+    /// works perfectly while leaking the words.
+    #[test]
+    fn cbr_makes_packet_size_independent_of_content() {
+        let frame_size = 960; // 20 ms at 48 kHz
+        let mut codec = OpusCodec::new(48_000, 1, frame_size).expect("codec");
+
+        let silence = vec![0.0f32; frame_size];
+        let tone: Vec<f32> = (0..frame_size)
+            .map(|i| {
+                #[allow(
+                    clippy::cast_precision_loss,
+                    reason = "frame_size is 960; f32 is exact well past that"
+                )]
+                let t = i as f32 / 48_000.0;
+                (t * 440.0 * std::f32::consts::TAU).sin() * 0.5
+            })
+            .collect();
+        // Deterministic pseudo-noise — the hardest case to encode, and
+        // the one VBR would spend the most bits on.
+        let noise: Vec<f32> = (0..frame_size)
+            .map(|i| {
+                let x = u32::try_from(i).unwrap_or(0).wrapping_mul(2_654_435_761);
+                let hi = u16::try_from(x >> 16).unwrap_or(0);
+                (f32::from(hi) / 32_768.0) - 1.0
+            })
+            .collect();
+
+        // Warm up: Opus adapts over the first frames, so compare only
+        // once the encoder has settled into steady state.
+        for _ in 0..10 {
+            codec.encode(&tone).expect("warmup");
+        }
+
+        let mut sizes = Vec::new();
+        for pcm in [&silence, &tone, &noise, &silence, &noise] {
+            sizes.push(codec.encode(pcm).expect("encode").data.len());
+        }
+
+        let min = sizes.iter().min().copied().unwrap_or(0);
+        let max = sizes.iter().max().copied().unwrap_or(0);
+        // libopus rounds each frame to a whole number of bytes, so hard
+        // CBR is constant to within a byte or two, not bit-exact.
+        assert!(
+            max - min <= 2,
+            "packet size varied with content ({min}..{max} bytes): VBR is on and the \
+             encrypted stream leaks phonemes"
+        );
+    }
+
+    /// The ladder must never drive the encoder into the region where
+    /// libopus documents CBR as costing noticeable quality.
+    ///
+    /// `const` blocks, so lowering a constant fails the **build** rather
+    /// than a test run — this guards a security setting, and the whole
+    /// point is that it cannot be relaxed quietly.
+    #[test]
+    fn the_bitrate_floor_stays_clear_of_the_low_rate_cbr_penalty() {
+        const { assert!(MIN_BITRATE_BPS >= 24_000) };
+        const { assert!(DEFAULT_BITRATE_BPS >= MIN_BITRATE_BPS) };
+        // Pin the worst bitrate the system can ever emit: the smallest
+        // group rung (8+ peers) with a Poor-link backoff on top. The
+        // ladder's own arithmetic lands under the floor there, so the
+        // clamp in `report_quality_if_due` is load-bearing rather than
+        // decorative — worth stating, because deleting it as redundant
+        // would silently reopen the low-rate CBR quality hole.
+        const {
+            let worst_rung = DEFAULT_BITRATE_BPS / 2;
+            assert!(
+                worst_rung * 2 / 3 < MIN_BITRATE_BPS,
+                "clamp is load-bearing"
+            );
+        };
+        // So the floor is what the system actually emits at its worst.
+        // (`Ord::max` is not const-callable yet, hence the runtime
+        // assertion for the clamped result.)
+        let worst_rung = DEFAULT_BITRATE_BPS / 2;
+        assert_eq!((worst_rung * 2 / 3).max(MIN_BITRATE_BPS), MIN_BITRATE_BPS);
+    }
 
     #[test]
     fn test_encode_decode_roundtrip() {
