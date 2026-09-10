@@ -139,6 +139,51 @@ fn heal_open_writer(
         .and_then(|s| s.parse::<veilid_core::KeyPair>().ok())
 }
 
+/// Re-open a community record that Veilid reports as not open.
+///
+/// Both delivery legs — watch establishment and the inspect/poll loop —
+/// call Veilid primitives that require the record open *this session*,
+/// and both hit `record not open` when a login open failed on a cold
+/// network or Veilid later dropped the handle (route refresh, eviction).
+/// Re-opening is idempotent and returns from the local store without a
+/// network round-trip when the record is already local (vendored 0.5.7
+/// `open_dht_record` docs), and it preserves any active watch — so this
+/// is safe to call on every failure. Opens the registry with its writer
+/// (a read-only re-open would strip presence/slot write capability);
+/// everything else read-only.
+///
+/// Returns `true` if the record is open afterward.
+pub(crate) async fn reopen_record(
+    rc: &veilid_core::RoutingContext,
+    state: &Arc<AppState>,
+    community_id: &str,
+    parsed_key: &veilid_core::RecordKey,
+    record_key: &str,
+) -> bool {
+    let writer = heal_open_writer(state, community_id, record_key);
+    match rc.open_dht_record(parsed_key.clone(), writer).await {
+        Ok(_) => {
+            tracing::info!(
+                community = %community_id,
+                record_key,
+                "re-opened record Veilid reported as not open"
+            );
+            true
+        }
+        Err(e) => {
+            // TryAgain while offline / KeyNotFound while still
+            // propagating — the caller's next tick re-enters here.
+            tracing::debug!(
+                community = %community_id,
+                record_key,
+                error = %e,
+                "record re-open failed — will retry next tick"
+            );
+            false
+        }
+    }
+}
+
 async fn watch_record(
     rc: &veilid_core::RoutingContext,
     state: &Arc<AppState>,
@@ -176,38 +221,18 @@ async fn watch_record(
     if matches!(
         result,
         Err(veilid_core::VeilidAPIError::InvalidArgument { .. })
-    ) {
-        let writer = heal_open_writer(state, community_id, record_key);
-        match rc.open_dht_record(parsed_key.clone(), writer).await {
-            Ok(_) => {
-                tracing::info!(
-                    community = %community_id,
-                    label,
-                    record_key,
-                    "opened record at watch time (login-open missed it)"
-                );
-                result = rc
-                    .watch_dht_values(
-                        parsed_key,
-                        Some(veilid_core::ValueSubkeyRangeSet::full()),
-                        None,
-                        None,
-                    )
-                    .await;
-            }
-            Err(e) => {
-                // TryAgain while offline / KeyNotFound while the record
-                // is still propagating — the next retry tick re-enters
-                // this path, so the heal itself is retried.
-                tracing::debug!(
-                    community = %community_id,
-                    label,
-                    record_key,
-                    error = %e,
-                    "watch-time open failed — will retry next tick"
-                );
-            }
-        }
+    ) && reopen_record(rc, state, community_id, &parsed_key, record_key).await
+    {
+        // reopen_record logs a failed re-open; the next retry tick
+        // re-enters this path, so a still-propagating record heals then.
+        result = rc
+            .watch_dht_values(
+                parsed_key,
+                Some(veilid_core::ValueSubkeyRangeSet::full()),
+                None,
+                None,
+            )
+            .await;
     }
 
     match result {

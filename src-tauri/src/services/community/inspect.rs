@@ -40,14 +40,44 @@ pub(crate) async fn inspect_record(
     let parsed_key = record_key
         .parse::<veilid_core::RecordKey>()
         .map_err(|e| format!("invalid record key: {e}"))?;
-    let report = rc
+    let report = match rc
         .inspect_dht_record(
             parsed_key.clone(),
             Some(veilid_core::ValueSubkeyRangeSet::full()),
             veilid_core::DHTReportScope::SyncGet,
         )
         .await
-        .map_err(|e| format!("inspect_dht_record failed: {e}"))?;
+    {
+        Ok(report) => report,
+        // The record is tracked but Veilid no longer has it open (a
+        // login open that failed on a cold network, or a handle dropped
+        // on a route refresh). Left alone this fires 'record not open'
+        // on every inspect tick forever — the dominant error in a live
+        // session — while channel sync silently degrades to watch-only.
+        // Re-open (idempotent, local when already open) and retry once;
+        // the next tick re-heals if the record is still propagating.
+        Err(veilid_core::VeilidAPIError::InvalidArgument { .. }) => {
+            if !crate::services::community::watch::reopen_record(
+                &rc,
+                state,
+                community_id,
+                &parsed_key,
+                record_key,
+            )
+            .await
+            {
+                return Err("inspect skipped — record not open and re-open pending".into());
+            }
+            rc.inspect_dht_record(
+                parsed_key.clone(),
+                Some(veilid_core::ValueSubkeyRangeSet::full()),
+                veilid_core::DHTReportScope::SyncGet,
+            )
+            .await
+            .map_err(|e| format!("inspect_dht_record failed after re-open: {e}"))?
+        }
+        Err(e) => return Err(format!("inspect_dht_record failed: {e}")),
+    };
 
     let mut changed_subkeys = {
         let mut communities = state.communities.write();
