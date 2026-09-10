@@ -16,6 +16,7 @@ members = [
     "crates/rekindle-media-stats",
     "crates/rekindle-video",
     "crates/rekindle-video-capture",
+    "crates/rekindle-video-libvpx",
     "crates/rekindle-sync",
     "crates/rekindle-protocol",
     "crates/rekindle-crypto",
@@ -50,6 +51,13 @@ members = [
 #
 # To build the daemon: `cargo build -p rekindle-node`
 # To build the CLI:    `cargo build -p rekindle-cli`
+#
+# `rekindle-video-libvpx` is likewise excluded from default-members: its
+# real encoder needs a system libvpx (C dep), gated behind its DEFAULT-OFF
+# `libvpx` feature. Keeping it out of default-members means a bare
+# `cargo build` never compiles it; `cargo build --workspace` does but, with
+# the feature off, pulls no C dependency. Build the encoder explicitly:
+#   VPX_STATIC=1 cargo build -p rekindle-video-libvpx --features libvpx
 default-members = [
     "src-tauri",
     "crates/rekindle-types",

@@ -27,6 +27,22 @@ pub enum VideoError {
     #[error("invalid input: {0}")]
     InvalidInput(String),
 
+    /// A [`codec::VideoEncoder`](crate::codec::VideoEncoder) impl failed
+    /// while encoding a frame (e.g. libvpx returned a non-OK status).
+    #[error("encode failed: {0}")]
+    Encode(String),
+
+    /// [`encode`](crate::codec::VideoEncoder::encode) was called before
+    /// [`configure`](crate::codec::VideoEncoder::configure).
+    #[error("encoder not configured — call configure() first")]
+    EncoderNotConfigured,
+
+    /// The requested encoder or codec is not available in this build —
+    /// e.g. `rekindle-video-libvpx` compiled without its `libvpx`
+    /// feature, or a codec (H.264) the selected engine cannot encode.
+    #[error("unsupported: {0}")]
+    Unsupported(String),
+
     #[error("fragment: {0}")]
     Fragment(#[from] crate::fragment::FragmentError),
 }

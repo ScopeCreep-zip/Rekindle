@@ -1,0 +1,49 @@
+[package]
+name = "rekindle-video-libvpx"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform libvpx (VP8/VP9) realtime encoder implementing rekindle-video's VideoEncoder trait — feature-gated, default OFF"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-video = { path = "../rekindle-video" }
+rekindle-types = { path = "../rekindle-types" }
+tracing = { workspace = true }
+
+# The libvpx C dependency is FEATURE-GATED, DEFAULT OFF. With the feature
+# disabled this crate compiles to a stub (see src/stub.rs) that carries no
+# C dependency at all — `cargo build`/`cargo test` on a machine WITHOUT
+# libvpx stay green and never pull `env-libvpx-sys`.
+#
+# We bind libvpx directly through `env-libvpx-sys` (the raw `vpx_sys` FFI)
+# rather than the higher-level `vpx-encode` wrapper. Reason (proven by
+# test, see src/imp.rs): a REALTIME encoder needs `g_lag_in_frames = 0`,
+# `rc_end_usage = VPX_CBR` and *live* `vpx_codec_enc_config_set`
+# reconfigure — none of which `vpx-encode 0.6.2`'s `Config`-only surface
+# exposes (its VP9 path buffers ~25 frames and never emits in realtime,
+# and it is VBR-only). CBR realtime is the exact "quality fix" the plan's
+# §"Video — two separable problems" says this engine exists to deliver.
+#
+# env-libvpx-sys STATIC-links libvpx when VPX_STATIC=1 is set in the build
+# environment. It does NOT build libvpx; a system libvpx must be
+# provisioned per build-env (brew on macOS, apt/dnf on Linux, vcpkg on
+# Windows) — the same posture GStreamer takes on Linux. The `generate`
+# feature runs bindgen against the *installed* libvpx headers (needs
+# libclang), so the bindings track the system libvpx (brew ships 1.15.2).
+[dependencies.env-libvpx-sys]
+version = "5.1"
+optional = true
+features = ["generate"]
+
+[features]
+default = []
+# Enable the real libvpx-backed encoder. REQUIRES: a system libvpx
+# (pkg-config `vpx`), libclang (for the `generate` bindgen path), and — to
+# static-link — `VPX_STATIC=1` in the build environment:
+#
+#   VPX_STATIC=1 cargo build -p rekindle-video-libvpx --features libvpx
+#
+libvpx = ["dep:env-libvpx-sys"]

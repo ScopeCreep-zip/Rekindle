@@ -6,6 +6,7 @@
 //! reassembly buffer with bounded memory).
 
 pub mod budget;
+pub mod codec;
 pub mod deps;
 pub mod error;
 pub mod fragment;
@@ -26,6 +27,7 @@ pub use budget::{
     START_PAYLOAD_SHARE_Q10, VIDEO_MAX_KBPS, VIDEO_MAX_KBPS_VOICE_PRESSURE, VIDEO_MIN_KBPS,
     VIDEO_START_KBPS,
 };
+pub use codec::{EncodedVideoFrame, RawFrame, VideoEncoder};
 pub use deps::{VideoDeps, VideoEvent};
 pub use error::VideoError;
 pub use fragment::{
