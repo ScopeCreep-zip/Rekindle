@@ -30,6 +30,18 @@ pub const VIDEO_MAX_KBPS: u32 = 600;
 /// the classic "video must adapt" threshold.
 const LOSS_BACKOFF_Q8: u8 = 13;
 
+/// Ceiling video may climb to WHILE voice on the shared media route is
+/// under pressure. Leaves the route's headroom for the low-bandwidth,
+/// latency-critical audio (~64 kbps) instead of letting video's AIMD —
+/// which only sees its own receiver — climb to `VIDEO_MAX_KBPS` and
+/// bufferbloat the egress until voice RTT explodes.
+///
+/// Set to the AIMD floor's neighbourhood, not the floor itself: video
+/// degrades but stays watchable, and voice gets first call on the pipe.
+/// WebRTC's shared estimator prioritises audio the same way; ours are
+/// separate estimators, so this is the explicit hand-off.
+pub const VIDEO_MAX_KBPS_VOICE_PRESSURE: u32 = 200;
+
 /// Static payload-share estimate (Q10) for the 4 KiB-fragment frame
 /// mix (~0.625) — used until the pacer has measured a real window.
 pub const START_PAYLOAD_SHARE_Q10: u32 = 640;
@@ -83,6 +95,26 @@ pub fn encoder_target_kbps(wire_kbps: u32, share_q10: u32) -> u32 {
 /// Result is always within `[VIDEO_MIN_KBPS, VIDEO_MAX_KBPS]`.
 #[must_use]
 pub fn target_from_feedback(prev_kbps: u32, feedback_kbps: u32, loss_q8: u8) -> u32 {
+    target_from_feedback_ceiled(prev_kbps, feedback_kbps, loss_q8, VIDEO_MAX_KBPS)
+}
+
+/// [`target_from_feedback`] with an explicit ceiling, so the caller can
+/// hand voice its headroom by passing [`VIDEO_MAX_KBPS_VOICE_PRESSURE`]
+/// while audio on the shared route is struggling.
+///
+/// The ceiling clamps AFTER the AIMD step, so a lowered ceiling forces
+/// video down immediately (not only on video's own loss) — the whole
+/// point, since video's receiver often reports clean while it is the
+/// thing saturating the pipe. `ceiling` is itself floored at
+/// `VIDEO_MIN_KBPS` so a caller can never wedge video below the ramp
+/// floor.
+#[must_use]
+pub fn target_from_feedback_ceiled(
+    prev_kbps: u32,
+    feedback_kbps: u32,
+    loss_q8: u8,
+    ceiling_kbps: u32,
+) -> u32 {
     let next = if loss_q8 > LOSS_BACKOFF_Q8 {
         // ×0.85 in exact integer math.
         u32::try_from(u64::from(prev_kbps) * 85 / 100).unwrap_or(u32::MAX)
@@ -91,7 +123,7 @@ pub fn target_from_feedback(prev_kbps: u32, feedback_kbps: u32, loss_q8: u8) -> 
         let cap = u32::try_from(u64::from(feedback_kbps) * 3 / 2).unwrap_or(u32::MAX);
         ramped.min(cap.max(prev_kbps))
     };
-    next.clamp(VIDEO_MIN_KBPS, VIDEO_MAX_KBPS)
+    next.clamp(VIDEO_MIN_KBPS, ceiling_kbps.max(VIDEO_MIN_KBPS))
 }
 
 #[cfg(test)]
@@ -104,6 +136,38 @@ mod tests {
         // direct UDP. Raising it re-opens the egress-saturation that
         // starves the unpaced voice stream — change deliberately.
         assert_eq!(VIDEO_MAX_KBPS, 600);
+    }
+
+    #[test]
+    fn voice_pressure_ceiling_forces_video_down_even_on_clean_feedback() {
+        // Video at its max, its own receiver reporting clean (loss 0):
+        // the plain AIMD would hold it at the ceiling and keep starving
+        // voice. Under the voice-pressure ceiling it must drop hard.
+        let held = target_from_feedback(VIDEO_MAX_KBPS, VIDEO_MAX_KBPS, 0);
+        assert_eq!(
+            held, VIDEO_MAX_KBPS,
+            "clean feedback holds the normal ceiling"
+        );
+
+        let yielded = target_from_feedback_ceiled(
+            VIDEO_MAX_KBPS,
+            VIDEO_MAX_KBPS,
+            0,
+            VIDEO_MAX_KBPS_VOICE_PRESSURE,
+        );
+        assert_eq!(
+            yielded, VIDEO_MAX_KBPS_VOICE_PRESSURE,
+            "voice pressure must pull video down regardless of its own clean loss"
+        );
+        assert!(yielded < held);
+    }
+
+    #[test]
+    fn voice_pressure_ceiling_never_wedges_below_the_floor() {
+        // A caller passing an absurd (too-low) ceiling must not push
+        // video under the ramp floor.
+        let t = target_from_feedback_ceiled(VIDEO_MIN_KBPS, VIDEO_MIN_KBPS, 0, 1);
+        assert_eq!(t, VIDEO_MIN_KBPS);
     }
 
     #[test]

@@ -264,6 +264,15 @@ pub struct AppState {
     /// Channel-media sends that found an empty roster (observability —
     /// frames encoded but with nobody to send to).
     pub channel_send_empty_roster_drops: std::sync::atomic::AtomicU64,
+    /// Wall-clock ms of the last voice-link report that showed the
+    /// outbound audio stream under pressure (Poor/Lost, or elevated
+    /// loss/RTT). Voice and video share the peer's media-class egress,
+    /// and video's AIMD is driven only by its own receiver — blind to
+    /// voice. When this is fresh, the video bitrate controller yields
+    /// headroom so the low-bandwidth, latency-critical audio survives
+    /// (WebRTC prioritises audio in its shared estimator for the same
+    /// reason). `0` = never observed. See `apply_bitrate_feedback`.
+    pub voice_route_pressure_ms: std::sync::atomic::AtomicU64,
     /// Single-flight gate for per-(community, peer) DHT route
     /// re-resolution. Lives on AppState because the gossip adapter is
     /// rebuilt per send — the coalescing window must span sends.
@@ -368,6 +377,7 @@ impl Default for AppState {
             voice_ingress_drops_total: std::sync::atomic::AtomicU64::new(0),
             video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
             channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),
+            voice_route_pressure_ms: std::sync::atomic::AtomicU64::new(0),
             gossip_resolve_gate: rekindle_gossip::ResolveGate::new(),
         }
     }

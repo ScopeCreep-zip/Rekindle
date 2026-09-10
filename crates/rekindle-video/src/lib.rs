@@ -22,8 +22,9 @@ pub mod stream_id;
 mod test_mock;
 
 pub use budget::{
-    encoder_target_kbps, target_from_feedback, wire_feedback_kbps, START_PAYLOAD_SHARE_Q10,
-    VIDEO_MAX_KBPS, VIDEO_MIN_KBPS, VIDEO_START_KBPS,
+    encoder_target_kbps, target_from_feedback, target_from_feedback_ceiled, wire_feedback_kbps,
+    START_PAYLOAD_SHARE_Q10, VIDEO_MAX_KBPS, VIDEO_MAX_KBPS_VOICE_PRESSURE, VIDEO_MIN_KBPS,
+    VIDEO_START_KBPS,
 };
 pub use deps::{VideoDeps, VideoEvent};
 pub use error::VideoError;

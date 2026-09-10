@@ -284,7 +284,25 @@ fn bitrate_feedback_step(
             rekindle_video::VIDEO_START_KBPS,
             rekindle_video::VIDEO_START_KBPS,
         ));
-        let next = rekindle_video::target_from_feedback(prev, feedback_wire, loss_q8);
+        // Yield egress to voice when it is under pressure on the shared
+        // media route: a fresh pressure stamp lowers video's ceiling so
+        // its AIMD is forced down immediately, even though video's own
+        // receiver may report clean (video is often the flow saturating
+        // the pipe). Freshness window 8 s = a few voice report cadences,
+        // so a single bad window doesn't strand video at the floor.
+        const VOICE_PRESSURE_TTL_MS: u64 = 8_000;
+        let pressure_ms = state
+            .voice_route_pressure_ms
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let voice_pressured = pressure_ms != 0
+            && rekindle_utils::timestamp_ms().saturating_sub(pressure_ms) < VOICE_PRESSURE_TTL_MS;
+        let ceiling = if voice_pressured {
+            rekindle_video::VIDEO_MAX_KBPS_VOICE_PRESSURE
+        } else {
+            rekindle_video::VIDEO_MAX_KBPS
+        };
+        let next =
+            rekindle_video::target_from_feedback_ceiled(prev, feedback_wire, loss_q8, ceiling);
         targets.insert(key.clone(), (next, emitted));
         (prev, next, emitted)
     };

@@ -75,6 +75,20 @@ pub(super) fn merge_quality_event(
             // numbers, or the UI blinks empty between reports.
             if let Some(stats) = link {
                 cache.link = Some(project_link(stats));
+                // Flag voice-route pressure so the video bitrate
+                // controller yields egress. Voice and video share the
+                // peer's media route; without this, video's AIMD climbs
+                // to its ceiling on its own low loss and starves audio
+                // (observed: voice RTT spiking to ~16 s while video sat
+                // at 600 kbps). Keyed off the E-model verdict the send
+                // loop already computed — the same `quality` string the
+                // UI shows — rather than a second hand-tuned threshold.
+                if quality == "poor" || quality == "lost" {
+                    state.voice_route_pressure_ms.store(
+                        rekindle_utils::timestamp_ms(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
             }
         }
         E::ReceiveStats {
