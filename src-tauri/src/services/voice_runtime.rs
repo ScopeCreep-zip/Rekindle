@@ -152,6 +152,13 @@ pub async fn join_voice_channel_inner(
         .map_err(|e| e.to_string())?;
     if let Some(cid) = community_id {
         apply_stage_audience_gate(state, cid, channel_id);
+        // Discover who is ALREADY in the channel now, rather than on the
+        // next 60 s steady poll: the presence reconcile that binds voice
+        // peers runs on the poll tick, and a join in steady state would
+        // otherwise wait up to a minute (observed: ~39 s join→peer gap).
+        // Our own row (now carrying the cleartext voice_channel_id) also
+        // publishes on this tick so peers see us join promptly.
+        crate::services::community::presence::nudge_presence_poll(state, cid);
     }
     Ok(())
 }

@@ -368,14 +368,6 @@ pub async fn update_community_profile_inner(
         community.my_banner_ref = banner_ref;
     }
 
-    if let Err(e) =
-        crate::services::community::presence::presence_poll_tick_public(state, &community_id).await
-    {
-        tracing::debug!(
-            community = %community_id,
-            error = %e,
-            "profile-update presence nudge skipped",
-        );
-    }
+    crate::services::community::presence::nudge_presence_poll(state, &community_id);
     Ok(())
 }
