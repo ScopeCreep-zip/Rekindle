@@ -101,6 +101,24 @@ pub struct MemberPresence {
     /// "audio", "video", "screen_share" (if in_call is true).
     pub call_type: Option<String>,
 
+    /// Voice channel this member is CURRENTLY connected to (MatrixRTC
+    /// `m.rtc.member` pattern — the durable, heartbeat-renewed roster
+    /// membership claim the voice reconcile keys on).
+    ///
+    /// CLEARTEXT, deliberately: voice discovery must work before the
+    /// channel MEK converges, and a member's presence row is already
+    /// members-only (W26-signed, in the SMPL registry). It was formerly
+    /// inside the MEK-encrypted `SessionExtras`, which coupled discovery
+    /// to key health and stalled voice on a split-brained MEK. Not
+    /// subject to the location-sharing policy or read-side reciprocity —
+    /// being in a voice channel is intrinsically visible to its members,
+    /// and leaving the channel is how you stop sharing it.
+    ///
+    /// `skip_serializing_if` keeps a not-in-voice row byte-identical to
+    /// the pre-existing format (same discipline as `departed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_channel_id: Option<String>,
+
     /// Route blob for an opt-in push relay (Tier 3 notifications).
     pub push_relay_route: Option<Vec<u8>>,
 
@@ -331,6 +349,7 @@ impl Default for MemberPresence {
             badges: Vec::new(),
             in_call: false,
             call_type: None,
+            voice_channel_id: None,
             push_relay_route: None,
             event_rsvps: Vec::new(),
             onboarding_answers: None,
@@ -458,7 +477,6 @@ mod tests {
                 channel_id: "general".into(),
             }),
             activity: Some("Playing Halo".into()),
-            voice_channel_id: Some("lounge-voice".into()),
         };
         let json = serde_json::to_vec(&extras).unwrap();
         let back: SessionExtras = serde_json::from_slice(&json).unwrap();

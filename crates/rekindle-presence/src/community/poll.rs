@@ -130,12 +130,15 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 // generation — the peer just shows no location), merge
                 // them back, then drop any signal our own policy doesn't
                 // reciprocate so the model self-balances.
-                let mut row_voice_channel: Option<String> = None;
+                // Voice-channel membership is cleartext on the row — read
+                // it directly so discovery never depends on decrypting
+                // the peer's extras (which fails during a MEK split-brain
+                // and used to stall voice join for minutes).
+                let row_voice_channel = row.presence.voice_channel_id.clone();
                 if let Some(enc) = &row.presence.session_extras_encrypted {
                     if let Some(extras) = deps.decrypt_session_extras(community_id, enc) {
                         row.presence.session.location = extras.location;
                         row.presence.session.activity = extras.activity;
-                        row_voice_channel = extras.voice_channel_id;
                     }
                 }
                 row.presence.session =

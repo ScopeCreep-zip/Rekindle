@@ -94,20 +94,29 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     let extras = rekindle_types::presence::SessionExtras {
         location: session.location.take(),
         activity: session.activity.take(),
-        // Durable voice-roster membership claim (MatrixRTC pattern).
-        // Deliberately NOT behind the location-sharing policy: being
-        // in a voice channel is intrinsically visible to its members,
-        // and leaving the channel is how you stop sharing it.
-        voice_channel_id: deps.active_voice_channel(community_id),
     };
-    let session_extras_encrypted = if extras.location.is_some()
-        || extras.activity.is_some()
-        || extras.voice_channel_id.is_some()
-    {
+    let session_extras_encrypted = if extras.location.is_some() || extras.activity.is_some() {
         deps.encrypt_session_extras_with_current_mek(community_id, &extras)
     } else {
         None
     };
+    // Voice-roster membership claim (MatrixRTC `m.rtc.member` pattern) —
+    // CLEARTEXT on the presence row, not in the MEK-encrypted extras.
+    //
+    // Which voice channel a member is in must be readable by every
+    // member the moment they arrive, *before* the channel MEK has
+    // converged. Behind the MEK it was not: a joining member with a
+    // split-brained MEK (different bytes at the same generation, which
+    // happens routinely on join) could not decrypt peers' extras, so
+    // `voice_channel_id` read as None, the roster reconcile saw nobody
+    // claiming the channel, and voice discovery stalled until the MEK
+    // healed — minutes, or never. Discovery must not depend on media-key
+    // convergence; MatrixRTC keeps call membership in cleartext room
+    // state and E2EEs only the media, for exactly this reason. The row
+    // is already members-only (W26-signed, in the SMPL registry) and
+    // already carries `in_call`/`call_type` in cleartext, so the channel
+    // id adds no meaningful exposure.
+    let active_voice_channel = deps.active_voice_channel(community_id);
     let status = session.status.as_wire_str().to_string();
 
     let mut presence = MemberPresence {
@@ -126,6 +135,7 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         banner_ref: snapshot.banner_ref,
         session,
         session_extras_encrypted,
+        voice_channel_id: active_voice_channel,
         ..Default::default()
     };
 
