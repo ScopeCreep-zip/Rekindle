@@ -62,11 +62,13 @@ pub async fn open_one_community_dht_records<D: GovernanceRuntimeDeps>(
 /// parallel so a cold join's 2-3 channel opens overlap instead of summing:
 /// sequential cold opens, each exhausting the adapter's "not found" backoff
 /// ladder, blew the 20 s OpenRecords gate budget.
+/// Returns the keys that actually opened, so the caller's bookkeeping
+/// records what happened rather than what was attempted.
 async fn open_channel_records_concurrent<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     channel_keys: &[String],
-) {
+) -> Vec<String> {
     use futures::stream::{FuturesUnordered, StreamExt};
 
     const OPEN_PARALLELISM: usize = 8;
@@ -79,16 +81,19 @@ async fn open_channel_records_concurrent<D: GovernanceRuntimeDeps>(
             (key, deps.open_dht_record(key, None).await)
         });
     }
+    let mut opened = Vec::new();
     while let Some((key, result)) = opens.next().await {
-        if let Err(error) = result {
-            tracing::debug!(
+        match result {
+            Ok(()) => opened.push(key.clone()),
+            Err(error) => tracing::debug!(
                 community = %community_id,
                 %key,
                 %error,
                 "failed to open channel SMPL record",
-            );
+            ),
         }
     }
+    opened
 }
 
 /// Open + track + mark-open (NO watch) a SINGLE community's governance,
@@ -144,27 +149,37 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
     let mut best_effort_keys = channel_keys.clone();
     best_effort_keys.extend(overflow_keys.iter().cloned());
-    let _ = tokio::time::timeout(
+    // Only the keys that actually opened get marked open. Marking the
+    // attempted set (as this once did) meant a cold-network open
+    // failure — or this timeout firing — recorded channel records as
+    // open that were not, and every later watch on them failed with
+    // Veilid 'record not open'. Keys left unmarked stay watch targets
+    // via `tracked_watch_keys`, and the watch retry heals their open.
+    let opened_keys = tokio::time::timeout(
         std::time::Duration::from_secs(12),
         open_channel_records_concurrent(deps, &rec.id, &best_effort_keys),
     )
-    .await;
+    .await
+    .unwrap_or_default();
 
     // Track all opened keys + persist the post-open snapshot.
     let mut all_keys = vec![rec.governance_key.clone()];
     if let Some(rk) = &rec.registry_key {
         all_keys.push(rk.clone());
     }
-    all_keys.extend(channel_keys.iter().cloned());
-    all_keys.extend(overflow_keys.iter().cloned());
+    all_keys.extend(opened_keys.iter().cloned());
     deps.track_open_dht_records(&all_keys);
 
+    let opened_channel_keys: Vec<String> = opened_keys
+        .into_iter()
+        .filter(|k| channel_keys.contains(k))
+        .collect();
     deps.mark_community_records_open(
         &rec.id,
         &rec.governance_key,
         rec.registry_key.as_deref(),
         rec.registry_writer.as_deref(),
-        channel_keys,
+        opened_channel_keys,
     );
 }
 

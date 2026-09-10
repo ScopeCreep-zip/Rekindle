@@ -55,6 +55,17 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
     for ch_key in &community.open_community_records.channel_keys {
         push("channel", ch_key.clone(), &mut seen);
     }
+    // Channel logs come straight from governance-synced state, not from
+    // the opened-records list: a channel discovered in a governance
+    // rebuild is a watch target *before* anything has opened it, and
+    // `watch_record` now heals the open itself. Routing these through
+    // `open_community_records.channel_keys` (as an overwrite in
+    // `apply_governance_rebuild_result` once did) made that list lie
+    // about what was open, which disabled `open_new_channel_records`'
+    // already-opened skip check.
+    for ch_key in community.channel_log_keys.values() {
+        push("channel", ch_key.clone(), &mut seen);
+    }
     if let Some(gov) = community.governance_state.as_ref() {
         for seg in &gov.segments {
             push("segment-governance", seg.governance_key.clone(), &mut seen);
@@ -101,6 +112,33 @@ pub async fn retry_dead_watches(state: &Arc<AppState>, community_id: &str) {
     }
 }
 
+/// The writer to open `record_key` with if a watch-time heal needs to
+/// open it.
+///
+/// Veilid re-opens replace the record's stored writer in place, so a
+/// blanket read-only open here would silently strip write permission
+/// from the member registry — the exact clobber
+/// `open_and_track_one_community` documents. The registry therefore
+/// opens with the same writer login uses; every other class opens
+/// read-only, matching the convention that writes pass the slot
+/// keypair inline at `set_dht_value` time.
+fn heal_open_writer(
+    state: &Arc<AppState>,
+    community_id: &str,
+    record_key: &str,
+) -> Option<veilid_core::KeyPair> {
+    let communities = state.communities.read();
+    let community = communities.get(community_id)?;
+    if community.member_registry_key.as_deref() != Some(record_key) {
+        return None;
+    }
+    community
+        .registry_owner_keypair
+        .as_deref()
+        .or(community.slot_keypair.as_deref())
+        .and_then(|s| s.parse::<veilid_core::KeyPair>().ok())
+}
+
 async fn watch_record(
     rc: &veilid_core::RoutingContext,
     state: &Arc<AppState>,
@@ -117,15 +155,62 @@ async fn watch_record(
         );
         return;
     };
-    match rc
+    let mut result = rc
         .watch_dht_values(
-            parsed_key,
+            parsed_key.clone(),
             Some(veilid_core::ValueSubkeyRangeSet::full()),
             None,
             None,
         )
-        .await
-    {
+        .await;
+
+    // Veilid watches require the record open THIS session ("Can only be
+    // used on opened records" — an InvalidArgument otherwise). The open
+    // is best-effort at login, so a record whose open failed on a cold
+    // network — or was never attempted, e.g. a channel discovered from
+    // a governance rebuild — used to fail its watch on every retry tick
+    // forever: observed live as 500+ 'record not open' errors per
+    // session, with channel messages arriving only via the poll
+    // backstop. Heal the open here, where the retry loop already
+    // targets exactly the records that are not being watched.
+    if matches!(
+        result,
+        Err(veilid_core::VeilidAPIError::InvalidArgument { .. })
+    ) {
+        let writer = heal_open_writer(state, community_id, record_key);
+        match rc.open_dht_record(parsed_key.clone(), writer).await {
+            Ok(_) => {
+                tracing::info!(
+                    community = %community_id,
+                    label,
+                    record_key,
+                    "opened record at watch time (login-open missed it)"
+                );
+                result = rc
+                    .watch_dht_values(
+                        parsed_key,
+                        Some(veilid_core::ValueSubkeyRangeSet::full()),
+                        None,
+                        None,
+                    )
+                    .await;
+            }
+            Err(e) => {
+                // TryAgain while offline / KeyNotFound while the record
+                // is still propagating — the next retry tick re-enters
+                // this path, so the heal itself is retried.
+                tracing::debug!(
+                    community = %community_id,
+                    label,
+                    record_key,
+                    error = %e,
+                    "watch-time open failed — will retry next tick"
+                );
+            }
+        }
+    }
+
+    match result {
         Ok(true) => {
             mark_watch_active(state, community_id, record_key);
             tracing::debug!(

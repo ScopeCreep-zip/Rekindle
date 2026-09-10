@@ -69,11 +69,29 @@ pub fn set_governance_state(
         // Without this, an admin creating a channel remotely produced an
         // updated cs.channel_log_keys but no watch — followers never received
         // messages on the new channel.
-        let prior_channel_keys: std::collections::HashSet<String> = cs
-            .open_community_records
-            .channel_keys
-            .iter()
+        //
+        // Snapshotted from the same sources `tracked_watch_keys` reads —
+        // channel logs, Plate Gate segments, channel-segment records —
+        // NOT from `open_community_records.channel_keys`. That list means
+        // "opened this session", and an earlier version of this function
+        // overwrote it with every governance-derived key: the unopened
+        // keys then failed their watches with Veilid 'record not open'
+        // on every retry tick, while `open_new_channel_records` skipped
+        // opening them because they were already "in the list".
+        let prior_watch_targets: std::collections::HashSet<String> = cs
+            .channel_log_keys
+            .values()
             .cloned()
+            .chain(cs.governance_state.iter().flat_map(|g| {
+                g.segments
+                    .iter()
+                    .flat_map(|s| [s.governance_key.clone(), s.registry_key.clone()])
+                    .chain(
+                        g.channel_segment_records
+                            .values()
+                            .map(|csr| csr.record_key.clone()),
+                    )
+            }))
             .collect();
 
         // ── Sync channels from governance ChannelCreated entries ──
@@ -167,22 +185,12 @@ pub fn set_governance_state(
         });
         cs.channels = channels;
         cs.channel_log_keys.clone_from(&channel_log_keys);
-        // Build the full watch-target set: channel logs + secondary-segment
-        // governance/registry records. Plate Gate §15.4 needs followers to
-        // watch segment-N records so admin-driven membership changes (e.g.
-        // RoleAssignment in segment 2) propagate to everyone, not just the
-        // members holding that segment.
-        let mut new_channel_keys: Vec<String> = channel_log_keys.into_values().collect();
-        for seg in &gov_state.segments {
-            if seg.segment_index == 0 {
-                continue; // primary segment — already on parent record's governance_key/registry_key
-            }
-            new_channel_keys.push(seg.governance_key.clone());
-            new_channel_keys.push(seg.registry_key.clone());
-        }
-        new_channel_keys.sort();
-        new_channel_keys.dedup();
-        cs.open_community_records.channel_keys = new_channel_keys;
+        // Deliberately NOT written into `open_community_records.channel_keys`:
+        // that list records what was actually opened this session, and
+        // `tracked_watch_keys` derives the full watch-target set (channel
+        // logs, Plate Gate §15.4 segment records, channel-segment records)
+        // from this synced state directly. `watch_record` opens a target
+        // itself when the watch reports 'record not open'.
 
         // ── Sync roles from governance RoleDefinition entries ──
         cs.roles = gov_state
@@ -255,12 +263,20 @@ pub fn set_governance_state(
 
         // Detect whether any new watch targets appeared so we only spawn
         // watch_community_records when something actually changed (avoids
-        // needless Veilid traffic on every governance merge).
+        // needless Veilid traffic on every governance merge). Compared
+        // over the same derived sources the prior snapshot used.
         needs_watch_refresh = cs
-            .open_community_records
-            .channel_keys
-            .iter()
-            .any(|k| !prior_channel_keys.contains(k));
+            .channel_log_keys
+            .values()
+            .any(|k| !prior_watch_targets.contains(k))
+            || gov_state.segments.iter().any(|s| {
+                !prior_watch_targets.contains(&s.governance_key)
+                    || !prior_watch_targets.contains(&s.registry_key)
+            })
+            || gov_state
+                .channel_segment_records
+                .values()
+                .any(|csr| !prior_watch_targets.contains(&csr.record_key));
 
         cs.governance_state = Some(gov_state);
     }

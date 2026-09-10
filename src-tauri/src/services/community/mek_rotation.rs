@@ -48,13 +48,11 @@ pub fn spawn_mek_request_with_retry(
         // needs a request is the one that never sends one. Observed
         // live as 625 consecutive `video frame MEK decrypt failed at
         // matching generation` warnings with zero RequestMEK sent.
-        let already_satisfied_at_spawn = match (needed_generation, initial_gen) {
-            // "Send me your current" is never satisfied up front — the
-            // whole point is to learn whether a newer one exists.
-            (0, _) => false,
-            (needed, Some(generation)) => generation >= needed,
-            (_, None) => false,
-        };
+        // `needed_generation != 0`: "send me your current" is never
+        // satisfied up front — the whole point is to learn whether a
+        // newer key exists.
+        let already_satisfied_at_spawn = needed_generation != 0
+            && initial_gen.is_some_and(|generation| generation >= needed_generation);
         for cascade_index in 0..max_cascades {
             // Bail early if a satisfying MEK arrived via a concurrent
             // path (parallel rotation broadcast, an MekTransfer reply,
