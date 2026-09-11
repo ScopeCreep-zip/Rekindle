@@ -424,8 +424,13 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// dedicated trait method.)
     fn log_voice_membership(&self, community_id: &str, channel_id: &str, joined: bool);
 
-    /// Snapshot our Veilid route blob for inclusion in a VoiceJoin
-    /// envelope. Returns empty Vec if we have no advertised route.
+    /// Snapshot the route blob peers import to send us inbound
+    /// voice/video, for inclusion in a VoiceJoin envelope. The adapter
+    /// returns its media-class (low-latency, unordered) inbound route
+    /// when one is allocated, so this is the authoritative
+    /// media-reachability blob — not necessarily the general route used
+    /// for chat/presence. Returns an empty `Vec` when we have no
+    /// advertised route.
     fn our_route_blob(&self) -> Vec<u8>;
 
     /// Our self-sovereign display name for the join handshake —

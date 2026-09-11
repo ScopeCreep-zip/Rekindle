@@ -425,7 +425,14 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn our_route_blob(&self) -> Vec<u8> {
-        state_helpers::our_route_blob(&self.state).unwrap_or_default()
+        // Advertise the media-class inbound route (LowLatency +
+        // PreferUnordered) — the blob peers import to send us inbound
+        // voice/video — with a general-route fallback. The general route
+        // prefers oldest-reliable ordered TCP relays that HOL-block
+        // realtime media. Consumed solely by the voice JOIN + re-announce
+        // path (`session::local_controls`), so presence/governance/chat
+        // stay on the general route.
+        state_helpers::our_media_or_general_route_blob(&self.state)
     }
 
     fn my_display_name(&self) -> Option<String> {

@@ -79,10 +79,9 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         // The media-class route when we have one — this blob is what
         // peers import to send us voice and video, so it is the half of
         // the path that `frame_sender`'s LowLatency + PreferUnordered
-        // context could not reach on its own.
-        state_helpers::our_media_route_blob(&self.state)
-            .or_else(|| state_helpers::our_route_blob(&self.state))
-            .unwrap_or_default()
+        // context could not reach on its own. Same selection the session
+        // path advertises; falls back to the general route.
+        state_helpers::our_media_or_general_route_blob(&self.state)
     }
 
     fn stage_channel_info(&self, community_id: &str, channel_id: &str) -> Option<StageChannelInfo> {

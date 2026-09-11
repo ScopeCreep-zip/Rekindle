@@ -60,6 +60,14 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
             if let Err(e) = handle.manager.release_private_route() {
                 tracing::warn!(error = %e, "failed to release private route during logout");
             }
+            // Release the media-class route too — otherwise a graceful
+            // restart leaves it persisted in Veilid's table store, where
+            // it can reload and keep answering peers' liveness pings,
+            // preventing their `dead_remote_routes` from firing for our
+            // departed route. No-op when no media route id is held.
+            if let Err(e) = handle.manager.release_media_route() {
+                tracing::warn!(error = %e, "failed to release media route during logout");
+            }
         }
     }
 
@@ -153,6 +161,13 @@ pub async fn shutdown_app(state: &AppState) {
         if let Some(ref mut handle) = *rm {
             if let Err(e) = handle.manager.release_private_route() {
                 tracing::warn!(error = %e, "failed to release private route during app exit");
+            }
+            // Same deterministic media-route cleanup as logout: don't
+            // leave a persisted media route to half-live and answer
+            // peers' pings after we exit. No-op when no media route id
+            // is held.
+            if let Err(e) = handle.manager.release_media_route() {
+                tracing::warn!(error = %e, "failed to release media route during app exit");
             }
         }
         *rm = None;

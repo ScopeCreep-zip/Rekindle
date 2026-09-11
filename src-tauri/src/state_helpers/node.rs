@@ -123,6 +123,24 @@ pub fn our_media_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
         .and_then(|h| h.manager.media_route_blob().cloned())
 }
 
+/// The route blob peers import to send us inbound voice/video: the
+/// media-class route (LowLatency + PreferUnordered) when allocated,
+/// else the general route (`None` → empty `Vec`).
+///
+/// The media route is built specifically for realtime media, while the
+/// general route prefers oldest-reliable, ordered TCP relays that
+/// head-of-line-block it. Both voice adapters advertise this same
+/// selection — the session-controls path (VoiceJoin + re-announce) and
+/// the signaling path (VoiceJoinAck + roster broadcast) — so it lives
+/// here rather than being spelled twice. General-route consumers
+/// (presence, governance, chat) intentionally keep using
+/// [`our_route_blob`] directly.
+pub fn our_media_or_general_route_blob(state: &Arc<AppState>) -> Vec<u8> {
+    our_media_route_blob(state)
+        .or_else(|| our_route_blob(state))
+        .unwrap_or_default()
+}
+
 /// Friend list DHT key.
 pub fn friend_list_dht_key(state: &Arc<AppState>) -> Option<String> {
     state
