@@ -10,6 +10,23 @@
 //! get added, ghosts whose rows say "left" (or whose heartbeat went
 //! stale) get expired. Pure decision in [`compute_roster_reconcile`];
 //! application + UI events in [`reconcile_from_presence`].
+//!
+//! **Media outranks the directory.** In-call liveness is judged on the
+//! CALL transport, never on a directory — the principle every shipped
+//! voice stack follows (Mumble drops on transport inactivity, Discord's
+//! voice gateway on missed voice-connection heartbeats, WebRTC on ICE
+//! consent-freshness / RTP inactivity). Presence rows are only the
+//! directory: a peer's row goes heartbeat-stale when their DHT presence
+//! WRITES fail, which happens routinely because the call itself
+//! saturates the Veilid relays. So the reconcile consults the media
+//! plane's [`crate::liveness::MediaLiveness`] ledger (accepted voice
+//! packets + verified receiver reports, via
+//! [`VoiceSignalingDeps::media_live_peers`]): a media-live peer is
+//! never evicted regardless of what their row claims, and a stale row
+//! whose peer is streaming to us still qualifies for the add repair —
+//! the row still carries the route blob we need. When a peer really
+//! leaves, media stops within seconds and the next scan expires them
+//! normally.
 
 use std::sync::Arc;
 
@@ -55,22 +72,29 @@ pub struct ReconcilePlan {
 }
 
 /// Pure reconcile decision over the transport roster
-/// (`(pseudonym, seconds-since-added)`) and the scan's presence view.
+/// (`(pseudonym, seconds-since-added)`), the scan's presence view, and
+/// the media plane's live-peer set (see the module doc: media outranks
+/// the directory).
 ///
-/// - **Add**: fresh row claiming OUR channel, not yet in the roster,
-///   not us, with a usable route blob.
-/// - **Remove**: roster entry past [`JOIN_GRACE_SECS`] whose presence
-///   row either freshly claims a different/no channel (definitive
-///   leave) or has gone heartbeat-stale (vanished client — the
-///   MatrixRTC `expires` analog).
-/// - **Keep**: anyone with no presence row at all — a scan miss must
-///   never kick a live peer off the media plane.
+/// - **Add**: row claiming OUR channel that is fresh OR media-live
+///   (a stale row whose peer is streaming to us is alive — the row is
+///   stale because their DHT writes fail, and it still carries the
+///   route blob), not yet in the roster, not us, with a usable route
+///   blob.
+/// - **Remove**: roster entry past [`JOIN_GRACE_SECS`], NOT media-live,
+///   whose presence row either freshly claims a different/no channel
+///   (definitive leave) or has gone heartbeat-stale (vanished client —
+///   the MatrixRTC `expires` analog).
+/// - **Keep**: any media-live peer (flowing media vetoes both remove
+///   branches), and anyone with no presence row at all — a scan miss
+///   must never kick a live peer off the media plane.
 #[must_use]
-pub fn compute_roster_reconcile(
+pub fn compute_roster_reconcile<S: std::hash::BuildHasher>(
     bound_channel: &str,
     my_pseudonym: &str,
     roster: &[(String, u64)],
     presence: &[PresencePeerView],
+    media_live: &std::collections::HashSet<String, S>,
 ) -> ReconcilePlan {
     let mut plan = ReconcilePlan::default();
     let in_roster: std::collections::HashSet<&str> =
@@ -78,7 +102,7 @@ pub fn compute_roster_reconcile(
 
     for row in presence {
         let claims_our_channel = row.voice_channel_id.as_deref() == Some(bound_channel);
-        if row.fresh
+        if (row.fresh || media_live.contains(row.pseudonym_hex.as_str()))
             && claims_our_channel
             && !in_roster.contains(row.pseudonym_hex.as_str())
             && row.pseudonym_hex != my_pseudonym
@@ -94,6 +118,15 @@ pub fn compute_roster_reconcile(
 
     for (pseudonym, age_secs) in roster {
         if *age_secs <= JOIN_GRACE_SECS {
+            continue;
+        }
+        // Media veto — covers BOTH remove branches below. Flowing
+        // media outranks any presence claim: a stale row means the
+        // peer's DHT writes are failing (routine mid-call), and even a
+        // fresh row claiming elsewhere loses to packets arriving NOW.
+        // When a peer really leaves, media stops within seconds and
+        // the next scan expires them normally.
+        if media_live.contains(pseudonym.as_str()) {
             continue;
         }
         let Some(row) = presence.iter().find(|r| &r.pseudonym_hex == pseudonym) else {
@@ -132,9 +165,10 @@ pub async fn reconcile_from_presence(
         return;
     };
 
+    let media_live = deps.media_live_peers();
     let plan = {
         let t = transport.lock().await;
-        compute_roster_reconcile(&channel_id, &my_pk, &t.peer_views(), &rows)
+        compute_roster_reconcile(&channel_id, &my_pk, &t.peer_views(), &rows, &media_live)
     };
     if plan.add.is_empty() && plan.remove.is_empty() {
         return;
@@ -263,6 +297,8 @@ pub async fn reconcile_from_presence(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     fn row(pseudonym: &str, channel: Option<&str>, fresh: bool) -> PresencePeerView {
@@ -275,9 +311,24 @@ mod tests {
         }
     }
 
+    /// No media evidence for anyone — the pre-media-liveness behavior.
+    fn no_media() -> HashSet<String> {
+        HashSet::new()
+    }
+
+    fn media(peers: &[&str]) -> HashSet<String> {
+        peers.iter().map(|p| (*p).to_string()).collect()
+    }
+
     #[test]
     fn fresh_claim_for_our_channel_is_added() {
-        let plan = compute_roster_reconcile("ch1", "me", &[], &[row("alice", Some("ch1"), true)]);
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &[],
+            &[row("alice", Some("ch1"), true)],
+            &no_media(),
+        );
         assert_eq!(plan.add.len(), 1);
         assert_eq!(plan.add[0].pseudonym_hex, "alice");
         assert_eq!(plan.add[0].display_name.as_deref(), Some("alice-name"));
@@ -299,6 +350,7 @@ mod tests {
                 row("erin", None, true),          // not in any channel
                 routeless,                        // no route yet
             ],
+            &no_media(),
         );
         assert!(plan.add.is_empty());
         assert!(plan.remove.is_empty());
@@ -307,8 +359,13 @@ mod tests {
     #[test]
     fn already_rostered_member_is_not_readded() {
         let roster = vec![("alice".to_string(), 100u64)];
-        let plan =
-            compute_roster_reconcile("ch1", "me", &roster, &[row("alice", Some("ch1"), true)]);
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[row("alice", Some("ch1"), true)],
+            &no_media(),
+        );
         assert!(plan.add.is_empty());
         assert!(plan.remove.is_empty());
     }
@@ -318,30 +375,115 @@ mod tests {
         // alice's row freshly says she left — but she was added 10s
         // ago via gossip; her presence row may simply predate her join.
         let roster = vec![("alice".to_string(), 10u64)];
-        let plan = compute_roster_reconcile("ch1", "me", &roster, &[row("alice", None, true)]);
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[row("alice", None, true)],
+            &no_media(),
+        );
         assert!(plan.remove.is_empty());
     }
 
     #[test]
     fn fresh_row_claiming_elsewhere_expires_aged_entry() {
         let roster = vec![("alice".to_string(), JOIN_GRACE_SECS + 1)];
-        let plan =
-            compute_roster_reconcile("ch1", "me", &roster, &[row("alice", Some("ch2"), true)]);
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[row("alice", Some("ch2"), true)],
+            &no_media(),
+        );
         assert_eq!(plan.remove, vec!["alice".to_string()]);
     }
 
     #[test]
     fn stale_heartbeat_expires_aged_entry() {
         let roster = vec![("alice".to_string(), JOIN_GRACE_SECS + 1)];
-        let plan =
-            compute_roster_reconcile("ch1", "me", &roster, &[row("alice", Some("ch1"), false)]);
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[row("alice", Some("ch1"), false)],
+            &no_media(),
+        );
         assert_eq!(plan.remove, vec!["alice".to_string()]);
     }
 
     #[test]
     fn missing_presence_row_never_expires_a_peer() {
         let roster = vec![("alice".to_string(), 10_000u64)];
-        let plan = compute_roster_reconcile("ch1", "me", &roster, &[]);
+        let plan = compute_roster_reconcile("ch1", "me", &roster, &[], &no_media());
         assert!(plan.remove.is_empty());
+    }
+
+    #[test]
+    fn media_live_peer_with_stale_row_is_not_removed() {
+        // The live-call bug, scenario (b): alice's audio is flowing but
+        // her DHT presence writes are failing, so her row is stale.
+        // Media outranks the directory — she stays.
+        let roster = vec![("alice".to_string(), JOIN_GRACE_SECS + 1)];
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[row("alice", Some("ch1"), false)],
+            &media(&["alice"]),
+        );
+        assert!(plan.remove.is_empty());
+    }
+
+    #[test]
+    fn media_live_peer_freshly_claiming_elsewhere_is_not_removed() {
+        // Even a fresh row claiming another channel loses to packets
+        // arriving NOW — the media veto covers the `left` branch too.
+        let roster = vec![("alice".to_string(), JOIN_GRACE_SECS + 1)];
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[row("alice", Some("ch2"), true)],
+            &media(&["alice"]),
+        );
+        assert!(plan.remove.is_empty());
+    }
+
+    #[test]
+    fn media_live_stale_row_is_added() {
+        // The live-call bug, scenario (a): alice's audio is flowing to
+        // us but her row is heartbeat-stale, so she never appeared in
+        // the roster. Media liveness relaxes the freshness gate — the
+        // stale row still carries the route blob we need.
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &[],
+            &[row("alice", Some("ch1"), false)],
+            &media(&["alice"]),
+        );
+        assert_eq!(plan.add.len(), 1);
+        assert_eq!(plan.add[0].pseudonym_hex, "alice");
+        assert!(plan.remove.is_empty());
+    }
+
+    #[test]
+    fn non_media_live_stale_row_behaves_as_before() {
+        // No regression: media liveness for bob changes nothing about
+        // carol, whose stale row is still not added (no roster entry)
+        // and still expires her aged roster entry.
+        let roster = vec![("carol".to_string(), JOIN_GRACE_SECS + 1)];
+        let plan = compute_roster_reconcile(
+            "ch1",
+            "me",
+            &roster,
+            &[
+                row("carol", Some("ch1"), false),
+                row("dave", Some("ch1"), false),
+            ],
+            &media(&["bob"]),
+        );
+        assert!(plan.add.is_empty()); // dave's stale row: still no add
+        assert_eq!(plan.remove, vec!["carol".to_string()]);
     }
 }

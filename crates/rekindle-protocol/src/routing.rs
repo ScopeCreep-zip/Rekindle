@@ -118,6 +118,15 @@ impl RoutingManager {
         self.media_route_blob.as_ref()
     }
 
+    /// Our media-class route ID, if allocated.
+    ///
+    /// The dead-route handler tests this against `RouteChange.dead_routes`
+    /// to decide whether the media route (as opposed to the general
+    /// route) is the one Veilid just killed.
+    pub fn media_route_id(&self) -> Option<RouteId> {
+        self.media_route_id.clone()
+    }
+
     /// Install an externally-allocated media-class route.
     pub fn set_allocated_media_route(&mut self, route_id: RouteId, blob: Vec<u8>) {
         self.media_route_id = Some(route_id);
@@ -130,13 +139,21 @@ impl RoutingManager {
     /// have independent lifetimes: a dead media route must not take the
     /// general route down with it.
     pub fn release_media_route(&mut self) -> Result<(), ProtocolError> {
-        if let Some(route_id) = self.media_route_id.take() {
-            self.api
+        // Drop the local blob unconditionally: a route Veilid has already
+        // reported dead (via `RouteChange`) rejects `release_private_route`
+        // with InvalidArgument, but the blob MUST NOT survive that error —
+        // `our_media_route_blob` would keep handing a dead blob into every
+        // voice join. Clear the local state first, then surface any API
+        // error to the caller (the dead-route heal logs and ignores it).
+        let release_result = match self.media_route_id.take() {
+            Some(route_id) => self
+                .api
                 .release_private_route(route_id)
-                .map_err(|e| ProtocolError::RoutingError(format!("release_media_route: {e}")))?;
-        }
+                .map_err(|e| ProtocolError::RoutingError(format!("release_media_route: {e}"))),
+            None => Ok(()),
+        };
         self.media_route_blob = None;
-        Ok(())
+        release_result
     }
 
     /// Install the route from an externally-allocated `RouteBlob`.

@@ -24,6 +24,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::audio_processing::AudioProcessor;
 use crate::codec::OpusCodec;
+use crate::liveness::MediaLiveness;
 use crate::receiver_report::VoiceReceiverReport;
 use crate::send_loop::quality::PeerLink;
 use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
@@ -65,6 +66,12 @@ pub struct VoiceSendParams {
     /// at the far end — loss, discard, jitter and round trip — none of
     /// which is derivable from a local `send()` result.
     pub report_rx: mpsc::Receiver<VoiceReceiverReport>,
+    /// Session-shared media-plane liveness ledger. Every verified
+    /// receiver report notes the reporter: a report proves the peer is
+    /// alive even when VAD keeps them silent (no voice packets for the
+    /// receive loop to note), so the presence reconcile can't evict a
+    /// live-but-quiet peer whose DHT heartbeat writes are failing.
+    pub media_liveness: Arc<MediaLiveness>,
 }
 
 struct VoiceSendLoop {
@@ -100,6 +107,7 @@ struct VoiceSendLoop {
     /// here: a peer that never reports must keep the local-failure
     /// classification, not be declared lost for staying quiet.
     peer_links: HashMap<String, PeerLink>,
+    media_liveness: Arc<MediaLiveness>,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -162,6 +170,7 @@ impl VoiceSendLoop {
             our_pseudonym: params.our_pseudonym,
             report_rx: params.report_rx,
             peer_links: HashMap::new(),
+            media_liveness: params.media_liveness,
         })
     }
 

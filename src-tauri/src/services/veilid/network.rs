@@ -347,6 +347,12 @@ pub async fn handle_route_change(
         }
     }
 
+    // Sibling heal for the media-class route (LowLatency + PreferUnordered).
+    // Our own dead media route also lands in `dead_routes`; it has an
+    // independent lifetime from the general route (its own blob + heal-gate),
+    // so it is handled separately rather than folded into the branch above.
+    super::media_route::heal_dead_media_route(state, change).await;
+
     if !change.dead_remote_routes.is_empty() {
         let affected_pubkeys = {
             let mut dht_mgr = state.dht_manager.write();

@@ -116,6 +116,12 @@ pub struct VoiceEngineHandle {
     pub muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Shared deafen flag — receive loop checks this to send silence.
     pub deafened_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Shared media-plane liveness ledger — fed by the receive loop
+    /// (accepted voice packets) and the send loop (verified receiver
+    /// reports); read by the signaling adapter's `media_live_peers()`
+    /// so the presence reconcile never evicts a peer whose media is
+    /// flowing.
+    pub media_liveness: std::sync::Arc<rekindle_voice::liveness::MediaLiveness>,
 }
 
 /// Handle to the DHT record manager.
@@ -220,4 +226,13 @@ pub struct RoutingManagerHandle {
     pub heal_attempts_admitted: u64,
     /// Dead-route heal attempts suppressed by the cooldown.
     pub heal_attempts_suppressed: u64,
+    /// Sibling flap debounce for the media-class route. The media route
+    /// has an independent lifetime from the general route (a dead media
+    /// route must not consume the general route's heal budget, or vice
+    /// versa), so it carries its own gate.
+    pub media_heal_gate: rekindle_route::lifecycle::HealGate,
+    /// Media-route heal attempts admitted by the media gate (A8 telemetry).
+    pub media_heal_attempts_admitted: u64,
+    /// Media-route heal attempts suppressed by the media cooldown.
+    pub media_heal_attempts_suppressed: u64,
 }

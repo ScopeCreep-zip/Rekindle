@@ -31,6 +31,9 @@ chacha20poly1305 = "0.10"
 async-trait = "0.1"
 blake3 = "1"
 hex = { workspace = true }
+# Media-plane liveness ledger (liveness.rs) — sync interior mutability
+# shared across the send/receive loops and the signaling adapter.
+parking_lot = { workspace = true }
 # Phase 14.g — community voice MEK encryption (send_loop / receive_loop).
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-utils = { path = "../rekindle-utils" }

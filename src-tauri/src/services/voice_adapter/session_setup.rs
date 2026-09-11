@@ -81,6 +81,7 @@ pub(super) fn init_voice_session_impl(
         community_id: community_id.map(String::from),
         muted_flag: Arc::clone(&muted_flag),
         deafened_flag: Arc::clone(&deafened_flag),
+        media_liveness: Arc::new(rekindle_voice::liveness::MediaLiveness::default()),
     });
 
     // Now that the engine is on state, start the cpal devices. Device
@@ -311,11 +312,27 @@ pub(super) fn spawn_voice_loops_impl(
 
     let (speaker_ref_tx, speaker_ref_rx) = broadcast::channel::<Vec<f32>>(50);
 
-    let (voice_community_id, voice_channel_id) = {
+    // The liveness ledger is shared: both loops note into the SAME
+    // Arc the engine handle owns, and the signaling adapter reads it
+    // for the presence reconcile's media veto.
+    let (voice_community_id, voice_channel_id, media_liveness) = {
         let ve = state.voice_engine.lock();
-        ve.as_ref().map_or((None, String::new()), |h| {
-            (h.community_id.clone(), h.channel_id.clone())
-        })
+        ve.as_ref().map_or_else(
+            || {
+                (
+                    None,
+                    String::new(),
+                    Arc::new(rekindle_voice::liveness::MediaLiveness::default()),
+                )
+            },
+            |h| {
+                (
+                    h.community_id.clone(),
+                    h.channel_id.clone(),
+                    Arc::clone(&h.media_liveness),
+                )
+            },
+        )
     };
 
     // Build a per-loop adapter Arc for the crate-side loop deps.
@@ -369,6 +386,7 @@ pub(super) fn spawn_voice_loops_impl(
                 .as_deref()
                 .and_then(|cid| crate::state_helpers::my_pseudonym_key(state, cid)),
             report_rx,
+            media_liveness: Arc::clone(&media_liveness),
         },
     ));
 
@@ -391,6 +409,7 @@ pub(super) fn spawn_voice_loops_impl(
             member_names,
             jitter_base_ms: bundle.jitter_base_ms,
             report_signing_key,
+            media_liveness,
         },
     ));
 

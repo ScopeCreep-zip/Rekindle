@@ -121,6 +121,11 @@ impl VoiceSendLoop {
         // guessing whether the 8–16 s figure is outbound audio, the
         // peer's buffer, or a congested report path.
         let now_ms = rekindle_utils::timestamp_ms();
+        // Media-plane proof of life for the presence reconcile: a
+        // verified report proves this peer is alive even while VAD
+        // keeps them silent (no voice packets for the receive loop to
+        // note). Same wall clock the receive loop's note site stamps.
+        self.media_liveness.note(&peer, now_ms);
         let lsr_age_ms = now_ms.saturating_sub(report.lsr_ms);
         let report_gap_ms = link
             .last_report_at

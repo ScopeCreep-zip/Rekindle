@@ -30,6 +30,7 @@ pub mod device;
 pub mod election; // Phase 14 — deterministic MCU host election (pure logic).
 pub mod error;
 pub mod jitter;
+pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
 pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
@@ -47,6 +48,7 @@ pub mod transport;
 
 pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
+pub use liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
 pub use session_deps::{
     AudioPrefs, CallKeyInfo, VoiceIdentity, VoicePeer, VoiceSessionDeps, VoiceSessionEvent,
     VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,

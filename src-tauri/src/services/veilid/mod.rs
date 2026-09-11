@@ -15,6 +15,7 @@ mod control_sync;
 mod dht_watch;
 pub(crate) mod ingress_queue;
 mod lifecycle;
+mod media_route;
 mod network;
 
 pub(crate) use lifecycle::route_watchdog_loop;

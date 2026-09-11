@@ -8032,6 +8032,7 @@ dependencies = [
  "hex",
  "nnnoiseless",
  "opus",
+ "parking_lot 0.12.5",
  "rekindle-crypto",
  "rekindle-media-stats",
  "rekindle-protocol",

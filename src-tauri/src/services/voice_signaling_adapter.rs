@@ -202,6 +202,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         crate::state_helpers::set_voice_engine_deafened(&self.state, deafened);
     }
 
+    fn media_live_peers(&self) -> std::collections::HashSet<String> {
+        state_helpers::media_live_peers(&self.state)
+    }
+
     async fn rotate_voice_mek_for_membership(
         &self,
         community_id: String,

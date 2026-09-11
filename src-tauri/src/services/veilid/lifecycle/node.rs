@@ -73,6 +73,11 @@ pub async fn initialize_node(
         ),
         heal_attempts_admitted: 0,
         heal_attempts_suppressed: 0,
+        media_heal_gate: rekindle_route::lifecycle::HealGate::new(
+            rekindle_route::lifecycle::HEAL_COOLDOWN,
+        ),
+        media_heal_attempts_admitted: 0,
+        media_heal_attempts_suppressed: 0,
     });
 
     // W16.9b — adopt the running VeilidAPI into a TransportNode in

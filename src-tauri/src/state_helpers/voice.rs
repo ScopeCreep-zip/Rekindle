@@ -65,3 +65,21 @@ pub fn set_voice_engine_deafened(state: &Arc<AppState>, deafened: bool) {
 pub fn voice_engine_present(state: &Arc<AppState>) -> bool {
     state.voice_engine.lock().is_some()
 }
+
+/// Pseudonym-hex of peers with media-plane evidence (voice packets or
+/// receiver reports) within `MEDIA_LIVE_WINDOW_MS`, read from the
+/// engine's shared `MediaLiveness` ledger. Empty when no voice engine
+/// is active. The ledger's own lock nests strictly inside the engine
+/// guard and both are sync, so no `.await` can intervene.
+pub fn media_live_peers(state: &Arc<AppState>) -> std::collections::HashSet<String> {
+    state
+        .voice_engine
+        .lock()
+        .as_ref()
+        .map_or_else(std::collections::HashSet::new, |handle| {
+            handle.media_liveness.live_within(
+                rekindle_voice::liveness::MEDIA_LIVE_WINDOW_MS,
+                rekindle_utils::timestamp_ms(),
+            )
+        })
+}

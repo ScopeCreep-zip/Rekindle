@@ -21,6 +21,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::codec::{EncodedFrame, OpusCodec};
 use crate::jitter::JitterBuffer;
+use crate::liveness::MediaLiveness;
 use crate::mixer::AudioMixer;
 use crate::receiver_report::SenderEcho;
 use crate::replay_window::VoiceSeqWindow;
@@ -53,6 +54,12 @@ pub struct VoiceReceiveParams {
     /// side signs packets with. `None` disables reporting rather than
     /// sending reports a peer would reject.
     pub report_signing_key: Option<ed25519_dalek::SigningKey>,
+    /// Session-shared media-plane liveness ledger. Every accepted
+    /// packet notes the sender so the presence reconcile never evicts
+    /// (or fails to add) a peer whose audio is actually flowing —
+    /// their DHT presence row goes stale exactly when the call
+    /// saturates the relays their presence writes need.
+    pub media_liveness: Arc<MediaLiveness>,
 }
 
 struct ParticipantDecoder {
@@ -95,6 +102,7 @@ struct VoiceReceiveLoop {
     channel_id: Option<String>,
     member_names: HashMap<String, String>,
     report_signing_key: Option<ed25519_dalek::SigningKey>,
+    media_liveness: Arc<MediaLiveness>,
     /// Origin for the loop's local millisecond clock. Only differences
     /// within it are ever used (DLSR is a duration), so the origin is
     /// arbitrary — it just has to be monotonic and stable for the
@@ -143,6 +151,7 @@ impl VoiceReceiveLoop {
             channel_id: params.channel_id,
             member_names: params.member_names,
             report_signing_key: params.report_signing_key,
+            media_liveness: params.media_liveness,
             origin: Instant::now(),
         })
     }
@@ -336,6 +345,13 @@ impl VoiceReceiveLoop {
             participant.echo.observe(&packet, arrival_local_ms);
             participant.jitter_buffer.push(packet, arrival_local_ms);
             participant.last_packet_time = Instant::now();
+            // Media-plane proof of life for the presence reconcile.
+            // Wall-clock ms (`timestamp_ms`), NOT `local_ms`: the
+            // ledger is shared with the send loop's receiver-report
+            // path, and the loops' `Instant` origins differ — only the
+            // wall clock is a domain both sides already stamp.
+            self.media_liveness
+                .note(&hex::encode(&sender_key), rekindle_utils::timestamp_ms());
 
             if !participant.is_speaking {
                 participant.is_speaking = true;

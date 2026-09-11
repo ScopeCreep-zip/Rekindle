@@ -230,6 +230,20 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// Flip the engine's deafened state. Sets engine + `deafened_flag`.
     fn set_voice_engine_deafened(&self, deafened: bool);
 
+    /// Pseudonym-hex of peers with media-plane evidence — an accepted
+    /// voice packet (receive loop) or a verified receiver report (send
+    /// loop) — within [`crate::liveness::MEDIA_LIVE_WINDOW_MS`]. Read
+    /// from the session's shared [`crate::liveness::MediaLiveness`]
+    /// ledger; empty when no engine/session is active.
+    ///
+    /// In-call liveness is judged on the CALL transport (the
+    /// Mumble/Discord/WebRTC principle), never on the presence
+    /// directory: the roster reconcile uses this set to veto
+    /// presence-based eviction and to admit stale-row peers whose
+    /// media is flowing (their row is stale because their DHT writes
+    /// are failing, not because they left).
+    fn media_live_peers(&self) -> std::collections::HashSet<String>;
+
     // ── Cross-subsystem ops (deferred to Phase 17 / 19 / 20) ────
 
     /// W11.2 — rotate the channel MEK on membership change. Phase 17
