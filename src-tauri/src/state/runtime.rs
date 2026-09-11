@@ -92,6 +92,17 @@ pub struct VoiceEngineHandle {
     pub engine: rekindle_voice::VoiceEngine,
     /// Shared voice transport — used by send loop, MCU loop, and VoiceJoin handler.
     pub transport: std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
+    /// Concrete Veilid frame sender backing `transport.sender`.
+    ///
+    /// Held here in addition to the trait object inside the transport
+    /// because the veilid host's `dead_remote_routes` handler needs to
+    /// evict cached route imports **by `RouteId`** — a veilid-core type
+    /// the `dyn VoiceFrameSender` trait can't expose (Invariant 2 keeps
+    /// veilid-core out of `rekindle-voice`). `None` when the session came
+    /// up without a Veilid API (offline / tests). Piece 4 mechanism B.
+    pub frame_sender: Option<
+        std::sync::Arc<crate::services::voice_adapter::frame_sender::VeilidVoiceFrameSender>,
+    >,
     /// Shutdown sender for the voice send loop task.
     pub send_loop_shutdown: Option<mpsc::Sender<()>>,
     /// Join handle for the voice send loop task.

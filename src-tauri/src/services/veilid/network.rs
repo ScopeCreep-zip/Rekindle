@@ -372,6 +372,22 @@ pub async fn handle_route_change(
                 }
             }
         }
+
+        // The active voice frame sender caches imported routes by blob as
+        // well, keyed by RouteId internally. A route Veilid just declared
+        // dead must be evicted there too — otherwise every voice frame
+        // short-circuits on the reaped RouteId until the next failed send
+        // self-heals it (Piece 4 mechanism A). This proactively evicts
+        // even while the send loop is idle (a muted peer, between frames).
+        // Clone the concrete sender out of the (parking_lot, !Send) guard
+        // before invalidating.
+        let voice_frame_sender = {
+            let ve = state.voice_engine.lock();
+            ve.as_ref().and_then(|h| h.frame_sender.clone())
+        };
+        if let Some(frame_sender) = voice_frame_sender {
+            frame_sender.invalidate_route_ids(&change.dead_remote_routes);
+        }
     }
 }
 

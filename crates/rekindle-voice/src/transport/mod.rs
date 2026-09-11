@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -74,6 +76,31 @@ pub struct VoiceTransport {
     mode: VoiceMode,
     /// Local three-way join handshake progress.
     handshake: JoinHandshake,
+    /// Monotonic reference for the `NoConnection` warn rate-limiter below.
+    created_at: Instant,
+    /// Millis-since-`created_at` of the last per-peer `NoConnection` warn.
+    /// The broadcast path runs at the ~50 Hz frame cadence, so a one-way
+    /// dead peer would otherwise flood the log 50×/s; this collapses the
+    /// warns to at most one per [`NO_CONN_WARN_INTERVAL_MS`]. `0` = never
+    /// warned. Interior-mutable via `&self` (broadcast takes `&self`) and
+    /// `Sync` so the transport stays `Send + Sync` behind its async mutex.
+    last_no_conn_warn_ms: AtomicU64,
+}
+
+/// Rate-limit window (ms) for the per-peer `NoConnection` broadcast warning.
+const NO_CONN_WARN_INTERVAL_MS: u64 = 5_000;
+
+/// Whether a per-peer send error is a Veilid `NoConnection`.
+///
+/// `rekindle-voice` cannot see `veilid_core::VeilidAPIError` (Invariant
+/// 2), and the frame-sender adapter wraps it as
+/// `VoiceError::Transport("app_message: {e}")`, where `NoConnection`'s
+/// `Display` is `"No connection: {message}"`. Matching that substring is
+/// the only signal available on this side of the boundary. It gates a
+/// log warning only — never control flow or the send return contract —
+/// so a false negative merely misses a log line, never a dropped frame.
+fn is_no_connection(err: &VoiceError) -> bool {
+    matches!(err, VoiceError::Transport(msg) if msg.contains("No connection"))
 }
 
 /// One connected roster entry. `added_at` powers the presence-reconcile
@@ -120,6 +147,8 @@ impl VoiceTransport {
             peers: HashMap::new(),
             mode: VoiceMode::default(),
             handshake: JoinHandshake::default(),
+            created_at: Instant::now(),
+            last_no_conn_warn_ms: AtomicU64::new(0),
         }
     }
 
@@ -354,10 +383,40 @@ impl VoiceTransport {
                 .send_voice_frame(&peer.route_blob, data.clone())
                 .await
             {
+                // A one-way-dead peer (our frames can't reach it, so its
+                // route keeps returning `NoConnection`) would otherwise be
+                // swallowed by the partial-failure rule in `send`. Surface
+                // it, rate-limited, so the peer is log-visible. The return
+                // contract is unchanged — the error still goes into
+                // `errors`, which `send` only escalates when ALL peers
+                // fail.
+                if is_no_connection(&e) {
+                    self.warn_no_connection(key);
+                }
                 errors.push((key.clone(), e));
             }
         }
         errors
+    }
+
+    /// Emit a rate-limited warning that a per-peer send failed with
+    /// `NoConnection`. See [`Self::last_no_conn_warn_ms`].
+    fn warn_no_connection(&self, pseudonym_key: &str) {
+        // Saturate rather than truncate: a session outliving u64 ms
+        // (~584 M years) simply always warns — harmless.
+        let now_ms = u64::try_from(self.created_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let last = self.last_no_conn_warn_ms.load(Ordering::Relaxed);
+        // `last == 0` is the never-warned sentinel — always warn the first
+        // time, then enforce the interval.
+        if last != 0 && now_ms.saturating_sub(last) < NO_CONN_WARN_INTERVAL_MS {
+            return;
+        }
+        self.last_no_conn_warn_ms.store(now_ms, Ordering::Relaxed);
+        tracing::warn!(
+            channel = %self.channel_id,
+            peer = %pseudonym_key,
+            "voice frame send failed with NoConnection — peer route may be one-way dead"
+        );
     }
 
     /// Send an encoded audio frame to a specific peer (MCU mode).
@@ -514,3 +573,7 @@ impl VoiceTransport {
         Ok(data)
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

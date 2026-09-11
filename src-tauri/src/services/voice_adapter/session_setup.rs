@@ -69,6 +69,9 @@ pub(super) fn init_voice_session_impl(
         transport: Arc::new(tokio::sync::Mutex::new(
             rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
         )),
+        // Set below once the real transport (and its concrete frame
+        // sender) is built. Placeholder session has no sender yet.
+        frame_sender: None,
         send_loop_shutdown: None,
         send_loop_handle: None,
         recv_loop_shutdown: None,
@@ -122,7 +125,7 @@ pub(super) fn init_voice_session_impl(
     if self_voice_id.is_empty() {
         return Err(VoiceError::IdentityNotLoaded);
     }
-    let transport = create_transport_impl(
+    let (transport, frame_sender) = create_transport_impl(
         state,
         &self_voice_id,
         channel_id,
@@ -131,12 +134,15 @@ pub(super) fn init_voice_session_impl(
     );
     let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
 
-    // Install the real transport on the handle (overwrite the
-    // placeholder).
+    // Install the real transport + its concrete frame sender on the
+    // handle (overwrite the placeholder). The frame sender is kept so the
+    // veilid host can evict its cached route imports by RouteId on a
+    // `dead_remote_routes` event (Piece 4 mechanism B).
     {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.transport = Arc::clone(&shared_transport);
+            handle.frame_sender = frame_sender;
         }
     }
 
@@ -210,14 +216,23 @@ fn create_transport_impl(
     channel_id: &str,
     community_id: Option<&str>,
     resolved_peer_route: Option<&[u8]>,
-) -> rekindle_voice::transport::VoiceTransport {
+) -> (
+    rekindle_voice::transport::VoiceTransport,
+    Option<Arc<super::frame_sender::VeilidVoiceFrameSender>>,
+) {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
     let api = state_helpers::veilid_api(state);
     let sender_key = hex::decode(self_voice_id).unwrap_or_default();
 
-    if let Some(api) = api {
-        let sender: Arc<dyn rekindle_voice::VoiceFrameSender> =
-            Arc::new(super::frame_sender::VeilidVoiceFrameSender::new(api));
+    // Build the concrete frame sender once and keep a clone: the transport
+    // gets it coerced to `dyn VoiceFrameSender`, the handle gets the
+    // concrete `Arc` so `dead_remote_routes` can invalidate by RouteId.
+    // Both share the same route-import cache.
+    let frame_sender = if let Some(api) = api {
+        let concrete = Arc::new(super::frame_sender::VeilidVoiceFrameSender::new(api));
+        // Method-call `.clone()` (not `Arc::clone`) so the unsized
+        // coercion Arc<Concrete> → Arc<dyn Trait> applies at the binding.
+        let sender: Arc<dyn rekindle_voice::VoiceFrameSender> = concrete.clone();
         if community_id.is_some() {
             transport.init(sender, sender_key);
         } else if let Some(blob) = resolved_peer_route {
@@ -227,7 +242,10 @@ fn create_transport_impl(
         } else {
             transport.init(sender, sender_key);
         }
-    }
+        Some(concrete)
+    } else {
+        None
+    };
 
     if let Some(cid) = community_id {
         if let Ok((_, signing_key)) = state_helpers::pseudonym_credentials(state, cid) {
@@ -260,7 +278,7 @@ fn create_transport_impl(
         }
     }
 
-    transport
+    (transport, frame_sender)
 }
 
 fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {
