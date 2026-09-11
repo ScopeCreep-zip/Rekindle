@@ -31,30 +31,40 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
     };
 
     // Rate limit check: token bucket per connection.
+    //
+    // Daemon→client media frames BYPASS this limit: the token bucket bounds a
+    // CLIENT that sends frames (video-media-engine plan Step 3), not the
+    // daemon's video fan-out, which arrives at frame rate across many streams.
+    // A non-daemon `Media` frame is dropped later in the `Media` arm, so
+    // exempting it here cannot let an untrusted client flood the bus.
     {
         let conns = state.connections.read().await;
         if let Some(conn) = conns.get(&sender_conn_id) {
-            let now_ms = rekindle_utils::timestamp_ms();
-            let last = conn
-                .last_token_refill
-                .load(std::sync::atomic::Ordering::Relaxed);
-            if now_ms.saturating_sub(last) >= RATE_LIMIT_REFILL_MS {
-                conn.rate_tokens
-                    .store(RATE_LIMIT_MAX_TOKENS, std::sync::atomic::Ordering::Relaxed);
-                conn.last_token_refill
-                    .store(now_ms, std::sync::atomic::Ordering::Relaxed);
-            }
-            let prev = conn.rate_tokens.fetch_update(
-                std::sync::atomic::Ordering::Relaxed,
-                std::sync::atomic::Ordering::Relaxed,
-                |t| if t > 0 { Some(t - 1) } else { None },
-            );
-            if prev.is_err() {
-                tracing::warn!(
-                    conn_id = sender_conn_id,
-                    "rate limit exceeded, dropping frame"
+            let is_daemon_media = matches!(msg.payload, BusPayload::Media(_))
+                && conn.verified_name.as_deref() == Some(DAEMON_AGENT_NAME);
+            if !is_daemon_media {
+                let now_ms = rekindle_utils::timestamp_ms();
+                let last = conn
+                    .last_token_refill
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if now_ms.saturating_sub(last) >= RATE_LIMIT_REFILL_MS {
+                    conn.rate_tokens
+                        .store(RATE_LIMIT_MAX_TOKENS, std::sync::atomic::Ordering::Relaxed);
+                    conn.last_token_refill
+                        .store(now_ms, std::sync::atomic::Ordering::Relaxed);
+                }
+                let prev = conn.rate_tokens.fetch_update(
+                    std::sync::atomic::Ordering::Relaxed,
+                    std::sync::atomic::Ordering::Relaxed,
+                    |t| if t > 0 { Some(t - 1) } else { None },
                 );
-                return;
+                if prev.is_err() {
+                    tracing::warn!(
+                        conn_id = sender_conn_id,
+                        "rate limit exceeded, dropping frame"
+                    );
+                    return;
+                }
             }
         }
     }
@@ -260,6 +270,53 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             }
             let (delivered, dropped) = state.event_router.read().deliver(event);
             tracing::debug!(delivered, dropped, "event routed via EventRouter");
+        }
+        BusPayload::Media(_) => {
+            // Compressed video frame from the daemon. Fan out DIRECTLY to every
+            // subscribed connection — bypassing the EventRouter's per-category
+            // dedup and journal, which exist for ordered events, not frame-rate
+            // media. Each connection has its own bounded, drop-oldest media
+            // queue, so a slow client sheds stale frames without stalling the
+            // rest or evicting queued control traffic.
+            //
+            // Daemon → client only: a client that sends `Media` is rejected
+            // here (mirroring the `Event` arm), so a client can never inject
+            // frames into another client's stream.
+            let is_daemon = {
+                let conns = state.connections.read().await;
+                conns
+                    .get(&sender_conn_id)
+                    .and_then(|c| c.verified_name.as_deref())
+                    == Some(DAEMON_AGENT_NAME)
+            };
+            if !is_daemon {
+                tracing::warn!(
+                    conn_id = sender_conn_id,
+                    "media frame from non-daemon source — rejected"
+                );
+                return;
+            }
+
+            // Subscribers are the media audience: a video consumer subscribed
+            // to the community's events. Fan out to all of them (noted: media
+            // has no finer topic than the event subscription in Step 3), minus
+            // the daemon's own connection so it never receives its own frames.
+            let recipients = state.event_router.read().subscribed_conn_ids();
+            let conns = state.connections.read().await;
+            let mut delivered = 0usize;
+            let mut evicted = 0usize;
+            for conn_id in recipients {
+                if conn_id == sender_conn_id {
+                    continue;
+                }
+                if let Some(conn) = conns.get(&conn_id) {
+                    if conn.media_tx.send(stamped_payload.clone()) {
+                        evicted += 1;
+                    }
+                    delivered += 1;
+                }
+            }
+            tracing::debug!(delivered, evicted, "media frame fanned out (drop-oldest)");
         }
     }
 }

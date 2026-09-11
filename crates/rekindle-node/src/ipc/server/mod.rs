@@ -31,14 +31,29 @@ const RATE_LIMIT_MAX_TOKENS: u32 = 100;
 /// Rate limit: refill interval in milliseconds.
 const RATE_LIMIT_REFILL_MS: u64 = 1000;
 
+/// Per-connection media fan-out queue depth.
+///
+/// Bounds how many undelivered video frames the server buffers for one slow
+/// client before evicting the oldest (drop-oldest). ~4 s of a single 30 fps
+/// stream — enough to ride out a socket-write hiccup, small enough that a
+/// stalled client never accrues stale video. A late frame is worthless.
+const MEDIA_FANOUT_CAPACITY: usize = 128;
+
 /// Per-connection state tracked by the bus server.
 struct ConnectionState {
     /// Agent identity (set on first message, immutable thereafter).
     agent_id: Option<Uuid>,
     /// Registry-verified agent name from Noise IK handshake.
     verified_name: Option<String>,
-    /// Outbound channel to this connection's I/O task.
+    /// Outbound channel to this connection's I/O task (responses + events).
     tx: mpsc::Sender<Vec<u8>>,
+    /// Bounded, drop-oldest media fan-out queue to this connection's I/O task.
+    ///
+    /// Separate from `tx` so a burst of video frames can never evict a queued
+    /// response or event, and so the media path can drop the OLDEST frame on
+    /// overflow (which `tx`, a plain mpsc, cannot). Carries encoded
+    /// `Message<BusPayload::Media>` frames.
+    media_tx: crate::ipc::media_channel::MediaSender<Vec<u8>>,
     /// Peer OS-level credentials.
     peer: PeerCredentials,
     /// Security clearance level from registry lookup.
@@ -179,13 +194,21 @@ impl BusServer {
                     let conn_id = self.state.next_conn_id.fetch_add(1, Ordering::Relaxed);
                     tracing::info!(conn_id, pid = peer.pid, "client connected");
 
-                    let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
+                    let (tx, outbound_rx) = mpsc::channel::<Vec<u8>>(256);
+                    let (media_tx, media_rx) =
+                        crate::ipc::media_channel::media_channel::<Vec<u8>>(MEDIA_FANOUT_CAPACITY);
+                    let channels = connection::ConnectionChannels {
+                        tx,
+                        outbound_rx,
+                        media_tx,
+                        media_rx,
+                    };
                     let state = Arc::clone(&self.state);
                     let keypair = Arc::clone(&self.keypair);
 
                     tokio::spawn(async move {
                         connection::handle_connection(
-                            state, conn_id, stream, tx, rx, peer, keypair,
+                            state, conn_id, stream, channels, peer, keypair,
                         )
                         .await;
                     });

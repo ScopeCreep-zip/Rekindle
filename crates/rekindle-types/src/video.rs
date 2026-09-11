@@ -218,6 +218,42 @@ pub struct BandwidthEstimate {
     pub loss_q8: u8,
 }
 
+/// One compressed video frame crossing the daemon↔client IPC bus as a
+/// `BusPayload::Media`. This is the postcard-native sibling of the webview
+/// `CommunityVideoFrameMsg` (`src-tauri/src/video_channels.rs`), which is
+/// Tauri/JSON-specific: fields mirror the encoder's `EncodedVideoFrame`
+/// shape (`payload` / `keyframe` / `timestamp_ms`) plus the stream identity
+/// and sequence a receiver needs to route frames to the right decoder and
+/// detect loss.
+///
+/// Deliberately **postcard-only** — it never crosses the JSON boundary that
+/// `Response` does, so it carries no `#[serde(rename_all)]` (postcard encodes
+/// positionally and ignores field names) and no `serde_json::Value`. All its
+/// fields are postcard-compatible: `Codec` is a closed externally-tagged enum.
+///
+/// A late video frame is worthless, so the bus queues it drop-oldest at each
+/// bounded hop — this type is a best-effort datagram, not a delivery promise.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaFrame {
+    /// Opaque per-sender stream identity (hex). The receiver keys its
+    /// per-stream decoder and ordering state on this — the RTP SSRC analog.
+    pub stream_id: String,
+    /// Monotonic per-stream frame sequence. A gap means an earlier frame was
+    /// dropped (drop-oldest under load); the decoder uses it to detect loss.
+    pub sequence: u32,
+    /// Whether this is a keyframe (intra / IDR) — a decoder can start or
+    /// recover from here without prior frames.
+    pub keyframe: bool,
+    /// The codec of `payload`. The receiver configures its decoder from this
+    /// tag (the RTP payload-type analog), never from session config.
+    pub codec: Codec,
+    /// The compressed bitstream for this single video frame.
+    pub payload: Vec<u8>,
+    /// Presentation timestamp in milliseconds, carried through from the source
+    /// `EncodedVideoFrame::timestamp_ms`.
+    pub timestamp_ms: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

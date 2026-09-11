@@ -79,6 +79,13 @@ impl IpcResponse {
 /// - CLI/TUI clients: `BusPayload::Request(IpcRequest)`
 /// - Daemon subscriber: `BusPayload::Response(IpcResponse)`
 /// - Subscription delivery: `BusPayload::Event(SubscriptionEvent)`
+/// - Media fan-out: `BusPayload::Media(MediaFrame)` (daemon → client only)
+///
+/// # Wire compatibility
+///
+/// Postcard encodes this enum by variant **index** (externally tagged), so
+/// variants are only ever **appended** — never inserted or reordered — to keep
+/// existing indices stable. `Media` is the last variant for that reason.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BusPayload {
     /// Frontend → Daemon request.
@@ -94,4 +101,15 @@ pub enum BusPayload {
     Response(Vec<u8>),
     /// Daemon → Frontend push event, routed via EventRouter to subscribed connections.
     Event(rekindle_types::subscription_events::SubscriptionEvent),
+    /// Daemon → Frontend compressed video frame.
+    ///
+    /// A sibling of `Event`, deliberately **not** an event: media bypasses the
+    /// EventRouter's dedup + journal and rides its own bounded, drop-oldest
+    /// queue at each hop, because a late video frame is worthless (unlike an
+    /// event, which must be delivered in order and exactly once). Postcard-
+    /// native — `MediaFrame` never crosses the JSON boundary `Response` does.
+    ///
+    /// Daemon → client only: a client never sends `Media`, and a client-origin
+    /// `Media` is rejected by the server router (see `ipc/server/routing.rs`).
+    Media(rekindle_types::video::MediaFrame),
 }

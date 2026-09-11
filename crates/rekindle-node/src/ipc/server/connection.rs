@@ -9,9 +9,25 @@ use tokio::sync::mpsc;
 use super::routing;
 use super::{ConnectionState, ServerState, RATE_LIMIT_MAX_TOKENS};
 
+use crate::ipc::media_channel::{MediaReceiver, MediaSender};
 use crate::ipc::message::SecurityLevel;
 use crate::ipc::noise::{self, NoiseTransport};
 use crate::ipc::transport::PeerCredentials;
+
+/// The two outbound queues that feed one connection's socket writer.
+///
+/// Bundled so `handle_connection` stays under the argument ceiling and so the
+/// two-queue design (control on `tx`, media on `media_tx`) is one unit.
+pub(super) struct ConnectionChannels {
+    /// Outbound responses + events → this connection's socket.
+    pub tx: mpsc::Sender<Vec<u8>>,
+    /// Receiver half of `tx`, drained by the I/O loop.
+    pub outbound_rx: mpsc::Receiver<Vec<u8>>,
+    /// Bounded, drop-oldest media fan-out → this connection's socket.
+    pub media_tx: MediaSender<Vec<u8>>,
+    /// Receiver half of `media_tx`, drained by the I/O loop.
+    pub media_rx: MediaReceiver<Vec<u8>>,
+}
 
 /// Handle a single client connection: Noise handshake, then encrypted I/O.
 ///
@@ -21,11 +37,16 @@ pub(super) async fn handle_connection(
     state: Arc<ServerState>,
     conn_id: u64,
     stream: UnixStream,
-    tx: mpsc::Sender<Vec<u8>>,
-    mut outbound_rx: mpsc::Receiver<Vec<u8>>,
+    channels: ConnectionChannels,
     peer_creds: PeerCredentials,
     keypair: Arc<snow::Keypair>,
 ) {
+    let ConnectionChannels {
+        tx,
+        mut outbound_rx,
+        media_tx,
+        mut media_rx,
+    } = channels;
     let (reader, writer) = stream.into_split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
@@ -92,6 +113,7 @@ pub(super) async fn handle_connection(
         agent_id: None,
         verified_name: verified_name.clone(),
         tx,
+        media_tx,
         peer: peer_creds,
         security_clearance,
         connected_at,
@@ -135,6 +157,16 @@ pub(super) async fn handle_connection(
                 zeroize::Zeroize::zeroize(&mut payload);
                 if let Err(e) = result {
                     tracing::debug!(conn_id, error = %e, "write failed, closing");
+                    break;
+                }
+            }
+            // Media frames ride their own bounded, drop-oldest queue so a slow
+            // socket sheds stale video instead of stalling control traffic.
+            Some(mut frame) = media_rx.recv() => {
+                let result = transport.write_encrypted_frame(&mut writer, &frame).await;
+                zeroize::Zeroize::zeroize(&mut frame);
+                if let Err(e) = result {
+                    tracing::debug!(conn_id, error = %e, "media write failed, closing");
                     break;
                 }
             }

@@ -259,6 +259,18 @@ impl EventRouter {
         self.channels.len()
     }
 
+    /// Connection ids of every subscribed connection.
+    ///
+    /// Used by the media fan-out (`BusPayload::Media`), which delivers to
+    /// subscribers **directly** — bypassing this router's per-category dedup
+    /// and journal — so it needs the subscriber set without an event to
+    /// classify. A media consumer is, by construction, a subscriber (it asked
+    /// for the community's events), so the subscriber set is the media
+    /// audience.
+    pub fn subscribed_conn_ids(&self) -> Vec<u64> {
+        self.channels.keys().copied().collect()
+    }
+
     /// Total index entries across all sets (for diagnostics).
     pub fn index_size(&self) -> usize {
         self.wildcard.len()

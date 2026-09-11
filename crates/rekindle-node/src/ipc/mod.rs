@@ -35,6 +35,7 @@
 pub mod client;
 pub mod error;
 pub mod framing;
+pub mod media_channel;
 pub mod message;
 pub mod noise;
 pub mod noise_keys;
@@ -43,10 +44,14 @@ pub mod registry;
 pub mod server;
 pub mod transport;
 
+#[cfg(test)]
+mod media_transport_tests;
+
 // Re-exports for convenience.
 pub use client::BusClient;
 pub use error::{IpcError, Result};
 pub use framing::{decode_frame, encode_frame, read_frame, write_frame, MAX_FRAME_SIZE};
+pub use media_channel::{media_channel, MediaReceiver, MediaSender};
 pub use message::{AgentType, Message, MessageContext, SecurityLevel, Timestamp, WIRE_VERSION};
 pub use noise::NoiseTransport;
 pub use noise_keys::{generate_keypair, ZeroizingKeypair, NOISE_PARAMS};
