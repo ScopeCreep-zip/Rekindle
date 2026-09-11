@@ -1,15 +1,18 @@
 //! Feature-OFF path (`not(feature = "libvpx")`).
 //!
-//! A pure-Rust stand-in with the **same public API** as the real
-//! [`imp::LibvpxEncoder`](crate::imp), carrying no C dependency. Every
-//! fallible entry point returns [`VideoError::Unsupported`] naming the
-//! fix ("rebuild with `--features libvpx`"); the infallible levers
-//! (`force_keyframe`, `set_bitrate`) are no-ops. This keeps callers that
-//! reference `LibvpxEncoder` compiling on a machine without libvpx and
-//! lets them degrade gracefully at runtime instead of failing to build.
+//! Pure-Rust stand-ins with the **same public API** as the real
+//! [`imp::LibvpxEncoder`](crate::imp) and
+//! [`imp_decoder::LibvpxDecoder`](crate::imp_decoder), carrying no C
+//! dependency. Every fallible entry point returns
+//! [`VideoError::Unsupported`] naming the fix ("rebuild with
+//! `--features libvpx`"); the infallible levers (`force_keyframe`,
+//! `set_bitrate`) are no-ops. This keeps callers that reference
+//! `LibvpxEncoder` / `LibvpxDecoder` compiling on a machine without libvpx
+//! and lets them degrade gracefully at runtime instead of failing to
+//! build.
 
 use rekindle_types::video::Codec;
-use rekindle_video::codec::{EncodedVideoFrame, RawFrame, VideoEncoder};
+use rekindle_video::codec::{EncodedVideoFrame, RawFrame, VideoDecoder, VideoEncoder};
 use rekindle_video::error::VideoError;
 use rekindle_video::EncoderConstraints;
 
@@ -59,6 +62,41 @@ impl VideoEncoder for LibvpxEncoder {
     }
 }
 
+/// Stub libvpx decoder — present so downstream code type-checks without
+/// the `libvpx` feature. It is never successfully constructed:
+/// [`Self::new`] always returns [`VideoError::Unsupported`].
+pub struct LibvpxDecoder {
+    codec: Codec,
+}
+
+impl LibvpxDecoder {
+    /// Always fails without the `libvpx` feature. `codec` is the codec the
+    /// real decoder would consume; retained only so the shared API
+    /// signature matches [`imp_decoder::LibvpxDecoder::new`](crate::imp_decoder).
+    pub fn new(codec: Codec) -> Result<Self, VideoError> {
+        // Construct the value (keeps the field + constructor reachable for
+        // the dead-code lint) and log it — the stub never yields a live
+        // decoder, so this instance is dropped and `new` reports the fix.
+        let decoder = Self { codec };
+        tracing::debug!(
+            target: "rekindle_video_libvpx",
+            codec = decoder.codec.wire_str(),
+            "libvpx feature not enabled — LibvpxDecoder is a stub"
+        );
+        Err(VideoError::Unsupported(NOT_BUILT.to_string()))
+    }
+}
+
+impl VideoDecoder for LibvpxDecoder {
+    fn decode(&mut self, _frame: &EncodedVideoFrame) -> Result<Option<RawFrame>, VideoError> {
+        Err(VideoError::Unsupported(NOT_BUILT.to_string()))
+    }
+
+    fn codec(&self) -> Codec {
+        self.codec
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,6 +104,15 @@ mod tests {
     #[test]
     fn new_reports_unsupported_without_feature() {
         match LibvpxEncoder::new(Codec::Vp9) {
+            Err(VideoError::Unsupported(msg)) => assert!(msg.contains("libvpx")),
+            Err(other) => panic!("expected Unsupported, got a different error: {other:?}"),
+            Ok(_) => panic!("stub new() must never succeed without the libvpx feature"),
+        }
+    }
+
+    #[test]
+    fn decoder_new_reports_unsupported_without_feature() {
+        match LibvpxDecoder::new(Codec::Vp9) {
             Err(VideoError::Unsupported(msg)) => assert!(msg.contains("libvpx")),
             Err(other) => panic!("expected Unsupported, got a different error: {other:?}"),
             Ok(_) => panic!("stub new() must never succeed without the libvpx feature"),

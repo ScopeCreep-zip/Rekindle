@@ -186,6 +186,36 @@ pub trait VideoEncoder: Send {
     fn codec(&self) -> Codec;
 }
 
+/// A realtime video decoder — the receive-side counterpart of
+/// [`VideoEncoder`]. Like the encoder it is `Send`, so it can live on a
+/// dedicated decode thread (one per remote stream) and be fed frames over
+/// a channel, matching the `rekindle-voice` per-participant posture.
+///
+/// Unlike the encoder there is **no `configure`**: the codec is fixed at
+/// construction (a VP8 stream needs a VP8 decoder, a VP9 stream a VP9 one —
+/// libvpx has no "auto" codec), and a VP8/VP9 bitstream is otherwise
+/// self-describing (frame dimensions, keyframe flag, and scaling all ride
+/// in the bitstream headers), so there is nothing left to negotiate on the
+/// receive side. Feed [`decode`](VideoDecoder::decode) each
+/// [`EncodedVideoFrame`] in arrival order; it returns the reconstructed
+/// [`RawFrame`] (I420) or `Ok(None)` when this input yielded no displayable
+/// frame yet.
+pub trait VideoDecoder: Send {
+    /// Decode one compressed frame. Returns `Ok(Some(frame))` with the
+    /// reconstructed I420 [`RawFrame`] when this input produced a
+    /// displayable frame, `Ok(None)` when it produced none (e.g. an empty
+    /// payload, or a hidden/alt-ref frame that carries no visible output),
+    /// or `Err` on a decode failure.
+    ///
+    /// A decoder cannot produce output before it has seen a keyframe; feed
+    /// frames in order and expect `Ok(None)` until the first keyframe
+    /// arrives.
+    fn decode(&mut self, frame: &EncodedVideoFrame) -> Result<Option<RawFrame>, VideoError>;
+
+    /// The codec this decoder consumes (fixed at construction).
+    fn codec(&self) -> Codec;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

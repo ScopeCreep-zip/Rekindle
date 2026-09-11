@@ -32,6 +32,12 @@ pub enum VideoError {
     #[error("encode failed: {0}")]
     Encode(String),
 
+    /// A [`codec::VideoDecoder`](crate::codec::VideoDecoder) impl failed
+    /// while decoding a frame (e.g. libvpx returned a non-OK status, or
+    /// handed back an image in an unexpected pixel format).
+    #[error("decode failed: {0}")]
+    Decode(String),
+
     /// [`encode`](crate::codec::VideoEncoder::encode) was called before
     /// [`configure`](crate::codec::VideoEncoder::configure).
     #[error("encoder not configured — call configure() first")]

@@ -34,7 +34,7 @@ pub use budget::{
     START_PAYLOAD_SHARE_Q10, VIDEO_MAX_KBPS, VIDEO_MAX_KBPS_VOICE_PRESSURE, VIDEO_MIN_KBPS,
     VIDEO_START_KBPS,
 };
-pub use codec::{EncodedVideoFrame, RawFrame, VideoEncoder};
+pub use codec::{EncodedVideoFrame, RawFrame, VideoDecoder, VideoEncoder};
 pub use deps::{VideoDeps, VideoEvent};
 pub use error::VideoError;
 pub use fragment::{
