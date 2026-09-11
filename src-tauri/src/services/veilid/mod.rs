@@ -9,6 +9,7 @@ mod app_message;
 mod control;
 mod control_event_records;
 mod control_events;
+pub(crate) mod control_ingress;
 mod control_membership;
 mod control_moderation;
 mod control_sync;

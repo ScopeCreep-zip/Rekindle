@@ -77,6 +77,44 @@ pub async fn start_dispatch_loop(
         })
     };
 
+    // Piece 6 — control ingress worker: sibling to the gossip worker.
+    // The serial recv loop used to `.await` the SLOW identity-dependent
+    // handlers inline — `ValueChange` (DHT read → DB → decrypt) and
+    // `AppCall` (network round-trips). While it did, incoming media
+    // `AppMessage`s backed up in the node's 4096-deep update channel and
+    // overflowed (the measured 388 media drops). This worker drains
+    // `ValueChange`/`AppCall` off-loop via `handle_veilid_update` so the
+    // recv loop returns immediately. Single worker → FIFO among control
+    // events (largely order-tolerant, but kept ordered conservatively).
+    // Shares the gossip worker's stop signal (one `send(true)` stops
+    // both).
+    let mut control_stop_rx = worker_stop_tx.subscribe();
+    let control_worker_handle = {
+        let app_handle = app_handle.clone();
+        let state = Arc::clone(&state);
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = control_stop_rx.changed() => {
+                        if *control_stop_rx.borrow() {
+                            tracing::info!("control ingress worker shutting down");
+                            break;
+                        }
+                    }
+                    item = state.control_ingress.pop() => {
+                        crate::services::veilid::handle_veilid_update(
+                            &app_handle,
+                            &state,
+                            item,
+                        )
+                        .await;
+                    }
+                }
+            }
+        })
+    };
+
     // Phase 9 — listen for lifecycle transitions so the cold-start
     // buffer can drain the moment the app becomes Operational. The
     // current() check below covers the (unlikely) case where Operational
@@ -95,6 +133,7 @@ pub async fn start_dispatch_loop(
                 tracing::info!("veilid dispatch loop shutting down");
                 let _ = worker_stop_tx.send(true);
                 worker_handle.abort();
+                control_worker_handle.abort();
                 break;
             }
             lifecycle_result = lifecycle_rx.recv() => {
@@ -135,13 +174,44 @@ pub async fn start_dispatch_loop(
                     continue;
                 }
                 // Identity-dependent: buffer until consumer install, then
-                // dispatch directly once the buffer is closed.
+                // dispatch once the buffer is closed.
                 match state.cold_start.try_record(update) {
                     Ok(()) => {
                         // Buffered for later drain. Nothing to do now.
                     }
                     Err(update) => {
-                        crate::services::veilid::handle_veilid_update(&app_handle, &state, update).await;
+                        // Piece 6 — post-cold-start, offload the SLOW
+                        // identity-dependent handlers to the control
+                        // ingress worker so this serial recv loop returns
+                        // immediately and the node's 4096-deep update
+                        // channel can't back up incoming media
+                        // `AppMessage`s behind them (the measured 388
+                        // media drops). `AppMessage` STAYS inline: its
+                        // handler is already sync-fast (media `try_send` /
+                        // gossip-queue push, returns immediately).
+                        //
+                        // Ordering is safe: media (`AppMessage`) and
+                        // control (`ValueChange`/`AppCall`) are independent
+                        // inbound streams with no cross-ordering
+                        // dependency, so decoupling them reorders nothing
+                        // that matters. The single control worker preserves
+                        // FIFO among control events; governance
+                        // `ValueChange`s are CRDT-merged (order-independent)
+                        // and presence `ValueChange`s are staleness-checked
+                        // via `last_heartbeat`.
+                        match update {
+                            VeilidUpdate::ValueChange(_) | VeilidUpdate::AppCall(_) => {
+                                state.control_ingress.push(update);
+                            }
+                            _ => {
+                                crate::services::veilid::handle_veilid_update(
+                                    &app_handle,
+                                    &state,
+                                    update,
+                                )
+                                .await;
+                            }
+                        }
                     }
                 }
             }
