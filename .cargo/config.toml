@@ -11,6 +11,12 @@ xtask = "run --quiet --package xtask --"
 [env]
 # CMake 4.x compatibility: Allow older CMakeLists.txt files (opus uses cmake_minimum_required < 3.5)
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+# Static-link libvpx for the off-Linux native-capture feature
+# (env-libvpx-sys reads VPX_STATIC). Global is safe — env-libvpx-sys is
+# only compiled when `rekindle-video-capture/native-capture` is on
+# (non-Linux src-tauri build), so this affects nothing otherwise. Spares
+# the developer remembering the env var on `cargo build` / `pnpm tauri dev`.
+VPX_STATIC = "1"
 
 [target.x86_64-pc-windows-msvc]
 # Static link the VC runtime to avoid requiring redistributables

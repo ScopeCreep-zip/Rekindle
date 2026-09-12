@@ -145,6 +145,16 @@ rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 # gates `set_enable_media_stream`.
 webkit2gtk = { version = "2.0.2", features = ["v2_4"] }
 
+# Off-Linux, the webview VP9 encoders honor their bitrates, so the native
+# path is opt-in: build `rekindle-video-capture` with `native-capture`
+# (nokhwa + libvpx) here so macOS/Windows get real camera capture. This is
+# a SEPARATE, mutually-exclusive target from the Linux entry above (which
+# stays feature-off, GStreamer only) — Cargo evaluates target cfgs per
+# build, so Linux never pulls nokhwa/libvpx. The feature's libvpx links
+# statically via `VPX_STATIC=1` (see `.cargo/config.toml`).
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rekindle-video-capture = { path = "../crates/rekindle-video-capture", features = ["native-capture"] }
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

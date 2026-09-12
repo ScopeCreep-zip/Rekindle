@@ -103,7 +103,6 @@ fn video_bitrate_target_wire() {
     );
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn native_video_error_wire() {
     let ev = CommunityEvent::NativeVideoError(NativeVideoErrorEvent {

@@ -263,6 +263,23 @@ pub fn enable_webview_media_capture(_window: &tauri::WebviewWindow) {
     request_av_authorization("microphone", audio);
 }
 
+/// Request camera authorization from macOS TCC before a native
+/// `rekindle-video-capture` session opens the device. nokhwa's
+/// `AVCaptureDevice` open does not reliably surface the TCC prompt on its
+/// own, so the shell front-loads the request here — reusing the same
+/// idempotent status-precheck helper the webview path uses (calling it
+/// again is a no-op once authorized). Called from `native_video::start`.
+#[cfg(target_os = "macos")]
+pub fn request_camera_authorization() {
+    use objc2_av_foundation::AVMediaTypeVideo;
+
+    // SAFETY: extern NSString constant from AVFoundation — valid for the
+    // process lifetime once the framework is loaded (tauri links it
+    // transitively via WebKit/AppKit).
+    let video = unsafe { AVMediaTypeVideo };
+    request_av_authorization("camera", video);
+}
+
 /// Check-then-request one AVFoundation media authorization, logging the
 /// outcome under `rekindle_video::permissions`. Denied/Restricted warns
 /// once per process (eight windows call this; one actionable line

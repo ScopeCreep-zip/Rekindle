@@ -162,15 +162,12 @@ pub struct VideoBitrateTargetEvent {
     pub kbps: u32,
 }
 
-/// The Linux-native capture session died asynchronously (camera
-/// unplugged, pipeline failure) — the panel reverts the camera
-/// toggle and surfaces the message. Linux-only: only the native
-/// GStreamer pipeline emits this, so the type is gated to where it
-/// can be constructed (the webview path on macOS/Windows reports
-/// capture failures inline via `setError`, never through a
-/// CommunityEvent). The frontend TS union keeps the variant
-/// unconditionally — it simply never arrives off-Linux.
-#[cfg(target_os = "linux")]
+/// The native capture session died asynchronously (camera unplugged,
+/// pipeline failure) — the panel reverts the camera toggle and surfaces
+/// the message. Emitted by the native `rekindle-video-capture` pump on
+/// every platform it runs (Linux GStreamer; macOS/Windows nokhwa+libvpx);
+/// the webview encode path reports its own failures inline via `setError`
+/// instead. The frontend TS union keeps the variant unconditionally.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeVideoErrorEvent {
