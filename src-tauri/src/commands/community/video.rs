@@ -40,9 +40,12 @@ pub async fn send_video_frame(
     send_video_frame_inner(state.inner(), &community_id, &channel_id, &request)
 }
 
-/// Capability query for the frontend camera toggle — true only when
-/// the Linux-native capture stack passed its full availability probe.
-/// Off-Linux this is always false and the webview path runs.
+/// Capability query for the frontend camera toggle — true when the
+/// native capture stack passed its full availability probe: the
+/// GStreamer `v4l2src` pipeline on Linux, or (with the `native-capture`
+/// feature) the nokhwa + libvpx backend on macOS/Windows. The frontend
+/// branches on this — `startNativeVideo` when true, the webview
+/// getUserMedia + WebCodecs path when false (no camera / feature off).
 #[tauri::command]
 pub async fn native_video_capture_available() -> Result<bool, String> {
     Ok(crate::services::native_video::capture_available())
