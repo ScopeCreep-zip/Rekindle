@@ -2,7 +2,7 @@
 name = "rekindle-video-capture"
 version = "0.1.0"
 edition = "2021"
-description = "Native Linux camera capture + VP9 realtime encode for Rekindle (GStreamer)"
+description = "Native camera capture + VP9 realtime encode for Rekindle (Linux GStreamer; macOS/Windows nokhwa+libvpx behind `native-capture`)"
 
 [lints]
 workspace = true
@@ -12,12 +12,67 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 
-# The whole module tree is #[cfg(target_os = "linux")]; off-Linux this
-# crate compiles to an empty lib (cfg'd-out code is not dead code).
-# GStreamer is the only maintained Rust capture stack with automatic
-# MJPEG/YUYV negotiation and a realtime-CBR VP9 encoder (vp9enc
-# deadline=1 end-usage=cbr) — see plan rosy-bouncing-kahn R1/R3.
+# ── `native-capture` backend deps (macOS/Windows), all DEFAULT OFF ──
+# Mirrors the `rekindle-video-libvpx` build-safety pattern: the C
+# dependency (libvpx via env-libvpx-sys) and the system-framework
+# dependency (nokhwa → AVFoundation/MediaFoundation) are quarantined behind
+# the DEFAULT-OFF `native-capture` feature, so `cargo build --workspace`
+# stays green and pulls NONE of these on a machine without libvpx. Only
+# `--features native-capture` compiles the nokhwa/libvpx path.
+#
+# `yuv` (yuvutils-rs) is pure-Rust SIMD colour conversion (YUYV→I420); the
+# NV12 de-interleave is hand-rolled. `image` (jpeg only) encodes the JPEG
+# self-view. The encoder is the in-tree `rekindle-video-libvpx` with its own
+# `libvpx` feature turned on (CBR realtime VP9, no GStreamer off-Linux).
+yuv = { version = "0.8", optional = true }
+rekindle-video = { path = "../rekindle-video", optional = true }
+rekindle-video-libvpx = { path = "../rekindle-video-libvpx", optional = true }
+
+[dependencies.image]
+version = "0.25"
+default-features = false
+features = ["jpeg"]
+optional = true
+
+[features]
+default = []
+# Enable native (non-Linux) camera capture + VP9 encode. REQUIRES, to link:
+# a system libvpx (pkg-config `vpx`), libclang (the libvpx `generate`
+# bindgen path), and `VPX_STATIC=1` in the build environment:
+#
+#   VPX_STATIC=1 cargo build -p rekindle-video-capture --features native-capture
+#
+# nokhwa links the OS camera frameworks already present (AVFoundation on
+# macOS, Media Foundation on Windows) with no runtime bundle.
+native-capture = [
+    "dep:nokhwa",
+    "dep:yuv",
+    "dep:image",
+    "dep:rekindle-video",
+    "dep:rekindle-video-libvpx",
+    "rekindle-video-libvpx/libvpx",
+]
+
+# The whole Linux module tree is #[cfg(target_os = "linux")]; GStreamer is
+# the only maintained Rust capture stack there with automatic MJPEG/YUYV
+# negotiation and a realtime-CBR VP9 encoder (vp9enc deadline=1
+# end-usage=cbr) — see plan rosy-bouncing-kahn R1/R3.
 [target.'cfg(target_os = "linux")'.dependencies]
 gstreamer = "0.25"
 gstreamer-app = "0.25"
 gstreamer-video = "0.25"
+
+# macOS camera capture via AVFoundation (nokhwa `input-avfoundation`).
+# Default features keep `decoding` (pure-Rust MJPEG, so `RgbFormat` and the
+# format machinery resolve); NOT `input-native`, so no V4L2/OpenCV is
+# pulled. Feature names verified against nokhwa 0.10.7.
+[target.'cfg(target_os = "macos")'.dependencies.nokhwa]
+version = "0.10"
+features = ["input-avfoundation"]
+optional = true
+
+# Windows camera capture via Media Foundation (nokhwa `input-msmf`).
+[target.'cfg(target_os = "windows")'.dependencies.nokhwa]
+version = "0.10"
+features = ["input-msmf"]
+optional = true

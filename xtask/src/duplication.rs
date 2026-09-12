@@ -323,6 +323,19 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          across the adapter horizon, which is the opposite of the \
          services-pattern design.",
     ),
+    (
+        &[
+            "rekindle-video-capture::EncodedFrame",
+            "rekindle-voice::EncodedFrame",
+        ],
+        "Two unrelated media chunks, one per media crate. \
+         rekindle-video-capture's is a single compressed VP9 video frame \
+         (`payload`, `keyframe`) for the peer egress branch; \
+         rekindle-voice's is a single Opus-encoded audio packet. Same \
+         word, different media, different crates — each owns its \
+         namespace (the GStreamer path's copy escapes this gate only by \
+         file ordering; making the collision explicit here is the fix).",
+    ),
 ];
 
 /// Frontend duplicates that are accepted rather than fixed.
