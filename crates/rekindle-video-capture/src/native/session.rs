@@ -154,19 +154,30 @@ fn build_encoder(config: &CaptureConfig) -> Result<LibvpxEncoder, VideoError> {
     Ok(encoder)
 }
 
-/// Convert one camera buffer to I420 at its source resolution. NV12/YUYV
-/// are supported directly; any other camera format is rejected (an
-/// MJPEG-only camera is not yet handled on the native path).
+/// Convert one camera buffer to I420 at its source resolution. NV12 and
+/// YUYV take a fast direct repack; every OTHER format (MJPEG on external
+/// webcams, UYVY, packed RGB) goes through nokhwa's decoder to RGB, then
+/// [`convert::rgb_to_i420`] — so any camera the OS can open is handled.
 fn to_i420(buffer: &nokhwa::Buffer) -> Result<convert::I420Buf, CaptureError> {
+    use nokhwa::pixel_format::RgbFormat;
     use nokhwa::utils::FrameFormat;
     let res = buffer.resolution();
     let (w, h) = (res.width(), res.height());
     match buffer.source_frame_format() {
         FrameFormat::NV12 => convert::nv12_to_i420(buffer.buffer(), w, h),
         FrameFormat::YUYV => convert::yuyv_to_i420(buffer.buffer(), w, h),
-        other => Err(CaptureError::Pipeline(format!(
-            "camera delivered {other:?}; the native path supports NV12/YUYV only"
-        ))),
+        // General fallback: nokhwa's `decoding` feature turns the source
+        // into RGB (JPEG-decode for MJPEG, colour-convert otherwise);
+        // then RGB → I420. Slower than the direct repacks, but correct
+        // for every remaining format. Uses the decoded image's own
+        // dimensions so the RGB buffer size always matches.
+        _ => {
+            let rgb = buffer
+                .decode_image::<RgbFormat>()
+                .map_err(|e| CaptureError::Pipeline(format!("camera frame → RGB decode: {e:?}")))?;
+            let (rw, rh) = rgb.dimensions();
+            convert::rgb_to_i420(rgb.as_raw(), rw, rh)
+        }
     }
 }
 

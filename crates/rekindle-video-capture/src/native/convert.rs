@@ -1,13 +1,17 @@
 //! Camera pixel-format → I420 conversion.
 //!
 //! The macOS AVFoundation and Windows Media Foundation cameras nokhwa opens
-//! deliver frames as **NV12** (bi-planar Y + interleaved Cb,Cr) or **YUYV**
-//! (packed 4:2:2). Both are converted to the tightly-packed I420 the libvpx
-//! encoder consumes: NV12 is a pure plane de-interleave (no colour maths,
-//! exact), YUYV → I420 the vertical-chroma-decimating repack, delegated to
-//! the SIMD `yuv` crate (`yuyv422_to_yuv420`). Any other source format is
-//! rejected by the caller (`session::to_i420`) — an MJPEG-only camera is
-//! not yet handled on the native path.
+//! usually deliver frames as **NV12** (bi-planar Y + interleaved Cb,Cr) or
+//! **YUYV** (packed 4:2:2), which are converted to the tightly-packed I420
+//! the libvpx encoder consumes by a direct repack: NV12 is a pure plane
+//! de-interleave (no colour maths, exact), YUYV → I420 the
+//! vertical-chroma-decimating repack, delegated to the SIMD `yuv` crate
+//! (`yuyv422_to_yuv420`). Any OTHER source format — MJPEG (common on
+//! external USB webcams), UYVY, packed RGB — is decoded by nokhwa to RGB
+//! (`session::to_i420`'s fallback arm) and converted here via
+//! [`rgb_to_i420`] (`yuv`'s `rgb_to_yuv420`, BT.601 limited — the webcam
+//! convention). So every camera the OS can open is handled; the direct
+//! paths are just the fast common cases.
 //!
 //! Both converters assume the camera buffer is TIGHTLY packed (row stride
 //! == width); nokhwa's platform bindings copy each frame into a tight
@@ -125,6 +129,50 @@ pub(crate) fn yuyv_to_i420(bytes: &[u8], width: u32, height: u32) -> Result<I420
     })
 }
 
+/// Packed RGB (3 bytes/pixel, no alpha) → I420, via the SIMD `yuv` crate.
+/// The general fallback for camera formats not repacked directly (MJPEG,
+/// UYVY, RGB): nokhwa decodes the source to RGB, this converts it. BT.601
+/// limited range matches the webcam convention the YUYV/NV12 paths carry
+/// implicitly, so the receiver's YUV→RGB decode stays colour-consistent.
+pub(crate) fn rgb_to_i420(bytes: &[u8], width: u32, height: u32) -> Result<I420Buf, CaptureError> {
+    require_even(width, height)?;
+    let need = width as usize * height as usize * 3;
+    if bytes.len() < need {
+        return Err(CaptureError::Pipeline(format!(
+            "RGB buffer too small: {} < {need} for {width}×{height}",
+            bytes.len()
+        )));
+    }
+    let mut planar =
+        yuv::YuvPlanarImageMut::<u8>::alloc(width, height, yuv::YuvChromaSubsampling::Yuv420);
+    yuv::rgb_to_yuv420(
+        &mut planar,
+        &bytes[..need],
+        width * 3,
+        yuv::YuvRange::Limited,
+        yuv::YuvStandardMatrix::Bt601,
+        yuv::YuvConversionMode::Balanced,
+    )
+    .map_err(|e| CaptureError::Pipeline(format!("RGB→I420: {e:?}")))?;
+    Ok(I420Buf {
+        width,
+        height,
+        y: tight_plane(planar.y_plane.borrow(), planar.y_stride, width, height),
+        u: tight_plane(
+            planar.u_plane.borrow(),
+            planar.u_stride,
+            width / 2,
+            height / 2,
+        ),
+        v: tight_plane(
+            planar.v_plane.borrow(),
+            planar.v_stride,
+            width / 2,
+            height / 2,
+        ),
+    })
+}
+
 /// Copy a strided plane into a tightly-packed `width × height` buffer.
 fn tight_plane(buf: &[u8], stride: u32, width: u32, height: u32) -> Vec<u8> {
     let stride = stride as usize;
@@ -192,5 +240,22 @@ mod tests {
         let raw = yuyv_to_i420(&bytes, 4, 4).unwrap().into_raw_frame(7);
         raw.validate().unwrap();
         assert_eq!(raw.timestamp_ms, 7);
+    }
+
+    #[test]
+    fn rgb_converts_to_i420_sizes() {
+        // 4×4 packed RGB (3 bytes/pixel) → I420: Y is w*h, U/V each
+        // (w/2)*(h/2). A mid-grey fill must produce a valid frame.
+        let f = rgb_to_i420(&[128u8; 4 * 4 * 3], 4, 4).unwrap();
+        assert_eq!((f.width, f.height), (4, 4));
+        assert_eq!(f.y.len(), 16);
+        assert_eq!(f.u.len(), 4);
+        assert_eq!(f.v.len(), 4);
+        f.into_raw_frame(3).validate().unwrap();
+    }
+
+    #[test]
+    fn rgb_rejects_short_buffer() {
+        assert!(rgb_to_i420(&[0u8; 4 * 4 * 3 - 1], 4, 4).is_err());
     }
 }
