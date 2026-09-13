@@ -71,6 +71,19 @@ impl VideoSessionStateMap {
             inner: RwLock::new(HashMap::new()),
         }
     }
+
+    /// The most recently negotiated `SessionVideoConfig` for a call, if any.
+    /// The native capture path derives its capture/encode target from this
+    /// encoder ceiling so it follows a lifted ceiling or a weak-peer
+    /// downgrade (video-media-engine gap item 2), falling back to the interim
+    /// consts before the first negotiation has produced a config.
+    #[must_use]
+    pub fn last_config(&self, community_id: &str, channel_id: &str) -> Option<SessionVideoConfig> {
+        self.inner
+            .read()
+            .get(&(community_id.to_string(), channel_id.to_string()))
+            .and_then(|s| s.last_emitted.clone())
+    }
 }
 
 impl Default for VideoSessionStateMap {

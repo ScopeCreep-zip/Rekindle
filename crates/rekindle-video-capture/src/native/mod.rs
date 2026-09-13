@@ -12,6 +12,7 @@ mod camera;
 mod convert;
 mod preview;
 mod scale;
+mod select;
 mod session;
 
 pub use camera::{capture_available, list_devices};

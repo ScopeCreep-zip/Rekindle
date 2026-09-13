@@ -186,12 +186,28 @@ pub async fn start(
     let (error_tx, mut error_rx) = tokio::sync::mpsc::channel(4);
     let (control_tx, mut control_rx) = tokio::sync::mpsc::channel(8);
 
+    // Derive the capture + encode target from the room's negotiated encoder
+    // ceiling (gap item 2) so native capture follows a lifted ceiling or a
+    // weak-peer downgrade; fall back to the interim consts before the first
+    // negotiation has produced a config. The scorer treats this as its match
+    // target and `scale.rs` downscales native frames to it.
+    let (target_width, target_height, target_fps) = state
+        .video_sessions
+        .last_config(community_id, channel_id)
+        .map_or((NATIVE_WIDTH, NATIVE_HEIGHT, NATIVE_FPS), |cfg| {
+            (
+                cfg.encoder.max_width,
+                cfg.encoder.max_height,
+                cfg.encoder.max_fps,
+            )
+        });
+
     let config = CaptureConfig {
         device_label,
         source_override: None,
-        width: NATIVE_WIDTH,
-        height: NATIVE_HEIGHT,
-        fps: NATIVE_FPS,
+        width: target_width,
+        height: target_height,
+        fps: target_fps,
         start_bitrate_kbps: encoder_kbps(state, community_id, channel_id),
         keyframe_max_dist: NATIVE_KEYFRAME_MAX_DIST,
     };
