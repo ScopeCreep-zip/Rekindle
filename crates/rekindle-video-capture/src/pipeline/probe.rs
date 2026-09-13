@@ -45,10 +45,25 @@ fn probe_available() -> Result<(), String> {
             return Err(format!("missing element: {factory}"));
         }
     }
-    if gst::ElementFactory::find("pipewiresrc").is_none()
-        && gst::ElementFactory::find("v4l2src").is_none()
+    // The camera source element is per-OS (GStreamer's own device
+    // provider supplies it): v4l2/pipewire on Linux, applemedia's
+    // avfvideosrc on macOS, mediafoundation/ks on Windows. Require at
+    // least one to exist for the platform, or fall back to the webview.
+    #[cfg(target_os = "linux")]
+    let (source_candidates, source_label): (&[&str], &str) =
+        (&["pipewiresrc", "v4l2src"], "pipewiresrc/v4l2src");
+    #[cfg(target_os = "macos")]
+    let (source_candidates, source_label): (&[&str], &str) = (&["avfvideosrc"], "avfvideosrc");
+    #[cfg(target_os = "windows")]
+    let (source_candidates, source_label): (&[&str], &str) =
+        (&["ksvideosrc", "mfvideosrc"], "ksvideosrc/mfvideosrc");
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let (source_candidates, source_label): (&[&str], &str) = (&[], "unsupported-platform");
+    if !source_candidates
+        .iter()
+        .any(|f| gst::ElementFactory::find(f).is_some())
     {
-        return Err("no camera source element (pipewiresrc/v4l2src)".into());
+        return Err(format!("no camera source element ({source_label})"));
     }
     let encoder = gst::ElementFactory::make("vp9enc")
         .build()

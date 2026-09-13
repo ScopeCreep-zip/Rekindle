@@ -11,12 +11,16 @@ xtask = "run --quiet --package xtask --"
 [env]
 # CMake 4.x compatibility: Allow older CMakeLists.txt files (opus uses cmake_minimum_required < 3.5)
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
-# Static-link libvpx for the off-Linux native-capture feature
-# (env-libvpx-sys reads VPX_STATIC). Global is safe — env-libvpx-sys is
-# only compiled when `rekindle-video-capture/native-capture` is on
-# (non-Linux src-tauri build), so this affects nothing otherwise. Spares
-# the developer remembering the env var on `cargo build` / `pnpm tauri dev`.
-VPX_STATIC = "1"
+# GStreamer runtime discovery for the native video-capture crate
+# (rekindle-video-capture builds on GStreamer on every platform). macOS
+# installs the official framework at /Library/Frameworks; point pkg-config
+# at its .pc files so `cargo build` / `pnpm tauri dev` link GStreamer with
+# no manual env. The .pc embeds an -rpath to the framework, so the built
+# binary finds the dylibs at runtime without DYLD tweaks. Set-if-unset
+# (cargo's default), so a dev who already exports PKG_CONFIG_PATH keeps
+# theirs. Harmless off-macOS: a nonexistent dir is ignored and system
+# GStreamer is still found via pkg-config's built-in default search.
+PKG_CONFIG_PATH = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
 
 [target.x86_64-pc-windows-msvc]
 # Static link the VC runtime to avoid requiring redistributables

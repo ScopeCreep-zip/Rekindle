@@ -97,6 +97,11 @@ pub(crate) fn create_source(
     let mut fallback: Option<(gst::Element, String)> = None;
     for device in &candidates {
         let desc = device.display_name().to_string();
+        // Linux fast-path: build `v4l2src` directly on the resolved
+        // `/dev/videoN` (the single-opener model). macOS/Windows have no
+        // such path and use the provider's own configured source element
+        // (`avfvideosrc`/`mfvideosrc`) via `create_element` below.
+        #[cfg(target_os = "linux")]
         if let Some(path) = v4l2_device_path(device) {
             let element = gst::ElementFactory::make("v4l2src")
                 .property("device", &path)
@@ -116,6 +121,8 @@ pub(crate) fn create_source(
 /// Read the `/dev/videoN` path a GstDevice points at, across provider
 /// quirks: the v4l2 provider sets `device.path`; the PipeWire provider
 /// sets `api.v4l2.path` (and `object.path` as `v4l2:/dev/videoN`).
+/// Linux-only — the v4l2 fast-path in `create_source`.
+#[cfg(target_os = "linux")]
 fn v4l2_device_path(device: &gst::Device) -> Option<String> {
     let props = device.properties()?;
     for key in ["device.path", "api.v4l2.path"] {

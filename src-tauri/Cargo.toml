@@ -17,6 +17,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # v2.0 crates (flat governance)
 rekindle-types = { path = "../crates/rekindle-types" }
+# Native camera capture + realtime CBR VP9 encode, cross-platform on
+# GStreamer (v4l2src/avfvideosrc/ksvideosrc). Unconditional — same engine
+# on every OS; requires the GStreamer runtime present/bundled per platform.
+rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 rekindle-secrets = { path = "../crates/rekindle-secrets" }
 rekindle-events = { path = "../crates/rekindle-events" }
 rekindle-vault = { path = "../crates/rekindle-vault" }
@@ -133,10 +137,6 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-# Native camera capture + vp8enc realtime CBR - replaces the webview
-# encode path on Linux (WebKitGTK's VP9 rides libvpx GOOD-deadline, no
-# true CBR). See services/native_video.rs.
-rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 # WebKitGTK ships the MediaStream API gated off and denies getUserMedia
 # permission requests by default — the cause of the blank in-app webcam on
 # Linux. We reach the underlying WebView (same version wry/tauri compiles
@@ -144,16 +144,6 @@ rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 # `enable-media-stream` and approve media-device permission requests. v2_4
 # gates `set_enable_media_stream`.
 webkit2gtk = { version = "2.0.2", features = ["v2_4"] }
-
-# Off-Linux, the webview VP9 encoders honor their bitrates, so the native
-# path is opt-in: build `rekindle-video-capture` with `native-capture`
-# (nokhwa + libvpx) here so macOS/Windows get real camera capture. This is
-# a SEPARATE, mutually-exclusive target from the Linux entry above (which
-# stays feature-off, GStreamer only) — Cargo evaluates target cfgs per
-# build, so Linux never pulls nokhwa/libvpx. The feature's libvpx links
-# statically via `VPX_STATIC=1` (see `.cargo/config.toml`).
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-rekindle-video-capture = { path = "../crates/rekindle-video-capture", features = ["native-capture"] }
 
 [dev-dependencies]
 tempfile = "3"
