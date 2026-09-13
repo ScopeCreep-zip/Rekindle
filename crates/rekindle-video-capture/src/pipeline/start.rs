@@ -61,6 +61,15 @@ impl NativeCaptureSession {
         // feature) here forces a system-memory copy the CPU branches can
         // negotiate, and normalizing to I420 once means both branches
         // inherit it (vp9enc wants I420; jpegenc accepts it).
+        // System-memory raw/MJPEG gate BEFORE decodebin (caps set below).
+        // avfvideosrc (macOS) prefers `video/x-raw(memory:GLMemory)`;
+        // decodebin's `(ANY)` stop-cap passes that GLMemory buffer through,
+        // and its src pad then can't link to videoconvert's plain
+        // `video/x-raw` (system memory) — GST_PAD_LINK_NOFORMAT ("Pads do
+        // not have common format") → internal data stream error. A
+        // feature-less filter drops the GLMemory branch. No-op on Linux
+        // v4l2src (only advertises system-memory raw + MJPEG anyway).
+        let src_caps = make(&pipeline, "capsfilter")?;
         let decode = make(&pipeline, "decodebin")?;
         let convert = make(&pipeline, "videoconvert")?;
         let head_caps = make(&pipeline, "capsfilter")?;
@@ -87,6 +96,20 @@ impl NativeCaptureSession {
             .map_err(|e| CaptureError::Pipeline(e.to_string()))?;
 
         let fps = i32::try_from(config.fps).unwrap_or(15);
+        // Feature-less (bare `video/x-raw` = implicit memory:SystemMemory)
+        // — deliberately NOT `video/x-raw(ANY)`, which would re-admit
+        // GLMemory and reintroduce the bug. No width/height/format/fps
+        // pinned: the source keeps its native mode; `videoconvert` +
+        // head_caps (I420) + the per-branch videoscale/videorate normalize.
+        // `image/jpeg` lets MJPEG-only cameras negotiate + decode via
+        // decodebin→jpegdec.
+        src_caps.set_property(
+            "caps",
+            gst::Caps::builder_full()
+                .structure(gst::Structure::builder("video/x-raw").build())
+                .structure(gst::Structure::builder("image/jpeg").build())
+                .build(),
+        );
         head_caps.set_property(
             "caps",
             gst::Caps::builder("video/x-raw")
@@ -128,9 +151,8 @@ impl NativeCaptureSession {
         // few KB/frame.
         jpegenc.set_property("quality", 50i32);
 
-        source
-            .link(&decode)
-            .map_err(|e| CaptureError::Pipeline(format!("source!decodebin: {e}")))?;
+        gst::Element::link_many([&source, &src_caps, &decode])
+            .map_err(|e| CaptureError::Pipeline(format!("source!caps!decodebin: {e}")))?;
         gst::Element::link_many([&convert, &head_caps, &tee])
             .map_err(|e| CaptureError::Pipeline(format!("convert..tee: {e}")))?;
         gst::Element::link_many([

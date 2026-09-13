@@ -1,7 +1,7 @@
 //! GStreamer capture+encode pipeline with an in-process `tee` fan-out:
 //!
 //! ```text
-//! {camera source} ! decodebin ! videoconvert ! video/x-raw,format=I420 ! tee t.
+//! {camera source} ! video/x-raw;image/jpeg ! decodebin ! videoconvert ! video/x-raw,format=I420 ! tee t.
 //!   t. ! queue leaky=downstream ! videoscale ! videorate
 //!      ! video/x-raw,format=I420,width=W,height=H,framerate=F/1
 //!      ! vp9enc deadline=1 end-usage=cbr target-bitrate=B ... ! appsink   (→ peers)
