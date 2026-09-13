@@ -11,16 +11,31 @@ xtask = "run --quiet --package xtask --"
 [env]
 # CMake 4.x compatibility: Allow older CMakeLists.txt files (opus uses cmake_minimum_required < 3.5)
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
-# GStreamer runtime discovery for the native video-capture crate
+# GStreamer discovery for the native video-capture crate
 # (rekindle-video-capture builds on GStreamer on every platform). macOS
 # installs the official framework at /Library/Frameworks; point pkg-config
-# at its .pc files so `cargo build` / `pnpm tauri dev` link GStreamer with
-# no manual env. The .pc embeds an -rpath to the framework, so the built
-# binary finds the dylibs at runtime without DYLD tweaks. Set-if-unset
-# (cargo's default), so a dev who already exports PKG_CONFIG_PATH keeps
-# theirs. Harmless off-macOS: a nonexistent dir is ignored and system
-# GStreamer is still found via pkg-config's built-in default search.
+# at its .pc files so `cargo build` / `pnpm tauri dev` link GStreamer at
+# COMPILE time with no manual env. Set-if-unset (cargo's default), so a
+# dev who already exports PKG_CONFIG_PATH keeps theirs. Harmless off-macOS:
+# a nonexistent dir is ignored and system GStreamer is still found via
+# pkg-config's built-in default search. NOTE: this only handles the LINK;
+# the RUNTIME rpath is added by the macOS rustflags below (pkg-config's
+# `-Wl,-rpath` in the .pc is NOT forwarded by gstreamer-sys, so without
+# the rustflag the binary aborts at launch with "no LC_RPATH's found" for
+# @rpath/libgst*.dylib).
 PKG_CONFIG_PATH = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
+
+# macOS: embed an rpath to the official GStreamer.framework so the app +
+# test binaries resolve @rpath/libgst*.dylib at runtime (dev). This is the
+# DEV rpath — an absolute /Library/Frameworks path present on dev machines;
+# the DISTRIBUTED .app instead bundles the framework and gets an
+# @executable_path-relative rpath at package time (see the plan's
+# install-package step). cfg-based so it applies to x86_64 + arm64 macs.
+[target.'cfg(target_os = "macos")']
+rustflags = [
+    "-C",
+    "link-arg=-Wl,-rpath,/Library/Frameworks/GStreamer.framework/Versions/1.0/lib",
+]
 
 [target.x86_64-pc-windows-msvc]
 # Static link the VC runtime to avoid requiring redistributables
