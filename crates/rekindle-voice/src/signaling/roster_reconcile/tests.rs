@@ -27,6 +27,69 @@ fn media(peers: &[&str]) -> HashSet<String> {
 }
 
 #[test]
+fn silent_rostered_peer_is_reannounced_to() {
+    // alice is in our roster and her row says she's in our channel, but
+    // she is sending us no media (not media-live) — our route likely
+    // never reached her. Re-announce.
+    let roster = vec![("alice".to_string(), 100u64)];
+    let out = compute_route_reannounce(
+        "ch1",
+        "me",
+        &roster,
+        &[row("alice", Some("ch1"), true)],
+        &no_media(),
+    );
+    assert_eq!(out, vec!["alice".to_string()]);
+}
+
+#[test]
+fn media_live_rostered_peer_is_not_reannounced_to() {
+    // bob streams to us → he already holds our route → no retry.
+    let roster = vec![("bob".to_string(), 100u64)];
+    let out = compute_route_reannounce(
+        "ch1",
+        "me",
+        &roster,
+        &[row("bob", Some("ch1"), true)],
+        &media(&["bob"]),
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
+fn not_yet_rostered_peer_is_an_add_not_a_reannounce() {
+    // carol is not in the roster → that's an ADD, never a re-announce
+    // (the two sets are disjoint).
+    let out = compute_route_reannounce(
+        "ch1",
+        "me",
+        &[],
+        &[row("carol", Some("ch1"), true)],
+        &no_media(),
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
+fn reannounce_skips_other_channels_and_self() {
+    let roster = vec![
+        ("dave".to_string(), 100u64),
+        ("me".to_string(), 100u64),
+    ];
+    let out = compute_route_reannounce(
+        "ch1",
+        "me",
+        &roster,
+        &[
+            row("dave", Some("ch2"), true), // different channel
+            row("me", Some("ch1"), true),   // ourselves
+        ],
+        &no_media(),
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
 fn fresh_claim_for_our_channel_is_added() {
     let plan = compute_roster_reconcile(
         "ch1",

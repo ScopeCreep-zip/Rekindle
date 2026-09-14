@@ -29,6 +29,10 @@ impl CommunityPresenceDeps for PresenceAdapter {
         state_helpers::our_route_blob(&self.state)
     }
 
+    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
+        state_helpers::our_media_route_blob(&self.state)
+    }
+
     fn current_presence_status_str(&self, community_id: &str) -> String {
         // Delegate to the src-tauri helper so the wire-string
         // mapping lives in exactly one place. The helper is the
@@ -518,7 +522,19 @@ impl CommunityPresenceDeps for PresenceAdapter {
             .map(|r| rekindle_voice::signaling::PresencePeerView {
                 pseudonym_hex: r.pseudonym_hex,
                 display_name: r.display_name,
-                route_blob: r.route_blob,
+                // Media routing: the voice roster must send realtime media
+                // over the peer's MEDIA route (LowLatency + PreferUnordered),
+                // not the general ordered-TCP route that head-of-line blocks
+                // it. Fall back to the general route only when the peer
+                // published no media route (old build / media route not
+                // allocated). This is also what stops the reconcile's
+                // route-supersession from downgrading a good media route to
+                // the general route every poll.
+                route_blob: if r.media_route_blob.is_empty() {
+                    r.route_blob
+                } else {
+                    r.media_route_blob
+                },
                 voice_channel_id: r.voice_channel_id,
                 fresh: r.fresh,
             })

@@ -42,7 +42,27 @@ pub struct MemberPresence {
 
     /// Current private route blob for direct messaging.
     /// Refreshed every 120 seconds.
+    ///
+    /// This is the GENERAL route (Reliable + PreferOrdered) — the one
+    /// chat / governance / gossip need for ordered, reliable delivery.
+    /// Realtime media must NOT use it (ordered TCP relays head-of-line
+    /// block a media stream); media peers use [`Self::media_route_blob`].
     pub route_blob: Vec<u8>,
+
+    /// Media-class inbound route blob (LowLatency + PreferUnordered) —
+    /// what a peer imports to send us realtime voice/video. Carried on
+    /// the presence row (the durable discovery path) so a peer found via
+    /// the roster reconcile learns our FAST route, not the general one,
+    /// and so the reconcile's route-supersession stops downgrading a
+    /// good media route to the general route every poll.
+    ///
+    /// Empty when no media route is allocated (readers fall back to
+    /// [`Self::route_blob`]). `skip_serializing_if` keeps a row without a
+    /// media route byte-identical to the pre-existing wire form, so old
+    /// readers still verify the signature (same discipline as
+    /// [`Self::departed`] / [`Self::voice_channel_id`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_route_blob: Vec<u8>,
 
     /// Unix timestamp of last heartbeat write.
     pub last_heartbeat: u64,
@@ -334,6 +354,7 @@ impl Default for MemberPresence {
             status: "online".into(),
             custom_status: None,
             route_blob: Vec::new(),
+            media_route_blob: Vec::new(),
             last_heartbeat: 0,
             // A default row is a live member, never a tombstone: every
             // heartbeat builds from `..Default::default()`, so defaulting
@@ -417,6 +438,37 @@ mod tests {
         assert!(
             !json.contains("historyRangesEncrypted"),
             "absent field must not serialize"
+        );
+    }
+
+    #[test]
+    fn media_route_blob_roundtrips_and_binds_to_signature() {
+        let presence = MemberPresence {
+            pseudonym_key: PseudonymKey([0x11; 32]),
+            route_blob: vec![1, 2, 3],
+            media_route_blob: vec![9, 8, 7, 6],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&presence).unwrap();
+        let back: MemberPresence = serde_json::from_str(&json).unwrap();
+        assert_eq!(presence, back);
+        // Bound into signing_bytes so a MITM can't swap the media route.
+        assert_eq!(presence.signing_bytes(), back.signing_bytes());
+        assert!(json.contains("mediaRouteBlob"));
+    }
+
+    #[test]
+    fn media_route_blob_omitted_when_empty() {
+        // Wire-identical to the pre-existing format when absent → old
+        // readers still verify the signature.
+        let presence = MemberPresence {
+            pseudonym_key: PseudonymKey([0; 32]),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&presence).unwrap();
+        assert!(
+            !json.contains("mediaRouteBlob"),
+            "absent media route must not serialize"
         );
     }
 

@@ -39,6 +39,10 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn our_route_blob(&self) -> Option<Vec<u8>> {
         self.state.lock().our_route.clone()
     }
+    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
+        // The fixture models a single route; no separate media route.
+        None
+    }
     fn current_presence_status_str(&self, community_id: &str) -> String {
         let mut st = self.state.lock();
         st.calls_status_str.push(community_id.to_string());

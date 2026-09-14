@@ -196,6 +196,47 @@ pub fn compute_blob_refreshes<S: std::hash::BuildHasher>(
     refreshes
 }
 
+/// Reciprocity retry — rostered peers who should be hearing our media
+/// but send NONE back to us (not media-live), while their presence row
+/// is fresh and claims OUR channel.
+///
+/// Not receiving reciprocal media from a peer that is present and in our
+/// channel is the signal that OUR route never reached them: our
+/// `VoiceJoin`/`VoiceJoinAck` was a fire-and-forget send with no ack, so
+/// a single lost leg leaves us added-to-them (we send, they receive) but
+/// them-not-added-to-us (they can't send back) — a persistent one-way.
+/// Re-announce our route to them each reconcile until media flows back,
+/// which stops the retry (a peer streaming to us already holds our
+/// route). This is the RFC 3550 receiver-report / RFC 7675 consent
+/// principle applied with the signals we have: reciprocal media is the
+/// proof the path is two-way.
+///
+/// Disjoint from [`compute_roster_reconcile`]'s adds (those are
+/// `!in_roster`; these are in-roster) and never targets a media-live
+/// peer or ourselves.
+#[must_use]
+pub fn compute_route_reannounce<S: std::hash::BuildHasher>(
+    bound_channel: &str,
+    my_pseudonym: &str,
+    roster: &[(String, u64)],
+    presence: &[PresencePeerView],
+    media_live: &std::collections::HashSet<String, S>,
+) -> Vec<String> {
+    let in_roster: std::collections::HashSet<&str> =
+        roster.iter().map(|(k, _)| k.as_str()).collect();
+    presence
+        .iter()
+        .filter(|row| {
+            in_roster.contains(row.pseudonym_hex.as_str())
+                && !media_live.contains(row.pseudonym_hex.as_str())
+                && row.fresh
+                && row.voice_channel_id.as_deref() == Some(bound_channel)
+                && row.pseudonym_hex != my_pseudonym
+        })
+        .map(|row| row.pseudonym_hex.clone())
+        .collect()
+}
+
 /// Apply the presence view to the bound voice session: compute the
 /// plan over the live transport roster, mutate it, and emit the same
 /// `VoiceJoin`/`VoiceLeave` events the gossip path emits so every
@@ -220,20 +261,23 @@ pub async fn reconcile_from_presence(
     };
 
     let media_live = deps.media_live_peers();
-    let (plan, refreshes) = {
+    let (plan, refreshes, reannounce) = {
         let t = transport.lock().await;
+        let roster = t.peer_views();
         let current_blobs: Vec<(String, Vec<u8>)> = t
             .peer_named_entries()
             .into_iter()
             .map(|(pseudonym, blob, _)| (pseudonym, blob))
             .collect();
-        let plan =
-            compute_roster_reconcile(&channel_id, &my_pk, &t.peer_views(), &rows, &media_live);
+        let plan = compute_roster_reconcile(&channel_id, &my_pk, &roster, &rows, &media_live);
         let refreshes =
             compute_blob_refreshes(&channel_id, &my_pk, &current_blobs, &rows, &media_live);
-        (plan, refreshes)
+        let reannounce =
+            compute_route_reannounce(&channel_id, &my_pk, &roster, &rows, &media_live);
+        (plan, refreshes, reannounce)
     };
-    if plan.add.is_empty() && plan.remove.is_empty() && refreshes.is_empty() {
+    if plan.add.is_empty() && plan.remove.is_empty() && refreshes.is_empty() && reannounce.is_empty()
+    {
         return;
     }
 
@@ -372,6 +416,30 @@ pub async fn reconcile_from_presence(
             &my_pk,
         )
         .await;
+    }
+
+    // Reciprocity retry — re-deliver our route to rostered peers who are
+    // sending us no media (see `compute_route_reannounce`). A directed
+    // VoiceJoinAck with `joiner_pseudonym` = the target's own key is
+    // exactly what the join path uses; the peer treats it as "the ack
+    // that is for me" and adds us with our route (`presence::ack`).
+    // Idempotent (a route upsert), fire-and-forget, self-limiting: once
+    // the peer holds our route and streams back, media_live drops them
+    // from this set.
+    for peer in &reannounce {
+        let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+            channel_id: channel_id.clone(),
+            joiner_pseudonym: peer.clone(),
+            display_name: deps.my_display_name(),
+            route_blob: deps.our_route_blob(),
+        });
+        deps.send_to_channel(community_id, &channel_id, &ack);
+        tracing::info!(
+            community = %community_id,
+            channel = %channel_id,
+            peer = %peer,
+            "presence reconcile: re-announced our route to a silent rostered peer (reciprocity retry)",
+        );
     }
 }
 

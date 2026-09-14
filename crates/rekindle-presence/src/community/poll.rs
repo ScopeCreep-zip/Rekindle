@@ -157,6 +157,7 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                     pseudonym_hex: row.pseudonym_hex.clone(),
                     display_name: row.presence.display_name.clone(),
                     route_blob: row.presence.route_blob.clone(),
+                    media_route_blob: row.presence.media_route_blob.clone(),
                     voice_channel_id: row_voice_channel,
                     fresh: row.online_member.is_some(),
                 });

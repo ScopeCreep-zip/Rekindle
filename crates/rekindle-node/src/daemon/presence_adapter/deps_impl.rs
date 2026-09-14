@@ -38,6 +38,12 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.our_route_blob_impl()
     }
 
+    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
+        // The daemon allocates no separate media-class route; peers fall
+        // back to the general route (`our_route_blob`) for its media.
+        None
+    }
+
     fn current_presence_status_str(&self, _community_id: &str) -> String {
         Self::current_status_impl()
     }

@@ -19,8 +19,16 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     fn my_pseudonym_for_community(&self, community_id: &str) -> String;
 
     /// Our published private route blob (if attached), used by the
-    /// gossip `PresenceUpdate` broadcast.
+    /// gossip `PresenceUpdate` broadcast. This is the GENERAL route
+    /// (Reliable + PreferOrdered) for chat / governance / gossip.
     fn our_route_blob(&self) -> Option<Vec<u8>>;
+
+    /// Our media-class inbound route blob (LowLatency + PreferUnordered),
+    /// written onto the presence row so peers found via the reconcile
+    /// send our realtime media over the FAST route, not the general one.
+    /// `None` when no media route is allocated (readers fall back to
+    /// `our_route_blob`).
+    fn our_media_route_blob(&self) -> Option<Vec<u8>>;
 
     /// String form of the local user's current presence status —
     /// "online" / "away" / "busy" / "offline" (Invisible folds to
@@ -451,7 +459,13 @@ pub use rekindle_types::presence::SegmentDescriptor;
 pub struct VoicePresenceRow {
     pub pseudonym_hex: String,
     pub display_name: Option<String>,
+    /// GENERAL route (Reliable + PreferOrdered) from the presence row.
     pub route_blob: Vec<u8>,
+    /// MEDIA route (LowLatency + PreferUnordered) from the presence row —
+    /// what the voice roster reconcile should add/supersede with, so
+    /// media flows over the fast route. Empty when the peer published no
+    /// media route (reconcile falls back to `route_blob`).
+    pub media_route_blob: Vec<u8>,
     /// MEK-decrypted voice channel claim from the row's SessionExtras.
     /// `None` when not in a channel or when our MEK can't decrypt.
     pub voice_channel_id: Option<String>,

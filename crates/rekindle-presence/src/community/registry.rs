@@ -124,6 +124,7 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         display_name: Some(deps.identity_display_name()),
         status,
         route_blob: our_route_blob.unwrap_or_default(),
+        media_route_blob: deps.our_media_route_blob().unwrap_or_default(),
         last_heartbeat: now_secs(),
         event_rsvps: snapshot.event_rsvps,
         history_ranges_encrypted,

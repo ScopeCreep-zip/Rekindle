@@ -39,8 +39,8 @@ pub use deps::{
 };
 pub use dispatcher::handle_voice_signaling;
 pub use roster_reconcile::{
-    compute_roster_reconcile, reconcile_from_presence, PresencePeerView, ReconcileAdd,
-    ReconcilePlan, JOIN_GRACE_SECS,
+    compute_roster_reconcile, compute_route_reannounce, reconcile_from_presence, PresencePeerView,
+    ReconcileAdd, ReconcilePlan, JOIN_GRACE_SECS,
 };
 pub use stage::{
     request_to_speak, respond_to_speak_request, server_deafen_member, server_mute_member,
