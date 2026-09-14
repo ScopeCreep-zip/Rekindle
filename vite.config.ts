@@ -38,14 +38,19 @@ export default defineConfig({
 
   clearScreen: false,
   server: {
-    port: 1420,
+    // 1430 (not the Tauri scaffold default 1420) so Rekindle's dev server
+    // coexists with other Tauri/Vite projects on this machine instead of
+    // colliding on 1420 — a collision silently loaded the wrong app into
+    // the Rekindle shell. Keep in sync with tauri.conf.json devUrl,
+    // package.json `dev`, the mac/linux dev scripts, and playwright.
+    port: 1430,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: 1431,
         }
       : undefined,
     watch: {

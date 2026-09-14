@@ -22,6 +22,7 @@ pub mod policy;
 pub mod reassembler;
 pub mod reassembly_state;
 pub mod receive;
+pub mod reception;
 pub mod send;
 pub mod send_pacer;
 pub mod stream_id;
@@ -47,6 +48,7 @@ pub use policy::negotiate_session_config;
 pub use reassembler::{ReassembledFrame, Reassembler, ReassemblerError};
 pub use reassembly_state::VideoReassemblyState;
 pub use receive::{handle_video_payload, video_payload_channel};
+pub use reception::{FrameAckOut, VideoReceptionWindow, ACK_WINDOW_MS};
 pub use rekindle_types::video::{
     BandwidthEstimate, Codec, DecoderConstraints, EncoderConstraints, MediaCapabilities,
     ScalabilityMode, SessionVideoConfig,

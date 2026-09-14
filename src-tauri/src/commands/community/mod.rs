@@ -181,7 +181,7 @@ pub use video::{
     __cmd__register_community_video_channel, __cmd__register_native_preview_channel,
     __cmd__report_local_video_capabilities, __cmd__report_media_capture_error,
     __cmd__report_video_decoder_status, __cmd__report_video_encoder_status,
-    __cmd__send_video_bandwidth_estimate, __cmd__send_video_frame, __cmd__send_video_frame_ack,
+    __cmd__send_video_bandwidth_estimate, __cmd__send_video_frame,
     __cmd__send_video_keyframe_request, __cmd__start_native_video, __cmd__stop_native_video,
     __cmd__unregister_community_video_channel, __cmd__unregister_native_preview_channel,
     default_media_capabilities, derive_video_stream_id, force_native_keyframes,
@@ -189,7 +189,7 @@ pub use video::{
     notify_video_topology_change, register_community_video_channel,
     register_native_preview_channel, report_local_video_capabilities, report_media_capture_error,
     report_video_decoder_status, report_video_encoder_status, send_video_bandwidth_estimate,
-    send_video_frame, send_video_frame_ack, send_video_keyframe_request, start_native_video,
+    send_video_frame, send_video_keyframe_request, start_native_video,
     stop_native_video, unregister_community_video_channel, unregister_native_preview_channel,
 };
 

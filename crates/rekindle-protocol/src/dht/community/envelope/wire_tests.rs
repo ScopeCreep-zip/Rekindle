@@ -24,6 +24,7 @@ fn sample_video_fragment() -> ControlPayload {
         codec: Codec::Vp9,
         timestamp: 123_456,
         mek_generation: 9,
+        transport_seq: 77,
         payload: vec![1, 2, 3],
         signature: vec![4, 5, 6],
     })
@@ -41,6 +42,7 @@ fn sample_parity() -> ControlPayload {
         frame_len: 999,
         timestamp: 123_456,
         mek_generation: 9,
+        transport_seq: 78,
         payload: vec![9, 9],
         signature: vec![8, 8],
     })
@@ -95,8 +97,8 @@ fn serde_json_wire_identity() {
 #[test]
 fn capnp_wire_identity() {
     let expect = [
-        ("video_fragment", sample_video_fragment(), "10115001010101500101013b500304712a0103010740e2010109110d22110d8211111a11111a07636831ff07070707070707070107070707070707070701020307040506"),
-        ("parity", sample_parity(), "10125001010101500101013c500404612a020373e70340e20100000109110d22110d8211111211111207636831ff0707070707070707010707070707070707030909030808"),
+        ("video_fragment", sample_video_fragment(), "10125001010101500101013b500404712a0103010740e2010109014d110d22110d8211111a11111a07636831ff07070707070707070107070707070707070701020307040506"),
+        ("parity", sample_parity(), "10125001010101500101013c500404612a020373e70340e201104e0109110d22110d8211111211111207636831ff0707070707070707010707070707070707030909030808"),
         ("mek_transfer", sample_mek_transfer(), "100f5001010101500101011050020401010105110d1a110d22110d1a110d120363310763683103703103aabb"),
         ("mek_ack", sample_mek_ack(), "100c500101010150010101435002030000010511091a000011051a036331037032"),
     ];

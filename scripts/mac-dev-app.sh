@@ -13,7 +13,7 @@
 # LaunchServices so macOS attributes camera access to the bundle.
 #
 # Usage:  ./scripts/mac-dev-app.sh
-#   - starts the Vite dev server if :1420 isn't already listening
+#   - starts the Vite dev server if :1430 isn't already listening
 #   - rebuilds the debug binary (re-run the script after Rust changes;
 #     frontend changes hot-reload as usual)
 #   - first camera use prompts for "Rekindle Dev" — accept it
@@ -24,24 +24,40 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT/target/debug/dev-bundle/Rekindle Dev.app"
 VITE_LOG="${TMPDIR:-/tmp}/rekindle-vite-dev.log"
 
-# Probe the dev server the way the webview does: http://localhost:1420
-# through the system resolver. Vite 6 binds the IPv6 loopback
-# ([::1]:1420), so a raw 127.0.0.1 port check reports DOWN while the
-# server is fine.
+# Rekindle's dev server runs on :1430 (NOT the Tauri scaffold default
+# 1420), so it coexists with other Tauri/Vite projects on this machine
+# instead of colliding — a collision on 1420 silently loaded a different
+# app's frontend into the Rekindle shell. Probe via the system resolver
+# (Vite binds the IPv6 loopback [::1], so a raw 127.0.0.1 check can report
+# DOWN while the server is fine).
+#   vite_up     — is anything answering on :1430?
+#   is_rekindle — and is it REKINDLE's server (title marker), not another
+#                 app squatting the port? (guards the silent-wrong-app bug)
 vite_up() {
-    curl -s -o /dev/null --max-time 2 "http://localhost:1420/" 2>/dev/null
+    curl -s -o /dev/null --max-time 2 "http://localhost:1430/" 2>/dev/null
+}
+is_rekindle() {
+    curl -s --max-time 2 "http://localhost:1430/" 2>/dev/null | grep -q "<title>Rekindle</title>"
 }
 
-# 1. Frontend dev server (devUrl http://localhost:1420).
-if ! vite_up; then
+# 1. Frontend dev server (devUrl http://localhost:1430).
+if vite_up; then
+    if ! is_rekindle; then
+        echo "✗ port 1430 is serving a DIFFERENT app, not Rekindle." >&2
+        echo "  Free it ('lsof -ti:1430 | xargs kill') or change Rekindle's" >&2
+        echo "  dev port (vite.config.ts + tauri.conf.json devUrl)." >&2
+        exit 1
+    fi
+    echo "→ reusing the Rekindle Vite dev server already on :1430"
+else
     echo "→ starting Vite dev server (log: $VITE_LOG)"
     (cd "$ROOT" && nohup pnpm dev >"$VITE_LOG" 2>&1 &)
     for _ in $(seq 1 120); do
-        vite_up && break
+        is_rekindle && break
         sleep 0.5
     done
-    vite_up || {
-        echo "✗ Vite did not come up on :1420 — see $VITE_LOG" >&2
+    is_rekindle || {
+        echo "✗ Rekindle Vite did not come up on :1430 — see $VITE_LOG" >&2
         exit 1
     }
 fi

@@ -108,6 +108,37 @@ impl VideoDeps for VideoAdapter {
         state_helpers::increment_lamport(&self.state, community_id)
     }
 
+    fn send_frame_ack(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        stream_id: [u8; 16],
+        last_frame_seq: u32,
+        kbps: u32,
+        loss_q8: u8,
+    ) {
+        // Receiver-owned congestion feedback (moved out of the thin
+        // frontend): wire loss over transport_seq drives the sender's
+        // AIMD. Fire-and-forget; a send error just means one skipped ack.
+        if let Err(e) = crate::services::community_video_runtime::send_video_frame_ack_inner(
+            &self.state,
+            community_id,
+            channel_id,
+            &hex::encode(stream_id),
+            last_frame_seq,
+            kbps,
+            loss_q8,
+        ) {
+            tracing::debug!(
+                target: "rekindle_video::receive",
+                community_id,
+                channel_id,
+                error = %e,
+                "receiver frame-ack send failed"
+            );
+        }
+    }
+
     fn emit_event(&self, event: VideoEvent) {
         // Phase 11 Tier 1 — high-throughput reassembled frames bypass the
         // `community-event` bus and go straight to the per-community

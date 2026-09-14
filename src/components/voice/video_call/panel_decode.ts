@@ -7,7 +7,6 @@ import { commands } from "../../../ipc/commands";
 import type { Codec } from "../../../ipc/commands";
 import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
-  ACK_INTERVAL_MS,
   DEBUG_VIDEO_LATENCY,
   KEYFRAME_REQUEST_MIN_INTERVAL_MS,
   type RemoteStream,
@@ -251,7 +250,6 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
         // pump skips decode until then.
         ready: false,
         buffer: new VideoPlayoutBuffer(),
-        lastAckAt: 0,
         decodeStamps: [],
         lastDecodeMs: 0,
         lastDebugAt: 0,
@@ -320,18 +318,10 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
             `lastDecode=${Math.round(r.lastDecodeMs)}ms jitter=${s.jitterMs}ms`,
         );
       }
-      if (ctx.props.mode === "community" && now - r.lastAckAt >= ACK_INTERVAL_MS) {
-        r.lastAckAt = now;
-        const { kbps, lossQ8, lastFrameSeq } = r.buffer.takeStats(now);
-        void commands.sendVideoFrameAck(
-          ctx.props.communityId,
-          ctx.props.channelId,
-          r.streamId,
-          lastFrameSeq,
-          kbps,
-          lossQ8,
-        );
-      }
+      // Receiver→sender congestion feedback (FrameAck) is now owned by
+      // the Rust receive path (rekindle-video), measured over the
+      // transport sequence — the thin frontend no longer computes or
+      // sends loss. It only decodes, paints, and asks for keyframes.
     }
     ctx.schedulePlayout();
   }

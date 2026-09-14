@@ -220,6 +220,9 @@ impl SendCtx<'_> {
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
                     mek_generation: fragment.mek_generation,
+                    // Placeholder — the pacer stamps the real gap-free
+                    // transport sequence at egress (`VideoPacer::poll`).
+                    transport_seq: 0,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 }))
@@ -272,6 +275,8 @@ impl SendCtx<'_> {
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
                     mek_generation: fragment.mek_generation,
+                    // Placeholder — stamped by `VideoPacer::poll` at egress.
+                    transport_seq: 0,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 },
@@ -299,6 +304,8 @@ impl SendCtx<'_> {
                     frame_len: fragment.frame_len,
                     timestamp: fragment.timestamp,
                     mek_generation: fragment.mek_generation,
+                    // Placeholder — stamped by `VideoPacer::poll` at egress.
+                    transport_seq: 0,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 }),

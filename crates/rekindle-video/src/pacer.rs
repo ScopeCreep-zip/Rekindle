@@ -67,6 +67,19 @@ fn envelope_wire_cost(envelope: &CommunityEnvelope) -> usize {
     }
 }
 
+/// Stamp the transport-wide send sequence on a fragment envelope at
+/// egress. No-op on non-fragment envelopes (the queue only ever holds
+/// video data/parity fragments, so this is defensive).
+fn stamp_transport_seq(envelope: &mut CommunityEnvelope, seq: u32) {
+    if let CommunityEnvelope::Control(control) = envelope {
+        match control {
+            ControlPayload::VideoFragment(p) => p.transport_seq = seq,
+            ControlPayload::VideoParityFragment(p) => p.transport_seq = seq,
+            _ => {}
+        }
+    }
+}
+
 /// Receiver-countable payload of one envelope: DATA fragments only.
 /// Parity is consumed inside the reassembler and never reaches the
 /// receiver's goodput accounting — it belongs in the wire denominator
@@ -113,6 +126,14 @@ pub struct VideoPacer {
     /// (receivers shouldn't get half a frame because policy changed).
     front_cursor: usize,
     sent_fragments: u64,
+    /// Transport-wide send sequence stamped on each fragment AS IT IS
+    /// RELEASED — the libwebrtc transport-cc analog (the PacketRouter
+    /// stamps the transport-wide sequence number extension when routing
+    /// from the pacer). Gap-free over fragments ACTUALLY transmitted:
+    /// frames the pacer expired never consume a number, so the receiver
+    /// can't mistake sender-side pacing drops for wire loss. Wrapping is
+    /// fine — the receiver measures over short windows.
+    next_transport_seq: u32,
     dropped_frames: u64,
     expired_frames: u64,
     oversized_keyframes: u64,
@@ -135,6 +156,7 @@ impl VideoPacer {
             queue: VecDeque::new(),
             front_cursor: 0,
             sent_fragments: 0,
+            next_transport_seq: 0,
             dropped_frames: 0,
             expired_frames: 0,
             oversized_keyframes: 0,
@@ -278,11 +300,12 @@ impl VideoPacer {
             self.released_wire_bytes += wire as u64;
             self.released_data_payload_bytes += envelope_data_payload_bytes(envelope) as u64;
             let front = self.queue.front().expect("checked above");
-            out.push((
-                front.community_id.clone(),
-                front.channel_id.clone(),
-                front.envelopes[self.front_cursor].clone(),
-            ));
+            let mut released = front.envelopes[self.front_cursor].clone();
+            // Stamp the transport-wide sequence at the moment of egress
+            // (both data and parity fragments share the one counter).
+            stamp_transport_seq(&mut released, self.next_transport_seq);
+            self.next_transport_seq = self.next_transport_seq.wrapping_add(1);
+            out.push((front.community_id.clone(), front.channel_id.clone(), released));
             self.front_cursor += 1;
             self.sent_fragments += 1;
         }

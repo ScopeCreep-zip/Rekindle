@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use parking_lot::Mutex;
 
 use crate::reassembler::{ReassembledFrame, Reassembler};
+use crate::reception::{FrameAckOut, VideoReceptionWindow};
 use crate::{VideoFragment, VideoParityFragment};
 
 /// Per-community reassembly state plus a set of stream_ids the local
@@ -35,6 +36,13 @@ pub struct VideoReassemblyState {
     /// by the decrypt-failure path — debounces the cascade request to
     /// once per window even at 15 fps of undecryptable frames.
     last_mek_request_ms: Mutex<HashMap<String, u32>>,
+    /// Receiver-side transport loss/goodput window per `(community_id,
+    /// sender_pseudonym)`. Fed one `observe` per authentic received
+    /// fragment; emits a `FrameAckOut` on the AIMD cadence. Keyed by
+    /// SENDER (not stream) because one sender's pacer stamps a single
+    /// transport sequence across all its streams — the shared bottleneck
+    /// the loss estimate is meant to see (libwebrtc transport-cc).
+    reception: Mutex<HashMap<(String, String), VideoReceptionWindow>>,
 }
 
 /// Decrypt failures within this window of a fired MEK request don't
@@ -98,6 +106,29 @@ impl VideoReassemblyState {
         }
     }
 
+    /// Record one authentic received fragment (data OR parity) against
+    /// the sender's transport-loss window and return a `FrameAckOut`
+    /// when the AIMD feedback window elapses. The caller sends the ack
+    /// back to the channel so the SENDER's AIMD adapts — loss measured
+    /// over `transport_seq` (real wire loss), never over `frame_seq`.
+    pub fn note_received(
+        &self,
+        community_id: &str,
+        sender_hex: &str,
+        transport_seq: u32,
+        frame_seq: u32,
+        stream_id: [u8; 16],
+        channel_id: &str,
+        bytes: usize,
+        now_ms: u32,
+    ) -> Option<FrameAckOut> {
+        let mut map = self.reception.lock();
+        let window = map
+            .entry((community_id.to_string(), sender_hex.to_string()))
+            .or_insert_with(|| VideoReceptionWindow::new(now_ms));
+        window.observe(transport_seq, frame_seq, stream_id, channel_id, bytes, now_ms)
+    }
+
     /// Drop pending fragments for a stream — invoked when the local
     /// receiver sends a `KeyframeRequest`.
     pub fn reset_stream(&self, community_id: &str, stream_id: [u8; 16], sender_hex: &str) {
@@ -117,6 +148,7 @@ impl VideoReassemblyState {
             .lock()
             .retain(|(cid, _), _| cid != community_id);
         self.last_mek_request_ms.lock().remove(community_id);
+        self.reception.lock().retain(|(cid, _), _| cid != community_id);
     }
 
     pub fn clear(&self) {
@@ -124,6 +156,7 @@ impl VideoReassemblyState {
         self.started_streams.lock().clear();
         self.last_topology_lamport.lock().clear();
         self.last_mek_request_ms.lock().clear();
+        self.reception.lock().clear();
     }
 
     /// Debounce gate for the decrypt-failure MEK refresh: returns

@@ -25,7 +25,7 @@ export RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rekindle_vide
 # plugin turns a second launch into a focus-the-old no-op. Take the old
 # `tauri dev` CLI down too so two watchers don't fight over
 # target/debug. (`pnpm dev`, the beforeDevCommand, clears a stale Vite
-# on :1420 by itself.)
+# on :1430 by itself.)
 for pattern in "$ROOT/.*tauri\.js dev" "$ROOT/target/debug/rekindle"; do
     if pgrep -f "$pattern" >/dev/null; then
         echo "→ stopping running dev processes ($pattern)"

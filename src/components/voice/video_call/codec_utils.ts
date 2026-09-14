@@ -55,8 +55,6 @@ export { wireCodecToWebCodecsString } from "../../../utils/webcodecs";
 // moved to ./playout_buffer.ts, their only consumer. They were declared
 // here while this file imported `VideoPlayoutBuffer` back out of that
 // module, which is the whole of that cycle.
-export const ACK_INTERVAL_MS = 1000; // measured kbps/loss feedback cadence
-
 // Per-stream render-path latency logging (~1 Hz) to confirm the buffer sits at
 // the live ceiling and isolate the decoder's internal latency per engine
 // (WKWebView / WebView2 / WebKitGTK differ). Turn off once the pipeline is tuned.
@@ -77,8 +75,6 @@ export interface RemoteStream {
   ready: boolean;
   // Reorder + jitter-absorb encoded chunks before decode (see playout_buffer.ts).
   buffer: VideoPlayoutBuffer;
-  // Throttles measured-ack emission to ACK_INTERVAL_MS (performance.now ms).
-  lastAckAt: number;
   // FIFO of performance.now() at each decoder.decode() call; paired with the
   // decoder's output callback to measure decode→paint (the decoder's internal
   // latency), isolated from the buffer's playout delay. Only used when

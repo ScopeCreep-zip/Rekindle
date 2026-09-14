@@ -38,30 +38,15 @@ export interface PlayoutBatch {
   requestKeyframe: boolean;
 }
 
-export interface ReceiveStats {
-  kbps: number;
-  /** Loss fraction × 256, clamped 0..255 (0 = perfect). */
-  lossQ8: number;
-  /** Highest frameSeq released so far — the ack's lastFrameSeq. */
-  lastFrameSeq: number;
-}
-
 export class VideoPlayoutBuffer {
   private frames = new Map<number, BufferedFrame>();
   private nextSeq: number | null = null; // next seq to release, in order
-  private lastReleasedSeq = 0;
   private playoutDelayMs = PLAYOUT_MIN_DELAY_MS;
   private jitterMs = 0;
   private lastArrival: number | null = null;
   private lastTimestamp: number | null = null;
   private initialFillDone = false;
   private firstFrameAt: number | null = null;
-
-  // Ack stats accumulated since the last takeStats().
-  private bytesWindow = 0;
-  private windowStart = performance.now();
-  private received = 0;
-  private lost = 0;
 
   push(frame: BufferedFrame): void {
     // RFC3550 inter-arrival jitter EWMA → adaptive playout delay.
@@ -83,8 +68,6 @@ export class VideoPlayoutBuffer {
     if (this.frames.has(frame.frameSeq)) return;
 
     this.frames.set(frame.frameSeq, frame);
-    this.bytesWindow += frame.data.length;
-    this.received += 1;
     if (this.firstFrameAt === null) this.firstFrameAt = frame.receivedAt;
     // Can only start a stream on a keyframe (deltas before it are undecodable).
     if (this.nextSeq === null && frame.keyframe) this.nextSeq = frame.frameSeq;
@@ -117,7 +100,6 @@ export class VideoPlayoutBuffer {
         if (now - next.receivedAt < this.playoutDelayMs) break;
         out.release.push(next);
         this.frames.delete(this.nextSeq);
-        this.lastReleasedSeq = this.nextSeq;
         this.nextSeq += 1;
         continue;
       }
@@ -127,12 +109,12 @@ export class VideoPlayoutBuffer {
       if (min === null || min <= this.nextSeq) break;
       const oldest = this.frames.get(min)!;
       if (now - oldest.receivedAt < this.playoutDelayMs) break;
-      // The gap [nextSeq, min) is now declared lost: those sequences never
-      // arrived on the wire. Count every skipped sequence exactly once,
-      // here at declaration, and advance past the hole. (The old code only
-      // counted on a keyframe jump and never in the kf===null stall, so the
-      // sender's AIMD never saw the loss and pinned at the ceiling.)
-      this.lost += min - this.nextSeq;
+      // A hole at [nextSeq, min) whose successors have aged out: the
+      // reference chain is broken here, so advance past it and force a
+      // keyframe (below). This gap is a DECODE signal only — wire loss
+      // is measured in the Rust receive path over the transport
+      // sequence, never over these frameSeq gaps (which also open when
+      // the SENDER's pacer expires frames — not loss at all).
       this.nextSeq = min;
       const kf = this.nextKeyframeSeq();
       if (kf === null) {
@@ -153,19 +135,6 @@ export class VideoPlayoutBuffer {
       out.requestKeyframe = true;
     }
     return out;
-  }
-
-  /** Drain measured kbps / loss / last seq for the next ack, reset window. */
-  takeStats(now: number): ReceiveStats {
-    const elapsed = Math.max(1, now - this.windowStart) / 1000;
-    const kbps = Math.round((this.bytesWindow * 8) / elapsed / 1000);
-    const total = this.received + this.lost;
-    const lossQ8 = total > 0 ? Math.min(255, Math.round((this.lost / total) * 256)) : 0;
-    this.bytesWindow = 0;
-    this.received = 0;
-    this.lost = 0;
-    this.windowStart = now;
-    return { kbps: Math.max(1, kbps), lossQ8, lastFrameSeq: this.lastReleasedSeq };
   }
 
   /** Read-only snapshot for the render-path latency log (DEBUG_VIDEO_LATENCY).

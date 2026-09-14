@@ -228,27 +228,6 @@ export const syncCommands = {
       errorMessage: errorMessage ?? null,
     }),
   /**
-   * Architecture §10.6 line 4081 — receiver acks frames roughly every
-   * 500 ms with measured downstream kbps + loss so senders can adapt
-   * VP9 bitrate. `lossQ8` is fixed-point 0..=255 (0 = perfect).
-   */
-  sendVideoFrameAck: (
-    communityId: string,
-    channelId: string,
-    streamIdHex: string,
-    lastFrameSeq: number,
-    kbps: number,
-    lossQ8: number,
-  ) =>
-    invoke<void>("send_video_frame_ack", {
-      communityId,
-      channelId,
-      streamIdHex,
-      lastFrameSeq,
-      kbps,
-      lossQ8,
-    }),
-  /**
    * Architecture §10.6 line 4081 — receiver lost too many inter-frames
    * and asks the sender to mark the next frame as a keyframe.
    */

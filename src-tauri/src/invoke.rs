@@ -157,7 +157,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::derive_video_stream_id,
         commands::community::default_media_capabilities,
         commands::community::send_video_frame,
-        commands::community::send_video_frame_ack,
         commands::community::send_video_keyframe_request,
         commands::community::native_video_capture_available,
         commands::community::list_native_video_devices,

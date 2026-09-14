@@ -562,6 +562,14 @@ struct VideoFragmentPayload @0xea003b000000a000 {
     # receivers request exactly this generation on decrypt failure
     # instead of guessing. Signature-covered.
     mekGeneration        @10 :UInt64;
+    # Transport-wide send sequence, stamped by the sender's VideoPacer
+    # at egress (the libwebrtc transport-cc analog) — gap-free over
+    # fragments ACTUALLY transmitted. The receiver measures wire loss
+    # over THIS, never over frameSeq: frames the pacer expired never
+    # get a transportSeq, so sender-side pacing drops can't masquerade
+    # as network loss. Transport metadata like channelId — NOT
+    # signature-covered (assigned after signing, at the pacer).
+    transportSeq         @11 :UInt32;
 }
 
 struct VideoParityFragmentPayload @0xea003c000000a000 {
@@ -581,6 +589,11 @@ struct VideoParityFragmentPayload @0xea003c000000a000 {
     codec                @10 :Codec;
     # Mirrors VideoFragmentPayload.mekGeneration; signature-covered.
     mekGeneration        @11 :UInt64;
+    # Transport-wide send sequence — mirrors VideoFragmentPayload.transportSeq.
+    # Parity fragments are paced and transmitted like data fragments, so
+    # they share the sender's one gap-free transport sequence and count
+    # toward wire-loss measurement. NOT signature-covered.
+    transportSeq         @12 :UInt32;
 }
 
 struct FrameAckPayload @0xea003d000000a000 {

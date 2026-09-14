@@ -13,6 +13,7 @@ fn fragment_envelope(payload_len: usize) -> CommunityEnvelope {
         codec: rekindle_types::video::Codec::Vp9,
         timestamp: 0,
         mek_generation: 0,
+        transport_seq: 0,
         payload: vec![0; payload_len],
         signature: Vec::new(),
     }))
@@ -31,6 +32,7 @@ fn parity_envelope(payload_len: usize) -> CommunityEnvelope {
             frame_len: 0,
             timestamp: 0,
             mek_generation: 0,
+            transport_seq: 0,
             payload: vec![0; payload_len],
             signature: Vec::new(),
         },
@@ -230,6 +232,63 @@ fn keyframe_burst_starves_deltas_at_low_rate_only() {
             "rate {rate_kbps}: expired {expired}, wanted [{min_expired}, {max_expired}]"
         );
     }
+}
+
+/// The transport_seq stamped at release is gap-free over RELEASED
+/// fragments — even when the pacer expires frames in between. This is
+/// the sender half of the phantom-loss fix: an expired frame consumes
+/// no transport_seq, so the receiver sees no gap for it (only real wire
+/// loss makes a gap). Data and parity fragments share the one counter.
+#[test]
+fn transport_seq_is_gapfree_over_released_fragments_across_expiry() {
+    fn transport_seq_of(env: &CommunityEnvelope) -> Option<u32> {
+        match env {
+            CommunityEnvelope::Control(ControlPayload::VideoFragment(p)) => Some(p.transport_seq),
+            CommunityEnvelope::Control(ControlPayload::VideoParityFragment(p)) => {
+                Some(p.transport_seq)
+            }
+            _ => None,
+        }
+    }
+
+    // Low rate so the queue can't drain instantly and a delta expires.
+    let mut p = VideoPacer::new(200);
+    // A keyframe (data + parity) then a delta enqueued 600 ms later —
+    // the delta's enqueue expires any older non-keyframe still queued.
+    p.enqueue(fec_keyframe(1, 3, 1, 2_000, 0), 0);
+    p.enqueue(frame(2, false, 1, 2_000, 10), 10);
+    // Let a delta age past the 500 ms TTL, then push a fresh one.
+    p.enqueue(frame(3, false, 1, 2_000, MAX_QUEUE_AGE_MS + 20), MAX_QUEUE_AGE_MS + 20);
+
+    let mut released = Vec::new();
+    let mut t = 0u64;
+    for _ in 0..100_000 {
+        for (_, _, env) in p.poll(t) {
+            if let Some(ts) = transport_seq_of(&env) {
+                released.push(ts);
+            }
+        }
+        if p.stats().queue_depth == 0 {
+            break;
+        }
+        t += p.next_poll_in_ms(t).max(1);
+    }
+
+    assert!(!released.is_empty(), "some fragments must be released");
+    // Gap-free 0,1,2,... regardless of how many frames expired.
+    for (i, ts) in released.iter().enumerate() {
+        assert_eq!(
+            *ts,
+            u32::try_from(i).unwrap(),
+            "released transport_seq must be contiguous: got {released:?}"
+        );
+    }
+    // At least one frame expired, proving the gap-free property holds
+    // THROUGH expiry (not merely on a clean drain).
+    assert!(
+        p.stats().expired_frames >= 1,
+        "the test must actually exercise expiry"
+    );
 }
 
 proptest! {

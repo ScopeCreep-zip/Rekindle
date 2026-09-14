@@ -7,8 +7,7 @@ use tauri::State;
 
 use crate::services::community_video_runtime::{
     derive_video_stream_id_inner, notify_video_topology_change_inner,
-    send_video_bandwidth_estimate_inner, send_video_frame_ack_inner, send_video_frame_inner,
-    send_video_keyframe_request_inner,
+    send_video_bandwidth_estimate_inner, send_video_frame_inner, send_video_keyframe_request_inner,
 };
 use crate::state::SharedState;
 
@@ -102,26 +101,11 @@ pub async fn force_native_keyframes(state: State<'_, SharedState>) -> Result<(),
     Ok(())
 }
 
-#[tauri::command]
-pub async fn send_video_frame_ack(
-    community_id: String,
-    channel_id: String,
-    stream_id_hex: String,
-    last_frame_seq: u32,
-    kbps: u32,
-    loss_q8: u8,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    send_video_frame_ack_inner(
-        state.inner(),
-        &community_id,
-        &channel_id,
-        &stream_id_hex,
-        last_frame_seq,
-        kbps,
-        loss_q8,
-    )
-}
+// The receiver `FrameAck` is emitted from the Rust receive path
+// (`VideoAdapter::send_frame_ack` → `send_video_frame_ack_inner`), not
+// via an IPC command — the thin frontend no longer computes or sends
+// congestion feedback. `send_video_frame_ack_inner` lives in
+// `community_video_runtime`.
 
 #[tauri::command]
 pub async fn send_video_keyframe_request(

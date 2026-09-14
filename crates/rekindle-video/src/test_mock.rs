@@ -16,6 +16,9 @@ pub struct MockCalls {
     pub events: Vec<VideoEvent>,
     pub lamport_calls: u64,
     pub mek_refresh_requests: Vec<(String, String)>,
+    /// `(community_id, channel_id, last_frame_seq, kbps, loss_q8)` for
+    /// each receiver `FrameAck` the receive path emitted.
+    pub frame_acks: Vec<(String, String, u32, u32, u8)>,
 }
 
 pub struct MockDeps {
@@ -105,6 +108,24 @@ impl VideoDeps for MockDeps {
 
     fn emit_event(&self, event: VideoEvent) {
         self.calls.lock().events.push(event);
+    }
+
+    fn send_frame_ack(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        _stream_id: [u8; 16],
+        last_frame_seq: u32,
+        kbps: u32,
+        loss_q8: u8,
+    ) {
+        self.calls.lock().frame_acks.push((
+            community_id.to_string(),
+            channel_id.to_string(),
+            last_frame_seq,
+            kbps,
+            loss_q8,
+        ));
     }
 }
 

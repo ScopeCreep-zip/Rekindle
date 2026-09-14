@@ -48,6 +48,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
             codec: frag.codec,
             timestamp: frag.timestamp,
             mek_generation: frag.mek_generation,
+            transport_seq: 0,
             payload: frag.payload,
             signature: frag.signature,
         }),
@@ -143,6 +144,7 @@ fn mek_mismatch_fires_debounced_refresh_request() {
             codec: frag.codec,
             timestamp: frag.timestamp,
             mek_generation: frag.mek_generation,
+            transport_seq: 0,
             payload: frag.payload,
             signature: frag.signature,
         })
@@ -247,6 +249,7 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
             codec: Codec::Vp9,
             timestamp: 0,
             mek_generation: 0,
+            transport_seq: 0,
             payload: vec![0xAB; 64],
             signature: vec![0u8; 64],
         }),
