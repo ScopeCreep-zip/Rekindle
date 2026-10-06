@@ -71,8 +71,7 @@ async fn dispatch_update(
     match update {
         VeilidUpdate::AppMessage(msg) => {
             let sender_key = msg.sender()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_default();
+                .map(std::string::ToString::to_string);
             let data = msg.message();
 
             if data.is_empty() {
@@ -84,7 +83,7 @@ async fn dispatch_update(
             info!(
                 type_id = first_byte,
                 data_len = data.len(),
-                sender = if sender_key.is_empty() { "anonymous" } else { &sender_key[..16.min(sender_key.len())] },
+                sender = sender_key.as_deref().map_or("anonymous", |key| &key[..16.min(key.len())]),
                 "dispatch: AppMessage received"
             );
 
@@ -136,7 +135,7 @@ async fn dispatch_update(
 
             // ── Forward to chat layer ───────────────────────────────
             if let Err(e) = inbound_tx.send(InboundEvent::Message {
-                sender_key: sender_key.clone(),
+                sender_key,
                 data: data.to_vec(),
             }).await {
                 warn!(type_id = first_byte, "dispatch: inbound_tx.send FAILED — chat channel closed: {e}");
@@ -147,8 +146,7 @@ async fn dispatch_update(
 
         VeilidUpdate::AppCall(call) => {
             let sender_key = call.sender()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_default();
+                .map(std::string::ToString::to_string);
             let data = call.message().to_vec();
             let call_id = call.id();
 
