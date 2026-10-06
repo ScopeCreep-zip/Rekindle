@@ -46,7 +46,7 @@ pub struct RouteResolver {
 }
 
 impl RouteResolver {
-    pub fn new(
+    pub(crate) fn new(
         peer_registry: Arc<parking_lot::RwLock<PeerRegistry>>,
         api: veilid_core::VeilidAPI,
         config: Arc<TransportConfig>,
@@ -165,7 +165,7 @@ impl RouteResolver {
 
     // ── Internal — uses VeilidAPI directly, no Arc<TransportNode> ───
 
-    fn import_route(&self, route_blob: &[u8]) -> std::result::Result<PeerTarget, crate::error::TransportError> {
+    pub(crate) fn import_route(&self, route_blob: &[u8]) -> std::result::Result<PeerTarget, crate::error::TransportError> {
         let route_id = self.api.import_remote_private_route(route_blob.to_vec())
             .map_err(|e| crate::error::TransportError::RouteImportFailed {
                 peer: String::new(),
@@ -191,31 +191,94 @@ impl RouteResolver {
             }
         };
 
-        // Open read-only
-        if let Err(e) = rc.open_dht_record(record_key.clone(), None).await {
-            debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], error = %e, "profile open failed");
-            return None;
-        }
+        // Open read-only with retry. DHT records created on another node
+        // take time to propagate. The retry handles the propagation delay.
+        let max_attempts: u32 = 4;
+        let mut backoff = std::time::Duration::from_millis(500);
+        let ceiling = std::time::Duration::from_secs(5);
 
-        match rc.get_dht_value(record_key, PROFILE_SUBKEY_ROUTE_BLOB, true).await {
-            Ok(Some(value_data)) => {
-                let blob = value_data.data().to_vec();
-                if blob.is_empty() {
-                    debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], "route blob empty");
-                    None
-                } else {
-                    debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], blob_len = blob.len(), "route blob read");
-                    Some(blob)
+        for attempt in 1..=max_attempts {
+            match rc.open_dht_record(record_key.clone(), None).await {
+                Ok(_) => break,
+                Err(e) => {
+                    let msg = e.to_string();
+                    if msg.contains("Key not found") && attempt < max_attempts {
+                        debug!(
+                            profile = &profile_dht_key[..20.min(profile_dht_key.len())],
+                            attempt,
+                            backoff_ms = backoff.as_millis(),
+                            "profile DHT record not yet propagated, retrying"
+                        );
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(ceiling);
+                        continue;
+                    }
+                    debug!(
+                        profile = &profile_dht_key[..20.min(profile_dht_key.len())],
+                        error = %e,
+                        "profile open failed after {} attempts", attempt
+                    );
+                    return None;
                 }
             }
-            Ok(None) => {
-                debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], "route blob subkey not written");
-                None
-            }
-            Err(e) => {
-                warn!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], error = %e, "route blob DHT read failed");
-                None
+        }
+
+        // Read route blob with retry. The subkey may not have been written
+        // yet if the peer just allocated its route and the DHT write has
+        // not propagated.
+        for attempt in 1..=max_attempts {
+            match rc.get_dht_value(record_key.clone(), PROFILE_SUBKEY_ROUTE_BLOB, true).await {
+                Ok(Some(value_data)) => {
+                    let blob = value_data.data().to_vec();
+                    if blob.is_empty() {
+                        if attempt < max_attempts {
+                            debug!(
+                                profile = &profile_dht_key[..20.min(profile_dht_key.len())],
+                                attempt,
+                                "route blob empty, retrying"
+                            );
+                            tokio::time::sleep(backoff).await;
+                            backoff = (backoff * 2).min(ceiling);
+                            continue;
+                        }
+                        debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], "route blob empty after all attempts");
+                        return None;
+                    }
+                    debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], blob_len = blob.len(), "route blob read");
+                    return Some(blob);
+                }
+                Ok(None) => {
+                    if attempt < max_attempts {
+                        debug!(
+                            profile = &profile_dht_key[..20.min(profile_dht_key.len())],
+                            attempt,
+                            "route blob subkey not written yet, retrying"
+                        );
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(ceiling);
+                        continue;
+                    }
+                    debug!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], "route blob subkey not written after all attempts");
+                    return None;
+                }
+                Err(e) => {
+                    if attempt < max_attempts {
+                        debug!(
+                            profile = &profile_dht_key[..20.min(profile_dht_key.len())],
+                            attempt,
+                            error = %e,
+                            "route blob DHT read failed, retrying"
+                        );
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(ceiling);
+                        continue;
+                    }
+                    warn!(profile = &profile_dht_key[..20.min(profile_dht_key.len())], error = %e, "route blob DHT read failed after all attempts");
+                    return None;
+                }
             }
         }
+
+        None
     }
 }

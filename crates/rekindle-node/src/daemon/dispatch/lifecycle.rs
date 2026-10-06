@@ -14,7 +14,7 @@ use rekindle_chat::ChatService;
 use rekindle_storage::unlock::passphrase::PassphraseUnlock;
 use rekindle_storage::unlock::VaultUnlock;
 use rekindle_storage::VaultStore;
-use rekindle_transport::veilid::broadcast::node::TransportNode;
+use rekindle_transport::veilid::TransportNode;
 use rekindle_transport::veilid::VeilidTransport;
 use rekindle_types::daemon::DaemonResponse;
 use rekindle_types::display::{Check, CircuitSummary, StatusSnapshot};

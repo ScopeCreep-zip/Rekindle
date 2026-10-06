@@ -101,18 +101,16 @@ pub enum TransportEvent {
 /// No transport API types leak to the chat layer.
 #[derive(Debug)]
 pub enum InboundEvent {
-    /// Opaque bytes arrived from a peer (app_message equivalent).
-    /// The chat layer parses TypeId, verifies signatures, dispatches.
+    /// Opaque bytes arrived from a peer via app_message.
     Message {
-        sender_key: String,
+        sender_key: Option<String>,
         data: Vec<u8>,
     },
 
-    /// Opaque bytes arrived expecting a reply (app_call equivalent).
-    /// Chat layer sends response bytes via `reply_tx`. The transport
-    /// handles the transport-specific reply mechanism internally.
+    /// Opaque bytes arrived expecting a reply via app_call.
+    /// Send response bytes via `reply_tx`.
     Call {
-        sender_key: String,
+        sender_key: Option<String>,
         data: Vec<u8>,
         reply_tx: tokio::sync::oneshot::Sender<Vec<u8>>,
     },
@@ -314,10 +312,6 @@ pub enum TransferStatus {
 #[async_trait]
 pub trait Transport: Send + Sync + 'static {
     // ── Lifecycle ───────────────────────────────────────────
-
-    /// Start the transport (attach to network). Some backends start at
-    /// construction time and this is a no-op.
-    async fn start(&self) -> TransportResult<()>;
 
     /// Graceful shutdown: stop background tasks, release routes, detach.
     async fn shutdown(&self) -> TransportResult<()>;

@@ -34,7 +34,7 @@ pub struct DeliveryEngine {
 }
 
 impl DeliveryEngine {
-    pub fn new(
+    pub(crate) fn new(
         resolver: Arc<RouteResolver>,
         broadcast: Arc<BroadcastManager>,
         api: veilid_core::VeilidAPI,

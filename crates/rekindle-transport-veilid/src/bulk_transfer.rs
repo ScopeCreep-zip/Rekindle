@@ -66,9 +66,13 @@ pub enum TransferFrame {
         media_type: String,
     },
     /// Receiver → Sender: "Go ahead, starting from this chunk."
+    /// `max_size` is the receiver's maximum acceptable transfer size in
+    /// bytes. If the sender's offer exceeds this, the sender cancels.
+    /// 0 means the receiver accepts any size up to MAX_TRANSFER_SIZE.
     Accept {
         transfer_id: [u8; 16],
         start_chunk: u32,
+        max_size: u64,
     },
     /// Receiver → Sender: "I don't want this file."
     Reject {
@@ -157,7 +161,7 @@ pub struct BulkSender {
 }
 
 impl BulkSender {
-    pub fn new(
+    pub(crate) fn new(
         resolver: Arc<crate::resolver::RouteResolver>,
         api: veilid_core::VeilidAPI,
         config: Arc<crate::config::TransportConfig>,
@@ -638,7 +642,7 @@ impl TransferRegistry {
                     let sender = t.sender_key.clone();
                     info!(filename = %filename, size = total, sender = &sender[..16.min(sender.len())], "transfer offer received");
                     self.inbound.write().insert(tid, t);
-                    reply_fn(sender_peer_key, TransferFrame::Accept { transfer_id: tid, start_chunk: 0 }).await;
+                    reply_fn(sender_peer_key, TransferFrame::Accept { transfer_id: tid, start_chunk: 0, max_size: MAX_TRANSFER_SIZE }).await;
                 }
             }
             TransferFrame::Chunk { transfer_id, chunk_index, chunk_hash, data } => {

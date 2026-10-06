@@ -12,23 +12,18 @@
 //!
 //! # Module Boundaries
 //!
-//! - `broadcast/` — ALL outbound Veilid I/O: sends, DHT writes, route
-//!   management, node lifecycle, mesh broadcast.
-//! - `subscriptions/` — ALL inbound Veilid I/O: event dispatch (typed
-//!   InboundEvent to mpsc channel), DHT watches, gossip dedup, bulk transfer.
-//! - `transport_impl.rs` — `Transport` trait implementation wrapping
-//!   `TransportNode`.
-//! - `config.rs`, `frame.rs`, `gossip.rs`, `shared.rs` — Veilid-specific
-//!   configuration, wire framing, gossip mesh, shared state.
-//! - `payload/` — Re-exports payload types from `rekindle-types` plus
-//!   transport-specific serialization/deserialization functions.
-//! - `error.rs` — Veilid-specific error types.
+//! `broadcast/` and `subscriptions/` are crate-internal. They contain all
+//! direct veilid_core usage. No veilid_core types appear in the public API.
+//!
+//! External consumers use the `Transport` trait for DHT, messaging, routes,
+//! watches, inspect, and bulk transfer. All trait methods operate on
+//! rekindle-types. The concrete `VeilidTransport` converts internally.
 
-// ── Veilid boundary modules ───────────────────────────────────────
-pub mod broadcast;
-pub mod subscriptions;
+// Crate-internal Veilid boundary modules
+pub(crate) mod broadcast;
+pub(crate) mod subscriptions;
 
-// ── Veilid-specific infrastructure ────────────────────────────────
+// Public infrastructure
 pub mod config;
 pub mod error;
 pub mod frame;
@@ -36,53 +31,56 @@ pub mod gossip;
 pub mod shared;
 pub mod transport_impl;
 
-// ── Commoditized delivery layer ──────────────────────────────────
+// Commoditized delivery
 pub mod resolver;
 pub mod delivery;
 pub mod mesh_manager;
 pub mod bulk_transfer;
 
-// ── Payload re-exports + transport-specific ser/de ────────────────
+// Payload re-exports and transport-specific serialization
 pub mod payload;
 
 #[cfg(test)]
 mod tests;
 
-// ── Constants ────────────────────────────────────────────────────
-
 /// Veilid SMPL schema member key length in bytes.
 ///
 /// Mirrors `veilid_core::storage_manager::MEMBER_ID_LENGTH` which is
 /// `pub(crate)` and cannot be imported. Every `DHTSchemaSMPLMember.m_key`
-/// must be exactly this many bytes — Veilid's schema validation rejects
-/// any other length. If Veilid changes this constant, update here.
+/// must be exactly this many bytes. Veilid schema validation rejects
+/// any other length.
 pub const VEILID_MEMBER_ID_LENGTH: usize = 32;
 
-// ── Public API ────────────────────────────────────────────────────
+// Public API re-exports
 
 // Transport trait implementation
 pub use transport_impl::VeilidTransport;
 
-// Core lifecycle
+// Node lifecycle
 pub use broadcast::node::TransportNode;
+
+// Peer messaging
 pub use broadcast::send::{Sender, Caller, BroadcastReport};
+
+// Route lifecycle
 pub use broadcast::peer_route::RouteManager;
+
+// Peer registry
 pub use broadcast::peer_registry::{PeerRegistry, PeerTarget, CircuitSummary, PeerSnapshot};
-pub use broadcast::dht::DhtStore;
 
 // Gossip mesh
 pub use gossip::{GossipMesh, OnlineMember, DedupCache, LamportClock};
 
 // Configuration
-pub use config::{TransportConfig, SafetyConfig, SafetyProfile};
+pub use config::{TransportConfig, SafetyConfig, SafetyProfile, StabilityPreference, SequencingPreference};
 
-// Error
+// Error taxonomy
 pub use error::TransportError as VeilidTransportError;
 
-// Shared state
+// Observable shared state
 pub use shared::{SharedState, AttachmentState, TransportNotification, TransportSnapshot};
 
-// Frame
+// Wire frame type IDs
 pub use frame::TypeId;
 
 // Time utilities
@@ -94,7 +92,6 @@ pub use broadcast::BroadcastManager;
 // Commoditized delivery
 pub use resolver::RouteResolver;
 pub use delivery::DeliveryEngine;
-// Durability and DeliveryReport are defined in rekindle_types::transport (SSOT)
 pub use rekindle_types::transport::{Durability, DeliveryReport};
 pub use mesh_manager::MeshManager;
 
@@ -105,5 +102,7 @@ pub use bulk_transfer::{
     TYPEID_BULK_TRANSFER,
 };
 
-// Re-export node::deserialize_keypair for daemon use
-pub use broadcast::node::deserialize_keypair;
+// Transport trait and inbound events from rekindle-types
+pub use rekindle_types::transport::{
+    Transport, InboundEvent, InspectResult, OpenRecord, WatchToken, RecordSchema,
+};

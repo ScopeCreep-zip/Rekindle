@@ -41,7 +41,6 @@ impl VeilidTransport {
 
 #[async_trait]
 impl Transport for VeilidTransport {
-    async fn start(&self) -> TransportResult<()> { Ok(()) }
     async fn shutdown(&self) -> TransportResult<()> { self.node.graceful_shutdown().await; Ok(()) }
     fn is_attached(&self) -> bool { self.node.is_ready() }
 

@@ -31,7 +31,7 @@ pub struct MeshManager {
 }
 
 impl MeshManager {
-    pub fn new(
+    pub(crate) fn new(
         resolver: Arc<RouteResolver>,
         broadcast: Arc<BroadcastManager>,
         peer_registry: Arc<parking_lot::RwLock<PeerRegistry>>,

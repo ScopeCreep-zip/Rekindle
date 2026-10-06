@@ -201,16 +201,22 @@ impl Default for RateLimiter {
 /// Tracks online members, selected gossip peers, and provides methods
 /// for peer selection and broadcast target computation.
 pub struct GossipMesh {
+    pub(crate) community_id: String,
+    pub(crate) online_members: HashMap<String, OnlineMember>,
+    pub(crate) peers: HashMap<String, OnlineMember>,
+    pub(crate) clock: LamportClock,
+    pub(crate) rate_limiter: RateLimiter,
+}
+
+impl GossipMesh {
     /// Community ID this mesh belongs to.
-    pub community_id: String,
-    /// All known online members: pseudonym_key → route blob.
-    pub online_members: HashMap<String, OnlineMember>,
-    /// Selected gossip peers (subset of online_members, size = fanout degree).
-    pub peers: HashMap<String, OnlineMember>,
-    /// Lamport clock for outgoing messages.
-    pub clock: LamportClock,
-    /// Rate limiter for inbound messages.
-    pub rate_limiter: RateLimiter,
+    pub fn community_id(&self) -> &str { &self.community_id }
+    /// Count of all known online members.
+    pub fn online_count(&self) -> usize { self.online_members.len() }
+    /// Count of selected gossip peers.
+    pub fn peer_count(&self) -> usize { self.peers.len() }
+    /// Current Lamport clock value.
+    pub fn clock_value(&self) -> u64 { self.clock.value() }
 }
 
 /// An online community member with their route data.
