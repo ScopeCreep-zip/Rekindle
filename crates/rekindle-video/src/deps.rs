@@ -13,7 +13,7 @@
 //! the hot path.
 
 use crate::error::VideoError;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_types::video::{Codec, ScalabilityMode};
 
 /// Events emitted to the UI from receive-side flows. Each variant

@@ -1,7 +1,7 @@
 //! Community-envelope dedup-key extraction.
 
-use rekindle_protocol::capnp_envelope::encode_community_envelope;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::capnp_envelope::encode_community_envelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 
 /// Phase 20 — pure community-envelope dedup-key extractor.
 ///

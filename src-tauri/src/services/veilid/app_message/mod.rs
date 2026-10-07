@@ -8,10 +8,10 @@ use crate::services::message_service;
 use crate::state::{AppState, OnlineMember};
 use crate::state_helpers;
 
-use rekindle_protocol::capnp_envelope::{
+use rekindle_codec::capnp_envelope::{
     decode_signed_envelope, encode_signed_envelope, try_decode_community_envelope,
 };
-use rekindle_protocol::dht::community::envelope::{
+use rekindle_codec::community::envelope::{
     verify_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
 };
 

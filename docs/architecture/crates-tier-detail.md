@@ -69,12 +69,24 @@ Dependencies: `blake3`, `serde`, `zeroize`.
 
 ### rekindle-codec
 
-Signed envelope construction, verification, dedup, and serialization for
-the gossip mesh. Modules: `dedup` (sliding-window cache — envelope ID →
-seen-at), `envelope` (`SignedEnvelope` build/verify, `CommunityEnvelope`
-payloads).
+Rekindle's wire types and their encodings, with no Veilid (plan C8,
+ADR 0014). Every tier crate that needs a wire type depends on this crate, not
+on `rekindle-protocol`. Modules:
+- the generated `*_capnp` modules (built from `schemas/` by this crate's
+  `build.rs`), `capnp_codec` and `capnp_envelope`;
+- `community` (`CommunityEnvelope`, `ControlPayload`, the community
+  `SignedEnvelope`, governance and metadata types, `channel_record` page
+  types and their signed encoding);
+- `message` (`MessageEnvelope`, `MessagePayload`, invite blobs, signing
+  bytes);
+- `friend` (`FriendEntry`);
+- `envelope` (the gossip `SignedEnvelope` build/verify);
+- `dedup` (sliding-window cache: envelope ID → seen-at);
+- `error` (`CodecError`, which converts into `ProtocolError`).
 
-Dependencies: `rekindle-types`, `rekindle-secrets`, `blake2`.
+Dependencies: `rekindle-types`, `rekindle-secrets` (including its
+`ed25519_dalek` re-export), `rekindle-utils`, `capnp`, `serde_json`, `blake2`,
+`blake3`, `base64`.
 
 ### rekindle-db
 

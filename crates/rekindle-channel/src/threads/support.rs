@@ -1,6 +1,6 @@
 //! Shared private helpers for the thread pipeline.
 
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_records::lease::CommunityLeases;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, ThreadId};

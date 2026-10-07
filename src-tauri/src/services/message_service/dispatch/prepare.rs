@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::{MessagePayload, Sealing};
+use rekindle_codec::message::envelope::{MessagePayload, Sealing};
 use rekindle_protocol::messaging::receiver::{
     parse_sealed_payload, process_incoming, received_sealing,
 };

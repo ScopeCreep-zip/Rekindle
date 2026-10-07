@@ -4,8 +4,8 @@ use crate::commands::chat::{Message, MessagePoll, MessagePollAnswer, ReactionGro
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_codec::community::channel_record::{ChannelRecordEntry, ChannelRecordItem};
 use rekindle_db::Db;
-use rekindle_protocol::dht::community::channel_record::{ChannelRecordEntry, ChannelRecordItem};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct EntryOrder {
@@ -327,7 +327,7 @@ pub(crate) async fn load_channel_messages_from_smpl(
     let poll_states = build_poll_states(&channel_entries, &subkey_pseudonyms, &my_pseudonym);
     let mut filtered: Vec<(
         u32,
-        rekindle_protocol::dht::community::channel_record::ChannelMessage,
+        rekindle_codec::community::channel_record::ChannelMessage,
     )> = channel_entries
         .iter()
         .filter_map(|item| match &item.entry {
@@ -438,7 +438,7 @@ pub(crate) async fn load_channel_messages_from_smpl(
 #[cfg(test)]
 mod tests {
     use super::build_poll_states;
-    use rekindle_protocol::dht::community::channel_record::{
+    use rekindle_codec::community::channel_record::{
         ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry, ChannelRecordItem,
     };
     use std::collections::HashMap;

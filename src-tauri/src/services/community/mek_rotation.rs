@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::rotator::select_rotator;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;

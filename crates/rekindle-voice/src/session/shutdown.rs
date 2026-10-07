@@ -23,8 +23,7 @@ use crate::session_deps::{VoiceSessionDeps, VoiceShutdownOpts};
 
 /// How long each loop scope gets to stop: the session deadline, since a
 /// loop may be inside one Veilid call when the stop arrives.
-pub const LOOP_STOP_DEADLINE: std::time::Duration =
-    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+pub const LOOP_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, opts: &VoiceShutdownOpts) {
     let scopes = deps.take_loop_scopes(*opts);

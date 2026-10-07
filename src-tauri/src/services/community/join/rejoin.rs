@@ -28,7 +28,7 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
     match crate::services::community::send_to_mesh(
         state,
         community_id,
-        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+        &rekindle_codec::community::envelope::CommunityEnvelope::PresenceUpdate {
             pseudonym_key,
             status: status_str.to_string(),
             game_info: None,

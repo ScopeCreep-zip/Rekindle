@@ -87,7 +87,7 @@ pub async fn handle_group_call_payload(
     state: &Arc<AppState>,
     pool: &Db,
     sender_hex: &str,
-    payload: rekindle_protocol::messaging::envelope::MessagePayload,
+    payload: rekindle_codec::message::envelope::MessagePayload,
 ) {
     let adapter = CallsAdapter::new(state.clone(), app.clone(), pool.clone());
     rekindle_calls::signaling::group_handlers::handle_group_call_payload(

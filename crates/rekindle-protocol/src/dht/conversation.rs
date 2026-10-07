@@ -1,7 +1,7 @@
 use super::parse_record_key;
 use super::pool::RecordPool;
-use crate::capnp_codec::conversation::{decode_conversation_header, ConversationHeader};
 use crate::error::ProtocolError;
+use rekindle_codec::capnp_codec::conversation::{decode_conversation_header, ConversationHeader};
 use rekindle_crypto::DhtRecordKey;
 
 /// Read and decrypt a peer's per-contact conversation header, or `None`
@@ -28,7 +28,7 @@ pub async fn read_conversation_header(
     match value? {
         Some(v) => {
             let plaintext = encryption_key.decrypt(v.data())?;
-            decode_conversation_header(&plaintext).map(Some)
+            Ok(Some(decode_conversation_header(&plaintext)?))
         }
         None => Ok(None),
     }

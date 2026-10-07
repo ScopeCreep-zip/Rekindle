@@ -7,10 +7,10 @@
 //! Hosts the multi-segment governance snapshot loader, the slot-claim
 //! state machine, and the Plate Gate auto-expand-and-retry path.
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::invite_quota;
 use rekindle_governance::permissions::compute_permissions;
 use rekindle_governance::state::{GovernanceState, SegmentState};
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;

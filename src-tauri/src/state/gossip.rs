@@ -29,8 +29,7 @@ pub struct GossipOverlay {
     /// Without this, the first member of a fresh community broadcast all
     /// their join announcements / MEK requests / governance updates to a
     /// zero-peer mesh — silently lost.
-    pub pending_mesh_broadcasts:
-        VecDeque<rekindle_protocol::dht::community::envelope::SignedEnvelope>,
+    pub pending_mesh_broadcasts: VecDeque<rekindle_codec::community::envelope::SignedEnvelope>,
 }
 
 impl Default for GossipOverlay {

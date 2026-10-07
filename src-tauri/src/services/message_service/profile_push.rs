@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::friends::FriendEntry;
+use rekindle_codec::friend::FriendEntry;
 
 use crate::state::AppState;
 use crate::state_helpers;

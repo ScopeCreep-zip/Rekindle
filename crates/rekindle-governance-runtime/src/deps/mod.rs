@@ -12,8 +12,8 @@
 //! (`RecentMessageRow`).
 
 use async_trait::async_trait;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
 

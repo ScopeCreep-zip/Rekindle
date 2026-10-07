@@ -10,7 +10,7 @@
 //! shrinks the file and gives a single place for future cross-cutting
 //! changes (e.g. audit-chain entry on every delete).
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
@@ -151,7 +151,7 @@ pub async fn remove_community_member_inner(
     use crate::db_helpers::db_call;
     use crate::services::community_registry_slot::clear_registry_presence_slot;
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
     use rekindle_types::permissions;
 
     let owner_key = state_helpers::current_owner_key(&state)?;

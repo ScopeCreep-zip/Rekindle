@@ -11,7 +11,7 @@
 //! `state.file_caches.write()`, fetches the per-community cache, and
 //! delegates here.
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
@@ -58,7 +58,7 @@ pub fn serve_attachment_request(
     if delivered.is_empty() {
         return None;
     }
-    rekindle_protocol::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
+    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
         ControlPayload::MultiAttachmentChunk { chunks: delivered },
     ))
     .ok()
@@ -80,8 +80,8 @@ mod tests {
     }
 
     fn parse_reply(bytes: &[u8]) -> Vec<(u32, Vec<u8>)> {
-        let env = rekindle_protocol::capnp_envelope::decode_community_envelope(bytes)
-            .expect("decode reply");
+        let env =
+            rekindle_codec::capnp_envelope::decode_community_envelope(bytes).expect("decode reply");
         let CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) = env
         else {
             panic!("unexpected reply variant");

@@ -10,9 +10,7 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"
-bitflags = { version = "2", features = [ "serde" ] }
 blake2 = "0.10"
-bytes = { workspace = true }
 capnp = { workspace = true }
 ed25519-dalek = { version = "2", features = [ "rand_core" ] }
 futures = { workspace = true }
@@ -36,8 +34,6 @@ tokio-util = "0.7"
 tracing = { workspace = true }
 veilid-core = { version = "0.5", default-features = true }
 
-[build-dependencies]
-capnpc = { workspace = true }
 
 [dev-dependencies]
 # `tests/log_scrub_veilid.rs` checks the log scrubber against the real

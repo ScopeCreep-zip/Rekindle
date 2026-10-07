@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CallError;

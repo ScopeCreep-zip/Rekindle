@@ -14,8 +14,8 @@
 //! via `deps.online_member_pseudonyms` + `deps.peer_route_blob`, and
 //! sends chunk requests via `deps.app_call_peer`.
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use uuid::Uuid;
 
 use crate::deps::{FilesDeps, FilesEvent};
@@ -168,10 +168,10 @@ async fn fetch_and_cache_chunks<D: FilesDeps>(
         requested_chunks: requested_chunks.to_vec(),
         requester_pseudonym,
     });
-    let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&payload)
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
         .map_err(|e| FilesError::Transport(format!("encode RequestAttachment: {e}")))?;
     let reply = deps.app_call_peer(&route_blob, bytes).await?;
-    let envelope = rekindle_protocol::capnp_envelope::decode_community_envelope(&reply)
+    let envelope = rekindle_codec::capnp_envelope::decode_community_envelope(&reply)
         .map_err(|e| FilesError::Transport(format!("decode reply: {e}")))?;
     let CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) = envelope
     else {

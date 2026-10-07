@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::member::MemberInfo;
 use rekindle_types::message::BootstrapChannelMessages;
 
@@ -39,7 +39,7 @@ pub(super) async fn fetch_bootstrap_bundle(
         joiner_pseudonym: joiner_pseudonym.to_string(),
         governance_key: governance_key.to_string(),
     });
-    let request_bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&request)
+    let request_bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&request)
         .map_err(|e| format!("encode bootstrap request: {e}"))?;
     // Bounded by Veilid's own reply timeout for the route (plan C4.L1b).
     let response = rc
@@ -47,7 +47,7 @@ pub(super) async fn fetch_bootstrap_bundle(
         .await
         .map_err(|e| format!("bootstrap app_call failed: {e}"))?;
 
-    match rekindle_protocol::capnp_envelope::decode_community_envelope(&response)
+    match rekindle_codec::capnp_envelope::decode_community_envelope(&response)
         .map_err(|e| format!("invalid bootstrap response envelope: {e}"))?
     {
         CommunityEnvelope::Control(ControlPayload::BootstrapResponse {

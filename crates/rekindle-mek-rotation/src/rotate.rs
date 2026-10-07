@@ -10,8 +10,8 @@
 //! (no governance entry — voice MEK rotations skip CRDT and rely on
 //! the gossip MEKRotated broadcast for membership notification).
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::ChannelId;

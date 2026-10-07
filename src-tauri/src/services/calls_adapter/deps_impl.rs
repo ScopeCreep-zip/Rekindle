@@ -14,7 +14,7 @@ use rekindle_calls::signaling::{
 };
 use rekindle_calls::state::CallKind;
 use rekindle_calls::CallError;
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 use super::CallsAdapter;
 use crate::state_helpers;

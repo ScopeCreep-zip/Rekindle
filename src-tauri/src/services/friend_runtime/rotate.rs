@@ -87,7 +87,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
         let friends = state.friends.read();
         friends.keys().cloned().collect()
     };
-    let payload = rekindle_protocol::messaging::envelope::MessagePayload::ProfileKeyRotated {
+    let payload = rekindle_codec::message::envelope::MessagePayload::ProfileKeyRotated {
         new_profile_dht_key: new_key.clone(),
     };
     for fk in &friend_keys {

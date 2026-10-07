@@ -17,7 +17,7 @@
 
 use std::collections::VecDeque;
 
-use rekindle_protocol::dht::community::envelope::{
+use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
 

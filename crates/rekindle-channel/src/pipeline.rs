@@ -7,8 +7,8 @@
 //! because it owns the receiver end of the channel; the crate
 //! exposes the per-write retry-enqueue primitive via the deps trait.
 
-use rekindle_protocol::dht::community::channel_record::{ChannelForward, ChannelMessage};
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::channel_record::{ChannelForward, ChannelMessage};
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_types::permissions::{BYPASS_SLOWMODE, SEND_MESSAGES};
 
 use crate::deps::{

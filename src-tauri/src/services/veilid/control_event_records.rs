@@ -9,9 +9,9 @@ pub(super) fn handle_event_payload(
     state: &Arc<AppState>,
     pool: &Db,
     community_id: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
     use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
     match payload {
@@ -85,9 +85,9 @@ pub(super) fn handle_game_server_payload(
     state: &Arc<AppState>,
     pool: &Db,
     community_id: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
     use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
     match payload {

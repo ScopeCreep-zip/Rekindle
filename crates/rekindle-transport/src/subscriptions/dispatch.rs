@@ -291,9 +291,9 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     handler: &Arc<H>,
     api: &veilid_core::VeilidAPI,
     call_id: veilid_core::OperationId,
-    transfer: rekindle_protocol::dht::community::envelope::MekTransferPayload,
+    transfer: rekindle_codec::community::envelope::MekTransferPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::{
+    use rekindle_codec::community::envelope::{
         CommunityEnvelope, ControlPayload, MekTransferAckPayload,
     };
 
@@ -325,7 +325,7 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
                     generation,
                     requester_pseudonym: String::from_utf8_lossy(&requester).into_owned(),
                 }));
-            rekindle_protocol::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(|e| {
+            rekindle_codec::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(|e| {
                 // The rotator is waiting on this reply. A bare NAK is a
                 // worse answer than nothing, but it at least resolves
                 // their `app_call` instead of leaving it to time out.

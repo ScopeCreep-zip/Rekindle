@@ -17,7 +17,7 @@ use super::{poll, SubscriptionManager};
 const TYPING_SWEEP_SECS: u64 = 5;
 
 /// How long the background loops get to stop at shutdown.
-const STOP_DEADLINE: Duration = rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+const STOP_DEADLINE: Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 impl SubscriptionManager {
     /// Start the background poll loop (tier 3 fallback).

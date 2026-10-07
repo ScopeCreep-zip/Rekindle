@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::services::gossip_adapter::deps_impl::build_adapter;
 use crate::state::{AppState, SharedState};

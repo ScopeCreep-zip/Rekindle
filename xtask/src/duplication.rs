@@ -175,7 +175,7 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     (
         &[
             "rekindle-channel::AutoModAction",
-            "rekindle-protocol::AutoModAction",
+            "rekindle-codec::AutoModAction",
         ],
         "protocol's is the configured *action* a rule takes \
          (BlockMessage, AlertModerators{channel_id}, \
@@ -223,8 +223,8 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     // ── Codec boundaries: domain type vs its wire DTO ─────────────
     (
         &[
+            "rekindle-codec::PreKeyBundle",
             "rekindle-crypto::PreKeyBundle",
-            "rekindle-protocol::PreKeyBundle",
         ],
         "crypto's is the domain type; protocol's is its Cap'n Proto DTO. \
          NOTE, from the X3DH specification: the bundle omits the \
@@ -238,7 +238,7 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     ),
     (
         &[
-            "rekindle-protocol::MekTransferPayload",
+            "rekindle-codec::MekTransferPayload",
             "rekindle-transport::MekTransferPayload",
         ],
         "Two wire forms. protocol's is the Cap'n Proto envelope payload \
@@ -251,7 +251,7 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     (
         &[
             "rekindle (src-tauri)::RoleDto",
-            "rekindle-protocol::RoleDto",
+            "rekindle-codec::RoleDto",
         ],
         "src-tauri's serialises `permissions` as a string \
          (`serialize_u64_as_string`): a u64 above 2^53-1 loses low bits \
@@ -289,7 +289,7 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          difference in what each frontend renders, not drift.",
     ),
     (
-        &["rekindle-protocol::GameInfo", "rekindle-types::GameInfo"],
+        &["rekindle-codec::GameInfo", "rekindle-types::GameInfo"],
         "Two different wire forms, not one type in two places. \
          protocol's is the 1:1 rich-presence payload the Cap'n Proto \
          codec encodes — `game_id: u32`, `elapsed_seconds: u32`, a \

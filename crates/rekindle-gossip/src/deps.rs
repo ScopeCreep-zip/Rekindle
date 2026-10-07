@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
 
 /// One candidate peer in the gossip mesh.
 #[derive(Debug, Clone)]

@@ -1,14 +1,14 @@
 use ed25519_dalek::{Signature, VerifyingKey};
 use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_SKEW_MS};
 
-use crate::capnp_codec;
 use crate::error::ProtocolError;
-use crate::messaging::envelope::{MessageEnvelope, MessagePayload, Sealing};
-use crate::messaging::signing::envelope_signing_bytes;
+use rekindle_codec::capnp_codec;
+use rekindle_codec::message::envelope::{MessageEnvelope, MessagePayload, Sealing};
+use rekindle_codec::message::signing::envelope_signing_bytes;
 
 /// Parse a raw incoming message into a `MessageEnvelope`.
 pub fn parse_envelope(data: &[u8]) -> Result<MessageEnvelope, ProtocolError> {
-    capnp_codec::message::decode_envelope(data)
+    Ok(capnp_codec::message::decode_envelope(data)?)
 }
 
 /// Verify the envelope's Ed25519 signature as addressed to

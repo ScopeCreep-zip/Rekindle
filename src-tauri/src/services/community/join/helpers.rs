@@ -74,16 +74,15 @@ pub(super) fn spawn_join_announcements(
                 }
             };
 
-            let joined_envelope =
-                rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                    rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoined {
-                        pseudonym_key: pseudonym_key.clone(),
-                        display_name,
-                        role_ids: vec![0],
-                        status: status.to_string(),
-                        route_blob: our_route,
-                    },
-                );
+            let joined_envelope = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+                rekindle_codec::community::envelope::ControlPayload::MemberJoined {
+                    pseudonym_key: pseudonym_key.clone(),
+                    display_name,
+                    role_ids: vec![0],
+                    status: status.to_string(),
+                    route_blob: our_route,
+                },
+            );
             let _ =
                 crate::services::community::send_to_mesh(&state, &community_id, &joined_envelope);
 

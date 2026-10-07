@@ -414,7 +414,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     fn send_community_envelope(
         &self,
         community_id: &str,
-        envelope: &rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     );
 
     /// DB analytics: log a voice join / leave event into the

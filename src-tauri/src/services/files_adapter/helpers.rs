@@ -6,9 +6,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelMessage};
 use rekindle_files::{FilesError, FilesEvent};
 use rekindle_protocol::dht::community::channel_record::{
-    write_member_attachment_cached, write_member_message, ChannelAttachmentCached, ChannelMessage,
+    write_member_attachment_cached, write_member_message,
 };
 
 use crate::channels::CommunityEvent;

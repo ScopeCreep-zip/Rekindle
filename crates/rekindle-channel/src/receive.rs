@@ -2,7 +2,7 @@
 //! extraction. The body codec is `rekindle_secrets::channel_body`
 //! (re-exported from `send`).
 
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_types::channel::flags::{MENTION_EVERYONE, MENTION_HERE};
 
 /// Decoded mention signals from a `ChannelMessage.flags + mentioned_*`

@@ -11,13 +11,11 @@
 //! compile pass proves nothing here, because both encodings type-check
 //! perfectly well on their own side.
 
-use rekindle_protocol::capnp_envelope::{
+use rekindle_codec::capnp_envelope::{
     decode_signed_envelope, encode_community_envelope, encode_signed_envelope,
     try_decode_community_envelope,
 };
-use rekindle_protocol::dht::community::envelope::{
-    sign_envelope, verify_envelope, CommunityEnvelope,
-};
+use rekindle_codec::community::envelope::{sign_envelope, verify_envelope, CommunityEnvelope};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
 fn signing_key() -> SigningKey {
@@ -156,7 +154,7 @@ fn watch_relay_carries_no_payload_bytes() {
 /// one four.
 #[test]
 fn directed_payloads_are_not_forwarded() {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     let join_accepted = CommunityEnvelope::Control(ControlPayload::JoinAccepted {
         mek_encrypted: vec![],

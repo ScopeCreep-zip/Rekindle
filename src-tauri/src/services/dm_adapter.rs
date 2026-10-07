@@ -14,10 +14,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore};
 use rekindle_protocol::dht::pool::RecordPool;
 use rekindle_protocol::dht::schema;
-use rekindle_protocol::messaging::envelope::MessagePayload;
 use rekindle_records::lease::LeaseId;
 use veilid_core::{BarePublicKey, BareSecretKey, KeyPair, PublicKey, RecordKey, CRYPTO_KIND_VLD0};
 

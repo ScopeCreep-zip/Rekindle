@@ -118,7 +118,7 @@ pub struct SessionExtras {
 }
 
 /// MEK-encrypted wire form for [`SessionExtras`]. Same shape as
-/// [`EncryptedHistoryRanges`]; `ciphertext` is over a JSON `SessionExtras`.
+/// [`crate::presence::EncryptedHistoryRanges`]; `ciphertext` is over a JSON `SessionExtras`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct EncryptedSessionExtras {

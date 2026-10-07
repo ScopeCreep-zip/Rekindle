@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use rekindle_protocol::dht::community::channel_record::{ChannelHandRaise, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::{ChannelHandRaise, ChannelRecordEntry};
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;

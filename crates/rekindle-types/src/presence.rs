@@ -185,7 +185,7 @@ pub struct MemberPresence {
     pub session_extras_encrypted: Option<EncryptedSessionExtras>,
 
     /// Architecture §26 W26 — Ed25519 signature by `pseudonym_key` over
-    /// [`signing_bytes`]. The SMPL slot keypair on `set_dht_value` is
+    /// [`MemberPresence::signing_bytes`]. The SMPL slot keypair on `set_dht_value` is
     /// community-shared (every member knows the slot seed), so without
     /// this signature any member could forge a presence write claiming
     /// to be any other member — including impersonating their voice
@@ -309,7 +309,7 @@ pub struct OnlineMember {
 /// already typed with it.
 ///
 /// One declaration now, in the vocabulary tier;
-/// `rekindle_protocol::dht::community::envelope` re-exports it.
+/// `rekindle_codec::community::envelope` re-exports it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingAnswer {
@@ -326,7 +326,7 @@ pub struct OnboardingAnswer {
 // Tier-1 type is where someone looks for the authoritative shape, so a
 // dead one with the wrong fields is worse than none: adopting it would
 // have silently dropped every multi-select answer. The live definition
-// is `rekindle_protocol::dht::community::envelope::OnboardingAnswer`.
+// is `rekindle_codec::community::envelope::OnboardingAnswer`.
 
 /// Range of message history this member has cached locally.
 /// Used by mutual aid: newcomers can request ranges from peers who have them.

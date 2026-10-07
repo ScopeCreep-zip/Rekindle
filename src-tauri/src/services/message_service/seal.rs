@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use rand::RngCore as _;
-use rekindle_protocol::messaging::envelope::{MessageEnvelope, MessagePayload, Sealing};
+use rekindle_codec::message::envelope::{MessageEnvelope, MessagePayload, Sealing};
 use rekindle_protocol::messaging::sender::build_envelope_from_secret;
 
 use crate::state::AppState;

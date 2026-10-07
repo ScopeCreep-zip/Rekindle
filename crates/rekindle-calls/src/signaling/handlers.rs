@@ -9,7 +9,7 @@
 //!
 //! Pre-Phase-14 these lived in `src-tauri/services/calls/mod.rs`.
 
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;

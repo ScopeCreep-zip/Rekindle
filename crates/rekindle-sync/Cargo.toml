@@ -22,5 +22,5 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 parking_lot = { workspace = true }
-rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-codec = { path = "../rekindle-codec" }
 tokio = { workspace = true, features = [ "rt", "macros", "sync", "time" ] }

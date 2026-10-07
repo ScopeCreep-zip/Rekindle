@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::{MessageEnvelope, MessagePayload};
+use rekindle_codec::message::envelope::{MessageEnvelope, MessagePayload};
 use rekindle_protocol::messaging::sender::send_envelope;
 
 use crate::state::AppState;
@@ -127,7 +127,7 @@ async fn try_relay_fallback_send(
         .is_ok()
 }
 
-/// Seal `payload` as its [`rekindle_protocol::messaging::envelope::Sealing`]
+/// Seal `payload` as its [`rekindle_codec::message::envelope::Sealing`]
 /// requires, sign it to `to`, and send via Veilid.
 ///
 /// If no route exists for the peer, the message is queued for retry by `sync_service`.

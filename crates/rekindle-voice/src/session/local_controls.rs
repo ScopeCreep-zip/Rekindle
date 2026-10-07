@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::error::VoiceError;
 use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent, VoiceShutdownOpts};

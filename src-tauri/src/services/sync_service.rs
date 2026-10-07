@@ -309,8 +309,8 @@ pub(super) async fn request_channel_sync(
     .await
     .unwrap_or(0);
 
-    let sync_req = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-        rekindle_protocol::dht::community::envelope::ControlPayload::SyncRequest {
+    let sync_req = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+        rekindle_codec::community::envelope::ControlPayload::SyncRequest {
             channel_id: channel_id.to_string(),
             since_timestamp: last_ts.cast_unsigned(),
         },

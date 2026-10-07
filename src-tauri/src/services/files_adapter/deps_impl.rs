@@ -6,11 +6,11 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use rekindle_files::{ChunkCache, FilesDeps, FilesError, FilesEvent, PinnedSet};
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_files::{ChunkCache, FilesDeps, FilesError, FilesEvent, PinnedSet};
 use rekindle_types::attachment::AttachmentOffer;
 use uuid::Uuid;
 
@@ -335,9 +335,7 @@ impl FilesDeps for FilesAdapter {
                 continue;
             };
             let Ok(entries) =
-                rekindle_protocol::dht::community::channel_record::decode_channel_entries(
-                    value.data(),
-                )
+                rekindle_codec::community::channel_record::decode_channel_entries(value.data())
             else {
                 continue;
             };

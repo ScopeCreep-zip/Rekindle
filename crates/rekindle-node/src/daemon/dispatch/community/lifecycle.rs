@@ -200,8 +200,7 @@ pub(crate) async fn handle_join(
 }
 
 /// How long a left community's tasks get to stop.
-const COMMUNITY_STOP_DEADLINE: std::time::Duration =
-    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 pub(crate) async fn handle_leave(
     ctx: &DaemonContext,

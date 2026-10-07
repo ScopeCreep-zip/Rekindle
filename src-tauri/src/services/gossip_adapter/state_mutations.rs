@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
 
 use crate::state::{AppState, OnlineMember};
 

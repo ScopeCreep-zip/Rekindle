@@ -1,8 +1,8 @@
 //! Expression operations — play, delete, list.
 
 use base64::Engine as _;
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::state::ExpressionState;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::governance::GovernanceEntry;
 
 use super::limits::{detect_audio_kind, detect_image_media_type};

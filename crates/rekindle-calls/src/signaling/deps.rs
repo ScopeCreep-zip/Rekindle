@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 use crate::error::CallError;
 use crate::signaling::event::CallSignalEvent;

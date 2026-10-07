@@ -16,7 +16,7 @@ pub use rekindle_utils::blake3_hex;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+    use rekindle_codec::community::envelope::CommunityEnvelope;
 
     #[test]
     fn accepts_matching_ciphertext() {

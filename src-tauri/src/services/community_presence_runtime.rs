@@ -3,7 +3,7 @@
 //! (`send_channel_typing_inner`, `update_community_presence_inner`,
 //! `get_community_members_inner`, `update_community_profile_inner`).
 
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use crate::db_helpers::db_call;
 use crate::services::community_profile_validation::validate_profile;
@@ -71,15 +71,14 @@ pub async fn update_community_presence_inner(
     let pseudonym_key =
         state_helpers::my_pseudonym_key(state, &community_id).ok_or("no pseudonym key")?;
 
-    let game_info =
-        game_name.map(
-            |name| rekindle_protocol::dht::community::envelope::PresenceGameInfo {
-                game_name: name,
-                game_id,
-                elapsed_seconds,
-                server_address: server_address.clone(),
-            },
-        );
+    let game_info = game_name.map(
+        |name| rekindle_codec::community::envelope::PresenceGameInfo {
+            game_name: name,
+            game_id,
+            elapsed_seconds,
+            server_address: server_address.clone(),
+        },
+    );
 
     let envelope = CommunityEnvelope::PresenceUpdate {
         pseudonym_key,

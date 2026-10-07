@@ -18,6 +18,14 @@ use serde::{Deserialize, Serialize};
 /// a Safe route with `hop_count == 0`, so the floor is always a valid route.
 pub const ANONYMITY_HOP_FLOOR: u8 = 3;
 
+/// How long a session's scope gets to stop at logout, lock or exit before
+/// its stragglers are aborted (`evidence/c4-live-findings.md` L1). Only
+/// tasks that make no Veilid call directly may be aborted: the DHT work of
+/// a session task is record-pool calls, which run on the pool's scope, are
+/// released by its drain and are never aborted (an abort mid-commit wedges
+/// Veilid's record store; plan C7.6g, C7.6j).
+pub const SESSION_STOP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
+
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

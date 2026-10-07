@@ -3,8 +3,8 @@
 //! index, persists the member list, derives the slot keypair from a
 //! granted seed, and kicks off peer bootstrap.
 
+use rekindle_codec::community::types::MemberSummary;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::types::MemberSummary;
 use rekindle_secrets::derive;
 
 use crate::deps::MekSnapshot;

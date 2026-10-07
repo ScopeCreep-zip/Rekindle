@@ -1,5 +1,5 @@
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 
 use super::{verify_notification_message, PendingMessageFetch};
 

@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use rekindle_codec::community::envelope::SignedEnvelope;
 use rekindle_gossip::resolve_gate::ResolveGate;
 use rekindle_gossip::{GossipDeps, PeerInfo};
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
 use super::DaemonGossipAdapter;
 

@@ -6,7 +6,7 @@ use crate::services::{message_service, sync_service};
 use crate::state::AppState;
 use crate::state_helpers;
 
-use rekindle_protocol::dht::community::envelope::{
+use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
 };
 
@@ -56,9 +56,8 @@ pub async fn handle_app_call(
         return;
     }
 
-    let reply_bytes = match rekindle_protocol::capnp_envelope::try_decode_community_envelope(
-        &message,
-    ) {
+    let reply_bytes = match rekindle_codec::capnp_envelope::try_decode_community_envelope(&message)
+    {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
             joiner_pseudonym,
             governance_key,
@@ -130,15 +129,16 @@ pub async fn handle_app_call(
                             requester_pseudonym,
                         },
                     ));
-                    rekindle_protocol::capnp_envelope::encode_community_envelope(&ack)
-                        .unwrap_or_else(|e| {
+                    rekindle_codec::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(
+                        |e| {
                             tracing::warn!(
                                 call_id = %call_id,
                                 error = %e,
                                 "failed to encode MekTransferAck — falling back to bare ACK"
                             );
                             b"ACK".to_vec()
-                        })
+                        },
+                    )
                 }
                 Err(error) => {
                     tracing::warn!(

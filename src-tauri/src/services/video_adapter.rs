@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_video::{VideoDeps, VideoEvent};
 
@@ -479,7 +479,7 @@ pub fn handle_video_payload(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     let adapter = VideoAdapter::new(state.clone(), app_handle.clone());
     let now_ms = u32::try_from(rekindle_utils::timestamp_ms() % u64::from(u32::MAX)).unwrap_or(0);

@@ -38,7 +38,7 @@ pub async fn reset_signal_session_inner(
         peer = %peer_public_key,
         "Signal session reset by user; sending SessionResetRequest"
     );
-    let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetRequest {
+    let payload = rekindle_codec::message::envelope::MessagePayload::SessionResetRequest {
         our_prekey_bundle,
     };
     crate::services::message_service::send_to_peer(&state, &pool, &peer_public_key, &payload)
@@ -79,7 +79,7 @@ pub async fn accept_session_reset_inner(
         let our_identity = rekindle_crypto::Identity::from_secret_bytes(&our_secret);
         our_identity.public_key_bytes().to_vec()
     };
-    let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetAccept {
+    let payload = rekindle_codec::message::envelope::MessagePayload::SessionResetAccept {
         ephemeral_key: session_init.ephemeral_public_key,
         signed_prekey_id: session_init.signed_prekey_id,
         one_time_prekey_id: session_init.one_time_prekey_id,
@@ -104,7 +104,7 @@ pub async fn decline_session_reset_inner(
     reason: Option<String>,
 ) -> Result<(), String> {
     state.pending_session_resets.lock().remove(&peer_public_key);
-    let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetDecline {
+    let payload = rekindle_codec::message::envelope::MessagePayload::SessionResetDecline {
         reason: reason.unwrap_or_default(),
     };
     let _ =

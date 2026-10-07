@@ -88,8 +88,8 @@ pub(crate) fn handle_mek_request(
     // (§A3/P1.3). Only that peer replies; the requester re-sends with an
     // incremented index if nobody does, which is the desktop's
     // `spawn_mek_request_with_retry` loop.
-    let request = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-        rekindle_protocol::dht::community::envelope::ControlPayload::RequestMEK {
+    let request = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+        rekindle_codec::community::envelope::ControlPayload::RequestMEK {
             channel_id: channel.to_string(),
             needed_generation: generation,
             requester_pseudonym: membership.pseudonym_key.clone(),

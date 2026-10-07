@@ -12,7 +12,7 @@
 //! instead of being logged and dropped, and there is one enum to add a
 //! variant to rather than two.
 
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_types::subscription_events::{
     ChannelMessageEvent, PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
 };

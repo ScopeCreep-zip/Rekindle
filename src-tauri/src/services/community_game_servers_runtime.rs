@@ -3,7 +3,7 @@
 //! (random server_id + DTO build + gossip `GameServerAdded`) and
 //! `get_game_servers` (SQLite scan of cached entries).
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
 use crate::channels::community_channel::GameServerInfoDto;

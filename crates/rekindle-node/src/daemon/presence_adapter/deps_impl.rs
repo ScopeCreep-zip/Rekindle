@@ -9,6 +9,8 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
+use rekindle_codec::community::channel_record::ChannelMessage;
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::community::{
     EventRsvpEntry, GossipOverlayPlan, GossipOverlaySnapshot, MemberProfileSnapshot,
 };
@@ -16,8 +18,6 @@ use rekindle_presence::deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
     SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
 };
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::presence::{
     EncryptedHistoryRanges, EncryptedSessionExtras, HistoryRange, MemberSession,

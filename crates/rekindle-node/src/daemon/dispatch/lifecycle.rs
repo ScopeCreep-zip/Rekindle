@@ -247,8 +247,7 @@ pub(crate) async fn handle_lock(ctx: &DaemonContext, state: DaemonState) -> IpcR
 }
 
 /// How long the unlock scope's tasks get to stop at lock or exit.
-const UNLOCK_STOP_DEADLINE: std::time::Duration =
-    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+const UNLOCK_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 /// Start the unlock's scope. A panicking task exits the daemon so systemd
 /// restarts it from fresh state: the task shared the unlocked identity's

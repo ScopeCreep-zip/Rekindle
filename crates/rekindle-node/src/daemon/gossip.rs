@@ -34,7 +34,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use super::dispatch::DaemonContext;
 use super::gossip_adapter::DaemonGossipAdapter;

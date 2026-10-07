@@ -13,11 +13,11 @@
 
 use std::path::Path;
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::permissions;
 use uuid::Uuid;
 

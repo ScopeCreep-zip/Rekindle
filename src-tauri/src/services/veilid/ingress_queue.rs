@@ -19,7 +19,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
 use tokio::sync::Notify;
 
 /// Bounded depth. At the paced video budget (~350 kbps ≈ 4 fragments/s

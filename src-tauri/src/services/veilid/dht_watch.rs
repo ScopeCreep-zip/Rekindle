@@ -178,7 +178,7 @@ async fn try_handle_dm_change(
 }
 
 fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, value: &[u8]) {
-    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+    use rekindle_codec::community::envelope::CommunityEnvelope;
 
     let community_id_and_pseudonym = {
         let communities = state.communities.read();

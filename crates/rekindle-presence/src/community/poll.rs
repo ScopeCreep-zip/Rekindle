@@ -19,7 +19,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::community::sync::run_initial_sync;
 use crate::community::util::random_peer_sample;
@@ -460,7 +460,7 @@ mod tests {
         // arrange for at least one online peer via the mock's
         // `inject_online` hook (rebuild only drains when peers
         // become non-empty).
-        let pending = rekindle_protocol::dht::community::envelope::SignedEnvelope {
+        let pending = rekindle_codec::community::envelope::SignedEnvelope {
             community_id: "c1".to_string(),
             sender_pseudonym: "me".to_string(),
             envelope_bytes: vec![1, 2, 3],

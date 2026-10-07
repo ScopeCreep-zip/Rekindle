@@ -6,7 +6,7 @@ use tracing::debug;
 use super::{state_effects, watches, SubscriptionManager};
 use crate::gossip::GossipAdmission;
 use crate::payload::dm::DmPayload;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use super::events::{self, SubscriptionEvent};
 use crate::payload::dht_types::SLOTS_PER_SEGMENT;

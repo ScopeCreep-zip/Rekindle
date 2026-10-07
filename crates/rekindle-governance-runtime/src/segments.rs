@@ -38,7 +38,7 @@ pub const MAX_SEGMENTS: u32 = 8;
 // and `origin.rs` each carried their own `255`, with doc comments asking
 // the reader to keep them in sync with each other and with the protocol
 // crate by hand.
-use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
+use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
 
 pub use rekindle_types::presence::SegmentDescriptor;
 

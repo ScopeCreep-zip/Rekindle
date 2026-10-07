@@ -23,9 +23,7 @@
 //! arriving signed, which is why this returns `None` for them and lets
 //! the caller NAK.
 
-use rekindle_protocol::dht::community::envelope::{
-    CommunityEnvelope, ControlPayload, MekTransferPayload,
-};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
 
 /// Recognise a bare `CommunityEnvelope` carrying a wrapped MEK.
 ///
@@ -34,7 +32,7 @@ use rekindle_protocol::dht::community::envelope::{
 /// `Ok(None)` on a union discriminant it does not know, so anything
 /// that is not genuinely this envelope falls through to `None`.
 pub(super) fn decode_bare_mek_transfer(raw: &[u8]) -> Option<MekTransferPayload> {
-    match rekindle_protocol::capnp_envelope::try_decode_community_envelope(raw) {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
             Some(transfer)
         }
@@ -45,8 +43,8 @@ pub(super) fn decode_bare_mek_transfer(raw: &[u8]) -> Option<MekTransferPayload>
 #[cfg(test)]
 mod tests {
     use super::decode_bare_mek_transfer;
-    use rekindle_protocol::capnp_envelope::encode_community_envelope;
-    use rekindle_protocol::dht::community::envelope::{
+    use rekindle_codec::capnp_envelope::encode_community_envelope;
+    use rekindle_codec::community::envelope::{
         CommunityEnvelope, ControlPayload, MekTransferPayload,
     };
 

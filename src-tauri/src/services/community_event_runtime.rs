@@ -2,7 +2,7 @@
 //! `commands/community/events.rs`. Same pattern as the sibling
 //! `community_*_runtime.rs` modules.
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
 use crate::channels::community_channel::EventInfoDto;

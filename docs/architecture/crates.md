@@ -34,7 +34,7 @@ crates/
 ├── rekindle-audit/                  (2) BLAKE3 keyed hash chain [NEW]
 
 # ── Tier 3 — Wire format, records, local state ────────────────────────
-├── rekindle-codec/                  (3) signed envelope build/verify, dedup
+├── rekindle-codec/                     wire types + encodings: Cap'n Proto schemas/codecs, envelopes, record pages, dedup
 ├── rekindle-records/                (4) DHT record lifecycle, SMPL schema
 ├── rekindle-db/                    (17) schema, Db handle, repositories, node lock [NEW]
 ├── rekindle-events/                 (5) dedup + SubscriptionState + EventJournal [NEW]
@@ -124,10 +124,10 @@ link `veilid-core`:
 - `rekindle-desktop` — until F1 makes it a thin client.
 
 The tier crates reach Veilid only through a `Deps` trait, so their logic stays
-portable. **Today this is not yet true of linkage:** the wire types still live
-in `rekindle-protocol`, so 13 more crates link `veilid-core` transitively. Plan
-step C8 moves the types into `rekindle-codec` and `rekindle-types`, and makes
-`check-boundaries` transitive.
+portable, and since plan step C8 they cannot link it: the wire types live in
+`rekindle-codec` (encodings) and `rekindle-types` (layouts and constants), and
+`cargo xtask check-boundaries` walks the resolved dependency graph, failing any
+crate outside this list from which `veilid-core` is reachable.
 
 `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`,
 and `rekindle-utils` are **cross-cutting**: they sit alongside the tier

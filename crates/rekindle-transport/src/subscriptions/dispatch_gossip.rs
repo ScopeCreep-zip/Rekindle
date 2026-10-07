@@ -39,9 +39,9 @@ pub(super) async fn dispatch_bare_gossip<H: InboundHandler>(
     dedup: &mut DedupCache,
     raw: &[u8],
 ) -> bool {
-    use rekindle_protocol::capnp_envelope::decode_signed_envelope;
-    use rekindle_protocol::capnp_envelope::try_decode_community_envelope;
-    use rekindle_protocol::dht::community::envelope::verify_envelope;
+    use rekindle_codec::capnp_envelope::decode_signed_envelope;
+    use rekindle_codec::capnp_envelope::try_decode_community_envelope;
+    use rekindle_codec::community::envelope::verify_envelope;
 
     let Ok(signed) = decode_signed_envelope(raw) else {
         return false;

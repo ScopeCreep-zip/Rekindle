@@ -193,6 +193,6 @@ pub trait MekDistributeDeps: Send + Sync {
     fn send_to_mesh(
         &self,
         community_id: &str,
-        envelope: &rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), MekRotationError>;
 }

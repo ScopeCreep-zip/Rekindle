@@ -136,8 +136,7 @@ impl DaemonPresenceAdapter {
                 // Segment 0's governance record is the community's own.
                 governance_key,
                 slot_range_start: 0,
-                slot_range_end:
-                    rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT,
+                slot_range_end: rekindle_types::dht_layout::SLOTS_PER_SEGMENT,
             });
         }
         if let Some(state) = self.ctx.community_runtime.governance_state(community_id) {

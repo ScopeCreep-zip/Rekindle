@@ -17,10 +17,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;

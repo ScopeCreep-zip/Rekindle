@@ -15,12 +15,12 @@ use rekindle_channel::deps::{
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
-use rekindle_governance::state::GovernanceState;
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
     ChannelPollVote, ChannelReaction,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_governance::state::GovernanceState;
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
 

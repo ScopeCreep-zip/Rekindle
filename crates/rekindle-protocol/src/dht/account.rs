@@ -3,8 +3,10 @@ use veilid_core::{DHTSchema, KeyPair, RecordKey};
 
 use super::parse_record_key;
 use super::pool::{RecordPool, SetOutcome};
-use crate::capnp_codec::account::{decode_account_header, encode_account_header, AccountHeader};
 use crate::error::ProtocolError;
+use rekindle_codec::capnp_codec::account::{
+    decode_account_header, encode_account_header, AccountHeader,
+};
 use rekindle_crypto::DhtRecordKey;
 
 /// A user's private account DHT record.
@@ -95,7 +97,7 @@ impl AccountRecord {
             .await?
             .ok_or_else(|| ProtocolError::DhtError("account header not set".into()))?;
         let plaintext = self.encryption_key.decrypt(value.data())?;
-        decode_account_header(&plaintext)
+        Ok(decode_account_header(&plaintext)?)
     }
 
     /// Encrypt and write a new account header.

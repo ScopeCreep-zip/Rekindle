@@ -14,8 +14,8 @@
 
 use std::sync::Arc;
 
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_presence::DiscoveredMemberRow;
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 
 use crate::state::AppState;
 use crate::state_helpers;

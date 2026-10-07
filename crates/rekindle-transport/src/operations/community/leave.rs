@@ -61,8 +61,8 @@ pub async fn leave_community(
         .remove_community(&membership.governance_key);
     info!(community = %membership.community_name, "community left");
     Ok(LeaveResult {
-        departure_notice: rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::MemberLeave {
+        departure_notice: rekindle_codec::community::envelope::CommunityEnvelope::Control(
+            rekindle_codec::community::envelope::ControlPayload::MemberLeave {
                 pseudonym_key: membership.pseudonym_key.clone(),
             },
         ),

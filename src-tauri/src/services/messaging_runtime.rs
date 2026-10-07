@@ -13,8 +13,8 @@ use crate::db_helpers::db_call;
 use crate::message_view::merge_message_lists;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_db::Db;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
 #[derive(Debug, serde::Serialize)]

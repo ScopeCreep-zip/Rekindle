@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use rekindle_protocol::dht::community::channel_record::ChannelRecordEntry;
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
 
 /// A peer's advertised possession of an attachment's chunks.
@@ -82,9 +82,7 @@ pub fn discover_sources_in_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rekindle_protocol::dht::community::channel_record::{
-        ChannelAttachmentCached, ChannelMessage,
-    };
+    use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelMessage};
 
     fn offer_with_id(attachment_id: [u8; 16], chunk_count: u32) -> AttachmentOffer {
         AttachmentOffer {

@@ -110,14 +110,12 @@ fn fan_out_community_presence(state: &SharedState, game_info: Option<&GameInfoSt
 
     for community_id in community_ids {
         let game_info_for_envelope =
-            game_info.map(
-                |g| rekindle_protocol::dht::community::envelope::PresenceGameInfo {
-                    game_name: g.game_name.clone(),
-                    game_id: Some(g.game_id),
-                    elapsed_seconds: Some(g.elapsed_seconds),
-                    server_address: g.server_address.clone(),
-                },
-            );
+            game_info.map(|g| rekindle_codec::community::envelope::PresenceGameInfo {
+                game_name: g.game_name.clone(),
+                game_id: Some(g.game_id),
+                elapsed_seconds: Some(g.elapsed_seconds),
+                server_address: g.server_address.clone(),
+            });
 
         let pseudonym_key =
             state_helpers::my_pseudonym_key(state, &community_id).unwrap_or_default();
@@ -126,7 +124,7 @@ fn fan_out_community_presence(state: &SharedState, game_info: Option<&GameInfoSt
         if let Err(e) = crate::services::community::send_to_mesh(
             state,
             &community_id,
-            &rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+            &rekindle_codec::community::envelope::CommunityEnvelope::PresenceUpdate {
                 pseudonym_key,
                 status: status.clone(),
                 game_info: game_info_for_envelope,

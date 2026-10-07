@@ -7,9 +7,9 @@ pub(crate) fn check_gossip_moderation_permission(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: &rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: &rekindle_codec::community::envelope::ControlPayload,
 ) -> bool {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
     use rekindle_types::permissions;
 
     let required: u64 = match payload {
@@ -159,8 +159,8 @@ pub(crate) fn handle_sync_request(
                 "responding to sync request"
             );
 
-            let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                rekindle_protocol::dht::community::envelope::ControlPayload::SyncResponse {
+            let envelope = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+                rekindle_codec::community::envelope::ControlPayload::SyncResponse {
                     channel_id: channel_id_for_envelope,
                     messages,
                 },

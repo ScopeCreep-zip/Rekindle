@@ -21,14 +21,6 @@ use veilid_core::VeilidConfig;
 /// and record-lock waits. There is no cancellation API (veilid issue #516).
 pub const LONGEST_VEILID_CALL: Duration = Duration::from_secs(10);
 
-/// How long a session's scope gets to stop at logout, lock or exit before
-/// its stragglers are aborted (`evidence/c4-live-findings.md` L1). Only
-/// tasks that make no Veilid call directly may be aborted: the DHT work of
-/// a session task is record-pool calls, which run on the pool's scope, are
-/// released by its drain and are never aborted (an abort mid-commit wedges
-/// Veilid's record store; plan C7.6g, C7.6j).
-pub const SESSION_STOP_DEADLINE: Duration = Duration::from_secs(12);
-
 /// Build the Veilid startup config from plain-data options.
 ///
 /// - `program_name`: application namespace on the Veilid network.
@@ -127,7 +119,7 @@ mod tests {
             LONGEST_VEILID_CALL,
             Duration::from_millis(u64::from(longest_ms))
         );
-        assert!(SESSION_STOP_DEADLINE > LONGEST_VEILID_CALL);
+        assert!(rekindle_types::config::SESSION_STOP_DEADLINE > LONGEST_VEILID_CALL);
     }
 
     #[test]

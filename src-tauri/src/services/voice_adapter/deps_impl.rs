@@ -375,7 +375,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     fn send_community_envelope(
         &self,
         community_id: &str,
-        envelope: &rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) {
         if let Err(e) =
             crate::services::community::send_to_mesh(&self.state, community_id, envelope)

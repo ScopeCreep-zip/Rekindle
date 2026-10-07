@@ -139,7 +139,7 @@ impl DaemonHandler {
             return;
         };
 
-        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::WatchRelay {
+        let envelope = rekindle_codec::community::envelope::CommunityEnvelope::WatchRelay {
             record_key: record_key.to_string(),
             subkey,
             content_hash: blake3::hash(value).to_hex().to_string(),

@@ -4,8 +4,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::channel_record::ChannelMessage;
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::GossipOverlaySnapshot;
 use crate::deps::{OnlineMember, PresenceCredentials, SegmentDescriptor};

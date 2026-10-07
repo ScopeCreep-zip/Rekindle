@@ -29,10 +29,10 @@ pub async fn add_friend_from_invite_inner(
     app: tauri::AppHandle,
     invite_string: String,
 ) -> Result<(), String> {
-    let blob = rekindle_protocol::messaging::decode_invite_url(&invite_string)?;
-    rekindle_protocol::messaging::verify_invite_blob(&blob)?;
+    let blob = rekindle_codec::message::decode_invite_url(&invite_string)?;
+    rekindle_codec::message::verify_invite_blob(&blob)?;
     let now_ms = rekindle_utils::timestamp_ms();
-    rekindle_protocol::messaging::check_invite_recency(&blob, now_ms, MAX_INVITE_AGE_SECS)?;
+    rekindle_codec::message::check_invite_recency(&blob, now_ms, MAX_INVITE_AGE_SECS)?;
 
     let owner_key = state_helpers::current_owner_key(&state)?;
 

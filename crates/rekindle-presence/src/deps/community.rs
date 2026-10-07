@@ -68,7 +68,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     fn send_to_mesh(
         &self,
         community_id: &str,
-        envelope: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+        envelope: rekindle_codec::community::envelope::CommunityEnvelope,
     );
 
     /// Highest timestamp persisted locally for the given channel —
@@ -92,7 +92,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     ) -> Result<
         Vec<(
             u32,
-            rekindle_protocol::dht::community::channel_record::ChannelMessage,
+            rekindle_codec::community::channel_record::ChannelMessage,
         )>,
         PresenceError,
     >;
@@ -107,7 +107,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         record_key: &str,
         messages: Vec<(
             u32,
-            rekindle_protocol::dht::community::channel_record::ChannelMessage,
+            rekindle_codec::community::channel_record::ChannelMessage,
         )>,
     );
 
@@ -393,7 +393,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     fn send_to_mesh_raw(
         &self,
         community_id: &str,
-        envelope: rekindle_protocol::dht::community::envelope::SignedEnvelope,
+        envelope: rekindle_codec::community::envelope::SignedEnvelope,
     );
 
     /// Emit a `MemberPresenceChanged{status:"offline"}` community

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_sync::history::{select_best_peer, select_deepest_peer, HistoryAd};
 use rekindle_types::presence::MemberPresence;
 

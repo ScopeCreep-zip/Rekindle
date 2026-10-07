@@ -5,6 +5,7 @@
 //! for the module map.
 
 use async_trait::async_trait;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_crypto::group::media_key::MediaEncryptionKey as CryptoMek;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::{
@@ -12,7 +13,6 @@ use rekindle_governance_runtime::{
     GovernanceRuntimeDeps, GovernanceRuntimeError, GovernanceRuntimeEvent, MekSnapshot,
     OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 

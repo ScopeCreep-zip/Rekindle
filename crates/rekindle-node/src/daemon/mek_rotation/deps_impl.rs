@@ -12,13 +12,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_mek_rotation::{
     ChannelMekCache, MekDistributeDeps, MekPersist, MekRotationError, MekRotationEvent,
     RotationRecipient,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};

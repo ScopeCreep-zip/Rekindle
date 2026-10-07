@@ -171,7 +171,7 @@ pub enum InboundCall {
     /// transport-local one above: that is the type on this wire, and
     /// minting a fourth MEK-transfer struct to restate it is the
     /// drift this branch exists to remove.
-    CommunityMekTransfer(rekindle_protocol::dht::community::envelope::MekTransferPayload),
+    CommunityMekTransfer(rekindle_codec::community::envelope::MekTransferPayload),
 }
 
 /// Response from the handler to an inbound RPC.

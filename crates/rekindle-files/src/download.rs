@@ -21,8 +21,8 @@
 
 use std::path::Path;
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ use crate::error::FilesError;
 use crate::fek::unwrap_fek_for_offer;
 use crate::manifest::validate_offer;
 use crate::verify::{verify_chunk, verify_merkle_root};
-use rekindle_protocol::dht::community::channel_record::ChannelAttachmentCached;
+use rekindle_codec::community::channel_record::ChannelAttachmentCached;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
 
 /// An attachment whose chunks are all in the local cache, with the key
@@ -336,11 +336,11 @@ async fn send_chunk_request<D: FilesDeps>(
         requested_chunks: requested_chunks.to_vec(),
         requester_pseudonym,
     });
-    let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&payload)
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
         .map_err(|e| FilesError::Transport(format!("encode RequestAttachment: {e}")))?;
 
     let reply = deps.app_call_peer(&route_blob, bytes).await?;
-    let envelope = rekindle_protocol::capnp_envelope::decode_community_envelope(&reply)
+    let envelope = rekindle_codec::capnp_envelope::decode_community_envelope(&reply)
         .map_err(|e| FilesError::Transport(format!("decode reply: {e}")))?;
     match envelope {
         CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) => Ok(chunks
@@ -367,7 +367,7 @@ fn parse_attachment_id_hex(hex_str: &str) -> Result<[u8; 16], FilesError> {
 mod tests {
     use super::*;
     use crate::test_mock::MockDeps;
-    use rekindle_protocol::dht::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+    use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 
     fn build_offer_entry(attachment_id: [u8; 16], chunk_count: u32) -> ChannelRecordEntry {
         ChannelRecordEntry::Message(ChannelMessage {

@@ -10,7 +10,7 @@
 //! abstracted governance-entry writes, gossip broadcasts, and
 //! AppState/SQLite mutations.
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::{hex_to_id_16, require_permission};
@@ -105,7 +105,7 @@ pub async fn submit_onboarding_answers_inner(
     acknowledged_rules: bool,
 ) -> Result<(), String> {
     enforce_rules_acknowledgment(state, &community_id, acknowledged_rules)?;
-    let answers: Vec<rekindle_protocol::dht::community::envelope::OnboardingAnswer> = answers
+    let answers: Vec<rekindle_codec::community::envelope::OnboardingAnswer> = answers
         .into_iter()
         .map(|v| serde_json::from_value(v).map_err(|e| format!("invalid answer: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
@@ -189,7 +189,7 @@ fn enforce_rules_acknowledgment(
 fn resolve_self_assignable_roles(
     state: &SharedState,
     community_id: &str,
-    answers: &[rekindle_protocol::dht::community::envelope::OnboardingAnswer],
+    answers: &[rekindle_codec::community::envelope::OnboardingAnswer],
 ) -> Result<Vec<rekindle_types::id::RoleId>, String> {
     let communities = state.communities.read();
     let community = communities.get(community_id).ok_or("community not found")?;

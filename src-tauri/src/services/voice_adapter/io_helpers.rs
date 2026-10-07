@@ -45,7 +45,7 @@ pub(super) fn broadcast_media_capabilities_impl(
     community_id: &str,
     channel_id: &str,
 ) -> Result<(), String> {
-    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
     let caps = local_media_capabilities(state);
     let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
         channel_id: channel_id.to_string(),

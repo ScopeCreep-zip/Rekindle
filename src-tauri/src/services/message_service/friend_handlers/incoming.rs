@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 use crate::db_helpers::db_call;
 use crate::state::AppState;

@@ -52,6 +52,7 @@ mod literals;
 mod no_emitter;
 mod no_managed_db;
 mod sqlite;
+mod veilid_boundary;
 mod veilid_dht_calls;
 
 #[derive(Parser)]
@@ -246,9 +247,9 @@ const CRYPTO_CRATES: &[&str] = &[
     // Noise protocol framework (the IPC bus handshake and transport).
     "snow",
 ];
-// Veilid integration is centralised: only the daemon-track transport
-// or the desktop-track protocol crate may import veilid-core directly.
-const VEILID_ALLOWED: &[&str] = &["rekindle-transport", "rekindle-protocol"];
+// The Veilid boundary is transitive linkage (ADR 0014): `veilid_boundary`
+// walks the resolved graph, so a crate that reaches veilid-core through
+// another crate fails as surely as one that names it.
 // Crypto-allowed crates for now; this list will shrink as the cleanup
 // sweep refactors crypto consumers to consume via rekindle-secrets.
 const CRYPTO_ALLOWED: &[&str] = &[
@@ -317,12 +318,8 @@ fn check_boundaries(root: &Path) -> Result<()> {
                 ));
             }
         }
-        if dep_present(&toml, "veilid-core") && !VEILID_ALLOWED.contains(&crate_name.as_str()) {
-            violations.push(format!(
-                "{crate_name}: imports `veilid-core` (Veilid boundary — only via rekindle-transport / rekindle-protocol)"
-            ));
-        }
     }
+    violations.extend(veilid_boundary::check_veilid_boundary(root)?);
 
     if violations.is_empty() {
         return Ok(());

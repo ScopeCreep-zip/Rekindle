@@ -14,8 +14,8 @@ use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::channel_record::ChannelMessage;
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::{GossipOverlayPlan, GossipOverlaySnapshot};
 use crate::deps::{

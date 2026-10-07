@@ -3,10 +3,10 @@
 //! The remainder of the trait surface — everything that is neither a
 //! plain state access nor a direct DHT call.
 
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{CommunityDhtOpenSetup, DiscoveredMember};
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 

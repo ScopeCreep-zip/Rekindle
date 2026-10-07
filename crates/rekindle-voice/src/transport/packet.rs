@@ -2,7 +2,7 @@
 //! (`schemas/voice_packet.capnp`); this module is its home in the voice
 //! crate's namespace, plus the outbound frame the transport signs.
 
-pub use rekindle_protocol::capnp_codec::voice_packet::VoicePacket;
+pub use rekindle_codec::capnp_codec::voice_packet::VoicePacket;
 
 /// One sealed frame on its way out: the packet fields the transport signs
 /// around the SFrame ciphertext.

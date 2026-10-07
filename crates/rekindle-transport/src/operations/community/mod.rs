@@ -40,5 +40,5 @@ pub use leave::leave_community;
 /// bytes means the caller broadcasts it through the same signed Cap'n
 /// Proto path as everything else.
 pub struct LeaveResult {
-    pub departure_notice: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+    pub departure_notice: rekindle_codec::community::envelope::CommunityEnvelope,
 }

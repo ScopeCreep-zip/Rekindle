@@ -14,7 +14,7 @@ use crate::signaling::event::CallSignalEvent;
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 /// Ring window (architecture §10.10) — 30 s for both caller-side
 /// dialing and receiver-side incoming. `pub` because rekindle-transport

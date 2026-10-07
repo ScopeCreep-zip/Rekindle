@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_presence::deps::PresenceError;
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 
 use super::DaemonPresenceAdapter;
 

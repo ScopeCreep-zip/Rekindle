@@ -1,7 +1,7 @@
 use super::*;
 use crate::reassembly_state::VideoReassemblyState;
 use crate::test_mock::MockDeps;
-use rekindle_protocol::dht::community::envelope::ControlPayload;
+use rekindle_codec::community::envelope::ControlPayload;
 
 fn small_request(keyframe: bool) -> VideoFrameSend {
     VideoFrameSend {

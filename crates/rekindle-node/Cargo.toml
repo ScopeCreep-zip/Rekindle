@@ -30,6 +30,7 @@ rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # boundary. No veilid_core types are named from this crate.
 rekindle-db = { path = "../rekindle-db" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }
 # Tier 5. The shared gossip stack — Cap'n Proto `CommunityEnvelope`

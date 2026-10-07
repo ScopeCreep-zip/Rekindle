@@ -9,7 +9,7 @@ use rekindle_types::subscription_events::{
     SubscriptionEvent,
 };
 
-use rekindle_protocol::dht::community::envelope::ControlPayload;
+use rekindle_codec::community::envelope::ControlPayload;
 
 use super::into_event_control_rest::control_into_event_rest;
 

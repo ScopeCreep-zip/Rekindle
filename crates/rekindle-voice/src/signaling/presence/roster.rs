@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::VoiceRosterEntry;
+use rekindle_codec::community::envelope::VoiceRosterEntry;
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 use crate::transport::VoiceTransport;

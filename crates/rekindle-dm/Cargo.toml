@@ -12,7 +12,7 @@ workspace = true
 hex = { workspace = true }
 hkdf = "0.12"
 rekindle-crypto = { path = "../rekindle-crypto" }                 # Phase 13 — MediaEncryptionKey for envelope crypto.
-rekindle-protocol = { path = "../rekindle-protocol" }             # Phase 13 — MessagePayload for deps trait wire types.
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-records = { path = "../rekindle-records" }               # Phase 13 — SMPL schema construction for new DM records.
 rekindle-secrets = { path = "../rekindle-secrets" }               # Phase 13 — slot keypair derivation.
 rekindle-types = { path = "../rekindle-types" }

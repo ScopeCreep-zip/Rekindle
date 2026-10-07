@@ -10,9 +10,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use rekindle_protocol::dht::community::envelope::{
-    CommunityEnvelope, ControlPayload, SignedEnvelope,
-};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, SignedEnvelope};
 use tracing::{debug, info, warn};
 
 use rekindle_transport::{

@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 use crate::db_helpers::db_call;
 use crate::state::AppState;
@@ -194,7 +194,7 @@ pub async fn send_typing(
 }
 
 /// Send any payload to a peer, sealed as its
-/// [`rekindle_protocol::messaging::envelope::Sealing`] requires. A
+/// [`rekindle_codec::message::envelope::Sealing`] requires. A
 /// `Session` payload with no Signal session fails closed.
 pub async fn send_to_peer(
     state: &Arc<AppState>,

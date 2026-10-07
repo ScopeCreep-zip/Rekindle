@@ -125,7 +125,7 @@ pub async fn run_video_pacer<D: VideoDeps>(
 mod tests {
     use super::*;
     use crate::test_mock::MockDeps;
-    use rekindle_protocol::dht::community::envelope::{
+    use rekindle_codec::community::envelope::{
         CommunityEnvelope, ControlPayload, VideoFragmentPayload,
     };
 

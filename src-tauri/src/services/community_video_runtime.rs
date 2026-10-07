@@ -3,7 +3,7 @@
 //! shared `decode_stream_id` helper used by the four envelope-based
 //! commands (frame_ack, keyframe_request, frame_send, topology_change).
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::services::community::video;
 use crate::state::SharedState;

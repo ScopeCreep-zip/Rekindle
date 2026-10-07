@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
 };
 

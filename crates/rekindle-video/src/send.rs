@@ -14,7 +14,7 @@
 //! receivers know to spin up a decoder; that tiny control envelope is
 //! still sent IMMEDIATELY (it must precede the first fragment).
 
-use rekindle_protocol::dht::community::envelope::{
+use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};

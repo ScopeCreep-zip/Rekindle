@@ -6,8 +6,8 @@
 //! → UI snapshot emit. All side effects flow through the
 //! `GovernanceRuntimeDeps` trait.
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::{compact, merge, validate};
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::derive;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;

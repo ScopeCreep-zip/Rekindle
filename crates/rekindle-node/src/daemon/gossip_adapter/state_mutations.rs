@@ -1,6 +1,6 @@
 //! Overlay mutations and delivery bookkeeping.
 
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
 use rekindle_transport::OnlineMember;
 
 use super::DaemonGossipAdapter;

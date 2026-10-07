@@ -26,7 +26,6 @@ rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-governance = { path = "../rekindle-governance" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-presence = { path = "../rekindle-presence" }
-rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-utils = { path = "../rekindle-utils" }

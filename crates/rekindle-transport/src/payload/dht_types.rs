@@ -37,7 +37,8 @@ pub const FRIEND_INBOX_SUBKEY_COUNT: u32 = 32;
 // — so neither track could read the other's friend list, and whichever
 // wrote last destroyed it. Cap'n Proto is the declared serialization
 // (CLAUDE.md, `schemas/friend.capnp`), so that is the one that stayed.
-pub use rekindle_protocol::dht::friends::{FriendEntry, FriendList};
+pub use rekindle_codec::friend::FriendEntry;
+pub use rekindle_protocol::dht::friends::FriendList;
 
 // ── Mailbox record (DFLT, 1 subkey) ──────────────────────────────────
 
@@ -70,8 +71,8 @@ pub use rekindle_types::dht_layout::manifest::{
 /// the v1.0 derivation — under `o_cnt: 0` there are no owner subkeys
 /// and the value is 255, which is what every record is actually built
 /// with.
-pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
-pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
+pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
 
 // ── Community metadata ──────────────────────────────────────────────
 //
@@ -124,7 +125,7 @@ pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as
 ///   * it lacked `attachment`, `flags`, `mentioned_pseudonyms` and
 ///     `mentioned_roles`, silently dropping file offers, voice-message
 ///     and @everyone/@here flags, and mention routing on any round trip.
-pub use rekindle_protocol::dht::community::channel_record::ChannelMessage;
+pub use rekindle_codec::community::channel_record::ChannelMessage;
 
 // ── Friend inbox types (DHT-based async friend requests) ────────────
 

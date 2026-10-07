@@ -20,7 +20,7 @@ pub async fn remove_friend_inner(
         &state,
         &pool,
         &public_key,
-        &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+        &rekindle_codec::message::envelope::MessagePayload::Unfriended,
     )
     .await;
 
@@ -70,7 +70,7 @@ pub async fn remove_friend_inner(
                 &state_clone,
                 &pool_clone,
                 &pk_clone,
-                &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+                &rekindle_codec::message::envelope::MessagePayload::Unfriended,
             )
             .await
             {

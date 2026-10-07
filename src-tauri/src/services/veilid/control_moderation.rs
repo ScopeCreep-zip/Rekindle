@@ -16,9 +16,9 @@ pub(crate) fn handle_gossip_control_payloads(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::AdminKeypairGrant {
@@ -179,9 +179,9 @@ fn handle_gossip_moderation(
     pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
         return;

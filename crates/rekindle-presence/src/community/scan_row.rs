@@ -21,7 +21,7 @@ use crate::deps::OnlineMember;
 /// registry's slot count by construction — one subkey per member slot —
 /// and two names for it is how the two drift. The duplicate-constant
 /// gate is keyed on the name, so it could never have caught this pair.
-pub use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT as SUBKEYS_PER_SEGMENT;
+pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT as SUBKEYS_PER_SEGMENT;
 
 /// Outcome of one row's classification — either accepted (with the
 /// MemberPresence body, hex-pseudonym, and whether it should be

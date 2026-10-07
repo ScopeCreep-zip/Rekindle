@@ -9,12 +9,13 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
+use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::{
     CommunityPresenceDeps, DiscoveredMemberRow, GossipOverlayPlan, GossipOverlaySnapshot,
     OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
 };
-use rekindle_protocol::dht::community::channel_record::{self, ChannelMessage};
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_protocol::dht::community::channel_record;
 
 use crate::services::presence_adapter::PresenceAdapter;
 use crate::state_helpers;
@@ -115,9 +116,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
         Ok(items
             .into_iter()
             .filter_map(|item| match item.entry {
-                channel_record::ChannelRecordEntry::Message(message) => {
-                    Some((item.subkey_index, message))
-                }
+                ChannelRecordEntry::Message(message) => Some((item.subkey_index, message)),
                 _ => None,
             })
             .collect())

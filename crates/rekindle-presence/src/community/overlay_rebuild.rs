@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
 
 use crate::deps::OnlineMember;
 

@@ -10,8 +10,8 @@
 
 use std::collections::HashMap;
 
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::state::GovernanceState;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::keys::MediaEncryptionKey;
@@ -244,7 +244,7 @@ pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
         wrapped_owner_keypair,
     };
     let envelope = CommunityEnvelope::Control(payload);
-    let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&envelope)
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&envelope)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap response: {e}")))?;
 
     deps.emit_event(GovernanceRuntimeEvent::BootstrapResponseBuilt {

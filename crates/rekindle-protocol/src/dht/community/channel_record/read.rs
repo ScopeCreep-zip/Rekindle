@@ -1,11 +1,12 @@
 //! Channel record reads: watching and merged multi-writer history.
 
-use super::codec::{decode_channel_entries, message_from_entry};
-use super::types::{ChannelMessage, ChannelRecordItem};
-use super::CHANNEL_OWNER_SUBKEY_COUNT;
 use crate::dht::parse_record_key;
 use crate::dht::pool::RecordPool;
 use crate::error::ProtocolError;
+use rekindle_codec::community::channel_record::{
+    decode_channel_entries, message_from_entry, ChannelMessage, ChannelRecordItem,
+    CHANNEL_OWNER_SUBKEY_COUNT,
+};
 
 // A channel watch is the record pool's (`RecordPool::watch` on a lease,
 // plan C7.4); nothing here watches.

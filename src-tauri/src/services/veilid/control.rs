@@ -12,9 +12,9 @@ pub(crate) async fn handle_relayed_control(
     pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         payload @ (ControlPayload::MemberJoinRequest { .. }
@@ -95,9 +95,9 @@ fn handle_channel_event_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::MessageEdited {
@@ -189,9 +189,9 @@ async fn handle_join_and_roles_payload(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::MemberRolesChanged {

@@ -1,7 +1,7 @@
 //! Thread message send/load.
 
-use rekindle_protocol::dht::community::channel_record::{ChannelMessage, ChannelRecordEntry};
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use super::policy::ThreadMessageView;
 use super::support::{decrypt_thread_body, ensure_thread_record_and_message, thread_write_context};

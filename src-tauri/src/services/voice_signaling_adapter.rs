@@ -12,7 +12,7 @@ use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceSc
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_voice::signaling::{CommunityVoiceEvent, StageChannelInfo, VoiceSignalingDeps};
 use rekindle_voice::transport::VoiceTransport;
 use tokio::sync::Mutex as AsyncMutex;
@@ -53,7 +53,7 @@ pub fn handle_voice_signaling(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     let Ok(pool) = state.db.current() else {
         tracing::debug!("voice signaling: no identity database — dropped");
@@ -332,7 +332,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         &self,
         community_id: &str,
         channel_id: &str,
-        envelope: &rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) {
         if let Err(e) = crate::services::community::send_to_channel_peers(
             &self.state,

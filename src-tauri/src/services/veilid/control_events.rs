@@ -14,9 +14,9 @@ pub(crate) async fn handle_control_events_and_threads(
     pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::ChannelOverwriteChanged { channel_id } => {
@@ -172,9 +172,9 @@ fn handle_pin_payload(
     state: &Arc<AppState>,
     pool: &Db,
     community_id: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::MessagePinned {
@@ -244,9 +244,9 @@ fn handle_thread_payload(
     state: &Arc<AppState>,
     pool: &Db,
     community_id: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::ThreadCreated { thread } => {

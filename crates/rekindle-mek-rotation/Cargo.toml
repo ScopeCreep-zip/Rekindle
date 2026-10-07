@@ -16,7 +16,6 @@ parking_lot = { workspace = true }
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
-rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }

@@ -14,7 +14,7 @@ fn scope(community: String, channel: String) -> VoiceScope {
     VoiceScope::Community { community, channel }
 }
 
-use rekindle_protocol::dht::community::envelope::ControlPayload;
+use rekindle_codec::community::envelope::ControlPayload;
 
 /// Tail of [`ControlPayload::into_event`] — see that method for the split
 /// rationale. Handles events, threads, game servers, governance, voice

@@ -305,7 +305,7 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     /// Convert from the protocol's `RoleDto`.
-    pub fn from_dto(dto: &rekindle_protocol::messaging::RoleDto) -> Self {
+    pub fn from_dto(dto: &rekindle_codec::message::RoleDto) -> Self {
         Self {
             id: dto.id,
             name: dto.name.clone(),

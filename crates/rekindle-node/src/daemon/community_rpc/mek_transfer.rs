@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use rekindle_protocol::dht::community::envelope::MekTransferPayload;
+use rekindle_codec::community::envelope::MekTransferPayload;
 use rekindle_transport::payload::rpc::CallResponse;
 
 use rekindle_types::channel_keys::KeyScope;

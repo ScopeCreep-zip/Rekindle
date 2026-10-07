@@ -11,7 +11,7 @@
 //! Signal-encrypted `app_call` transport.
 
 use rand::RngCore;
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
 use crate::deps::DmDeps;

@@ -254,7 +254,7 @@ pub async fn process_onboarding_answers(
     app_handle: &AppHandle,
     community_id: &str,
     sender_pseudonym: &str,
-    answers: &[rekindle_protocol::dht::community::envelope::OnboardingAnswer],
+    answers: &[rekindle_codec::community::envelope::OnboardingAnswer],
 ) {
     let Some(adapter) = membership_adapter(state, app_handle) else {
         return;

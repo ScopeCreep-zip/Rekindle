@@ -95,6 +95,18 @@ pub enum ProtocolError {
     NotStored { subkey: u32, outcome: String },
 }
 
+impl From<rekindle_codec::CodecError> for ProtocolError {
+    fn from(e: rekindle_codec::CodecError) -> Self {
+        use rekindle_codec::CodecError;
+        match e {
+            CodecError::Serialization(m) => Self::Serialization(m),
+            CodecError::Deserialization(m) => Self::Deserialization(m),
+            CodecError::UnknownVariant(m) => Self::UnknownVariant(m),
+            CodecError::Verification(m) => Self::Verification(m),
+        }
+    }
+}
+
 impl From<rekindle_crypto::CryptoError> for ProtocolError {
     fn from(e: rekindle_crypto::CryptoError) -> Self {
         Self::CryptoError(e.to_string())

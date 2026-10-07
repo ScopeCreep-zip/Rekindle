@@ -14,11 +14,11 @@
 //! sleeps `cascade_delay(N)` and bails out if any peer already
 //! advanced the generation (we yielded the rotation).
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_crypto::group::mek_distribution::wrap_mek;
-use rekindle_protocol::dht::community::envelope::{
+use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
 };
+use rekindle_crypto::group::media_key::MediaEncryptionKey;
+use rekindle_crypto::group::mek_distribution::wrap_mek;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 
@@ -133,7 +133,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
             sender_pseudonym: my_pseudonym_hex.clone(),
             wrapped_mek: wrapped,
         }));
-        let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&payload)
+        let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
             .map_err(|e| MekRotationError::Transport(format!("encode MEK transfer: {e}")))?;
 
         let reply = deps
@@ -185,7 +185,7 @@ fn inspect_reply(
         );
         return;
     }
-    match rekindle_protocol::capnp_envelope::try_decode_community_envelope(reply) {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(reply) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck(
             MekTransferAckPayload {
                 generation: ack_gen,

@@ -25,7 +25,7 @@ use crate::event::GovernanceRuntimeEvent;
 use rekindle_records::lease::CommunityLeases;
 
 // Slots per segment record — imported, not redeclared. See segments.rs.
-use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
+use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
 
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is

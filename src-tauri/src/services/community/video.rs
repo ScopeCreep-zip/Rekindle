@@ -32,7 +32,7 @@ pub fn handle_video_payload(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     crate::services::video_adapter::handle_video_payload(
         app_handle,

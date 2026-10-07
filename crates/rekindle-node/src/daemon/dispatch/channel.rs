@@ -411,7 +411,7 @@ pub(crate) async fn handle_send(
             // unencrypted at the envelope layer, so the notification
             // names the message and peers read the body from the record.
             let notification =
-                rekindle_protocol::dht::community::envelope::CommunityEnvelope::MessageNotification {
+                rekindle_codec::community::envelope::CommunityEnvelope::MessageNotification {
                     channel_id: channel_id.clone(),
                     message_id: sent.message_id.clone(),
                     author_pseudonym: membership.pseudonym_key.clone(),

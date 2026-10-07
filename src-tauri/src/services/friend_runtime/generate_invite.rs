@@ -76,7 +76,7 @@ pub async fn generate_invite_inner(
     let invite_id = uuid::Uuid::new_v4().to_string();
 
     let issued_at_ms = rekindle_utils::timestamp_ms();
-    let blob = rekindle_protocol::messaging::create_invite_blob(
+    let blob = rekindle_codec::message::create_invite_blob(
         &secret_key,
         &public_key,
         &display_name,
@@ -87,7 +87,7 @@ pub async fn generate_invite_inner(
         Some(&invite_id),
         issued_at_ms,
     );
-    let url = rekindle_protocol::messaging::encode_invite_url(&blob);
+    let url = rekindle_codec::message::encode_invite_url(&blob);
 
     let owner_key = state_helpers::current_owner_key(&state)?;
     crate::invite_helpers::create_outgoing_invite(&pool, &owner_key, &invite_id, &url).await?;

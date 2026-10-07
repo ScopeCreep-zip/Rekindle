@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_codec::message::envelope::MessagePayload;
 
 use rekindle_db::Db;
 use rusqlite::OptionalExtension as _;

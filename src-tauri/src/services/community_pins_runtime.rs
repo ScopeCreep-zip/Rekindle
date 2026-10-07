@@ -2,7 +2,7 @@
 //! `commands/community/reactions_pins.rs`. Hosts `pin_message`,
 //! `unpin_message`, and `get_channel_pins` bodies.
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;

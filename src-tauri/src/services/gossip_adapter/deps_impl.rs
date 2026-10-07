@@ -6,8 +6,8 @@
 //! awaiting (parking_lot guards are `!Send`).
 
 use async_trait::async_trait;
+use rekindle_codec::community::envelope::SignedEnvelope;
 use rekindle_gossip::{GossipDeps, PeerInfo};
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
 use crate::services::gossip_adapter::{state_mutations, state_reads, GossipAdapter};
 use crate::state_helpers;

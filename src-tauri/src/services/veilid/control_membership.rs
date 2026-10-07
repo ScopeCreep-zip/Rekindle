@@ -17,9 +17,9 @@ pub(super) fn handle_membership_payload(
     state: &Arc<AppState>,
     pool: &Db,
     community_id: &str,
-    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+    payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         ControlPayload::MemberJoinRequest {

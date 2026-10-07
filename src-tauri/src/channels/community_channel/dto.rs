@@ -43,8 +43,8 @@ pub struct RoleDto {
     pub exclusion_group: Option<String>,
 }
 
-impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
-    fn from(dto: &rekindle_protocol::messaging::RoleDto) -> Self {
+impl From<&rekindle_codec::message::RoleDto> for RoleDto {
+    fn from(dto: &rekindle_codec::message::RoleDto) -> Self {
         Self {
             id: dto.id,
             name: dto.name.clone(),
@@ -83,8 +83,8 @@ impl From<&crate::state::RoleDefinition> for RoleDto {
     }
 }
 
-impl From<&rekindle_protocol::dht::community::types::RoleEntryV2> for RoleDto {
-    fn from(r: &rekindle_protocol::dht::community::types::RoleEntryV2) -> Self {
+impl From<&rekindle_codec::community::types::RoleEntryV2> for RoleDto {
+    fn from(r: &rekindle_codec::community::types::RoleEntryV2) -> Self {
         Self {
             id: r.id,
             name: r.name.clone(),

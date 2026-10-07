@@ -3,8 +3,8 @@
 //! send/receive paths against deterministic state.
 
 use parking_lot::Mutex;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
 use crate::deps::{VideoDeps, VideoEvent};

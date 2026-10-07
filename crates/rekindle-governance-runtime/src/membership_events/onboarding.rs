@@ -5,9 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rekindle_protocol::dht::community::envelope::{
-    CommunityEnvelope, ControlPayload, OnboardingAnswer,
-};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, OnboardingAnswer};
 use rekindle_types::governance::{GovernanceEntry, OnboardingQuestion};
 use rekindle_types::id::{PseudonymKey, RoleId};
 

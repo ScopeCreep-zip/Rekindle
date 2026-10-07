@@ -1,10 +1,10 @@
 use ed25519_dalek::{Signer, SigningKey};
 use veilid_core::{RoutingContext, Target};
 
-use crate::capnp_codec;
 use crate::error::ProtocolError;
-use crate::messaging::envelope::MessageEnvelope;
-use crate::messaging::signing::envelope_signing_bytes;
+use rekindle_codec::capnp_codec;
+use rekindle_codec::message::envelope::MessageEnvelope;
+use rekindle_codec::message::signing::envelope_signing_bytes;
 
 /// Build and sign a `MessageEnvelope` to `recipient` from raw secret key
 /// bytes. See [`build_envelope`].

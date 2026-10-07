@@ -1,14 +1,13 @@
 //! Channel record writes: record creation and per-member entry appends.
 
-use super::codec::{decode_own_page, encode_page_entries};
-use super::types::{
-    ChannelAttachmentCached, ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose,
-    ChannelPollCreate, ChannelPollVote, ChannelReaction, ChannelRecordEntry,
-};
-use super::{CHANNEL_MEMBER_SUBKEY_COUNT, CHANNEL_OWNER_SUBKEY_COUNT};
 use crate::dht::parse_record_key;
 use crate::dht::pool::{RecordPool, SetOutcome};
 use crate::error::ProtocolError;
+use rekindle_codec::community::channel_record::{
+    decode_own_page, encode_page_entries, ChannelAttachmentCached, ChannelForward,
+    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
+    ChannelReaction, ChannelRecordEntry, CHANNEL_MEMBER_SUBKEY_COUNT, CHANNEL_OWNER_SUBKEY_COUNT,
+};
 
 /// Maximum serialized size for a member's message page (~30KB, leaving DHT overhead room).
 const MAX_PAGE_SIZE: usize = 30_000;
@@ -31,8 +30,8 @@ pub async fn create_smpl_channel_record(
 > {
     use crate::dht::community::member_registry;
 
-    let mut members = Vec::with_capacity(member_registry::SLOTS_PER_SEGMENT as usize);
-    for i in 0..member_registry::SLOTS_PER_SEGMENT {
+    let mut members = Vec::with_capacity(rekindle_types::dht_layout::SLOTS_PER_SEGMENT as usize);
+    for i in 0..rekindle_types::dht_layout::SLOTS_PER_SEGMENT {
         let signing_key = member_registry::derive_slot_keypair(slot_seed, i)?;
         let public_bytes = signing_key.verifying_key().to_bytes();
         members.push(veilid_core::DHTSchemaSMPLMember {
@@ -52,7 +51,7 @@ pub async fn create_smpl_channel_record(
     // value in the last slot, under that slot's writer from the shared seed:
     // readers treat an empty page as no entries, and a joiner takes that
     // slot last (plan C7.6d).
-    let last = member_registry::SLOTS_PER_SEGMENT - 1;
+    let last = rekindle_types::dht_layout::SLOTS_PER_SEGMENT - 1;
     let writer = member_registry::derive_slot_veilid_keypair(slot_seed, last)?;
     let published = pool
         .set(

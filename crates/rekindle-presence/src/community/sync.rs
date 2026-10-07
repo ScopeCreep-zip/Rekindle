@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::deps::CommunityPresenceDeps;
 
@@ -102,7 +102,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use rekindle_protocol::dht::community::channel_record::ChannelMessage;
+    use rekindle_codec::community::channel_record::ChannelMessage;
 
     use super::*;
     use crate::community::test_fixture::{MockCommunityDeps, MockState};

@@ -13,7 +13,7 @@ use rekindle_transport::session::CommunityMembership as SessionMembership;
 
 use super::DaemonGovernanceAdapter;
 
-use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
+use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
 
 impl DaemonGovernanceAdapter<'_> {
     /// Ed25519 identity secret, or `None` while the daemon is locked.

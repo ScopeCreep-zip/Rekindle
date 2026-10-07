@@ -15,12 +15,12 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use rekindle_governance::state::GovernanceState;
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
     ChannelPollVote, ChannelReaction, ChannelRecordEntry,
 };
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::GovernanceEntry;

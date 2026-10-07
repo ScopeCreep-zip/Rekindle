@@ -24,8 +24,8 @@ use std::future::Future;
 
 use crate::payload::dm::DmPayload;
 use crate::payload::rpc::{CallResponse, InboundCall};
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
 
 /// Identity of a verified inbound message sender.
 #[derive(Debug, Clone)]

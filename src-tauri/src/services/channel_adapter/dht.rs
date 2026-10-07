@@ -5,13 +5,15 @@
 
 use rekindle_channel::deps::{ChannelEntryItem, ChannelWriteContext, DhtWrite};
 use rekindle_channel::error::ChannelError;
+use rekindle_codec::community::channel_record::{
+    ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
+    ChannelPollVote, ChannelReaction,
+};
 use rekindle_protocol::dht::community::channel_record::AppendOutcome;
 use rekindle_protocol::dht::community::channel_record::{
     create_smpl_channel_record, read_all_channel_entries, read_all_channel_messages,
     write_member_forward, write_member_hand_raise, write_member_message, write_member_poll_close,
-    write_member_poll_create, write_member_poll_vote, write_member_reaction, ChannelForward,
-    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-    ChannelReaction,
+    write_member_poll_create, write_member_poll_vote, write_member_reaction,
 };
 use rekindle_protocol::ProtocolError;
 

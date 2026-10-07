@@ -13,9 +13,7 @@
 //! `rekindle_secrets::channel_body`, shared by every host and re-exported
 //! here.
 
-use rekindle_protocol::dht::community::channel_record::{
-    ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT,
-};
+use rekindle_codec::community::channel_record::{ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT};
 
 use crate::error::ChannelError;
 

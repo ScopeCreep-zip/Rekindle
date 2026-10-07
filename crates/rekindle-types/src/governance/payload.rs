@@ -17,7 +17,7 @@ use crate::domains;
 /// `rekindle_secrets::derive::derive_slot_keypair`).
 ///
 /// Architecture §26 W26 line 4140 — `signature` is an Ed25519 signature
-/// by the author's pseudonym secret over [`signing_bytes`]. Any reader
+/// by the author's pseudonym secret over [`GovernanceSubkeyPayload::signing_bytes`]. Any reader
 /// MUST verify the signature against `author_pseudonym` (which is itself
 /// the Ed25519 public key) before applying the entries to local state;
 /// otherwise any community member could impersonate any other by writing
@@ -35,10 +35,10 @@ pub struct GovernanceSubkeyPayload {
     /// 305). Readers MUST open the pointed-at record, verify each payload
     /// against THIS `author_pseudonym`, and merge its entries before running
     /// the CRDT merge, otherwise spilled state silently vanishes from the
-    /// merged view. Authenticated by [`signing_bytes`].
+    /// merged view. Authenticated by [`GovernanceSubkeyPayload::signing_bytes`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overflow_next: Option<String>,
-    /// 64-byte Ed25519 signature over [`signing_bytes`]. Empty `Vec` for
+    /// 64-byte Ed25519 signature over [`GovernanceSubkeyPayload::signing_bytes`]. Empty `Vec` for
     /// pre-signature payloads in disk fixtures or in-flight legacy
     /// rows; readers treat empty signatures as authentication failure
     /// once SCHEMA_VERSION 59 ships.

@@ -40,7 +40,7 @@ fn sample() -> ChannelMessage {
 #[test]
 fn transport_and_protocol_share_one_definition() {
     let written = serde_json::to_vec(&sample()).expect("serialize");
-    let read: rekindle_protocol::dht::community::channel_record::ChannelMessage =
+    let read: rekindle_codec::community::channel_record::ChannelMessage =
         serde_json::from_slice(&written)
             .expect("the desktop track must parse daemon-written bytes");
     assert_eq!(read.sequence, 1);

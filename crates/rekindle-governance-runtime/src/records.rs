@@ -54,7 +54,7 @@ pub(crate) async fn publish_created<D: GovernanceRuntimeDeps>(
     slot_seed: &[u8; 32],
     slot_range_start: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let last = rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT - 1;
+    let last = rekindle_types::dht_layout::SLOTS_PER_SEGMENT - 1;
     let slot = rekindle_secrets::derive::derive_slot_keypair(slot_seed, slot_range_start + last)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("derive publish slot: {e}")))?;
     let writer = deps.format_writer_keypair(slot.verifying_key().to_bytes(), slot.to_bytes());

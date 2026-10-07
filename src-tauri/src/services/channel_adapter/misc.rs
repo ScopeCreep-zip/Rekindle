@@ -4,7 +4,7 @@
 //! lives here.
 
 use rekindle_channel::error::ChannelError;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
 

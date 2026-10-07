@@ -15,7 +15,7 @@ hex = { workspace = true }
 rand = { workspace = true }
 rekindle-db = { path = "../rekindle-db" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
-rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }

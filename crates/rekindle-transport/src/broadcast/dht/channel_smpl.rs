@@ -80,7 +80,7 @@ pub async fn read_message_items(
     Ok(items
         .into_iter()
         .filter_map(|item| match item.entry {
-            channel_record::ChannelRecordEntry::Message(message) => {
+            rekindle_codec::community::channel_record::ChannelRecordEntry::Message(message) => {
                 Some((item.subkey_index, message))
             }
             _ => None,

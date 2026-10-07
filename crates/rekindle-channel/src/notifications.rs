@@ -13,7 +13,7 @@ use std::str::FromStr;
 
 use parking_lot::Mutex;
 
-use rekindle_protocol::dht::community::channel_record::ChannelMessage;
+use rekindle_codec::community::channel_record::ChannelMessage;
 
 /// Architecture §17.2 line 2402 — "Max 5 notifications per channel per
 /// 10-second window. If exceeded, a single summary notification

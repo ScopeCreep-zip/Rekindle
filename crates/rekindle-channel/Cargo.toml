@@ -20,7 +20,6 @@ rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-gossip = { path = "../rekindle-gossip" }
 rekindle-governance = { path = "../rekindle-governance" }
 rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
-rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }

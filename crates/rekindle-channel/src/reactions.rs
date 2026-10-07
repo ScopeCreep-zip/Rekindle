@@ -7,8 +7,8 @@
 //! parameterised over the deps trait; src-tauri retains a thin facade
 //! after 19.h-REDO wires the adapter.
 
-use rekindle_protocol::dht::community::channel_record::ChannelReaction;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::channel_record::ChannelReaction;
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;

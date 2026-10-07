@@ -14,10 +14,10 @@
 //! compliant sender only ever addresses the channel roster, so this
 //! gate is defense-in-depth against non-compliant or stale senders.
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::envelope::{
+use rekindle_codec::community::envelope::{
     ControlPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
+use rekindle_crypto::group::media_key::MediaEncryptionKey;
 
 use crate::deps::{VideoDeps, VideoEvent};
 use crate::reassembler::ReassembledFrame;

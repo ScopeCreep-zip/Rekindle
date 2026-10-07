@@ -9,10 +9,10 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::capnp_envelope::{
+use rekindle_codec::capnp_envelope::{
     encode_community_envelope, encode_signed_envelope, try_decode_community_envelope,
 };
-use rekindle_protocol::dht::community::envelope::{self, CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::envelope::{self, CommunityEnvelope, SignedEnvelope};
 
 use crate::broadcast::extract_mesh_dedup_key;
 use crate::deps::{GossipDeps, GossipError, PeerInfo};
@@ -304,7 +304,7 @@ mod tests {
 
     use async_trait::async_trait;
     use parking_lot::Mutex;
-    use rekindle_protocol::dht::community::envelope::SignedEnvelope;
+    use rekindle_codec::community::envelope::SignedEnvelope;
 
     use super::*;
 
@@ -530,7 +530,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn channel_peers_send_reaches_every_peer_with_ttl_zero() {
-        use rekindle_protocol::capnp_envelope::decode_signed_envelope;
+        use rekindle_codec::capnp_envelope::decode_signed_envelope;
 
         let deps = Arc::new(MockDeps::new());
         let peers: Vec<PeerInfo> = (0..3u8)

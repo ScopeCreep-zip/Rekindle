@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::MessageEnvelope;
+use rekindle_codec::message::envelope::MessageEnvelope;
 use rekindle_sync::{PendingMessageRow, PendingRetryOutcome};
 
 use crate::state::AppState;

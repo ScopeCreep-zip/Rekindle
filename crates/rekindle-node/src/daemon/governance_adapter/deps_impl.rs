@@ -6,6 +6,7 @@
 //! place where logic hides.
 
 use async_trait::async_trait;
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
@@ -14,7 +15,6 @@ use rekindle_governance_runtime::deps::{
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;

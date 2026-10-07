@@ -22,7 +22,7 @@ use crate::state_helpers;
 
 /// How long the login scope's tasks get to stop at logout or exit: one
 /// in-flight Veilid call plus margin, then they are aborted.
-const SCOPE_STOP_DEADLINE: Duration = rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+const SCOPE_STOP_DEADLINE: Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 /// How long logout waits for the Offline status write (plan C7.6j). The
 /// write is one record-pool call: it runs on to completion past this, and

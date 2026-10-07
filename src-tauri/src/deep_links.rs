@@ -106,9 +106,9 @@ impl PendingDeepLink {
 
 /// Validate a friend invite locally: decode, signature, recency.
 fn friend_invite_key(invite_url: &str) -> Result<String, String> {
-    let blob = rekindle_protocol::messaging::decode_invite_url(invite_url)?;
-    rekindle_protocol::messaging::verify_invite_blob(&blob)?;
-    rekindle_protocol::messaging::check_invite_recency(
+    let blob = rekindle_codec::message::decode_invite_url(invite_url)?;
+    rekindle_codec::message::verify_invite_blob(&blob)?;
+    rekindle_codec::message::check_invite_recency(
         &blob,
         rekindle_utils::timestamp_ms(),
         crate::services::friend_runtime::MAX_INVITE_AGE_SECS,

@@ -36,7 +36,7 @@ rekindle-utils = { path = "../rekindle-utils" }
 # Phase 14.k — voice signaling handlers need protocol envelope types
 # (CommunityEnvelope / ControlPayload) + permission bit constants.
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
-rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-types = { path = "../rekindle-types" }
 tokio-util = "0.7"
 # The single RFC 3550 / RFC 3611 reception model. The jitter buffer used

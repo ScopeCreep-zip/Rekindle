@@ -10,9 +10,9 @@
 
 use std::collections::HashMap;
 
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_presence::community::GossipOverlayPlan;
 use rekindle_presence::deps::OnlineMember;
-use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
 use super::DaemonPresenceAdapter;
 

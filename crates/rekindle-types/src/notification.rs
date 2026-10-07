@@ -158,7 +158,7 @@ pub enum TransportNotification {
         /// frontends share the same start time.
         started_at_ms: u64,
         /// "calling" — initial. Transitions to "ringing" / "connecting"
-        /// / "active" via [`CallStatusChanged`].
+        /// / "active" via [`TransportNotification::CallStatusChanged`].
         status: String,
     },
 
@@ -291,7 +291,7 @@ pub enum TransportNotification {
 
     // ── W16.4: Group call lifecycle ─────────────────────────────────
     /// Caller-side: `start_group_call` fanned out invites. Mirror of
-    /// [`CallStarted`] for groups.
+    /// [`TransportNotification::CallStarted`] for groups.
     GroupCallStarted {
         call_id: String,
         kind: String,

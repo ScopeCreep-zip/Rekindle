@@ -18,8 +18,7 @@ use rekindle_db::Db;
 use rekindle_types::channel_keys::KeyScope;
 
 /// How long a left community's tasks get to stop.
-const COMMUNITY_STOP_DEADLINE: std::time::Duration =
-    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 pub async fn leave_community_inner(
     state: &SharedState,
@@ -52,8 +51,8 @@ pub async fn leave_community_inner(
     let _ = crate::services::community::send_to_mesh(
         state,
         community_id,
-        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::MemberLeave {
+        &rekindle_codec::community::envelope::CommunityEnvelope::Control(
+            rekindle_codec::community::envelope::ControlPayload::MemberLeave {
                 pseudonym_key: my_pseudonym_key.clone(),
             },
         ),

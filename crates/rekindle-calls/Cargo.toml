@@ -31,7 +31,7 @@ async-trait = "0.1"
 tokio = { workspace = true, features = [ "sync", "macros", "rt", "time" ] }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
-rekindle-protocol = { path = "../rekindle-protocol" }                       # MessagePayload for trait wire types
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }                           # Identity::to_x25519_secret for group call key unwrap
 
 [dev-dependencies]

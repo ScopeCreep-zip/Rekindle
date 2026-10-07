@@ -20,7 +20,7 @@ use crate::state_helpers;
 /// block invite acceptance.
 pub async fn setup_invite_contact(
     state: &Arc<AppState>,
-    blob: &rekindle_protocol::messaging::envelope::InviteBlob,
+    blob: &rekindle_codec::message::envelope::InviteBlob,
 ) {
     // Cache the route blob from the invite for immediate contact
     tracing::info!(

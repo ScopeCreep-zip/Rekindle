@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::channel_record::{
+use rekindle_codec::community::channel_record::{
     decode_channel_entries, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_records::retry;
