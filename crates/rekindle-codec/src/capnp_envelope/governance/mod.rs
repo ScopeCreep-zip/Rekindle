@@ -32,7 +32,10 @@ use community::{
     read_invite_created, read_invite_revoked, read_mek_generation_bump, read_segment_added,
 };
 pub(super) use dispatch_write::write_governance_entry;
-use events::{read_event_archived, read_event_created, read_thread_archived, read_thread_created};
+use events::{
+    read_event_archived, read_event_created, read_event_rsvp, read_thread_archived,
+    read_thread_created,
+};
 use expression::{read_attachment_pinned, read_expression_added, read_expression_removed};
 use moderation::{
     read_admin_delete, read_admission_policy, read_auto_mod_rule, read_ban_entry,
@@ -93,6 +96,7 @@ pub(super) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::ExpressionAdded(p) => read_expression_added(p.map_err(|e| capnp_err(&e))?),
         Which::ExpressionRemoved(p) => read_expression_removed(p.map_err(|e| capnp_err(&e))?),
         Which::EventArchived(p) => read_event_archived(p.map_err(|e| capnp_err(&e))?),
+        Which::EventRsvp(p) => read_event_rsvp(p.map_err(|e| capnp_err(&e))?),
         Which::OnboardingConfig(p) => read_onboarding_config(p.map_err(|e| capnp_err(&e))?),
         Which::WelcomeScreen(p) => read_welcome_screen(p.map_err(|e| capnp_err(&e))?),
         Which::AdminDelete(p) => read_admin_delete(p.map_err(|e| capnp_err(&e))?),
@@ -165,6 +169,26 @@ mod admission_wire_tests {
             reason: None,
             lamport: 10,
         });
+    }
+
+    #[test]
+    fn event_rsvp_round_trips_every_status() {
+        use rekindle_types::event::RsvpStatus;
+        use rekindle_types::id::EventId;
+        for (lamport, status) in [
+            RsvpStatus::Going,
+            RsvpStatus::Interested,
+            RsvpStatus::Declined,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            round_trip(&GovernanceEntry::EventRsvp {
+                event_id: EventId([0x5A; 16]),
+                status,
+                lamport: lamport as u64 + 1,
+            });
+        }
     }
 
     #[test]

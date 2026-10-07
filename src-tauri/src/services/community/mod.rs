@@ -7,6 +7,7 @@ pub mod channel_polls;
 pub mod channel_reactions;
 pub mod create;
 pub mod event_reminders;
+pub mod event_rsvps;
 pub mod events_hydration;
 pub mod expression_assets;
 pub mod expressions;

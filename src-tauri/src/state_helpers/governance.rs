@@ -296,6 +296,7 @@ pub fn set_governance_state(
             })
             .collect();
 
+        crate::services::community::event_rsvps::rebuild_from_governance(cs, &gov_state);
         cs.governance_state = Some(gov_state);
     }
     drop(communities);

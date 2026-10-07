@@ -137,7 +137,8 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         G::ThreadCreated { .. }
         | G::ThreadArchived { .. }
         | G::EventCreated { .. }
-        | G::EventArchived { .. } => apply_events(author, entry, state),
+        | G::EventArchived { .. }
+        | G::EventRsvp { .. } => apply_events(author, entry, state),
         G::ExpressionAdded { .. } | G::ExpressionRemoved { .. } | G::AttachmentPinned { .. } => {
             apply_expression(entry, state);
         }

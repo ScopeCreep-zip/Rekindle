@@ -123,6 +123,7 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
         tracing::debug!(
             community = %community_id,
             segment = descriptor.segment_index,
+            registry_key = %descriptor.registry_key,
             rows = raw_rows.len(),
             "presence scan: segment rows read",
         );
@@ -175,7 +176,6 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 voice_rows.push(crate::deps::VoicePresenceRow {
                     pseudonym_hex: row.pseudonym_hex.clone(),
                     display_name: row.presence.display_name.clone(),
-                    media_route_blob: row.presence.media_route_blob.clone(),
                     voice_channel_id: row_voice_channel,
                     fresh: row.online_member.is_some(),
                 });
@@ -221,17 +221,6 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     // members whose VoiceJoin gossip was lost get added, ghosts whose
     // rows say "left" or whose heartbeat went stale get expired.
     deps.reconcile_voice_roster(community_id, voice_rows);
-    // Per-event RSVP aggregation: load known events + read local
-    // RSVPs, compose via pure `aggregate_event_rsvps`, write back.
-    let known_event_ids = deps.load_known_event_ids(community_id).await;
-    let my_event_rsvps = deps.read_my_event_rsvps(community_id);
-    let aggregated_rsvps = crate::community::aggregate_event_rsvps(
-        &discovered,
-        &my_event_rsvps,
-        &known_event_ids,
-        &creds.my_pseudonym_hex,
-    );
-    deps.write_event_rsvps_by_event(community_id, aggregated_rsvps);
     // Member profile diff: read prior snapshots, compose via the
     // pure `compute_profile_diff`, apply + fire MembersRefreshed
     // only when at least one entry changed (wave 5 D1).
@@ -377,7 +366,6 @@ fn log_scanned_row(
             heartbeat_age_secs = now_secs.saturating_sub(row.presence.last_heartbeat),
             online = row.online_member.is_some(),
             route_len = row.presence.route_blob.len(),
-            media_route_len = row.presence.media_route_blob.len(),
             "presence scan: row accepted",
         ),
         other => tracing::debug!(
@@ -487,9 +475,6 @@ mod tests {
         assert_eq!(st.calls_scan_segment.len(), 1);
         assert_eq!(st.calls_merge_roles.len(), 1);
         assert_eq!(st.calls_apply_member_state.len(), 1);
-        assert_eq!(st.calls_load_known_events, vec!["c1".to_string()]);
-        assert_eq!(st.calls_read_my_rsvps, vec!["c1".to_string()]);
-        assert_eq!(st.calls_write_rsvps.len(), 1);
         assert_eq!(st.calls_read_profiles, vec!["c1".to_string()]);
         assert_eq!(st.calls_apply_profiles.len(), 1);
         assert_eq!(st.calls_extend_online.len(), 1);

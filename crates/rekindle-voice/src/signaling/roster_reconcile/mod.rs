@@ -3,13 +3,23 @@
 //! presence rows).
 //!
 //! Gossip `VoiceJoin`/`VoiceLeave` is the fast path; each member's
-//! presence row carries a MEK-encrypted `voice_channel_id` claim
-//! renewed by the heartbeat. After every registry scan the orchestrator
-//! hands the presence-derived membership view here and the roster
-//! converges from durable state: members whose join gossip was lost
-//! get added, ghosts whose rows say "left" (or whose heartbeat went
-//! stale) get expired. Pure decision in [`compute_roster_reconcile`];
-//! application + UI events in [`reconcile_from_presence`].
+//! presence row carries a cleartext `voice_channel_id` claim renewed by
+//! the heartbeat. After every registry scan the orchestrator hands the
+//! presence-derived membership view here and the roster converges from
+//! durable state: a member whose row claims our channel but who is not
+//! in our roster (one of the two join messages was lost) is introduced
+//! to by re-sending our `VoiceJoin`, and ghosts whose rows say "left"
+//! (or whose heartbeat went stale) get expired. Pure decision in
+//! [`compute_roster_reconcile`]; application + UI events in
+//! [`reconcile_from_presence`].
+//!
+//! **The row is the directory, never the connection.** It carries no
+//! media route (plan C7.15): the route is connection data for a call
+//! and rides the call's own signaling, as Discord's
+//! `VOICE_SERVER_UPDATE` and Jingle's `transport-info` do. So a repair
+//! re-runs the join handshake instead of adding a peer from its row: our
+//! `VoiceJoin` makes the peer add us and ack, and the ack (carrying its
+//! route) adds the peer here (`presence::ack`).
 //!
 //! **Media outranks the directory.** In-call liveness is judged on the
 //! CALL transport, never on a directory — the principle every shipped
@@ -23,8 +33,7 @@
 //! packets + verified receiver reports, via
 //! [`VoiceSignalingDeps::media_live_peers`]): a media-live peer is
 //! never evicted regardless of what their row claims, and a stale row
-//! whose peer is streaming to us still qualifies for the add repair —
-//! the row still carries the route blob we need. When a peer really
+//! whose peer is streaming to us still qualifies for the repair. When a peer really
 //! leaves, media stops within seconds and the next scan expires them
 //! normally.
 
@@ -48,26 +57,18 @@ pub const JOIN_GRACE_SECS: u64 = 45;
 pub struct PresencePeerView {
     pub pseudonym_hex: String,
     pub display_name: Option<String>,
-    pub route_blob: Vec<u8>,
-    /// The member's MEK-decrypted voice channel claim, if any.
+    /// The member's voice channel claim, if any.
     pub voice_channel_id: Option<String>,
     /// Row passed the scan's liveness gate (fresh heartbeat +
     /// non-offline status).
     pub fresh: bool,
 }
 
-/// One repaired (lost-gossip) roster addition.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReconcileAdd {
-    pub pseudonym_hex: String,
-    pub route_blob: Vec<u8>,
-    pub display_name: Option<String>,
-}
-
-/// The reconcile decision: who to add, who to expire.
+/// The reconcile decision: who to introduce ourselves to, who to expire.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReconcilePlan {
-    pub add: Vec<ReconcileAdd>,
+    /// Members in our channel by their rows but not in our roster.
+    pub introduce: Vec<String>,
     pub remove: Vec<String>,
 }
 
@@ -76,11 +77,9 @@ pub struct ReconcilePlan {
 /// the media plane's live-peer set (see the module doc: media outranks
 /// the directory).
 ///
-/// - **Add**: row claiming OUR channel that is fresh OR media-live
+/// - **Introduce**: row claiming OUR channel that is fresh OR media-live
 ///   (a stale row whose peer is streaming to us is alive — the row is
-///   stale because their DHT writes fail, and it still carries the
-///   route blob), not yet in the roster, not us, with a usable route
-///   blob.
+///   stale because their DHT writes fail), not yet in the roster, not us.
 /// - **Remove**: roster entry past [`JOIN_GRACE_SECS`], NOT media-live,
 ///   whose presence row either freshly claims a different/no channel
 ///   (definitive leave) or has gone heartbeat-stale (vanished client —
@@ -106,13 +105,8 @@ pub fn compute_roster_reconcile<S: std::hash::BuildHasher>(
             && claims_our_channel
             && !in_roster.contains(row.pseudonym_hex.as_str())
             && row.pseudonym_hex != my_pseudonym
-            && !row.route_blob.is_empty()
         {
-            plan.add.push(ReconcileAdd {
-                pseudonym_hex: row.pseudonym_hex.clone(),
-                route_blob: row.route_blob.clone(),
-                display_name: row.display_name.clone(),
-            });
+            plan.introduce.push(row.pseudonym_hex.clone());
         }
     }
 
@@ -142,60 +136,6 @@ pub fn compute_roster_reconcile<S: std::hash::BuildHasher>(
     plan
 }
 
-/// Send-side route-blob supersession for peers ALREADY in the roster —
-/// the heal for a peer who re-announced a new route (the restart case).
-///
-/// Veilid never reliably marks a peer's old route dead when that peer
-/// restarts: the old route persists in their table store and can keep
-/// answering our node's background liveness pings, so `dead_remote_routes`
-/// never fires and `app_message` (fire-and-forget past hop 1) returns no
-/// error while our media dies at the peer's vanished endpoint. The
-/// authoritative signal is the peer's own re-published blob: when their
-/// presence row carries a route blob that differs from the one the
-/// transport is currently sending to, adopt it. Keyed by PEER (pseudonym)
-/// and compared by blob bytes — never by blob identity, per the Veilid
-/// source dig (a stale RouteId must be superseded, not re-imported).
-///
-/// This complements [`compute_roster_reconcile`], which only ADDS peers
-/// not yet in the roster (its `!in_roster` gate skips exactly the peers
-/// handled here). A refresh changes only the route we send over, not
-/// roster membership, so it emits no join/leave.
-#[must_use]
-pub fn compute_blob_refreshes<S: std::hash::BuildHasher>(
-    bound_channel: &str,
-    my_pseudonym: &str,
-    current_blobs: &[(String, Vec<u8>)],
-    presence: &[PresencePeerView],
-    media_live: &std::collections::HashSet<String, S>,
-) -> Vec<ReconcileAdd> {
-    let mut refreshes = Vec::new();
-    for row in presence {
-        let live = row.fresh || media_live.contains(row.pseudonym_hex.as_str());
-        let claims_our_channel = row.voice_channel_id.as_deref() == Some(bound_channel);
-        if !(live
-            && claims_our_channel
-            && row.pseudonym_hex != my_pseudonym
-            && !row.route_blob.is_empty())
-        {
-            continue;
-        }
-        // Only peers we already hold a blob for, and only when it
-        // actually changed. A peer not yet rostered is an ADD
-        // (`compute_roster_reconcile`), not a refresh.
-        if current_blobs
-            .iter()
-            .any(|(p, cur)| p == &row.pseudonym_hex && cur != &row.route_blob)
-        {
-            refreshes.push(ReconcileAdd {
-                pseudonym_hex: row.pseudonym_hex.clone(),
-                route_blob: row.route_blob.clone(),
-                display_name: row.display_name.clone(),
-            });
-        }
-    }
-    refreshes
-}
-
 /// Reciprocity retry — rostered peers who should be hearing our media
 /// but send NONE back to us (not media-live), while their presence row
 /// is fresh and claims OUR channel.
@@ -211,7 +151,7 @@ pub fn compute_blob_refreshes<S: std::hash::BuildHasher>(
 /// principle applied with the signals we have: reciprocal media is the
 /// proof the path is two-way.
 ///
-/// Disjoint from [`compute_roster_reconcile`]'s adds (those are
+/// Disjoint from [`compute_roster_reconcile`]'s introductions (those are
 /// `!in_roster`; these are in-roster) and never targets a media-live
 /// peer or ourselves.
 #[must_use]
@@ -261,87 +201,22 @@ pub async fn reconcile_from_presence(
     };
 
     let media_live = deps.media_live_peers();
-    let (plan, refreshes, reannounce) = {
+    let (plan, reannounce) = {
         let t = transport.lock().await;
         let roster = t.peer_views();
-        let current_blobs: Vec<(String, Vec<u8>)> = t
-            .peer_named_entries()
-            .into_iter()
-            .map(|(pseudonym, blob, _)| (pseudonym, blob))
-            .collect();
         let plan = compute_roster_reconcile(&channel_id, &my_pk, &roster, &rows, &media_live);
-        let refreshes =
-            compute_blob_refreshes(&channel_id, &my_pk, &current_blobs, &rows, &media_live);
         let reannounce = compute_route_reannounce(&channel_id, &my_pk, &roster, &rows, &media_live);
-        (plan, refreshes, reannounce)
+        (plan, reannounce)
     };
-    if plan.add.is_empty()
-        && plan.remove.is_empty()
-        && refreshes.is_empty()
-        && reannounce.is_empty()
-    {
+    if plan.introduce.is_empty() && plan.remove.is_empty() && reannounce.is_empty() {
         return;
     }
 
-    let (added, removed, remote_count) = {
+    let (removed, remote_count) = {
         let mut t = transport.lock().await;
-        let mut added: Vec<bool> = Vec::with_capacity(plan.add.len());
-        for add in &plan.add {
-            added.push(t.add_peer(
-                &add.pseudonym_hex,
-                &add.route_blob,
-                add.display_name.as_deref(),
-            ));
-        }
-        // Route-blob supersession: upsert the peer's new blob so the next
-        // broadcast sends over the fresh route. `add_peer` upserts the
-        // blob for an existing roster entry (returns false), so this
-        // changes only the route, never membership — no join/leave event.
-        for refresh in &refreshes {
-            t.add_peer(
-                &refresh.pseudonym_hex,
-                &refresh.route_blob,
-                refresh.display_name.as_deref(),
-            );
-            tracing::info!(
-                community = %community_id,
-                channel = %channel_id,
-                peer = %refresh.pseudonym_hex,
-                "presence reconcile: superseded peer route blob (re-announce)",
-            );
-        }
-        let mut removed: Vec<bool> = Vec::with_capacity(plan.remove.len());
-        for gone in &plan.remove {
-            removed.push(t.remove_peer(gone));
-        }
-        (added, removed, t.peer_count())
+        let removed: Vec<bool> = plan.remove.iter().map(|gone| t.remove_peer(gone)).collect();
+        (removed, t.peer_count())
     };
-
-    for (add, newly) in plan.add.iter().zip(&added) {
-        tracing::info!(
-            community = %community_id,
-            channel = %channel_id,
-            peer = %add.pseudonym_hex,
-            "presence reconcile: repaired lost voice join",
-        );
-        deps.emit_event(CommunityVoiceEvent::VoiceJoin {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.clone(),
-            pseudonym_key: add.pseudonym_hex.clone(),
-            route_blob: add.route_blob.clone(),
-            display_name: add.display_name.clone(),
-        });
-        if *newly {
-            deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
-                community_id: community_id.to_string(),
-                channel_id: channel_id.clone(),
-                pseudonym_key: add.pseudonym_hex.clone(),
-                present: true,
-                display_name: add.display_name.clone(),
-                remote_count,
-            });
-        }
-    }
     for (gone, was_present) in plan.remove.iter().zip(&removed) {
         tracing::info!(
             community = %community_id,
@@ -366,61 +241,30 @@ pub async fn reconcile_from_presence(
         }
     }
 
-    if !plan.add.is_empty() {
-        // Handshake convergence for the lost-gossip path — the repair
-        // mirrors `voice_join_apply` exactly. (1) Directed ack: the
-        // SimpleX-style introduction carries OUR identity + route, so
-        // the repaired peer adds us from the ack alone and their
-        // handshake advances even though our original VoiceJoin never
-        // reached them. (2) Mutual evidence: a fresh presence row
-        // claiming our channel is the durable Path-1 analog of the
-        // mutual VoiceJoin that `voice_join_apply` already counts as
-        // leg 2; count it the same way and complete leg 3. Without
-        // this, two peers who both missed each other's join gossip sit
-        // at `handshake-announced` forever and media-ready never opens.
-        // Without a media route there is nothing to introduce us by.
-        if let Some(route_blob) = deps.our_media_route_blob() {
-            for add in &plan.add {
-                let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
-                    channel_id: channel_id.clone(),
-                    joiner_pseudonym: add.pseudonym_hex.clone(),
-                    display_name: deps.my_display_name(),
-                    route_blob: route_blob.clone(),
-                });
-                deps.send_to_channel(community_id, &channel_id, &ack);
-            }
-        }
-        if transport.lock().await.advance_handshake_seen() {
-            let first = &plan.add[0];
-            deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                community_id: community_id.to_string(),
-                channel_id: channel_id.clone(),
-                state: "seen".to_string(),
-                peer: Some(first.pseudonym_hex.clone()),
-                display_name: first.display_name.clone(),
-            });
-        }
-        crate::signaling::presence::send_confirmed_if_first(
-            deps.as_ref(),
-            community_id,
-            &channel_id,
-            &transport,
-        )
-        .await;
+    // Both repairs deliver our media route; without one there is nothing
+    // to introduce us by.
+    let Some(our_route) = deps.our_media_route_blob() else {
+        return;
+    };
 
-        // Repaired members missed every capabilities advertise we made
-        // before they appeared — directed re-advertise (receivers dedup),
-        // then re-check the mesh→MCU threshold the gossip join path
-        // would have evaluated.
-        deps.advertise_media_capabilities(community_id, &channel_id);
-        crate::signaling::presence::maybe_switch_to_mcu(
-            deps.as_ref(),
-            community_id,
-            &channel_id,
-            &transport,
-            &my_pk,
-        )
-        .await;
+    // Lost-join repair: re-run the join handshake. A peer that missed our
+    // `VoiceJoin` adds us from it and acks with its own route, which adds
+    // it here (`presence::ack`). Gossip dedups a `Control` envelope by its
+    // content, so peers that already applied this join drop the resend.
+    // Repeats every scan until the peer is in our roster.
+    if !plan.introduce.is_empty() {
+        let join = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+            channel_id: channel_id.clone(),
+            route_blob: our_route.clone(),
+            display_name: deps.my_display_name(),
+        });
+        deps.send_to_mesh(community_id, &join);
+        tracing::info!(
+            community = %community_id,
+            channel = %channel_id,
+            peers = ?plan.introduce,
+            "presence reconcile: re-sent our voice join to members missing from our roster",
+        );
     }
 
     // Reciprocity retry — re-deliver our route to rostered peers who are
@@ -431,10 +275,6 @@ pub async fn reconcile_from_presence(
     // Idempotent (a route upsert), fire-and-forget, self-limiting: once
     // the peer holds our route and streams back, media_live drops them
     // from this set.
-    // Nothing to re-announce without a media route.
-    let Some(our_route) = deps.our_media_route_blob() else {
-        return;
-    };
     for peer in &reannounce {
         let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
             channel_id: channel_id.clone(),

@@ -7,7 +7,9 @@ use super::super::sub_types::{
     thread_id_from_capnp, uuid16_to_capnp, write_event_location_via_event_capnp,
     write_recurrence_rule_via_event_capnp,
 };
-use super::shared::{event_status_from_capnp, event_status_to_capnp};
+use super::shared::{
+    event_status_from_capnp, event_status_to_capnp, rsvp_status_from_capnp, rsvp_status_to_capnp,
+};
 use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
@@ -135,6 +137,27 @@ pub(super) fn write_event_archived(
 ) {
     uuid16_to_capnp(p.reborrow().init_event_id(), &event_id.0);
     p.set_lamport(lamport);
+}
+
+pub(super) fn write_event_rsvp(
+    mut p: schema_pkg::event_rsvp_entry::Builder<'_>,
+    event_id: EventId,
+    status: rekindle_types::event::RsvpStatus,
+    lamport: u64,
+) {
+    uuid16_to_capnp(p.reborrow().init_event_id(), &event_id.0);
+    p.set_status(rsvp_status_to_capnp(status));
+    p.set_lamport(lamport);
+}
+
+pub(super) fn read_event_rsvp(
+    p: schema_pkg::event_rsvp_entry::Reader<'_>,
+) -> Result<GovernanceEntry, CodecError> {
+    Ok(GovernanceEntry::EventRsvp {
+        event_id: event_id_from_capnp(p.get_event_id().map_err(|e| capnp_err(&e))?)?,
+        status: rsvp_status_from_capnp(p.get_status().map_err(not_in_schema)?),
+        lamport: p.get_lamport(),
+    })
 }
 
 pub(super) fn read_thread_created(

@@ -135,7 +135,7 @@ echo "→ launching Rekindle Dev.app (log: $APP_LOG)"
 # log filter is passed explicitly. Same default as scripts/linux-dev.sh:
 # the voice/video paths plus the presence scan and member-route resolve
 # diagnostics, which say why a peer is or is not visible and reachable.
-RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rekindle_video=debug,rekindle_voice=debug,rekindle_presence::community::poll=debug,rekindle_lib::services::community::routes=debug}"
+RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rekindle_video=debug,rekindle_voice=debug,rekindle_presence::community::poll=debug,rekindle_presence::community::registry=debug,rekindle_protocol::dht::pool::read=debug,rekindle_lib::services::community::routes=debug}"
 open --env "RUST_LOG=$RUST_LOG" --stdout "$APP_LOG" --stderr "$APP_LOG" "$APP_DIR"
 echo "✓ running — Rust changes need a re-run of this script; frontend hot-reloads"
 echo "── live logs (Ctrl-C stops the tail, NOT the app) ──"

@@ -269,7 +269,7 @@ away decision logic), `poll_buckets` (steady/rapid tick scheduling),
 [`presence.md`](presence.md).
 
 Public surface includes `presence_poll_tick`, `compute_rebuild_plan`,
-`compute_merged_roles`, `aggregate_event_rsvps`, plus timing constants
+`compute_merged_roles`, `PRESENCE_ROW_CAP`, plus timing constants
 (`STEADY_TICK_INTERVAL_SECS`, `RAPID_TICK_INTERVAL_SECS`,
 `STALE_HEARTBEAT_SECS`, `MAX_SYNC_ATTEMPTS`).
 

@@ -9,8 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::{ChannelId, EventId, PseudonymKey};
+use crate::id::{ChannelId, PseudonymKey};
 
+pub mod limits;
 pub mod session;
 
 // Re-exported so `rekindle_types::presence::SessionLocation` and friends
@@ -46,25 +47,14 @@ pub struct MemberPresence {
     ///
     /// This is the GENERAL route (Reliable + PreferOrdered) — the one
     /// chat / governance / gossip need for ordered, reliable delivery.
-    /// Realtime media must NOT use it (ordered TCP relays head-of-line
-    /// block a media stream); media peers use [`Self::media_route_blob`].
-    pub route_blob: Vec<u8>,
-
-    /// Media-class inbound route blob (LowLatency + PreferUnordered) —
-    /// what a peer imports to send us realtime voice/video. Carried on
-    /// the presence row (the durable discovery path) so a peer found via
-    /// the roster reconcile learns our FAST route, not the general one,
-    /// and so the reconcile's route-supersession stops downgrading a
-    /// good media route to the general route every poll.
     ///
-    /// Empty when no media route is allocated, and then the peer is
-    /// unreachable for media: readers never substitute
-    /// [`Self::route_blob`] (plan C7.9c). `skip_serializing_if` keeps a row without a
-    /// media route byte-identical to the pre-existing wire form, so old
-    /// readers still verify the signature (same discipline as
-    /// [`Self::departed`] / [`Self::voice_channel_id`]).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub media_route_blob: Vec<u8>,
+    /// The row carries no media route (plan C7.15). Connection data for a
+    /// call rides the call's own signaling — `VoiceJoin`, `VoiceJoinAck`
+    /// and the re-announce — as Discord's `VOICE_SERVER_UPDATE` and
+    /// Jingle's `transport-info` do, and both routes on the row overflowed
+    /// its 4112-byte registry slot.
+    #[serde(with = "crate::base64_bytes")]
+    pub route_blob: Vec<u8>,
 
     /// Unix timestamp of last heartbeat write.
     pub last_heartbeat: u64,
@@ -142,10 +132,7 @@ pub struct MemberPresence {
     pub voice_channel_id: Option<String>,
 
     /// Route blob for an opt-in push relay (Tier 3 notifications).
-    pub push_relay_route: Option<Vec<u8>>,
-
-    /// RSVPs for scheduled events.
-    pub event_rsvps: Vec<EventRSVP>,
+    pub push_relay_route: Option<crate::base64_bytes::Base64Bytes>,
 
     /// Reader-aggregated onboarding answers submitted by this member.
     pub onboarding_answers: Option<Vec<OnboardingAnswer>>,
@@ -191,7 +178,11 @@ pub struct MemberPresence {
     /// to be any other member — including impersonating their voice
     /// channel state, RSVPs, custom status, or onboarding answers.
     /// Receivers MUST verify before applying.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        with = "crate::base64_bytes"
+    )]
     pub signature: Vec<u8>,
 }
 
@@ -229,15 +220,6 @@ pub struct GameInfo {
     pub game_id: Option<String>,
     pub elapsed_seconds: Option<u64>,
     pub server_address: Option<String>,
-}
-
-/// RSVP for a scheduled community event.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct EventRSVP {
-    pub event_id: EventId,
-    /// "going", "interested", "declined"
-    pub status: String,
 }
 
 /// One registry segment of a community (architecture §15, Plate Gates).
@@ -353,6 +335,7 @@ pub struct HistoryRange {
 #[serde(rename_all = "camelCase")]
 pub struct EncryptedHistoryRanges {
     pub mek_generation: u64,
+    #[serde(with = "crate::base64_bytes")]
     pub ciphertext: Vec<u8>,
 }
 
@@ -364,7 +347,6 @@ impl Default for MemberPresence {
             status: "online".into(),
             custom_status: None,
             route_blob: Vec::new(),
-            media_route_blob: Vec::new(),
             last_heartbeat: 0,
             // A default row is a live member, never a tombstone: every
             // heartbeat builds from `..Default::default()`, so defaulting
@@ -382,7 +364,6 @@ impl Default for MemberPresence {
             call_type: None,
             voice_channel_id: None,
             push_relay_route: None,
-            event_rsvps: Vec::new(),
             onboarding_answers: None,
             history_ranges_encrypted: None,
             session: MemberSession::default(),
@@ -448,37 +429,6 @@ mod tests {
         assert!(
             !json.contains("historyRangesEncrypted"),
             "absent field must not serialize"
-        );
-    }
-
-    #[test]
-    fn media_route_blob_roundtrips_and_binds_to_signature() {
-        let presence = MemberPresence {
-            pseudonym_key: PseudonymKey([0x11; 32]),
-            route_blob: vec![1, 2, 3],
-            media_route_blob: vec![9, 8, 7, 6],
-            ..Default::default()
-        };
-        let json = serde_json::to_string(&presence).unwrap();
-        let back: MemberPresence = serde_json::from_str(&json).unwrap();
-        assert_eq!(presence, back);
-        // Bound into signing_bytes so a MITM can't swap the media route.
-        assert_eq!(presence.signing_bytes(), back.signing_bytes());
-        assert!(json.contains("mediaRouteBlob"));
-    }
-
-    #[test]
-    fn media_route_blob_omitted_when_empty() {
-        // Wire-identical to the pre-existing format when absent → old
-        // readers still verify the signature.
-        let presence = MemberPresence {
-            pseudonym_key: PseudonymKey([0; 32]),
-            ..Default::default()
-        };
-        let json = serde_json::to_string(&presence).unwrap();
-        assert!(
-            !json.contains("mediaRouteBlob"),
-            "absent media route must not serialize"
         );
     }
 

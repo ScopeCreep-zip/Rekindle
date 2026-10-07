@@ -220,8 +220,12 @@ fn display_names() {
         display_name: name.into(),
     };
     assert!(!rejected(&create("  alice  ")));
-    assert!(!rejected(&create(&"日".repeat(MAX_DISPLAY_NAME))));
-    assert!(rejected(&create(&"a".repeat(MAX_DISPLAY_NAME + 1))));
+    assert!(!rejected(&create(&"日".repeat(
+        rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN
+    ))));
+    assert!(rejected(&create(&"a".repeat(
+        rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN + 1
+    ))));
     assert!(rejected(&create("")));
     assert!(rejected(&create("hello\x00world")));
 }

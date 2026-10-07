@@ -27,14 +27,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// (Reliable + PreferOrdered) for chat / governance / gossip.
     fn our_route_blob(&self) -> Option<Vec<u8>>;
 
-    /// Our media-class inbound route blob (LowLatency + PreferUnordered),
-    /// written onto the presence row so peers found via the reconcile
-    /// send our realtime media over the FAST route, not the general one.
-    /// `None` when no media route is allocated: the row then carries no
-    /// media blob, and readers never substitute `our_route_blob` (plan
-    /// C7.9c).
-    fn our_media_route_blob(&self) -> Option<Vec<u8>>;
-
     /// String form of the local user's current presence status —
     /// "online" / "away" / "busy" / "offline" (Invisible folds to
     /// "offline"). Defaults to "online" when no identity is loaded.
@@ -306,25 +298,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         banned_members: &HashSet<String>,
     );
 
-    /// Load the local user's known event IDs from the community
-    /// events SQLite table — bounds the per-event RSVP aggregation
-    /// so stale snapshots don't surface unloaded events.
-    async fn load_known_event_ids(&self, community_id: &str) -> Vec<String>;
-
-    /// Snapshot the local user's per-community `my_event_rsvps`
-    /// map (event_id → status string).
-    fn read_my_event_rsvps(&self, community_id: &str) -> HashMap<String, String>;
-
-    /// Replace `community.event_rsvps_by_event` with the freshly
-    /// aggregated map. The crate orchestrator computes the
-    /// aggregation via
-    /// [`crate::community::rsvp_aggregate::aggregate_event_rsvps`].
-    fn write_event_rsvps_by_event(
-        &self,
-        community_id: &str,
-        aggregated: HashMap<String, Vec<crate::community::EventRsvpEntry>>,
-    );
-
     /// Snapshot the in-memory `community.member_profiles` map for
     /// the diff. The crate orchestrator hands this to
     /// [`crate::community::profile_diff::compute_profile_diff`]
@@ -466,14 +439,9 @@ pub use rekindle_types::presence::SegmentDescriptor;
 pub struct VoicePresenceRow {
     pub pseudonym_hex: String,
     pub display_name: Option<String>,
-    /// MEDIA route (LowLatency + PreferUnordered) from the presence row:
-    /// what the voice roster reconcile adds and supersedes with. Empty
-    /// when the peer published none, and then the peer is unreachable for
-    /// media; the general route is never substituted (plan C7.9c), so the
-    /// row carries no general route.
-    pub media_route_blob: Vec<u8>,
-    /// MEK-decrypted voice channel claim from the row's SessionExtras.
-    /// `None` when not in a channel or when our MEK can't decrypt.
+    /// The cleartext voice channel claim on the row. The row carries no
+    /// media route (plan C7.15): the reconcile introduces us through the
+    /// call's signaling instead.
     pub voice_channel_id: Option<String>,
     /// Row passed the scan's liveness gate (fresh heartbeat +
     /// non-offline). Stale rows still flow through so the reconcile
@@ -500,7 +468,6 @@ pub use rekindle_types::presence::OnlineMember;
 /// Per-community profile fields the presence write path needs.
 #[derive(Debug, Clone, Default)]
 pub struct SelfPresenceSnapshot {
-    pub event_rsvps: Vec<rekindle_types::presence::EventRSVP>,
     pub bio: Option<String>,
     pub pronouns: Option<String>,
     pub theme_color: Option<u32>,

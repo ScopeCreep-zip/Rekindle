@@ -50,6 +50,9 @@ pub async fn set_nickname_inner(
     app: &tauri::AppHandle,
     nickname: String,
 ) -> Result<(), String> {
+    let nickname = rekindle_types::presence::limits::display_name(&nickname)
+        .map_err(|e| format!("display name: {e}"))?
+        .to_string();
     let public_key = {
         let mut identity = state.identity.write();
         let id = identity.as_mut().ok_or("not logged in")?;

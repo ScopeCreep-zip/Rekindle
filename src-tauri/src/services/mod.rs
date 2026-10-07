@@ -31,7 +31,6 @@ pub mod community_pins_runtime; // Phase 23.C — pin/unpin/get_channel_pins orc
 pub mod community_policy_runtime; // Phase 23.C — community policy get/set bodies lifted from commands/community/policy.rs.
 pub mod community_presence_runtime; // Phase 23.C — presence-handler runtime orchestration lifted from commands/community/presence.rs.
 pub mod community_profile_blobs_runtime; // Phase 23.C — community avatar/banner blob compression + content-addressed cache lifted from commands/community/profile_blobs.rs.
-pub mod community_profile_validation; // Phase 23.C — pure profile validators lifted from commands/community/presence.rs.
 pub mod community_registry_slot; // Phase 23.C — `clear_registry_presence_slot` helper lifted from legacy/messages.rs.
 pub mod community_role_handlers_runtime; // Phase 23.C — role-command Tauri handler wrappers (parse + permission + delegate) lifted from commands/community/roles.rs.
 pub mod community_role_runtime; // Phase 23.C — role-mutation runtime orchestration lifted from commands/community/roles.rs.

@@ -1,6 +1,7 @@
 //! `merge` events CRDT apply rules.
 
 use super::{EventState, GovernanceEntry, GovernanceState, PseudonymKey, ThreadState};
+use crate::state::RsvpState;
 
 pub(super) fn apply_events(
     author: &PseudonymKey,
@@ -111,7 +112,29 @@ pub(super) fn apply_events(
             if let Some(event) = state.events.get(event_id) {
                 if *lamport > event.lamport {
                     state.events.remove(event_id);
+                    state.event_rsvps.remove(event_id);
                 }
+            }
+        }
+
+        // ── RSVPs: LWW per (event_id, author) ──
+        GovernanceEntry::EventRsvp {
+            event_id,
+            status,
+            lamport,
+        } => {
+            let rsvps = state.event_rsvps.entry(*event_id).or_default();
+            if rsvps
+                .get(author)
+                .is_none_or(|current| *lamport > current.lamport)
+            {
+                rsvps.insert(
+                    author.clone(),
+                    RsvpState {
+                        status: *status,
+                        lamport: *lamport,
+                    },
+                );
             }
         }
 

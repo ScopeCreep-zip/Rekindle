@@ -398,3 +398,36 @@ fn wedged_subkey_self_heals_under_cap_when_invite_appended() {
         bytes.len()
     );
 }
+
+#[test]
+fn rsvps_keep_the_latest_answer_per_event() {
+    use rekindle_types::event::RsvpStatus;
+    use rekindle_types::id::EventId;
+    let rsvp = |event: u8, status, lamport| GovernanceEntry::EventRsvp {
+        event_id: EventId([event; 16]),
+        status,
+        lamport,
+    };
+    let out = compact_author_entries(
+        vec![
+            meta(1),
+            rsvp(7, RsvpStatus::Going, 2),
+            rsvp(7, RsvpStatus::Interested, 3),
+            rsvp(8, RsvpStatus::Declined, 4),
+            rsvp(7, RsvpStatus::Declined, 5),
+        ],
+        0,
+    );
+    let rsvps: Vec<_> = out
+        .iter()
+        .filter(|e| matches!(e, GovernanceEntry::EventRsvp { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(
+        rsvps,
+        vec![
+            rsvp(8, RsvpStatus::Declined, 4),
+            rsvp(7, RsvpStatus::Declined, 5)
+        ]
+    );
+}

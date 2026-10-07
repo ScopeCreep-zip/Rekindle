@@ -9,17 +9,6 @@ use std::hash::BuildHasher;
 use rand::seq::SliceRandom;
 use rekindle_types::id::RoleId;
 
-/// Derive a 16-byte presence-event identifier from a UTF-8 event-id
-/// string via BLAKE3 (truncate). Used both when publishing our own
-/// RSVPs and when matching incoming RSVPs back to events.
-#[must_use]
-pub fn presence_event_id_bytes(event_id: &str) -> [u8; 16] {
-    let hash = blake3::hash(event_id.as_bytes());
-    let mut bytes = [0u8; 16];
-    bytes.copy_from_slice(&hash.as_bytes()[..16]);
-    bytes
-}
-
 /// Convert a governance-state set of `RoleId`s into the sorted
 /// `Vec<u32>` shape the in-memory member roles map uses. Stable
 /// ordering keeps SQLite role_ids_json deterministic.
@@ -60,15 +49,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn presence_event_id_bytes_is_deterministic() {
-        let a = presence_event_id_bytes("event-42");
-        let b = presence_event_id_bytes("event-42");
-        assert_eq!(a, b);
-        let c = presence_event_id_bytes("event-43");
-        assert_ne!(a, c);
-    }
 
     #[test]
     fn role_ids_from_governance_sorts_ascending() {

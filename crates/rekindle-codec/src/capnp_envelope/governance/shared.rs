@@ -36,6 +36,30 @@ pub(super) fn event_status_to_capnp(
     }
 }
 
+pub(super) fn rsvp_status_to_capnp(
+    s: rekindle_types::event::RsvpStatus,
+) -> community_event_capnp::RsvpStatus {
+    use community_event_capnp::RsvpStatus as Cap;
+    use rekindle_types::event::RsvpStatus;
+    match s {
+        RsvpStatus::Going => Cap::Going,
+        RsvpStatus::Interested => Cap::Interested,
+        RsvpStatus::Declined => Cap::Declined,
+    }
+}
+
+pub(super) fn rsvp_status_from_capnp(
+    s: community_event_capnp::RsvpStatus,
+) -> rekindle_types::event::RsvpStatus {
+    use community_event_capnp::RsvpStatus as Cap;
+    use rekindle_types::event::RsvpStatus;
+    match s {
+        Cap::Going => RsvpStatus::Going,
+        Cap::Interested => RsvpStatus::Interested,
+        Cap::Declined => RsvpStatus::Declined,
+    }
+}
+
 pub(super) fn event_status_from_capnp(
     s: community_event_capnp::EventStatus,
 ) -> rekindle_types::event::EventStatus {

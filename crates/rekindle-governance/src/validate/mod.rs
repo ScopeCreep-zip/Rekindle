@@ -248,6 +248,13 @@ pub fn validate_write(
 
         GovernanceEntry::EventArchived { .. } => has(perms, MANAGE_EVENTS),
 
+        // Answering an event is not a permission: any member who is not
+        // banned (checked above) may, and the entry is the author's own
+        // (LWW per author). It does not require the event to exist at this
+        // point in the merge: compaction keeps only an event's latest
+        // create, and readers show RSVPs of live events only.
+        GovernanceEntry::EventRsvp { .. } => true,
+
         GovernanceEntry::ExpressionAdded {
             kind,
             animated,

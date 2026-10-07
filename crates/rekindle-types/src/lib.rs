@@ -8,6 +8,7 @@
 
 pub mod analytics;
 pub mod attachment;
+pub mod base64_bytes;
 pub mod channel;
 pub mod channel_keys;
 pub mod config;

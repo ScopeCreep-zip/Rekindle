@@ -13,6 +13,7 @@
 using import "community_event.capnp".RecurrenceRule;
 using import "community_event.capnp".EventLocation;
 using import "community_event.capnp".EventStatus;
+using import "community_event.capnp".RsvpStatus;
 
 # Shared sub-types referenced by governance entries.
 
@@ -355,6 +356,13 @@ struct EventArchivedEntry @0xccd4eb16e9bf1c2e {
     lamport              @1 :UInt64;
 }
 
+# Plan C7.15 — the author's RSVP to a live event; LWW per (event, author).
+struct EventRsvpEntry @0x822acc59ac9bfa9e {
+    eventId              @0 :Uuid16;
+    status               @1 :RsvpStatus;
+    lamport              @2 :UInt64;
+}
+
 struct OnboardingConfigEntry @0xcdd4eb16e9bf1c2e {
     enabled              @0 :Bool;
     # `default` / `guided` / `gated`.
@@ -450,7 +458,7 @@ struct CommunityPolicyEntry @0xd8d4eb16e9bf1c2e {
     lamport              @4 :UInt64;
 }
 
-# Top-level governance entry union — 34 arms, append-only.
+# Top-level governance entry union — 39 arms, append-only.
 struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
     union {
         channelCreated                @0  :ChannelCreatedEntry;
@@ -491,5 +499,6 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         memberApproved                @35 :MemberApprovedPayload;
         memberRejected                @36 :MemberRejectedPayload;
         admissionPolicy               @37 :AdmissionPolicyPayload;
+        eventRsvp                     @38 :EventRsvpEntry;
     }
 }

@@ -10,6 +10,13 @@ enum EventStatus @0xa7d4eb16e9bf1c2e {
     cancelled @3;
 }
 
+# Architecture §21 line 2643 — a member's answer to an event.
+enum RsvpStatus @0xad4e59fd253acd8d {
+    going      @0;
+    interested @1;
+    declined   @2;
+}
+
 enum RecurrenceFrequency @0xa8d4eb16e9bf1c2e {
     daily   @0;
     weekly  @1;

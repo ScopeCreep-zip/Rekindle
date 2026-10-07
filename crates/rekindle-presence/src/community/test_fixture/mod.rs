@@ -54,10 +54,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn our_route_blob(&self) -> Option<Vec<u8>> {
         self.state.lock().our_route.clone()
     }
-    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
-        // The fixture models a single route; no separate media route.
-        None
-    }
     fn current_presence_status_str(&self, community_id: &str) -> String {
         let mut st = self.state.lock();
         st.calls_status_str.push(community_id.to_string());
@@ -149,7 +145,12 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .lock()
             .calls_encrypt_history
             .push((community_id.to_string(), ranges.len()));
-        None
+        // Sized like the real MEK seal: nonce (12) + plaintext + tag (16).
+        let plaintext = serde_json::to_vec(ranges).ok()?;
+        Some(rekindle_types::presence::EncryptedHistoryRanges {
+            mek_generation: 1,
+            ciphertext: vec![0; 12 + plaintext.len() + 16],
+        })
     }
     fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
         rekindle_types::presence::MemberSession::default()
@@ -313,30 +314,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             merged_member_roles.len(),
             known_member_keys.len(),
         ));
-    }
-    async fn load_known_event_ids(&self, community_id: &str) -> Vec<String> {
-        self.state
-            .lock()
-            .calls_load_known_events
-            .push(community_id.to_string());
-        Vec::new()
-    }
-    fn read_my_event_rsvps(&self, community_id: &str) -> HashMap<String, String> {
-        self.state
-            .lock()
-            .calls_read_my_rsvps
-            .push(community_id.to_string());
-        HashMap::new()
-    }
-    fn write_event_rsvps_by_event(
-        &self,
-        community_id: &str,
-        aggregated: HashMap<String, Vec<crate::community::EventRsvpEntry>>,
-    ) {
-        self.state
-            .lock()
-            .calls_write_rsvps
-            .push((community_id.to_string(), aggregated.len()));
     }
     fn read_member_profile_snapshot(
         &self,

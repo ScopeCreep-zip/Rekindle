@@ -77,6 +77,42 @@ pub struct RecurrenceRule {
     pub count: Option<u32>,
 }
 
+/// A member's answer to a scheduled event (architecture §21 line 2643).
+///
+/// Its durable form is the member-authored `GovernanceEntry::EventRsvp`
+/// (plan C7.15): an RSVP belongs to the event, as Discord's per-event
+/// users and Matrix's `m.calendar.rsvp` relations do, never to presence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RsvpStatus {
+    Going,
+    Interested,
+    Declined,
+}
+
+impl RsvpStatus {
+    /// The wire string the `EventRsvpChanged` envelope and the DTOs carry.
+    #[must_use]
+    pub const fn as_wire_str(self) -> &'static str {
+        match self {
+            Self::Going => "going",
+            Self::Interested => "interested",
+            Self::Declined => "declined",
+        }
+    }
+
+    /// Parse a status a client sent: `maybe` is `interested`; anything
+    /// else that is not a status declines.
+    #[must_use]
+    pub fn from_request(status: &str) -> Self {
+        match status {
+            "going" => Self::Going,
+            "interested" | "maybe" => Self::Interested,
+            _ => Self::Declined,
+        }
+    }
+}
+
 /// Maximum lengths from spec §21 line 2622-2623.
 pub const MAX_EVENT_NAME_CHARS: usize = 100;
 pub const MAX_EVENT_DESCRIPTION_CHARS: usize = 1000;

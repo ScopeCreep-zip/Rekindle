@@ -18,7 +18,6 @@ pub mod poll;
 pub mod profile_diff;
 pub mod registry;
 pub mod role_merge;
-pub mod rsvp_aggregate;
 pub mod scan_row;
 pub mod spawn;
 pub mod sync;
@@ -40,7 +39,6 @@ pub use registry::{
     persist_discovered_registry_members, write_our_presence, DiscoveredRow, PresenceWrite,
 };
 pub use role_merge::compute_merged_roles;
-pub use rsvp_aggregate::{aggregate_event_rsvps, EventRsvpEntry};
 pub use scan_row::{
     explain_route_for_peer, parse_and_classify_row, route_for_peer, AcceptedRow, ClassifiedRow,
     RouteRefusal, SUBKEYS_PER_SEGMENT,
@@ -49,4 +47,4 @@ pub use spawn::{
     start_presence_poll, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STEADY_TICK_INTERVAL_SECS,
 };
 pub use sync::run_initial_sync;
-pub use util::{presence_event_id_bytes, random_peer_sample, role_ids_from_governance};
+pub use util::{random_peer_sample, role_ids_from_governance};

@@ -38,6 +38,8 @@
 //! * Single-key display state — `CommunityMeta`, `CommunityNotificationDefault`,
 //!   `OnboardingConfig`, `WelcomeScreen` — keep only the highest-lamport entry.
 //! * `MEKGenerationBump` — Max-Register; keep only the highest generation.
+//! * `EventRsvp` — LWW per (event, author); keep the author's latest answer
+//!   per event. RSVPs gate nothing in `validate_write`.
 //!
 //! Roles, moderation (ban/timeout), expressions, automod, permission overwrites
 //! and `CommunityPolicy` (invite-quota gating) all feed `validate_write`, so
@@ -137,6 +139,21 @@ pub fn compact_author_entries(
         }
     }
 
+    // The author's latest answer per event: `EventRsvp` is LWW per
+    // (event, author), and this is one author's log.
+    let mut rsvp_max: HashMap<EventId, u64> = HashMap::new();
+    for e in &entries {
+        if let GovernanceEntry::EventRsvp {
+            event_id, lamport, ..
+        } = e
+        {
+            let slot = rsvp_max.entry(*event_id).or_insert(0);
+            if *lamport > *slot {
+                *slot = *lamport;
+            }
+        }
+    }
+
     let mut out: Vec<GovernanceEntry> = entries
         .into_iter()
         .filter(|e| {
@@ -164,6 +181,9 @@ pub fn compact_author_entries(
                 GovernanceEntry::EventArchived { event_id, .. } => {
                     !dropped_events.contains(event_id)
                 }
+                GovernanceEntry::EventRsvp {
+                    event_id, lamport, ..
+                } => rsvp_max.get(event_id) == Some(lamport),
                 GovernanceEntry::InviteCreated { invite_id, .. } => {
                     !revoked_invites.contains(invite_id) && !pruned_invites.contains(invite_id)
                 }

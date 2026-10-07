@@ -176,9 +176,11 @@ pub struct CommunityState {
     #[serde(skip)]
     pub my_event_rsvps: HashMap<String, String>,
 
-    /// Reader-aggregated RSVPs discovered from member presence records.
+    /// Members' RSVPs per live event: rebuilt from governance on every
+    /// merge (`GovernanceEntry::EventRsvp`, plan C7.15), with
+    /// `EventRsvpChanged` gossip applied in between.
     #[serde(skip)]
-    pub event_rsvps_by_event: HashMap<String, Vec<EventRsvpEntry>>,
+    pub event_rsvps_by_event: HashMap<String, Vec<rekindle_types::event::EventRsvp>>,
 
     /// Whether our local member record has completed onboarding for this community.
     #[serde(skip)]
@@ -267,12 +269,6 @@ pub struct CommunityState {
 /// `HashMap<channel_id, record_key>`. The fields came here; the type
 /// went there.
 pub use rekindle_records::lifecycle::CommunityRecords;
-
-/// Aggregated RSVP entry for a single member and event.
-//
-// Declared by `rekindle-presence`, which owns RSVP aggregation
-// (`community::rsvp_aggregate`). The copy here was byte-identical.
-pub use rekindle_presence::EventRsvpEntry;
 
 /// Per-community profile snapshot aggregated from a peer's presence
 /// subkey.

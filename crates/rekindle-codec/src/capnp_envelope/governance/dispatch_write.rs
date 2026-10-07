@@ -17,7 +17,8 @@ use super::community::{
     write_invite_created, write_invite_revoked, write_mek_generation_bump, write_segment_added,
 };
 use super::events::{
-    write_event_archived, write_event_created, write_thread_archived, write_thread_created,
+    write_event_archived, write_event_created, write_event_rsvp, write_thread_archived,
+    write_thread_created,
 };
 use super::expression::{
     write_attachment_pinned, write_expression_added, write_expression_removed,
@@ -152,6 +153,11 @@ pub(in crate::capnp_envelope) fn write_governance_entry(
         GovernanceEntry::EventArchived { event_id, lamport } => {
             write_event_archived(b.reborrow().init_event_archived(), *event_id, *lamport);
         }
+        GovernanceEntry::EventRsvp {
+            event_id,
+            status,
+            lamport,
+        } => write_event_rsvp(b.reborrow().init_event_rsvp(), *event_id, *status, *lamport),
         GovernanceEntry::EventCreated { .. } => {
             write_event_created(b.reborrow().init_event_created(), e);
         }

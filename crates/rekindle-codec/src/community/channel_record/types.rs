@@ -1,7 +1,7 @@
 //! Wire types stored in channel record pages, plus the serde helpers
 //! their field attributes reference.
 
-use super::super::base64_bytes;
+use rekindle_types::base64_bytes;
 use rekindle_types::domains;
 use serde::{Deserialize, Serialize};
 

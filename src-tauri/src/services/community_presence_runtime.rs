@@ -6,10 +6,10 @@
 use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use crate::db_helpers::db_call;
-use crate::services::community_profile_validation::validate_profile;
 use crate::state::SharedState;
 use crate::state_helpers;
 use rekindle_db::Db;
+use rekindle_types::presence::limits::validate_profile;
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,6 +1,5 @@
 //! Phase 23.C — pure onboarding-shape validator lifted from
-//! `commands/community/onboarding.rs`. Mirrors the sibling
-//! `community_profile_validation.rs`: just MAX_* constants + a
+//! `commands/community/onboarding.rs`: just MAX_* constants + a
 //! single `Result<(), String>` predicate.
 
 pub const MAX_ONBOARDING_QUESTIONS: usize = 5;

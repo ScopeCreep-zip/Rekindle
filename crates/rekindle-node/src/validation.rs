@@ -17,9 +17,6 @@ use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 use rekindle_ipc::noise_keys::validate_agent_name;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, DESTROY_CONFIRMATION, WIPE_CONFIRMATION};
 
-/// Longest display name.
-const MAX_DISPLAY_NAME: usize = 64;
-
 /// Largest page a history or inbox query returns: Discord's message-list
 /// `limit` (1-100).
 const MAX_PAGE: u32 = 100;
@@ -205,7 +202,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. } => Ok(()),
 
-        IpcRequest::IdentityCreate { display_name } => key_format::name(display_name, MAX_DISPLAY_NAME)
+        IpcRequest::IdentityCreate { display_name } => rekindle_types::presence::limits::display_name(display_name)
             .map(drop)
             .map_err(|e| reject("display name", &e)),
         IpcRequest::IdentityDestroy { confirmation: given } => {

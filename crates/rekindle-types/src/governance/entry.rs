@@ -272,8 +272,8 @@ pub enum GovernanceEntry {
     ThreadArchived { thread_id: ThreadId, lamport: u64 },
 
     /// Create or update a scheduled event (architecture §21).
-    /// RSVPs stored in MemberPresence.event_rsvps, not here. CRDT:
-    /// LWW per `event_id` — bumping `lamport` re-publishes any field
+    /// RSVPs are their own member-authored [`Self::EventRsvp`] entries.
+    /// CRDT: LWW per `event_id` — bumping `lamport` re-publishes any field
     /// (e.g. status: Scheduled → Active → Completed).
     EventCreated {
         event_id: EventId,
@@ -358,6 +358,15 @@ pub enum GovernanceEntry {
 
     /// Archive a scheduled event. CRDT: tombstone.
     EventArchived { event_id: EventId, lamport: u64 },
+
+    /// The author's RSVP to a live event (plan C7.15). Member-authored,
+    /// like Matrix's `m.calendar.rsvp` relation (MSC4496); readers
+    /// aggregate them per event. CRDT: LWW per (`event_id`, author).
+    EventRsvp {
+        event_id: EventId,
+        status: crate::event::RsvpStatus,
+        lamport: u64,
+    },
 
     /// Onboarding configuration. CRDT: LWW (latest lamport wins).
     OnboardingConfig {
@@ -534,6 +543,7 @@ impl GovernanceEntry {
             | Self::ExpressionAdded { lamport, .. }
             | Self::ExpressionRemoved { lamport, .. }
             | Self::EventArchived { lamport, .. }
+            | Self::EventRsvp { lamport, .. }
             | Self::OnboardingConfig { lamport, .. }
             | Self::WelcomeScreen { lamport, .. }
             | Self::AdminDelete { lamport, .. }

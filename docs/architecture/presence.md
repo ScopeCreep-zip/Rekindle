@@ -39,10 +39,9 @@ The crate's `lib.rs` re-exports cover the integration surface:
 | `presence_poll_tick`, `presence_poll_tick_public`, `start_presence_poll`, `steady_poll_duration` | Community presence poll loop |
 | `compute_rebuild_plan`, `GossipOverlayPlan`, `GossipOverlaySnapshot`, `GossipRebuildOutcome` | Gossip overlay rebuild decisions |
 | `compute_merged_roles`, `role_ids_from_governance` | Effective-role computation against `GovernanceState` |
-| `aggregate_event_rsvps`, `EventRsvpEntry` | Event RSVP aggregation across slots |
 | `compute_profile_diff`, `ProfileDiffOutcome`, `MemberProfileSnapshot` | Per-community profile diff (theme color, bio, avatar) |
 | `parse_and_classify_row`, `ClassifiedRow`, `DiscoveredRow`, `persist_discovered_registry_members` | Member-registry row parsing and persistence |
-| `presence_event_id_bytes`, `write_our_presence`, `PresenceWrite` | Outbound presence writes |
+| `write_our_presence`, `PresenceWrite`, `PRESENCE_ROW_CAP` | Outbound presence writes, bounded to the registry slot |
 | `random_peer_sample`, `gossip_degree` | Peer-selection helpers |
 | `run_initial_sync` | Bootstrap sync on join |
 
@@ -57,6 +56,37 @@ Plus timing constants:
 | `STALE_SYNC_RETRY_SECS` | configurable | Cooldown before retrying a sync that returned stale data |
 | `MAX_SYNC_ATTEMPTS` | configurable | Per-bootstrap sync attempt budget |
 | `SUBKEYS_PER_SEGMENT` | 255 | Universal SMPL slot count |
+
+## What a presence row holds
+
+A row is one subkey of the SMPL(0, 255×1) registry, so it may encode to at
+most 4112 bytes (`PRESENCE_ROW_CAP`); the record pool refuses anything larger
+before Veilid sees it. A slot of fixed size holds fixed-size fields only
+(plan C7.15):
+
+- liveness: status, heartbeat, the typed session and its MEK-sealed extras;
+- the profile, each field bounded by `rekindle_types::presence::limits`
+  (display name 64, bio 190, pronouns 40 characters; badges and content refs
+  as ASCII identifiers);
+- the voice-channel claim and the **general** route blob;
+- the W26 signature.
+
+Byte fields are base64 (`rekindle_types::base64_bytes`). With every field at
+its bound and four-byte characters the row is 3,990 bytes
+(`worst_case_row_fits_its_slot`).
+
+What does not belong in a heartbeat slot lives elsewhere:
+
+- **The media route** rides the call's signaling (`VoiceJoin`,
+  `VoiceJoinAck`, the re-announce), as Discord's `VOICE_SERVER_UPDATE` and
+  Jingle's `transport-info` do. The voice reconcile repairs a lost join by
+  re-sending our `VoiceJoin`.
+- **RSVPs** are member-authored `GovernanceEntry::EventRsvp` entries,
+  aggregated per event (Matrix `m.calendar.rsvp`, Discord scheduled-event
+  users), with `EventRsvpChanged` gossip as the fast path.
+- **The history ad** stays inline but takes only the room the fixed fields
+  leave, most recently active channels first (VeilidChat's per-member
+  status slot). E3.5 moves it to the member record's own subkey.
 
 ## Friend presence
 

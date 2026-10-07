@@ -23,7 +23,7 @@ pub use app_state::AppState;
 pub use circuit::CircuitBreakerState;
 pub use community::{
     display_role_name, CategoryInfo, ChannelInfo, ChannelType, CommunityRecords, CommunityState,
-    EventRsvpEntry, MemberProfileSnapshot, RoleDefinition,
+    MemberProfileSnapshot, RoleDefinition,
 };
 pub use friend::{FriendState, FriendshipState, GameInfoState, IdentityState, UserStatus};
 pub use gossip::{GossipOverlay, OnlineMember};

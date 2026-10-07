@@ -34,10 +34,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
         state_helpers::our_route_blob(&self.state)
     }
 
-    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
-        state_helpers::our_media_route_blob(&self.state)
-    }
-
     fn current_presence_status_str(&self, community_id: &str) -> String {
         // Delegate to the src-tauri helper so the wire-string
         // mapping lives in exactly one place. The helper is the
@@ -152,18 +148,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
         let Some(community) = communities.get(community_id) else {
             return SelfPresenceSnapshot::default();
         };
-        let event_rsvps = community
-            .my_event_rsvps
-            .iter()
-            .map(|(event_id, status)| rekindle_types::presence::EventRSVP {
-                event_id: rekindle_types::id::EventId(rekindle_presence::presence_event_id_bytes(
-                    event_id,
-                )),
-                status: status.clone(),
-            })
-            .collect();
         SelfPresenceSnapshot {
-            event_rsvps,
             bio: community.my_bio.clone(),
             pronouns: community.my_pronouns.clone(),
             theme_color: community.my_theme_color,
@@ -419,22 +404,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
         );
     }
 
-    async fn load_known_event_ids(&self, community_id: &str) -> Vec<String> {
-        super::member_state::load_known_event_ids(&self.state, &self.pool, community_id).await
-    }
-
-    fn read_my_event_rsvps(&self, community_id: &str) -> HashMap<String, String> {
-        super::member_state::read_my_event_rsvps(&self.state, community_id)
-    }
-
-    fn write_event_rsvps_by_event(
-        &self,
-        community_id: &str,
-        aggregated: HashMap<String, Vec<rekindle_presence::EventRsvpEntry>>,
-    ) {
-        super::member_state::write_event_rsvps_by_event(&self.state, community_id, aggregated);
-    }
-
     fn read_member_profile_snapshot(
         &self,
         community_id: &str,
@@ -537,11 +506,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
             .map(|r| rekindle_voice::signaling::PresencePeerView {
                 pseudonym_hex: r.pseudonym_hex,
                 display_name: r.display_name,
-                // The peer's MEDIA route (LowLatency + PreferUnordered)
-                // only. A peer that published none is unreachable for
-                // media: its empty blob is skipped by the reconcile, never
-                // replaced by the general route (plan C7.9c).
-                route_blob: r.media_route_blob,
                 voice_channel_id: r.voice_channel_id,
                 fresh: r.fresh,
             })

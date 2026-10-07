@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 hex = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }

@@ -35,14 +35,6 @@ pub fn parse_pseudonym(hex_str: &str) -> Option<rekindle_types::id::PseudonymKey
     Some(rekindle_types::id::PseudonymKey(arr))
 }
 
-pub fn normalize_rsvp_status(status: &str) -> String {
-    match status {
-        "maybe" => "interested".to_string(),
-        "going" | "interested" | "declined" => status.to_string(),
-        _ => "declined".to_string(),
-    }
-}
-
 /// Tauri-runtime orchestration: validate title/description sizes,
 /// generate event_id, write governance `EventCreated` entry, broadcast
 /// `ControlPayload::EventCreated`. Returns the new event_id.
@@ -219,6 +211,9 @@ pub async fn cancel_event_inner(
     )
 }
 
+/// Record our RSVP: the durable member-authored governance entry
+/// (`GovernanceEntry::EventRsvp`, plan C7.15), our local copy, and the
+/// `EventRsvpChanged` gossip fast path.
 pub async fn set_event_rsvp_inner(
     state: &SharedState,
     pool: &Db,
@@ -230,7 +225,8 @@ pub async fn set_event_rsvp_inner(
     use crate::db_helpers::db_call;
 
     require_permission(state, &community_id, permissions::VIEW_CHANNELS)?;
-    let normalized_status = normalize_rsvp_status(&status);
+    let rsvp = rekindle_types::event::RsvpStatus::from_request(&status);
+    let normalized_status = rsvp.as_wire_str().to_string();
     let pseudonym_key = {
         let communities = state.communities.read();
         communities
@@ -238,6 +234,20 @@ pub async fn set_event_rsvp_inner(
             .and_then(|c| c.my_pseudonym_key.clone())
             .unwrap_or_default()
     };
+
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
+    crate::services::community::write_entry(
+        state,
+        &community_id,
+        rekindle_types::governance::GovernanceEntry::EventRsvp {
+            event_id: parse_event_id(&event_id),
+            status: rsvp,
+            lamport,
+        },
+    )
+    .await?;
+
     let owner_key = crate::state_helpers::current_owner_key(state)?;
     let community_id_for_db = community_id.clone();
     let event_id_for_db = event_id.clone();
@@ -262,21 +272,12 @@ pub async fn set_event_rsvp_inner(
             community
                 .my_event_rsvps
                 .insert(event_id.clone(), normalized_status.clone());
-            let rsvps = community
-                .event_rsvps_by_event
-                .entry(event_id.clone())
-                .or_default();
-            if let Some(existing) = rsvps
-                .iter_mut()
-                .find(|entry| entry.pseudonym_key == pseudonym_key)
-            {
-                existing.status.clone_from(&normalized_status);
-            } else {
-                rsvps.push(crate::state::EventRsvpEntry {
-                    pseudonym_key: pseudonym_key.clone(),
-                    status: normalized_status.clone(),
-                });
-            }
+            crate::services::community::event_rsvps::apply(
+                community,
+                &event_id,
+                &pseudonym_key,
+                &normalized_status,
+            );
         }
     }
     crate::services::community::send_to_mesh(
@@ -294,25 +295,13 @@ pub async fn set_event_rsvp_inner(
             &rekindle_types::subscription_events::SubscriptionEvent::Social(
                 rekindle_types::subscription_events::SocialEvent::EventRsvpChanged {
                     community: community_id.clone(),
-                    event_id: event_id.clone(),
+                    event_id,
                     pseudonym: pseudonym_key,
                     rsvp_status: normalized_status,
                 },
             ),
         );
     }
-    let state_clone = state.clone();
-    let community_id_clone = community_id.clone();
-    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
-        "event RSVP publish",
-        async move {
-            let _ = crate::services::community::presence_poll_tick_public(
-                &state_clone,
-                &community_id_clone,
-            )
-            .await;
-        },
-    );
     Ok(())
 }
 

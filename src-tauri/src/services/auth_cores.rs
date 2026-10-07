@@ -42,9 +42,12 @@ pub async fn create_identity_core(
     let identity = rekindle_crypto::Identity::generate();
     let public_key = identity.public_key_hex();
     let secret_bytes = *identity.secret_key_bytes();
-    let display_name = display_name
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| format!("User_{}", rekindle_utils::text::prefix(&public_key, 8)));
+    let display_name = match display_name.filter(|s| !s.trim().is_empty()) {
+        Some(name) => rekindle_types::presence::limits::display_name(&name)
+            .map_err(|e| format!("display name: {e}"))?
+            .to_string(),
+        None => format!("User_{}", rekindle_utils::text::prefix(&public_key, 8)),
+    };
     let now = db::timestamp_now();
 
     let keystore = StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)

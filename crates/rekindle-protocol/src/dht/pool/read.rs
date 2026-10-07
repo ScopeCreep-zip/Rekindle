@@ -66,19 +66,28 @@ impl RecordPool {
         let report = self
             .inspect(id, Some(set), DHTReportScope::UpdateGet)
             .await?;
-        let plan = plan_reads(
-            report
-                .subkeys()
+        let seqs: Vec<(u32, Option<u32>, Option<u32>)> = report
+            .subkeys()
+            .iter()
+            .zip(report.local_seqs().iter().zip(report.network_seqs()))
+            .map(|(subkey, (local, network))| {
+                (
+                    subkey,
+                    ValueSeqNum::to_option(local),
+                    ValueSeqNum::to_option(network),
+                )
+            })
+            .collect();
+        tracing::debug!(
+            key = self.key_of(id).as_deref().unwrap_or("?"),
+            asked = subkeys.len(),
+            present = ?seqs
                 .iter()
-                .zip(report.local_seqs().iter().zip(report.network_seqs()))
-                .map(|(subkey, (local, network))| {
-                    (
-                        subkey,
-                        ValueSeqNum::to_option(local),
-                        ValueSeqNum::to_option(network),
-                    )
-                }),
+                .filter(|(_, local, network)| local.is_some() || network.is_some())
+                .collect::<Vec<_>>(),
+            "read_changed: inspected (subkey, local seq, network seq)",
         );
+        let plan = plan_reads(seqs);
 
         let sem = tokio::sync::Semaphore::new(READ_PARALLELISM);
         let mut reads = FuturesUnordered::new();

@@ -6,8 +6,9 @@
 //! every surface that carries it is rewritten:
 //! - General: the profile route subkey, the mailbox route, each community's
 //!   presence row, and a voice re-announce;
-//! - Media: each community's presence row (it carries `media_route_blob`)
-//!   and a voice re-announce.
+//! - Media: a voice re-announce only. The media route is connection data
+//!   for a call, so it rides the call's signaling, never the presence row
+//!   (plan C7.15).
 //!
 //! Every change also refreshes the network status the window shows.
 
@@ -54,7 +55,7 @@ pub(crate) async fn run(
         if let RouteState::Available { blob } = route {
             match class {
                 RouteClass::General => republish_general(&app_handle, &state, &blob).await,
-                RouteClass::Media => republish_media(&state).await,
+                RouteClass::Media => republish_media(&state),
             }
         }
     }
@@ -102,13 +103,12 @@ async fn republish_general(app_handle: &tauri::AppHandle, state: &Arc<AppState>,
     tracing::info!(blob_len = blob.len(), "own route republished");
 }
 
-async fn republish_media(state: &Arc<AppState>) {
-    rewrite_presence_rows(state).await;
+fn republish_media(state: &Arc<AppState>) {
     crate::services::voice_adapter::reannounce_voice_route(state);
     tracing::info!("own media route republished");
 }
 
-/// Our presence row in every joined community carries both blobs.
+/// Our presence row in every joined community carries the general blob.
 async fn rewrite_presence_rows(state: &Arc<AppState>) {
     let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
     for community_id in &community_ids {

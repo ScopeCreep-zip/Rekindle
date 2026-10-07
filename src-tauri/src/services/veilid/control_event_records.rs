@@ -52,6 +52,17 @@ pub(super) fn handle_event_payload(
             pseudonym_key,
             status,
         } => {
+            // The fast path (plan C7.15): the attendee list moves now; the
+            // author's `EventRsvp` governance entry replaces it at the next
+            // merge.
+            if let Some(community) = state.communities.write().get_mut(community_id) {
+                crate::services::community::event_rsvps::apply(
+                    community,
+                    &event_id,
+                    &pseudonym_key,
+                    &status,
+                );
+            }
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
             let cid = community_id.to_string();
             let eid = event_id.clone();

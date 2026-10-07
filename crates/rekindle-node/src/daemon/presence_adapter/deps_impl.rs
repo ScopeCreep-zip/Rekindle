@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::community::{
-    EventRsvpEntry, GossipOverlayPlan, GossipOverlaySnapshot, MemberProfileSnapshot,
+    GossipOverlayPlan, GossipOverlaySnapshot, MemberProfileSnapshot,
 };
 use rekindle_presence::deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
@@ -40,11 +40,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
 
     fn our_route_blob(&self) -> Option<Vec<u8>> {
         self.our_route_blob_impl()
-    }
-
-    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
-        // Our media-class route (plan C7.9d); never the personal route.
-        self.transport()?.media_route_blob()
     }
 
     fn current_presence_status_str(&self, _community_id: &str) -> String {
@@ -379,23 +374,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     }
 
     fn prune_pending_syncs(&self, _community_id: &str, _max_attempts: u32) {}
-
-    // ---------- Capability gaps: no event store ----------
-
-    async fn load_known_event_ids(&self, _community_id: &str) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn read_my_event_rsvps(&self, _community_id: &str) -> HashMap<String, String> {
-        HashMap::new()
-    }
-
-    fn write_event_rsvps_by_event(
-        &self,
-        _community_id: &str,
-        _aggregated: HashMap<String, Vec<EventRsvpEntry>>,
-    ) {
-    }
 
     // ---------- Capability gaps: no profile store, no voice engine ----------
 

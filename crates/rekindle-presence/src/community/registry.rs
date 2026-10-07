@@ -9,10 +9,30 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 
-use rekindle_types::presence::MemberPresence;
+use rekindle_records::lease::{max_subkey_bytes, SchemaShape};
+use rekindle_types::presence::{EncryptedHistoryRanges, HistoryRange, MemberPresence};
 
+use crate::community::scan_row::SUBKEYS_PER_SEGMENT;
 use crate::community::time::now_secs;
 use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow};
+
+/// The most a presence row may encode to: one subkey of the SMPL(0,
+/// 255×1) registry, 4112 bytes (plan V2, C7.15). `RecordPool::set`
+/// refuses anything larger before Veilid sees it.
+pub const PRESENCE_ROW_CAP: usize = max_subkey_bytes(SchemaShape {
+    subkey_count: SUBKEYS_PER_SEGMENT,
+});
+
+/// An Ed25519 signature; its base64 form is always 88 characters, so a
+/// row measured with a placeholder of this length measures as signed.
+const SIGNATURE_LEN: usize = 64;
+
+/// The encoded size `presence` will have once signed.
+fn signed_len(presence: &MemberPresence) -> usize {
+    let mut probe = presence.clone();
+    probe.signature = vec![0; SIGNATURE_LEN];
+    serde_json::to_vec(&probe).map_or(usize::MAX, |bytes| bytes.len())
+}
 
 /// `(segment_index, local_subkey, presence)` tuple yielded by the
 /// per-segment registry scan. Plate Gate (architecture §15) carries
@@ -68,11 +88,6 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     }
 
     let snapshot = deps.self_presence_snapshot(community_id);
-    let history_ranges_encrypted = if history_ranges.is_empty() {
-        None
-    } else {
-        deps.encrypt_history_ranges_with_current_mek(community_id, &history_ranges)
-    };
 
     let pseudonym_bytes = hex::decode(my_pseudonym_hex)
         .ok()
@@ -124,10 +139,7 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         display_name: Some(deps.identity_display_name()),
         status,
         route_blob: our_route_blob.unwrap_or_default(),
-        media_route_blob: deps.our_media_route_blob().unwrap_or_default(),
         last_heartbeat: now_secs(),
-        event_rsvps: snapshot.event_rsvps,
-        history_ranges_encrypted,
         bio: snapshot.bio,
         pronouns: snapshot.pronouns,
         theme_color: snapshot.theme_color,
@@ -139,6 +151,22 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         voice_channel_id: active_voice_channel,
         ..Default::default()
     };
+
+    // The fixed fields are bounded (`presence::limits`, proven by
+    // `worst_case_row_fits_its_slot`); a row over the cap here means a
+    // field escaped its bound, and the write would be refused anyway.
+    let fixed_len = signed_len(&presence);
+    if fixed_len > PRESENCE_ROW_CAP {
+        tracing::warn!(
+            community = %community_id,
+            len = fixed_len,
+            cap = PRESENCE_ROW_CAP,
+            "presence row over its slot before the history ad; not written",
+        );
+        return;
+    }
+    presence.history_ranges_encrypted =
+        fit_history_ad(deps, community_id, &presence, history_ranges);
 
     // Architecture §26 W26 — sign before publishing so receivers can
     // verify the presence row actually came from `pseudonym_key`.
@@ -163,17 +191,76 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         }
     };
 
-    if let Err(error) = deps
+    if presence_json.len() > PRESENCE_ROW_CAP {
+        tracing::warn!(
+            community = %community_id,
+            len = presence_json.len(),
+            cap = PRESENCE_ROW_CAP,
+            "signed presence row over its slot; not written",
+        );
+        return;
+    }
+
+    let route_len = presence.route_blob.len();
+    match deps
         .write_presence_to_registry_subkey(registry_key, subkey_idx, presence_json, kp_str)
         .await
     {
-        tracing::debug!(
+        Ok(()) => tracing::debug!(
             community = %community_id,
+            registry_key,
+            subkey = subkey_idx,
+            route_len,
+            "presence row written",
+        ),
+        Err(error) => tracing::warn!(
+            community = %community_id,
+            registry_key,
             subkey = subkey_idx,
             %error,
             "failed to write presence to registry",
+        ),
+    }
+}
+
+/// The history ad that fits beside the row's fixed fields: the most
+/// recently active channels first, as many as the slot holds. VeilidChat's
+/// per-member status slot caps its vector the same way ("capped by encoded
+/// size; least-recently-active authors are evicted first",
+/// `veilidchat.proto` L242-247). E3.5 gives the ad its own subkey (`M/5`).
+fn fit_history_ad<D: CommunityPresenceDeps>(
+    deps: &D,
+    community_id: &str,
+    presence: &MemberPresence,
+    mut ranges: Vec<HistoryRange>,
+) -> Option<EncryptedHistoryRanges> {
+    if ranges.is_empty() {
+        return None;
+    }
+    ranges.sort_by(|a, b| b.newest_lamport.cmp(&a.newest_lamport));
+    let mut probe = presence.clone();
+    let mut fitted = None;
+    let mut fitted_count = 0;
+    for count in 1..=ranges.len() {
+        // No current MEK: no ad at all this write.
+        let encrypted =
+            deps.encrypt_history_ranges_with_current_mek(community_id, &ranges[..count])?;
+        probe.history_ranges_encrypted = Some(encrypted);
+        if signed_len(&probe) > PRESENCE_ROW_CAP {
+            break;
+        }
+        fitted = probe.history_ranges_encrypted.take();
+        fitted_count = count;
+    }
+    if fitted_count < ranges.len() {
+        tracing::debug!(
+            community = %community_id,
+            advertised = fitted_count,
+            evicted = ranges.len() - fitted_count,
+            "history ad capped by the row's slot (least recently active evicted)",
         );
     }
+    fitted
 }
 
 /// Diff against `known_members` to emit `MemberDiscovered` events
@@ -254,3 +341,7 @@ fn build_member_row<S: BuildHasher>(
         banner_ref: presence.banner_ref.clone(),
     }
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;

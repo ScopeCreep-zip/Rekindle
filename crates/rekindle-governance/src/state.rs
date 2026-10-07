@@ -80,6 +80,13 @@ pub struct GovernanceState {
     /// Active events (LWW per event_id).
     pub events: HashMap<EventId, EventState>,
 
+    /// Members' RSVPs per event (LWW per (event_id, author), plan C7.15).
+    /// Kept per event id whether or not the event is live yet, so the
+    /// merge does not depend on an event's create entry surviving
+    /// compaction; an event's archive clears its RSVPs, and readers go
+    /// through [`GovernanceState::live_event_rsvps`].
+    pub event_rsvps: HashMap<EventId, HashMap<PseudonymKey, RsvpState>>,
+
     /// Active expressions after OR-Set add/remove merge.
     pub expressions: HashMap<[u8; 16], ExpressionState>,
 
@@ -250,6 +257,41 @@ pub struct EventState {
     pub location: Option<rekindle_types::event::EventLocation>,
     pub status: rekindle_types::event::EventStatus,
     pub lamport: u64,
+}
+
+/// One member's answer to one event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RsvpState {
+    pub status: rekindle_types::event::RsvpStatus,
+    pub lamport: u64,
+}
+
+impl GovernanceState {
+    /// RSVPs of live events, each event's list sorted by pseudonym so a
+    /// reader's view is deterministic.
+    #[must_use]
+    pub fn live_event_rsvps(
+        &self,
+    ) -> Vec<(
+        EventId,
+        Vec<(PseudonymKey, rekindle_types::event::RsvpStatus)>,
+    )> {
+        let mut out: Vec<_> = self
+            .event_rsvps
+            .iter()
+            .filter(|(event_id, _)| self.events.contains_key(*event_id))
+            .map(|(event_id, rsvps)| {
+                let mut list: Vec<_> = rsvps
+                    .iter()
+                    .map(|(member, rsvp)| (member.clone(), rsvp.status))
+                    .collect();
+                list.sort_by(|a, b| a.0 .0.cmp(&b.0 .0));
+                (*event_id, list)
+            })
+            .collect();
+        out.sort_by(|a, b| a.0 .0.cmp(&b.0 .0));
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

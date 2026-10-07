@@ -123,6 +123,7 @@ pub struct SessionExtras {
 #[serde(rename_all = "camelCase")]
 pub struct EncryptedSessionExtras {
     pub mek_generation: u64,
+    #[serde(with = "crate::base64_bytes")]
     pub ciphertext: Vec<u8>,
 }
 
