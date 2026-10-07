@@ -59,12 +59,16 @@ pub async fn run_initial_sync<D: CommunityPresenceDeps>(
     }
 
     let channel_entries = deps.channel_log_keys_for_community(community_id);
-    let member_count = deps.member_count_for_community(community_id);
+    let member_slots = if channel_entries.is_empty() {
+        Vec::new()
+    } else {
+        deps.member_slots_for_community(community_id).await
+    };
 
-    if !channel_entries.is_empty() && member_count > 0 {
+    if !member_slots.is_empty() {
         for (channel_id, record_key) in &channel_entries {
             match deps
-                .read_all_channel_messages(record_key, member_count)
+                .read_channel_message_items(record_key, &member_slots)
                 .await
             {
                 Ok(messages) if !messages.is_empty() => {
@@ -74,7 +78,7 @@ pub async fn run_initial_sync<D: CommunityPresenceDeps>(
                         count = messages.len(),
                         "caught up from SMPL channel record",
                     );
-                    deps.persist_channel_catchup(community_id, channel_id, messages);
+                    deps.persist_channel_catchup(community_id, channel_id, record_key, messages);
                 }
                 Ok(_) => {}
                 Err(error) => {
@@ -98,7 +102,6 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use parking_lot::Mutex;
     use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 
     use super::*;
@@ -106,12 +109,10 @@ mod tests {
 
     #[tokio::test]
     async fn no_peers_skips_presence_broadcast_but_still_marks_done() {
-        let deps = Arc::new(MockCommunityDeps {
-            state: Mutex::new(MockState {
-                channels: vec!["ch1".into()],
-                ..Default::default()
-            }),
-        });
+        let deps = Arc::new(MockCommunityDeps::new(MockState {
+            channels: vec!["ch1".into()],
+            ..Default::default()
+        }));
         run_initial_sync(Arc::clone(&deps), "c1", 0).await;
         let st = deps.state.lock();
         assert_eq!(st.sent_envelopes.len(), 1);
@@ -125,14 +126,12 @@ mod tests {
 
     #[tokio::test]
     async fn no_route_blob_aborts_early() {
-        let deps = Arc::new(MockCommunityDeps {
-            state: Mutex::new(MockState {
-                my_pk: "me".into(),
-                our_route: None,
-                channels: vec!["ch1".into()],
-                ..Default::default()
-            }),
-        });
+        let deps = Arc::new(MockCommunityDeps::new(MockState {
+            my_pk: "me".into(),
+            our_route: None,
+            channels: vec!["ch1".into()],
+            ..Default::default()
+        }));
         run_initial_sync(Arc::clone(&deps), "c1", 3).await;
         let st = deps.state.lock();
         assert!(st.sent_envelopes.is_empty());
@@ -145,33 +144,34 @@ mod tests {
         let mut read = HashMap::new();
         read.insert(
             "rec1".to_string(),
-            Ok(vec![ChannelMessage {
-                sequence: 1,
-                sender_pseudonym: "alice".into(),
-                ciphertext: vec![0u8; 16],
-                mek_generation: 0,
-                timestamp: 1000,
-                reply_to: None,
-                lamport_ts: 1,
-                message_id: Some("m1".into()),
-                attachment: None,
-                flags: 0,
-                mentioned_pseudonyms: Vec::new(),
-                mentioned_roles: Vec::new(),
-            }]),
+            Ok(vec![(
+                0,
+                ChannelMessage {
+                    sequence: 1,
+                    sender_pseudonym: "alice".into(),
+                    ciphertext: vec![0u8; 16],
+                    mek_generation: 0,
+                    timestamp: 1000,
+                    reply_to: None,
+                    lamport_ts: 1,
+                    message_id: Some("m1".into()),
+                    attachment: None,
+                    flags: 0,
+                    mentioned_pseudonyms: Vec::new(),
+                    mentioned_roles: Vec::new(),
+                },
+            )]),
         );
-        let deps = Arc::new(MockCommunityDeps {
-            state: Mutex::new(MockState {
-                my_pk: "me".into(),
-                our_route: Some(vec![1, 2, 3]),
-                status: "online".into(),
-                channels: vec!["ch1".into(), "ch2".into()],
-                channel_logs: vec![("ch1".into(), "rec1".into())],
-                member_count: 5,
-                read_results: read,
-                ..Default::default()
-            }),
-        });
+        let deps = Arc::new(MockCommunityDeps::new(MockState {
+            my_pk: "me".into(),
+            our_route: Some(vec![1, 2, 3]),
+            status: "online".into(),
+            channels: vec!["ch1".into(), "ch2".into()],
+            channel_logs: vec![("ch1".into(), "rec1".into())],
+            member_slots: vec![0, 3, 7],
+            read_results: read,
+            ..Default::default()
+        }));
         run_initial_sync(Arc::clone(&deps), "c1", 3).await;
         let st = deps.state.lock();
         assert_eq!(st.sent_envelopes.len(), 3);
@@ -181,22 +181,22 @@ mod tests {
         ));
         assert_eq!(st.pending_syncs.len(), 2);
         assert_eq!(st.catchups, vec![("c1".into(), "ch1".into(), 1)]);
+        // The catch-up reads the writer index, not a count.
+        assert_eq!(st.calls_read_all, vec![("rec1".into(), vec![0, 3, 7])]);
         assert_eq!(st.initial_done, vec!["c1".to_string()]);
     }
 
     #[tokio::test]
     async fn empty_channel_log_skips_catchup_read() {
-        let deps = Arc::new(MockCommunityDeps {
-            state: Mutex::new(MockState {
-                my_pk: "me".into(),
-                our_route: Some(vec![1]),
-                status: "online".into(),
-                channels: vec!["ch1".into()],
-                channel_logs: Vec::new(),
-                member_count: 5,
-                ..Default::default()
-            }),
-        });
+        let deps = Arc::new(MockCommunityDeps::new(MockState {
+            my_pk: "me".into(),
+            our_route: Some(vec![1]),
+            status: "online".into(),
+            channels: vec!["ch1".into()],
+            channel_logs: Vec::new(),
+            member_slots: vec![0, 3, 7],
+            ..Default::default()
+        }));
         run_initial_sync(Arc::clone(&deps), "c1", 3).await;
         let st = deps.state.lock();
         assert_eq!(st.sent_envelopes.len(), 2);

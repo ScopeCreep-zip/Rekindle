@@ -1,30 +1,38 @@
 //! The `dispatch()` router: matches every `IpcRequest` variant to its
 //! domain handler, plus the audit-logging helper it calls before routing.
 
-use crate::ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::{
-    admin, channel, community, governance, identity, keys, lifecycle, presence, social,
-    DaemonContext,
+    admin, channel, community, governance, identity, keys, lifecycle, presence, social, status,
+    CallerContext, DaemonContext,
 };
 
 /// Dispatch an IPC request to the appropriate domain handler.
 ///
 /// Returns an `IpcResponse` for every request — no request goes unanswered.
 /// Every `IpcRequest` variant is explicitly matched; there is no catch-all arm.
-pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
+pub async fn dispatch(
+    ctx: &DaemonContext,
+    request: IpcRequest,
+    caller: &CallerContext,
+) -> IpcResponse {
     let state = ctx.lifecycle.state();
 
     // Audit: log every request before dispatch (best-effort, non-blocking).
     audit_request(ctx, &request);
 
+    if let Err(rejection) = crate::validation::validate_request(&request) {
+        return rejection;
+    }
+
     match request {
         // ── Lifecycle (any state) ────────────────────────────────
-        IpcRequest::Status => lifecycle::handle_status(ctx, state),
+        IpcRequest::Status => status::handle_status(ctx, state),
         IpcRequest::Unlock { passphrase } => {
             lifecycle::handle_unlock(ctx, state, &passphrase).await
         }
-        IpcRequest::Lock => lifecycle::handle_lock(ctx),
+        IpcRequest::Lock => lifecycle::handle_lock(ctx, state).await,
         IpcRequest::Shutdown => lifecycle::handle_shutdown(ctx),
 
         // ── Identity ─────────────────────────────────────────────
@@ -34,12 +42,12 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         IpcRequest::IdentityShow => identity::handle_show(ctx, state),
         IpcRequest::IdentityExport => identity::handle_export(ctx, state),
         IpcRequest::IdentityRotate => identity::handle_rotate(ctx, state).await,
-        IpcRequest::IdentityDestroy { confirmation } => {
-            identity::handle_destroy(ctx, state, &confirmation).await
+        // `validate_request` checked the typed confirmation.
+        IpcRequest::IdentityDestroy { confirmation: _ } => {
+            identity::handle_destroy(ctx, state).await
         }
-        IpcRequest::IdentityWipe { confirmation } => {
-            identity::handle_wipe(ctx, state, &confirmation).await
-        }
+        // `validate_request` checked the typed confirmation.
+        IpcRequest::IdentityWipe { confirmation: _ } => identity::handle_wipe(ctx, state).await,
 
         // ── Community ────────────────────────────────────────────
         IpcRequest::CommunityCreate {
@@ -303,7 +311,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
             channel,
             muted,
             deafened,
-        } => presence::handle_voice_join(ctx, state, &community, &channel, muted, deafened).await,
+        } => presence::handle_voice_join(ctx, state, &community, &channel, muted, deafened),
         IpcRequest::VoiceLeave => presence::handle_voice_leave(ctx, state),
 
         // ── Admin / Network ──────────────────────────────────────
@@ -325,7 +333,7 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
             name,
             agent_type,
             capabilities,
-        } => admin::handle_agent_register(ctx, &name, agent_type, &capabilities).await,
+        } => admin::handle_agent_register(ctx, caller, &name, agent_type, &capabilities).await,
         IpcRequest::AgentRevoke { name } => admin::handle_agent_revoke(ctx, &name).await,
         IpcRequest::PolicyReload => admin::handle_policy_reload(ctx),
     }
@@ -334,23 +342,17 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
 /// Log an IPC request to the BLAKE3 hash-chained audit log.
 ///
 /// Best-effort: audit failures are logged but never block the request.
-/// The audit entry includes the request type and security-relevant context
-/// but never the payload body (no message content in the audit trail).
+/// The entry is the request's variant name only — never a field, so no
+/// key, name or message content reaches the audit trail.
 fn audit_request(ctx: &DaemonContext, request: &IpcRequest) {
-    let event_type = format!("{request:?}");
-    // Truncate to just the variant name for the audit log (no field data)
-    let event_name = event_type
-        .split_once(' ')
-        .or_else(|| event_type.split_once('{'))
-        .map_or(event_type.as_str(), |(name, _)| name)
-        .trim();
+    let event_name = request.name();
 
     let mut guard = ctx.audit.lock();
     if let Some(ref mut logger) = *guard {
         if let Err(e) = logger.append(
             event_name.as_bytes(),
             None, // sender name filled by server layer
-            crate::ipc::message::SecurityLevel::Open,
+            rekindle_ipc::message::SecurityLevel::Open,
             event_name.to_string(),
             None,
         ) {

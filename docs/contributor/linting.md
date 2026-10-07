@@ -73,7 +73,7 @@ taplo format --check
 markdownlint-cli2 '**/*.md'
 lychee --config lychee.toml '**/*.md'
 typos
-sqlfluff lint src-tauri/migrations/
+sqlfluff lint crates/rekindle-db/schema/
 actionlint
 zizmor .
 

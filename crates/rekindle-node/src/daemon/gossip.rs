@@ -89,7 +89,7 @@ pub fn send(tx: &GossipSender, community_id: &str, envelope: &CommunityEnvelope)
         .is_err()
     {
         tracing::debug!(
-            community = %&community_id[..16.min(community_id.len())],
+            community = %community_id,
             "gossip: worker gone, dropping broadcast"
         );
     }
@@ -107,29 +107,39 @@ pub fn forward(tx: &GossipSender, envelope: SignedEnvelope) {
 /// `resolve_gate`. Each request is awaited to the point where the
 /// crate spawns its own fan-out, so a slow peer cannot stall the queue.
 pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
-    let adapter = Arc::new(DaemonGossipAdapter::new(ctx));
+    let adapter = Arc::new(DaemonGossipAdapter::new(Arc::clone(&ctx)));
     tracing::info!("gossip worker started");
-    while let Some(request) = rx.recv().await {
-        match request {
-            GossipRequest::Originate {
-                community_id,
-                envelope,
-            } => {
-                if let Err(error) =
-                    rekindle_gossip::send_to_mesh(Arc::clone(&adapter), &community_id, &envelope)
-                        .await
-                {
-                    tracing::warn!(
-                        community = %&community_id[..16.min(community_id.len())],
-                        %error,
-                        "gossip: broadcast pipeline error"
-                    );
+    while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
+        let send = async {
+            match request {
+                GossipRequest::Originate {
+                    community_id,
+                    envelope,
+                } => {
+                    if let Err(error) = rekindle_gossip::send_to_mesh(
+                        Arc::clone(&adapter),
+                        &community_id,
+                        &envelope,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            community = %community_id,
+                            %error,
+                            "gossip: broadcast pipeline error"
+                        );
+                    }
+                }
+                GossipRequest::Forward(signed) => {
+                    let community_id = signed.community_id.clone();
+                    rekindle_gossip::send_to_mesh_raw(Arc::clone(&adapter), &community_id, signed);
                 }
             }
-            GossipRequest::Forward(signed) => {
-                let community_id = signed.community_id.clone();
-                rekindle_gossip::send_to_mesh_raw(Arc::clone(&adapter), &community_id, signed);
-            }
+        };
+        // Gossip is PATH 2 with "Durability: None": a send cut off at
+        // shutdown costs latency, never content.
+        if ctx.shutdown.run_until(send).await.is_none() {
+            break;
         }
     }
     tracing::info!("gossip worker stopped");

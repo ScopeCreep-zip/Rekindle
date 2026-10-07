@@ -16,22 +16,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::codec::{EncodedFrame, OpusCodec};
-use crate::jitter::JitterBuffer;
+use crate::jitter::{JitterBuffer, JitterFrame};
 use crate::liveness::MediaLiveness;
+use crate::media_crypto::{FrameOpener, MediaKeys, MediaScope, OpenError};
 use crate::mixer::AudioMixer;
 use crate::receiver_report::SenderEcho;
-use crate::replay_window::VoiceSeqWindow;
-use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
-use crate::transport::{decrypt_packet_audio, VoicePacket};
+use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
+use crate::transport::VoicePacket;
 
 pub struct VoiceReceiveParams {
     pub packet_rx: mpsc::Receiver<VoicePacket>,
     pub playback_tx: Option<mpsc::Sender<Vec<f32>>>,
-    pub shutdown_rx: mpsc::Receiver<()>,
+    /// Cancelled when the loop's session scope shuts down.
+    pub stop: tokio_util::sync::CancellationToken,
     pub deps: Arc<dyn VoiceSessionDeps>,
     pub our_public_key: String,
     pub deafened_flag: Arc<AtomicBool>,
@@ -65,10 +65,6 @@ pub struct VoiceReceiveParams {
 struct ParticipantDecoder {
     codec: OpusCodec,
     jitter_buffer: JitterBuffer,
-    /// M9.3 — per-peer anti-replay window. Rejects duplicate sequence
-    /// numbers (replay) at network ingress, before the jitter buffer
-    /// sees the packet.
-    replay_window: VoiceSeqWindow,
     /// Newest accepted packet from this peer, for the RFC 3550 LSR/DLSR
     /// echo that lets *them* compute the round trip.
     echo: SenderEcho,
@@ -79,7 +75,7 @@ struct ParticipantDecoder {
 struct VoiceReceiveLoop {
     packet_rx: mpsc::Receiver<VoicePacket>,
     playback_tx: mpsc::Sender<Vec<f32>>,
-    shutdown_rx: mpsc::Receiver<()>,
+    stop: tokio_util::sync::CancellationToken,
     deps: Arc<dyn VoiceSessionDeps>,
     our_key_bytes: Vec<u8>,
     deafened_flag: Arc<AtomicBool>,
@@ -92,9 +88,12 @@ struct VoiceReceiveLoop {
     jitter_base_ms: u32,
     packets_received: u64,
     last_quality_check: Instant,
-    /// Packets dropped this stats window for MEK reasons (missing key /
-    /// generation mismatch / decrypt failure).
+    /// Packets dropped this stats window because they could not be
+    /// opened (no key for their generation, wrong sender, or rejected).
     mek_drops: u64,
+    /// SFrame-opens inbound frames; owns the per-sender CTR replay
+    /// windows (M9.3), so replays are dropped before the jitter buffer.
+    opener: FrameOpener,
     /// Debounce for the RequestMEK cascade — one fire per window even
     /// when every packet of a 50/s stream is undecryptable.
     last_mek_request: Option<Instant>,
@@ -129,10 +128,19 @@ impl VoiceReceiveLoop {
         let channels: u16 = 1;
         let frame_size: usize = 960;
 
+        let key_source: Arc<dyn MediaKeySource> = params.deps.clone();
+        let keys = Arc::new(MediaKeys::new(
+            key_source,
+            MediaScope::of_session(
+                params.community_id.as_deref(),
+                params.channel_id.as_deref().unwrap_or_default(),
+            ),
+        ));
         Some(Self {
+            opener: FrameOpener::new(keys),
             packet_rx: params.packet_rx,
             playback_tx,
-            shutdown_rx: params.shutdown_rx,
+            stop: params.stop,
             deps: params.deps,
             our_key_bytes: hex::decode(&params.our_public_key).unwrap_or_default(),
             deafened_flag: params.deafened_flag,
@@ -179,12 +187,12 @@ impl VoiceReceiveLoop {
         loop {
             tokio::select! {
                 biased;
-                _ = self.shutdown_rx.recv() => {
+                () = self.stop.cancelled() => {
                     tracing::info!("voice receive loop: shutdown signal received");
                     break;
                 }
                 Some(packet) = self.packet_rx.recv() => {
-                    self.ingest_packet(packet);
+                    self.ingest_packet(&packet);
                 }
                 _ = tick.tick() => {
                     self.tick();
@@ -196,7 +204,7 @@ impl VoiceReceiveLoop {
         tracing::info!("voice receive loop exited");
     }
 
-    fn ingest_packet(&mut self, mut packet: VoicePacket) {
+    fn ingest_packet(&mut self, packet: &VoicePacket) {
         // Skip our own packets.
         if packet.sender_key == self.our_key_bytes {
             return;
@@ -206,93 +214,28 @@ impl VoiceReceiveLoop {
             return;
         }
 
-        // Decrypt voice frame.
-        // W13.14 — for 1:1 DM calls, use the AEAD call_key on the
-        // active call entry whose peer_pubkey matches the packet's
-        // sender_key. For community voice, use the MEK.
-        if let Some(ref cid) = self.community_id {
-            let cid = cid.clone();
-            let channel = self.channel_id.clone().unwrap_or_default();
-            // Channel-media MEK hierarchy (§10.5): channel MEK when the
-            // join/leave rotation distributed one, community MEK
-            // otherwise. NO undecrypted passthrough — a packet we hold
-            // no key for is dropped and the RequestMEK cascade fired.
-            let Some((mut mek_bytes, mut our_gen)) = self.deps.channel_media_mek(&cid, &channel)
-            else {
-                self.note_mek_drop(
-                    &cid,
-                    &channel,
-                    "no channel-media MEK cached",
-                    packet.mek_generation,
-                );
-                return;
-            };
-            if packet.mek_generation < our_gen {
-                // Rotation retention window: the REPLACED key still
-                // decrypts in-flight old-generation packets (SFrame /
-                // DAVE previous-epoch retention). Past the window:
-                // counted drop, no request (an older key can't help;
-                // apply refuses downgrades; the sender converges via
-                // its own receive path).
-                match self.deps.previous_channel_mek(&cid, &channel) {
-                    Some((prev_bytes, prev_gen)) if prev_gen == packet.mek_generation => {
-                        mek_bytes = prev_bytes;
-                        our_gen = prev_gen;
-                    }
-                    _ => {
-                        self.mek_drops += 1;
-                        self.deps.record_packet_drop();
-                        return;
-                    }
+        // SFrame open under the sender's key (RFC 9605). Failures are
+        // counted, not logged per packet (§4.4.4); a missing channel key
+        // fires the debounced RequestMEK cascade for the frame's
+        // generation.
+        let opus = match self.opener.open(packet) {
+            Ok(opus) => opus,
+            Err(OpenError::NoKey { needed_generation }) => {
+                if let (Some(cid), Some(needed)) = (self.community_id.clone(), needed_generation) {
+                    let channel = self.channel_id.clone().unwrap_or_default();
+                    self.note_mek_drop(&cid, &channel, "no key for frame generation", needed);
+                } else {
+                    self.mek_drops += 1;
+                    self.deps.record_packet_drop();
                 }
-            }
-            if packet.mek_generation > our_gen {
-                tracing::trace!(
-                    packet_gen = packet.mek_generation,
-                    our_gen,
-                    "voice MEK generation mismatch — dropping + requesting exact generation"
-                );
-                self.note_mek_drop(
-                    &cid,
-                    &channel,
-                    "MEK generation mismatch",
-                    packet.mek_generation,
-                );
                 return;
             }
-            let mek = MediaEncryptionKey::from_bytes(mek_bytes, our_gen);
-            match mek.decrypt(&packet.audio_data) {
-                Ok(plaintext) => packet.audio_data = plaintext,
-                Err(e) => {
-                    tracing::trace!(error = %e, "voice MEK decrypt failed — dropping + requesting");
-                    self.note_mek_drop(&cid, &channel, "MEK decrypt failed", packet.mek_generation);
-                    return;
-                }
-            }
-        } else {
-            // 1:1 DM call. Look up the peer's call_key by sender pubkey.
-            let sender_hex = hex::encode(&packet.sender_key);
-            let key_info = self.deps.call_key_for_peer(&sender_hex);
-            let Some(info) = key_info else {
-                // W14.4 — common during the dispatch race; surfaces as
-                // info!+counter until pre-stage path fully eliminates.
-                tracing::info!(sender = %sender_hex,
-                    "1:1 voice packet from non-active-call sender — dropping");
+            Err(OpenError::WrongSender | OpenError::Rejected) => {
+                self.mek_drops += 1;
                 self.deps.record_packet_drop();
                 return;
-            };
-            match decrypt_packet_audio(&info.call_key, &packet) {
-                Ok(plaintext) => packet.audio_data = plaintext,
-                Err(e) => {
-                    // W14.4 — AEAD decrypt failure. Either tampered or
-                    // key mismatch (architectural bug if mismatch).
-                    tracing::warn!(error = %e, sender = %sender_hex,
-                        "1:1 voice AEAD decrypt failed — dropping (key mismatch or tamper)");
-                    self.deps.record_packet_drop();
-                    return;
-                }
             }
-        }
+        };
 
         self.packets_received += 1;
         let sender_key = packet.sender_key.clone();
@@ -316,7 +259,6 @@ impl VoiceReceiveLoop {
                             codec,
                             echo: SenderEcho::default(),
                             jitter_buffer: JitterBuffer::new(self.jitter_base_ms),
-                            replay_window: VoiceSeqWindow::new(),
                             is_speaking: false,
                             last_packet_time: Instant::now(),
                         },
@@ -331,19 +273,17 @@ impl VoiceReceiveLoop {
 
         let arrival_local_ms = self.local_ms();
         if let Some(participant) = self.participants.get_mut(&sender_key) {
-            // M9.3 — drop replays before the jitter buffer sees them.
-            if !participant.replay_window.check_and_insert(packet.sequence) {
-                tracing::trace!(
-                    seq = packet.sequence,
-                    "voice replay window: dropping replay/too-old packet"
-                );
-                return;
-            }
             // Remember the newest accepted packet so our next report
-            // lets this peer compute the round trip. Before `push`,
-            // which takes ownership.
-            participant.echo.observe(&packet, arrival_local_ms);
-            participant.jitter_buffer.push(packet, arrival_local_ms);
+            // lets this peer compute the round trip.
+            participant.echo.observe(packet, arrival_local_ms);
+            participant.jitter_buffer.push(
+                JitterFrame {
+                    sequence: packet.sequence,
+                    timestamp: packet.timestamp,
+                    opus,
+                },
+                arrival_local_ms,
+            );
             participant.last_packet_time = Instant::now();
             // Media-plane proof of life for the presence reconcile.
             // Wall-clock ms (`timestamp_ms`), NOT `local_ms`: the
@@ -395,12 +335,11 @@ impl VoiceReceiveLoop {
         // elapsed time.
         let now_ms = self.local_ms();
         let frame_size = self.frame_size;
-        let decode_packet = |participant: &mut ParticipantDecoder, packet: VoicePacket| {
+        let decode_packet = |participant: &mut ParticipantDecoder, packet: JitterFrame| {
             let frame = EncodedFrame {
-                data: packet.audio_data,
+                data: packet.opus,
                 timestamp: packet.timestamp,
                 sequence: packet.sequence,
-                mek_generation: packet.mek_generation,
             };
             match participant.codec.decode(&frame) {
                 Ok(decoded) => decoded.samples,

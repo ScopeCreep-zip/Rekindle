@@ -12,7 +12,6 @@ pub mod mock_node;
 use crate::frame::TypeId;
 use crate::payload::dm::{deserialize_dm, dm_type_id, serialize_dm, DmPayload};
 use crate::payload::rpc::*;
-use crate::payload::voice::VoicePayload;
 
 #[test]
 fn dm_roundtrip_direct_message() {
@@ -54,24 +53,6 @@ fn dm_roundtrip_friend_request() {
         }
         _ => panic!("wrong variant"),
     }
-}
-
-#[test]
-fn voice_payload_roundtrip() {
-    let payload = VoicePayload {
-        sender_key_hex: "deadbeef".into(),
-        sequence: 42,
-        timestamp: 1_234_567_890,
-        encrypted_audio: vec![0xAB; 100],
-        hmac: [0x42; 16],
-        signature: vec![0xCC; 64],
-    };
-    let bytes = postcard::to_stdvec(&payload).unwrap();
-    let back: VoicePayload = postcard::from_bytes(&bytes).unwrap();
-    assert_eq!(back.sender_key_hex, "deadbeef");
-    assert_eq!(back.sequence, 42);
-    assert_eq!(back.encrypted_audio.len(), 100);
-    assert_eq!(back.hmac, [0x42; 16]);
 }
 
 #[test]

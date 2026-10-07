@@ -81,10 +81,9 @@ mod tests {
         let alice_addr = hex::encode(alice_id.public_key_bytes());
         let bob_addr = hex::encode(bob_id.public_key_bytes());
 
-        // Step 1: Bob publishes a PQXDH prekey bundle (classical + ML-KEM).
-        let bob_bundle = bob_mgr
-            .generate_prekey_bundle(1, Some(100), Some(100))
-            .unwrap();
+        // Step 1: Bob hands Alice a PQXDH prekey bundle (classical + ML-KEM,
+        // with one-time keys).
+        let bob_bundle = bob_mgr.handout_bundle().unwrap();
 
         // Step 2: Alice establishes session as initiator — derives root key
         // from PQXDH (DH1..DH4 + ML-KEM encapsulation).
@@ -199,89 +198,188 @@ mod tests {
         let bob_addr = hex::encode(bob_id.public_key_bytes());
         assert!(!alice_mgr.has_session(&bob_addr).unwrap());
 
-        let bob_bundle = bob_mgr.generate_prekey_bundle(1, None, None).unwrap();
+        let bob_bundle = bob_mgr.current_bundle().unwrap();
         alice_mgr.establish_session(&bob_addr, &bob_bundle).unwrap();
 
         assert!(alice_mgr.has_session(&bob_addr).unwrap());
     }
 
-    #[test]
-    fn prekey_bundle_generation() {
-        let identity = Identity::generate();
-        let mgr = make_manager(&identity);
-
-        let bundle = mgr.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
-        assert_eq!(bundle.identity_key.len(), 32);
-        assert_eq!(bundle.signed_prekey.len(), 32);
-        assert_eq!(bundle.signed_prekey_signature.len(), 64);
-        assert!(bundle.one_time_prekey.is_some());
-        assert_eq!(bundle.one_time_prekey.as_ref().unwrap().len(), 32);
-        assert_eq!(bundle.registration_id, 1);
-
-        let bundle2 = mgr.generate_prekey_bundle(2, None, None).unwrap();
-        assert!(bundle2.one_time_prekey.is_none());
-        assert_ne!(bundle.signed_prekey, bundle2.signed_prekey);
+    /// Run the initiator half against `bundle`, then the responder half.
+    fn handshake(
+        initiator: &SignalSessionManager,
+        initiator_id: &Identity,
+        responder: &SignalSessionManager,
+        responder_id: &Identity,
+        bundle: &crate::signal::PreKeyBundle,
+    ) -> Result<(), CryptoError> {
+        let init =
+            initiator.establish_session(&hex::encode(responder_id.public_key_bytes()), bundle)?;
+        responder.respond_to_session(
+            &hex::encode(initiator_id.public_key_bytes()),
+            &initiator_id.public_key_bytes(),
+            &init.ephemeral_public_key,
+            init.signed_prekey_id,
+            init.one_time_prekey_id,
+            &init.ml_kem_ciphertext,
+            init.used_ot_pqpk_id,
+        )
     }
 
-    #[test]
-    fn load_existing_prekey_bundle_returns_none_when_empty() {
-        // P1.2 — fresh Stronghold-equivalent (Memory* store starts empty)
-        // → load_existing_prekey_bundle returns None so caller mints fresh.
-        let identity = Identity::generate();
-        let mgr = make_manager(&identity);
-        let result = mgr
-            .load_existing_prekey_bundle(1, Some(1), Some(1))
-            .unwrap();
-        assert!(result.is_none(), "empty store must return None");
-    }
-
-    #[test]
-    fn load_existing_prekey_bundle_reuses_after_generate() {
-        // P1.2 — after generate_prekey_bundle persists prekey #1 +
-        // signed_prekey #1, a subsequent load_existing_prekey_bundle
-        // must return the SAME public keys (no fresh generation).
-        let identity = Identity::generate();
-        let mgr = make_manager(&identity);
-
-        let original = mgr.generate_prekey_bundle(1, Some(1), Some(1)).unwrap();
-        let loaded = mgr
-            .load_existing_prekey_bundle(1, Some(1), Some(1))
-            .unwrap()
-            .expect("bundle must be loadable after generate");
-
-        assert_eq!(original.identity_key, loaded.identity_key);
-        assert_eq!(original.signed_prekey, loaded.signed_prekey);
-        assert_eq!(
-            original.one_time_prekey, loaded.one_time_prekey,
-            "one-time prekey must be reused, not regenerated"
+    /// Messages flow both ways over an established pair.
+    async fn assert_round_trip(
+        a: &SignalSessionManager,
+        a_id: &Identity,
+        b: &SignalSessionManager,
+        b_id: &Identity,
+    ) {
+        let (a_addr, b_addr) = (
+            hex::encode(a_id.public_key_bytes()),
+            hex::encode(b_id.public_key_bytes()),
         );
-        assert_eq!(original.registration_id, loaded.registration_id);
-        // The signature is deterministic over (identity_private,
-        // signed_prekey_public) so re-signing yields the same bytes.
-        assert_eq!(
-            original.signed_prekey_signature, loaded.signed_prekey_signature,
-            "signature must be stable across reuse"
-        );
+        let ct = a.encrypt(&b_addr, b"ping").await.unwrap();
+        assert_eq!(b.decrypt(&a_addr, &ct).await.unwrap(), b"ping");
+        let ct = b.encrypt(&a_addr, b"pong").await.unwrap();
+        assert_eq!(a.decrypt(&b_addr, &ct).await.unwrap(), b"pong");
     }
 
     #[test]
-    fn load_existing_prekey_bundle_returns_none_when_otpk_missing() {
-        // P1.2 — if the requested one-time prekey ID isn't in the
-        // store but the signed prekey is, return None so the caller
-        // re-generates rather than building a partial bundle.
+    fn bundle_shapes() {
         let identity = Identity::generate();
         let mgr = make_manager(&identity);
 
-        // Generate signed_prekey only (no OTPK).
-        let _ = mgr.generate_prekey_bundle(1, None, None).unwrap();
-        // Asking for OTPK #1 — not present.
-        let result = mgr
-            .load_existing_prekey_bundle(1, Some(1), Some(1))
-            .unwrap();
+        let current = mgr.current_bundle().unwrap();
+        assert_eq!(current.identity_key.len(), 32);
+        assert_eq!(current.signed_prekey.len(), 32);
+        assert_eq!(current.signed_prekey_signature.len(), 64);
+        assert_eq!(current.registration_id, 1);
+        assert!(current.one_time_prekey.is_none() && current.one_time_prekey_id.is_none());
+        assert!(current.pqpk_ot.is_none() && current.pqpk_ot_id.is_none());
+
+        let handout = mgr.handout_bundle().unwrap();
+        assert_eq!(handout.signed_prekey, current.signed_prekey);
+        assert_eq!(handout.pqpk_lr, current.pqpk_lr);
+        assert_eq!(handout.one_time_prekey.as_ref().map(Vec::len), Some(32));
+        assert!(handout.one_time_prekey_id.is_some_and(|id| id != 0));
+        assert!(handout.pqpk_ot_id.is_some_and(|id| id != 0));
+        assert!(handout.pqpk_ot.is_some() && handout.pqpk_ot_signature.is_some());
+
+        let next = mgr.handout_bundle().unwrap();
+        assert_ne!(next.one_time_prekey, handout.one_time_prekey);
+        assert_ne!(next.one_time_prekey_id, handout.one_time_prekey_id);
+        assert_ne!(next.pqpk_ot_id, handout.pqpk_ot_id);
+    }
+
+    /// Every handed-out bundle completes exactly once, whatever order the
+    /// handshakes arrive in, and a replay of a consumed one fails.
+    #[tokio::test]
+    async fn handouts_complete_independently() {
+        use rand::seq::SliceRandom;
+
+        let bob_id = Identity::generate();
+        let bob = make_manager(&bob_id);
+        let peers: Vec<(Identity, SignalSessionManager)> = (0..50)
+            .map(|_| {
+                let id = Identity::generate();
+                let mgr = make_manager(&id);
+                (id, mgr)
+            })
+            .collect();
+        let bundles: Vec<_> = peers
+            .iter()
+            .map(|_| bob.handout_bundle().unwrap())
+            .collect();
+
+        let mut order: Vec<usize> = (0..peers.len()).collect();
+        order.shuffle(&mut rand::rngs::OsRng);
+        let (first, rest) = order.split_at(peers.len() / 2);
+        for &i in first.iter().chain(rest) {
+            let (id, mgr) = &peers[i];
+            handshake(mgr, id, &bob, &bob_id, &bundles[i]).unwrap();
+            assert_round_trip(mgr, id, &bob, &bob_id).await;
+        }
+
+        let (id, mgr) = &peers[first[0]];
         assert!(
-            result.is_none(),
-            "missing one-time prekey must force regeneration"
+            handshake(mgr, id, &bob, &bob_id, &bundles[first[0]]).is_err(),
+            "a consumed one-time key must not be usable twice"
         );
+    }
+
+    #[test]
+    fn current_bundle_is_byte_stable() {
+        let bob_id = Identity::generate();
+        let bob = make_manager(&bob_id);
+        let before = postcard::to_stdvec(&bob.current_bundle().unwrap()).unwrap();
+        assert_eq!(
+            before,
+            postcard::to_stdvec(&bob.current_bundle().unwrap()).unwrap()
+        );
+
+        let alice_id = Identity::generate();
+        let alice = make_manager(&alice_id);
+        let handout = bob.handout_bundle().unwrap();
+        handshake(&alice, &alice_id, &bob, &bob_id, &handout).unwrap();
+
+        assert_eq!(
+            before,
+            postcard::to_stdvec(&bob.current_bundle().unwrap()).unwrap(),
+            "handouts and consumption must not touch the long-lived keys"
+        );
+    }
+
+    /// Beyond the cap the oldest unclaimed one-time keys are deleted; the
+    /// newest stay usable.
+    #[test]
+    fn eviction_keeps_newest_one_time_keys() {
+        use crate::signal::MAX_UNCLAIMED_ONE_TIME;
+
+        let bob_id = Identity::generate();
+        let bob = make_manager(&bob_id);
+        let extra = 3;
+        let bundles: Vec<_> = (0..MAX_UNCLAIMED_ONE_TIME + extra)
+            .map(|_| bob.handout_bundle().unwrap())
+            .collect();
+
+        let alice_id = Identity::generate();
+        let alice = make_manager(&alice_id);
+        for evicted in &bundles[..extra] {
+            assert!(handshake(&alice, &alice_id, &bob, &bob_id, evicted).is_err());
+        }
+        for kept in [&bundles[extra], bundles.last().unwrap()] {
+            handshake(&alice, &alice_id, &bob, &bob_id, kept).unwrap();
+        }
+    }
+
+    /// Crossing friend requests: exactly one side initiates, the other
+    /// answers, and the session works both ways.
+    #[tokio::test]
+    async fn crossing_requests_pick_one_initiator() {
+        let a_id = Identity::generate();
+        let b_id = Identity::generate();
+        let a = make_manager(&a_id);
+        let b = make_manager(&b_id);
+
+        let a_initiates = a
+            .initiates_crossing_handshake(&b_id.public_key_bytes())
+            .unwrap();
+        let b_initiates = b
+            .initiates_crossing_handshake(&a_id.public_key_bytes())
+            .unwrap();
+        assert_ne!(a_initiates, b_initiates, "exactly one side initiates");
+
+        // Each side's request carried a handout bundle.
+        let a_bundle = a.handout_bundle().unwrap();
+        let b_bundle = b.handout_bundle().unwrap();
+        if a_initiates {
+            handshake(&a, &a_id, &b, &b_id, &b_bundle).unwrap();
+        } else {
+            handshake(&b, &b_id, &a, &a_id, &a_bundle).unwrap();
+        }
+        assert_round_trip(&a, &a_id, &b, &b_id).await;
+
+        assert!(a
+            .initiates_crossing_handshake(&a_id.public_key_bytes())
+            .is_err());
     }
 
     #[tokio::test]

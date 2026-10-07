@@ -16,7 +16,7 @@ mod social;
 pub use channel::{ChannelCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
 pub use config::{ConfigCmd, ExportCmd, ImportCmd};
-pub use identity::{IdentityCmd, InitArgs, StatusArgs};
+pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
 pub use social::{DmCmd, FriendCmd, PresenceCmd};
@@ -65,6 +65,11 @@ pub struct Cli {
     /// Override Veilid storage directory.
     #[arg(long, global = true)]
     pub storage: Option<PathBuf>,
+
+    /// Never prompt; fail instead and name the flag that supplies the
+    /// input (scripts, CI).
+    #[arg(long, global = true)]
+    pub no_input: bool,
 }
 
 /// Top-level command dispatch enum.
@@ -78,6 +83,12 @@ pub enum Command {
 
     /// Show node status, identity, connectivity.
     Status(StatusArgs),
+
+    /// Unlock the daemon: load the identity and go online.
+    Unlock(UnlockArgs),
+
+    /// Lock the daemon: go offline and drop the identity's keys from memory.
+    Lock,
 
     /// Identity management.
     #[command(subcommand)]
@@ -180,21 +191,50 @@ mod tests {
     }
 
     #[test]
-    fn parse_init_non_interactive() {
+    fn parse_init_without_prompts() {
         let cli = Cli::try_parse_from([
             "rekindle",
             "init",
-            "--non-interactive",
+            "--no-input",
             "--display-name",
             "alice",
+            "--passphrase-file",
+            "-",
         ])
         .unwrap();
+        assert!(cli.no_input);
         if let Some(Command::Init(args)) = cli.command {
-            assert!(args.non_interactive);
             assert_eq!(args.display_name.as_deref(), Some("alice"));
+            assert_eq!(
+                args.passphrase_file.as_deref(),
+                Some(std::path::Path::new("-"))
+            );
         } else {
             panic!("expected Init command");
         }
+    }
+
+    #[test]
+    fn parse_unlock_and_lock() {
+        let cli = Cli::try_parse_from(["rekindle", "unlock", "--passphrase-file", "pw"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Unlock(_))));
+        let cli = Cli::try_parse_from(["rekindle", "lock"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Lock)));
+    }
+
+    #[test]
+    fn parse_destroy_confirm() {
+        let cli = Cli::try_parse_from([
+            "rekindle",
+            "identity",
+            "destroy",
+            "--confirm=DESTROY MY IDENTITY",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Identity(IdentityCmd::Destroy { confirm: Some(_) }))
+        ));
     }
 
     #[test]
@@ -360,12 +400,14 @@ mod tests {
             channel,
             muted,
             deafened,
+            watch,
         })) = cli.command
         {
             assert_eq!(community, "gaming");
             assert_eq!(channel, "voice-1");
             assert!(muted);
             assert!(!deafened);
+            assert!(!watch);
         } else {
             panic!("expected Voice Join");
         }

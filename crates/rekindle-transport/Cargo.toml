@@ -10,14 +10,15 @@ workspace = true
 
 [dependencies]
 # Workspace
-rekindle-types = { path = "../rekindle-types" }
-rekindle-codec = { path = "../rekindle-codec" }
-rekindle-utils = { path = "../rekindle-utils", features = ["retry"] }
-rekindle-events = { path = "../rekindle-events" }
-rekindle-secrets = { path = "../rekindle-secrets" }
-rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-calls = { path = "../rekindle-calls" }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-events = { path = "../rekindle-events" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-route = { path = "../rekindle-route" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }
 # Tier-5 gossip primitives. rekindle-gossip is transport-agnostic pure
 # logic ("does not call app_message itself; the integration layer plumbs
 # the broadcast helpers into Veilid") and this crate is that integration
@@ -35,45 +36,47 @@ subtle = "2"
 # both node-startup tracks. Unidirectional edge; rekindle-protocol must
 # never depend on rekindle-transport.
 rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-records = { path = "../rekindle-records" }
 
 # Veilid — the ONLY crate in the workspace that imports this
 veilid-core = { version = "0.5", default-features = true }
 
 # Async
-tokio = { workspace = true }
-futures = { workspace = true }
 async-trait = "0.1"
 backoff = "0.4"
+futures = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
 
 # Serialization — postcard for wire, serde for trait bounds
+postcard = { version = "1", features = [ "use-std" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-postcard = { version = "1", features = ["use-std"] }
 
 # Crypto
-ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
-x25519-dalek = { version = "2", features = ["static_secrets"] }
 aes-gcm = "0.10"
-hkdf = "0.12"
-sha2 = "0.10"
 blake3 = "1"
+ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
+hkdf = "0.12"
 rand = { workspace = true }
-zeroize = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+x25519-dalek = { version = "2", features = [ "static_secrets" ] }
+zeroize = { version = "1", features = [ "derive" ] }
 
 # Data structures
-parking_lot = { workspace = true }
+bitflags = { version = "2", features = [ "serde" ] }
 indexmap = "2"
-bitflags = { version = "2", features = ["serde"] }
+parking_lot = { workspace = true }
 
 # Identity generation
-uuid = { version = "1", features = ["v4", "fast-rng"] }
+uuid = { version = "1", features = [ "v4", "fast-rng" ] }
 
 # Logging
-tracing = { workspace = true }
-thiserror = { workspace = true }
 hex = "0.4"
+thiserror = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util", "macros"] }
-tempfile = "3"
 proptest = "1"
+tempfile = "3"
+tokio = { workspace = true, features = [ "test-util", "macros" ] }

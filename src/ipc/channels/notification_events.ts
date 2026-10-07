@@ -66,7 +66,8 @@ export type NotificationSubscriptionEvent = { notification: NotificationEvent };
  *
  * Was a standalone `NetworkStatusEvent`; it is now the
  * `attachmentChanged` variant of Tier 1's `NetworkEvent`, which gained
- * `attachmentState` and `hasRoute` to carry what this already had.
+ * `attachmentState` and `hasRoute` to carry what this already had, and
+ * `mediaRoute` for the media-class route voice needs (plan C7.9c).
  */
 export type NetworkEvent =
   | {
@@ -75,6 +76,7 @@ export type NetworkEvent =
         isAttached: boolean;
         publicInternetReady: boolean;
         hasRoute: boolean;
+        mediaRoute: RouteAvailability;
       };
     }
   | { localRoutesDied: { count: number } }
@@ -86,10 +88,18 @@ export type NetworkEvent =
 
 export type NetworkSubscriptionEvent = { network: NetworkEvent };
 
+/**
+ * What one of our route classes is doing (Rust `RouteAvailability`).
+ * Voice and video need the media route; the general route is never
+ * substituted for it.
+ */
+export type RouteAvailability = "idle" | "allocating" | "available" | "unavailable" | "failed";
+
 /** Shape the network indicator reads, whatever variant arrived. */
 export interface NetworkStatusEvent {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
   hasRoute: boolean;
+  mediaRoute: RouteAvailability;
 }

@@ -4,32 +4,19 @@
 //! categories, members, event_rsvps, slowmode) are loaded in a single
 //! `db_call` round-trip via [`fetch_community_loader_rows`].
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::state::ChannelType;
+use rekindle_db::Db;
+
+pub use rekindle_db::repo::communities::CommunityRow;
+pub use rekindle_db::repo::members::ProfileRow as MemberRow;
 
 // ── community-load row DTOs ──
 //
 // Typed structs replace the long tuples that used to live in this query
 // fan-out. Each one mirrors the SELECT columns exactly so query helpers
 // can be small and named.
-
-pub struct CommunityRow {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub icon_hash: Option<String>,
-    pub banner_hash: Option<String>,
-    pub my_role_ids_json: String,
-    pub dht_owner_keypair: Option<String>,
-    pub my_pseudonym_key: Option<String>,
-    pub mek_generation: u64,
-    pub member_registry_key: Option<String>,
-    pub my_subkey_index: Option<u32>,
-    pub my_segment_index: Option<u32>,
-    pub onboarding_complete: bool,
-    pub presence_policy_json: Option<String>,
-}
 
 pub struct ChannelRow {
     pub id: String,
@@ -69,18 +56,6 @@ pub struct CategoryRow {
     pub sort_order: i32,
 }
 
-pub struct MemberRow {
-    pub community_id: String,
-    pub pseudonym_key: String,
-    pub display_name: Option<String>,
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
-    pub theme_color: Option<i64>,
-    pub badges_json: String,
-    pub avatar_ref: Option<String>,
-    pub banner_ref: Option<String>,
-}
-
 pub struct EventRsvpRow {
     pub community_id: String,
     pub event_id: String,
@@ -101,52 +76,6 @@ pub struct CommunityLoaderRows {
     pub members: Vec<MemberRow>,
     pub event_rsvps: Vec<EventRsvpRow>,
     pub slowmode: Vec<SlowmodeRow>,
-}
-
-fn load_community_rows(
-    conn: &rusqlite::Connection,
-    owner_key: &str,
-) -> rusqlite::Result<Vec<CommunityRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
-         c.my_role_ids, c.dht_owner_keypair, c.my_pseudonym_key, c.mek_generation, \
-         c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
-         COALESCE(cm.onboarding_complete, 0), c.presence_policy \
-         FROM communities c \
-         LEFT JOIN community_members cm \
-           ON cm.owner_key = c.owner_key \
-          AND cm.community_id = c.id \
-          AND cm.pseudonym_key = c.my_pseudonym_key \
-         WHERE c.owner_key = ?1",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
-        Ok(CommunityRow {
-            id: db::get_str(row, "id"),
-            name: db::get_str(row, "name"),
-            description: db::get_str_opt(row, "description"),
-            icon_hash: db::get_str_opt(row, "icon_hash"),
-            banner_hash: db::get_str_opt(row, "banner_hash"),
-            my_role_ids_json: db::get_str(row, "my_role_ids"),
-            dht_owner_keypair: db::get_str_opt(row, "dht_owner_keypair"),
-            my_pseudonym_key: db::get_str_opt(row, "my_pseudonym_key"),
-            mek_generation: row
-                .get::<_, i64>("mek_generation")
-                .unwrap_or(0)
-                .cast_unsigned(),
-            member_registry_key: db::get_str_opt(row, "member_registry_key"),
-            my_subkey_index: row
-                .get::<_, Option<i64>>("my_subkey_index")
-                .unwrap_or(None)
-                .map(|v| u32::try_from(v).unwrap_or(0)),
-            my_segment_index: row
-                .get::<_, Option<i64>>("my_segment_index")
-                .unwrap_or(None)
-                .map(|v| u32::try_from(v).unwrap_or(0)),
-            onboarding_complete: row.get::<_, i64>(12).unwrap_or(0) != 0,
-            presence_policy_json: db::get_str_opt(row, "presence_policy"),
-        })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
 }
 
 fn load_role_rows(conn: &rusqlite::Connection, owner_key: &str) -> rusqlite::Result<Vec<RoleRow>> {
@@ -216,7 +145,16 @@ fn load_channel_rows(
             id: db::get_str(row, "id"),
             community_id: db::get_str(row, "community_id"),
             name: db::get_str(row, "name"),
-            channel_type: row.get::<_, ChannelType>("channel_type")?,
+            // No ToSql/FromSql impl for ChannelType itself: it's now an
+            // alias for rekindle_types::channel::ChannelKind (orphan
+            // rule — neither the trait nor the type is local once it's
+            // not src-tauri's own enum). Read as text and parse,
+            // matching the fallback convention already used at the
+            // other two ChannelType parse sites in this crate.
+            channel_type: row
+                .get::<_, String>("channel_type")?
+                .parse()
+                .unwrap_or(ChannelType::Text),
             category_id: db::get_str_opt(row, "category_id"),
             topic: db::get_str(row, "topic"),
             slowmode_seconds: row
@@ -237,39 +175,6 @@ fn load_channel_rows(
             notification_level: row.get::<_, i64>("notification_level").unwrap_or(0),
             notification_sound_ref: db::get_str_opt(row, "notification_sound_ref"),
             parent_voice_channel_id: db::get_str_opt(row, "parent_voice_channel_id"),
-        })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-}
-
-fn load_member_rows(
-    conn: &rusqlite::Connection,
-    owner_key: &str,
-) -> rusqlite::Result<Vec<MemberRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT community_id, pseudonym_key, display_name, bio, pronouns, theme_color, badges,
-                avatar_ref, banner_ref
-         FROM community_members WHERE owner_key = ?1",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
-        Ok(MemberRow {
-            community_id: db::get_str(row, "community_id"),
-            pseudonym_key: db::get_str(row, "pseudonym_key"),
-            display_name: row
-                .get::<_, Option<String>>("display_name")
-                .unwrap_or_default(),
-            bio: row.get::<_, Option<String>>("bio").unwrap_or_default(),
-            pronouns: row.get::<_, Option<String>>("pronouns").unwrap_or_default(),
-            theme_color: row.get::<_, Option<i64>>("theme_color").unwrap_or_default(),
-            badges_json: row
-                .get::<_, String>("badges")
-                .unwrap_or_else(|_| "[]".into()),
-            avatar_ref: row
-                .get::<_, Option<String>>("avatar_ref")
-                .unwrap_or_default(),
-            banner_ref: row
-                .get::<_, Option<String>>("banner_ref")
-                .unwrap_or_default(),
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -313,17 +218,17 @@ fn load_slowmode_rows(
 /// Run the seven SELECT queries in a single connection trip and return
 /// row DTOs grouped by table.
 pub async fn fetch_community_loader_rows(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
 ) -> Result<CommunityLoaderRows, String> {
     let ok = owner_key.to_string();
     db_call(pool, move |conn| {
         Ok(CommunityLoaderRows {
-            communities: load_community_rows(conn, &ok)?,
+            communities: rekindle_db::repo::communities::load_all(conn, &ok)?,
             channels: load_channel_rows(conn, &ok)?,
             roles: load_role_rows(conn, &ok)?,
             categories: load_category_rows(conn, &ok)?,
-            members: load_member_rows(conn, &ok)?,
+            members: rekindle_db::repo::members::load_profiles(conn, &ok)?,
             event_rsvps: load_event_rsvp_rows(conn, &ok)?,
             slowmode: load_slowmode_rows(conn, &ok)?,
         })

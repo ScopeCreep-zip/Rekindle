@@ -272,11 +272,13 @@ pub async fn reconcile_from_presence(
         let plan = compute_roster_reconcile(&channel_id, &my_pk, &roster, &rows, &media_live);
         let refreshes =
             compute_blob_refreshes(&channel_id, &my_pk, &current_blobs, &rows, &media_live);
-        let reannounce =
-            compute_route_reannounce(&channel_id, &my_pk, &roster, &rows, &media_live);
+        let reannounce = compute_route_reannounce(&channel_id, &my_pk, &roster, &rows, &media_live);
         (plan, refreshes, reannounce)
     };
-    if plan.add.is_empty() && plan.remove.is_empty() && refreshes.is_empty() && reannounce.is_empty()
+    if plan.add.is_empty()
+        && plan.remove.is_empty()
+        && refreshes.is_empty()
+        && reannounce.is_empty()
     {
         return;
     }
@@ -376,14 +378,17 @@ pub async fn reconcile_from_presence(
         // leg 2; count it the same way and complete leg 3. Without
         // this, two peers who both missed each other's join gossip sit
         // at `handshake-announced` forever and media-ready never opens.
-        for add in &plan.add {
-            let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
-                channel_id: channel_id.clone(),
-                joiner_pseudonym: add.pseudonym_hex.clone(),
-                display_name: deps.my_display_name(),
-                route_blob: deps.our_route_blob(),
-            });
-            deps.send_to_channel(community_id, &channel_id, &ack);
+        // Without a media route there is nothing to introduce us by.
+        if let Some(route_blob) = deps.our_media_route_blob() {
+            for add in &plan.add {
+                let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+                    channel_id: channel_id.clone(),
+                    joiner_pseudonym: add.pseudonym_hex.clone(),
+                    display_name: deps.my_display_name(),
+                    route_blob: route_blob.clone(),
+                });
+                deps.send_to_channel(community_id, &channel_id, &ack);
+            }
         }
         if transport.lock().await.advance_handshake_seen() {
             let first = &plan.add[0];
@@ -426,12 +431,16 @@ pub async fn reconcile_from_presence(
     // Idempotent (a route upsert), fire-and-forget, self-limiting: once
     // the peer holds our route and streams back, media_live drops them
     // from this set.
+    // Nothing to re-announce without a media route.
+    let Some(our_route) = deps.our_media_route_blob() else {
+        return;
+    };
     for peer in &reannounce {
         let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
             channel_id: channel_id.clone(),
             joiner_pseudonym: peer.clone(),
             display_name: deps.my_display_name(),
-            route_blob: deps.our_route_blob(),
+            route_blob: our_route.clone(),
         });
         deps.send_to_channel(community_id, &channel_id, &ack);
         tracing::info!(

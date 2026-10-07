@@ -8,24 +8,22 @@ description = "Voice chat engine with Opus codec for Rekindle"
 workspace = true
 
 [dependencies]
-tokio = { workspace = true }
-bytes = { workspace = true }
-tracing = { workspace = true }
-thiserror = { workspace = true }
-serde = { workspace = true }
-opus = "0.3"
-cpal = "0.15"
-dasp_sample = "0.11"
-nnnoiseless = "0.5"
 aec3 = "0.1"
 bincode = "1"
+bytes = { workspace = true }
+cpal = "0.15"
+dasp_sample = "0.11"
 ed25519-dalek = "2"
-# Wave 13 W13.14 — AEAD audio encryption under the X25519-ECDH-derived
-# call_key for 1:1 calls. Architecture §10.10 mandates audio be
-# encrypted under call_key; previously only signed (Veilid private
-# routes encrypted at transport, but exposed if a relay node compromised
-# or a route blob leaked).
-chacha20poly1305 = "0.10"
+nnnoiseless = "0.5"
+opus = "0.3"
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+# RFC 9605 SFrame (media_crypto) — every voice frame is sealed under
+# its sender's key, for calls and community channels alike.
+rekindle-secrets = { path = "../rekindle-secrets" }
+zeroize = { version = "1", features = [ "derive" ] }
 # Phase 14 additions: election module needs BLAKE3 + hex; voice session
 # deps trait + adapter wiring need async-trait.
 async-trait = "0.1"
@@ -34,13 +32,13 @@ hex = { workspace = true }
 # Media-plane liveness ledger (liveness.rs) — sync interior mutability
 # shared across the send/receive loops and the signaling adapter.
 parking_lot = { workspace = true }
-# Phase 14.g — community voice MEK encryption (send_loop / receive_loop).
-rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-utils = { path = "../rekindle-utils" }
 # Phase 14.k — voice signaling handlers need protocol envelope types
 # (CommunityEnvelope / ControlPayload) + permission bit constants.
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-types = { path = "../rekindle-types" }
+tokio-util = "0.7"
 # The single RFC 3550 / RFC 3611 reception model. The jitter buffer used
 # to carry its own copy of the interarrival estimator; one estimator,
 # read by both the adaptive target and the receiver report.
@@ -49,7 +47,7 @@ rekindle-media-stats = { path = "../rekindle-media-stats" }
 [dev-dependencies]
 # Phase 7 Week 26 — voice latency benchmark (architecture line 4147,
 # target <100ms mouth-to-ear).
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.5", features = [ "html_reports" ] }
 
 [[bench]]
 name = "latency"

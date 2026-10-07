@@ -2,19 +2,19 @@
 //!
 //! Pure SQL aggregations now live in the `rekindle-analytics` crate.
 //! This module wraps the crate's `&Connection`-taking compute fns with
-//! `DbPool` + AppState/owner-key resolution + voice/member event
+//! `Db` + AppState/owner-key resolution + voice/member event
 //! loggers (db_fire fire-and-forget inserts).
 
 use rekindle_types::analytics::CommunityAnalytics;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn compute_community_analytics(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
 ) -> Result<CommunityAnalytics, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -55,7 +55,7 @@ pub async fn compute_community_analytics(
 /// current monotonic timestamp; this is fire-and-forget — analytics
 /// can tolerate dropped log entries.
 pub fn log_voice_join(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     community_id: &str,
     channel_id: &str,
@@ -65,7 +65,7 @@ pub fn log_voice_join(
 }
 
 pub fn log_voice_leave(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     community_id: &str,
     channel_id: &str,
@@ -82,7 +82,7 @@ pub fn log_voice_leave(
 }
 
 fn log_voice_event(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     community_id: &str,
     channel_id: &str,
@@ -106,7 +106,7 @@ fn log_voice_event(
 }
 
 /// Append a member-leave event to the analytics log.
-pub fn log_member_leave(pool: &DbPool, owner_key: &str, community_id: &str, pseudonym: &str) {
+pub fn log_member_leave(pool: &Db, owner_key: &str, community_id: &str, pseudonym: &str) {
     let owner = owner_key.to_string();
     let cid = community_id.to_string();
     let pse = pseudonym.to_string();

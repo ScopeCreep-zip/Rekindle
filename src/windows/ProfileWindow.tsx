@@ -11,6 +11,7 @@ import { commands } from "../ipc/commands";
 import { handleRemoveFriend } from "../actions/buddy.actions";
 import { handleStartDmCall } from "../actions/calls.actions";
 import { ICON_SEND, ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_VIDEO } from "../icons";
+import { startEventStream } from "../ipc/channels";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -25,6 +26,7 @@ const ProfileWindow: Component = () => {
   onMount(() => {
     hydrateState();
     unlistenPresence = subscribeProfilePresenceEvents(publicKey);
+    void startEventStream();
   });
 
   onCleanup(() => {
@@ -99,7 +101,7 @@ const ProfileWindow: Component = () => {
           <div class="profile-actions">
             <button
               class="form-btn-secondary"
-              onClick={() => commands.openChatWindow(publicKey, displayName())}
+              onClick={() => commands.openChatWindow(publicKey)}
             >
               <span class="nf-icon">{ICON_SEND}</span> Send Message
             </button>

@@ -4,18 +4,16 @@
 //! preserved so existing E2E test imports continue to work via the
 //! `pub use` re-export from `commands::auth`.
 
-use std::sync::Arc;
-
 use rekindle_vault::VaultKey;
-use rusqlite::OptionalExtension as _;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
 use crate::state::{IdentityState, SharedState, UserStatus};
+use rekindle_db::Db;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,23 +22,14 @@ pub struct LoginResult {
     pub display_name: String,
 }
 
-#[derive(Debug)]
-pub struct IdentityDhtColumns {
-    pub existing_dht_key: Option<String>,
-    pub existing_friend_list_key: Option<String>,
-    pub dht_owner_keypair: Option<String>,
-    pub friend_list_owner_keypair: Option<String>,
-    pub account_dht_key: Option<String>,
-    pub account_owner_keypair: Option<String>,
-    pub mailbox_dht_key: Option<String>,
-}
+pub use rekindle_db::repo::identity::IdentityDhtColumns;
 
 pub async fn create_identity_core(
     config_dir: &std::path::Path,
     passphrase: &str,
     display_name: Option<String>,
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     keystore_handle: &KeystoreHandle,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(LoginResult, [u8; 32]), String> {
@@ -55,7 +44,7 @@ pub async fn create_identity_core(
     let secret_bytes = *identity.secret_key_bytes();
     let display_name = display_name
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| format!("User_{}", &public_key[..8]));
+        .unwrap_or_else(|| format!("User_{}", rekindle_utils::text::prefix(&public_key, 8)));
     let now = db::timestamp_now();
 
     let keystore = StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)
@@ -69,11 +58,7 @@ pub async fn create_identity_core(
     let pk = public_key.clone();
     let dn = display_name.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "INSERT INTO identity (public_key, display_name, created_at) VALUES (?, ?, ?)",
-            rusqlite::params![pk, dn, now],
-        )?;
-        Ok(())
+        rekindle_db::repo::identity::insert(conn, &pk, &dn, now)
     })
     .await?;
 
@@ -109,7 +94,7 @@ pub async fn create_identity_core(
 async fn initialize_audit_chain(
     app_handle: Option<&tauri::AppHandle>,
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     keystore: &KeystoreHandle,
     owner_key: &str,
 ) {
@@ -139,7 +124,7 @@ pub async fn login_core(
     public_key: &str,
     passphrase: &str,
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     keystore_handle: &KeystoreHandle,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(LoginResult, [u8; 32], IdentityDhtColumns), String> {
@@ -149,42 +134,10 @@ pub async fn login_core(
 
     let pk_query = public_key.to_string();
     let (display_name, dht_cols) = db_call(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT display_name, dht_record_key, friend_list_dht_key, \
-                     dht_owner_keypair, friend_list_owner_keypair, \
-                     account_dht_key, account_owner_keypair, mailbox_dht_key \
-                     FROM identity WHERE public_key = ?1",
-        )?;
-        let row = stmt
-            .query_row(rusqlite::params![pk_query], |row| {
-                Ok((
-                    row.get::<_, String>("display_name").unwrap_or_default(),
-                    IdentityDhtColumns {
-                        existing_dht_key: row.get::<_, Option<String>>("dht_record_key")?,
-                        existing_friend_list_key: row
-                            .get::<_, Option<String>>("friend_list_dht_key")?,
-                        dht_owner_keypair: row.get::<_, Option<String>>("dht_owner_keypair")?,
-                        friend_list_owner_keypair: row
-                            .get::<_, Option<String>>("friend_list_owner_keypair")?,
-                        account_dht_key: row.get::<_, Option<String>>("account_dht_key")?,
-                        account_owner_keypair: row
-                            .get::<_, Option<String>>("account_owner_keypair")?,
-                        mailbox_dht_key: row.get::<_, Option<String>>("mailbox_dht_key")?,
-                    },
-                ))
-            })
-            .optional()?
-            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
-        Ok(row)
+        rekindle_db::repo::identity::login_row(conn, &pk_query)
     })
-    .await
-    .map_err(|e| {
-        if e.contains("Query returned no rows") {
-            "no identity found — please create one first".to_string()
-        } else {
-            e
-        }
-    })?;
+    .await?
+    .ok_or_else(|| "no identity found — please create one first".to_string())?;
 
     let keystore = StrongholdKeystore::initialize_for_identity(config_dir, public_key, passphrase)
         .map_err(|e| {
@@ -228,7 +181,6 @@ pub async fn login_core(
     crate::community_loader::load_friends_from_db(pool, state, public_key).await?;
     crate::community_loader::load_communities_from_db(pool, state, public_key).await?;
     services::community::hydrate_peer_reliability(state, pool).await;
-    services::community::start_peer_reliability_flush(Arc::clone(state), pool.clone());
 
     crate::community_loader::restore_community_pseudonyms_and_meks(
         state,

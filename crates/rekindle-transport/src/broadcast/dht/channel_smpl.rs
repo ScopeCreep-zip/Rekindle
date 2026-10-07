@@ -29,7 +29,9 @@ use crate::broadcast::node::TransportNode;
 use crate::error::{Result, TransportError};
 use crate::payload::dht_types::ChannelMessage;
 
-/// Append a message to our own slot in a channel segment record.
+/// Append a message to our own slot in a channel segment record: `Stored`
+/// at consensus, or `Held` by the record pool, which re-pushes it until it
+/// lands (plan C7.13).
 pub async fn write_message(
     node: &TransportNode,
     channel_key: &str,
@@ -38,16 +40,14 @@ pub async fn write_message(
     author_pseudonym: PseudonymKey,
     signing_key: &ed25519_dalek::SigningKey,
     message: &ChannelMessage,
-) -> Result<()> {
+) -> Result<channel_record::AppendOutcome> {
     let writer = writer_keypair_str
         .parse::<veilid_core::KeyPair>()
         .map_err(|e| TransportError::DhtError {
             reason: format!("invalid slot keypair: {e}"),
         })?;
-    let dht = node.dht()?;
-    let mgr = rekindle_protocol::dht::DHTManager::new(dht.routing_context().clone());
     channel_record::write_member_message(
-        &mgr,
+        &*node.require_records()?,
         channel_key,
         slot_index,
         writer,
@@ -61,19 +61,29 @@ pub async fn write_message(
     })
 }
 
-/// Read every member's messages from one channel segment record.
+/// Read every member's messages from one channel segment record, each
+/// with the subkey it was written to — the subkey is part of the body's
+/// AAD, so a reader that drops it cannot decrypt.
 ///
-/// Returns them sorted by `(lamport_ts, sender_pseudonym)` — the same
-/// deterministic total order the desktop reader applies, so two peers
-/// render one conversation identically.
-pub async fn read_messages(
-    rc: &veilid_core::RoutingContext,
+/// Only `member_slots` (the writer index) are read (plan C7.12). Sorted by
+/// `(lamport_ts, subkey)`, the reader's deterministic order.
+pub async fn read_message_items(
+    pool: &rekindle_protocol::dht::pool::RecordPool,
     channel_key: &str,
-    member_count: u32,
-) -> Result<Vec<ChannelMessage>> {
-    channel_record::read_all_channel_messages(rc, channel_key, member_count)
+    member_slots: &[u32],
+) -> Result<Vec<(u32, ChannelMessage)>> {
+    let items = channel_record::read_all_channel_entries(pool, channel_key, member_slots)
         .await
         .map_err(|e| TransportError::DhtError {
             reason: format!("channel SMPL read: {e}"),
+        })?;
+    Ok(items
+        .into_iter()
+        .filter_map(|item| match item.entry {
+            channel_record::ChannelRecordEntry::Message(message) => {
+                Some((item.subkey_index, message))
+            }
+            _ => None,
         })
+        .collect())
 }

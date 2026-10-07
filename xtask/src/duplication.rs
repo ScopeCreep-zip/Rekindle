@@ -186,7 +186,7 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          representable.",
     ),
     (
-        &["rekindle-cli::ChannelEntry", "rekindle-types::ChannelEntry"],
+        &["rekindle-tui::ChannelEntry", "rekindle-types::ChannelEntry"],
         "Tier 1's is the channel *log* entry — the enum of things \
          written to a channel record (Message with MEK ciphertext, \
          reactions, edits). The CLI's is a TUI row: id, name, kind, \
@@ -194,8 +194,8 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          'channel'; the CLI's should probably be `ChannelTreeRow`.",
     ),
     (
-        &["rekindle (src-tauri)::Message", "rekindle-node::Message"],
-        "rekindle-node's is the generic IPC envelope `Message<T>` — \
+        &["rekindle (src-tauri)::Message", "rekindle-ipc::Message"],
+        "rekindle-ipc's is the generic IPC envelope `Message<T>` — \
          wire version, UUIDv7 id, correlation id, dual clock, \
          classification. src-tauri's is a chat message DTO for the \
          frontend. Same word, different layers of the stack.",
@@ -211,12 +211,12 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     ),
     (
         &[
-            "rekindle (src-tauri)::PendingFriendRequest",
+            "rekindle-db::PendingFriendRequest",
             "rekindle-transport::PendingFriendRequest",
         ],
         "Two stages of one flow. transport's is what arrives over the \
          wire — profile DHT key and route blob, needed to answer. \
-         src-tauri's is what the UI lists — public key, display name, \
+         rekindle-db's is what the UI lists — public key, display name, \
          message, `received_at`. Merging would put routing data in a \
          view model.",
     ),

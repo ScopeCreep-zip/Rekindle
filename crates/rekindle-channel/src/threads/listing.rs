@@ -47,7 +47,7 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
         dto.auto_archive_seconds = u32::try_from(thread.auto_archive_seconds).unwrap_or(u32::MAX);
 
         let (last_lamport, last_activity, message_count) =
-            thread_activity(deps, thread.record_key.as_deref()).await?;
+            thread_activity(deps, community_id, thread.record_key.as_deref()).await?;
         dto.last_message_at = last_activity;
         dto.message_count = message_count;
         dto.archived = is_thread_archived(

@@ -6,13 +6,15 @@ use std::time::Instant;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::codec::EncodedFrame;
 use crate::error::VoiceError;
 
 mod packet;
 
-use packet::encrypt_audio;
-pub use packet::{decrypt_packet_audio, VoicePacket};
+pub use packet::{OutboundFrame, VoicePacket};
+
+/// One-byte media tag a voice packet travels under on `app_message`, so
+/// ingress can tell it from envelopes and receiver reports (`b'R'`).
+pub const VOICE_PACKET_TAG: u8 = b'V';
 
 /// Voice channel operating mode.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,8 +43,8 @@ pub enum VoiceMode {
 /// stability) — anonymous on every voice frame, never Unsafe.
 #[async_trait]
 pub trait VoiceFrameSender: Send + Sync {
-    /// Ship already-built wire bytes (signed + optionally AEAD-encrypted
-    /// packet, `b'V'`-tagged) to the peer reachable via `route_blob`.
+    /// Ship already-built wire bytes (a signed SFrame packet, `b'V'`-tagged)
+    /// to the peer reachable via `route_blob`.
     async fn send_voice_frame(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), VoiceError>;
 }
 
@@ -64,12 +66,6 @@ pub struct VoiceTransport {
     /// community_id (or identity secret alone for 1:1 calls). Cleared on
     /// disconnect so a stale key can't sign packets after channel exit.
     signing_key: Option<ed25519_dalek::SigningKey>,
-    /// Wave 13 W13.14 — optional AEAD key for audio encryption.
-    /// `Some(call_key)` for 1:1 DM calls (X25519 ECDH derived). For
-    /// community voice, the per-channel MEK is applied at a higher
-    /// layer in `services/voice/send_loop.rs`, so this stays None and
-    /// audio_data passes through unmodified.
-    call_key: Option<[u8; 32]>,
     /// Connected peers: pseudonym_key (hex) → roster entry.
     peers: HashMap<String, VoicePeer>,
     /// Current operating mode.
@@ -143,7 +139,6 @@ impl VoiceTransport {
             sender: None,
             sender_key: Vec::new(),
             signing_key: None,
-            call_key: None,
             peers: HashMap::new(),
             mode: VoiceMode::default(),
             handshake: JoinHandshake::default(),
@@ -179,20 +174,10 @@ impl VoiceTransport {
         false
     }
 
-    /// Wave 13 W13.14 — install the AEAD call_key for 1:1 DM calls so
-    /// every outbound packet's `audio_data` is ChaCha20-Poly1305
-    /// encrypted under the X25519-ECDH-derived shared key.
-    /// Architecture §10.10 mandate. Receivers verify the signature
-    /// against the (encrypted) audio_data, then decrypt.
-    pub fn set_call_key(&mut self, call_key: [u8; 32]) {
-        self.call_key = Some(call_key);
-    }
-
-    /// Get the installed call_key (for the receive path which decrypts
-    /// after signature verify). Returns None for community voice or
-    /// when no call has set up a key yet.
-    pub fn call_key(&self) -> Option<[u8; 32]> {
-        self.call_key
+    /// The key this transport signs packets with (pseudonym for a
+    /// channel, identity for a call).
+    pub fn sender_key(&self) -> &[u8] {
+        &self.sender_key
     }
 
     /// Initialize the transport with a frame-sender backend and sender
@@ -364,7 +349,7 @@ impl VoiceTransport {
     /// Broadcast an encoded audio frame to ALL connected peers (mesh mode).
     ///
     /// Returns a list of (pseudonym_key, error) for any failed sends.
-    pub async fn broadcast(&self, frame: &EncodedFrame) -> Vec<(String, VoiceError)> {
+    pub async fn broadcast(&self, frame: &OutboundFrame) -> Vec<(String, VoiceError)> {
         let data = match self.build_packet_data(frame) {
             Ok(d) => d,
             Err(e) => return vec![("*".into(), e)],
@@ -423,7 +408,7 @@ impl VoiceTransport {
     pub async fn send_to_peer(
         &self,
         pseudonym_key: &str,
-        frame: &EncodedFrame,
+        frame: &OutboundFrame,
     ) -> Result<(), VoiceError> {
         let data = self.build_packet_data(frame)?;
         self.send_bytes_to_peer(pseudonym_key, data).await
@@ -460,7 +445,7 @@ impl VoiceTransport {
     /// roster holds one peer, a mesh roster holds all of them, and the
     /// partial-failure rule is what keeps one dead route from silencing
     /// a call for everyone else.
-    pub async fn send(&self, frame: &EncodedFrame) -> Result<(), VoiceError> {
+    pub async fn send(&self, frame: &OutboundFrame) -> Result<(), VoiceError> {
         if self.peers.is_empty() {
             return Err(VoiceError::NotConnected);
         }
@@ -482,38 +467,19 @@ impl VoiceTransport {
         self.sender = None;
         self.sender_key.clear();
         self.signing_key = None;
-        self.call_key = None;
         self.mode = VoiceMode::default();
         self.handshake = JoinHandshake::default();
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
     }
 
-    /// Deserialize an incoming voice packet from raw bytes and verify
-    /// its Ed25519 signature against `sender_key`. Architecture §10.3 +
-    /// §26 W26 — packets with missing or invalid signatures are
-    /// rejected (returns `VoiceError::Transport`).
-    ///
-    /// Expects data WITHOUT the `b'V'` type tag prefix — the dispatch loop
-    /// should strip the tag before calling this.
+    /// Decode an incoming voice packet (bytes after the `b'V'` tag) and
+    /// verify its signature against `sender_key`. Decryption happens in
+    /// the receiving loop, which knows the session's keys.
     pub fn receive(data: &[u8]) -> Result<VoicePacket, VoiceError> {
-        let packet: VoicePacket =
-            bincode::deserialize(data).map_err(|e| VoiceError::Transport(format!("{e}")))?;
-        let sig_arr: [u8; 64] = packet
-            .signature
-            .as_slice()
-            .try_into()
-            .map_err(|_| VoiceError::Transport("voice packet signature length".into()))?;
-        let sender_arr: [u8; 32] = packet
-            .sender_key
-            .as_slice()
-            .try_into()
-            .map_err(|_| VoiceError::Transport("voice packet sender_key length".into()))?;
-        use ed25519_dalek::{Signature, VerifyingKey};
-        let vk = VerifyingKey::from_bytes(&sender_arr)
-            .map_err(|e| VoiceError::Transport(format!("voice packet sender_key invalid: {e}")))?;
-        let sig = Signature::from_bytes(&sig_arr);
-        vk.verify_strict(&packet.signing_bytes(), &sig)
-            .map_err(|e| VoiceError::Transport(format!("voice packet signature: {e}")))?;
+        let packet = VoicePacket::decode(data).map_err(|e| VoiceError::Transport(e.to_string()))?;
+        packet
+            .verify()
+            .map_err(|e| VoiceError::Transport(e.to_string()))?;
         Ok(packet)
     }
 
@@ -527,48 +493,25 @@ impl VoiceTransport {
         &self.channel_id
     }
 
-    /// Build the wire-format packet data from an encoded frame.
-    ///
-    /// Wave 13 W13.14 — for 1:1 DM calls (`call_key` installed), the
-    /// Opus payload is AEAD-encrypted under ChaCha20-Poly1305 with a
-    /// deterministic per-packet nonce derived from `(sequence,
-    /// timestamp)`. The 16-byte tag is appended; receivers reconstruct
-    /// the same nonce and verify+decrypt. For community voice
-    /// (`call_key.is_none()`), the audio_data passes through and the
-    /// per-channel MEK applied at a higher layer remains the encryption.
-    fn build_packet_data(&self, frame: &EncodedFrame) -> Result<Vec<u8>, VoiceError> {
+    /// Sign `frame` as a packet from this transport's sender and frame it
+    /// with the voice tag.
+    fn build_packet_data(&self, frame: &OutboundFrame) -> Result<Vec<u8>, VoiceError> {
         let signing_key = self
             .signing_key
             .as_ref()
             .ok_or_else(|| VoiceError::Transport("voice signing key not installed".into()))?;
-
-        // W13.14 — encrypt audio_data with ChaCha20-Poly1305 if a
-        // call_key is installed.
-        let audio_data = if let Some(key) = self.call_key.as_ref() {
-            encrypt_audio(key, frame.sequence, frame.timestamp, &frame.data)?
-        } else {
-            frame.data.clone()
-        };
-
         let mut packet = VoicePacket {
             sender_key: self.sender_key.clone(),
             sequence: frame.sequence,
             timestamp: frame.timestamp,
-            audio_data,
-            mek_generation: frame.mek_generation,
-            signature: Vec::new(),
+            transport_seq: frame.transport_seq,
+            sframe: frame.sframe.clone(),
+            sig: Vec::new(),
         };
-        use ed25519_dalek::Signer;
-        let sig = signing_key.sign(&packet.signing_bytes());
-        packet.signature = sig.to_bytes().to_vec();
-
-        let payload =
-            bincode::serialize(&packet).map_err(|e| VoiceError::Transport(format!("{e}")))?;
-
-        // Prepend voice type tag (b'V') so the dispatch loop can distinguish
-        // voice packets from chat messages and community broadcasts.
+        packet.sign(signing_key);
+        let payload = packet.encode();
         let mut data = Vec::with_capacity(1 + payload.len());
-        data.push(b'V');
+        data.push(VOICE_PACKET_TAG);
         data.extend_from_slice(&payload);
         Ok(data)
     }

@@ -48,11 +48,17 @@ pub(super) fn handle_stage_update(
     let cid = community_id.to_string();
     {
         let deps_task = Arc::clone(deps);
-        let handle = tokio::spawn(async move {
-            reconcile_stage_transport(&*deps_task, &cid, &channel_id, &transport, &my_pseudonym)
+        deps.scope()
+            .spawn_or_drop("voice stage update", async move {
+                reconcile_stage_transport(
+                    &*deps_task,
+                    &cid,
+                    &channel_id,
+                    &transport,
+                    &my_pseudonym,
+                )
                 .await;
-        });
-        deps.register_background_handle(handle);
+            });
     }
 }
 
@@ -89,10 +95,10 @@ pub(super) fn handle_speak_response(
         let deps_persist = Arc::clone(deps);
         let cid = community_id.to_string();
         let ch_id = channel_id.clone();
-        let handle = tokio::spawn(async move {
-            deps_persist.persist_hand_raise(cid, ch_id, false).await;
-        });
-        deps.register_background_handle(handle);
+        deps.scope()
+            .spawn_or_drop("voice speak response", async move {
+                deps_persist.persist_hand_raise(cid, ch_id, false).await;
+            });
 
         if granted {
             deps.set_voice_engine_muted(false);
@@ -178,7 +184,7 @@ pub async fn request_to_speak<D: VoiceSignalingDeps + ?Sized>(
         .ok_or_else(|| VoiceError::Session("no pseudonym for community".into()))?;
     deps.persist_hand_raise(community_id.to_string(), channel_id.to_string(), true)
         .await;
-    let lamport = deps.next_lamport(community_id);
+    let lamport = deps.next_lamport(community_id)?;
     let envelope = CommunityEnvelope::Control(ControlPayload::SpeakRequest {
         channel_id: channel_id.to_string(),
         requester_pseudonym,
@@ -214,7 +220,7 @@ pub async fn respond_to_speak_request<D: VoiceSignalingDeps + ?Sized>(
         .await;
     }
 
-    let lamport = deps.next_lamport(community_id);
+    let lamport = deps.next_lamport(community_id)?;
     let response = CommunityEnvelope::Control(ControlPayload::SpeakResponse {
         channel_id: channel_id.to_string(),
         requester_pseudonym: requester_pseudonym.to_string(),
@@ -234,7 +240,7 @@ pub async fn respond_to_speak_request<D: VoiceSignalingDeps + ?Sized>(
             topic: None,
             speakers,
             moderator_pseudonym,
-            lamport: lamport.saturating_add(1),
+            lamport: deps.next_lamport(community_id)?,
         });
         deps.send_to_mesh(community_id, &stage_update);
     }

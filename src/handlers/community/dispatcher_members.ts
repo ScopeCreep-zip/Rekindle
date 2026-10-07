@@ -210,6 +210,14 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
     return;
   }
 
+  if ("segmentsChanged" in g) {
+    const { community, segments } = g.segmentsChanged;
+    if (communityState.communities[community]) {
+      setCommunityState("communities", community, "segments", segments);
+    }
+    return;
+  }
+
   if ("channelsChanged" in g) {
     const { community, channels, categories } = g.channelsChanged;
     const c = communityState.communities[community];

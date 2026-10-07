@@ -1,36 +1,29 @@
-//! Stronghold-backed Signal Protocol storage (B7/D4 — P0.1 + P0.5 + P1.2).
+//! Vault-backed Signal Protocol storage.
 //!
 //! Each store wraps the rekindle-crypto Memory* implementation as an
-//! in-memory cache and writes through to Stronghold via the `keystore.rs`
-//! delegate helpers. Reads stay fast (HashMap lookup); writes hit
-//! Stronghold synchronously so a crash mid-write doesn't lose state.
+//! in-memory cache and writes through to `rekindle-vault` via the
+//! `keystore` helpers. Reads hit the cache; writes and deletes reach the
+//! vault before returning Ok, so a crash mid-write doesn't lose state.
 //!
-//! Why src-tauri and not rekindle-crypto: Stronghold is a Tauri-shell
-//! concern. rekindle-crypto stays pure-crypto with no iota_stronghold
-//! dependency, which keeps the security boundary small and lets the
-//! crate be reused by future non-Tauri surfaces.
-//!
-//! Vulnerable-user safety stance (`feedback_vulnerable_users_no_creative_paths`):
-//! every write reaches Stronghold before returning Ok. We do NOT buffer
-//! writes in memory and flush "later" — that's a fallback path an attacker
-//! can exploit by killing the process between the in-memory write and the
-//! disk flush. Fail-closed: if Stronghold rejects a write we surface the
-//! error so the caller decides whether to proceed.
+//! Fail-closed (vulnerable-user stance): a locked vault or a rejected
+//! read, write or delete is an error, never a silently skipped persist —
+//! an attacker who can kill the process between an in-memory write and a
+//! later flush must not be able to roll keys or trust decisions back.
 
 use std::sync::Arc;
 
-use parking_lot::Mutex;
-
 use rekindle_crypto::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
-use rekindle_crypto::signal::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};
+use rekindle_crypto::signal::{
+    MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore, PQ_LR_ID, SPK_ID,
+};
 use rekindle_crypto::CryptoError;
 
 use crate::keystore::{
-    delete_signal_pq_secret, delete_signal_prekey, delete_signal_session, list_signal_prekey_ids,
-    list_signal_sessions, load_signal_pq_secret, load_signal_prekey, load_signal_session,
-    load_signal_signed_prekey, load_trusted_identity, persist_signal_pq_secret,
-    persist_signal_prekey, persist_signal_session, persist_signal_signed_prekey,
-    persist_trusted_identity, KeystoreHandle,
+    delete_signal_pq_one_time, delete_signal_prekey, delete_signal_session,
+    list_signal_pq_one_time_ids, list_signal_prekey_ids, list_signal_sessions,
+    load_signal_pq_secret, load_signal_prekey, load_signal_session, load_signal_signed_prekey,
+    load_trusted_identity, persist_signal_pq_secret, persist_signal_prekey, persist_signal_session,
+    persist_signal_signed_prekey, persist_trusted_identity, KeystoreHandle,
 };
 
 /// Stronghold-backed identity key store with TOFU on save_identity.
@@ -95,84 +88,100 @@ impl IdentityKeyStore for StrongholdIdentityStore {
         // Always update both layers. Stronghold first; if it fails we
         // refuse to update the cache (otherwise the cache would diverge
         // from disk).
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            persist_trusted_identity(keystore, address, identity_key)
-                .map_err(CryptoError::storage)?;
+        {
+            let ks = self.keystore.lock();
+            let vault = ks.as_ref().ok_or(CryptoError::VaultLocked)?;
+            persist_trusted_identity(vault, address, identity_key).map_err(CryptoError::storage)?;
         }
-        drop(ks);
         self.cache.save_identity(address, identity_key)
     }
 }
 
-/// Stronghold-backed prekey store with write-through cache.
+/// Vault-backed prekey store with a write-through in-memory cache.
+///
+/// Every key is primed at construction, so reads are cache-only. Writes and
+/// deletes reach the vault first and fail when it is locked or rejects them.
 pub struct StrongholdPreKeyStore {
     keystore: KeystoreHandle,
-    cache: Arc<Mutex<MemoryPreKeyStore>>,
-    primed: Mutex<bool>,
+    cache: MemoryPreKeyStore,
 }
 
 impl StrongholdPreKeyStore {
-    pub fn new(keystore: KeystoreHandle) -> Self {
-        let store = Self {
-            keystore,
-            cache: Arc::new(Mutex::new(MemoryPreKeyStore::new())),
-            primed: Mutex::new(false),
-        };
-        store.prime_from_stronghold();
-        store
+    /// Load every persisted prekey into the cache. Fails if the vault is
+    /// locked or any read fails.
+    pub fn new(keystore: KeystoreHandle) -> Result<Self, CryptoError> {
+        let cache = MemoryPreKeyStore::new();
+        {
+            let ks = keystore.lock();
+            let vault = ks.as_ref().ok_or(CryptoError::VaultLocked)?;
+            prime_prekeys(vault, &cache)?;
+        }
+        Ok(Self { keystore, cache })
     }
 
-    /// Load every persisted prekey + signed prekey into the in-memory cache
-    /// so subsequent reads stay fast. Called once at construction.
-    fn prime_from_stronghold(&self) {
+    /// Run `op` against the unlocked vault, mapping its error.
+    fn with_vault(
+        &self,
+        op: impl FnOnce(&crate::keystore::StrongholdKeystore) -> Result<(), String>,
+    ) -> Result<(), CryptoError> {
         let ks = self.keystore.lock();
-        let Some(keystore) = ks.as_ref() else { return };
-        let cache = self.cache.lock();
-        for prekey_id in list_signal_prekey_ids(keystore) {
-            if let Some(data) = load_signal_prekey(keystore, prekey_id) {
-                let _ = cache.store_prekey(prekey_id, &data);
-            }
-        }
-        // Signed prekeys: there's no index yet (signed prekey rotation is
-        // single-slot per generation, so we attempt id 1 explicitly — the
-        // common case after `generate_prekey_bundle(1, Some(1))` in auth.rs).
-        if let Some(data) = load_signal_signed_prekey(keystore, 1) {
-            let _ = cache.store_signed_prekey(1, &data);
-        }
-        *self.primed.lock() = true;
+        let vault = ks.as_ref().ok_or(CryptoError::VaultLocked)?;
+        op(vault).map_err(CryptoError::storage)
     }
+}
+
+/// Copy the signed prekey, the PQ last-resort key and every indexed
+/// one-time key from the vault into `cache`, oldest first. An indexed id
+/// whose key is gone was consumed by a delete that stopped before its
+/// index update; the index entry is removed to finish that delete.
+fn prime_prekeys(
+    vault: &crate::keystore::StrongholdKeystore,
+    cache: &MemoryPreKeyStore,
+) -> Result<(), CryptoError> {
+    if let Some(data) = load_signal_signed_prekey(vault, SPK_ID).map_err(CryptoError::storage)? {
+        cache.store_signed_prekey(SPK_ID, &data)?;
+    }
+    if let Some(data) =
+        load_signal_pq_secret(vault, PQ_LR_ID, true).map_err(CryptoError::storage)?
+    {
+        cache.store_pq_secret(PQ_LR_ID, PqKeyKind::LastResort, &data)?;
+    }
+    for id in list_signal_prekey_ids(vault).map_err(CryptoError::storage)? {
+        match load_signal_prekey(vault, id).map_err(CryptoError::storage)? {
+            Some(data) => cache.store_prekey(id, &data)?,
+            None => delete_signal_prekey(vault, id).map_err(CryptoError::storage)?,
+        }
+    }
+    for id in list_signal_pq_one_time_ids(vault).map_err(CryptoError::storage)? {
+        match load_signal_pq_secret(vault, id, false).map_err(CryptoError::storage)? {
+            Some(data) => cache.store_pq_secret(id, PqKeyKind::OneTime, &data)?,
+            None => delete_signal_pq_one_time(vault, id).map_err(CryptoError::storage)?,
+        }
+    }
+    Ok(())
 }
 
 impl PreKeyStore for StrongholdPreKeyStore {
     fn load_prekey(&self, prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        let cache = self.cache.lock();
-        cache.load_prekey(prekey_id)
+        self.cache.load_prekey(prekey_id)
     }
 
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            persist_signal_prekey(keystore, prekey_id, key_data).map_err(CryptoError::storage)?;
-        }
-        drop(ks);
-        let cache = self.cache.lock();
-        cache.store_prekey(prekey_id, key_data)
+        self.with_vault(|v| persist_signal_prekey(v, prekey_id, key_data))?;
+        self.cache.store_prekey(prekey_id, key_data)
     }
 
     fn remove_prekey(&self, prekey_id: u32) -> Result<(), CryptoError> {
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            delete_signal_prekey(keystore, prekey_id);
-        }
-        drop(ks);
-        let cache = self.cache.lock();
-        cache.remove_prekey(prekey_id)
+        self.with_vault(|v| delete_signal_prekey(v, prekey_id))?;
+        self.cache.remove_prekey(prekey_id)
+    }
+
+    fn list_prekey_ids(&self) -> Result<Vec<u32>, CryptoError> {
+        self.cache.list_prekey_ids()
     }
 
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        let cache = self.cache.lock();
-        cache.load_signed_prekey(signed_prekey_id)
+        self.cache.load_signed_prekey(signed_prekey_id)
     }
 
     fn store_signed_prekey(
@@ -180,14 +189,8 @@ impl PreKeyStore for StrongholdPreKeyStore {
         signed_prekey_id: u32,
         key_data: &[u8],
     ) -> Result<(), CryptoError> {
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            persist_signal_signed_prekey(keystore, signed_prekey_id, key_data)
-                .map_err(CryptoError::storage)?;
-        }
-        drop(ks);
-        let cache = self.cache.lock();
-        cache.store_signed_prekey(signed_prekey_id, key_data)
+        self.with_vault(|v| persist_signal_signed_prekey(v, signed_prekey_id, key_data))?;
+        self.cache.store_signed_prekey(signed_prekey_id, key_data)
     }
 
     fn load_pq_secret(
@@ -195,20 +198,7 @@ impl PreKeyStore for StrongholdPreKeyStore {
         prekey_id: u32,
         kind: PqKeyKind,
     ) -> Result<Option<Vec<u8>>, CryptoError> {
-        if let Some(bytes) = self.cache.lock().load_pq_secret(prekey_id, kind)? {
-            return Ok(Some(bytes));
-        }
-        let ks = self.keystore.lock();
-        let last_resort = matches!(kind, PqKeyKind::LastResort);
-        let Some(keystore) = ks.as_ref() else {
-            return Ok(None);
-        };
-        let from_disk = load_signal_pq_secret(keystore, prekey_id, last_resort);
-        drop(ks);
-        if let Some(ref bytes) = from_disk {
-            let _ = self.cache.lock().store_pq_secret(prekey_id, kind, bytes);
-        }
-        Ok(from_disk)
+        self.cache.load_pq_secret(prekey_id, kind)
     }
 
     fn store_pq_secret(
@@ -217,90 +207,78 @@ impl PreKeyStore for StrongholdPreKeyStore {
         kind: PqKeyKind,
         key_data: &[u8],
     ) -> Result<(), CryptoError> {
-        let last_resort = matches!(kind, PqKeyKind::LastResort);
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            persist_signal_pq_secret(keystore, prekey_id, last_resort, key_data)
-                .map_err(CryptoError::storage)?;
-        }
-        drop(ks);
-        self.cache.lock().store_pq_secret(prekey_id, kind, key_data)
+        let last_resort = kind == PqKeyKind::LastResort;
+        self.with_vault(|v| persist_signal_pq_secret(v, prekey_id, last_resort, key_data))?;
+        self.cache.store_pq_secret(prekey_id, kind, key_data)
     }
 
     fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<(), CryptoError> {
-        let last_resort = matches!(kind, PqKeyKind::LastResort);
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            delete_signal_pq_secret(keystore, prekey_id, last_resort);
+        // The last-resort key is rotated, never consumed (trait contract).
+        if kind == PqKeyKind::LastResort {
+            return Ok(());
         }
-        drop(ks);
-        self.cache.lock().remove_pq_secret(prekey_id, kind)
+        self.with_vault(|v| delete_signal_pq_one_time(v, prekey_id))?;
+        self.cache.remove_pq_secret(prekey_id, kind)
+    }
+
+    fn list_pq_one_time_ids(&self) -> Result<Vec<u32>, CryptoError> {
+        self.cache.list_pq_one_time_ids()
     }
 }
 
-/// Stronghold-backed session store with write-through cache.
+/// Vault-backed session store with a write-through in-memory cache.
 pub struct StrongholdSessionStore {
     keystore: KeystoreHandle,
-    cache: Arc<Mutex<MemorySessionStore>>,
+    cache: MemorySessionStore,
 }
 
 impl StrongholdSessionStore {
-    pub fn new(keystore: KeystoreHandle) -> Self {
-        let store = Self {
-            keystore,
-            cache: Arc::new(Mutex::new(MemorySessionStore::new())),
-        };
-        store.prime_from_stronghold();
-        store
-    }
-
-    fn prime_from_stronghold(&self) {
-        let ks = self.keystore.lock();
-        let Some(keystore) = ks.as_ref() else { return };
-        let cache = self.cache.lock();
-        for peer_address in list_signal_sessions(keystore) {
-            if let Some(data) = load_signal_session(keystore, &peer_address) {
-                let _ = cache.store_session(&peer_address, &data);
+    /// Load every persisted session into the cache. Fails if the vault is
+    /// locked or any read fails.
+    pub fn new(keystore: KeystoreHandle) -> Result<Self, CryptoError> {
+        let cache = MemorySessionStore::new();
+        {
+            let ks = keystore.lock();
+            let vault = ks.as_ref().ok_or(CryptoError::VaultLocked)?;
+            for peer in list_signal_sessions(vault).map_err(CryptoError::storage)? {
+                if let Some(data) = load_signal_session(vault, &peer) {
+                    cache.store_session(&peer, &data)?;
+                }
             }
         }
+        Ok(Self { keystore, cache })
     }
 }
 
 impl SessionStore for StrongholdSessionStore {
     fn load_session(&self, address: &str) -> Result<Option<Vec<u8>>, CryptoError> {
-        let cache = self.cache.lock();
-        cache.load_session(address)
+        self.cache.load_session(address)
     }
 
     fn store_session(&self, address: &str, session_data: &[u8]) -> Result<(), CryptoError> {
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            persist_signal_session(keystore, address, session_data)
-                .map_err(CryptoError::storage)?;
+        {
+            let ks = self.keystore.lock();
+            let vault = ks.as_ref().ok_or(CryptoError::VaultLocked)?;
+            persist_signal_session(vault, address, session_data).map_err(CryptoError::storage)?;
         }
-        drop(ks);
-        let cache = self.cache.lock();
-        cache.store_session(address, session_data)
+        self.cache.store_session(address, session_data)
     }
 
     fn has_session(&self, address: &str) -> Result<bool, CryptoError> {
-        let cache = self.cache.lock();
-        cache.has_session(address)
+        self.cache.has_session(address)
     }
 
     fn delete_session(&self, address: &str) -> Result<(), CryptoError> {
-        let ks = self.keystore.lock();
-        if let Some(keystore) = ks.as_ref() {
-            delete_signal_session(keystore, address);
+        {
+            let ks = self.keystore.lock();
+            let vault = ks.as_ref().ok_or(CryptoError::VaultLocked)?;
+            delete_signal_session(vault, address).map_err(CryptoError::storage)?;
         }
-        drop(ks);
-        let cache = self.cache.lock();
-        cache.delete_session(address)
+        self.cache.delete_session(address)
     }
 
     fn list_sessions(&self) -> Result<Vec<String>, CryptoError> {
-        let cache = self.cache.lock();
-        cache.list_sessions()
+        self.cache.list_sessions()
     }
 }
 
@@ -344,7 +322,7 @@ impl rekindle_crypto::signal::SessionPersistence for VaultSessionStore {
         tokio::task::spawn_blocking(move || {
             let ks = keystore.lock();
             match ks.as_ref() {
-                Some(k) => Ok(load_signal_session(k, &peer)),
+                Some(k) => Ok(load_signal_session(k, &peer).map(|session| session.to_vec())),
                 None => Err(CryptoError::VaultLocked),
             }
         })
@@ -377,6 +355,7 @@ mod tests {
     //! restart (simulated as keystore-close-and-reopen).
 
     use super::*;
+    use parking_lot::Mutex;
     use rekindle_crypto::signal::{SessionCache, SessionPersistence};
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -496,5 +475,61 @@ mod tests {
             matches!(load_err, CryptoError::VaultLocked),
             "expected VaultLocked from load, got {load_err:?}",
         );
+    }
+
+    /// One-time keys survive a reopen in insertion order, consumed keys
+    /// stay gone, and a locked vault is an error rather than a skipped
+    /// write.
+    #[test]
+    fn prekey_store_persists_order_and_fails_closed() {
+        let dir = TempDir::new().unwrap();
+        let keystore = crate::keystore::StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        let handle: KeystoreHandle = Arc::new(Mutex::new(Some(keystore)));
+
+        let store = StrongholdPreKeyStore::new(handle.clone()).unwrap();
+        for (id, byte) in [(5, 5u8), (3, 3), (9, 9)] {
+            store.store_prekey(id, &[byte; 32]).unwrap();
+        }
+        store.remove_prekey(3).unwrap();
+        for (id, byte) in [(8, 8u8), (7, 7)] {
+            store
+                .store_pq_secret(id, PqKeyKind::OneTime, &[byte; 4])
+                .unwrap();
+        }
+        store
+            .store_pq_secret(PQ_LR_ID, PqKeyKind::LastResort, b"lr")
+            .unwrap();
+        store.store_signed_prekey(SPK_ID, &[1; 32]).unwrap();
+        drop(store);
+
+        let reopened = StrongholdPreKeyStore::new(handle.clone()).unwrap();
+        assert_eq!(reopened.list_prekey_ids().unwrap(), vec![5, 9]);
+        assert_eq!(reopened.list_pq_one_time_ids().unwrap(), vec![8, 7]);
+        assert_eq!(reopened.load_prekey(9).unwrap(), Some(vec![9; 32]));
+        assert_eq!(reopened.load_prekey(3).unwrap(), None);
+        assert_eq!(
+            reopened
+                .load_pq_secret(PQ_LR_ID, PqKeyKind::LastResort)
+                .unwrap(),
+            Some(b"lr".to_vec())
+        );
+        assert_eq!(
+            reopened.load_signed_prekey(SPK_ID).unwrap(),
+            Some(vec![1; 32])
+        );
+
+        handle.lock().take();
+        assert!(matches!(
+            reopened.store_prekey(1, &[0; 32]),
+            Err(CryptoError::VaultLocked)
+        ));
+        assert!(matches!(
+            reopened.remove_prekey(5),
+            Err(CryptoError::VaultLocked)
+        ));
+        assert!(matches!(
+            StrongholdPreKeyStore::new(handle),
+            Err(CryptoError::VaultLocked)
+        ));
     }
 }

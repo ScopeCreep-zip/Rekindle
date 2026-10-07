@@ -15,7 +15,7 @@ use crate::pacer::{PacedFrame, VideoPacer};
 /// Cadence of the structured pacer summary log (Phase 7 anchor).
 const SUMMARY_INTERVAL_MS: u64 = 5_000;
 
-/// Run the pacer until `shutdown_rx` fires or the frame channel
+/// Run the pacer until `stop` is cancelled or the frame channel
 /// closes. `now_ms` comes from `rekindle_utils::timestamp_ms` so the
 /// pure pacer stays clock-free.
 pub async fn run_video_pacer<D: VideoDeps>(
@@ -23,7 +23,7 @@ pub async fn run_video_pacer<D: VideoDeps>(
     mut frame_rx: tokio::sync::mpsc::Receiver<PacedFrame>,
     mut rate_rx: tokio::sync::watch::Receiver<u32>,
     share_tx: tokio::sync::watch::Sender<u32>,
-    mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
+    stop: tokio_util::sync::CancellationToken,
 ) {
     let mut pacer = VideoPacer::new(*rate_rx.borrow());
     let mut last_summary_ms = rekindle_utils::timestamp_ms();
@@ -37,7 +37,7 @@ pub async fn run_video_pacer<D: VideoDeps>(
         let wait = pacer.next_poll_in_ms(now);
         tokio::select! {
             biased;
-            _ = shutdown_rx.recv() => {
+            () = stop.cancelled() => {
                 tracing::info!(target: "rekindle_video::pacer", "video pacer shutting down");
                 break;
             }
@@ -134,7 +134,7 @@ mod tests {
         let envelopes = (0..fragments)
             .map(|i| {
                 CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
-                    channel_id: "ch1".into(),
+                    channel_id: "11111111111111111111111111111111".into(),
                     stream_id: [sid; 16],
                     frame_seq: seq,
                     frag_index: u8::try_from(i).unwrap(),
@@ -151,7 +151,7 @@ mod tests {
             .collect();
         PacedFrame {
             community_id: "c1".into(),
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: [sid; 16],
             frame_seq: seq,
             keyframe: true,
@@ -169,14 +169,14 @@ mod tests {
         let (frame_tx, frame_rx) = tokio::sync::mpsc::channel(8);
         let (_rate_tx, rate_rx) = tokio::sync::watch::channel(350u32);
         let (share_tx, share_rx) = tokio::sync::watch::channel(crate::START_PAYLOAD_SHARE_Q10);
-        let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
+        let stop = tokio_util::sync::CancellationToken::new();
 
         let task = tokio::spawn(run_video_pacer(
             Arc::clone(&deps),
             frame_rx,
             rate_rx,
             share_tx,
-            shutdown_rx,
+            stop.clone(),
         ));
 
         frame_tx.send(paced_frame(1, 3)).await.unwrap();
@@ -223,7 +223,7 @@ mod tests {
         // 4,000 payload / (4,000 + 1,400) wire = 758 in Q10.
         assert_eq!(*share_rx.borrow(), 758);
 
-        shutdown_tx.send(()).await.unwrap();
+        stop.cancel();
         task.await.unwrap();
     }
 }

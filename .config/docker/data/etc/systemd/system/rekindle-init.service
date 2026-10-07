@@ -1,9 +1,9 @@
 [Unit]
 Description=Rekindle identity initialization (first boot only)
-After=network-online.target gnome-keyring.service rekindle-node.service
+After=network-online.target gnome-keyring.service rekindled.service
 Wants=network-online.target
-Requires=gnome-keyring.service rekindle-node.service
-ConditionPathExists=!/home/rekindle/.local/state/rekindle/session.json
+Requires=gnome-keyring.service rekindled.service
+ConditionPathExists=!/home/rekindle/.local/share/com.rekindle.app/state/session.json
 
 [Service]
 Type=oneshot

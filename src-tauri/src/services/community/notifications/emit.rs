@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::level::resolve_notification_level;
 use super::quiet_hours::{is_do_not_disturb_active, is_quiet_hours_active};
@@ -15,7 +15,7 @@ use super::{CleartextMentions, NotificationDecision, NotificationLevel};
 
 pub async fn should_emit_message_notification(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     sender_pseudonym_hex: &str,
@@ -74,7 +74,7 @@ pub async fn should_emit_message_notification(
 pub async fn emit_message_notification(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     sender_pseudonym: &str,

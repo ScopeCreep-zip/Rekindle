@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use ed25519_dalek::SigningKey;
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::id::ChannelId;
 
 use crate::error::{Result, TransportError};
 
@@ -98,10 +100,11 @@ struct CachedMek {
 
 /// Unified MEK cache. Single source of truth, replaces the old dual cache.
 ///
-/// Key: `(community_id, channel_id)`. For community-wide MEK, use empty
-/// string as channel_id.
+/// Key: `(community_id, KeyScope)`, with every retained generation per
+/// scope, oldest first. The community-wide key is `KeyScope::Community`;
+/// no channel string stands in for it.
 pub struct MekCache {
-    entries: HashMap<(String, String), Vec<CachedMek>>,
+    entries: HashMap<(String, KeyScope), Vec<CachedMek>>,
 }
 
 impl MekCache {
@@ -111,10 +114,19 @@ impl MekCache {
         }
     }
 
+    fn generations_mut(&mut self, community_id: &str, scope: KeyScope) -> &mut Vec<CachedMek> {
+        self.entries
+            .entry((community_id.to_string(), scope))
+            .or_default()
+    }
+
+    fn generations(&self, community_id: &str, scope: KeyScope) -> Option<&Vec<CachedMek>> {
+        self.entries.get(&(community_id.to_string(), scope))
+    }
+
     /// Store a MEK at a specific generation. Deduplicates by generation.
-    pub fn insert(&mut self, community_id: &str, channel_id: &str, mek: Mek) {
-        let key = (community_id.to_string(), channel_id.to_string());
-        let generations = self.entries.entry(key).or_default();
+    pub fn insert(&mut self, community_id: &str, scope: KeyScope, mek: Mek) {
+        let generations = self.generations_mut(community_id, scope);
         let gen = mek.generation();
         if !generations.iter().any(|cm| cm.mek.generation() == gen) {
             generations.push(CachedMek {
@@ -137,12 +149,9 @@ impl MekCache {
     /// Callers use this only after deciding the incoming key wins, via
     /// `rekindle_mek_rotation::convergence::incoming_wins_same_generation`.
     /// The decision stays out of this type on purpose — a cache should
-    /// not arbitrate protocol conflicts — but the inputs are no longer
-    /// out of reach: `Mek` is now the canonical key and carries its own
-    /// `election_rank`, so a caller can compare without a side table.
-    pub fn replace_generation(&mut self, community_id: &str, channel_id: &str, mek: Mek) {
-        let key = (community_id.to_string(), channel_id.to_string());
-        let generations = self.entries.entry(key).or_default();
+    /// not arbitrate protocol conflicts.
+    pub fn replace_generation(&mut self, community_id: &str, scope: KeyScope, mek: Mek) {
+        let generations = self.generations_mut(community_id, scope);
         let gen = mek.generation();
         if let Some(existing) = generations.iter_mut().find(|cm| cm.mek.generation() == gen) {
             existing.mek = mek;
@@ -156,25 +165,44 @@ impl MekCache {
         generations.sort_by_key(|cm| cm.mek.generation());
     }
 
-    /// Get the current (latest generation) MEK for a channel.
-    pub fn current(&self, community_id: &str, channel_id: &str) -> Option<&Mek> {
-        self.entries
-            .get(&(community_id.to_string(), channel_id.to_string()))
+    /// The scope's current (latest generation) MEK.
+    pub fn current(&self, community_id: &str, scope: KeyScope) -> Option<&Mek> {
+        self.generations(community_id, scope)
             .and_then(|gens| gens.last())
             .map(|cm| &cm.mek)
     }
 
-    /// Get a specific generation MEK for a channel.
+    /// When the scope's current MEK was cached.
+    pub fn current_since(&self, community_id: &str, scope: KeyScope) -> Option<Instant> {
+        self.generations(community_id, scope)
+            .and_then(|gens| gens.last())
+            .map(|cm| cm.cached_at)
+    }
+
+    /// The scope's MEK at exactly `generation`.
     pub fn get_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
     ) -> Option<&Mek> {
-        self.entries
-            .get(&(community_id.to_string(), channel_id.to_string()))
+        self.generations(community_id, scope)
             .and_then(|gens| gens.iter().find(|cm| cm.mek.generation() == generation))
             .map(|cm| &cm.mek)
+    }
+
+    /// Every channel of `community_id` holding a key of its own.
+    pub fn channels(&self, community_id: &str) -> Vec<ChannelId> {
+        let mut channels: Vec<ChannelId> = self
+            .entries
+            .keys()
+            .filter_map(|(cid, scope)| match scope {
+                KeyScope::Channel(channel) if cid == community_id => Some(*channel),
+                _ => None,
+            })
+            .collect();
+        channels.sort_by_key(|channel| channel.0);
+        channels
     }
 
     /// Remove all MEKs for a community.
@@ -190,26 +218,32 @@ impl MekCache {
     /// Point-in-time snapshot of cached MEKs for a community.
     ///
     /// Returns display-ready data suitable for `rekindle key mek list`
-    /// and the TUI dashboard. Sorted by channel then generation.
+    /// and the TUI dashboard. Community key first, then channels, each by
+    /// generation.
     pub fn snapshot(&self, community_id: &str) -> Vec<MekCacheEntrySnapshot> {
-        let mut result: Vec<MekCacheEntrySnapshot> = self
+        let mut rows: Vec<(KeyScope, MekCacheEntrySnapshot)> = self
             .entries
             .iter()
             .filter(|((cid, _), _)| cid == community_id)
-            .flat_map(|((_, channel_id), entries)| {
-                entries.iter().map(move |cm| MekCacheEntrySnapshot {
-                    channel_id: channel_id.clone(),
-                    generation: cm.mek.generation(),
-                    age_secs: cm.cached_at.elapsed().as_secs(),
+            .flat_map(|((_, scope), entries)| {
+                entries.iter().map(move |cm| {
+                    (
+                        *scope,
+                        MekCacheEntrySnapshot {
+                            channel_id: scope.wire_channel(),
+                            generation: cm.mek.generation(),
+                            age_secs: cm.cached_at.elapsed().as_secs(),
+                        },
+                    )
                 })
             })
             .collect();
-        result.sort_by(|a, b| {
-            a.channel_id
-                .cmp(&b.channel_id)
+        rows.sort_by(|(a_scope, a), (b_scope, b)| {
+            scope_order(*a_scope)
+                .cmp(&scope_order(*b_scope))
                 .then(a.generation.cmp(&b.generation))
         });
-        result
+        rows.into_iter().map(|(_, row)| row).collect()
     }
 
     /// Total number of cached MEK entries across all communities.
@@ -217,9 +251,17 @@ impl MekCache {
         self.entries.values().map(Vec::len).sum()
     }
 
-    /// Number of unique (community, channel) pairs with cached MEKs.
+    /// Number of unique (community, scope) pairs with cached MEKs.
     pub fn channel_count(&self) -> usize {
         self.entries.len()
+    }
+}
+
+/// Sort key for snapshots: the community key, then channels by id.
+fn scope_order(scope: KeyScope) -> (u8, [u8; 16]) {
+    match scope {
+        KeyScope::Community => (0, [0; 16]),
+        KeyScope::Channel(channel) => (1, channel.0),
     }
 }
 
@@ -235,16 +277,20 @@ pub use rekindle_types::display::MekCacheEntrySnapshot;
 #[cfg(test)]
 mod cache_tests {
     use super::{Mek, MekCache};
+    use rekindle_types::channel_keys::KeyScope;
+    use rekindle_types::id::ChannelId;
+
+    const CH: KeyScope = KeyScope::Channel(ChannelId([7; 16]));
 
     /// `insert` is idempotent by generation — the property every
     /// re-delivery path relies on.
     #[test]
     fn insert_keeps_the_first_key_at_a_generation() {
         let mut cache = MekCache::new();
-        cache.insert("c", "ch", Mek::from_bytes([1; 32], 3));
-        cache.insert("c", "ch", Mek::from_bytes([2; 32], 3));
+        cache.insert("c", CH, Mek::from_bytes([1; 32], 3));
+        cache.insert("c", CH, Mek::from_bytes([2; 32], 3));
         assert_eq!(
-            cache.get_generation("c", "ch", 3).unwrap().as_bytes(),
+            cache.get_generation("c", CH, 3).unwrap().as_bytes(),
             &[1; 32]
         );
     }
@@ -255,10 +301,10 @@ mod cache_tests {
     #[test]
     fn replace_generation_overwrites_at_the_same_generation() {
         let mut cache = MekCache::new();
-        cache.insert("c", "ch", Mek::from_bytes([1; 32], 3));
-        cache.replace_generation("c", "ch", Mek::from_bytes([2; 32], 3));
+        cache.insert("c", CH, Mek::from_bytes([1; 32], 3));
+        cache.replace_generation("c", CH, Mek::from_bytes([2; 32], 3));
         assert_eq!(
-            cache.get_generation("c", "ch", 3).unwrap().as_bytes(),
+            cache.get_generation("c", CH, 3).unwrap().as_bytes(),
             &[2; 32]
         );
     }
@@ -268,8 +314,8 @@ mod cache_tests {
     #[test]
     fn replace_generation_inserts_when_absent() {
         let mut cache = MekCache::new();
-        cache.replace_generation("c", "ch", Mek::from_bytes([7; 32], 9));
-        assert_eq!(cache.current("c", "ch").unwrap().generation(), 9);
+        cache.replace_generation("c", CH, Mek::from_bytes([7; 32], 9));
+        assert_eq!(cache.current("c", CH).unwrap().generation(), 9);
     }
 
     /// Replacing must not disturb the retained older generations that
@@ -277,17 +323,37 @@ mod cache_tests {
     #[test]
     fn replace_generation_leaves_other_generations_intact() {
         let mut cache = MekCache::new();
-        cache.insert("c", "ch", Mek::from_bytes([1; 32], 1));
-        cache.insert("c", "ch", Mek::from_bytes([2; 32], 2));
-        cache.replace_generation("c", "ch", Mek::from_bytes([9; 32], 2));
+        cache.insert("c", CH, Mek::from_bytes([1; 32], 1));
+        cache.insert("c", CH, Mek::from_bytes([2; 32], 2));
+        cache.replace_generation("c", CH, Mek::from_bytes([9; 32], 2));
         assert_eq!(
-            cache.get_generation("c", "ch", 1).unwrap().as_bytes(),
+            cache.get_generation("c", CH, 1).unwrap().as_bytes(),
             &[1; 32]
         );
         assert_eq!(
-            cache.get_generation("c", "ch", 2).unwrap().as_bytes(),
+            cache.get_generation("c", CH, 2).unwrap().as_bytes(),
             &[9; 32]
         );
-        assert_eq!(cache.current("c", "ch").unwrap().generation(), 2);
+        assert_eq!(cache.current("c", CH).unwrap().generation(), 2);
+    }
+
+    /// The community key and a channel key never share an entry.
+    #[test]
+    fn community_and_channel_scopes_are_distinct() {
+        let mut cache = MekCache::new();
+        cache.insert("c", KeyScope::Community, Mek::from_bytes([1; 32], 4));
+        cache.insert("c", CH, Mek::from_bytes([2; 32], 1));
+        assert_eq!(
+            cache
+                .current("c", KeyScope::Community)
+                .unwrap()
+                .generation(),
+            4
+        );
+        assert_eq!(cache.current("c", CH).unwrap().generation(), 1);
+        assert_eq!(cache.channels("c"), vec![ChannelId([7; 16])]);
+        let snapshot = cache.snapshot("c");
+        assert_eq!(snapshot[0].channel_id, None);
+        assert_eq!(snapshot[1].channel_id, Some(hex::encode([7u8; 16])));
     }
 }

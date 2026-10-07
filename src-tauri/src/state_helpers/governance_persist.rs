@@ -2,19 +2,22 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 use super::identity::current_owner_key;
 
 /// Persist the current merged governance snapshot into SQLite for restart hydration.
 pub async fn persist_governance_snapshot_to_sqlite(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     lamport_clock: u64,
 ) -> Result<(), String> {
+    let lamport_clock = i64::try_from(lamport_clock)
+        .map_err(|_| format!("governance clock {lamport_clock} beyond i64 — not persisted"))?;
+
     #[derive(Clone)]
     struct ChannelRow {
         id: String,
@@ -67,7 +70,7 @@ pub async fn persist_governance_snapshot_to_sqlite(
         community_description,
         icon_hash,
         banner_hash,
-        my_role_ids_json,
+        my_role_ids,
         mek_generation,
         channels,
         roles,
@@ -181,7 +184,7 @@ pub async fn persist_governance_snapshot_to_sqlite(
             community.description.clone(),
             metadata.as_ref().and_then(|meta| meta.icon_hash.clone()),
             metadata.as_ref().and_then(|meta| meta.banner_hash.clone()),
-            serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0]".to_string()),
+            my_role_ids,
             community.mek_generation.try_into().unwrap_or(i64::MAX),
             channels,
             roles,
@@ -191,21 +194,19 @@ pub async fn persist_governance_snapshot_to_sqlite(
     };
 
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE communities SET name = ?1, description = ?2, icon_hash = ?3, banner_hash = ?4, \
-             my_role_ids = ?5, mek_generation = ?6, lamport_clock = ?7 \
-             WHERE owner_key = ?8 AND id = ?9",
-            rusqlite::params![
-                community_name,
-                community_description,
-                icon_hash,
-                banner_hash,
-                my_role_ids_json,
+        rekindle_db::repo::communities::apply_governance(
+            conn,
+            &owner_key,
+            &community_id_owned,
+            &rekindle_db::repo::communities::GovernanceFields {
+                name: &community_name,
+                description: community_description.as_deref(),
+                icon_hash: icon_hash.as_deref(),
+                banner_hash: banner_hash.as_deref(),
+                my_role_ids: &my_role_ids,
                 mek_generation,
-                lamport_clock.cast_signed(),
-                owner_key,
-                community_id_owned,
-            ],
+                lamport_clock,
+            },
         )?;
 
         conn.execute(
@@ -303,4 +304,24 @@ pub async fn persist_governance_snapshot_to_sqlite(
         Ok(())
     })
     .await
+}
+
+/// Raise the persisted governance clock to `clock` (never lowers it).
+/// Fire-and-forget: the write is queued on the DB thread ahead of any
+/// network write the caller makes with the tick.
+pub fn persist_governance_clock(state: &Arc<AppState>, community_id: &str, clock: u64) {
+    let Some((_, pool)) = super::node::app_context(state) else {
+        return;
+    };
+    let Ok(owner_key) = current_owner_key(state) else {
+        return;
+    };
+    let Ok(clock) = i64::try_from(clock) else {
+        tracing::warn!(community = %community_id, clock, "governance clock beyond i64 — not persisted");
+        return;
+    };
+    let community_id = community_id.to_string();
+    crate::db_helpers::db_fire(&pool, "persist governance clock", move |conn| {
+        rekindle_db::repo::communities::raise_clock(conn, &owner_key, &community_id, clock)
+    });
 }

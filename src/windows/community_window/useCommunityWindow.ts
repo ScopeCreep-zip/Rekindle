@@ -31,6 +31,7 @@ import { ICON_CHANNEL_TEXT, ICON_MEGAPHONE } from "../../icons";
 import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
+import { startEventStream } from "../../ipc/channels";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
@@ -288,6 +289,7 @@ export function useCommunityWindow() {
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityVoiceEvents());
     unlisteners.push(subscribeCommunityChannelChatEvents(() => activeCommunity()?.myPseudonymKey));
+    void startEventStream();
 
     // Architecture §23 — global Cmd/Ctrl-F opens the message search overlay.
     window.addEventListener("keydown", searchShortcutHandler);

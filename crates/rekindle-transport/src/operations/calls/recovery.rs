@@ -135,10 +135,11 @@ impl CallRuntime {
             expires_at_ms: persisted.expires_at_ms,
             my_x25519_secret: my_secret,
             peer_x25519_pub: peer_pub,
-            // call_key is not persisted (held only in-memory once
-            // derived); a recovered Outgoing/Incoming call hasn't
-            // accepted yet, so call_key is None either way.
-            call_key: None,
+            // The media secret is not persisted (held only in memory once
+            // derived); a recovered Outgoing/Incoming call hasn't accepted
+            // yet, so it is None either way, and the sender state is new.
+            media_secret: None,
+            media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
             // Peer caps aren't persisted either — a recovered pre-accept
             // call re-learns them from the CallAccept; senders treat
             // empty as the VP9 floor.

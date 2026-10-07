@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::state::SharedState;
 
 use super::types::CommunityRoleDto;
@@ -19,7 +18,6 @@ pub use crate::services::community_role_handlers_runtime::ExclusionGroupEdit;
 pub async fn get_roles(
     community_id: String,
     state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
 ) -> Result<Vec<CommunityRoleDto>, String> {
     get_roles_inner(state.inner(), &community_id)
 }
@@ -39,11 +37,11 @@ pub async fn create_role(
     self_assignable: bool,
     exclusion_group: Option<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<u32, String> {
+    let pool = state.db.current()?;
     create_role_handler_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         name,
         color,
@@ -73,11 +71,11 @@ pub async fn edit_role(
     self_assignable: Option<bool>,
     exclusion_group: Option<ExclusionGroupEdit>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     edit_role_handler_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         role_id,
         name,
@@ -98,9 +96,9 @@ pub async fn delete_role(
     community_id: String,
     role_id: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    delete_role_with_check_inner(state.inner(), pool.inner(), community_id, role_id).await
+    let pool = state.db.current()?;
+    delete_role_with_check_inner(state.inner(), &pool, community_id, role_id).await
 }
 
 /// Assign a role to a member (additive — does not remove other roles).
@@ -110,16 +108,9 @@ pub async fn assign_role(
     pseudonym_key: String,
     role_id: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    assign_role_with_check_inner(
-        state.inner(),
-        pool.inner(),
-        community_id,
-        pseudonym_key,
-        role_id,
-    )
-    .await
+    let pool = state.db.current()?;
+    assign_role_with_check_inner(state.inner(), &pool, community_id, pseudonym_key, role_id).await
 }
 
 /// Remove a role from a member.
@@ -129,16 +120,9 @@ pub async fn unassign_role(
     pseudonym_key: String,
     role_id: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    unassign_role_with_check_inner(
-        state.inner(),
-        pool.inner(),
-        community_id,
-        pseudonym_key,
-        role_id,
-    )
-    .await
+    let pool = state.db.current()?;
+    unassign_role_with_check_inner(state.inner(), &pool, community_id, pseudonym_key, role_id).await
 }
 
 /// Assign a self-assignable role to the current member.
@@ -147,9 +131,9 @@ pub async fn self_assign_role(
     community_id: String,
     role_id: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    self_assign_role_inner(state.inner(), pool.inner(), community_id, role_id).await
+    let pool = state.db.current()?;
+    self_assign_role_inner(state.inner(), &pool, community_id, role_id).await
 }
 
 /// Remove a self-assignable role from the current member.
@@ -158,7 +142,7 @@ pub async fn self_unassign_role(
     community_id: String,
     role_id: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    self_unassign_role_inner(state.inner(), pool.inner(), community_id, role_id).await
+    let pool = state.db.current()?;
+    self_unassign_role_inner(state.inner(), &pool, community_id, role_id).await
 }

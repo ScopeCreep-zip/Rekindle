@@ -61,6 +61,38 @@ pub enum ProtocolError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// A value larger than the record's per-subkey limit
+    /// (`min(32768, 1 MiB / subkey_count)`), refused before Veilid sees it.
+    #[error("subkey {subkey} value of {len} bytes exceeds the record's {cap}-byte subkey limit")]
+    SubkeyTooLarge { subkey: u32, len: usize, cap: usize },
+
+    /// The lease was released (or never issued by this pool).
+    #[error("record lease {0} is not held")]
+    LeaseNotHeld(u64),
+
+    /// The pool's session ended (logout): no new Veilid calls start.
+    #[error("record pool is shut down")]
+    PoolClosed,
+
+    /// A write with no writer to a record the session does not hold
+    /// writable: Veilid would refuse it ("value is not writable"), so the
+    /// pool does not send it.
+    #[error("record {0} is not held writable")]
+    NotWritable(String),
+
+    /// A send to a remote private route failed with `NoConnection` or
+    /// `InvalidTarget`: the route is unusable, and the importer forgets it
+    /// (`RouteImports::invalidate_after_send_failure`). Any other send
+    /// failure is `SendFailed`, which keeps the route.
+    #[error("route unusable: {0}")]
+    RouteUnusable(String),
+
+    /// A write that a structure depends on did not reach consensus (or lost
+    /// to a newer value), so the structure was not updated
+    /// ([`SetOutcome::missed`](crate::dht::pool::SetOutcome::missed)).
+    #[error("subkey {subkey} not stored: {outcome}")]
+    NotStored { subkey: u32, outcome: String },
 }
 
 impl From<rekindle_crypto::CryptoError> for ProtocolError {

@@ -35,7 +35,7 @@ pub async fn run_poll_loop(
     watches: Arc<RwLock<WatchRegistry>>,
     interval_secs: u64,
     change_tx: mpsc::Sender<(String, Vec<u32>)>,
-    mut shutdown_rx: mpsc::Receiver<()>,
+    stop: tokio_util::sync::CancellationToken,
 ) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
     interval.tick().await; // skip immediate first tick
@@ -52,10 +52,10 @@ pub async fn run_poll_loop(
 
                 let sweep_start = Instant::now();
 
-                let entries: Vec<(String, Vec<u32>)> = {
+                let entries: Vec<(String, Vec<u32>, crate::broadcast::dht_writes::LeaseId)> = {
                     let reg = watches.read();
                     reg.entries.iter().map(|(k, e)| {
-                        (k.clone(), e.subkeys.clone())
+                        (k.clone(), e.subkeys.clone(), e.lease)
                     }).collect()
                 };
 
@@ -70,7 +70,7 @@ pub async fn run_poll_loop(
                 let mut total_read = 0u32;
                 let mut inspect_failures = 0u32;
 
-                for (record_key, subkeys) in &entries {
+                for (record_key, subkeys, lease) in &entries {
                     total_inspected += 1;
                     let record_start = Instant::now();
 
@@ -81,17 +81,12 @@ pub async fn run_poll_loop(
                     // poll loop is the guaranteed fallback, not the primary path.
 
                     // Step 1: Inspect — one network call for all subkeys
-                    let populated = match crate::broadcast::dht_writes::inspect(
-                        &node, record_key, Some(subkeys),
+                    let populated = match crate::broadcast::dht_writes::inspect_leased_local_present(
+                        &node, *lease, subkeys,
                     ).await {
-                        Ok(report) => {
-                            let pop: Vec<u32> = report.subkeys().iter()
-                                .zip(report.local_seqs().iter())
-                                .filter(|(_, seq)| seq.is_some())
-                                .map(|(sk, _)| sk)
-                                .collect();
+                        Ok(pop) => {
                             debug!(
-                                record_key = &record_key[..20.min(record_key.len())],
+                                record_key = %record_key,
                                 populated = pop.len(),
                                 total_subkeys = subkeys.len(),
                                 inspect_ms = record_start.elapsed().as_millis(),
@@ -101,7 +96,7 @@ pub async fn run_poll_loop(
                         }
                         Err(e) => {
                             warn!(
-                                record_key = &record_key[..20.min(record_key.len())],
+                                record_key = %record_key,
                                 error = %e,
                                 "poll: inspect failed, falling back to full read (SLOW)"
                             );
@@ -120,14 +115,14 @@ pub async fn run_poll_loop(
                     let mut changed_subkeys = Vec::new();
                     for &subkey in &populated {
                         total_read += 1;
-                        match crate::broadcast::dht_writes::get(&node, record_key, subkey, true).await {
+                        match crate::broadcast::dht_writes::get_leased(&node, *lease, subkey, true).await {
                             Ok(Some(data)) if !data.is_empty() => {
                                 changed_subkeys.push(subkey);
                             }
                             Ok(_) => {}
                             Err(e) => {
                                 debug!(
-                                    record_key = &record_key[..20.min(record_key.len())],
+                                    record_key = %record_key,
                                     subkey, error = %e,
                                     "poll: get failed"
                                 );
@@ -139,7 +134,7 @@ pub async fn run_poll_loop(
                     if !changed_subkeys.is_empty() {
                         records_with_changes += 1;
                         debug!(
-                            record_key = &record_key[..20.min(record_key.len())],
+                            record_key = %record_key,
                             changed = changed_subkeys.len(),
                             record_ms = record_start.elapsed().as_millis(),
                             "poll: record has changes, signaling"
@@ -161,7 +156,7 @@ pub async fn run_poll_loop(
                     "poll: sweep complete"
                 );
             }
-            _ = shutdown_rx.recv() => {
+            () = stop.cancelled() => {
                 info!("poll loop shutting down");
                 break;
             }

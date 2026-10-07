@@ -9,16 +9,26 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 pub fn schedule_history_catchup(state: Arc<AppState>, community_id: String) {
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-        if let Err(error) = request_history_catchup(&state, &community_id).await {
+    let scope = state_helpers::community_scope(&state, &community_id);
+    scope.spawn_with_token_or_drop("community history catch-up", |stop| async move {
+        let settle = tokio::time::sleep(std::time::Duration::from_secs(15));
+        if stop.run_until_cancelled(settle).await.is_none() {
+            return;
+        }
+        if let Err(error) = request_history_catchup(&state, &community_id, &stop).await {
             tracing::debug!(community = %community_id, error = %error, "history ad catchup skipped");
         }
     });
 }
 
-async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
-    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
+/// Reads the registry slot by slot, stopping before the next read once
+/// `stop` is cancelled.
+async fn request_history_catchup(
+    state: &Arc<AppState>,
+    community_id: &str,
+    stop: &tokio_util::sync::CancellationToken,
+) -> Result<(), String> {
+    let pool = state_helpers::record_pool(state)?;
     let registry_key = {
         let communities = state.communities.read();
         communities
@@ -46,14 +56,23 @@ async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> R
     };
     let mut peer_ads: Vec<(String, Vec<u8>, Vec<HistoryAd>)> = Vec::new();
 
-    for subkey in 0..255u32 {
-        let Some(value) = rc
-            .get_dht_value(record_key.clone(), subkey, false)
-            .await
-            .map_err(|e| format!("registry read failed: {e}"))?
-        else {
-            continue;
-        };
+    // The registry is the membership index: one inspect over its range,
+    // then a read of each row that holds a value (plan C7.12), not 255 reads
+    // one after another.
+    if stop.is_cancelled() {
+        return Ok(());
+    }
+    let all_slots: Vec<u32> = (0..rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT)
+        .filter_map(|slot| u32::try_from(slot).ok())
+        .collect();
+    let lease = pool
+        .acquire(&record_key, None)
+        .await
+        .map_err(|e| format!("registry open failed: {e}"))?;
+    let rows = pool.read_changed(lease, &all_slots).await;
+    pool.release(lease).await;
+    let rows = rows.map_err(|e| format!("registry read failed: {e}"))?;
+    for (_, value) in rows {
         if value.data().is_empty() {
             continue;
         }
@@ -112,6 +131,10 @@ async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> R
     }
 
     for channel_id in &channel_ids {
+        // Each request is an `app_call`: stop before the next one (C4.L1).
+        if stop.is_cancelled() {
+            return Ok(());
+        }
         let current_oldest = *local_oldest.get(channel_id).unwrap_or(&0);
         let needed_lamport = current_oldest.saturating_sub(1);
         let candidates: Vec<_> = peer_ads
@@ -143,17 +166,15 @@ async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> R
             continue;
         }
 
-        let route_id = state_helpers::import_route_blob(state, route_blob)?;
         let request = CommunityEnvelope::Control(ControlPayload::SyncRequest {
             channel_id: channel_id.clone(),
             since_timestamp: 0,
         });
         let bytes =
             serde_json::to_vec(&request).map_err(|e| format!("sync request serialize: {e}"))?;
-        let _ = rc
-            .app_call(veilid_core::Target::RouteId(route_id), bytes)
+        state_helpers::call_route_blob(state, route_blob, bytes)
             .await
-            .map_err(|e| format!("sync request app_call failed: {e}"))?;
+            .map_err(|e| format!("sync request failed: {e}"))?;
     }
 
     Ok(())
@@ -163,14 +184,11 @@ async fn load_local_oldest_lamports(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Result<HashMap<String, u64>, String> {
-    use tauri::Manager as _;
-
-    let app_handle = state_helpers::app_handle(state).ok_or("app handle unavailable")?;
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+    let pool = state.db.current()?;
     let owner_key = state_helpers::current_owner_key(state)?;
     let cid = community_id.to_string();
 
-    crate::db_helpers::db_call(pool.inner(), move |conn| {
+    crate::db_helpers::db_call(&pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT conversation_id, COALESCE(MIN(lamport_ts), 0) \
              FROM messages \

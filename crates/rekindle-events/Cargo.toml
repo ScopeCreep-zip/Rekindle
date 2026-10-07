@@ -8,9 +8,9 @@ description = "Reusable event primitives: BLAKE3 dedup, subscription state, stat
 workspace = true
 
 [dependencies]
+blake3 = "1"
+parking_lot = { workspace = true }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
-parking_lot = { workspace = true }
-blake3 = "1"
 serde = { workspace = true }
 tracing = { workspace = true }

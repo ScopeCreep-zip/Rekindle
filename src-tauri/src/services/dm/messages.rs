@@ -10,15 +10,15 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Outbound 1:1 DM send. Errors map to Tauri-friendly `String`.
 pub async fn send_dm_message(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
     body: &str,
 ) -> Result<(), String> {
@@ -35,7 +35,7 @@ pub async fn send_dm_message(
 /// on a DM SMPL record.
 pub async fn handle_dm_subkey_change(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
     subkey: u32,
     raw_value: &[u8],

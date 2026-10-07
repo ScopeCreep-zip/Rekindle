@@ -1,7 +1,6 @@
 use tauri::State;
 
 use crate::commands::chat::Message;
-use crate::db::DbPool;
 use crate::services::messaging_runtime::SendChannelMessageResponse;
 use crate::state::SharedState;
 
@@ -18,14 +17,12 @@ pub async fn forward_channel_message(
     source_message_id: String,
     dest_community_id: String,
     dest_channel_id: String,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<SendChannelMessageResponse, String> {
+    let pool = state.db.current()?;
     crate::services::messaging_runtime::forward_channel_message_inner(
         state.inner(),
-        pool.inner(),
-        &app,
+        &pool,
         source_community_id,
         source_channel_id,
         source_message_id,
@@ -41,15 +38,13 @@ pub async fn send_channel_message(
     channel_id: String,
     body: String,
     reply_to_id: Option<String>,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<SendChannelMessageResponse, String> {
+    let pool = state.db.current()?;
     let _ = reply_to_id;
     crate::services::messaging_runtime::send_channel_message_inner(
         state.inner(),
-        pool.inner(),
-        &app,
+        &pool,
         channel_id,
         body,
     )
@@ -89,11 +84,11 @@ pub async fn get_channel_messages(
     channel_id: String,
     limit: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<Message>, String> {
+    let pool = state.db.current()?;
     crate::services::messaging_runtime::get_channel_messages_inner(
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         channel_id,
         limit,
     )
@@ -107,11 +102,11 @@ pub async fn get_older_channel_messages(
     before_timestamp: u64,
     limit: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<Message>, String> {
+    let pool = state.db.current()?;
     crate::services::messaging_runtime::get_older_channel_messages_inner(
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         community_id,
         channel_id,
         before_timestamp,

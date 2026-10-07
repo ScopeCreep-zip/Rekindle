@@ -20,22 +20,28 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::cors::{Any, CorsLayer};
 
+use rekindle_db::Db;
 use rekindle_lib::commands::auth::{
-    create_identity_core, login_core, IdentitySummary, LoginResult,
+    create_identity_core, list_identities_inner, login_core, LoginResult,
 };
-use rekindle_lib::db::{self, DbPool};
 use rekindle_lib::keystore::{self, KeystoreHandle, StrongholdKeystore};
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
 
 /// Shared server state passed to every axum handler.
 struct ServerState {
     state: SharedState,
-    pool: DbPool,
     keystore_handle: KeystoreHandle,
     config_dir: PathBuf,
 }
 
 type SharedServer = Arc<ServerState>;
+
+impl ServerState {
+    /// The open database, as the app's commands reach it (`AppState.db`).
+    fn db(&self) -> Result<Db, String> {
+        Ok(self.state.db.current()?)
+    }
+}
 
 #[derive(Deserialize)]
 struct InvokeRequest {
@@ -46,20 +52,28 @@ struct InvokeRequest {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    rekindle_utils::log_scrub::install_panic_hook();
+    tracing_subscriber::fmt()
+        .with_writer(rekindle_utils::log_scrub::ScrubbingMakeWriter::new(
+            std::io::stdout,
+        ))
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     let config_dir = std::env::temp_dir().join(format!("rekindle-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&config_dir).expect("failed to create temp config dir");
 
     tracing::info!(dir = %config_dir.display(), "E2E server starting");
 
-    let pool = db::create_pool(":memory:").expect("in-memory SQLite").pool;
+    let pool = rekindle_db::open(std::path::Path::new(":memory:"))
+        .expect("in-memory SQLite")
+        .db;
     let shared_state: SharedState = Arc::new(AppState::default());
+    shared_state.db.set(pool);
     let keystore_handle = keystore::new_handle();
 
     let server = Arc::new(ServerState {
         state: shared_state,
-        pool,
         keystore_handle,
         config_dir: config_dir.clone(),
     });
@@ -111,11 +125,12 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
     *server.keystore_handle.lock() = None;
 
     // Recreate SQLite database (drop all tables and re-run schema)
-    server
-        .pool
-        .call(|conn| -> Result<(), rusqlite::Error> {
-            conn.execute_batch(
-                "DELETE FROM pending_messages; \
+    let Ok(pool) = server.db() else {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    };
+    pool.call(|conn| -> Result<(), rusqlite::Error> {
+        conn.execute_batch(
+            "DELETE FROM pending_messages; \
              DELETE FROM prekeys; \
              DELETE FROM signal_sessions; \
              DELETE FROM trusted_identities; \
@@ -126,11 +141,11 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
              DELETE FROM friends; \
              DELETE FROM friend_groups; \
              DELETE FROM identity;",
-            )?;
-            Ok(())
-        })
-        .await
-        .expect("failed to clear database");
+        )?;
+        Ok(())
+    })
+    .await
+    .expect("failed to clear database");
 
     // Delete Stronghold snapshot files
     if let Ok(entries) = std::fs::read_dir(&server.config_dir) {
@@ -160,7 +175,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 &passphrase,
                 display_name,
                 &server.state,
-                &server.pool,
+                &server.db()?,
                 &server.keystore_handle,
                 None,
             )
@@ -175,7 +190,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 &public_key,
                 &passphrase,
                 &server.state,
-                &server.pool,
+                &server.db()?,
                 &server.keystore_handle,
                 None,
             )
@@ -183,35 +198,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             Ok(serde_json::to_value(result).unwrap())
         }
         "list_identities" => {
-            let summaries = server
-                .pool
-                .call(|conn| -> Result<Vec<IdentitySummary>, rusqlite::Error> {
-                    let mut stmt = conn.prepare(
-                        "SELECT public_key, display_name, created_at, avatar_webp \
-                         FROM identity ORDER BY created_at ASC",
-                    )?;
-                    let rows = stmt
-                        .query_map([], |row| {
-                            let avatar_base64 = row
-                                .get::<_, Option<Vec<u8>>>("avatar_webp")
-                                .unwrap_or(None)
-                                .map(|bytes| {
-                                    use base64::Engine as _;
-                                    base64::engine::general_purpose::STANDARD.encode(&bytes)
-                                });
-                            Ok(IdentitySummary {
-                                public_key: row.get::<_, String>(0)?,
-                                display_name: row.get::<_, String>(1).unwrap_or_default(),
-                                created_at: row.get::<_, i64>(2)?,
-                                has_avatar: avatar_base64.is_some(),
-                                avatar_base64,
-                            })
-                        })?
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok(rows)
-                })
-                .await
-                .map_err(|e| e.to_string())?;
+            let summaries = list_identities_inner(&server.db()?).await?;
             Ok(serde_json::to_value(summaries).unwrap())
         }
         "delete_identity" => {
@@ -250,14 +237,8 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             // Delete from DB
             let pk = public_key.clone();
             server
-                .pool
-                .call(move |conn| -> Result<(), rusqlite::Error> {
-                    conn.execute(
-                        "DELETE FROM identity WHERE public_key = ?1",
-                        rusqlite::params![pk],
-                    )?;
-                    Ok(())
-                })
+                .db()?
+                .call(move |conn| rekindle_db::repo::identity::delete(conn, &pk))
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -330,6 +311,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             "isAttached": false,
             "publicInternetReady": false,
             "hasRoute": false,
+            "mediaRoute": "idle",
             "profileDhtKey": Value::Null,
             "friendListDhtKey": Value::Null,
         })),

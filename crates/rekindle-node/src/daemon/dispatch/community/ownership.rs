@@ -1,7 +1,7 @@
 //! Ownership transfer and the encrypted community backup it writes.
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::IpcResponse;
 
 use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 

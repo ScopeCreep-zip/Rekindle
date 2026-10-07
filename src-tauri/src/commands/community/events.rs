@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_event_runtime::{
     cancel_event_inner, delete_event_inner, edit_event_inner, get_events_inner,
     set_event_rsvp_inner,
@@ -13,7 +12,6 @@ pub use crate::channels::community_channel::EventRsvpInfoDto;
 #[tauri::command]
 pub async fn create_event(
     state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
     community_id: String,
     request: CreateEventRequest,
 ) -> Result<String, String> {
@@ -53,7 +51,6 @@ pub struct CreateEventRequest {
 #[tauri::command]
 pub async fn edit_event(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     event_id: String,
     title: Option<String>,
@@ -63,9 +60,10 @@ pub async fn edit_event(
     channel_id: Option<String>,
     max_attendees: Option<u32>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     edit_event_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         event_id,
         title,
@@ -90,33 +88,32 @@ pub async fn delete_event(
 #[tauri::command]
 pub async fn cancel_event(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     event_id: String,
 ) -> Result<(), String> {
-    cancel_event_inner(state.inner(), pool.inner(), community_id, event_id).await
+    let pool = state.db.current()?;
+    cancel_event_inner(state.inner(), &pool, community_id, event_id).await
 }
 
 #[tauri::command]
 pub async fn rsvp_event(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     event_id: String,
     status: String,
 ) -> Result<(), String> {
-    set_event_rsvp(state, pool, community_id, event_id, status).await
+    set_event_rsvp(state, community_id, event_id, status).await
 }
 
 #[tauri::command]
 pub async fn set_event_rsvp(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     event_id: String,
     status: String,
 ) -> Result<(), String> {
-    set_event_rsvp_inner(state.inner(), pool.inner(), community_id, event_id, status).await
+    let pool = state.db.current()?;
+    set_event_rsvp_inner(state.inner(), &pool, community_id, event_id, status).await
 }
 
 #[tauri::command]
@@ -135,8 +132,8 @@ pub async fn list_event_attendees(
 #[tauri::command]
 pub async fn get_events(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
 ) -> Result<Vec<EventInfoDto>, String> {
-    get_events_inner(state.inner(), pool.inner(), community_id).await
+    let pool = state.db.current()?;
+    get_events_inner(state.inner(), &pool, community_id).await
 }

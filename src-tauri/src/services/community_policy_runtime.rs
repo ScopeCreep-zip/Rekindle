@@ -54,7 +54,8 @@ pub async fn set_community_policy_inner(
             return Err("policy_text exceeds 4096 characters".into());
         }
     }
-    let lamport = state_helpers::increment_lamport(state, community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         community_id,

@@ -18,12 +18,12 @@ use rekindle_governance_runtime::membership_events::{
 };
 use rekindle_secrets::sync_key::SyncKey;
 
-use crate::db::DbPool;
 use crate::services::cross_device_sync::{
     open_personal_sync_record, read_read_state, write_read_state,
 };
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::GovernanceAdapter;
 
@@ -51,17 +51,9 @@ impl MembershipEventDeps for GovernanceAdapter {
         let pk = pseudonym_hex.to_string();
         let rids = role_ids.to_vec();
         crate::db_helpers::db_fire(&self.pool, "member_roles_changed_persist", move |conn| {
-            let json = serde_json::to_string(&rids).unwrap_or_default();
-            conn.execute(
-                "UPDATE community_members SET role_ids = ?1 \
-                 WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
-                rusqlite::params![json, owner_key, cid, pk],
-            )?;
+            rekindle_db::repo::members::set_role_ids(conn, &owner_key, &cid, &pk, &rids, false)?;
             if is_self {
-                conn.execute(
-                    "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![json, owner_key, cid],
-                )?;
+                rekindle_db::repo::communities::set_my_role_ids(conn, &owner_key, &cid, &rids)?;
             }
             Ok(())
         });
@@ -87,16 +79,21 @@ impl MembershipEventDeps for GovernanceAdapter {
         let owner_key = state_helpers::current_owner_key(&self.state).unwrap_or_default();
         let cid = community_id.to_string();
         let rk_str = member_registry_key.map(str::to_string);
-        let _ = crate::db_helpers::db_call(&self.pool, move |conn| {
-            if let Some(ref rk) = rk_str {
-                conn.execute(
-                    "UPDATE communities SET member_registry_key = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![rk, owner_key, cid],
-                )?;
+        if let Some(rk) = rk_str {
+            if let Err(e) = crate::db_helpers::db_call(&self.pool, move |conn| {
+                rekindle_db::repo::communities::set(
+                    conn,
+                    &owner_key,
+                    &cid,
+                    rekindle_db::repo::communities::Column::MemberRegistryKey,
+                    rk,
+                )
+            })
+            .await
+            {
+                tracing::warn!(community = %community_id, error = %e, "member registry key not persisted");
             }
-            Ok(())
-        })
-        .await;
+        }
     }
 
     async fn upsert_members(&self, community_id: &str, members: Vec<MemberUpsertRow>) {
@@ -107,23 +104,19 @@ impl MembershipEventDeps for GovernanceAdapter {
         let cid = community_id.to_string();
         let result = crate::db_helpers::db_call(&self.pool, move |conn| {
             for m in &members {
-                let role_ids_json =
-                    serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[0,1]".into());
-                conn.execute(
-                    "INSERT OR REPLACE INTO community_members \
-                     (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, subkey_index, onboarding_complete, timeout_until) \
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![
-                        owner_key,
-                        cid,
-                        m.pseudonym_hex,
-                        m.display_name,
-                        role_ids_json,
-                        m.joined_at.cast_signed(),
-                        m.subkey_index,
-                        i32::from(m.onboarding_complete),
-                        m.timeout_until.map(u64::cast_signed),
-                    ],
+                rekindle_db::repo::members::replace_accepted(
+                    conn,
+                    &owner_key,
+                    &cid,
+                    &rekindle_db::repo::members::AcceptedMember {
+                        pseudonym_key: &m.pseudonym_hex,
+                        display_name: &m.display_name,
+                        role_ids: &m.role_ids,
+                        joined_at: m.joined_at.cast_signed(),
+                        subkey_index: m.subkey_index,
+                        onboarding_complete: m.onboarding_complete,
+                        timeout_until: m.timeout_until.map(u64::cast_signed),
+                    },
                 )?;
             }
             Ok(())
@@ -158,11 +151,13 @@ impl MembershipEventDeps for GovernanceAdapter {
             &self.pool,
             "backup my_subkey_index from members list",
             move |conn| {
-                conn.execute(
-                    "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![idx, owner_key, cid],
-                )?;
-                Ok(())
+                rekindle_db::repo::communities::set(
+                    conn,
+                    &owner_key,
+                    &cid,
+                    rekindle_db::repo::communities::Column::MySubkeyIndex,
+                    idx,
+                )
             },
         );
     }
@@ -180,10 +175,19 @@ impl MembershipEventDeps for GovernanceAdapter {
         let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = self.app_handle.state();
         let ks = ks_handle.lock();
         if let Some(ref keystore) = *ks {
-            let mek_cache = self.state.mek_cache.lock();
-            if let Some(mek) = mek_cache.get(community_id) {
-                crate::keystore::persist_mek(keystore, community_id, mek);
-                tracing::debug!(community = %community_id, "persisted MEK to Stronghold after JoinAccepted");
+            if let Some(mek) = crate::state_helpers::current_mek(
+                &self.state,
+                community_id,
+                rekindle_types::channel_keys::KeyScope::Community,
+            ) {
+                if let Err(e) = crate::keystore::persist_mek(
+                    keystore,
+                    community_id,
+                    rekindle_types::channel_keys::KeyScope::Community,
+                    &mek,
+                ) {
+                    tracing::warn!(community = %community_id, error = %e, "community MEK from JoinAccepted not persisted");
+                }
             }
         }
     }
@@ -191,101 +195,103 @@ impl MembershipEventDeps for GovernanceAdapter {
     fn spawn_peer_bootstrap(&self, community_id: &str, members: Vec<MemberUpsertRow>) {
         let state = Arc::clone(&self.state);
         let community_id = community_id.to_string();
-        tokio::spawn(async move {
-            let (registry_key, my_pseudo) = {
-                let communities = state.communities.read();
-                let cs = communities.get(&community_id);
-                (
-                    cs.and_then(|c| c.member_registry_key.clone()),
-                    cs.and_then(|c| c.my_pseudonym_key.clone()),
-                )
-            };
-            let Some(rk) = registry_key else { return };
-            let Some(rc) = state_helpers::routing_context(&state) else {
-                return;
-            };
+        crate::state_helpers::spawn_in_login_with_token(
+            &state.clone(),
+            "peer bootstrap",
+            |stop| async move {
+                let (registry_key, my_pseudo) = {
+                    let communities = state.communities.read();
+                    let cs = communities.get(&community_id);
+                    (
+                        cs.and_then(|c| c.member_registry_key.clone()),
+                        cs.and_then(|c| c.my_pseudonym_key.clone()),
+                    )
+                };
+                let Some(rk) = registry_key else { return };
+                let Ok(pool) = state_helpers::record_pool(&state) else {
+                    return;
+                };
+                let Ok(reg_typed_key) = rk.parse::<veilid_core::RecordKey>() else {
+                    return;
+                };
 
-            let Ok(reg_typed_key) = rk.parse::<veilid_core::RecordKey>() else {
-                return;
-            };
-            if let Err(e) = rc.open_dht_record(reg_typed_key.clone(), None).await {
-                tracing::debug!(error = %e, "failed to open registry for peer bootstrap");
-                return;
-            }
-
-            let mut found_peers = 0u32;
-            for member in &members {
-                if my_pseudo.as_deref() == Some(&member.pseudonym_hex) {
-                    continue;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                if let Ok(Some(val)) = rc
-                    .get_dht_value(reg_typed_key.clone(), member.subkey_index, false)
-                    .await
-                {
-                    if val.data().is_empty() {
+                let mut found_peers = 0u32;
+                for member in &members {
+                    if my_pseudo.as_deref() == Some(&member.pseudonym_hex) {
                         continue;
                     }
-                    if let Ok(presence) = serde_json::from_slice::<
-                        rekindle_types::presence::MemberPresence,
-                    >(val.data())
+                    let pace = tokio::time::sleep(std::time::Duration::from_millis(200));
+                    if stop.run_until_cancelled(pace).await.is_none() {
+                        return;
+                    }
+                    if let Ok(Some(val)) = pool
+                        .read_once(&reg_typed_key, member.subkey_index, false)
+                        .await
                     {
-                        // Architecture §26 W26 — verify the presence row was
-                        // signed by the claimed pseudonym before treating it
-                        // as authoritative routing info.
-                        let Ok(sig_arr): Result<[u8; 64], _> =
-                            presence.signature.as_slice().try_into()
-                        else {
-                            continue;
-                        };
-                        if rekindle_secrets::derive::verify_pseudonym_signature(
-                            &presence.pseudonym_key.0,
-                            &presence.signing_bytes(),
-                            &sig_arr,
-                        )
-                        .is_err()
-                        {
+                        if val.data().is_empty() {
                             continue;
                         }
-                        // Liveness ≠ reachability. A just-joined member is
-                        // online the moment it heartbeats; its route may not
-                        // have been allocated yet. Populate `online_members`
-                        // (roster) regardless of route, but only add to
-                        // `peers` (the set we actually send bytes to) once a
-                        // route is present.
-                        if presence.status != "offline" {
-                            let mut communities = state.communities.write();
-                            if let Some(cs) = communities.get_mut(&community_id) {
-                                if let Some(ref mut gossip) = cs.gossip {
-                                    let route_present = !presence.route_blob.is_empty();
-                                    let om = crate::state::OnlineMember {
-                                        location: presence.session.location.clone(),
-                                        last_active: presence.session.last_active,
-                                        route_blob: presence.route_blob,
-                                        status: presence.status,
-                                        last_seen: rekindle_utils::timestamp_secs(),
-                                    };
-                                    gossip
-                                        .online_members
-                                        .insert(member.pseudonym_hex.clone(), om.clone());
-                                    if route_present {
-                                        gossip.peers.insert(member.pseudonym_hex.clone(), om);
+                        if let Ok(presence) = serde_json::from_slice::<
+                            rekindle_types::presence::MemberPresence,
+                        >(val.data())
+                        {
+                            // Architecture §26 W26 — verify the presence row was
+                            // signed by the claimed pseudonym before treating it
+                            // as authoritative routing info.
+                            let Ok(sig_arr): Result<[u8; 64], _> =
+                                presence.signature.as_slice().try_into()
+                            else {
+                                continue;
+                            };
+                            if rekindle_secrets::derive::verify_pseudonym_signature(
+                                &presence.pseudonym_key.0,
+                                &presence.signing_bytes(),
+                                &sig_arr,
+                            )
+                            .is_err()
+                            {
+                                continue;
+                            }
+                            // Liveness ≠ reachability. A just-joined member is
+                            // online the moment it heartbeats; its route may not
+                            // have been allocated yet. Populate `online_members`
+                            // (roster) regardless of route, but only add to
+                            // `peers` (the set we actually send bytes to) once a
+                            // route is present.
+                            if presence.status != "offline" {
+                                let mut communities = state.communities.write();
+                                if let Some(cs) = communities.get_mut(&community_id) {
+                                    if let Some(ref mut gossip) = cs.gossip {
+                                        let route_present = !presence.route_blob.is_empty();
+                                        let om = crate::state::OnlineMember {
+                                            location: presence.session.location.clone(),
+                                            last_active: presence.session.last_active,
+                                            route_blob: presence.route_blob,
+                                            status: presence.status,
+                                            last_seen: rekindle_utils::timestamp_secs(),
+                                        };
+                                        gossip
+                                            .online_members
+                                            .insert(member.pseudonym_hex.clone(), om.clone());
+                                        if route_present {
+                                            gossip.peers.insert(member.pseudonym_hex.clone(), om);
+                                        }
+                                        found_peers += 1;
                                     }
-                                    found_peers += 1;
                                 }
                             }
                         }
                     }
                 }
-            }
-            if found_peers > 0 {
-                tracing::info!(
-                    community = %community_id,
-                    peers = found_peers,
-                    "bootstrapped gossip peers from JoinAccepted member list"
-                );
-            }
-        });
+                if found_peers > 0 {
+                    tracing::info!(
+                        community = %community_id,
+                        peers = found_peers,
+                        "bootstrapped gossip peers from JoinAccepted member list"
+                    );
+                }
+            },
+        );
     }
 
     // ---------- Grants / slot seed ----------
@@ -331,17 +337,12 @@ impl MembershipEventDeps for GovernanceAdapter {
         let owner_key = state_helpers::current_owner_key(&self.state).unwrap_or_default();
         let cid = community_id.to_string();
         crate::db_helpers::db_fire(&self.pool, "apply slot grant", move |conn| {
-            if let Some(ref kp) = owner_kp {
-                conn.execute(
-                    "UPDATE communities SET dht_owner_keypair = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![kp, owner_key, cid],
-                )?;
+            use rekindle_db::repo::communities::{set, Column};
+            if let Some(kp) = owner_kp {
+                set(conn, &owner_key, &cid, Column::DhtOwnerKeypair, kp)?;
             }
             if let Some(idx) = subkey_idx {
-                conn.execute(
-                    "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![i64::from(idx), owner_key, cid],
-                )?;
+                set(conn, &owner_key, &cid, Column::MySubkeyIndex, idx)?;
             }
             Ok(())
         });
@@ -350,7 +351,7 @@ impl MembershipEventDeps for GovernanceAdapter {
     fn spawn_presence_poll_tick(&self, community_id: &str) {
         let state = Arc::clone(&self.state);
         let community_id = community_id.to_string();
-        tokio::spawn(async move {
+        crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop("presence poll tick", async move {
             if let Err(e) =
                 crate::services::community::presence_poll_tick_public(&state, &community_id).await
             {
@@ -383,14 +384,9 @@ impl MembershipEventDeps for GovernanceAdapter {
         };
         let cid = community_id.to_string();
         let pk = pseudonym_hex.to_string();
-        let role_ids_json = serde_json::to_string(role_ids).unwrap_or_default();
+        let role_ids = role_ids.to_vec();
         crate::db_helpers::db_fire(&self.pool, "persist onboarding completion", move |conn| {
-            conn.execute(
-                "UPDATE community_members SET role_ids = ?1, onboarding_complete = 1 \
-                 WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
-                rusqlite::params![role_ids_json, owner_key, cid, pk],
-            )?;
-            Ok(())
+            rekindle_db::repo::members::set_role_ids(conn, &owner_key, &cid, &pk, &role_ids, true)
         });
     }
 
@@ -398,7 +394,7 @@ impl MembershipEventDeps for GovernanceAdapter {
         let state = Arc::clone(&self.state);
         let pool = self.pool.clone();
         let community_id = community_id.to_string();
-        tokio::spawn(async move {
+        crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop("onboarding sync push", async move {
             if let Err(e) =
                 push_onboarding_complete_to_sync_inner(&state, &pool, &community_id).await
             {
@@ -453,7 +449,7 @@ impl MembershipEventDeps for GovernanceAdapter {
 /// provisioned yet (fresh install before pairing).
 async fn push_onboarding_complete_to_sync_inner(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
 ) -> Result<(), String> {
     let Some(handle) = open_personal_sync_record(state, pool).await else {

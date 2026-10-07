@@ -4,23 +4,20 @@
 //! when `VeilidUpdate::ValueChange` arrives, we know whether the changed
 //! record is a friend inbox, a community registry, a channel log, etc.
 //!
-//! Watch renewal runs on a timer — Veilid watches have finite lifetimes
-//! (default ~10 minutes) and must be proactively renewed.
+//! Every watch rides a lease on the session's record pool (plan C7.7): the
+//! pool watches the union of its borrowers' subkeys, Veilid renews a watch
+//! itself, and the pool re-arms a dead one while it is held (plan C7.8), so
+//! nothing here renews.
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
+use crate::broadcast::dht_writes::LeaseId;
 use crate::broadcast::node::TransportNode;
 use crate::payload::dht_types;
 use crate::session::{CommunityMembership, Session};
-
-/// Default watch renewal interval (4 minutes).
-/// Veilid's default watch expiry is ~10 minutes; renewing at 4 gives margin.
-const WATCH_RENEWAL_INTERVAL: Duration = Duration::from_secs(240);
 
 /// What kind of record a watch is tracking.
 #[derive(Debug, Clone)]
@@ -57,17 +54,8 @@ pub struct WatchEntry {
     pub kind: WatchKind,
     /// Subkeys being watched.
     pub subkeys: Vec<u32>,
-    /// When the watch was last established or renewed.
-    pub established_at: Instant,
-    /// How often to renew (before Veilid expires it).
-    pub renewal_interval: Duration,
-}
-
-impl WatchEntry {
-    /// Whether this watch needs renewal.
-    pub fn needs_renewal(&self) -> bool {
-        self.established_at.elapsed() > self.renewal_interval
-    }
+    /// The pool lease the watch rides; released when the watch is removed.
+    pub lease: LeaseId,
 }
 
 /// Registry of all active DHT watches, keyed by record key string.
@@ -83,9 +71,10 @@ impl WatchRegistry {
         }
     }
 
-    /// Register a watch. Overwrites any existing watch for this key.
-    pub fn insert(&mut self, record_key: String, entry: WatchEntry) {
-        self.entries.insert(record_key, entry);
+    /// Register a watch, returning the one it replaced (whose lease the
+    /// caller releases).
+    pub fn insert(&mut self, record_key: String, entry: WatchEntry) -> Option<WatchEntry> {
+        self.entries.insert(record_key, entry)
     }
 
     /// Remove a watch by record key.
@@ -98,30 +87,35 @@ impl WatchRegistry {
         self.entries.get(record_key)
     }
 
-    /// Collect all entries that need renewal.
-    pub fn needs_renewal(&self) -> Vec<(String, WatchEntry)> {
-        self.entries
-            .iter()
-            .filter(|(_, e)| e.needs_renewal())
-            .map(|(k, e)| (k.clone(), e.clone()))
-            .collect()
+    /// Remove every watch matching `gone`; their leases, to release.
+    fn remove_where(&mut self, gone: impl Fn(&WatchKind) -> bool) -> Vec<LeaseId> {
+        let mut leases = Vec::new();
+        self.entries.retain(|_, e| {
+            let keep = !gone(&e.kind);
+            if !keep {
+                leases.push(e.lease);
+            }
+            keep
+        });
+        leases
     }
 
-    /// Remove all watches for a community.
-    pub fn remove_community(&mut self, community: &str) {
-        self.entries.retain(|_, e| {
-            !matches!(&e.kind,
+    /// Remove all watches for a community; their leases, to release.
+    pub fn remove_community(&mut self, community: &str) -> Vec<LeaseId> {
+        self.remove_where(|kind| {
+            matches!(kind,
                 WatchKind::GovernanceRecord { community: c }
                 | WatchKind::ChannelRecord { community: c, .. }
                 if c == community
             )
-        });
+        })
     }
 
-    /// Remove all watches for a DM peer.
-    pub fn remove_dm_peer(&mut self, peer_key: &str) {
-        self.entries
-            .retain(|_, e| !matches!(&e.kind, WatchKind::DmLog { peer_key: pk } if pk == peer_key));
+    /// Remove all watches for a DM peer; their leases, to release.
+    pub fn remove_dm_peer(&mut self, peer_key: &str) -> Vec<LeaseId> {
+        self.remove_where(
+            |kind| matches!(kind, WatchKind::DmLog { peer_key: pk } if pk == peer_key),
+        )
     }
 
     /// Total number of active watches.
@@ -134,8 +128,8 @@ impl WatchRegistry {
 
 /// Establish a DHT watch on a record and register it in the watch registry.
 ///
-/// Opens the record readonly (if not already open), then calls
-/// `watch_dht_values`. Returns `true` if the watch is active.
+/// Borrows the record read-only from the session's pool and watches on
+/// that lease. Returns `true` if the watch was registered.
 pub async fn establish_watch(
     node: &TransportNode,
     registry: &RwLock<WatchRegistry>,
@@ -157,8 +151,8 @@ pub async fn establish_watch(
 /// watch capability" — so opening with our slot keypair moves us out of
 /// the contended public pool at no cost.
 ///
-/// `writer` is that keypair, in string form. `None` keeps the old
-/// read-only open for records we hold no slot in.
+/// `writer` is that keypair, in string form; it becomes the lease's sticky
+/// writer. `None` borrows read-only, for records we hold no slot in.
 pub async fn establish_watch_as(
     node: &TransportNode,
     registry: &RwLock<WatchRegistry>,
@@ -167,39 +161,35 @@ pub async fn establish_watch_as(
     kind: WatchKind,
     writer: Option<&str>,
 ) -> bool {
-    let opened = match writer {
-        Some(writer) => {
-            crate::broadcast::dht_writes::open_str(node, record_key, Some(writer)).await
+    let lease = match crate::broadcast::dht_writes::acquire_str(node, record_key, writer).await {
+        Ok(lease) => lease,
+        Err(e) => {
+            warn!(record_key, error = %e, "watch: cannot open record");
+            return false;
         }
-        None => crate::broadcast::dht_writes::open_readonly(node, record_key).await,
     };
-    if let Err(e) = opened {
-        warn!(record_key, error = %e, "watch: cannot open record");
-        return false;
-    }
 
-    let active = match crate::broadcast::dht_writes::watch(node, record_key, subkeys).await {
-        Ok(active) => active,
+    let active = match crate::broadcast::dht_writes::watch_leased(node, lease, subkeys).await {
+        Ok(()) => true,
         Err(e) => {
             warn!(record_key, error = %e, "watch: watch_dht_values failed");
             false
         }
     };
 
-    // Registered unconditionally, because the return value cannot tell
-    // us whether a watch exists.
+    // Registered unconditionally (with its lease, which keeps the record
+    // open), because a watch call cannot tell us whether a watch exists.
     //
     // `watch_dht_values` "records the desired watch state and returns
     // without a network round-trip; a background task reconciles it
     // with a remote node", and "no network errors surface here". So
-    // `Ok(true)` means the desired state was accepted locally, not that
-    // a remote node agreed to watch — a record refused for want of a
-    // slot is indistinguishable here from one that succeeded. `false`
-    // means the watch was *cancelled* (a zero count or empty range),
-    // not declined.
+    // Success means the desired state was accepted locally, not that a
+    // remote node agreed to watch — a record refused for want of a slot is
+    // indistinguishable here from one that succeeded.
     //
     // Failure surfaces later, as a `ValueChange` with `count == 0` or an
-    // empty subkey range — see `SubscriptionManager::on_watch_died`.
+    // empty subkey range, which the record pool re-arms while the lease
+    // is held.
     //
     // Registering regardless is therefore the only correct behaviour,
     // and it is also what enrols the record in the 60-second inspect
@@ -207,41 +197,19 @@ pub async fn establish_watch_as(
     // most for the members who did not get a slot: with 8 member and 32
     // public slots per record, a community past ~40 members leaves most
     // of them watchless, and PATH 3 has two halves.
-    if !active {
-        debug!(
-            record_key,
-            "watch: cancelled at request time (zero count or empty range)"
-        );
-    }
-    registry.write().insert(
+    let replaced = registry.write().insert(
         record_key.to_string(),
         WatchEntry {
             kind,
             subkeys: subkeys.to_vec(),
-            established_at: Instant::now(),
-            renewal_interval: WATCH_RENEWAL_INTERVAL,
+            lease,
         },
     );
+    if let Some(old) = replaced {
+        crate::broadcast::dht_writes::release(node, old.lease).await;
+    }
 
     active
-}
-
-/// Renew a watch (re-call watch_dht_values with same parameters).
-pub async fn renew_watch(node: &TransportNode, record_key: &str, subkeys: &[u32]) -> bool {
-    match crate::broadcast::dht_writes::watch(node, record_key, subkeys).await {
-        Ok(active) => {
-            if active {
-                debug!(record_key, "watch renewed");
-            } else {
-                warn!(record_key, "watch renewal: Veilid declined");
-            }
-            active
-        }
-        Err(e) => {
-            warn!(record_key, error = %e, "watch renewal failed");
-            false
-        }
-    }
 }
 
 // ── Setup helpers ──────────────────────────────────────────────────────
@@ -383,51 +351,4 @@ pub async fn setup_dm_watch(
         },
     )
     .await;
-}
-
-// ── Renewal loop ───────────────────────────────────────────────────────
-
-/// Background task that renews watches before they expire.
-///
-/// Runs every 60 seconds. For each watch past its renewal interval,
-/// re-calls `watch_dht_values` and updates the `established_at` timestamp.
-pub async fn run_renewal_loop(
-    node: Arc<TransportNode>,
-    registry: Arc<RwLock<WatchRegistry>>,
-    event_tx: tokio::sync::broadcast::Sender<super::events::SubscriptionEvent>,
-    mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
-) {
-    use super::events::{NetworkEvent, SubscriptionEvent};
-
-    let mut interval = tokio::time::interval(Duration::from_secs(60));
-    interval.tick().await; // skip immediate first tick
-
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
-                let stale = registry.read().needs_renewal();
-                for (record_key, entry) in stale {
-                    if renew_watch(&node, &record_key, &entry.subkeys).await {
-                        if let Some(e) = registry.write().entries.get_mut(&record_key) {
-                            e.established_at = Instant::now();
-                        }
-                        let _ = event_tx.send(SubscriptionEvent::Network(
-                            NetworkEvent::WatchRenewed { record_key: record_key.clone() },
-                        ));
-                    } else {
-                        let _ = event_tx.send(SubscriptionEvent::Network(
-                            NetworkEvent::WatchFailed {
-                                record_key: record_key.clone(),
-                                error: "renewal declined by Veilid".into(),
-                            },
-                        ));
-                    }
-                }
-            }
-            _ = shutdown_rx.recv() => {
-                info!("watch renewal loop shutting down");
-                break;
-            }
-        }
-    }
 }

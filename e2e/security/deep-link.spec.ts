@@ -1,149 +1,76 @@
-import { test, expect, type Page } from "@playwright/test";
-import { setupMocks, LOGIN_SUCCESS_HANDLER } from "../fixtures/mocks";
+import { test, expect } from "@playwright/test";
+import { preloadMocks, LOGIN_SUCCESS_HANDLER } from "../fixtures/mocks";
 
-// Deep-link payload tests.
+// Deep-link consent.
 //
-// `rekindle://invite/{base64url(blob)}#{base64url(key)}` is parsed
-// every time the user clicks an invite link. The blob is decrypted
-// with the URL fragment key, then the decrypted Cap'n Proto bytes are
-// deserialised. Any of those steps can mishandle attacker-controlled
-// input — the tests here ensure malformed / hostile payloads:
-//   * never execute JavaScript
-//   * never crash the app
-//   * never leak partial state
-//
-// We test by setting `window.location.href` to a crafted deep link
-// and observing the post-navigation state.
+// OS deep links (`rekindle://invite/{VLD0:…}/{VLD0:…}/{32 hex}`, friend
+// invites `rekindle://<base64url blob>`, pairing `rekindle://pair?…`) are
+// parsed and validated in Rust (`rekindle_types::invite::{InviteLink,
+// DeepLink}`; the hostile-URL corpus is unit-tested there). The backend
+// holds a valid link and hands the webview only a request id and a key
+// fingerprint. These tests check the webview side of that contract:
+//   * the buddy list pulls the pending request on mount and asks first;
+//   * nothing is joined until the user confirms;
+//   * Cancel dismisses the request in the backend;
+//   * a refused pairing link only informs.
 
-const HOSTILE_PAYLOADS: { name: string; url: string }[] = [
-  // Empty payload
-  { name: "empty path", url: "rekindle://invite/" },
-  // Single character (decodes to nothing)
-  { name: "single char", url: "rekindle://invite/a" },
-  // Non-base64 input
-  { name: "not base64", url: "rekindle://invite/!!!!#@@@@" },
-  // Base64-shaped but not valid Cap'n Proto
-  {
-    name: "base64 garbage",
-    url: "rekindle://invite/QUFBQUFBQUFBQQ==#Wm16YnRtbk9hQQ==",
-  },
-  // XSS-like content in the path
-  {
-    name: "xss in path",
-    url: "rekindle://invite/<script>alert(1)</script>#key",
-  },
-  // XSS-like content in the fragment
-  {
-    name: "xss in fragment",
-    url: "rekindle://invite/blob#<script>alert(1)</script>",
-  },
-  // Path traversal attempt
-  {
-    name: "path traversal",
-    url: "rekindle://invite/../../../etc/passwd#k",
-  },
-  // SQL injection lookalike
-  {
-    name: "sql injection",
-    url: "rekindle://invite/blob';DROP TABLE friends;--#k",
-  },
-  // Very large payload (memory exhaustion)
-  {
-    name: "huge payload",
-    url: `rekindle://invite/${"A".repeat(100_000)}#${"B".repeat(10_000)}`,
-  },
-  // Null bytes
-  { name: "null bytes", url: "rekindle://invite/aaa%00bbb#%00" },
-  // Control characters
-  { name: "control chars", url: "rekindle://invite/aaa%01%02%03#%04" },
-  // Unicode RTL override (Trojan source attempt)
-  { name: "rtl override", url: "rekindle://invite/blob‮#key" },
-];
+const JOIN_REQUEST = {
+  kind: "joinCommunity",
+  requestId: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  keyFingerprint: "3f1a 9c0b 7e2d 4f6a",
+};
 
-async function installCanary(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    (window as unknown as { __rekindleXssTriggered: boolean }).__rekindleXssTriggered = false;
-    (window as unknown as { __rekindleErrors: string[] }).__rekindleErrors = [];
-    window.addEventListener("error", (e) => {
-      (window as unknown as { __rekindleErrors: string[] }).__rekindleErrors.push(
-        e.message,
-      );
-    });
-    window.addEventListener("unhandledrejection", (e) => {
-      (window as unknown as { __rekindleErrors: string[] }).__rekindleErrors.push(
-        String(e.reason),
-      );
-    });
-  });
+/// The login handler, plus the given pending request.
+function handlerWithPending(request: unknown): string {
+  return `
+    if (cmd === "get_pending_deep_link") return ${JSON.stringify(request)};
+    if (cmd === "confirm_deep_link") return { kind: "dismissed" };
+    ${LOGIN_SUCCESS_HANDLER}
+  `;
 }
 
-test.describe("Deep-link — hostile payloads", () => {
-  test.beforeEach(async ({ page }) => {
-    await installCanary(page);
+async function ipcCalls(page: import("@playwright/test").Page): Promise<string[]> {
+  return page.evaluate(() =>
+    ((window as unknown as { __ipcCalls?: { cmd: string }[] }).__ipcCalls ?? []).map((c) => c.cmd),
+  );
+}
+
+test.describe("Deep-link consent", () => {
+  test("asks before joining and joins only on confirm", async ({ page }) => {
+    await preloadMocks(page, "buddy-list", handlerWithPending(JOIN_REQUEST));
+    await page.goto("/buddy-list");
+
+    const dialog = page.getByRole("dialog", { name: "Join community?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(JOIN_REQUEST.keyFingerprint);
+    expect(await ipcCalls(page)).not.toContain("confirm_deep_link");
+
+    await dialog.getByRole("button", { name: "Join" }).click();
+    await expect(dialog).toBeHidden();
+    expect(await ipcCalls(page)).toContain("confirm_deep_link");
   });
 
-  for (const { name, url } of HOSTILE_PAYLOADS) {
-    test(`${name}: ${url.slice(0, 50)}…`, async ({ page }) => {
-      // Navigate to login first so the deep-link handler is registered.
-      // The IPC mocks must be installed too: without them the Tauri
-      // shim is absent and the app's own listeners throw
-      // "Cannot read properties of undefined (reading 'transformCallback')",
-      // which the fatal-error assertion below would blame on the payload.
-      await page.goto("/login");
-      await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-      await page.waitForLoadState("networkidle");
+  test("cancel dismisses the request", async ({ page }) => {
+    await preloadMocks(page, "buddy-list", handlerWithPending(JOIN_REQUEST));
+    await page.goto("/buddy-list");
 
-      // Baseline: this test is about what the *payload* causes, so
-      // discard anything logged while the page was booting.
-      await page.evaluate(() => {
-        (window as unknown as { __rekindleErrors: string[] }).__rekindleErrors.length = 0;
-      });
+    const dialog = page.getByRole("dialog", { name: "Join community?" });
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    const calls = await ipcCalls(page);
+    expect(calls).toContain("dismiss_deep_link");
+    expect(calls).not.toContain("confirm_deep_link");
+  });
 
-      // Trigger the deep-link handler. In dev mode we can't actually
-      // fire a `rekindle://` URL — the OS handles that — but we can
-      // simulate the payload-extraction step that the handler does
-      // internally by passing it via the hash fragment of the same
-      // origin.
-      const reachedHandler = await page.evaluate(async (testUrl) => {
-        try {
-          // The deep-link handler in `src/deep_links.ts` (or equivalent)
-          // ultimately calls `parseInviteLink(testUrl)` — which is
-          // pure-JS string manipulation followed by a Tauri command.
-          // We can call it via a window-exposed test hook if available,
-          // or fall back to the URL constructor to verify it doesn't
-          // throw / leak.
-          const u = new URL(testUrl);
-          return u.protocol === "rekindle:";
-        } catch {
-          // URL constructor rejecting is a *good* outcome — it means
-          // hostile input never reaches the parser.
-          return false;
-        }
-      }, url);
+  test("a refused pairing link only informs", async ({ page }) => {
+    const pairing = { kind: "pairingRefused", requestId: JOIN_REQUEST.requestId };
+    await preloadMocks(page, "buddy-list", handlerWithPending(pairing));
+    await page.goto("/buddy-list");
 
-      // Whatever the handler did, verify no XSS, no console errors
-      // beyond expected validation failures.
-      const triggered = await page.evaluate(
-        () => (window as unknown as { __rekindleXssTriggered: boolean })
-          .__rekindleXssTriggered,
-      );
-      expect(triggered, `${name} triggered XSS`).toBe(false);
-
-      const errors = await page.evaluate(
-        () => (window as unknown as { __rekindleErrors: string[] })
-          .__rekindleErrors,
-      );
-      // Acceptable errors: validation failures, decode failures.
-      // Unacceptable: TypeError / ReferenceError / out-of-bounds / panic-equivalent.
-      const fatal = errors.filter((e) =>
-        /TypeError|ReferenceError|RangeError|panicked/i.test(e),
-      );
-      expect(fatal, `${name} produced fatal errors: ${fatal.join(", ")}`)
-        .toHaveLength(0);
-
-      // The handler may not have reached at all (ideal); just confirm
-      // the test ran.
-      expect(typeof reachedHandler).toBe("boolean");
-    });
-  }
+    const dialog = page.getByRole("dialog", { name: "Pairing link blocked" });
+    await expect(dialog).toContainText("Settings → Devices");
+    await expect(dialog.getByRole("button", { name: "Join" })).toHaveCount(0);
+    await dialog.getByRole("button", { name: "OK" }).click();
+    expect(await ipcCalls(page)).toContain("dismiss_deep_link");
+  });
 });

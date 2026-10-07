@@ -27,8 +27,9 @@
 
 use std::time::{Duration, Instant};
 
+use rekindle_secrets::sframe;
 use rekindle_voice::codec::{EncodedFrame, OpusCodec};
-use rekindle_voice::jitter::JitterBuffer;
+use rekindle_voice::jitter::{JitterBuffer, JitterFrame};
 use rekindle_voice::mixer::AudioMixer;
 use rekindle_voice::transport::VoicePacket;
 
@@ -130,55 +131,66 @@ fn latency_budget_holds() {
 }
 
 /// Measure the per-iteration wall-clock cost of one full pipeline pass
-/// (encode → packetize → jitter push+pop → decode → mix), then return
-/// the P95 as a `Duration`.
+/// (encode → SFrame seal → sign + Cap'n Proto encode → decode + verify →
+/// SFrame open → jitter push+pop → decode → mix), then return the P95 as
+/// a `Duration`.
 fn measure_pipeline_compute_p95() -> Duration {
     let mut encoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("encoder init");
     let mut decoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("decoder init");
     let mut jb = JitterBuffer::new(60);
     let mixer = AudioMixer::new(CHANNELS);
     let frame = synth_frame();
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
+    let sender_key = signing_key.verifying_key().to_bytes().to_vec();
+    let kid = sframe::media_kid(0x1234, 0);
+    let key = sframe::media_key(&[4u8; 32], &sender_key, kid);
+    let mut ctr = 0u64;
+
+    let mut one_pass = |seq: u32| -> JitterFrame {
+        let encoded = encoder.encode(&frame).expect("encode");
+        let timestamp = u64::from(seq) * 20;
+        let metadata = VoicePacket::sframe_metadata(&sender_key, seq, timestamp, 0);
+        let mut plaintext = vec![0u8];
+        plaintext.extend_from_slice(&encoded.data);
+        let mut packet = VoicePacket {
+            sender_key: sender_key.clone(),
+            sequence: seq,
+            timestamp,
+            transport_seq: 0,
+            sframe: sframe::seal(&key, kid, ctr, &metadata, &plaintext).expect("seal"),
+            sig: Vec::new(),
+        };
+        ctr += 1;
+        packet.sign(&signing_key);
+        let received = VoicePacket::decode(&packet.encode()).expect("decode packet");
+        received.verify().expect("verify");
+        let opened = sframe::open(&key, &received.sframe, &metadata).expect("open");
+        JitterFrame {
+            sequence: seq,
+            timestamp,
+            opus: opened[1..].to_vec(),
+        }
+    };
 
     // Pre-fill the jitter so pop returns Some on the first measured
     // iteration.
     for seq in 0..3u32 {
-        let encoded = encoder.encode(&frame).expect("warmup encode");
-        jb.push(
-            VoicePacket {
-                sender_key: vec![1u8; 32],
-                sequence: seq,
-                timestamp: u64::from(seq) * 20,
-                audio_data: encoded.data,
-                mek_generation: 0,
-                signature: Vec::new(),
-            },
-            u64::from(seq) * 20,
-        );
+        let opened = one_pass(seq);
+        jb.push(opened, u64::from(seq) * 20);
     }
     let mut seq: u32 = 3;
 
     let mut samples: Vec<Duration> = Vec::with_capacity(ITERATIONS);
     for _ in 0..ITERATIONS {
         let start = Instant::now();
-        let encoded = encoder.encode(&frame).expect("encode");
-        jb.push(
-            VoicePacket {
-                sender_key: vec![1u8; 32],
-                sequence: seq,
-                timestamp: u64::from(seq) * 20,
-                audio_data: encoded.data,
-                mek_generation: 0,
-                signature: Vec::new(),
-            },
-            u64::from(seq) * 20,
-        );
+        let opened = one_pass(seq);
+        jb.push(opened, u64::from(seq) * 20);
         seq = seq.wrapping_add(1);
         if let Some(packet) = jb.pop(u64::from(seq) * 20) {
             let dec_frame = EncodedFrame {
-                data: packet.audio_data,
+                data: packet.opus,
                 timestamp: packet.timestamp,
                 sequence: packet.sequence,
-                mek_generation: packet.mek_generation,
             };
             let decoded = decoder.decode(&dec_frame).expect("decode");
             let _ = mixer.mix(&[("p0", &decoded.samples)]);

@@ -88,14 +88,19 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         )));
     }
 
-    let mek = deps.community_mek(community_id).ok_or_else(|| {
+    let (epoch, key) = rekindle_types::channel_keys::current_key(
+        &*deps.keys(),
+        community_id,
+        rekindle_types::channel_keys::KeyScope::Community,
+    )
+    .ok_or_else(|| {
         GovernanceRuntimeError::Adapter("no MEK available to seed the invite".to_string())
     })?;
     let mek_wire_bytes = {
         use base64::Engine as _;
         let mut wire = Vec::with_capacity(40);
-        wire.extend_from_slice(&mek.generation.to_le_bytes());
-        wire.extend_from_slice(&mek.key_bytes);
+        wire.extend_from_slice(&epoch.0.to_le_bytes());
+        wire.extend_from_slice(&*key);
         base64::engine::general_purpose::STANDARD.encode(wire)
     };
 
@@ -146,7 +151,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
 
     let invite_id = rekindle_utils::random::id_bytes_16();
     let expires_at = expires_in_seconds.map(|s| rekindle_utils::timestamp_secs() + s);
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -179,7 +184,7 @@ pub async fn revoke_invite<D: GovernanceRuntimeDeps>(
     community_id: &str,
     invite_id: [u8; 16],
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,

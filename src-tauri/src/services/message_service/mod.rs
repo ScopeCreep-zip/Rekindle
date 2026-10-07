@@ -11,6 +11,7 @@ mod dm_dispatch;
 mod friend_handlers;
 mod outgoing;
 mod profile_push;
+mod seal;
 mod session_reset;
 mod transport;
 
@@ -18,8 +19,9 @@ pub use dispatch::{handle_incoming_message, try_handle_dm_invite_app_call};
 pub(crate) use friend_handlers::delete_pending_messages_to_recipient;
 pub(crate) use outgoing::build_and_queue_envelope;
 pub use outgoing::{
-    send_friend_accept, send_friend_reject, send_friend_request, send_message, send_to_peer_call,
-    send_to_peer_encrypted, send_to_peer_raw, send_typing,
+    send_friend_accept, send_friend_reject, send_friend_request, send_message, send_to_peer,
+    send_to_peer_call, send_typing,
 };
 pub use profile_push::{push_friend_list_update, push_profile_update};
+pub(crate) use seal::resign_for_retry;
 pub(crate) use transport::try_fetch_route_from_dht;

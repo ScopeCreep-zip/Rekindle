@@ -77,6 +77,10 @@ pub const DEFAULT_EVERYONE: u64 = VIEW_CHANNELS
     | CREATE_EVENTS;
 
 /// All permissions set (bits 0-50).
+/// The permissions any one of which lets a member rotate the community
+/// key ([`Permissions::may_rotate_mek`]).
+pub const MEK_ROTATION: u64 = KICK_MEMBERS | BAN_MEMBERS | MANAGE_COMMUNITY;
+
 pub const ALL: u64 = (1 << 51) - 1;
 
 /// Convenience struct wrapping a u64 bitmask with helper methods.
@@ -96,6 +100,14 @@ impl Permissions {
     /// Check if ADMINISTRATOR bit is set.
     pub fn is_administrator(self) -> bool {
         self.0 & ADMINISTRATOR != 0
+    }
+
+    /// May this member rotate the community key — be elected rotator and
+    /// write a `MEKGenerationBump` (plan D20)? Any one of
+    /// [`MEK_ROTATION`] suffices: rotation follows a removal, and the
+    /// members who can remove someone are the ones trusted to re-key.
+    pub fn may_rotate_mek(self) -> bool {
+        self.is_administrator() || self.0 & MEK_ROTATION != 0
     }
 }
 

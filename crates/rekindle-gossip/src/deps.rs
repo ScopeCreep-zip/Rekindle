@@ -48,7 +48,7 @@ pub enum GossipError {
 
 /// Bag of operations the crate needs from its host. Implemented
 /// in src-tauri by `GossipAdapter` against the live `AppState` +
-/// `AppHandle` + `DbPool`.
+/// `AppHandle` + `Db`.
 #[async_trait]
 pub trait GossipDeps: Send + Sync + 'static {
     // === Identity / community state ===
@@ -59,9 +59,12 @@ pub trait GossipDeps: Send + Sync + 'static {
     /// Locked identity secret bytes, or `None` if vault is locked.
     fn identity_secret(&self) -> Option<[u8; 32]>;
 
-    // === Dedup / Lamport (interior mutability) ===
+    /// The scope fan-out sends run in; it ends with the session that
+    /// owns the identity (plan C4).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
+    // === Dedup (interior mutability) ===
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str);
-    fn increment_lamport(&self, community_id: &str);
 
     // === Peer overlay reads ===
     /// Snapshot of the current gossip peers for the community, or

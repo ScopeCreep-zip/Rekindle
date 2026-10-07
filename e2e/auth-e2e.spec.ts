@@ -78,7 +78,7 @@ test.describe("New User Registration", () => {
     await page.locator('input[type="password"]').fill("my-secure-passphrase");
 
     // Submit — this calls real create_identity_core (Ed25519 + Stronghold + SQLite)
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Should navigate to buddy list (show_buddy_list triggers browser nav in E2E)
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
@@ -103,7 +103,7 @@ test.describe("New User Registration", () => {
     // Fresh install — already in create mode
     // Leave display name empty, just fill passphrase
     await page.locator('input[type="password"]').fill("test-passphrase");
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Should navigate to buddy list
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
@@ -146,14 +146,12 @@ test.describe("Existing User Login", () => {
     // Click Bob's account card
     await page.locator(".account-bubble").click();
 
-    // Should transition to login mode
-    await expect(page.locator(".login-subtitle")).toContainText(
-      "Enter your passphrase to unlock",
-    );
+    // Should transition to the lock screen for Bob
+    await expect(page.locator(".lock-name")).toHaveText("Bob");
 
     // Enter the correct passphrase
     await page.locator('input[type="password"]').fill(TEST_PASSPHRASE);
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Should navigate to buddy list
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
@@ -190,11 +188,11 @@ test.describe("Login Failures", () => {
 
     // Enter wrong passphrase
     await page.locator('input[type="password"]').fill("wrong-password");
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Should show the real Stronghold error (translated to user-friendly message)
-    await expect(page.locator(".login-error")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".login-error")).toContainText(
+    await expect(page.locator(".login-container .form-error")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".login-container .form-error")).toContainText(
       "Wrong passphrase",
     );
 
@@ -202,8 +200,8 @@ test.describe("Login Failures", () => {
     expect(page.url()).toContain("/login");
 
     // Button should return to normal state
-    await expect(page.locator(".login-btn")).toHaveText("Unlock");
-    await expect(page.locator(".login-btn")).not.toBeDisabled();
+    await expect(page.locator(".login-container button[type='submit']")).toHaveText("Unlock");
+    await expect(page.locator(".login-container button[type='submit']")).not.toBeDisabled();
   });
 
   test("empty passphrase does not submit", async ({ page }) => {
@@ -214,13 +212,13 @@ test.describe("Login Failures", () => {
     await page.locator(".account-bubble").click();
 
     // Click submit without entering anything
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Wait briefly to confirm nothing happens
     await page.waitForTimeout(500);
 
     // No error should appear (form just doesn't submit)
-    await expect(page.locator(".login-error")).not.toBeVisible();
+    await expect(page.locator(".login-container .form-error")).not.toBeVisible();
 
     // Still on login page
     expect(page.url()).toContain("/login");
@@ -247,7 +245,7 @@ test.describe("Fresh Install", () => {
     );
 
     // No back button when no identities exist
-    await expect(page.locator(".account-back-btn")).not.toBeVisible();
+    await expect(page.locator(".login-container .form-btn-secondary")).not.toBeVisible();
   });
 });
 
@@ -266,7 +264,7 @@ test.describe("Full Lifecycle", () => {
     await page.waitForSelector(".login-title", { timeout: 10_000 });
     await page.locator('input[type="text"]').fill("Dave");
     await page.locator('input[type="password"]').fill("lifecycle-pass");
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Step 2: Verify on buddy list with correct name
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
@@ -290,7 +288,7 @@ test.describe("Full Lifecycle", () => {
 
     // Enter passphrase
     await page.locator('input[type="password"]').fill("lifecycle-pass");
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Step 5: Verify same identity restored
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
@@ -335,7 +333,7 @@ test.describe("Multi-Account", () => {
 
     // Enter Alice's passphrase
     await page.locator('input[type="password"]').fill("pass-a");
-    await page.locator(".login-btn").click();
+    await page.locator(".login-container button[type='submit']").click();
 
     // Should reach buddy list as Alice
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
@@ -363,7 +361,7 @@ test.describe("Multi-Account", () => {
 
     // Enter passphrase and confirm deletion
     await page.locator(".modal-container input[type='password']").fill("delete-me-pass");
-    await page.locator(".delete-confirm-btn").click();
+    await page.locator(".modal-container .form-btn-danger").click();
 
     // Should transition to create mode (no identities left)
     await expect(page.locator(".login-subtitle")).toContainText(

@@ -108,7 +108,8 @@
     color: var(--color-xfire-text);
   }
 
-  .confirm-dialog-actions {
+  .confirm-dialog-actions,
+  .consent-dialog-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;

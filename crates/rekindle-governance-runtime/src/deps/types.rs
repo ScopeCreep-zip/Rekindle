@@ -36,7 +36,8 @@ pub struct CommunityMembership {
     pub slot_keypair: Option<String>,
     pub slot_seed_hex: Option<String>,
     pub dht_owner_keypair: Option<String>,
-    pub lamport_counter: u64,
+    /// The community's governance clock.
+    pub governance_clock: u64,
     pub channel_log_keys: HashMap<String, String>,
     pub channel_ids: Vec<String>,
     pub mek_generation: u64,
@@ -65,14 +66,6 @@ pub struct MekSnapshot {
     pub key_bytes: [u8; 32],
 }
 
-/// Per-channel MEK pair returned from `channel_meks_all` for the
-/// bootstrap response build.
-#[derive(Debug, Clone)]
-pub struct ChannelMekSnapshot {
-    pub channel_id: String,
-    pub mek: MekSnapshot,
-}
-
 /// Outcome of creating a new SMPL DHT record. Owner keypair string is
 /// `None` if the underlying record was created with `o_cnt: 0` (the
 /// universal community SMPL schema — Schwarzschild principle, §3).
@@ -80,6 +73,9 @@ pub struct ChannelMekSnapshot {
 pub struct DhtRecordInfo {
     pub record_key: String,
     pub owner_keypair: Option<String>,
+    /// The creator's lease on the new record, held writable: hand it to the
+    /// host with `community_records_ready`, or release it.
+    pub lease: rekindle_records::lease::LeaseId,
 }
 
 /// One row from the `messages` table used to build a bootstrap bundle.
@@ -106,6 +102,12 @@ pub struct CommunityDhtOpenSetup {
     /// present, falling back to the slot keypair). `None` opens the
     /// record read-only.
     pub registry_writer: Option<String>,
+    /// Our slot writer keypair string, the key that writes our member subkey
+    /// of every channel record (they share the registry's slot seed). Not
+    /// `registry_writer`: a creator's registry owner key writes no member
+    /// subkey of an `o_cnt: 0` record (plan C7.13). `None` borrows channel
+    /// records read-only.
+    pub slot_writer: Option<String>,
 }
 
 /// Slot row discovered from a presence/registry scan during join.
@@ -137,6 +139,7 @@ pub struct CommunityInsert {
     pub my_pseudonym_hex: String,
     pub mek: MekSnapshot,
     pub governance_state: GovernanceState,
-    pub lamport_counter: u64,
+    /// The community's governance clock.
+    pub governance_clock: u64,
     pub creator_role_ids: Vec<u32>,
 }

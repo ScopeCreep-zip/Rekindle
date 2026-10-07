@@ -1,6 +1,6 @@
 //! Phase 20 REDO — `GossipDeps` implementation for `GossipAdapter`.
 //!
-//! Maps each trait method to the live AppState / DbPool / Veilid
+//! Maps each trait method to the live AppState / Db / Veilid
 //! routing-context calls that pre-port lived directly inside
 //! `services/community/gossip.rs`. Mutation paths drop locks before
 //! awaiting (parking_lot guards are `!Send`).
@@ -24,15 +24,15 @@ impl GossipDeps for GossipAdapter {
         state_helpers::identity_secret(&self.state)
     }
 
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        state_helpers::login_scope_or_closed(&self.state)
+    }
+
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {
         self.state
             .dedup_cache
             .lock()
             .check_and_insert(community_id, sender, dedup_key);
-    }
-
-    fn increment_lamport(&self, community_id: &str) {
-        state_mutations::increment_lamport(&self.state, community_id);
     }
 
     fn current_peers(&self, community_id: &str) -> Option<Vec<PeerInfo>> {
@@ -70,9 +70,12 @@ impl GossipDeps for GossipAdapter {
         // guard is alive.
         if let Some(transport) = transport {
             let pk = peer_key.to_string();
-            tauri::async_runtime::spawn(async move {
-                transport.lock().await.refresh_peer_route(&pk, &route_blob);
-            });
+            crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
+                "voice route refresh",
+                async move {
+                    transport.lock().await.refresh_peer_route(&pk, &route_blob);
+                },
+            );
         }
     }
 
@@ -133,15 +136,7 @@ impl GossipDeps for GossipAdapter {
     }
 
     async fn send_app_message(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), String> {
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or_else(|| "no routing context".to_string())?;
-        let route_id = rc
-            .api()
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| e.to_string())?;
-        rc.app_message(veilid_core::Target::RouteId(route_id), data)
-            .await
-            .map_err(|e| e.to_string())
+        state_helpers::message_route_blob(&self.state, route_blob, data).await
     }
 }
 

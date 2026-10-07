@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_channel_admin_runtime::{
     delete_channel_inner, rename_channel_inner,
 };
@@ -16,12 +15,12 @@ pub async fn delete_channel(
     channel_id: String,
     idempotency_key: uuid::Uuid,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let s = state.inner().clone();
-    let p = pool.inner().clone();
+    let p = pool.clone();
     state
         .idempotency
         .wrap(idempotency_key, || async move {
@@ -36,14 +35,7 @@ pub async fn rename_channel(
     channel_id: String,
     new_name: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    rename_channel_inner(
-        state.inner(),
-        pool.inner(),
-        community_id,
-        channel_id,
-        new_name,
-    )
-    .await
+    let pool = state.db.current()?;
+    rename_channel_inner(state.inner(), &pool, community_id, channel_id, new_name).await
 }

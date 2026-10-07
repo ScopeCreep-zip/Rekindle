@@ -51,9 +51,6 @@ pub enum TypeId {
     // ── Community gossip (Ed25519 signed, optionally MEK encrypted) ─
     GossipBroadcast = 0x10,
 
-    // ── Voice (MEK encrypted, HMAC authenticated) ────────────────
-    VoicePacket = 0x11,
-
     // ── Community RPC (app_call, Ed25519 signed) ────────────────
     /// Member leave notification (best-effort, triggers rekey).
     CommunityLeave = 0x21,
@@ -122,8 +119,6 @@ impl TypeId {
     /// per-call class context.
     ///
     /// Mapping rationale:
-    /// - **VoicePacket** is the only audio-frame class (latency-critical,
-    ///   participants mutually known) → `Voice` (Unsafe routing).
     /// - **Call signaling** (CallInvite/Accept/Decline/End/MediaState/
     ///   Reaction + GroupCall* + DmInviteRequest/Reply) is RPC-shaped
     ///   short-lived control — `Rpc` (1-hop safety route, anonymous).
@@ -138,7 +133,6 @@ impl TypeId {
     pub fn class(self) -> rekindle_types::message::MessageClass {
         use rekindle_types::message::MessageClass;
         match self {
-            Self::VoicePacket => MessageClass::Voice,
             Self::CallInvite
             | Self::CallAccept
             | Self::CallDecline
@@ -185,7 +179,6 @@ impl TypeId {
             0x09 => Some(Self::ProfileKeyRotated),
             0x0A => Some(Self::DmPresenceUpdate),
             0x10 => Some(Self::GossipBroadcast),
-            0x11 => Some(Self::VoicePacket),
             0x21 => Some(Self::CommunityLeave),
             0x23 => Some(Self::SyncRequest),
             0x24 => Some(Self::SyncResponse),
@@ -225,7 +218,6 @@ impl TypeId {
                 | Self::UnfriendAck
                 | Self::ProfileKeyRotated
                 | Self::FriendRequestAck
-                | Self::VoicePacket
         )
     }
 
@@ -381,7 +373,6 @@ mod tests {
     fn all_type_ids_have_stable_byte_values() {
         assert_eq!(TypeId::DmMessage as u8, 0x01);
         assert_eq!(TypeId::GossipBroadcast as u8, 0x10);
-        assert_eq!(TypeId::VoicePacket as u8, 0x11);
         assert_eq!(TypeId::CommunityLeave as u8, 0x21);
         assert_eq!(TypeId::DmCall as u8, 0x25);
     }

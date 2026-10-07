@@ -1,8 +1,7 @@
 //! Community lifecycle: create, join, leave.
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::validation;
+use rekindle_ipc::protocol::IpcResponse;
 
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 
@@ -18,10 +17,7 @@ pub(crate) async fn handle_create(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let name = match validation::validate_name(name, "Community") {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
+    let name = name.trim().to_owned();
 
     // Refuse if a community with this name already exists in the session
     {
@@ -72,19 +68,23 @@ pub(crate) async fn handle_create(
         // Description is metadata, not part of genesis. A failure here
         // leaves a working community with no description rather than
         // failing a creation that already succeeded.
-        if let Err(e) = rekindle_governance_runtime::apply::write_entry(
-            &adapter(ctx),
-            &community_id,
-            rekindle_types::governance::GovernanceEntry::CommunityMeta {
-                name: Some(name.clone()),
-                description: Some(description.to_string()),
-                icon_hash: None,
-                banner_hash: None,
-                lamport: adapter(ctx).increment_lamport(&community_id),
-            },
-        )
-        .await
-        {
+        let written = match adapter(ctx).next_governance_lamport(&community_id) {
+            Ok(lamport) => rekindle_governance_runtime::apply::write_entry(
+                &adapter(ctx),
+                &community_id,
+                rekindle_types::governance::GovernanceEntry::CommunityMeta {
+                    name: Some(name.clone()),
+                    description: Some(description.to_string()),
+                    icon_hash: None,
+                    banner_hash: None,
+                    lamport,
+                },
+            )
+            .await
+            .map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        if let Err(e) = written {
             tracing::warn!(error = %e, "community created but description not written");
         }
     }
@@ -128,13 +128,17 @@ pub(crate) async fn handle_join(
     // match the registry's member keys, since those come from the
     // creator's shared seed. The seed rides in the invite, so a full
     // invite link is now required rather than a bare governance key.
-    let Some(link) = rekindle_types::invite::InviteLink::parse(invite) else {
-        return IpcResponse::error(
-            400,
-            "join requires a full invite link \
-             (rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}) — \
-             a bare governance key no longer works: the slot seed it needs lives in the invite",
-        );
+    let link = match rekindle_types::invite::InviteLink::parse(invite) {
+        Ok(link) => link,
+        Err(e) => {
+            return IpcResponse::error(
+                400,
+                format!(
+                    "join requires a full invite link \
+                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
+                ),
+            )
+        }
     };
 
     let session_display_name = match ctx.require_session(|s| s.identity.display_name.clone()) {
@@ -143,17 +147,11 @@ pub(crate) async fn handle_join(
     };
 
     let adapter = adapter(ctx);
-    let outcome = match rekindle_governance_runtime::join_flow::run_join_stages(
-        &adapter,
-        &link.governance_key,
-        &link.invite_code,
-        Some(&link.secrets_record_key),
-    )
-    .await
-    {
-        Ok(o) => o,
-        Err(e) => return IpcResponse::error(500, format!("community join failed: {e}")),
-    };
+    let outcome =
+        match rekindle_governance_runtime::join_flow::run_join_stages(&adapter, &link).await {
+            Ok(o) => o,
+            Err(e) => return IpcResponse::error(500, format!("community join failed: {e}")),
+        };
 
     // The claim reports which segment it landed in, so unlike the old
     // flow this is a fact rather than a guess.
@@ -161,7 +159,7 @@ pub(crate) async fn handle_join(
         .ok()
         .and_then(|b| <[u8; 32]>::try_from(b).ok());
     let membership = rekindle_transport::session::CommunityMembership {
-        governance_key: link.governance_key.clone(),
+        governance_key: link.governance_key.as_str().to_owned(),
         pseudonym_key: outcome.identity.pseudo_hex.clone(),
         display_name: session_display_name,
         role_ids: Vec::new(),
@@ -190,16 +188,20 @@ pub(crate) async fn handle_join(
     // Seed the runtime cache with the state the join already merged, so
     // the first read afterwards does not go back to the DHT.
     ctx.community_runtime
-        .set_governance_state(&link.governance_key, outcome.snapshot.gov_state);
+        .set_governance_state(link.governance_key.as_str(), outcome.snapshot.gov_state);
 
     IpcResponse::ok(&serde_json::json!({
         "community_name": outcome.invite.community_name,
-        "governance_key": link.governance_key,
+        "governance_key": link.governance_key.as_str(),
         "segment": outcome.claimed.segment_index,
         "slot": outcome.claimed.local_subkey,
         "known_members": outcome.initial_presence.known_members.len(),
     }))
 }
+
+/// How long a left community's tasks get to stop.
+const COMMUNITY_STOP_DEADLINE: std::time::Duration =
+    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
 
 pub(crate) async fn handle_leave(
     ctx: &DaemonContext,
@@ -222,6 +224,17 @@ pub(crate) async fn handle_leave(
         Ok(k) => k,
         Err(e) => return e,
     };
+    // The community's presence poll stops first, so it writes no row
+    // into a registry this leave is giving up.
+    let tasks = ctx
+        .community_scopes
+        .lock()
+        .remove(&membership.governance_key);
+    if let Some(tasks) = tasks {
+        if let Err(stuck) = tasks.shutdown(COMMUNITY_STOP_DEADLINE).await {
+            tracing::warn!(%stuck, "community tasks did not stop in time");
+        }
+    }
     match rekindle_transport::operations::community::leave_community(
         &transport,
         &membership,
@@ -240,6 +253,24 @@ pub(crate) async fn handle_leave(
                 &membership.governance_key,
                 &result.departure_notice,
             );
+            // The community's records go back to the pool; the last
+            // borrower's release closes each one (plan C7.5).
+            let leases = ctx
+                .community_runtime
+                .take_leases(&membership.governance_key);
+            // The subscription watches on the community's records go too.
+            let watch_leases = ctx
+                .subscriptions
+                .read()
+                .as_ref()
+                .map(|subs| subs.teardown_community(&membership.governance_key))
+                .unwrap_or_default();
+            for lease in leases.all().chain(watch_leases) {
+                rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
+            }
+            // The community's runtime state goes with it (its keepalive
+            // stopped with the community scope above).
+            ctx.community_runtime.remove(&membership.governance_key);
             {
                 let mut guard = ctx.session.write();
                 if let Some(ref mut s) = *guard {

@@ -1,6 +1,6 @@
 import { Component, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { MessageAttachment } from "../../stores/chat.store";
-import { handleDownloadAttachment } from "../../actions/community.actions";
+import { handleLoadVoiceMessage } from "../../actions/community.actions";
 import { ICON_DOWNLOAD } from "../../icons";
 
 interface VoiceMessagePlayerProps {
@@ -26,13 +26,17 @@ function formatDuration(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/// Plays a voice message from its bytes. The audio is fetched through the
+/// chunk cache by the backend and played from a `blob:` URL, so nothing is
+/// written to disk and no file path reaches the webview.
 const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
-  const [downloading, setDownloading] = createSignal(false);
+  const [fetching, setFetching] = createSignal(false);
   const [playing, setPlaying] = createSignal(false);
   const [audio, setAudio] = createSignal<HTMLAudioElement | null>(null);
   const [position, setPosition] = createSignal(0);
+  let objectUrl: string | null = null;
 
-  const downloaded = createMemo(() => Boolean(props.attachment.localPath));
+  const loaded = createMemo(() => audio() !== null);
 
   // Render bars from the waveform peak bytes — full vs already-played split
   // is computed from `position / durationMs`.
@@ -42,34 +46,28 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
     return Math.round((position() / props.durationMs) * totalBars());
   });
 
-  async function ensureDownloaded(): Promise<string | null> {
-    if (props.attachment.localPath) return props.attachment.localPath;
-    setDownloading(true);
+  async function loadAudio(): Promise<HTMLAudioElement | null> {
+    setFetching(true);
     try {
-      const ok = await handleDownloadAttachment(
+      const blob = await handleLoadVoiceMessage(
         props.communityId,
         props.channelId,
         props.attachment.attachmentId,
-        props.attachment.filename,
+        props.attachment.mimeType,
       );
-      // After successful download, the AttachmentDownloaded handler updates
-      // `attachment.localPath`. If the user cancelled, return null.
-      return ok ? props.attachment.localPath ?? null : null;
+      if (!blob) return null;
+      objectUrl = URL.createObjectURL(blob);
+      return new Audio(objectUrl);
     } finally {
-      setDownloading(false);
+      setFetching(false);
     }
   }
 
   async function togglePlay(): Promise<void> {
-    let path = props.attachment.localPath;
-    if (!path) {
-      path = await ensureDownloaded();
-      if (!path) return;
-    }
     let el = audio();
     if (!el) {
-      const { convertFileSrc } = await import("@tauri-apps/api/core");
-      el = new Audio(convertFileSrc(path));
+      el = await loadAudio();
+      if (!el) return;
       el.addEventListener("timeupdate", () => setPosition(Math.round(el!.currentTime * 1000)));
       el.addEventListener("ended", () => {
         setPlaying(false);
@@ -92,6 +90,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
       el.pause();
       el.src = "";
     }
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
   });
 
   return (
@@ -99,11 +98,11 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
       <button
         class="voice-message-play-btn"
         onClick={() => void togglePlay()}
-        disabled={downloading()}
-        title={playing() ? "Pause" : downloaded() ? "Play" : "Download + play"}
+        disabled={fetching()}
+        title={playing() ? "Pause" : loaded() ? "Play" : "Fetch + play"}
       >
         <Show
-          when={!downloaded() && !downloading()}
+          when={!loaded() && !fetching()}
           fallback={<span class="nf-icon">{playing() ? "\u{F03E4}" : "\u{F040A}"}</span>}
         >
           <span class="nf-icon">{ICON_DOWNLOAD}</span>

@@ -2,7 +2,7 @@
 name = "rekindle-records"
 version = "0.1.0"
 edition = "2021"
-description = "DHT record lifecycle, SMPL sizing, and write retry for Rekindle v2.0"
+description = "DHT record lifecycle, SMPL sizing, and read backoff for Rekindle v2.0"
 license = "MIT"
 
 [lints]
@@ -10,7 +10,8 @@ workspace = true
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
-tokio = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

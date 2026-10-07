@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "src-tauri",
     "crates/rekindle-types",
+    "crates/rekindle-db",
     "crates/rekindle-secrets",
     "crates/rekindle-governance",
     "crates/rekindle-codec",
@@ -21,11 +22,15 @@ members = [
     "crates/rekindle-protocol",
     "crates/rekindle-crypto",
     "crates/rekindle-game-detect",
+    "crates/rekindle-idle",
     "crates/rekindle-voice",
     "crates/rekindle-e2e-server",
     "crates/rekindle-utils",
     "crates/rekindle-transport",
     "crates/rekindle-cli",
+    "crates/rekindle-client",
+    "crates/rekindle-tui",
+    "crates/rekindle-ipc",
     "crates/rekindle-node",
     # Decomposed-harvest crates (added per `.claude/plans/memoized-dazzling-torvalds.md`).
     "crates/rekindle-audit",
@@ -77,6 +82,7 @@ default-members = [
     "crates/rekindle-protocol",
     "crates/rekindle-crypto",
     "crates/rekindle-game-detect",
+    "crates/rekindle-idle",
     "crates/rekindle-voice",
     "crates/rekindle-e2e-server",
     "crates/rekindle-utils",
@@ -97,11 +103,11 @@ default-members = [
 ]
 
 [workspace.dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = [ "full" ] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = [ "env-filter" ] }
 thiserror = "2"
 anyhow = "1"
 bytes = "1"
@@ -126,7 +132,7 @@ warnings = "deny"
 unused-imports = "deny"
 dead-code = "deny"
 unused-variables = "deny"
-unsafe-op-in-unsafe-fn = "warn"          # Rust 2024: explicit unsafe blocks in unsafe fns
+unsafe-op-in-unsafe-fn = "warn" # Rust 2024: explicit unsafe blocks in unsafe fns
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -139,16 +145,16 @@ missing-panics-doc = "allow"
 must-use-candidate = "allow"
 return-self-not-must-use = "allow"
 struct-excessive-bools = "allow"
-items-after-statements = "allow"         # use statements in fn bodies (common in tests)
-similar-names = "allow"                  # ct/pt, idx/id pairs — too many false positives
-doc-markdown = "allow"                   # noisy for technical codebases
-doc-lazy-continuation = "allow"          # multi-line doc comment formatting
-trivially-copy-pass-by-ref = "allow"     # serde serialize_with/skip_serializing_if mandate fn(&T)
+items-after-statements = "allow"     # use statements in fn bodies (common in tests)
+similar-names = "allow"              # ct/pt, idx/id pairs — too many false positives
+doc-markdown = "allow"               # noisy for technical codebases
+doc-lazy-continuation = "allow"      # multi-line doc comment formatting
+trivially-copy-pass-by-ref = "allow" # serde serialize_with/skip_serializing_if mandate fn(&T)
 
 # --- Security: cherry-picked restriction lints ---
-dbg-macro = "deny"                       # no leftover dbg!() in production
-todo = "deny"                            # no todo!() in shipped code
-unimplemented = "deny"                   # no unimplemented!() in shipped code
-undocumented-unsafe-blocks = "deny"      # every unsafe block needs // SAFETY: comment
-print-stdout = "warn"                    # prefer tracing over println!
-print-stderr = "warn"                    # prefer tracing over eprintln!
+dbg-macro = "deny"                  # no leftover dbg!() in production
+todo = "deny"                       # no todo!() in shipped code
+unimplemented = "deny"              # no unimplemented!() in shipped code
+undocumented-unsafe-blocks = "deny" # every unsafe block needs // SAFETY: comment
+print-stdout = "warn"               # prefer tracing over println!
+print-stderr = "warn"               # prefer tracing over eprintln!

@@ -45,7 +45,7 @@ export async function handleSendChannelMessage(
       msgs.map((m) => (m.id === tempId ? { ...m, status, serverMessageId: result.messageId } : m)),
     );
     if (result.status === "queued") {
-      addToast("Message queued — will deliver when server is reachable", "info");
+      addToast("Message queued: it will be delivered when the network is back", "info");
     }
   } catch (e) {
     console.error("Failed to send channel message:", e);

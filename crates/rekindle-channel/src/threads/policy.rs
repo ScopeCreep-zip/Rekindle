@@ -1,7 +1,5 @@
 //! Pure thread policy: archive rules, defaults, the message view.
 
-use rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT;
-
 use crate::error::ChannelError;
 
 pub fn validate_auto_archive_seconds(secs: u64) -> Result<u64, ChannelError> {
@@ -40,11 +38,6 @@ pub fn is_thread_archived(
     manually_archived || auto_archived
 }
 
-#[must_use]
-pub fn thread_member_count() -> u32 {
-    u32::try_from(MAX_MEMBERS_PER_SEGMENT).unwrap_or(u32::MAX)
-}
-
 /// One thread message decrypted and ready for adapter-side display
 /// assembly. Crate-side counterpart of src-tauri `Message` — adapter
 /// wraps these into the full Message DTO.
@@ -52,6 +45,9 @@ pub fn thread_member_count() -> u32 {
 pub struct ThreadMessageView {
     pub sender_pseudonym: String,
     pub body: String,
+    /// The body did not open under its key generation at its position
+    /// (generation not held yet, or not authentic there).
+    pub decryption_failed: bool,
     pub timestamp_ms: u64,
     pub is_own: bool,
     pub server_message_id: Option<String>,

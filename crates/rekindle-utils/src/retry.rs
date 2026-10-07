@@ -1,9 +1,9 @@
 //! Bounded retry with backoff — the one retry loop for the workspace.
 //!
 //! Before this module existed the same loop was hand-rolled four times
-//! (`rekindle-protocol::dht::retry_on_unreachable`, the transport DHT
-//! `open_with_retry`, and two private-route allocators in the Tauri
-//! host), each with its own attempt counting, sleeping, and logging.
+//! (two DHT open retries, since replaced by the record pool's one retry
+//! layer, and two private-route allocators in the Tauri host), each with
+//! its own attempt counting, sleeping, and logging.
 //! Only two things ever differed per site: the backoff shape and the
 //! "is this error worth retrying" predicate — so those are the
 //! parameters, and everything else lives here once.
@@ -62,9 +62,31 @@ impl RetryPolicy {
 pub async fn retry_with_backoff<T, E, F, Fut>(
     policy: RetryPolicy,
     label: &str,
-    mut is_transient: impl FnMut(&E) -> bool,
-    mut op: F,
+    is_transient: impl FnMut(&E) -> bool,
+    op: F,
 ) -> Result<T, E>
+where
+    E: std::fmt::Display,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    let never = tokio_util::sync::CancellationToken::new();
+    retry_with_backoff_until(policy, label, is_transient, &never, op)
+        .await
+        .expect("a token nobody cancels never stops the retry")
+}
+
+/// [`retry_with_backoff`] for session work: stops when `stop` is
+/// cancelled, before the next attempt or during a backoff sleep, and
+/// returns `None`. An attempt already running finishes: the operations
+/// retried here are Veilid calls, which have no cancellation (plan C4.L1).
+pub async fn retry_with_backoff_until<T, E, F, Fut>(
+    policy: RetryPolicy,
+    label: &str,
+    mut is_transient: impl FnMut(&E) -> bool,
+    stop: &tokio_util::sync::CancellationToken,
+    mut op: F,
+) -> Option<Result<T, E>>
 where
     E: std::fmt::Display,
     F: FnMut() -> Fut,
@@ -74,11 +96,14 @@ where
     let mut delay = policy.initial_delay;
 
     for attempt in 1..=attempts {
+        if stop.is_cancelled() {
+            return None;
+        }
         match op().await {
-            Ok(v) => return Ok(v),
+            Ok(v) => return Some(Ok(v)),
             Err(e) if is_transient(&e) => {
                 if attempt == attempts {
-                    return Err(e);
+                    return Some(Err(e));
                 }
                 tracing::debug!(
                     label,
@@ -88,12 +113,17 @@ where
                     error = %e,
                     "transient failure; retrying"
                 );
-                if !delay.is_zero() {
-                    tokio::time::sleep(delay).await;
+                if !delay.is_zero()
+                    && stop
+                        .run_until_cancelled(tokio::time::sleep(delay))
+                        .await
+                        .is_none()
+                {
+                    return None;
                 }
                 delay = delay.saturating_mul(2).min(policy.max_delay);
             }
-            Err(e) => return Err(e),
+            Err(e) => return Some(Err(e)),
         }
     }
     unreachable!("loop returns on success, hard error, or final attempt")
@@ -199,5 +229,35 @@ mod tests {
             retry_with_backoff(policy, "t", |_| true, || async { Err("t".to_string()) }).await;
         assert!(res.is_err());
         assert_eq!(start.elapsed(), Duration::from_millis(600));
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_token_stops_before_the_first_attempt() {
+        let stop = tokio_util::sync::CancellationToken::new();
+        stop.cancel();
+        let res: Option<Result<u32, String>> =
+            retry_with_backoff_until(ZERO, "t", |_| true, &stop, || async { Ok(1) }).await;
+        assert!(res.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_during_backoff_stops_the_retry() {
+        let stop = tokio_util::sync::CancellationToken::new();
+        let calls = Cell::new(0u32);
+        let canceller = stop.clone();
+        let res: Option<Result<u32, String>> = retry_with_backoff_until(
+            RetryPolicy::fixed(5, Duration::from_secs(3)),
+            "t",
+            |_| true,
+            &stop,
+            || {
+                calls.set(calls.get() + 1);
+                canceller.cancel();
+                async { Err("transient".to_string()) }
+            },
+        )
+        .await;
+        assert!(res.is_none());
+        assert_eq!(calls.get(), 1, "no attempt after the stop");
     }
 }

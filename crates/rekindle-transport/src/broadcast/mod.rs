@@ -8,7 +8,6 @@
 //! ## Veilid lifecycle & infrastructure
 //! - `node` — VeilidAPI lifecycle (startup, shutdown, attach, detach, RoutingContext)
 //! - `send` — app_message / app_call outbound wrappers
-//! - `peer_route` — route allocation, import, release (RouteManager)
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
 //! - `dht/` — all DHT record CRUD (create, open, close, get, set, watch, inspect)
 //!
@@ -24,7 +23,6 @@
 pub mod dht;
 pub mod node;
 pub mod peer_registry;
-pub mod peer_route;
 pub mod send;
 
 // Application-level broadcast (calls through infrastructure above)
@@ -32,7 +30,6 @@ pub mod dht_writes;
 pub mod dm;
 pub mod route;
 pub mod rpc;
-pub mod voice;
 
 use std::collections::HashMap;
 use std::sync::Arc;

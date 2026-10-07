@@ -8,8 +8,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use rekindle_channel::deps::{
-    ChannelEntryItem, ChannelInfoSnapshot, ChannelMek, ChannelMessageRow, ChannelMessagingDeps,
-    ChannelSendOutcome, ChannelWriteContext, MemberMentionView, PendingChannelWrite,
+    ChannelEntryItem, ChannelInfoSnapshot, ChannelMessageRow, ChannelMessagingDeps,
+    ChannelSendOutcome, ChannelWriteContext, DhtWrite, MemberMentionView, PendingDelivery,
     PseudonymCredentials, RoleSnapshot, SentChannelMessageEcho, ThreadInfoSnapshot,
     ThreadStateSnapshot,
 };
@@ -90,16 +90,8 @@ impl ChannelMessagingDeps for ChannelAdapter {
             .cloned()
     }
 
-    fn community_mek(&self, community_id: &str) -> Option<ChannelMek> {
-        state_mutations::community_mek_impl(self, community_id)
-    }
-
-    fn channel_or_community_mek(&self, community_id: &str, channel_id: &str) -> Option<ChannelMek> {
-        state_mutations::channel_or_community_mek_impl(self, community_id, channel_id)
-    }
-
-    fn current_mek_generation(&self, community_id: &str) -> Option<u64> {
-        state_mutations::current_mek_generation_impl(self, community_id)
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        state_helpers::key_provider(&self.state)
     }
 
     fn governance_state(&self, community_id: &str) -> Option<GovernanceState> {
@@ -169,12 +161,18 @@ impl ChannelMessagingDeps for ChannelAdapter {
         state_mutations::mark_last_send_at_impl(self, community_id, channel_id, now_ms);
     }
 
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        state_helpers::increment_lamport(&self.state, community_id)
+    fn increment_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_message_lamport(&self.state, community_id)
     }
 
-    fn track_open_records(&self, _community_id: &str, record_keys: &[String]) {
-        state_helpers::track_open_records(&self.state, record_keys);
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_governance_lamport(&self.state, community_id)
     }
 
     // ---------- DHT ----------
@@ -183,7 +181,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
         &self,
         context: &ChannelWriteContext,
         channel_msg: &ChannelMessage,
-    ) -> Result<(), ChannelError> {
+    ) -> Result<DhtWrite, ChannelError> {
         dht::write_channel_message_smpl_impl(self, context, channel_msg).await
     }
 
@@ -191,7 +189,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
         &self,
         context: &ChannelWriteContext,
         forward: &ChannelForward,
-    ) -> Result<(), ChannelError> {
+    ) -> Result<DhtWrite, ChannelError> {
         dht::write_channel_forward_smpl_impl(self, context, forward).await
     }
 
@@ -239,36 +237,47 @@ impl ChannelMessagingDeps for ChannelAdapter {
         &self,
         community_id: &str,
     ) -> Result<std::collections::HashMap<u32, String>, ChannelError> {
-        persist::stage_pseudonyms_by_subkey_impl(self, community_id).await
+        crate::services::community::writers::writer_slots(&self.state, &self.pool, community_id)
+            .await
+            .map(|slots| slots.into_iter().collect())
+            .map_err(ChannelError::Adapter)
     }
 
     async fn create_smpl_thread_record(
         &self,
         slot_seed_bytes: &[u8; 32],
-    ) -> Result<String, ChannelError> {
+    ) -> Result<(rekindle_records::lease::LeaseId, String), ChannelError> {
         dht::create_smpl_thread_record_impl(self, slot_seed_bytes).await
+    }
+
+    async fn release_record(&self, lease: rekindle_records::lease::LeaseId) {
+        if let Ok(pool) = state_helpers::record_pool(&self.state) {
+            pool.release(lease).await;
+        }
     }
 
     async fn read_all_channel_entries(
         &self,
+        community_id: &str,
         record_key: &str,
-        member_count: u32,
     ) -> Result<Vec<ChannelEntryItem>, ChannelError> {
-        dht::read_all_channel_entries_impl(self, record_key, member_count).await
+        dht::read_all_channel_entries_impl(self, community_id, record_key).await
     }
 
     async fn read_all_channel_messages(
         &self,
+        community_id: &str,
         record_key: &str,
-        member_count: u32,
     ) -> Result<Vec<ChannelMessage>, ChannelError> {
-        dht::read_all_channel_messages_impl(self, record_key, member_count).await
+        dht::read_all_channel_messages_impl(self, community_id, record_key).await
     }
 
-    async fn watch_community_records(&self, community_id: &str) -> Result<(), ChannelError> {
-        crate::services::community::watch::watch_community_records(&self.state, community_id)
-            .await
-            .map_err(ChannelError::Adapter)
+    async fn community_records_ready(
+        &self,
+        community_id: &str,
+        leases: rekindle_records::lease::CommunityLeases,
+    ) {
+        crate::services::community::leases::records_ready(&self.state, community_id, leases).await;
     }
 
     async fn ensure_channel_segment_record(
@@ -285,13 +294,23 @@ impl ChannelMessagingDeps for ChannelAdapter {
         .map_err(ChannelError::Adapter)
     }
 
-    // ---------- Retry queue ----------
+    // ---------- Held writes (plan C7.13) ----------
 
-    async fn enqueue_channel_retry(
-        &self,
-        pending: PendingChannelWrite,
-    ) -> Result<(), ChannelError> {
-        persist::enqueue_channel_retry_impl(self, pending).await
+    fn track_pending_delivery(&self, record_key: &str, subkey: u32, pending: PendingDelivery) {
+        self.state
+            .channel_pending_deliveries
+            .lock()
+            .entry((record_key.to_string(), subkey))
+            .or_default()
+            .push(pending);
+    }
+
+    fn take_pending_deliveries(&self, record_key: &str, subkey: u32) -> Vec<PendingDelivery> {
+        self.state
+            .channel_pending_deliveries
+            .lock()
+            .remove(&(record_key.to_string(), subkey))
+            .unwrap_or_default()
     }
 
     // ---------- DB (channel messages) ----------

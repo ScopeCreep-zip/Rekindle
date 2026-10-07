@@ -22,7 +22,7 @@ impl DaemonPresenceAdapter {
 
     pub(super) fn our_route_blob_impl(&self) -> Option<Vec<u8>> {
         let node = self.transport()?;
-        let blob = node.routes().read().route_blob()?.to_vec();
+        let blob = node.personal_route_blob()?;
         // An allocated-but-empty route is not publishable: a peer that
         // imported it would have nothing to send to.
         (!blob.is_empty()).then_some(blob)
@@ -66,8 +66,31 @@ impl DaemonPresenceAdapter {
     /// map lookup against a roster whose every row was signature-checked
     /// when it was scanned, rather than a DHT read of a shared structure
     /// any member could have written.
-    pub(super) fn member_count_impl(&self, community_id: &str) -> u32 {
-        u32::try_from(self.ctx.community_runtime.member_count(community_id)).unwrap_or(u32::MAX)
+    /// The writer index for our segment's channel records: every member
+    /// the roster placed in our segment, and our own slot (plan C7.12).
+    pub(super) fn member_slots_impl(&self, community_id: &str) -> Vec<u32> {
+        let Some((segment, own_slot)) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .and_then(|s| s.community(community_id))
+            .map(|m| (m.segment_index.unwrap_or(0), m.slot_index))
+        else {
+            return Vec::new();
+        };
+        let mut slots: Vec<u32> = self
+            .ctx
+            .community_runtime
+            .members(community_id)
+            .into_values()
+            .filter(|member| member.segment_index == segment)
+            .map(|member| member.subkey_index)
+            .collect();
+        slots.push(own_slot);
+        slots.sort_unstable();
+        slots.dedup();
+        slots
     }
 
     pub(super) fn presence_credentials_impl(
@@ -112,6 +135,9 @@ impl DaemonPresenceAdapter {
                 registry_key,
                 // Segment 0's governance record is the community's own.
                 governance_key,
+                slot_range_start: 0,
+                slot_range_end:
+                    rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT,
             });
         }
         if let Some(state) = self.ctx.community_runtime.governance_state(community_id) {
@@ -125,6 +151,8 @@ impl DaemonPresenceAdapter {
                     // Carried rather than dropped: the merged segment
                     // entry has it, and the type can now hold it.
                     governance_key: seg.governance_key.clone(),
+                    slot_range_start: seg.slot_range_start,
+                    slot_range_end: seg.slot_range_end,
                 });
             }
         }

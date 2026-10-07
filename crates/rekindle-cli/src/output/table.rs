@@ -7,7 +7,6 @@
 
 use std::io::Write;
 
-use super::color::ColorSupport;
 use super::OutputMode;
 
 /// Print a table with headers and rows.
@@ -41,12 +40,12 @@ pub fn print_table(headers: &[&str], rows: &[Vec<String>], mode: OutputMode) -> 
             }
             Ok(())
         }
-        _ => {
+        OutputMode::Text => {
             let color_support = mode.color_support();
             let mut table = comfy_table::Table::new();
 
             // Use UTF-8 borders by default, ASCII if terminal doesn't support Unicode
-            if ColorSupport::use_unicode() {
+            if rekindle_client::term::use_unicode() {
                 table.load_preset(comfy_table::presets::UTF8_FULL);
             } else {
                 table.load_preset(comfy_table::presets::ASCII_FULL);

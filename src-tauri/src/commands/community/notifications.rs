@@ -1,20 +1,19 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_notifications_runtime::QuietHoursSettingsDto;
 use crate::state::SharedState;
 
 #[tauri::command]
 pub async fn set_channel_notification_level(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     level: String,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     crate::services::community_notifications_runtime::set_channel_notification_level_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         &community_id,
         &channel_id,
         &level,
@@ -53,14 +52,14 @@ pub async fn get_community_default_notification_level(
 #[tauri::command]
 pub async fn set_notification_sound(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     sound_ref: Option<String>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     crate::services::community::notifications::set_notification_sound(
         state.inner(),
-        pool.inner(),
+        &pool,
         &community_id,
         &channel_id,
         sound_ref,
@@ -74,14 +73,14 @@ pub async fn set_notification_sound(
 /// own bundled default if `None`).
 #[tauri::command]
 pub async fn get_notification_sound(
-    pool: State<'_, DbPool>,
     state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
 ) -> Result<Option<String>, String> {
+    let pool = state.db.current()?;
     crate::services::community_notifications_runtime::get_notification_sound_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         &community_id,
         &channel_id,
     )
@@ -94,43 +93,34 @@ pub async fn get_notification_sound(
 #[tauri::command]
 pub async fn set_do_not_disturb(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     enabled: bool,
 ) -> Result<(), String> {
-    crate::services::community::notifications::set_do_not_disturb(
-        state.inner(),
-        pool.inner(),
-        enabled,
-    )
-    .await
+    let pool = state.db.current()?;
+    crate::services::community::notifications::set_do_not_disturb(state.inner(), &pool, enabled)
+        .await
 }
 
 #[tauri::command]
-pub async fn get_do_not_disturb(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<bool, String> {
+pub async fn get_do_not_disturb(state: State<'_, SharedState>) -> Result<bool, String> {
+    let pool = state.db.current()?;
     Ok(
-        crate::services::community::notifications::is_do_not_disturb_active(
-            state.inner(),
-            pool.inner(),
-        )
-        .await,
+        crate::services::community::notifications::is_do_not_disturb_active(state.inner(), &pool)
+            .await,
     )
 }
 
 #[tauri::command]
 pub async fn set_quiet_hours(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     enabled: bool,
     start_hour: u8,
     end_hour: u8,
     timezone: String,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     crate::services::community_notifications_runtime::set_quiet_hours_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         enabled,
         start_hour,
         end_hour,
@@ -142,11 +132,8 @@ pub async fn set_quiet_hours(
 #[tauri::command]
 pub async fn get_quiet_hours(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<QuietHoursSettingsDto, String> {
-    crate::services::community_notifications_runtime::get_quiet_hours_inner(
-        state.inner(),
-        pool.inner(),
-    )
-    .await
+    let pool = state.db.current()?;
+    crate::services::community_notifications_runtime::get_quiet_hours_inner(state.inner(), &pool)
+        .await
 }

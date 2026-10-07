@@ -262,7 +262,7 @@ runs.
 |---|---|
 | `invoke.ts` | Conditional invoke (Tauri normally, HTTP to `localhost:3001` under E2E) |
 | `hydrate.ts` | State hydration on login |
-| `avatar.ts` | Avatar data handling (Tauri convertFileSrc adapter) |
+| `avatar.ts` | Avatar bytes from `get_avatar` → `data:image/webp` URL |
 | `permissions.ts` | Permission bitmask helpers shared with the backend bitfield |
 
 ## Styles

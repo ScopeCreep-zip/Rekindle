@@ -7,9 +7,12 @@ use std::sync::Arc;
 use rekindle_transport::{Session, TransportNode};
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{BusPayload, IpcRequest, IpcResponse, Lane};
 
-use super::DaemonContext;
+use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
+
+use super::in_flight::{shutting_down, Correlation, Finished, InFlight};
+use super::{CallerContext, DaemonContext};
 
 // ── Shared helpers used across dispatch submodules ───────────────────────
 
@@ -34,8 +37,8 @@ impl DaemonContext {
         guard.as_ref().map(f).ok_or_else(|| {
             IpcResponse::error_with_remediation(
                 404,
-                "no identity loaded — run: rekindle init",
-                "initialize an identity first: rekindle init",
+                "no identity loaded",
+                "initialize an identity first",
             )
         })
     }
@@ -47,7 +50,7 @@ impl DaemonContext {
             IpcResponse::error_with_remediation(
                 403,
                 "signing key not available — daemon is locked",
-                "unlock the daemon first: rekindle unlock",
+                "unlock the daemon first",
             )
         })
     }
@@ -87,6 +90,14 @@ impl DaemonContext {
     }
 }
 
+/// Move the lifecycle to `next`, or answer 409 if the FSM refuses the edge.
+pub(crate) fn transition(ctx: &DaemonContext, next: DaemonState) -> Result<(), IpcResponse> {
+    ctx.lifecycle
+        .transition(next)
+        .map(drop)
+        .map_err(|e| IpcResponse::error(409, e.to_string()))
+}
+
 /// Produce a standard error response for state violations.
 pub(crate) fn state_error(state: DaemonState, required: &str) -> IpcResponse {
     IpcResponse::error_with_remediation(
@@ -96,7 +107,7 @@ pub(crate) fn state_error(state: DaemonState, required: &str) -> IpcResponse {
             state.as_str()
         ),
         if state == DaemonState::Locked {
-            "unlock the daemon first: rekindle unlock"
+            "unlock the daemon first"
         } else {
             "wait for the daemon to reach operational state"
         },
@@ -110,56 +121,117 @@ impl DaemonContext {
     ///
     /// Connects to the daemon's own IPC socket as a privileged internal
     /// agent, receives `BusPayload::Request` messages routed by the server,
-    /// dispatches each to the appropriate handler, and sends correlated
-    /// `BusPayload::Response` messages back through the bus.
+    /// dispatches each as its own task in its lane, and sends correlated
+    /// `BusPayload::Response` messages back through the bus as they finish.
+    /// An interval arm beats the heartbeat the watchdog checks.
     ///
     /// This method runs until the bus connection is closed (daemon shutdown).
     pub async fn run_subscriber(
         self: &std::sync::Arc<Self>,
-        mut client: crate::ipc::client::BusClient,
+        mut client: rekindle_ipc::client::BusClient,
     ) {
         tracing::info!("daemon bus subscriber started");
+        let mut in_flight = InFlight::default();
+        let mut tick = tokio::time::interval(self.subscriber_heartbeat.tick());
 
         loop {
-            let msg = match client.recv_bus_message().await {
-                Some(Ok(msg)) => msg,
-                Some(Err(e)) => {
-                    tracing::warn!(error = %e, "daemon subscriber: decode failed, skipping");
-                    continue;
-                }
-                None => {
-                    tracing::info!("daemon subscriber: bus connection closed");
-                    break;
-                }
-            };
-
-            let request = match msg.payload {
-                crate::ipc::protocol::BusPayload::Request(req) => req,
-                other => {
-                    tracing::debug!(payload = ?std::mem::discriminant(&other), "daemon subscriber: non-request payload, ignoring");
-                    continue;
-                }
-            };
-
-            let correlation_id = msg.msg_id;
-            let level = msg.security_level;
-            let response = super::router::dispatch(self, request).await;
-
-            // Serialize IpcResponse to JSON bytes for the bus wire format.
-            // IpcResponse contains serde_json::Value which postcard cannot handle.
-            let response_bytes = match serde_json::to_vec(&response) {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::error!(error = %e, "daemon subscriber: failed to serialize response");
-                    continue;
-                }
-            };
-
-            if let Err(e) = client.respond(response_bytes, correlation_id, level).await {
-                tracing::error!(error = %e, "daemon subscriber: failed to send response");
+            tokio::select! {
+                () = self.shutdown.requested() => break,
+                msg = client.recv_bus_message() => match msg {
+                    Some(Ok(msg)) => {
+                        let BusPayload::Request(request) = msg.payload else {
+                            tracing::debug!("daemon subscriber: non-request payload, ignoring");
+                            continue;
+                        };
+                        let correlation = Correlation {
+                            id: msg.msg_id,
+                            level: msg.security_level,
+                        };
+                        let caller = CallerContext {
+                            verified_name: msg.verified_sender_name,
+                            static_key: msg.verified_sender_key,
+                            level: msg.security_level,
+                        };
+                        let ctx = Arc::clone(self);
+                        in_flight.spawn(correlation, async move {
+                            ctx.dispatch_in_lane(request, &caller).await
+                        });
+                    }
+                    Some(Err(e)) => {
+                        tracing::warn!(error = %e, "daemon subscriber: decode failed, skipping");
+                    }
+                    None => {
+                        tracing::info!("daemon subscriber: bus connection closed");
+                        break;
+                    }
+                },
+                Some(done) = in_flight.next() => self.answer(&client, done).await,
+                _ = tick.tick() => self.subscriber_heartbeat.beat(),
             }
         }
 
+        self.drain(&client, &mut in_flight).await;
+        client.shutdown().await;
         tracing::info!("daemon bus subscriber stopped");
+    }
+
+    /// Send a finished request's response. A handler panic may have left
+    /// shared state half-mutated, so after answering it the daemon shuts
+    /// down for its supervisor to restart it from fresh state.
+    async fn answer(&self, client: &rekindle_ipc::client::BusClient, done: Finished) {
+        respond(client, done.correlation, &done.response).await;
+        if done.panicked {
+            self.shutdown.request(ExitReason::HandlerPanic);
+        }
+    }
+
+    /// Answer every request still in flight: let them finish until
+    /// [`REQUEST_DRAIN_DEADLINE`], then abort the rest and answer 503.
+    async fn drain(&self, client: &rekindle_ipc::client::BusClient, in_flight: &mut InFlight) {
+        let deadline = tokio::time::Instant::now() + REQUEST_DRAIN_DEADLINE;
+        while let Ok(Some(done)) = tokio::time::timeout_at(deadline, in_flight.next()).await {
+            self.answer(client, done).await;
+        }
+        for correlation in in_flight.abort_all().await {
+            respond(client, correlation, &shutting_down()).await;
+        }
+    }
+
+    /// Dispatch `request` holding its lane for the whole handler.
+    async fn dispatch_in_lane(&self, request: IpcRequest, caller: &CallerContext) -> IpcResponse {
+        match request.lane() {
+            Lane::Query => super::router::dispatch(self, request, caller).await,
+            Lane::Write => {
+                let _lane = self.write_lane.read().await;
+                super::router::dispatch(self, request, caller).await
+            }
+            Lane::Exclusive => {
+                let _lane = self.write_lane.write().await;
+                super::router::dispatch(self, request, caller).await
+            }
+        }
+    }
+}
+
+/// Send `response` back to the requester `correlation` names.
+async fn respond(
+    client: &rekindle_ipc::client::BusClient,
+    correlation: Correlation,
+    response: &IpcResponse,
+) {
+    // Serialize IpcResponse to JSON bytes for the bus wire format.
+    // IpcResponse contains serde_json::Value which postcard cannot handle.
+    let response_bytes = match serde_json::to_vec(response) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(error = %e, "daemon subscriber: failed to serialize response");
+            return;
+        }
+    };
+    if let Err(e) = client
+        .respond(response_bytes, correlation.id, correlation.level)
+        .await
+    {
+        tracing::error!(error = %e, "daemon subscriber: failed to send response");
     }
 }

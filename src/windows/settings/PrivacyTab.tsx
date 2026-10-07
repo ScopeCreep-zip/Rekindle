@@ -3,9 +3,11 @@ import FormField from "../../components/common/FormField";
 import RelaySettingsSection from "../../components/settings/RelaySettingsSection";
 import { authState } from "../../stores/auth.store";
 import { commands } from "../../ipc/commands";
+import { handleUnblockUser } from "../../actions/buddy.actions";
 
 const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
+  const [error, setError] = createSignal<string | null>(null);
 
   onMount(() => {
     commands.getBlockedUsers().then(setBlockedUsers).catch((e) => {
@@ -13,13 +15,18 @@ const PrivacyTab: Component = () => {
     });
   });
 
+  // Delegates to the shared action (`actions/buddy.actions.ts`) rather than
+  // calling `commands.unblockUser` directly here a second time — this file
+  // used to reimplement it locally with weaker error handling
+  // (`console.error` only, nothing surfaced to the user).
   async function handleUnblock(publicKey: string): Promise<void> {
-    try {
-      await commands.unblockUser(publicKey);
-      setBlockedUsers((prev) => prev.filter((u) => u.publicKey !== publicKey));
-    } catch (e) {
-      console.error("Failed to unblock user:", e);
+    setError(null);
+    const err = await handleUnblockUser(publicKey);
+    if (err) {
+      setError(err);
+      return;
     }
+    setBlockedUsers((prev) => prev.filter((u) => u.publicKey !== publicKey));
   }
 
   return (
@@ -35,6 +42,9 @@ const PrivacyTab: Component = () => {
       </div>
       <div class="settings-hint">Identity export/import requires Stronghold integration.</div>
       <div class="settings-section-title">Blocked Users</div>
+      <Show when={error()}>
+        <div class="form-error">{error()}</div>
+      </Show>
       <Show when={blockedUsers().length > 0} fallback={
         <div class="settings-hint">No blocked users.</div>
       }>

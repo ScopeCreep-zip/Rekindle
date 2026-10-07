@@ -6,16 +6,15 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 use veilid_core::{VeilidAPI, VeilidUpdate};
 
-use super::routes::run_route_authority_loop;
-use super::updates::veilid_update_label;
+use super::routes::run_route_publisher;
 use super::TransportNode;
 use crate::broadcast::peer_registry::PeerRegistry;
-use crate::broadcast::peer_route::RouteManager;
 use crate::config::TransportConfig;
 use crate::error::{Result, TransportError};
 use crate::handler::InboundHandler;
 use crate::shared::SharedState;
 use crate::subscriptions::dispatch;
+use rekindle_protocol::node::veilid_update_name as veilid_update_label;
 
 impl TransportNode {
     /// Start a new transport node, attach to the Veilid network, and begin
@@ -80,7 +79,6 @@ impl TransportNode {
             })?;
 
         let config = Arc::new(config);
-        let route_manager = Arc::new(parking_lot::RwLock::new(RouteManager::new()));
         let peer_registry = Arc::new(parking_lot::RwLock::new(PeerRegistry::new(
             config.route_cache_ttl_secs,
             config.circuit_breaker_threshold,
@@ -89,47 +87,49 @@ impl TransportNode {
         let shared_state = SharedState::new();
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
-        let (heal_tx, heal_rx) = mpsc::channel(16);
-        let dispatch_handle = {
-            let h = Arc::clone(&handler);
-            let c = Arc::clone(&config);
-            let a = api.clone();
-            let ss = Arc::clone(&shared_state);
-            let ht = heal_tx;
-            tokio::spawn(dispatch::run_dispatch_loop(
-                h,
-                c,
-                update_rx,
-                shutdown_rx,
-                a,
-                ss,
-                Some(ht),
-            ))
-        };
+        let own_routes = rekindle_protocol::own_routes::OwnRoutes::new(
+            rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
+            shared_state.subscribe_ready(),
+        );
+        let route_imports = Arc::new(rekindle_protocol::dht::route_imports::RouteImports::new(
+            api.clone(),
+        ));
+        let dispatch_handle = tokio::spawn(dispatch::run_dispatch_loop(
+            Arc::clone(&handler),
+            Arc::clone(&config),
+            update_rx,
+            shutdown_rx,
+            api.clone(),
+            Arc::clone(&shared_state),
+            dispatch::RouteOwners {
+                own: Arc::clone(&own_routes),
+                imports: Arc::clone(&route_imports),
+                peers: Arc::clone(&peer_registry),
+            },
+        ));
 
         let (ra_tx, ra_rx) = mpsc::channel(1);
-        let route_authority_handle = {
-            let a = api.clone();
-            let rm = Arc::clone(&route_manager);
-            let secs = config.route_watchdog_secs;
-            let sess = Arc::clone(&session);
-            let cfg = Arc::clone(&config);
-            let ss = Arc::clone(&shared_state);
-            tokio::spawn(run_route_authority_loop(
-                a, rm, secs, heal_rx, ra_rx, sess, cfg, ss,
-            ))
-        };
+        let route_publisher_handle = tokio::spawn(run_route_publisher(
+            Arc::clone(&handler),
+            Arc::clone(&own_routes),
+            config.route_watchdog_secs,
+            ra_rx,
+            Arc::clone(&session),
+            Arc::clone(&shared_state),
+        ));
 
         info!("transport node started");
 
         Ok(Self {
+            route_imports,
+            record_closer: rekindle_protocol::dht::pool::RecordCloser::new(),
             api,
             config,
             shutdown_tx,
             dispatch_handle: Some(dispatch_handle),
-            route_authority_handle: Some(route_authority_handle),
-            route_authority_shutdown_tx: Some(ra_tx),
-            route_manager,
+            route_publisher_handle: Some(route_publisher_handle),
+            route_publisher_shutdown_tx: Some(ra_tx),
+            own_routes: Some(own_routes),
             peer_registry,
             shared_state,
         })
@@ -161,7 +161,6 @@ impl TransportNode {
         info!(namespace = %config.namespace, "adopting external Veilid node into transport");
 
         let config = Arc::new(config);
-        let route_manager = Arc::new(parking_lot::RwLock::new(RouteManager::new()));
         let peer_registry = Arc::new(parking_lot::RwLock::new(PeerRegistry::new(
             config.route_cache_ttl_secs,
             config.circuit_breaker_threshold,
@@ -170,47 +169,49 @@ impl TransportNode {
         let shared_state = SharedState::new();
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
-        let (heal_tx, heal_rx) = mpsc::channel(16);
-        let dispatch_handle = {
-            let h = Arc::clone(handler);
-            let c = Arc::clone(&config);
-            let a = api.clone();
-            let ss = Arc::clone(&shared_state);
-            let ht = heal_tx;
-            tokio::spawn(dispatch::run_dispatch_loop(
-                h,
-                c,
-                update_rx,
-                shutdown_rx,
-                a,
-                ss,
-                Some(ht),
-            ))
-        };
+        let own_routes = rekindle_protocol::own_routes::OwnRoutes::new(
+            rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
+            shared_state.subscribe_ready(),
+        );
+        let route_imports = Arc::new(rekindle_protocol::dht::route_imports::RouteImports::new(
+            api.clone(),
+        ));
+        let dispatch_handle = tokio::spawn(dispatch::run_dispatch_loop(
+            Arc::clone(handler),
+            Arc::clone(&config),
+            update_rx,
+            shutdown_rx,
+            api.clone(),
+            Arc::clone(&shared_state),
+            dispatch::RouteOwners {
+                own: Arc::clone(&own_routes),
+                imports: Arc::clone(&route_imports),
+                peers: Arc::clone(&peer_registry),
+            },
+        ));
 
         let (ra_tx, ra_rx) = mpsc::channel(1);
-        let route_authority_handle = {
-            let a = api.clone();
-            let rm = Arc::clone(&route_manager);
-            let secs = config.route_watchdog_secs;
-            let sess = Arc::clone(session);
-            let cfg = Arc::clone(&config);
-            let ss = Arc::clone(&shared_state);
-            tokio::spawn(run_route_authority_loop(
-                a, rm, secs, heal_rx, ra_rx, sess, cfg, ss,
-            ))
-        };
+        let route_publisher_handle = tokio::spawn(run_route_publisher(
+            Arc::clone(handler),
+            Arc::clone(&own_routes),
+            config.route_watchdog_secs,
+            ra_rx,
+            Arc::clone(session),
+            Arc::clone(&shared_state),
+        ));
 
         info!("transport node adopted (host owns Veilid lifecycle)");
 
         Self {
+            route_imports,
+            record_closer: rekindle_protocol::dht::pool::RecordCloser::new(),
             api,
             config,
             shutdown_tx,
             dispatch_handle: Some(dispatch_handle),
-            route_authority_handle: Some(route_authority_handle),
-            route_authority_shutdown_tx: Some(ra_tx),
-            route_manager,
+            route_publisher_handle: Some(route_publisher_handle),
+            route_publisher_shutdown_tx: Some(ra_tx),
+            own_routes: Some(own_routes),
             peer_registry,
             shared_state,
         }
@@ -220,7 +221,7 @@ impl TransportNode {
     ///
     /// The host process keeps its own dispatch loop on `update_rx` (e.g.
     /// src-tauri's `lifecycle::dispatch::run_dispatch_loop`). This mode
-    /// gives the caller `Sender`, `Caller`, `DhtStore`, and the peer
+    /// gives the caller `Sender`, `Caller`, the record pool, and the peer
     /// registry — everything needed for outbound `app_message`,
     /// `app_call`, and DHT operations — without consuming inbound
     /// updates. Useful during migration: the host's existing
@@ -228,12 +229,9 @@ impl TransportNode {
     /// new send paths route through transport's typed APIs (e.g.
     /// `operations::friend::send_friend_request`, `operations::dm_invite`).
     ///
-    /// NO route loop is spawned in this mode: the HOST owns the
-    /// personal route lifecycle (allocation, dead-route healing,
-    /// republish — src-tauri's `handle_route_change` /
-    /// `allocate_fresh_private_route`). The transport's `RouteManager`
-    /// stays empty here; outbound safety routes are allocated
-    /// internally by veilid-core per send.
+    /// NO route owner is built in this mode: the HOST owns its routes
+    /// (src-tauri's `OwnRoutes` and `route_publish`). Outbound safety
+    /// routes are allocated internally by veilid-core per send.
     pub fn adopt_outbound(
         config: TransportConfig,
         api: VeilidAPI,
@@ -242,7 +240,6 @@ impl TransportNode {
         info!(namespace = %config.namespace, "adopting Veilid (outbound-only) into transport");
 
         let config = Arc::new(config);
-        let route_manager = Arc::new(parking_lot::RwLock::new(RouteManager::new()));
         let peer_registry = Arc::new(parking_lot::RwLock::new(PeerRegistry::new(
             config.route_cache_ttl_secs,
             config.circuit_breaker_threshold,
@@ -258,13 +255,17 @@ impl TransportNode {
         info!("transport node adopted (outbound-only — host owns dispatch + Veilid lifecycle)");
 
         Self {
+            route_imports: Arc::new(rekindle_protocol::dht::route_imports::RouteImports::new(
+                api.clone(),
+            )),
+            record_closer: rekindle_protocol::dht::pool::RecordCloser::new(),
             api,
             config,
             shutdown_tx,
             dispatch_handle: None,
-            route_authority_handle: None,
-            route_authority_shutdown_tx: None,
-            route_manager,
+            route_publisher_handle: None,
+            route_publisher_shutdown_tx: None,
+            own_routes: None,
             peer_registry,
             shared_state,
         }
@@ -274,11 +275,11 @@ impl TransportNode {
     /// nodes — the host process owns Veilid lifecycle and will detach
     /// itself).
     pub async fn shutdown_borrowed(mut self) -> Result<()> {
-        info!("transport node (borrowed) shutting down dispatch + route authority");
-        if let Some(tx) = self.route_authority_shutdown_tx.take() {
+        info!("transport node (borrowed) shutting down dispatch + route publisher");
+        if let Some(tx) = self.route_publisher_shutdown_tx.take() {
             let _ = tx.send(()).await;
         }
-        if let Some(h) = self.route_authority_handle.take() {
+        if let Some(h) = self.route_publisher_handle.take() {
             let _ = h.await;
         }
         let _ = self.shutdown_tx.send(()).await;
@@ -287,7 +288,11 @@ impl TransportNode {
                 warn!(error = %e, "dispatch loop join failed");
             }
         }
-        info!("transport node (borrowed) dispatch + route authority stopped");
+        // The routes are this transport's even though Veilid is the host's.
+        if let Some(own_routes) = self.own_routes.take() {
+            own_routes.shutdown().await;
+        }
+        info!("transport node (borrowed) dispatch + route publisher stopped");
         Ok(())
     }
 
@@ -295,10 +300,10 @@ impl TransportNode {
     pub async fn shutdown(mut self) -> Result<()> {
         info!("transport node shutting down");
 
-        if let Some(tx) = self.route_authority_shutdown_tx.take() {
+        if let Some(tx) = self.route_publisher_shutdown_tx.take() {
             let _ = tx.send(()).await;
         }
-        if let Some(h) = self.route_authority_handle.take() {
+        if let Some(h) = self.route_publisher_handle.take() {
             let _ = h.await;
         }
 
@@ -309,18 +314,10 @@ impl TransportNode {
             }
         }
 
-        // Best-effort release of our allocated route before detach.
-        // May fail if the route already died — that's expected and harmless.
-        // Veilid's Drop impl on VeilidAPIInner calls api_shutdown which
-        // cleans up the context, but explicit release is still correct
-        // practice when the route is still alive.
-        {
-            let rm = self.route_manager.read();
-            if let Some(route_id) = rm.route_id() {
-                if let Err(e) = self.api.release_private_route(route_id.clone()) {
-                    tracing::debug!(error = %e, "route release on shutdown failed (likely already dead)");
-                }
-            }
+        // Release our live routes before detach; a dead one was already
+        // forgotten (plan C7.9a).
+        if let Some(own_routes) = self.own_routes.take() {
+            own_routes.shutdown().await;
         }
 
         self.api

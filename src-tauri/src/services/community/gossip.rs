@@ -7,7 +7,7 @@
 //!
 //! Peer-reliability persistence (hydrate from SQLite on login, dirty
 //! flush every 30s, drain on logout) stays src-tauri-side: it's pure
-//! AppState + DbPool orchestration with no protocol logic worth
+//! AppState + Db orchestration with no protocol logic worth
 //! abstracting behind a trait.
 
 use std::sync::Arc;
@@ -27,7 +27,7 @@ use crate::state_helpers;
 /// so an honest receiver never gossip-forwards the reply onward.
 pub async fn send_to_member(
     state: &SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: &str,
     peer_pseudonym: &str,
     envelope: &CommunityEnvelope,
@@ -56,7 +56,7 @@ pub async fn send_to_member(
 }
 
 /// Sign + dedup + bump lamport + fan out. Returns `Err` if the app
-/// handle / DbPool can't be acquired; transport failures are
+/// handle / Db can't be acquired; transport failures are
 /// best-effort and recorded as reliability + delivery rows inside
 /// the orchestrator.
 pub fn send_to_mesh(
@@ -75,7 +75,7 @@ pub fn send_to_mesh(
     // every caller already runs on a tokio worker, so spawn the
     // pipeline and return immediately — preserves the prior
     // fire-and-forget semantics (pipeline errors are logged inside).
-    tauri::async_runtime::spawn(async move {
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop("mesh send", async move {
         if let Err(error) = rekindle_gossip::send_to_mesh(adapter, &cid, &env).await {
             tracing::warn!(community = %cid, %error, "send_to_mesh: pipeline error");
         }
@@ -123,7 +123,7 @@ pub fn send_to_channel_peers(
     // snapshot needs the tokio transport lock, so peers are resolved
     // inside the spawned task.
     let drop_counter = Arc::clone(&state_for_counter);
-    tauri::async_runtime::spawn(async move {
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop("channel peer send", async move {
         let (peers, handshake) = {
             let guard = transport.lock().await;
             let peers: Vec<rekindle_gossip::PeerInfo> = guard
@@ -215,7 +215,7 @@ pub fn record_peer_reliability(
 /// the in-memory `peer_reliability` map. Called once on login so the
 /// fan-out ranker boots with prior session knowledge instead of
 /// treating every peer as neutral.
-pub async fn hydrate_peer_reliability(state: &SharedState, pool: &crate::db::DbPool) {
+pub async fn hydrate_peer_reliability(state: &SharedState, pool: &rekindle_db::Db) {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return;
@@ -259,7 +259,7 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &crate::db::DbP
 /// transaction. Architecture §14.5: in-memory `peer_reliability` is the
 /// source of truth during a session; this batch flush just mirrors it
 /// to SQLite so the score survives restarts.
-pub async fn flush_peer_reliability(state: &AppState, pool: &crate::db::DbPool) {
+pub async fn flush_peer_reliability(state: &AppState, pool: &rekindle_db::Db) {
     let owner_key = state
         .identity
         .read()
@@ -313,16 +313,22 @@ pub async fn flush_peer_reliability(state: &AppState, pool: &crate::db::DbPool) 
 /// Spawn the periodic flush loop. Idempotent — safe to call multiple
 /// times; the loop self-terminates once the user logs out (empty
 /// owner key).
-pub fn start_peer_reliability_flush(state: SharedState, pool: crate::db::DbPool) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        interval.tick().await; // skip immediate fire
-        loop {
-            interval.tick().await;
-            if state_helpers::owner_key_or_default(&state).is_empty() {
-                break;
+pub fn start_peer_reliability_flush(state: SharedState, pool: rekindle_db::Db) {
+    crate::state_helpers::spawn_in_login_with_token(
+        &state.clone(),
+        "peer reliability flush",
+        |stop| async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            interval.tick().await; // skip immediate fire
+            loop {
+                if stop.run_until_cancelled(interval.tick()).await.is_none() {
+                    break;
+                }
+                if state_helpers::owner_key_or_default(&state).is_empty() {
+                    break;
+                }
+                flush_peer_reliability(&state, &pool).await;
             }
-            flush_peer_reliability(&state, &pool).await;
-        }
-    });
+        },
+    );
 }

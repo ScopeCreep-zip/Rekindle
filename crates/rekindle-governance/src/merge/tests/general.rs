@@ -86,3 +86,41 @@ fn multi_member_merge_converges() {
         "CRDT convergence: different subkey order must produce same state"
     );
 }
+
+fn meta(lamport: u64) -> GovernanceEntry {
+    GovernanceEntry::CommunityMeta {
+        name: Some("C".into()),
+        description: None,
+        icon_hash: None,
+        banner_hash: None,
+        lamport,
+    }
+}
+
+#[test]
+fn accepted_clock_is_highest_accepted_plus_one() {
+    let (_, clock) = merge_with_accepted(&[(pseudo(1), vec![meta(1), meta(2), meta(7)])]);
+    assert_eq!(clock, 8);
+}
+
+/// An entry the reader rejects (no permission) never moves the clock,
+/// however far ahead it claims to be.
+#[test]
+fn rejected_entry_does_not_move_the_clock() {
+    let creator = pseudo(1);
+    let outsider = pseudo(9);
+    let (_, clock) =
+        merge_with_accepted(&[(creator, vec![meta(1)]), (outsider, vec![meta(u64::MAX)])]);
+    assert_eq!(clock, 2);
+}
+
+/// An accepted entry (the creator's own) that jumps to the ceiling is
+/// applied, but advances the clock by at most the drift bound.
+#[test]
+fn accepted_far_future_entry_is_bounded() {
+    use rekindle_types::lamport::MAX_LAMPORT_DRIFT;
+    let (state, clock) = merge_with_accepted(&[(pseudo(1), vec![meta(1), meta(u64::MAX)])]);
+    assert_eq!(clock, 2 + MAX_LAMPORT_DRIFT + 1);
+    // The entry itself is accepted and orders by its own timestamp.
+    assert_eq!(state.metadata.map(|m| m.lamport), Some(u64::MAX));
+}

@@ -64,7 +64,7 @@ pub(in crate::signaling) fn handle_voice_join(
         let blob = blob.clone();
         let my_pk = my_pk.clone();
         let joiner_name = display_name.clone();
-        let handle = tokio::spawn(async move {
+        deps.scope().spawn_or_drop("voice join apply", async move {
             voice_join_apply(
                 &deps_task,
                 &cid,
@@ -79,7 +79,6 @@ pub(in crate::signaling) fn handle_voice_join(
             )
             .await;
         });
-        deps.register_background_handle(handle);
     }
 
     deps.emit_event(CommunityVoiceEvent::VoiceJoin {
@@ -140,25 +139,31 @@ async fn voice_join_apply(
             let cid = community_id.to_string();
             let ch_id = channel_id.to_string();
             let sender = sender_key.clone();
-            let handle = tokio::spawn(async move {
-                deps_rot
-                    .rotate_voice_mek_for_membership(cid, ch_id, sender, true)
-                    .await;
-            });
-            deps.register_background_handle(handle);
+            deps.scope()
+                .spawn_or_drop("voice mek rotate (join)", async move {
+                    deps_rot
+                        .rotate_voice_mek_for_membership(cid, ch_id, sender, true)
+                        .await;
+                });
         }
     }
 
     // Handshake leg 2 — "seen": directed ack carrying OUR identity +
     // route so the joiner can add us from the ack alone (SimpleX
     // x.grp.mem.intro pattern: the introduction carries the member).
-    let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
-        channel_id: channel_id.to_string(),
-        joiner_pseudonym: sender_key.clone(),
-        display_name: deps.my_display_name(),
-        route_blob: deps.our_route_blob(),
-    });
-    deps.send_to_channel(community_id, channel_id, &ack);
+    // Without a media route there is nothing to introduce us by; the ack
+    // goes out when the route is back and re-announced.
+    if let Some(route_blob) = deps.our_media_route_blob() {
+        let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+            channel_id: channel_id.to_string(),
+            joiner_pseudonym: sender_key.clone(),
+            display_name: deps.my_display_name(),
+            route_blob,
+        });
+        deps.send_to_channel(community_id, channel_id, &ack);
+    } else {
+        tracing::warn!(community = %community_id, channel = %channel_id, "voice join ack not sent: no media route");
+    }
 
     // Mutual-join race: if WE are still unseen (joined moments ago and
     // nobody acked yet), this peer's VoiceJoin is itself evidence the

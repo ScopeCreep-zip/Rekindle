@@ -2,8 +2,8 @@
 //! `commands/community/notifications.rs`. Pure struct-shape conversion
 //! between the Tauri DTO and the internal `QuietHoursSettings` shape.
 
-use crate::db::DbPool;
 use crate::state::SharedState;
+use rekindle_db::Db;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,7 +16,7 @@ pub struct QuietHoursSettingsDto {
 
 pub async fn set_quiet_hours_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     enabled: bool,
     start_hour: u8,
     end_hour: u8,
@@ -37,7 +37,7 @@ pub async fn set_quiet_hours_inner(
 
 pub async fn get_quiet_hours_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<QuietHoursSettingsDto, String> {
     let settings = crate::services::community::notifications::get_quiet_hours(state, pool).await?;
     Ok(QuietHoursSettingsDto {
@@ -50,7 +50,7 @@ pub async fn get_quiet_hours_inner(
 
 pub async fn set_channel_notification_level_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     level: &str,
@@ -93,7 +93,7 @@ pub fn get_community_default_notification_level_inner(
 
 pub async fn get_notification_sound_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
 ) -> Result<Option<String>, String> {

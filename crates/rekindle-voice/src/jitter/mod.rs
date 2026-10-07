@@ -1,6 +1,14 @@
-use crate::transport::VoicePacket;
 use rekindle_media_stats::{ReceptionMetrics, ReceptionTracker};
 use std::collections::BTreeMap;
+
+/// An opened voice frame waiting for playout: the packet's ordering
+/// fields and the Opus bytes its SFrame ciphertext carried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JitterFrame {
+    pub sequence: u32,
+    pub timestamp: u64,
+    pub opus: Vec<u8>,
+}
 
 /// Lower bound on the adaptive playout target — below this the buffer
 /// can't absorb even one frame of reorder.
@@ -44,7 +52,7 @@ const REORDER_IMPLAUSIBLE: u32 = 1000;
 /// derived live from `target_delay_ms`).
 pub struct JitterBuffer {
     /// Buffered packets indexed by sequence number.
-    buffer: BTreeMap<u32, VoicePacket>,
+    buffer: BTreeMap<u32, JitterFrame>,
     /// Current ADAPTIVE buffer depth in milliseconds. Mutated only via
     /// [`Self::set_target_delay_ms`] so the derived windows stay in sync.
     target_delay_ms: u32,
@@ -125,7 +133,7 @@ impl JitterBuffer {
     /// moment the packet arrived (the receive loop's `local_ms()`). The
     /// buffer keeps no `Instant` of its own, so its timing behavior is
     /// fully determined by its inputs and unit-tests deterministically.
-    pub fn push(&mut self, packet: VoicePacket, arrival_ms: u64) {
+    pub fn push(&mut self, packet: JitterFrame, arrival_ms: u64) {
         let seq = packet.sequence;
 
         // Record the first arrival as the initial-fill origin — it
@@ -267,7 +275,7 @@ impl JitterBuffer {
     /// `now_ms` is the caller's monotonic millisecond clock at this
     /// playout tick — the same clock passed to [`Self::push`] — used by
     /// the initial-fill time window.
-    pub fn pop(&mut self, now_ms: u64) -> Option<VoicePacket> {
+    pub fn pop(&mut self, now_ms: u64) -> Option<JitterFrame> {
         // Don't start playback until initial fill is complete
         if !self.initial_fill_done {
             if !self.check_initial_fill(now_ms) {
@@ -296,7 +304,7 @@ impl JitterBuffer {
     /// trim discards one GOOD packet per arrival (observed live as
     /// rx_overflow_drops in the hundreds per 5 s with dead audio until
     /// the participant timed out and re-seeded).
-    pub fn note_miss_and_maybe_jump(&mut self) -> Option<VoicePacket> {
+    pub fn note_miss_and_maybe_jump(&mut self) -> Option<JitterFrame> {
         if !self.initial_fill_done {
             return None;
         }
@@ -378,7 +386,7 @@ impl JitterBuffer {
             return None;
         }
         let next_seq = self.next_playback_seq.wrapping_add(1);
-        self.buffer.get(&next_seq).map(|p| p.audio_data.as_slice())
+        self.buffer.get(&next_seq).map(|p| p.opus.as_slice())
     }
 
     /// Get the current buffer depth (number of buffered packets).

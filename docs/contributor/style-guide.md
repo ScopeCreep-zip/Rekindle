@@ -83,8 +83,8 @@ outright, delete old code paths. Do not add:
   thing.
 - Compatibility shims that translate between two versions.
 
-The `001_init.sql` schema is edited in place and `SCHEMA_VERSION` is
-bumped (currently 70). On mismatch, the DB tables are dropped, the
+The `001_init.sql` schema (`crates/rekindle-db/schema/001_init.sql`) is edited in place and
+`SCHEMA_VERSION` (`crates/rekindle-db/src/open.rs`) is bumped. On mismatch, the DB tables are dropped, the
 vault file (and its salt sidecar) is removed, and Veilid storage is
 wiped — the three stores must stay in sync. The runtime / adapter /
 pure-logic split for new services lives in
@@ -172,8 +172,9 @@ pub enum UserStatus { Online, Away, Busy, Offline }
 ### Database access
 
 ```rust
-// Async wrapper over rusqlite on a dedicated background thread.
-pub type DbPool = tokio_rusqlite::Connection;
+// The open database (rekindle_db::Db, rusqlite on a background thread), or
+// NotLoggedIn. Never a `State<'_, Db>` (cargo xtask check-no-managed-db).
+let pool = state.db.current()?;
 
 // Use db_helpers::* for all DB access:
 db_call(pool, |conn| { /* sync rusqlite */ }).await?

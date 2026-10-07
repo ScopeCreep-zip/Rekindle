@@ -6,18 +6,16 @@
 
 use std::sync::Arc;
 
-use tauri::Manager;
-
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::services::governance_adapter;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub(super) fn handle_membership_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
@@ -81,22 +79,25 @@ pub(super) fn handle_membership_payload(
                     }
                 }
             }
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("membership event: no identity database — dropped");
+                return;
+            };
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
             let cid = community_id.to_string();
             let pk = pseudonym_key.clone();
             let dn = display_name.clone();
             let rids = role_ids.clone();
-            crate::db_helpers::db_fire(pool.inner(), "persist MemberJoined", move |conn| {
-                let role_ids_json = serde_json::to_string(&rids).unwrap_or_else(|_| "[0,1]".into());
-                let now = crate::db::timestamp_now();
-                conn.execute(
-                    "INSERT OR IGNORE INTO community_members \
-                     (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-                     VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
-                )?;
-                Ok(())
+            crate::db_helpers::db_fire(&pool, "persist MemberJoined", move |conn| {
+                rekindle_db::repo::members::insert_if_absent(
+                    conn,
+                    &owner_key,
+                    &cid,
+                    &pk,
+                    &dn,
+                    &rids,
+                    crate::db::timestamp_now(),
+                )
             });
 
             crate::event_dispatch::emit_membership(
@@ -154,22 +155,21 @@ pub(super) fn handle_membership_payload(
         ControlPayload::MemberRemoved { pseudonym_key }
         | ControlPayload::MemberLeave { pseudonym_key } => {
             let departed_pseudonym = pseudonym_key.clone();
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("membership event: no identity database — dropped");
+                return;
+            };
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
             crate::services::community::analytics::log_member_leave(
-                pool.inner(),
+                &pool,
                 &owner_key,
                 community_id,
                 &pseudonym_key,
             );
             let cid = community_id.to_string();
             let pk = pseudonym_key.clone();
-            crate::db_helpers::db_fire(pool.inner(), "persist MemberRemoved/Leave", move |conn| {
-                conn.execute(
-                    "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![owner_key, cid, pk],
-                )?;
-                Ok(())
+            crate::db_helpers::db_fire(&pool, "persist MemberRemoved/Leave", move |conn| {
+                rekindle_db::repo::members::delete(conn, &owner_key, &cid, &pk)
             });
 
             {
@@ -191,21 +191,12 @@ pub(super) fn handle_membership_payload(
                 },
             );
 
-            let state_clone = state.clone();
-            let app_handle = app_handle.clone();
-            let community_id = community_id.to_string();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = crate::services::community::rotate_text_mek_for_departure(
-                    &app_handle,
-                    &state_clone,
-                    &community_id,
-                    &departed_pseudonym,
-                )
-                .await
-                {
-                    tracing::debug!(community = %community_id, error = %error, "text MEK rotation skipped after departure");
-                }
-            });
+            crate::services::community::spawn_departure_rotations(
+                app_handle,
+                state,
+                community_id,
+                &departed_pseudonym,
+            );
         }
         ControlPayload::MemberTimedOut {
             pseudonym_key,
@@ -215,12 +206,7 @@ pub(super) fn handle_membership_payload(
             let cid = community_id.to_string();
             let tp = pseudonym_key.clone();
             db_fire(pool, "relayed_member_timed_out", move |conn| {
-                conn.execute(
-                    "UPDATE community_members SET timeout_until = ?1 \
-                     WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
-                    rusqlite::params![timeout_until, ok, cid, tp],
-                )?;
-                Ok(())
+                rekindle_db::repo::members::set_timeout(conn, &ok, &cid, &tp, timeout_until)
             });
             crate::event_dispatch::emit_membership(
                 app_handle,

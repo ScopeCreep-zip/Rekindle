@@ -12,9 +12,25 @@ use x25519_dalek::StaticSecret;
 
 use crate::signal::ratchet::{self, RatchetState};
 
-use super::{SessionInitInfo, SignalSessionManager, PQ_LR_ID};
+use super::{SessionInitInfo, SignalSessionManager, PQ_LR_ID, SPK_ID};
 
 impl SignalSessionManager {
+    /// Whether we initiate when both sides sent a friend request at once.
+    /// The lexically lower identity key initiates, so exactly one side
+    /// runs [`Self::establish_session`] and the other answers it.
+    pub fn initiates_crossing_handshake(
+        &self,
+        their_identity_key: &[u8],
+    ) -> Result<bool, CryptoError> {
+        let (_, ours) = self.identity.get_identity_key_pair()?;
+        if ours.as_slice() == their_identity_key {
+            return Err(CryptoError::invalid_key(
+                "crossing handshake with our own identity".into(),
+            ));
+        }
+        Ok(ours.as_slice() < their_identity_key)
+    }
+
     /// Establish a session with a peer using their `PreKeyBundle` (X3DH).
     ///
     /// This is the initiator side — called when we want to start a conversation
@@ -65,8 +81,8 @@ impl SignalSessionManager {
 
         Ok(SessionInitInfo {
             ephemeral_public_key: hs.ek_public.to_vec(),
-            // SPK id 1 matches generate_prekey_bundle(1, ...) convention.
-            signed_prekey_id: 1,
+            // The bundle does not carry the SPK id yet; there is only one.
+            signed_prekey_id: SPK_ID,
             one_time_prekey_id: hs.used_ot_opk_id,
             ml_kem_ciphertext: hs.ml_kem_ct,
             used_ot_pqpk_id: hs.used_ot_pqpk_id,

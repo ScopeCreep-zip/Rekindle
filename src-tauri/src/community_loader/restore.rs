@@ -1,8 +1,8 @@
 //! Phase 23.C — `restore_community_pseudonyms_and_meks` lifted from
 //! `commands/auth.rs`.
 //!
-//! Re-derive pseudonym keys and load MEKs from Stronghold into
-//! `mek_cache`. Called during login after communities are loaded
+//! Re-derive pseudonym keys and load each key scope's latest MEK from
+//! the vault into the live keys (`state_helpers::install_mek`). Called during login after communities are loaded
 //! from SQLite. For each community, derives the pseudonym
 //! (deterministic from `identity_secret` + `community_id`) and loads
 //! the MEK from Stronghold if stored.
@@ -12,6 +12,8 @@
 //! absent and re-acquired from a peer by the architecture §7.3 login
 //! catch-up in `login_runtime::spawn_dht_publish` (owner mints a
 //! superseding key only as a last resort if no peer responds).
+
+use rekindle_types::channel_keys::KeyScope;
 
 use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
@@ -33,7 +35,7 @@ pub fn restore_community_pseudonyms_and_meks(
 
     let mut pseudonym_updates: Vec<(String, String)> = Vec::new();
     let mut mek_updates: Vec<(String, MediaEncryptionKey)> = Vec::new();
-    let mut channel_mek_updates: Vec<(String, String, MediaEncryptionKey)> = Vec::new();
+    let mut channel_mek_updates: Vec<(String, KeyScope, MediaEncryptionKey)> = Vec::new();
 
     for community_id in &community_info {
         // Derive pseudonym
@@ -44,7 +46,9 @@ pub fn restore_community_pseudonyms_and_meks(
         // Try to load MEK from Stronghold
         let keystore = keystore_handle.lock();
         if let Some(ref ks) = *keystore {
-            if let Some(mek) = crate::keystore::load_mek(ks, community_id) {
+            if let Some(mek) =
+                crate::keystore::load_latest_mek(ks, community_id, KeyScope::Community)
+            {
                 mek_updates.push((community_id.clone(), mek));
             } else {
                 // MEK missing from Stronghold (vault loss). Do NOT mint a fresh
@@ -71,11 +75,12 @@ pub fn restore_community_pseudonyms_and_meks(
         if let Some(ref ks) = *keystore {
             for community in communities.values() {
                 for channel in &community.channels {
-                    let all = crate::keystore::load_all_meks(ks, &community.id, Some(&channel.id));
-                    if let Some(mek) = all.into_iter().max_by_key(
-                        rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
-                    ) {
-                        channel_mek_updates.push((community.id.clone(), channel.id.clone(), mek));
+                    let Some(id) = rekindle_types::id::ChannelId::from_hex(&channel.id) else {
+                        continue;
+                    };
+                    let scope = KeyScope::Channel(id);
+                    if let Some(mek) = crate::keystore::load_latest_mek(ks, &community.id, scope) {
+                        channel_mek_updates.push((community.id.clone(), scope, mek));
                     }
                 }
             }
@@ -142,16 +147,16 @@ pub fn restore_community_pseudonyms_and_meks(
             generation = mek.generation(),
             "restored MEK from Stronghold"
         );
-        crate::state_helpers::install_community_mek(state, &community_id, mek);
+        crate::state_helpers::install_mek(state, &community_id, KeyScope::Community, mek);
     }
 
-    for (community_id, channel_id, mek) in channel_mek_updates {
+    for (community_id, scope, mek) in channel_mek_updates {
         tracing::debug!(
             community = %community_id,
-            channel = %channel_id,
+            %scope,
             generation = mek.generation(),
             "restored channel MEK from Stronghold"
         );
-        crate::state_helpers::install_channel_mek(state, &community_id, &channel_id, mek);
+        crate::state_helpers::install_mek(state, &community_id, scope, mek);
     }
 }

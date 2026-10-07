@@ -7,14 +7,14 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call_or_default;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn handle_relay_envelope(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     target_pubkey: &str,
     inner_payload: &[u8],
 ) -> Result<(), String> {

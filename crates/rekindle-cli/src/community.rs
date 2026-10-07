@@ -1,18 +1,16 @@
 //! Community commands: create, join, leave, list, info.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::CommunityCmd;
-use crate::config::schema::Config;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
-use crate::transport::DaemonClient;
+use rekindle_client::DaemonClient;
 
 pub async fn dispatch(
     cmd: &CommunityCmd,
     client: &DaemonClient,
-    _cfg: &Config,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     match cmd {
@@ -40,9 +38,9 @@ pub async fn dispatch(
                 .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::Leave { community, .. } => {
-            let confirmed = helpers::confirm(&format!("Leave community '{community}'?"))?;
-            if !confirmed {
+        CommunityCmd::Leave { community, force } => {
+            if !helpers::confirm_unless_forced(*force, &format!("Leave community '{community}'?"))?
+            {
                 return format::print_text("Cancelled.");
             }
             let value = client
@@ -50,7 +48,6 @@ pub async fn dispatch(
                     governance_key: community.clone(),
                 })
                 .await?;
-            helpers::audit_log("leave_community", community, "ok");
             format::print_structured(&value, mode)
         }
         CommunityCmd::List { .. } => {
@@ -74,7 +71,7 @@ pub async fn dispatch(
                                 c.get("channel_count")
                                     .and_then(serde_json::Value::as_u64)
                                     .map_or("?".into(), |n| n.to_string()),
-                                helpers::abbreviate_key(
+                                rekindle_client::fmt::abbreviate_key(
                                     c.get("governance_key")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("?"),
@@ -193,7 +190,7 @@ pub async fn dispatch(
                     arr.iter()
                         .map(|p| {
                             vec![
-                                helpers::abbreviate_key(
+                                rekindle_client::fmt::abbreviate_key(
                                     p.get("requester_pseudonym_hex")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("?"),
@@ -216,15 +213,13 @@ pub async fn dispatch(
         CommunityCmd::Transfer {
             community,
             new_owner,
-            yes,
+            force,
         } => {
-            if !yes {
-                let confirmed = helpers::confirm(&format!(
-                    "Transfer ownership of '{community}' to {new_owner}?"
-                ))?;
-                if !confirmed {
-                    return format::print_text("Cancelled.");
-                }
+            if !helpers::confirm_unless_forced(
+                *force,
+                &format!("Transfer ownership of '{community}' to {new_owner}?"),
+            )? {
+                return format::print_text("Cancelled.");
             }
             let value = client
                 .request_ok(IpcRequest::CommunityTransferOwnership {
@@ -232,7 +227,6 @@ pub async fn dispatch(
                     new_owner_pseudonym: new_owner.clone(),
                 })
                 .await?;
-            helpers::audit_log("transfer_ownership", community, "ok");
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }

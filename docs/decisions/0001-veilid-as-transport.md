@@ -1,6 +1,8 @@
 # 0001 — Adopt Veilid as the sole transport substrate
 
 - **Status:** Accepted
+- **Superseded in part by [0014](0014-veilid-boundary-is-transitive.md):** the "Boundaries"
+  sentence naming the only `veilid_core` importers (the boundary is transitive linkage).
 - **Date:** 2026-04 (initial); reconfirmed 2026-05 in v2.0 architecture work
 
 ## Context and problem statement

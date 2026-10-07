@@ -2,6 +2,8 @@
 // former monolithic commands.ts; re-exported by ../commands.ts so
 // existing `import { ... } from "../ipc/commands"` call sites work.
 
+import type { RouteAvailability } from "../channels/notification_events";
+
 export interface LoginResult {
   publicKey: string;
   displayName: string;
@@ -42,7 +44,7 @@ export interface Message {
     mimeType: string;
     totalSize: number;
     chunkCount: number;
-    localPath?: string | null;
+    downloaded: boolean;
   };
   flags?: number;
 }
@@ -61,7 +63,8 @@ export interface ExpressionInfo {
   name: string;
   kind: "emoji" | "sticker" | "soundboard";
   contentHash: string;
-  inlineDataBase64?: string | null;
+  /** `data:` URL built by the backend from an allowlisted media type. */
+  inlineDataUrl?: string | null;
   mediaType?: string | null;
   animated: boolean;
   tags: string[];
@@ -207,6 +210,7 @@ export interface NetworkStatus {
   isAttached: boolean;
   publicInternetReady: boolean;
   hasRoute: boolean;
+  mediaRoute: RouteAvailability;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }
@@ -274,4 +278,71 @@ export interface EventInfo {
   coverImageRef?: string;
   recurrence?: RecurrenceRule;
   location?: EventLocation;
+}
+
+// Declared once in the IPC layer — community.store.ts re-exports both
+// (`export type { Thread, GameServer }`) rather than defining them, so
+// every existing consumer that imports from the store keeps working.
+// Moved here because `ipc/channels/community_subscription_events.ts`
+// needs them too, and src/ipc/ is the dependency-cruiser-enforced leaf:
+// it may not import from src/stores/.
+
+export interface Thread {
+  id: string;
+  channelId: string;
+  name: string;
+  starterMessageId: string;
+  creatorPseudonym: string;
+  forumTag?: string | null;
+  createdAt: number;
+  archived: boolean;
+  autoArchiveSeconds: number;
+  lastMessageAt: number;
+  messageCount: number;
+}
+
+export interface GameServer {
+  id: string;
+  gameId: string;
+  label: string;
+  address: string;
+  addedBy: string;
+  createdAt: number;
+}
+
+/// A settings-window tab. Mirrors `SettingsTab` in `src-tauri/src/windows/mod.rs`.
+export type SettingsTab =
+  | "profile"
+  | "application"
+  | "notifications"
+  | "audio"
+  | "video"
+  | "privacy"
+  | "devices"
+  | "mobile"
+  | "about";
+
+/// An OS deep link awaiting the user's consent. Mirrors
+/// `DeepLinkRequest` in `src-tauri/src/deep_links.rs`; the invite secrets
+/// stay in the backend.
+export type DeepLinkRequest =
+  | { kind: "joinCommunity"; requestId: string; keyFingerprint: string }
+  | { kind: "addFriend"; requestId: string; keyFingerprint: string }
+  | { kind: "pairingRefused"; requestId: string };
+
+/// What a confirmed deep link did.
+export type DeepLinkOutcome =
+  | { kind: "joinedCommunity"; communityId: string }
+  | { kind: "friendAdded" }
+  | { kind: "dismissed" };
+
+/// A live 1:1 call (`get_active_call`).
+export interface ActiveCall {
+  callId: string;
+  peerKey: string;
+  displayName: string;
+  kind: "audio" | "video";
+  expiresAtMs: number;
+  /// Accepted (connecting or active) rather than still ringing out.
+  connected: boolean;
 }

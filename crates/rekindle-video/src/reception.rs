@@ -139,11 +139,9 @@ impl VideoReceptionWindow {
         };
         // bits ÷ ms = kbit/s. `.max(1)` on ms guards a zero window; the
         // reported rate floors at 1 so a live stream never reads 0.
-        let kbps = u32::try_from(
-            self.bytes.saturating_mul(8) / u64::from(elapsed_ms.max(1)),
-        )
-        .unwrap_or(u32::MAX)
-        .max(1);
+        let kbps = u32::try_from(self.bytes.saturating_mul(8) / u64::from(elapsed_ms.max(1)))
+            .unwrap_or(u32::MAX)
+            .max(1);
         let out = FrameAckOut {
             channel_id: self.channel_id.clone(),
             stream_id: self.stream_id,
@@ -184,7 +182,14 @@ mod tests {
         for (i, fs) in frame_seqs.iter().enumerate() {
             let seq = base + u32::try_from(i).unwrap();
             let now = start_ms + u32::try_from(i).unwrap() * step_ms;
-            if let Some(ack) = w.observe(seq, *fs, SID, "ch1", bytes, now) {
+            if let Some(ack) = w.observe(
+                seq,
+                *fs,
+                SID,
+                "11111111111111111111111111111111",
+                bytes,
+                now,
+            ) {
                 out = Some(ack);
             }
         }
@@ -195,11 +200,26 @@ mod tests {
     fn holds_ack_until_window_elapses() {
         let mut w = VideoReceptionWindow::new(0);
         // Three fragments inside the first 100 ms — no ack yet.
-        assert!(w.observe(0, 0, SID, "ch1", 1000, 10).is_none());
-        assert!(w.observe(1, 1, SID, "ch1", 1000, 20).is_none());
-        assert!(w.observe(2, 2, SID, "ch1", 1000, 30).is_none());
+        assert!(w
+            .observe(0, 0, SID, "11111111111111111111111111111111", 1000, 10)
+            .is_none());
+        assert!(w
+            .observe(1, 1, SID, "11111111111111111111111111111111", 1000, 20)
+            .is_none());
+        assert!(w
+            .observe(2, 2, SID, "11111111111111111111111111111111", 1000, 30)
+            .is_none());
         // One past the window boundary emits.
-        let ack = w.observe(3, 3, SID, "ch1", 1000, ACK_WINDOW_MS + 1).unwrap();
+        let ack = w
+            .observe(
+                3,
+                3,
+                SID,
+                "11111111111111111111111111111111",
+                1000,
+                ACK_WINDOW_MS + 1,
+            )
+            .unwrap();
         assert_eq!(ack.loss_q8, 0, "contiguous transport seq = no loss");
         assert_eq!(ack.last_frame_seq, 3);
     }
@@ -223,8 +243,7 @@ mod tests {
         // yet transport_seq is 0,1,2,3,4,... — every fragment that WAS
         // sent arrived.
         let frame_seqs = [0u32, 5, 10, 26, 40, 41, 90, 130, 131, 200, 260, 261];
-        let ack = feed(&mut w, 0, &frame_seqs, 800, 0, 100)
-            .expect("12×100ms spans the window");
+        let ack = feed(&mut w, 0, &frame_seqs, 800, 0, 100).expect("12×100ms spans the window");
         assert_eq!(
             ack.loss_q8, 0,
             "sender-side frame expiry is NOT network loss — the death-spiral guard"
@@ -233,7 +252,10 @@ mod tests {
         // ACK_WINDOW_MS (index 10 at t=1000ms, frame_seq 260); 261 lands
         // in the next window. The ack carries the highest frame_seq
         // observed within the closed window.
-        assert_eq!(ack.last_frame_seq, 260, "highest frame_seq in the window is carried through");
+        assert_eq!(
+            ack.last_frame_seq, 260,
+            "highest frame_seq in the window is carried through"
+        );
     }
 
     #[test]
@@ -243,11 +265,27 @@ mod tests {
         // (dropped on the wire): receive only the even ones.
         let mut last = None;
         for seq in (0..20u32).filter(|s| s % 2 == 0) {
-            last = w.observe(seq, seq, SID, "ch1", 500, seq * 60);
+            last = w.observe(
+                seq,
+                seq,
+                SID,
+                "11111111111111111111111111111111",
+                500,
+                seq * 60,
+            );
         }
         // Force the window closed with one more past the boundary.
         let ack = last
-            .or_else(|| w.observe(20, 20, SID, "ch1", 500, ACK_WINDOW_MS + 1))
+            .or_else(|| {
+                w.observe(
+                    20,
+                    20,
+                    SID,
+                    "11111111111111111111111111111111",
+                    500,
+                    ACK_WINDOW_MS + 1,
+                )
+            })
             .unwrap();
         // ~half the sent sequence is missing → substantial loss.
         assert!(
@@ -264,7 +302,11 @@ mod tests {
         // in ~1.2 s ≈ ~86 kbps.
         let seqs: Vec<u32> = (0..13).collect();
         let ack = feed(&mut w, 0, &seqs, 1000, 0, 100).expect("spans window");
-        assert!(ack.kbps > 50 && ack.kbps < 130, "measured kbps: {}", ack.kbps);
+        assert!(
+            ack.kbps > 50 && ack.kbps < 130,
+            "measured kbps: {}",
+            ack.kbps
+        );
     }
 
     #[test]
@@ -274,12 +316,26 @@ mod tests {
         // begins again at 0 — the jump must resync, not read as ~4 billion
         // lost packets.
         for i in 0..30u32 {
-            w.observe(100_000 + i, i, SID, "ch1", 400, i * 10);
+            w.observe(
+                100_000 + i,
+                i,
+                SID,
+                "11111111111111111111111111111111",
+                400,
+                i * 10,
+            );
         }
         // Restart: seq drops to 0. First post-restart window close.
         let mut ack = None;
         for i in 0..40u32 {
-            if let Some(a) = w.observe(i, i, SID, "ch1", 400, 1_000 + i * 40) {
+            if let Some(a) = w.observe(
+                i,
+                i,
+                SID,
+                "11111111111111111111111111111111",
+                400,
+                1_000 + i * 40,
+            ) {
                 ack = Some(a);
             }
         }

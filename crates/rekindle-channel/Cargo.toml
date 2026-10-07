@@ -9,22 +9,22 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-rekindle-types = { path = "../rekindle-types" }
-rekindle-crypto = { path = "../rekindle-crypto" }
-rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
-rekindle-governance = { path = "../rekindle-governance" }
-rekindle-records = { path = "../rekindle-records" }
+async-trait = "0.1"
 base64 = "0.22"
 blake3 = "1"
-regex = "1"
-rekindle-gossip = { path = "../rekindle-gossip" }
-rekindle-codec = { path = "../rekindle-codec" }
-rekindle-protocol = { path = "../rekindle-protocol" }
-rekindle-secrets = { path = "../rekindle-secrets" }
-rekindle-utils = { path = "../rekindle-utils" }
-async-trait = "0.1"
 hex = { workspace = true }
 parking_lot = { workspace = true }
+regex = "1"
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-gossip = { path = "../rekindle-gossip" }
+rekindle-governance = { path = "../rekindle-governance" }
+rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-records = { path = "../rekindle-records" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -32,4 +32,4 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

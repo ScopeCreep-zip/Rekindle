@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 use super::control_events::handle_control_events_and_threads;
 use crate::services::governance_adapter;
@@ -9,7 +9,7 @@ use crate::services::governance_adapter;
 pub(crate) async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
@@ -64,32 +64,30 @@ pub(crate) async fn handle_relayed_control(
     }
 }
 
+/// An edit's new body, opened under exactly the generation of the
+/// channel's text key the edit names.
 fn decrypt_edited_message_body(
     state: &Arc<AppState>,
     community_id: &str,
     channel_id: &str,
+    mek_generation: u64,
     new_ciphertext: &[u8],
 ) -> String {
-    let decrypted = {
-        let mek_cache = state.channel_mek_cache.lock();
-        mek_cache
-            .get(&(community_id.to_string(), channel_id.to_string()))
-            .map(|mek| mek.decrypt(new_ciphertext))
+    let key = crate::state_helpers::text_scope(state, community_id, channel_id).and_then(|scope| {
+        crate::state_helpers::key_provider(state).key(
+            community_id,
+            scope,
+            rekindle_types::channel_keys::KeyEpoch(mek_generation),
+        )
+    });
+    let Some(key) = key else {
+        return "(no MEK available)".to_string();
     };
-    match decrypted {
-        Some(Ok(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
-        Some(Err(_)) => "(decryption failed)".to_string(),
-        None => {
-            let mek_cache = state.mek_cache.lock();
-            if let Some(mek) = mek_cache.get(community_id) {
-                match mek.decrypt(new_ciphertext) {
-                    Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                    Err(_) => "(decryption failed)".to_string(),
-                }
-            } else {
-                "(no MEK available)".to_string()
-            }
-        }
+    match rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*key, mek_generation)
+        .decrypt(new_ciphertext)
+    {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(_) => "(decryption failed)".to_string(),
     }
 }
 
@@ -106,11 +104,16 @@ fn handle_channel_event_payload(
             channel_id,
             message_id,
             new_ciphertext,
-            mek_generation: _,
+            mek_generation,
             edited_at,
         } => {
-            let new_body =
-                decrypt_edited_message_body(state, community_id, &channel_id, &new_ciphertext);
+            let new_body = decrypt_edited_message_body(
+                state,
+                community_id,
+                &channel_id,
+                mek_generation,
+                &new_ciphertext,
+            );
             crate::event_dispatch::emit_subscription(
                 app_handle,
                 &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
@@ -286,31 +289,10 @@ async fn handle_join_and_roles_payload(
             // Permission check: only act if we have MANAGE_COMMUNITY.
             // Other peers without the bit ignore — that's the spec's
             // "any admin reacts" model.
-            let have_manage_community = {
-                use rekindle_governance::permissions::{compute_permissions, has_capability};
-                use rekindle_types::permissions::MANAGE_COMMUNITY;
-                let communities = state.communities.read();
-                communities
-                    .get(community_id)
-                    .and_then(|cs| {
-                        let pseudo_hex = cs.my_pseudonym_key.clone()?;
-                        let bytes = hex::decode(&pseudo_hex).ok()?;
-                        let arr: [u8; 32] = bytes.as_slice().try_into().ok()?;
-                        let me = rekindle_types::id::PseudonymKey(arr);
-                        cs.governance_state.as_ref().map(|gov| {
-                            has_capability(
-                                compute_permissions(
-                                    &me,
-                                    None,
-                                    gov,
-                                    rekindle_utils::time::timestamp_secs(),
-                                ),
-                                MANAGE_COMMUNITY,
-                            )
-                        })
-                    })
-                    .unwrap_or(false)
-            };
+            let have_manage_community = rekindle_governance::permissions::has_capability(
+                crate::state_helpers::my_permissions(state, community_id, None),
+                rekindle_types::permissions::MANAGE_COMMUNITY,
+            );
             if !have_manage_community {
                 tracing::debug!(
                     community = %community_id,

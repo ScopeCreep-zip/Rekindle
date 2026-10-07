@@ -28,16 +28,26 @@ pub fn encode_conversation_header(header: &ConversationHeader) -> Vec<u8> {
         root.set_message_log_key(&header.message_log_key);
         root.set_route_blob(&header.route_blob);
 
-        // Write embedded prekey bundle
+        // Write embedded prekey bundle — all 11 fields, matching
+        // `identity_codec::encode_prekey_bundle`'s canonical shape. This
+        // once dropped the 6 PQXDH fields (pqpk_lr/_sig, pqpk_ot/_sig/_id,
+        // one_time_pre_key_id) on every round trip; `decode_conversation_header`
+        // below always read all 11, so a write would have silently zeroed
+        // any PQ key material. Caught before anything calls the write side
+        // again — see `dht::conversation`'s module doc.
         {
             let mut pkb = root.reborrow().init_pre_key_bundle();
             pkb.set_identity_key(&header.prekey_bundle.identity_key);
             pkb.set_signed_pre_key(&header.prekey_bundle.signed_pre_key);
             pkb.set_signed_pre_key_sig(&header.prekey_bundle.signed_pre_key_sig);
-            if !header.prekey_bundle.one_time_pre_key.is_empty() {
-                pkb.set_one_time_pre_key(&header.prekey_bundle.one_time_pre_key);
-            }
+            pkb.set_one_time_pre_key(&header.prekey_bundle.one_time_pre_key);
+            pkb.set_one_time_pre_key_id(header.prekey_bundle.one_time_pre_key_id);
             pkb.set_registration_id(header.prekey_bundle.registration_id);
+            pkb.set_pqpk_lr(&header.prekey_bundle.pqpk_lr);
+            pkb.set_pqpk_lr_sig(&header.prekey_bundle.pqpk_lr_sig);
+            pkb.set_pqpk_ot(&header.prekey_bundle.pqpk_ot);
+            pkb.set_pqpk_ot_sig(&header.prekey_bundle.pqpk_ot_sig);
+            pkb.set_pqpk_ot_id(header.prekey_bundle.pqpk_ot_id);
         }
 
         root.set_created_at(header.created_at);

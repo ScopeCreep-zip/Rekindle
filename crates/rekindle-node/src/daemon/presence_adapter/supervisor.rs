@@ -34,17 +34,18 @@ pub fn channel() -> (PresenceStartSender, PresenceStartReceiver) {
 /// Drain start requests and spawn one poll per community.
 pub async fn run_supervisor(ctx: Arc<DaemonContext>, mut rx: PresenceStartReceiver) {
     tracing::info!("presence supervisor started");
-    while let Some(request) = rx.recv().await {
+    while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
         for community_id in request.community_ids {
             // A fresh adapter per community: it is one `Arc` clone of the
             // context, and giving each poll its own avoids a shared
             // handle outliving a community that gets left.
             let adapter = Arc::new(DaemonPresenceAdapter::new(Arc::clone(&ctx)));
             tracing::debug!(
-                community = %&community_id[..16.min(community_id.len())],
+                community = %community_id,
                 "starting presence poll"
             );
-            rekindle_presence::community::start_presence_poll(adapter, community_id);
+            let scope = ctx.community_scope(&community_id);
+            rekindle_presence::community::start_presence_poll(adapter, community_id, &scope);
         }
     }
     tracing::info!("presence supervisor stopped");

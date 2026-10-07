@@ -55,12 +55,12 @@ receiver's IP in the same manner.
 | Stage | Layer | Operation |
 |-------|-------|-----------|
 | 1. Compose | Frontend | User types message, invokes `send_message` command |
-| 2. Encrypt | rekindle-crypto | Signal Protocol Double Ratchet encryption (1:1) |
-| 3. Sign | rekindle-codec | Build `MessageEnvelope`, sign over (timestamp ‖ nonce ‖ payload) with Ed25519 |
-| 4. Serialize | rekindle-codec | bincode-serialize the envelope |
+| 2. Seal | rekindle-crypto | `payload.sealing()`: `Session` payloads are Signal Double Ratchet ciphertext; `Plain` payloads are signed only |
+| 3. Sign | rekindle-protocol | Build `MessageEnvelope`, sign `envelope_signing_bytes` (domain ‖ recipient ‖ timestamp ‖ length-prefixed nonce and payload) with Ed25519 |
+| 4. Serialize | rekindle-protocol | Cap'n Proto-encode the envelope (`capnp_codec::message`) |
 | 5. Send | rekindle-protocol | Look up peer's route blob, import route, `app_message()` |
 | 6. Receive | services/veilid::dispatch | `VeilidUpdate::AppMessage` callback dispatches to `message_service` |
-| 7. Decrypt | rekindle-crypto | Verify signature, Signal decrypt |
+| 7. Verify & open | rekindle-protocol, rekindle-crypto | Verify the signature for our key, check freshness and replay, Signal-decrypt, require the sealing the payload type demands |
 | 8. Store & Display | src-tauri | Insert into SQLite, emit `ChatEvent::MessageReceived` |
 
 ## MessageEnvelope (Wire Format)
@@ -70,12 +70,31 @@ All friend-to-friend messages are wrapped in a `MessageEnvelope`:
 ```rust
 pub struct MessageEnvelope {
     pub sender_key: Vec<u8>,    // Ed25519 public key (32 bytes)
-    pub timestamp: u64,         // Unix milliseconds
-    pub nonce: Vec<u8>,         // Unique nonce (dedup + ordering)
-    pub payload: Vec<u8>,       // Encrypted body
-    pub signature: Vec<u8>,     // Ed25519 over (timestamp || nonce || payload)
+    pub timestamp: u64,         // Unix milliseconds, set at each send attempt
+    pub nonce: Vec<u8>,         // Message identity, kept across retries
+    pub payload: Vec<u8>,       // Signal ciphertext, or plain JSON (see Sealing)
+    pub signature: Vec<u8>,     // Ed25519 over envelope_signing_bytes
 }
 ```
+
+The signature covers `"rekindle-msg-envelope-v2" ‖ recipient identity key ‖
+timestamp LE ‖ u32 len(nonce) ‖ nonce ‖ u32 len(payload) ‖ payload`
+(`rekindle-protocol::messaging::signing`). Binding the recipient means a
+captured envelope verifies only for the identity it was sent to. The
+receiver rejects envelopes outside the freshness window (5 minutes old,
+60 seconds ahead, shared with the daemon track) and drops a second copy of
+a `(sender, nonce)` it already accepted (`messaging::replay`); the retry
+queue re-signs each attempt with a fresh timestamp and the same nonce.
+
+Every `MessagePayload` has a sealing class (`MessagePayload::sealing()`,
+exhaustive): `Session` payloads (DMs, typing, DM video, group-DM control)
+must arrive Signal-encrypted, `Plain` payloads (friend handshake, session
+reset, call signaling, relay, push and status probes) must arrive signed
+only. A payload that arrives in the other form is dropped.
+
+The daemon track's framed `SignedPayload` carries the same binding under
+`"rekindle-dm-frame-sig-v2"`, plus the frame `TypeId`, so signed bytes
+cannot be re-framed as another message type.
 
 Payload type discrimination uses an internally tagged serde enum
 (`#[serde(tag = "type")]`).
@@ -233,15 +252,10 @@ paths resolve.
 |-----------|-------|
 | `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`. Used for DMs, friend-add, call signaling (W13/W16), DM invites, and voice/video frames. Reliability for envelopes that need it (signaling, friend-add, DMs) is layered on top via the W16 `pending_envelopes` SQLite primitive: per-recipient seq_ack, receiver dedup, route-aware retry up to 5 min, crash-survives recovery. |
 | `app_call(target, data)` | Request-response delivery. Reserved for operations that genuinely need an inline reply: MEK delivery, file chunk transfer, bootstrap bundles. **Not used for call signaling or DM invites** — Wave 13/16 superseded those with `app_message + W16 reliability layer` to avoid `app_call`'s connection-table exhaustion under bootstrap, ~25 s collapse under network churn, and signaling-vs-DM traffic-shape leakage. See `docs/architecture/voice.md` and the `.claude/docs/rekindle-communities-architecture.md` §10.10 / §27 for the design rationale. |
-| `create_dht_record(schema)` | Create a new DHT record (DFLT or SMPL) |
-| `open_dht_record(key, keypair)` | Open existing record with optional write access |
-| `set_dht_value(key, subkey, data)` | Write to a subkey of an owned record |
-| `get_dht_value(key, subkey, force)` | Read a subkey (force=true bypasses cache) |
-| `inspect_dht_record(key, subkeys)` | Read seq numbers without fetching data |
-| `watch_dht_values(key, subkeys)` | Subscribe to change notifications |
-| `close_dht_record(key)` | Release a record handle |
-| `new_custom_private_route(stability, sequencing)` | Allocate a private route |
-| `import_remote_private_route(blob)` | Import a peer's route blob for sending |
+| DHT record calls (`create`/`open`/`close_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`) | Only through the record pool, `rekindle_protocol::dht::pool::RecordPool` (one per session, both tracks). It holds each record's lease, sticky writer and watch; serializes writes per subkey; re-pushes missed writes of records held writable and persists them to the `dht_outbox` table at logout; closes ended sessions' records through the node's `RecordCloser`, after their calls finish, never aborting one mid-commit; and rehydrates community records on a jittered keepalive. A multi-writer read consults an index (one inspect over the writer set) before fetching (plan C7.12). |
+| `new_private_route` / `new_custom_private_route` / `release_private_route` | Only through `rekindle_protocol::own_routes::OwnRoutes` (one per node): a General route and a Media route (LowLatency, PreferUnordered; never substituted by General). Allocated at network readiness, single-flight per class, `TryAgain` retried with backoff; a route Veilid reports dead is forgotten, never released, and reallocated; logout releases and renews, so no route is shared between identities. The relay feature owns its dedicated relay routes (`services/relay/offer.rs`). |
+| `import_remote_private_route(blob)` | Only through `RouteImports` (one per node). A dead or failed peer route is forgotten, never released: Veilid releases a dead remote route itself. |
+| Node capabilities | App nodes disable `DHTV` (they do not store records for others; veilid #492). |
 | `RoutingContext` | Scoped handle for all DHT and message operations |
 
 ## DHT Record Layouts

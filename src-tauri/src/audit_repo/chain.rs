@@ -5,14 +5,14 @@
 
 use std::sync::Arc;
 
-use rekindle_audit::{AuditChain, AuditKind, AuditRecord, VerifyError};
+use rekindle_audit::{AuditChain, AuditKind, AuditRecord, TailCheck, VerifyError};
 use serde::Serialize;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
+use rekindle_db::Db;
 
-use super::store::{insert_entry, load_all, load_tail};
+use rekindle_db::repo::audit::{insert_entry, load_all, load_tail};
 
 /// Result shape returned by the `audit_verify` Tauri command.
 #[derive(Debug, Clone, Serialize)]
@@ -31,7 +31,7 @@ pub struct AuditVerifyResult {
 /// primary mutation it's accompanying.
 pub async fn append_async(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     kind: AuditKind,
     payload: serde_json::Value,
@@ -103,7 +103,7 @@ pub async fn append_async(
 pub async fn verify_async(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
 ) -> AuditVerifyResult {
     let owner = owner_key.to_string();
@@ -190,7 +190,7 @@ pub async fn verify_async(
 pub async fn restore_chain(
     app_handle: Option<&tauri::AppHandle>,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     mac_key: [u8; 32],
 ) -> Result<(), String> {
@@ -206,50 +206,35 @@ pub async fn restore_chain(
     // and an `AuditChainBroken` event surfaces the tamper.
     let anchor = {
         let ks = state.keystore.lock();
-        ks.as_ref().and_then(crate::keystore::load_audit_tail)
+        ks.as_ref()
+            .and_then(|keystore| crate::keystore::load_audit_tail(keystore))
     };
-    // Decide whether SQLite has been tampered, taking three signals:
-    //   anchor_cursor == sqlite_cursor && anchor_mac == sqlite_mac : clean.
-    //   anchor_cursor == sqlite_cursor && mac mismatch            : tail content modified.
-    //   anchor_cursor >  sqlite_cursor                            : SQLite truncated.
-    //   anchor_cursor <  sqlite_cursor                            : anchor is behind
-    //     (in-flight append lost its vault write — e.g. logout race or
-    //     crash between SQLite insert and vault persist). NOT tamper.
-    //     The auto-verify-on-boot call in auth.rs re-MACs every entry,
-    //     so any forgery added in the gap will be caught there; the
-    //     anchor will be refreshed on the next legitimate append.
-    let (cursor, last_mac, tamper_at) = match anchor {
-        Some((anchor_cursor, anchor_mac)) => {
-            if anchor_cursor == sqlite_cursor && anchor_mac == sqlite_mac {
-                (sqlite_cursor, sqlite_mac, None)
-            } else if anchor_cursor < sqlite_cursor {
-                tracing::info!(
-                    owner = %owner_key,
-                    sqlite_cursor,
-                    anchor_cursor,
-                    "audit tail anchor is behind SQLite — accepting catch-up (likely \
-                     in-flight append lost vault write at logout); full-chain verify \
-                     will catch any forgery in the gap",
-                );
-                (sqlite_cursor, sqlite_mac, None)
-            } else {
-                tracing::error!(
-                    owner = %owner_key,
-                    sqlite_cursor,
-                    anchor_cursor,
-                    "audit tail anchor mismatch — SQLite was tampered with (truncation \
-                     or tail-content modification)",
-                );
-                // The user-visible cursor is the highest known good entry — the
-                // anchor's, since SQLite's may have been forged downward.
-                (anchor_cursor, anchor_mac, Some(anchor_cursor))
-            }
-        }
-        None => {
-            // No anchor yet (fresh identity OR pre-Phase-4 vault). Trust the
-            // SQLite tail; the first append will write an anchor.
-            (sqlite_cursor, sqlite_mac, None)
-        }
+    // The vault anchor is behind when an append's vault write was lost
+    // (logout or a crash between the two writes): a catch-up, and the
+    // auto-verify on boot (auth.rs) re-MACs every entry in the gap.
+    let stored = (sqlite_cursor, sqlite_mac);
+    let check = TailCheck::of(anchor, stored);
+    match check {
+        TailCheck::CatchUp => tracing::info!(
+            owner = %owner_key,
+            sqlite_cursor,
+            "audit tail anchor is behind SQLite — accepting catch-up (likely \
+             in-flight append lost vault write at logout); full-chain verify \
+             will catch any forgery in the gap",
+        ),
+        TailCheck::Tampered { anchor } => tracing::error!(
+            owner = %owner_key,
+            sqlite_cursor,
+            anchor_cursor = anchor.0,
+            "audit tail anchor mismatch — SQLite was tampered with (truncation \
+             or tail-content modification)",
+        ),
+        TailCheck::Unanchored | TailCheck::Clean => {}
+    }
+    let (cursor, last_mac) = check.resume_from(stored);
+    let tamper_at = match check {
+        TailCheck::Tampered { anchor } => Some(anchor.0),
+        TailCheck::Unanchored | TailCheck::Clean | TailCheck::CatchUp => None,
     };
     let chain = AuditChain::open(zeroize::Zeroizing::new(mac_key), last_mac, cursor);
     *state.audit_chain.lock() = Some(chain);

@@ -673,8 +673,11 @@ struct LinkPreviewPayload @0xea0042000000a000 {
     title                @4 :Text;
     hasDescription       @5 :Bool;
     description          @6 :Text;
-    hasImageUrl          @7 :Bool;
-    imageUrl             @8 :Text;
+    # Never set. Previews carry no image: rendering a peer-chosen image URL
+    # would make every reader fetch it and leak their IP. Only ordinals are
+    # on the wire, so the rename is compatible.
+    obsoleteHasImageUrl  @7 :Bool;
+    obsoleteImageUrl     @8 :Text;
     hasSiteName          @9 :Bool;
     siteName             @10 :Text;
     fetchedAt            @11 :UInt64;

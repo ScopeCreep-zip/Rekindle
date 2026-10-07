@@ -62,6 +62,6 @@ impl SyncDeps for SyncAdapter {
     }
 
     async fn attempt_pending_retry(&self, row: &PendingMessageRow) -> PendingRetryOutcome {
-        super::attempt::attempt_pending_retry(&self.state, row).await
+        super::attempt::attempt_pending_retry(&self.state, row, &self.stop).await
     }
 }

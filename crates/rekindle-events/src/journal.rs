@@ -1,11 +1,10 @@
 //! Bounded in-memory event journal with monotonic cursors.
 //!
-//! Every emitted event gets a unique [`JournalCursor`]. The frontend
-//! persists the most-recent cursor to `localStorage`; on soft stalls
-//! (page reload during dev, brief IPC pause, hot-reload across the
-//! Tauri ↔ webview bridge) it calls the `event_resume` Tauri command
-//! which returns [`EventJournal::replay_since`] — events newer than the
-//! cursor in arrival order.
+//! Every journaled event gets a unique [`JournalCursor`]. A desktop window
+//! keeps the most recent cursor it saw in its own `sessionStorage`; when
+//! the page reloads it passes that cursor to `subscribe_events`, which
+//! sends it the entries from [`EventJournal::replay_since`] that were
+//! addressed to it — events newer than the cursor, in arrival order.
 //!
 //! ## Persistence
 //!
@@ -19,8 +18,8 @@
 //! process lifetime.
 //!
 //! Phase 10 generalised the journal over `T` so the daemon track can
-//! store `SubscriptionEvent` while the Tauri track stores its own
-//! `{ channel, payload }` envelope. Either way the cursor + ring semantics
+//! store `SubscriptionEvent` while the Tauri track stores its typed
+//! `WebviewEvent`. Either way the cursor + ring semantics
 //! are identical.
 
 use std::collections::VecDeque;
@@ -96,7 +95,7 @@ impl<T> EventJournal<T> {
     /// session — a privacy hazard for a vulnerable-users platform
     /// where shared devices are common. Resetting the counter is
     /// intentional: any cursor the frontend has persisted to
-    /// `localStorage` is now meaningless against the new journal
+    /// `sessionStorage` is now meaningless against the new journal
     /// generation, but cross-session resume is best-effort and the
     /// frontend treats empty replays as the cold-start default.
     pub fn clear(&self) {
@@ -116,6 +115,7 @@ mod tests {
             is_attached: true,
             public_internet_ready: true,
             has_route: true,
+            media_route: rekindle_types::subscription_events::RouteAvailability::Available,
         })
     }
 
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(j.len(), 2);
         j.clear();
         assert!(j.is_empty(), "ring must be empty after clear");
-        // Cursor restarts at 1 — a stale localStorage cursor from the
+        // Cursor restarts at 1 — a stale sessionStorage cursor from the
         // previous session would now be GREATER than any cursor the
         // new session will produce, so replay returns nothing.
         let c = j.append("bob-fresh-1".into());

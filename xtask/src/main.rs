@@ -7,6 +7,15 @@
 //!     cargo xtask check-boundaries     Crate-import tier boundaries.
 //!     cargo xtask check-file-sizes     600-line ceiling, unconditional.
 //!     cargo xtask check-allow-reasons  Every `#[allow(...)]` has reason="…".
+//!     cargo xtask check-domain-literals
+//!                                      Domain-separation labels only in
+//!                                      rekindle-types::domains.
+//!     cargo xtask check-no-emitter     src-tauri sends webview events only
+//!                                      through event_dispatch (ADR 0007).
+//!     cargo xtask check-veilid-dht-calls
+//!                                      Veilid DHT/route calls only in their
+//!                                      owners (record pool, RouteImports,
+//!                                      OwnRoutes, relay offer).
 //!     cargo xtask check-duplicate-constants
 //!                                      One SCREAMING_CASE name must not hold
 //!                                      different values in different crates.
@@ -35,7 +44,15 @@ use clap::{Parser, Subcommand};
 use ignore::WalkBuilder;
 use quote::ToTokens as _;
 
+mod bare_spawn;
+mod domain_literals;
 mod duplication;
+mod frontend_boundaries;
+mod literals;
+mod no_emitter;
+mod no_managed_db;
+mod sqlite;
+mod veilid_dht_calls;
 
 #[derive(Parser)]
 #[command(
@@ -55,12 +72,26 @@ enum Command {
     Check,
     /// Verify crate-import tier boundaries (rekindle-secrets sole crypto, etc).
     CheckBoundaries,
+    /// Verify no frontend crate links the backend (veilid, transport, node…).
+    CheckFrontendBoundaries,
     /// Verify the unconditional 600-line file-size ceiling.
     CheckFileSizes,
     /// Verify every `#[allow(...)]` has a `reason = "…"` argument.
     CheckAllowReasons,
     /// Verify no constant name holds different values in different crates.
     CheckDuplicateConstants,
+    /// Verify domain-separation labels appear only in rekindle-types::domains.
+    CheckDomainLiterals,
+    /// Verify src-tauri never uses Tauri's `Emitter` (events go through the router).
+    CheckNoEmitter,
+    /// Verify every Veilid DHT and private-route call stays in its owner.
+    CheckVeilidDhtCalls,
+    /// Verify SQL lives only in the storage crates (rekindle-db, -vault, -asql).
+    CheckSqlite,
+    /// Verify the database is reached through `AppState.db`, not Tauri managed state.
+    CheckNoManagedDb,
+    /// Verify session work spawns through a `SessionScope`, not bare `tokio::spawn`.
+    CheckBareSpawn,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
     /// Verify no type name is declared in two crates.
@@ -101,11 +132,36 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "boundaries",
                     Box::new(|| check_boundaries(&root)) as Box<dyn FnOnce() -> Result<()>>,
                 ),
+                (
+                    "frontend-boundaries",
+                    Box::new(|| frontend_boundaries::check_frontend_boundaries(&root)),
+                ),
                 ("file-sizes", Box::new(|| check_file_sizes(&root))),
                 ("allow-reasons", Box::new(|| check_allow_reasons(&root))),
                 (
                     "duplicate-constants",
                     Box::new(|| check_duplicate_constants(&root)),
+                ),
+                (
+                    "domain-literals",
+                    Box::new(|| domain_literals::check_domain_literals(&root)),
+                ),
+                (
+                    "no-emitter",
+                    Box::new(|| no_emitter::check_no_emitter(&root)),
+                ),
+                (
+                    "veilid-dht-calls",
+                    Box::new(|| veilid_dht_calls::check_veilid_dht_calls(&root)),
+                ),
+                ("sqlite", Box::new(|| sqlite::check_sqlite(&root))),
+                (
+                    "no-managed-db",
+                    Box::new(|| no_managed_db::check_no_managed_db(&root)),
+                ),
+                (
+                    "bare-spawn",
+                    Box::new(|| bare_spawn::check_bare_spawn(&root)),
                 ),
                 (
                     "duplicate-bodies",
@@ -138,9 +194,16 @@ fn dispatch(cmd: &Command) -> Result<()> {
             Ok(())
         }
         Command::CheckBoundaries => check_boundaries(&root),
+        Command::CheckFrontendBoundaries => frontend_boundaries::check_frontend_boundaries(&root),
         Command::CheckFileSizes => check_file_sizes(&root),
         Command::CheckAllowReasons => check_allow_reasons(&root),
         Command::CheckDuplicateConstants => check_duplicate_constants(&root),
+        Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
+        Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
+        Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
+        Command::CheckSqlite => sqlite::check_sqlite(&root),
+        Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),
+        Command::CheckBareSpawn => bare_spawn::check_bare_spawn(&root),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),
@@ -180,6 +243,8 @@ const CRYPTO_CRATES: &[&str] = &[
     "aes-gcm",
     "chacha20poly1305",
     "hkdf",
+    // Noise protocol framework (the IPC bus handshake and transport).
+    "snow",
 ];
 // Veilid integration is centralised: only the daemon-track transport
 // or the desktop-track protocol crate may import veilid-core directly.
@@ -188,6 +253,9 @@ const VEILID_ALLOWED: &[&str] = &["rekindle-transport", "rekindle-protocol"];
 // sweep refactors crypto consumers to consume via rekindle-secrets.
 const CRYPTO_ALLOWED: &[&str] = &[
     "rekindle-secrets",
+    // The IPC bus is Noise IK end to end; `rekindle-ipc` owns the
+    // handshake and transport state (plan C1). Tier 3.
+    "rekindle-ipc",
     // ── Pending sweep — see ai-assisted-contributions.md §5 ──
     "rekindle-crypto",
     "rekindle-dm",
@@ -400,11 +468,6 @@ const DUPLICATE_CONSTANT_EXCEPTIONS: &[(&str, &str)] = &[
         "HKDF_INFO",
         "Per-purpose HKDF domain-separation labels MUST differ — identical \
          labels across contexts is the bug, not the divergence.",
-    ),
-    (
-        "MIGRATION",
-        "`include_str!` of the same 001_init.sql; the literals differ only \
-         by relative depth from the embedding file.",
     ),
     (
         "SCAN_PARALLELISM",
@@ -639,46 +702,11 @@ const DUPLICATE_BODY_EXCEPTIONS: &[(&[&str], &str)] = &[
          conversion, which is the same code again.",
     ),
     (
-        &["rekindle-secrets::generate", "rekindle-transport::generate"],
-        "MEK codec, plan 4.2. Blocked on unifying two CryptoError \
-         taxonomies (7 vs 11 variants, 116 sites) — rekindle-crypto \
-         depends on rekindle-secrets, so the naive direction is circular.",
-    ),
-    (
-        &[
-            "rekindle-secrets::to_wire_bytes",
-            "rekindle-transport::to_wire_bytes",
-        ],
-        "MEK codec, plan 4.2 — same blocker.",
-    ),
-    (
-        &[
-            "rekindle-secrets::from_wire_bytes",
-            "rekindle-transport::from_wire_bytes",
-        ],
-        "MEK codec, plan 4.2 — same blocker.",
-    ),
-    (
         &["rekindle (src-tauri)::as_ref", "rekindle-protocol::as_str"],
         "Two ChannelType enums, not two functions: the bodies match \
          because the types do. Converging is a Tier-1 type migration \
          (same shape as the onboarding DTOs in Phase 1), not a helper \
          hoist. Plan 4.9.",
-    ),
-    (
-        &[
-            "rekindle-governance-runtime::as_wire_str",
-            "rekindle-types::as_wire_str",
-        ],
-        "Three status enums with identical variants and identical wire \
-         mapping: rekindle-types::presence::SessionStatus (canonical), \
-         rekindle-governance-runtime::deps::UserStatusKind, and \
-         rekindle-presence::status::UserStatusKind. The runtime crate's \
-         doc claims it avoids depending on src-tauri's UserStatus — but \
-         the alternative is the Tier-1 enum it ALREADY depends on, so \
-         that justification does not hold. Converging changes a trait \
-         signature, hence plan 4.10 rather than a drive-by. This entry \
-         is not settled.",
     ),
 ];
 

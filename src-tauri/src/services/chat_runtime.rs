@@ -6,15 +6,16 @@
 use std::sync::Arc;
 
 use crate::commands::chat::Message;
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn send_dm_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     to: String,
     body: String,
@@ -49,6 +50,7 @@ pub async fn send_dm_inner(
     let ack = rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
         rekindle_types::subscription_events::ChannelMessageEvent::DirectMessageAcknowledged {
             message_id: timestamp.cast_unsigned(),
+            conversation_id: to.clone(),
         },
     );
     crate::event_dispatch::emit_subscription(&app, &ack);
@@ -58,7 +60,7 @@ pub async fn send_dm_inner(
 
 pub async fn get_message_history_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     peer_id: String,
     limit: u32,
 ) -> Result<Vec<Message>, String> {
@@ -110,19 +112,17 @@ pub async fn prepare_chat_session_inner(
     let Some(dht_key_str) = dht_record_key else {
         return Ok(());
     };
-    let record_key: veilid_core::RecordKey = dht_key_str
-        .parse()
-        .map_err(|e| format!("invalid DHT key: {e}"))?;
-
-    let Some((_api, routing_context)) = state_helpers::safe_api_and_routing_context(&state) else {
+    let Ok(pool) = state_helpers::record_pool(&state) else {
         return Ok(());
     };
-
-    let _ = routing_context
-        .open_dht_record(record_key.clone(), None)
-        .await;
-    if let Ok(Some(value_data)) = routing_context.get_dht_value(record_key, 6, true).await {
-        let route_blob = value_data.data().to_vec();
+    if let Ok(Some(route_blob)) = rekindle_protocol::dht::profile::read_profile_subkey(
+        &pool,
+        &dht_key_str,
+        rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
+        true,
+    )
+    .await
+    {
         if !route_blob.is_empty() {
             state_helpers::cache_peer_route(&state, &peer_id, route_blob);
         }
@@ -134,7 +134,7 @@ pub async fn prepare_chat_session_inner(
 
 pub async fn mark_read_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     peer_id: String,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(&state)?;

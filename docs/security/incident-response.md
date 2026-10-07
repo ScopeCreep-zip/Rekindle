@@ -205,7 +205,7 @@ they shouldn't.
 3. Coordinate with anyone running their own daemon
    (`rekindle-node`) — the daemon track means there could be
    long-running infrastructure outside the maintainer's view.
-4. Bump `SCHEMA_VERSION` if the database schema needs to change. Per
+4. Bump `SCHEMA_VERSION` (`crates/rekindle-db/src/open.rs`) if the database schema needs to change. Per
    the project's pre-1.0 status, this triggers a wipe-and-rebuild on
    next launch — see [`../architecture/data-layer.md`](../architecture/data-layer.md).
 5. Publish the GHSA, release the patch, and add a regression test

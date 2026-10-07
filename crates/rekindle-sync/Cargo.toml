@@ -17,9 +17,10 @@ rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tokio-util = "0.7"
 tracing = { workspace = true }
 
 [dev-dependencies]
 parking_lot = { workspace = true }
 rekindle-protocol = { path = "../rekindle-protocol" }
-tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+tokio = { workspace = true, features = [ "rt", "macros", "sync", "time" ] }

@@ -50,7 +50,7 @@ crlf = false
 # its built-in schema if reorder_keys is on. We keep author-ordered
 # Cargo.toml so diffs stay legible.
 [[rule]]
-include = ["Cargo.toml", "**/Cargo.toml"]
-keys = ["dependencies", "dev-dependencies", "build-dependencies"]
+include = [ "Cargo.toml", "**/Cargo.toml" ]
+keys = [ "dependencies", "dev-dependencies", "build-dependencies" ]
 [rule.formatting]
 reorder_keys = true

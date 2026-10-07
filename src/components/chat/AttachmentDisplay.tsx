@@ -1,6 +1,10 @@
 import { Component, Show, createMemo, createSignal } from "solid-js";
 import type { MessageAttachment } from "../../stores/chat.store";
-import { handleDownloadAttachment, handlePinAttachment } from "../../actions/community.actions";
+import {
+  handleDownloadAttachment,
+  handlePinAttachment,
+  handleRevealAttachment,
+} from "../../actions/community.actions";
 import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
 import { communityState } from "../../stores/community.store";
 import { calculateBasePermissions } from "../../utils/permissions";
@@ -35,7 +39,7 @@ function pickIcon(mimeType: string): string {
 const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
   const [downloading, setDownloading] = createSignal(false);
 
-  const downloaded = createMemo(() => Boolean(props.attachment.localPath));
+  const downloaded = createMemo(() => props.attachment.downloaded);
   const pinned = createMemo(() => {
     const community = communityState.communities[props.communityId];
     return community?.pinnedAttachments?.includes(props.attachment.attachmentId) ?? false;
@@ -56,18 +60,18 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         props.communityId,
         props.channelId,
         props.attachment.attachmentId,
-        props.attachment.filename,
       );
     } finally {
       setDownloading(false);
     }
   }
 
-  async function handleOpenClick(): Promise<void> {
-    const path = props.attachment.localPath;
-    if (!path) return;
-    const { openPath } = await import("@tauri-apps/plugin-opener");
-    await openPath(path);
+  async function handleRevealClick(): Promise<void> {
+    await handleRevealAttachment(
+      props.communityId,
+      props.channelId,
+      props.attachment.attachmentId,
+    );
   }
 
   async function handlePinClick(): Promise<void> {
@@ -99,9 +103,13 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
           </button>
         }
       >
-        <button class="attachment-card-btn" onClick={() => void handleOpenClick()} title="Open">
+        <button
+          class="attachment-card-btn"
+          onClick={() => void handleRevealClick()}
+          title="Show in folder"
+        >
           <span class="nf-icon">{ICON_FOLDER_OPEN}</span>
-          <span>Open</span>
+          <span>Show in folder</span>
         </button>
       </Show>
       <Show when={canPin()}>

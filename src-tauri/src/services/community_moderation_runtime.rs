@@ -14,16 +14,16 @@ use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayl
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub const BULK_DELETE_CAP: usize = 100;
 
 pub async fn admin_delete_channel_message_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     channel_id: String,
     message_id: String,
@@ -51,7 +51,7 @@ pub fn message_id_to_bytes(message_id: &str) -> [u8; 16] {
 }
 
 pub async fn purge_local_message(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     channel_id: &str,
     message_id: &str,
@@ -96,7 +96,7 @@ pub fn emit_message_deleted_local(
 /// write_entry success even if gossip/purge fail (they log).
 pub async fn admin_delete_one_message(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     message_id: &str,
@@ -105,7 +105,8 @@ pub async fn admin_delete_one_message(
 ) -> Result<(), String> {
     use crate::commands::community::helpers::hex_to_id_16;
 
-    let lamport = state_helpers::increment_lamport(state, community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         community_id,
@@ -142,7 +143,7 @@ pub async fn admin_delete_one_message(
 
 pub async fn remove_community_member_inner(
     state: std::sync::Arc<crate::state::AppState>,
-    pool: crate::db::DbPool,
+    pool: rekindle_db::Db,
     community_id: String,
     pseudonym_key: String,
 ) -> Result<(), String> {
@@ -184,13 +185,24 @@ pub async fn remove_community_member_inner(
     let community_id_clone = community_id.clone();
     let pseudonym_key_clone = pseudonym_key.clone();
     db_call(&pool, move |conn| {
-        conn.execute(
-            "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![owner_key, community_id_clone, pseudonym_key_clone],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::delete(
+            conn,
+            &owner_key,
+            &community_id_clone,
+            &pseudonym_key_clone,
+        )
     })
     .await?;
+
+    // The kicked member still holds the current keys (plan D20).
+    if let Some(app_handle) = state_helpers::app_handle(&state) {
+        crate::services::community::spawn_departure_rotations(
+            &app_handle,
+            &state,
+            &community_id,
+            &pseudonym_key,
+        );
+    }
 
     tracing::info!(
         community = %community_id,
@@ -202,7 +214,7 @@ pub async fn remove_community_member_inner(
 
 pub async fn timeout_member_inner(
     state: &crate::state::SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: String,
     pseudonym_key: String,
     duration_seconds: u64,
@@ -215,7 +227,8 @@ pub async fn timeout_member_inner(
 
     require_permission(state, &community_id, permissions::TIMEOUT_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -230,14 +243,11 @@ pub async fn timeout_member_inner(
     .await?;
 
     let timeout_until = crate::db::timestamp_now() / 1000 + duration_seconds.cast_signed();
+    let until = u64::try_from(timeout_until).map_err(|e| e.to_string())?;
     let cid = community_id.clone();
     let pk = pseudonym_key.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE community_members SET timeout_until = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![timeout_until, owner_key, cid, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::set_timeout(conn, &owner_key, &cid, &pk, Some(until))
     })
     .await?;
     Ok(())
@@ -245,7 +255,7 @@ pub async fn timeout_member_inner(
 
 pub async fn remove_timeout_inner(
     state: &crate::state::SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: String,
     pseudonym_key: String,
 ) -> Result<(), String> {
@@ -256,7 +266,8 @@ pub async fn remove_timeout_inner(
 
     require_permission(state, &community_id, permissions::TIMEOUT_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -270,11 +281,7 @@ pub async fn remove_timeout_inner(
     let cid = community_id.clone();
     let pk = pseudonym_key.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE community_members SET timeout_until = NULL WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![owner_key, cid, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::set_timeout(conn, &owner_key, &cid, &pk, None)
     })
     .await?;
     Ok(())
@@ -282,7 +289,7 @@ pub async fn remove_timeout_inner(
 
 pub async fn set_channel_overwrite_inner(
     state: &crate::state::SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: String,
     channel_id: String,
     target_type: String,
@@ -298,7 +305,8 @@ pub async fn set_channel_overwrite_inner(
     require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -329,7 +337,7 @@ pub async fn set_channel_overwrite_inner(
 
 pub async fn delete_channel_overwrite_inner(
     state: &crate::state::SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: String,
     channel_id: String,
     target_type: String,
@@ -343,7 +351,8 @@ pub async fn delete_channel_overwrite_inner(
     require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -381,7 +390,8 @@ pub async fn set_slowmode_inner(
     use crate::commands::community::helpers::hex_to_id_16;
     use crate::state_helpers;
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -418,7 +428,8 @@ pub async fn ban_member_inner(
     use rekindle_types::permissions;
 
     require_permission(state, &community_id, permissions::BAN_MEMBERS)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -431,21 +442,12 @@ pub async fn ban_member_inner(
     .await?;
 
     if let Some(app_handle) = state_helpers::app_handle(state) {
-        let state = state.clone();
-        let community_id = community_id.clone();
-        let pseudonym_key = pseudonym_key.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(error) = crate::services::community::rotate_text_mek_for_departure(
-                &app_handle,
-                &state,
-                &community_id,
-                &pseudonym_key,
-            )
-            .await
-            {
-                tracing::debug!(community = %community_id, member = %pseudonym_key, error = %error, "text MEK rotation skipped after ban");
-            }
-        });
+        crate::services::community::spawn_departure_rotations(
+            &app_handle,
+            state,
+            &community_id,
+            &pseudonym_key,
+        );
     }
 
     tracing::info!(community = %community_id, member = %pseudonym_key, "member banned");
@@ -462,7 +464,8 @@ pub async fn unban_member_inner(
     use rekindle_types::permissions;
 
     require_permission(state, &community_id, permissions::BAN_MEMBERS)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,

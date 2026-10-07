@@ -24,7 +24,6 @@ use std::future::Future;
 
 use crate::payload::dm::DmPayload;
 use crate::payload::rpc::{CallResponse, InboundCall};
-use crate::payload::voice::VoicePayload;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
@@ -46,12 +45,13 @@ pub enum TransportEvent {
         is_attached: bool,
         public_internet_ready: bool,
     },
+    /// One of our own routes changed state (allocated, died, failed): the
+    /// network status a window shows changed though attachment did not.
+    RoutesChanged,
     /// One or more of our allocated private routes died.
     LocalRoutesDied { count: usize },
     /// One or more imported remote peer routes died.
     RemoteRoutesDied { peer_keys: Vec<String> },
-    /// A DHT watch expired or was cancelled by the watching node.
-    WatchDied { record_key: String },
 }
 
 /// Application-layer handler for all inbound transport events.
@@ -60,6 +60,10 @@ pub enum TransportEvent {
 /// decrypted payloads from the transport layer. The transport guarantees
 /// that every call to these methods has passed full authentication.
 pub trait InboundHandler: Send + Sync + 'static {
+    /// Our identity key while an identity is unlocked. Signed DMs and RPCs
+    /// are verified as addressed to it; with none, they are dropped.
+    fn local_identity(&self) -> Option<[u8; 32]>;
+
     /// An authenticated DM payload arrived from a verified peer.
     ///
     /// W16.4 — `DmPayload` includes call signaling variants
@@ -117,9 +121,6 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// the 5-hop TTL; without it a message reaches six people in a
     /// forty-member community.
     fn on_gossip_forward(&self, envelope: &SignedEnvelope) -> impl Future<Output = ()> + Send;
-
-    /// An authenticated, encrypted voice packet arrived.
-    fn on_voice(&self, sender_key: &str, packet: VoicePayload) -> impl Future<Output = ()> + Send;
 
     /// An authenticated RPC request arrived, expecting a response.
     fn on_call(

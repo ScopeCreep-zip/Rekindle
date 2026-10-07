@@ -49,9 +49,9 @@ pub enum ChannelCmd {
         /// Channel name or ID.
         #[arg(long, short = 'C')]
         channel: String,
-        /// Skip confirmation.
+        /// Skip the confirmation prompt.
         #[arg(long)]
-        yes: bool,
+        force: bool,
     },
 
     /// Update a channel's properties.
@@ -121,9 +121,6 @@ pub enum ChannelCmd {
         /// Channel name or ID.
         #[arg(long, short = 'C')]
         channel: String,
-        /// Show raw ciphertext (debugging).
-        #[arg(long)]
-        raw: bool,
     },
 
     /// Pin a message.
@@ -170,6 +167,10 @@ pub enum VoiceCmd {
         /// Join deafened.
         #[arg(long)]
         deafened: bool,
+        /// Stay joined and stream the channel's voice events until Ctrl-C,
+        /// then leave.
+        #[arg(long)]
+        watch: bool,
     },
 
     /// Leave current voice session.

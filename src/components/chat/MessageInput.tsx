@@ -110,10 +110,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
 
   async function handleAttachClick(): Promise<void> {
     if (!props.communityId) return;
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: false, directory: false });
-    if (!picked) return;
-    await handleUploadAttachment(props.communityId, props.peerId, picked as string);
+    await handleUploadAttachment(props.communityId, props.peerId);
   }
 
   return (

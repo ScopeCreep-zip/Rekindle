@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
-use tauri::Manager;
 
 pub(crate) fn check_gossip_moderation_permission(
     state: &Arc<AppState>,
@@ -23,21 +21,11 @@ pub(crate) fn check_gossip_moderation_permission(
         _ => return true,
     };
 
-    let Some(gov) = crate::state_helpers::governance_state(state, community_id) else {
+    let Some(perms) =
+        crate::state_helpers::permissions_for(state, community_id, sender_pseudonym, None)
+    else {
         return false;
     };
-    let Ok(bytes) = hex::decode(sender_pseudonym) else {
-        return false;
-    };
-    let Ok(pseudo_bytes): Result<[u8; 32], _> = bytes.try_into() else {
-        return false;
-    };
-    let perms = rekindle_governance::permissions::compute_permissions(
-        &rekindle_types::id::PseudonymKey(pseudo_bytes),
-        None,
-        &gov,
-        rekindle_utils::timestamp_secs(),
-    );
     if rekindle_governance::permissions::has_capability(perms, required) {
         true
     } else {
@@ -95,14 +83,16 @@ fn fit_within_budget(
 }
 
 pub(crate) fn handle_sync_request(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
     requester_pseudonym: &str,
     channel_id: &str,
     since_timestamp: u64,
 ) {
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("channel sync: no identity database — dropped");
+        return;
+    };
     let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
     let community_id_owned = community_id.to_string();
     let channel_id_owned = channel_id.to_string();
@@ -110,90 +100,93 @@ pub(crate) fn handle_sync_request(
     let since_ts = since_timestamp.cast_signed();
     let requester_owned = requester_pseudonym.to_string();
     let state = Arc::clone(state);
-    let pool = pool.inner().clone();
+    let pool = pool.clone();
 
-    tokio::spawn(async move {
-        let messages: Vec<rekindle_types::message::SyncedMessage> =
-            crate::db_helpers::db_call(&pool, move |conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT sender_key, body, timestamp, mek_generation, lamport_ts \
+    crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
+        "channel sync reply",
+        async move {
+            let messages: Vec<rekindle_types::message::SyncedMessage> =
+                crate::db_helpers::db_call(&pool, move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT sender_key, body, timestamp, mek_generation, lamport_ts \
                          FROM messages \
                          WHERE owner_key = ? AND conversation_id = ? \
                            AND conversation_type = 'channel' AND timestamp >= ? \
                          ORDER BY timestamp ASC LIMIT 500",
-                )?;
-                let rows = stmt.query_map(
-                    rusqlite::params![owner_key, channel_id_owned, since_ts],
-                    |row| {
-                        Ok(rekindle_types::message::SyncedMessage {
-                            sender_key: row.get::<_, String>(0)?,
-                            body: row.get::<_, String>(1)?,
-                            timestamp: row.get::<_, i64>(2)?,
-                            mek_generation: row.get::<_, Option<i64>>(3)?,
-                            lamport_ts: row.get::<_, Option<i64>>(4)?,
-                        })
-                    },
-                )?;
-                Ok(rows.filter_map(std::result::Result::ok).collect::<Vec<_>>())
-            })
-            .await
-            .unwrap_or_default();
+                    )?;
+                    let rows = stmt.query_map(
+                        rusqlite::params![owner_key, channel_id_owned, since_ts],
+                        |row| {
+                            Ok(rekindle_types::message::SyncedMessage {
+                                sender_key: row.get::<_, String>(0)?,
+                                body: row.get::<_, String>(1)?,
+                                timestamp: row.get::<_, i64>(2)?,
+                                mek_generation: row.get::<_, Option<i64>>(3)?,
+                                lamport_ts: row.get::<_, Option<i64>>(4)?,
+                            })
+                        },
+                    )?;
+                    Ok(rows.filter_map(std::result::Result::ok).collect::<Vec<_>>())
+                })
+                .await
+                .unwrap_or_default();
 
-        if messages.is_empty() {
-            return;
-        }
+            if messages.is_empty() {
+                return;
+            }
 
-        let total = messages.len();
-        let messages = fit_within_budget(messages);
-        if messages.is_empty() {
-            tracing::warn!(
-                community = %community_id_owned,
-                "first sync row alone exceeds the app_message budget — nothing sent"
-            );
-            return;
-        }
-        if messages.len() < total {
+            let total = messages.len();
+            let messages = fit_within_budget(messages);
+            if messages.is_empty() {
+                tracing::warn!(
+                    community = %community_id_owned,
+                    "first sync row alone exceeds the app_message budget — nothing sent"
+                );
+                return;
+            }
+            if messages.len() < total {
+                tracing::debug!(
+                    community = %community_id_owned,
+                    sent = messages.len(),
+                    withheld = total - messages.len(),
+                    "sync response truncated to fit the app_message ceiling"
+                );
+            }
+
             tracing::debug!(
                 community = %community_id_owned,
-                sent = messages.len(),
-                withheld = total - messages.len(),
-                "sync response truncated to fit the app_message ceiling"
+                count = messages.len(),
+                "responding to sync request"
             );
-        }
 
-        tracing::debug!(
-            community = %community_id_owned,
-            count = messages.len(),
-            "responding to sync request"
-        );
-
-        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::SyncResponse {
-                channel_id: channel_id_for_envelope,
-                messages,
-            },
-        );
-        // Directed, not broadcast: the requester asked, so the reply goes
-        // to the requester. Broadcasting made every member re-receive
-        // history they already held and multiplied an already-oversize
-        // payload by the fan-out degree.
-        if let Err(e) = crate::services::community::gossip::send_to_member(
-            &state,
-            &pool,
-            &community_id_owned,
-            &requester_owned,
-            &envelope,
-        )
-        .await
-        {
-            tracing::warn!(
-                community = %community_id_owned,
-                requester = %requester_owned,
-                error = %e,
-                "sync response delivery failed"
+            let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                rekindle_protocol::dht::community::envelope::ControlPayload::SyncResponse {
+                    channel_id: channel_id_for_envelope,
+                    messages,
+                },
             );
-        }
-    });
+            // Directed, not broadcast: the requester asked, so the reply goes
+            // to the requester. Broadcasting made every member re-receive
+            // history they already held and multiplied an already-oversize
+            // payload by the fan-out degree.
+            if let Err(e) = crate::services::community::gossip::send_to_member(
+                &state,
+                &pool,
+                &community_id_owned,
+                &requester_owned,
+                &envelope,
+            )
+            .await
+            {
+                tracing::warn!(
+                    community = %community_id_owned,
+                    requester = %requester_owned,
+                    error = %e,
+                    "sync response delivery failed"
+                );
+            }
+        },
+    );
 }
 
 pub(crate) fn handle_sync_response(
@@ -214,7 +207,10 @@ pub(crate) fn handle_sync_response(
         "merging sync response messages"
     );
 
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("channel sync: no identity database — dropped");
+        return;
+    };
     let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
 
     for message in messages {
@@ -224,7 +220,7 @@ pub(crate) fn handle_sync_response(
         let mek_generation = message.mek_generation;
         let owner_key = owner_key.clone();
         let channel_id = channel_id.to_string();
-        db_fire(pool.inner(), "store sync message", move |conn| {
+        db_fire(&pool, "store sync message", move |conn| {
             conn.execute(
                 "INSERT OR IGNORE INTO messages \
                  (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \

@@ -42,8 +42,8 @@ pub(crate) fn handle_leave(
     session: &RwLock<Option<rekindle_transport::Session>>,
     mek_rotation_tx: &MekRotationSender,
 ) -> CallResponse {
-    let community_short = &notif.governance_key[..16.min(notif.governance_key.len())];
-    let member_short = &notif.leaving_pseudonym_hex[..16.min(notif.leaving_pseudonym_hex.len())];
+    let community = &notif.governance_key;
+    let member = &notif.leaving_pseudonym_hex;
 
     // Only act for communities we are actually in. Without this an
     // unsolicited notification would queue rotation work for a
@@ -55,15 +55,15 @@ pub(crate) fn handle_leave(
         .is_some_and(|s| s.community(&notif.governance_key).is_some());
     if !is_member {
         tracing::debug!(
-            community = %community_short,
+            community = %community,
             "leave notification for a community we are not in — ignoring"
         );
         return CallResponse::Ack;
     }
 
     tracing::info!(
-        community = %community_short,
-        member = %member_short,
+        community = %community,
+        member = %member,
         "member departed — queueing MEK rotation"
     );
 
@@ -73,7 +73,7 @@ pub(crate) fn handle_leave(
     );
     if mek_rotation_tx.send(request).is_err() {
         tracing::warn!(
-            community = %community_short,
+            community = %community,
             "MEK rotation worker is gone — departure did not rotate the key"
         );
     }
@@ -153,9 +153,7 @@ mod tests {
             crate::daemon::mek_rotation::MekRotationKind::Departure {
                 departed_pseudonym_hex,
             } => assert_eq!(departed_pseudonym_hex, DEPARTED),
-            other @ crate::daemon::mek_rotation::MekRotationKind::Manual { .. } => {
-                panic!("expected a departure rotation, got {other:?}")
-            }
+            other => panic!("expected a departure rotation, got {other:?}"),
         }
         assert!(rx.try_recv().is_err(), "exactly one request");
     }

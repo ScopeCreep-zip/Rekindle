@@ -1,8 +1,7 @@
 //! Governance dispatch handlers: roles, moderation, invites.
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::validation;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{adapter, state_error, DaemonContext};
 
@@ -82,10 +81,7 @@ pub(crate) async fn handle_role_create(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let name = match validation::validate_name(spec.name, "Role") {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
+    let name = spec.name.trim().to_owned();
     // Still gated on being attached: the entry write goes to the DHT,
     // and failing here is a clearer answer than a deep write error.
     if let Err(e) = ctx.require_transport() {
@@ -130,11 +126,6 @@ pub(crate) async fn handle_role_update(
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
-    }
-    if let Some(n) = name {
-        if let Err(e) = validation::validate_name(n, "Role") {
-            return e;
-        }
     }
     // Still gated on being attached: the entry write goes to the DHT,
     // and failing here is a clearer answer than a deep write error.
@@ -425,21 +416,42 @@ pub(crate) async fn handle_invite_create(
     )
     .await
     {
-        Ok(invite) => IpcResponse::ok(&serde_json::json!({
-            "invite_code": invite.code,
-            "code_hash": invite.code_hash,
-            "secrets_record_key": invite.secrets_record_key,
-            "invite_id": hex::encode(invite.invite_id),
-            "expires_at": invite.expires_at,
+        Ok(invite) => {
             // The joiner needs all three parts, so hand back the link
             // rather than making every frontend assemble it.
-            "invite_link": format!(
-                "rekindle://invite/{}/{}/{}",
-                membership.governance_key, invite.secrets_record_key, invite.code
-            ),
-        })),
+            let link = match invite_link(
+                &membership.governance_key,
+                &invite.secrets_record_key,
+                &invite.code,
+            ) {
+                Ok(link) => link,
+                Err(e) => return IpcResponse::error(500, format!("invite link: {e}")),
+            };
+            IpcResponse::ok(&serde_json::json!({
+                "invite_code": invite.code,
+                "code_hash": invite.code_hash,
+                "secrets_record_key": invite.secrets_record_key,
+                "invite_id": hex::encode(invite.invite_id),
+                "expires_at": invite.expires_at,
+                "invite_link": link.to_url(),
+            }))
+        }
         Err(e) => IpcResponse::error(500, format!("invite create: {e}")),
     }
+}
+
+/// The canonical invite link for a freshly minted invite.
+fn invite_link(
+    governance_key: &str,
+    secrets_record_key: &str,
+    code: &str,
+) -> Result<rekindle_types::invite::InviteLink, rekindle_types::key_format::KeyFormatError> {
+    use rekindle_types::key_format;
+    Ok(rekindle_types::invite::InviteLink {
+        governance_key: key_format::record_key(governance_key)?,
+        secrets_record_key: key_format::record_key(secrets_record_key)?,
+        invite_code: key_format::hex16_id(code)?,
+    })
 }
 
 pub(crate) fn handle_invite_list(

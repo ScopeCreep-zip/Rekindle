@@ -107,18 +107,46 @@ fn admin_can_manage_channels() {
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
 
-#[test]
-fn mek_bump_accepted_at_governance_layer() {
-    let state = state_with_creator_and_roles();
-    let entry = GovernanceEntry::MEKGenerationBump {
-        generation: 2,
+fn bump(generation: u64) -> GovernanceEntry {
+    GovernanceEntry::MEKGenerationBump {
+        generation,
         trigger_departed: pseudo(10),
         cascade_skipped: vec![],
         lamport: 10,
-    };
-    // At governance CRDT layer, MEK bumps are accepted (Max-Register).
-    // Full rotator authority is verified at the sync layer.
-    assert!(validate_write(&pseudo(99), &entry, &state));
+    }
+}
+
+/// Plan D20: a bump is `current + 1` from a member who may rotate.
+#[test]
+fn mek_bump_next_generation_from_a_rotator_is_valid() {
+    let mut state = state_with_creator_and_roles();
+    state.mek_generation = 4;
+    assert!(validate_write(&pseudo(5), &bump(5), &state), "admin");
+}
+
+#[test]
+fn mek_bump_from_a_member_without_rotation_permission_is_refused() {
+    let mut state = state_with_creator_and_roles();
+    state.mek_generation = 4;
+    assert!(!validate_write(&pseudo(99), &bump(5), &state));
+}
+
+/// The `u64::MAX` DoS and replays: refused whoever writes them, the
+/// creator included.
+#[test]
+fn mek_bump_that_skips_or_repeats_is_refused_even_from_the_creator() {
+    let mut state = state_with_creator_and_roles();
+    state.mek_generation = 4;
+    for generation in [4, 6, u64::MAX] {
+        assert!(
+            !validate_write(&pseudo(1), &bump(generation), &state),
+            "{generation}"
+        );
+        assert!(
+            !validate_write(&pseudo(5), &bump(generation), &state),
+            "{generation}"
+        );
+    }
 }
 
 #[test]

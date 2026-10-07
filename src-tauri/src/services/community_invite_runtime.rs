@@ -11,16 +11,17 @@ use rekindle_types::permissions;
 use crate::commands::community::helpers::{
     hex_to_id_16, random_16_bytes, random_nonce, require_permission,
 };
-use crate::db::DbPool;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
+/// A freshly minted invite. The webview gets only the canonical link and
+/// the code hash it is listed under.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteCreatedDto {
-    pub code: String,
-    pub governance_key: String,
-    pub secrets_record_key: String,
+    pub code_hash: String,
+    pub url: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -32,15 +33,43 @@ pub struct InviteInfoDto {
     pub uses: u32,
     pub expires_at: Option<u64>,
     pub created_at: u64,
+    /// The invite link, for invites this node created.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secrets_record_key: Option<String>,
+    pub url: Option<String>,
+}
+
+/// The canonical invite link (`rekindle_types::invite::InviteLink`).
+fn invite_url(
+    governance_key: &str,
+    secrets_record_key: &str,
+    code: &str,
+) -> Result<String, String> {
+    use rekindle_types::key_format;
+    let link = rekindle_types::invite::InviteLink {
+        governance_key: key_format::record_key(governance_key)
+            .map_err(|e| format!("invite governance key: {e}"))?,
+        secrets_record_key: key_format::record_key(secrets_record_key)
+            .map_err(|e| format!("invite secrets key: {e}"))?,
+        invite_code: key_format::hex16_id(code).map_err(|e| format!("invite code: {e}"))?,
+    };
+    Ok(link.to_url())
+}
+
+/// The governance key a community's invites name.
+fn community_governance_key(state: &SharedState, community_id: &str) -> Option<String> {
+    let communities = state.communities.read();
+    let community = communities.get(community_id)?;
+    Some(
+        community
+            .governance_key
+            .clone()
+            .unwrap_or_else(|| community.id.clone()),
+    )
 }
 
 pub async fn create_community_invite_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     max_uses: Option<u32>,
     expires_in_seconds: Option<u64>,
@@ -106,8 +135,12 @@ pub async fn create_community_invite_inner(
     }
 
     let mek_wire_b64 = {
-        let cache = state.mek_cache.lock();
-        let mek = cache.get(&community_id).ok_or("no MEK available")?;
+        let mek = state_helpers::current_mek(
+            state,
+            &community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )
+        .ok_or("no MEK available")?;
         use base64::Engine;
         base64::engine::general_purpose::STANDARD.encode(mek.to_wire_bytes())
     };
@@ -163,7 +196,8 @@ pub async fn create_community_invite_inner(
         .map_err(|e| e.to_string())?;
 
     let expires_at = expires_in_seconds.map(|seconds| rekindle_utils::timestamp_secs() + seconds);
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -214,9 +248,8 @@ pub async fn create_community_invite_inner(
     }
 
     Ok(InviteCreatedDto {
-        code,
-        governance_key,
-        secrets_record_key,
+        url: invite_url(&governance_key, &secrets_record_key, &code)?,
+        code_hash,
     })
 }
 
@@ -226,7 +259,8 @@ pub async fn revoke_community_invite_inner(
     code_hash: String,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -252,9 +286,12 @@ pub async fn revoke_community_invite_inner(
 }
 
 pub async fn list_community_invites_inner(
-    pool: &DbPool,
+    state: &SharedState,
+    pool: &Db,
     community_id: String,
 ) -> Result<Vec<InviteInfoDto>, String> {
+    let governance_key =
+        community_governance_key(state, &community_id).ok_or("community not found")?;
     let cid = community_id.clone();
     let local_invites: Vec<(String, String, String, i64, Option<i64>, i64, i64)> =
         crate::db_helpers::db_call_or_default(pool, move |conn| {
@@ -292,12 +329,7 @@ pub async fn list_community_invites_inner(
                     uses: u32::try_from(uses).unwrap_or(0),
                     expires_at: expires_at.map(|expires| expires.try_into().unwrap_or(0)),
                     created_at: created_at.try_into().unwrap_or(0),
-                    code: Some(code),
-                    secrets_record_key: if secrets_record_key.is_empty() {
-                        None
-                    } else {
-                        Some(secrets_record_key)
-                    },
+                    url: invite_url(&governance_key, &secrets_record_key, &code).ok(),
                 }
             },
         )

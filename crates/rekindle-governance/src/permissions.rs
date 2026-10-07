@@ -13,6 +13,17 @@ use rekindle_types::permissions::{
 
 use crate::state::GovernanceState;
 
+/// Whether `member` may rotate the community key under `state` — be
+/// elected rotator and write a `MEKGenerationBump` (plan D20). Evaluated
+/// exactly as `validate_write` evaluates the bump (base permissions, no
+/// timeout clock), so the rotator a peer elects is one every reader
+/// accepts.
+#[must_use]
+pub fn may_rotate_mek(member: &PseudonymKey, state: &GovernanceState) -> bool {
+    rekindle_types::permissions::Permissions(compute_permissions(member, None, state, 0))
+        .may_rotate_mek()
+}
+
 /// Compute effective permissions for a member in a specific context.
 ///
 /// # Arguments

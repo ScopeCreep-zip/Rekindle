@@ -1,5 +1,6 @@
 //! Watch setup / teardown for identities, communities, and DM peers.
 
+use crate::broadcast::dht_writes::LeaseId;
 use tracing::{debug, info};
 
 use super::{watches, SubscriptionManager};
@@ -42,35 +43,41 @@ impl SubscriptionManager {
         self.watches.read().entries.contains_key(record_key)
     }
 
-    /// Remove all watches and state for a community.
-    pub fn teardown_community(&self, governance_key: &str) {
-        self.watches.write().remove_community(governance_key);
+    /// Remove all watches and state for a community. Returns the watches'
+    /// pool leases, for the caller to release.
+    #[must_use]
+    pub fn teardown_community(&self, governance_key: &str) -> Vec<LeaseId> {
+        let leases = self.watches.write().remove_community(governance_key);
         self.meshes.write().remove(governance_key);
         self.state.write().unread.remove_community(governance_key);
         self.state.write().typing.remove_community(governance_key);
         self.state.write().presence.remove_community(governance_key);
         self.state.write().voice.remove_community(governance_key);
         debug!(governance_key, "community subscriptions torn down");
+        leases
     }
 
     /// Set up a DM peer watch.
     pub async fn setup_dm_peer(&self, peer_key: &str, dm_log_key: &str) {
         debug!(
-            peer = &peer_key[..12.min(peer_key.len())],
+            peer = %peer_key,
             dm_log_key, "sub: setup_dm_peer"
         );
         watches::setup_dm_watch(&self.node, &self.watches, peer_key, dm_log_key).await;
     }
 
-    /// Remove DM watch and state for a peer.
-    pub fn teardown_dm_peer(&self, peer_key: &str) {
+    /// Remove DM watch and state for a peer. Returns the watch's pool
+    /// lease, for the caller to release.
+    #[must_use]
+    pub fn teardown_dm_peer(&self, peer_key: &str) -> Vec<LeaseId> {
         debug!(
-            peer = &peer_key[..12.min(peer_key.len())],
+            peer = %peer_key,
             "sub: teardown_dm_peer"
         );
-        self.watches.write().remove_dm_peer(peer_key);
+        let leases = self.watches.write().remove_dm_peer(peer_key);
         self.state.write().unread.remove_dm_peer(peer_key);
         self.state.write().typing.remove_dm_peer(peer_key);
         self.state.write().presence.remove_dm_peer(peer_key);
+        leases
     }
 }

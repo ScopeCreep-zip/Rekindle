@@ -15,8 +15,9 @@
 //! decoded-streams senders, so every connected peer — speaker or
 //! audience — receives the speaker mix.
 //!
-//! No AppState/Tauri/deps coupling — moved verbatim from
-//! `src-tauri/services/voice/mcu_loop.rs` (299 LoC).
+//! Every inbound frame is SFrame-opened under its sender's key and every
+//! mix is sealed under ours (`media_crypto`) — the host is a participant,
+//! never a hole through which channel audio leaves in the clear.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -24,15 +25,22 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::codec::{EncodedFrame, OpusCodec};
-use crate::jitter::JitterBuffer;
+use crate::jitter::{JitterBuffer, JitterFrame};
+use crate::media_crypto::{FrameOpener, FrameSealer, MediaKeys};
 use crate::mixer::AudioMixer;
-use crate::transport::{VoicePacket, VoiceTransport};
+use crate::transport::{OutboundFrame, VoicePacket, VoiceTransport};
 
 pub struct McuParams {
     pub transport: std::sync::Arc<tokio::sync::Mutex<VoiceTransport>>,
     pub packet_rx: mpsc::Receiver<VoicePacket>,
-    pub shutdown_rx: mpsc::Receiver<()>,
+    /// Cancelled when the loop's session scope shuts down.
+    pub stop: tokio_util::sync::CancellationToken,
+    /// The loop's scope, which its per-recipient sends also run in.
+    pub sends: std::sync::Arc<rekindle_lifecycle::SessionScope>,
     pub our_key_bytes: Vec<u8>,
+    /// The channel's media keys, for opening inbound frames and sealing
+    /// the mixes.
+    pub keys: std::sync::Arc<MediaKeys>,
 }
 
 struct PerSenderState {
@@ -44,13 +52,16 @@ struct PerSenderState {
 struct McuLoop {
     transport: std::sync::Arc<tokio::sync::Mutex<VoiceTransport>>,
     packet_rx: mpsc::Receiver<VoicePacket>,
-    shutdown_rx: mpsc::Receiver<()>,
+    stop: tokio_util::sync::CancellationToken,
+    sends: std::sync::Arc<rekindle_lifecycle::SessionScope>,
     our_key_bytes: Vec<u8>,
     senders: HashMap<Vec<u8>, PerSenderState>,
     mixer: AudioMixer,
     encoder: OpusCodec,
     frame_size: usize,
     sequence: u32,
+    opener: FrameOpener,
+    sealer: FrameSealer,
     /// Origin for the monotonic millisecond clock handed to each
     /// sender's jitter buffer for arrival stamping and playout timing.
     /// Only differences within it are used, so the origin is arbitrary.
@@ -81,13 +92,16 @@ impl McuLoop {
         Some(Self {
             transport: params.transport,
             packet_rx: params.packet_rx,
-            shutdown_rx: params.shutdown_rx,
+            stop: params.stop,
+            sends: params.sends,
             our_key_bytes: params.our_key_bytes,
             senders: HashMap::new(),
             mixer: AudioMixer::new(channels),
             encoder,
             frame_size,
             sequence: 0,
+            opener: FrameOpener::new(std::sync::Arc::clone(&params.keys)),
+            sealer: FrameSealer::new(params.keys),
             origin: Instant::now(),
         })
     }
@@ -106,12 +120,12 @@ impl McuLoop {
         loop {
             tokio::select! {
                 biased;
-                _ = self.shutdown_rx.recv() => {
+                () = self.stop.cancelled() => {
                     tracing::info!("MCU mix loop: shutdown signal received");
                     break;
                 }
                 Some(packet) = self.packet_rx.recv() => {
-                    self.ingest_packet(packet);
+                    self.ingest_packet(&packet);
                 }
                 _ = tick.tick() => {
                     self.tick().await;
@@ -121,10 +135,15 @@ impl McuLoop {
         tracing::info!("MCU mix loop exited");
     }
 
-    fn ingest_packet(&mut self, packet: VoicePacket) {
+    fn ingest_packet(&mut self, packet: &VoicePacket) {
         if packet.sender_key == self.our_key_bytes {
             return;
         }
+        // Unopenable frames are dropped; the regular receive loop owns
+        // the drop accounting and MEK refresh.
+        let Ok(opus) = self.opener.open(packet) else {
+            return;
+        };
         let sender_key = packet.sender_key.clone();
         if !self.senders.contains_key(&sender_key) {
             match OpusCodec::new(48000, 1, self.frame_size) {
@@ -146,7 +165,14 @@ impl McuLoop {
         }
         let arrival_ms = self.local_ms();
         if let Some(sender) = self.senders.get_mut(&sender_key) {
-            sender.jitter_buffer.push(packet, arrival_ms);
+            sender.jitter_buffer.push(
+                JitterFrame {
+                    sequence: packet.sequence,
+                    timestamp: packet.timestamp,
+                    opus,
+                },
+                arrival_ms,
+            );
             sender.last_packet_time = Instant::now();
         }
     }
@@ -158,10 +184,9 @@ impl McuLoop {
         for (key, sender) in &mut self.senders {
             if let Some(packet) = sender.jitter_buffer.pop(now_ms) {
                 let frame = EncodedFrame {
-                    data: packet.audio_data,
+                    data: packet.opus,
                     timestamp: packet.timestamp,
                     sequence: packet.sequence,
-                    mek_generation: packet.mek_generation,
                 };
                 match sender.codec.decode(&frame) {
                     Ok(decoded) => {
@@ -182,9 +207,12 @@ impl McuLoop {
         }
 
         // 2. Build the recipient set from the FULL connected peer list.
-        let recipient_keys: Vec<Vec<u8>> = {
+        let (recipient_keys, sender_key): (Vec<Vec<u8>>, Vec<u8>) = {
             let transport = self.transport.lock().await;
-            select_recipients(&transport.peer_keys(), &self.our_key_bytes)
+            (
+                select_recipients(&transport.peer_keys(), &self.our_key_bytes),
+                transport.sender_key().to_vec(),
+            )
         };
         let hex_keys: Vec<String> = decoded_streams
             .iter()
@@ -206,16 +234,29 @@ impl McuLoop {
             let mixed = self.mixer.mix(&streams_for_recipient);
 
             match self.encoder.encode(&mixed) {
-                Ok(mut encoded) => {
-                    encoded.sequence = self.sequence;
-                    encoded.timestamp = rekindle_utils::timestamp_ms();
+                Ok(encoded) => {
+                    let sequence = self.sequence;
+                    let timestamp = rekindle_utils::timestamp_ms();
                     self.sequence = self.sequence.wrapping_add(1);
+                    // No key → drop the mix; it is never sent in the clear.
+                    let Some(sframe) =
+                        self.sealer
+                            .seal(&sender_key, sequence, timestamp, 0, &encoded.data)
+                    else {
+                        continue;
+                    };
+                    let frame = OutboundFrame {
+                        sequence,
+                        timestamp,
+                        transport_seq: 0,
+                        sframe,
+                    };
 
                     let recipient_hex = hex::encode(recipient_key);
                     let transport = self.transport.clone();
-                    tokio::spawn(async move {
+                    self.sends.spawn_or_drop("voice mcu send", async move {
                         let t = transport.lock().await;
-                        if let Err(e) = t.send_to_peer(&recipient_hex, &encoded).await {
+                        if let Err(e) = t.send_to_peer(&recipient_hex, &frame).await {
                             tracing::trace!(error = %e, peer = %recipient_hex, "MCU send failed");
                         }
                     });

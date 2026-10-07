@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use rusqlite::OptionalExtension;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn move_friend_to_group_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     public_key: String,
     group_id: Option<i64>,
 ) -> Result<(), String> {
@@ -22,7 +22,13 @@ pub async fn move_friend_to_group_inner(
     let pk = public_key.clone();
     let ok = owner_key;
     db_call(&pool, move |conn| {
-        crate::friend_repo::update_group_id(conn, &ok, &pk, group_id)
+        rekindle_db::repo::friends::set(
+            conn,
+            &ok,
+            &pk,
+            rekindle_db::repo::friends::Column::GroupId,
+            group_id,
+        )
     })
     .await?;
 

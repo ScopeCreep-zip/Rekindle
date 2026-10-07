@@ -1,13 +1,15 @@
 //! Shared private helpers for the thread pipeline.
 
 use rekindle_protocol::dht::community::channel_record::ChannelMessage;
+use rekindle_records::lease::CommunityLeases;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, ThreadId};
 
-use super::policy::thread_member_count;
 use crate::deps::{ChannelMessagingDeps, ThreadStateSnapshot};
 use crate::error::ChannelError;
-use crate::send::{build_channel_message, encrypt_channel_body, BuildChannelMessageParams};
+use crate::send::{
+    build_channel_message, channel_message_subkey, BodyPosition, BuildChannelMessageParams,
+};
 
 pub(super) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
     hex::decode(hex_str)
@@ -51,13 +53,17 @@ pub(super) async fn ensure_thread_record_and_message<D: ChannelMessagingDeps>(
         Some(key) => key,
         None => create_lazy_thread_record(deps, community_id, thread_id, &thread).await?,
     };
-    // Adapter should always provide channel_write_context for the
-    // thread's parent channel; if not, fall back to slot 0 so a
-    // missing parent doesn't block reply.
-    let slot_index = deps
-        .channel_write_context(community_id, &thread.parent_channel_id_hex)
-        .map_or(0, |c| c.slot_index);
-    let message = build_thread_message(deps, community_id, &record_key, slot_index, body)?;
+    // The body is bound to the subkey the reply is actually written to:
+    // our slot in the thread record, from the same context the write uses.
+    let slot_index = thread_write_context(deps, community_id, &record_key)?.slot_index;
+    let message = build_thread_message(
+        deps,
+        community_id,
+        &thread.parent_channel_id_hex,
+        &record_key,
+        slot_index,
+        body,
+    )?;
     Ok((record_key, message))
 }
 
@@ -70,55 +76,70 @@ pub(super) async fn create_lazy_thread_record<D: ChannelMessagingDeps>(
     let slot_seed = deps
         .slot_seed_bytes(community_id)
         .ok_or_else(|| ChannelError::Adapter("no slot seed available for community".into()))?;
-    let record_key = deps.create_smpl_thread_record(&slot_seed).await?;
+    // Taken before the create, so nothing fails between it and the
+    // announcement that hands the record's lease to the host.
+    let lamport = deps.next_governance_lamport(community_id)?;
+    let (lease, record_key) = deps.create_smpl_thread_record(&slot_seed).await?;
 
-    deps.track_open_records(community_id, std::slice::from_ref(&record_key));
-    let _ = deps.watch_community_records(community_id).await;
-
-    let lamport = deps.increment_lamport(community_id);
-    deps.write_governance_entry(
+    let announced = deps
+        .write_governance_entry(
+            community_id,
+            GovernanceEntry::ThreadCreated {
+                thread_id: ThreadId(hex_to_id_16(thread_id)),
+                parent_channel_id: ChannelId(hex_to_id_16(&thread.parent_channel_id_hex)),
+                name: thread.name.clone(),
+                thread_type: thread.thread_type.clone(),
+                record_key: Some(record_key.clone()),
+                invited: thread.invited.clone(),
+                forum_tag: thread.forum_tag.clone(),
+                auto_archive_seconds: thread.auto_archive_seconds,
+                lamport,
+            },
+        )
+        .await;
+    if let Err(e) = announced {
+        deps.release_record(lease).await;
+        return Err(e);
+    }
+    deps.community_records_ready(
         community_id,
-        GovernanceEntry::ThreadCreated {
-            thread_id: ThreadId(hex_to_id_16(thread_id)),
-            parent_channel_id: ChannelId(hex_to_id_16(&thread.parent_channel_id_hex)),
-            name: thread.name.clone(),
-            thread_type: thread.thread_type.clone(),
-            record_key: Some(record_key.clone()),
-            invited: thread.invited.clone(),
-            forum_tag: thread.forum_tag.clone(),
-            auto_archive_seconds: thread.auto_archive_seconds,
-            lamport,
+        CommunityLeases {
+            segments: vec![lease],
+            ..CommunityLeases::default()
         },
     )
-    .await?;
+    .await;
     Ok(record_key)
 }
 
+/// A thread reply, sealed under the parent channel's text key and bound
+/// to the thread record subkey it is written to.
 pub(super) fn build_thread_message<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
+    parent_channel_id: &str,
     record_key: &str,
     slot_index: u32,
     body: &str,
 ) -> Result<ChannelMessage, ChannelError> {
-    let lamport_ts = deps.increment_lamport(community_id);
-    let mek = deps
-        .community_mek(community_id)
-        .ok_or_else(|| ChannelError::MekMissing {
-            community: community_id.into(),
-            channel: "__thread__".into(),
-        })?;
-    let ciphertext =
-        encrypt_channel_body(&mek, record_key, slot_index, lamport_ts, body.as_bytes())?;
+    let lamport_ts = deps.increment_lamport(community_id)?;
+    let (ciphertext, mek_generation) = crate::text_keys::seal_text(
+        deps,
+        community_id,
+        parent_channel_id,
+        BodyPosition {
+            channel_record_key: record_key,
+            subkey_index: channel_message_subkey(slot_index),
+            lamport_ts,
+        },
+        body.as_bytes(),
+    )?;
 
     let sender_hex = deps
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
     let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
         crate::mentions::resolve_outbound_mentions(deps, community_id, &sender_hex, body);
-    let mek_generation = deps
-        .current_mek_generation(community_id)
-        .ok_or_else(|| ChannelError::Adapter("community not found".into()))?;
     let timestamp_ms = rekindle_utils::timestamp_secs() * 1000;
 
     Ok(build_channel_message(BuildChannelMessageParams {
@@ -135,42 +156,43 @@ pub(super) fn build_thread_message<D: ChannelMessagingDeps>(
     }))
 }
 
+/// A thread reply's body, opened under exactly its generation of the
+/// parent channel's text key at the subkey and Lamport position it was
+/// read from. `None` when that key is not held or the body does not
+/// authenticate there.
 pub(super) fn decrypt_thread_body<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
+    parent_channel_id: &str,
     record_key: &str,
     subkey_index: u32,
-    lamport_ts: u64,
-    ciphertext: &[u8],
-    mek_generation: u64,
-) -> String {
-    let Some(mek) = deps.community_mek(community_id) else {
-        return String::new();
-    };
-    if mek.generation != mek_generation {
-        return String::new();
-    }
-    let Ok(plaintext) = crate::receive::decrypt_channel_body_with_legacy_fallback(
-        &mek,
-        Some(record_key),
-        subkey_index,
-        lamport_ts,
-        ciphertext,
-    ) else {
-        return String::new();
-    };
-    String::from_utf8(plaintext).unwrap_or_default()
+    message: &ChannelMessage,
+) -> Option<String> {
+    crate::text_keys::open_text(
+        deps,
+        community_id,
+        parent_channel_id,
+        message.mek_generation,
+        BodyPosition {
+            channel_record_key: record_key,
+            subkey_index,
+            lamport_ts: message.lamport_ts,
+        },
+        &message.ciphertext,
+    )
+    .and_then(|plaintext| String::from_utf8(plaintext).ok())
 }
 
 pub(super) async fn thread_activity<D: ChannelMessagingDeps>(
     deps: &D,
+    community_id: &str,
     record_key: Option<&str>,
 ) -> Result<(u64, u64, u32), ChannelError> {
     let Some(record_key) = record_key else {
         return Ok((0, 0, 0));
     };
     let messages = deps
-        .read_all_channel_messages(record_key, thread_member_count())
+        .read_all_channel_messages(community_id, record_key)
         .await?;
     let last_lamport = messages.iter().map(|m| m.lamport_ts).max().unwrap_or(0);
     let last_activity = messages

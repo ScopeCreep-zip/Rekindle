@@ -50,16 +50,8 @@ impl VideoAdapter {
 }
 
 impl VideoDeps for VideoAdapter {
-    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)> {
-        crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
-    }
-
-    fn previous_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<([u8; 32], u64)> {
-        crate::state_helpers::previous_channel_mek(&self.state, community_id, channel_id)
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        crate::state_helpers::key_provider(&self.state)
     }
 
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {
@@ -95,17 +87,24 @@ impl VideoDeps for VideoAdapter {
         let Some(my_pseudonym) = state_helpers::my_pseudonym_key(&self.state, community_id) else {
             return;
         };
+        let Some(scope) = crate::state_helpers::media_scope(&self.state, community_id, channel_id)
+        else {
+            return;
+        };
         crate::services::community::mek_rotation::spawn_mek_request_with_retry(
             std::sync::Arc::clone(&self.state),
             community_id.to_string(),
-            channel_id.to_string(),
+            scope,
             needed_generation,
             my_pseudonym,
         );
     }
 
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        state_helpers::increment_lamport(&self.state, community_id)
+    fn increment_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_message_lamport(&self.state, community_id)
     }
 
     fn send_frame_ack(
@@ -243,7 +242,7 @@ impl VideoDeps for VideoAdapter {
         // above by `apply_bitrate_feedback` / `on_peer_caps_received`
         // and no frontend reads them. See `map_video_event`.
         if let Some(mapped) = map_video_event(event) {
-            crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+            crate::event_dispatch::emit_community(&self.app_handle, mapped);
         }
     }
 }
@@ -286,7 +285,7 @@ impl VideoAdapter {
             // overhead + parity.
             kbps: encoder_kbps,
         });
-        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &event);
+        crate::event_dispatch::emit_community(&self.app_handle, event);
     }
 }
 

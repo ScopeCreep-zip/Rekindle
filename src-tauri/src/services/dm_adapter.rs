@@ -1,32 +1,31 @@
 //! Phase 13 — DM domain adapter.
 //!
 //! Implements `rekindle_dm::DmDeps` + `rekindle_dm::DmMekCache` against
-//! the live `AppState`, `tauri::AppHandle`, `DbPool`, and Veilid
+//! the live `AppState`, `tauri::AppHandle`, `Db`, and Veilid
 //! `RoutingContext`. Every veilid-core / Tauri / SQLite touch the DM
 //! domain logic needs is realized here so `rekindle-dm` stays a
 //! veilid-free, Tauri-free, AppState-free domain crate.
 //!
 //! Construct one `Arc<DmAdapter>` per session and hand it to
 //! `rekindle_dm::send_dm_message`, `handle_dm_subkey_change`, etc. The
-//! adapter cheaply clones the underlying `Arc<AppState>` + DbPool +
+//! adapter cheaply clones the underlying `Arc<AppState>` + Db +
 //! AppHandle handles.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore};
+use rekindle_protocol::dht::pool::RecordPool;
 use rekindle_protocol::dht::schema;
 use rekindle_protocol::messaging::envelope::MessagePayload;
-use veilid_core::{
-    BarePublicKey, BareSecretKey, KeyPair, PublicKey, RecordKey, ValueSubkeyRangeSet,
-    CRYPTO_KIND_VLD0,
-};
+use rekindle_records::lease::LeaseId;
+use veilid_core::{BarePublicKey, BareSecretKey, KeyPair, PublicKey, RecordKey, CRYPTO_KIND_VLD0};
 
 use crate::services::message_service;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// MEK cache that wraps `AppState.dm_mek_cache`. Holds a strong Arc to
 /// AppState so the lock survives even if the adapter that constructed
@@ -88,14 +87,14 @@ impl DmMekCache for AppStateMekCache {
 pub struct DmAdapter {
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
-    pool: DbPool,
+    pool: Db,
     store: Arc<dyn DmStore>,
     mek_cache: Arc<dyn DmMekCache>,
 }
 
 impl DmAdapter {
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: DbPool) -> Arc<Self> {
+    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         let store: Arc<dyn DmStore> = Arc::new(SqliteDmStore::new(pool.clone()));
         let mek_cache: Arc<dyn DmMekCache> = Arc::new(AppStateMekCache {
             state: Arc::clone(&state),
@@ -107,6 +106,18 @@ impl DmAdapter {
             store,
             mek_cache,
         })
+    }
+}
+
+/// A slot writer from its Ed25519 `(secret, public)` bytes.
+fn slot_keypair((secret, public): ([u8; 32], [u8; 32])) -> KeyPair {
+    let veilid_pub = PublicKey::new(CRYPTO_KIND_VLD0, BarePublicKey::new(&public));
+    KeyPair::new_from_parts(veilid_pub, BareSecretKey::new(&secret))
+}
+
+impl DmAdapter {
+    fn record_pool(&self) -> Result<Arc<RecordPool>, DmError> {
+        state_helpers::record_pool(&self.state).map_err(|_| DmError::RoutingContextUnavailable)
     }
 }
 
@@ -131,78 +142,85 @@ impl DmDeps for DmAdapter {
     async fn dht_create_smpl_record(
         &self,
         member_pubkeys: Vec<[u8; 32]>,
-    ) -> Result<String, DmError> {
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or(DmError::RoutingContextUnavailable)?;
+    ) -> Result<(LeaseId, String), DmError> {
         let smpl_schema = schema::community_smpl_schema(&member_pubkeys)
             .map_err(|e| DmError::transport(format!("dm smpl schema: {e}")))?;
-        let descriptor = rc
-            .create_dht_record(CRYPTO_KIND_VLD0, smpl_schema, None)
+        let (lease, key, _owner) = self
+            .record_pool()?
+            .create(smpl_schema, None)
             .await
             .map_err(|e| DmError::transport(format!("create dm dht record: {e}")))?;
-        Ok(descriptor.key().to_string())
+        Ok((lease, key.to_string()))
     }
 
-    async fn dht_open_record(
+    async fn dht_acquire_record(
         &self,
         record_key: &str,
         writer_keypair: Option<([u8; 32], [u8; 32])>,
-    ) -> Result<(), DmError> {
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or(DmError::RoutingContextUnavailable)?;
+    ) -> Result<LeaseId, DmError> {
         let record_key_typed = record_key
             .parse::<RecordKey>()
             .map_err(|e| DmError::transport(format!("invalid record key: {e}")))?;
-        let veilid_keypair = writer_keypair.map(|(secret, public)| {
-            let veilid_pub = PublicKey::new(CRYPTO_KIND_VLD0, BarePublicKey::new(&public));
-            let veilid_secret = BareSecretKey::new(&secret);
-            KeyPair::new_from_parts(veilid_pub, veilid_secret)
-        });
-        let _ = rc
-            .open_dht_record(record_key_typed, veilid_keypair)
+        self.record_pool()?
+            .acquire(&record_key_typed, writer_keypair.map(slot_keypair))
             .await
-            .map_err(|e| DmError::transport(format!("open dm record: {e}")))?;
-        Ok(())
+            .map_err(|e| DmError::transport(format!("open dm record: {e}")))
+    }
+
+    async fn dht_release_record(&self, lease: LeaseId) {
+        if let Ok(pool) = self.record_pool() {
+            pool.release(lease).await;
+        }
     }
 
     async fn dht_write_subkey(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
-        _writer_keypair: ([u8; 32], [u8; 32]),
+        writer_keypair: ([u8; 32], [u8; 32]),
     ) -> Result<(), DmError> {
-        // The writer keypair is already passed to dht_open_record above.
-        // Veilid's set_dht_value uses the record's current writer
-        // keypair (the one open_dht_record was called with), so we
-        // don't need to pass it again here.
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or(DmError::RoutingContextUnavailable)?;
-        let record_key_typed = record_key
-            .parse::<RecordKey>()
-            .map_err(|e| DmError::transport(format!("invalid record key: {e}")))?;
-        rc.set_dht_value(record_key_typed, subkey, value, None)
+        let outcome = self
+            .record_pool()?
+            .set(lease, subkey, value, Some(slot_keypair(writer_keypair)))
             .await
             .map_err(|e| DmError::transport(format!("write dm subkey: {e}")))?;
+        if outcome.missed() {
+            return Err(DmError::transport(format!(
+                "write dm subkey: not stored ({outcome:?})"
+            )));
+        }
         Ok(())
     }
 
-    async fn dht_watch_subkeys(&self, record_key: &str, subkeys: Vec<u32>) -> Result<(), DmError> {
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or(DmError::RoutingContextUnavailable)?;
-        let record_key_typed = record_key
-            .parse::<RecordKey>()
-            .map_err(|e| DmError::transport(format!("invalid record key: {e}")))?;
-        // Build a subkey range set from the listed individual subkeys.
-        let mut range = ValueSubkeyRangeSet::new();
-        for sk in subkeys {
-            range.insert(sk);
-        }
-        let _ = rc
-            .watch_dht_values(record_key_typed, Some(range), None, None)
+    async fn dht_watch_subkeys(&self, lease: LeaseId, subkeys: Vec<u32>) -> Result<(), DmError> {
+        self.record_pool()?
+            .watch(lease, subkeys.into_iter().collect())
             .await
-            .map_err(|e| DmError::transport(format!("watch dm subkeys: {e}")))?;
-        Ok(())
+            .map_err(|e| DmError::transport(format!("watch dm subkeys: {e}")))
+    }
+
+    async fn dht_hold_session(&self, record_key: &str, lease: LeaseId) {
+        let surplus = {
+            let mut held = self.state.dm_leases.lock();
+            match held.entry(record_key.to_string()) {
+                std::collections::hash_map::Entry::Occupied(_) => Some(lease),
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(lease);
+                    None
+                }
+            }
+        };
+        if let Some(lease) = surplus {
+            self.dht_release_record(lease).await;
+        }
+    }
+
+    async fn dht_release_session(&self, record_key: &str) {
+        let held = self.state.dm_leases.lock().remove(record_key);
+        if let Some(lease) = held {
+            self.dht_release_record(lease).await;
+        }
     }
 
     async fn send_app_call(
@@ -220,7 +238,7 @@ impl DmDeps for DmAdapter {
         peer_pubkey_hex: &str,
         payload: MessagePayload,
     ) -> Result<(), DmError> {
-        message_service::send_to_peer_encrypted(&self.state, &self.pool, peer_pubkey_hex, &payload)
+        message_service::send_to_peer(&self.state, &self.pool, peer_pubkey_hex, &payload)
             .await
             .map_err(DmError::transport)
     }

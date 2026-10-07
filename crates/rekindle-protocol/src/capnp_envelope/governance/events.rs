@@ -12,20 +12,30 @@ use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::ProtocolError;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::{ChannelId, EventId, PseudonymKey, ThreadId};
+use rekindle_types::id::{EventId, ThreadId};
 
 pub(super) fn write_thread_created(
     mut p: schema_pkg::thread_created_entry::Builder<'_>,
-    thread_id: ThreadId,
-    parent_channel_id: ChannelId,
-    name: &str,
-    thread_type: &str,
-    record_key: Option<&str>,
-    invited: &[PseudonymKey],
-    forum_tag: Option<&str>,
-    auto_archive_seconds: u64,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::ThreadCreated {
+        thread_id,
+        parent_channel_id,
+        name,
+        thread_type,
+        record_key,
+        invited,
+        forum_tag,
+        auto_archive_seconds,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_thread_created: variant mismatch")
+    };
+    let record_key = record_key.as_deref();
+    let forum_tag = forum_tag.as_deref();
+    let auto_archive_seconds = *auto_archive_seconds;
+    let lamport = *lamport;
     uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
     uuid16_to_capnp(p.reborrow().init_parent_channel_id(), &parent_channel_id.0);
     p.set_name(name);

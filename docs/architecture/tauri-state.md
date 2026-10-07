@@ -21,8 +21,11 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `signal_manager` | `Arc<RwLock<Option<Arc<SignalManagerHandle>>>>` | Signal session manager (X3DH + Double Ratchet) |
 | `keystore` | `crate::keystore::KeystoreHandle` | VaultStore handle (`rekindle-vault` SQLCipher) |
 | `node` | `Arc<RwLock<Option<NodeHandle>>>` | Veilid node handle |
-| `dht_manager` | `Arc<RwLock<Option<DHTManagerHandle>>>` | DHT record manager |
-| `routing_manager` | `Arc<RwLock<Option<RoutingManagerHandle>>>` | Private route lifecycle |
+| `dht_manager` | `Arc<RwLock<Option<DHTManagerHandle>>>` | Maps of watched DHT keys to friends (DHT calls go through `record_pool`) |
+| `routing_manager` | `Arc<RwLock<Option<RoutingManagerHandle>>>` | Peers' cached route blobs |
+| `record_pool` | `RwLock<Option<Arc<RecordPool>>>` | The session's DHT record pool, the only caller of Veilid DHT calls (plan C7.3, rule B22): started at login, drained and ended at logout |
+| `route_imports` | `RwLock<Option<Arc<RouteImports>>>` | The process's one importer of peers' routes (boot-scoped) |
+| `own_routes` | `RwLock<Option<Arc<OwnRoutes<VeilidRouteAllocator>>>>` | Our general and media routes: allocation, death, release (plan C7.9); `route_publish` republishes a new blob |
 | `transport` | `Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>` | Outbound-only `TransportNode` (Wave 16.9b — Tauri-side adoption of the daemon's transport boundary) |
 | `transport_session` | `Arc<parking_lot::RwLock<Option<Session>>>` | Session mirror used by route-refresh + community route refresh |
 | `lifecycle` | `Arc<rekindle_lifecycle::AppLifecycle>` | 9-state FSM gating mutating commands via `TransportGuard` |
@@ -104,9 +107,10 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | Field | Type | Purpose |
 |---|---|---|
 | `event_dispatch` | `Arc<crate::event_dispatch::EventDispatch>` | Single-source emit router for every Rust → Frontend event. See [`event-dispatch.md`](event-dispatch.md). |
-| `event_journal` | `…` | 10 k-capacity FIFO event log for Phase 10 reconnect replay (`rekindle-events::EventJournal`) |
-| `event_replay_watermark` | `parking_lot::Mutex<u64>` | High-water mark for resumed events |
+| `event_journal` | `Arc<EventJournal<WebviewEvent>>` | 10 k-capacity FIFO of journaled webview events, replayed to a window that reloads (`subscribe_events`) |
+| `event_router` | `crate::event_router::WebviewRouter` | Per-window event channels; see [`event-dispatch.md`](event-dispatch.md) |
 | `dedup_cache` | `Mutex<DedupCache>` | Global gossip-mesh dedup cache |
+| `envelope_replay` | `Mutex<ReplayGuard>` | 1:1 envelopes already accepted, kept until they leave the freshness window; cleared on logout |
 
 ## Idempotency
 

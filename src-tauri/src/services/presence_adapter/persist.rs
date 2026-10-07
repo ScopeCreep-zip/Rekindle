@@ -17,20 +17,44 @@ use std::sync::Arc;
 use rekindle_presence::DiscoveredMemberRow;
 use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
+/// Store caught-up channel messages, each body opened under exactly its
+/// key generation at the record and subkey it was read from. A body that
+/// does not open is not stored: the materialized channel view and the
+/// MEK request path pick it up once its key arrives.
 pub(super) fn insert_channel_catchup_messages(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
+    community_id: &str,
     channel_id: &str,
-    messages: Vec<ChannelMessage>,
+    record_key: &str,
+    messages: Vec<(u32, ChannelMessage)>,
 ) {
     let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
     let channel = channel_id.to_string();
+    let opened: Vec<(ChannelMessage, String)> = messages
+        .into_iter()
+        .filter_map(|(subkey_index, msg)| {
+            let body = crate::channel_materialize::decrypt_channel_record_message(
+                state,
+                community_id,
+                channel_id,
+                msg.mek_generation,
+                &msg.ciphertext,
+                rekindle_secrets::channel_body::BodyPosition {
+                    channel_record_key: record_key,
+                    subkey_index,
+                    lamport_ts: msg.lamport_ts,
+                },
+            );
+            (!body.decryption_failed).then_some((msg, body.body))
+        })
+        .collect();
     crate::db_helpers::db_fire(pool, "smpl_channel_catchup", move |conn| {
-        for msg in &messages {
+        for (msg, body) in &opened {
             let mid = msg.message_id.as_deref().unwrap_or("");
             if mid.is_empty() {
                 continue;
@@ -53,7 +77,7 @@ pub(super) fn insert_channel_catchup_messages(
                     owner_key,
                     channel,
                     msg.sender_pseudonym,
-                    String::from_utf8_lossy(&msg.ciphertext),
+                    body,
                     msg.timestamp,
                     mid,
                     msg.lamport_ts,
@@ -66,7 +90,7 @@ pub(super) fn insert_channel_catchup_messages(
 
 pub(super) async fn compute_history_ranges(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
 ) -> Vec<rekindle_types::presence::HistoryRange> {
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {
@@ -131,7 +155,7 @@ fn decode_channel_id_bytes(channel_id_str: &str) -> [u8; 16] {
 
 pub(super) fn upsert_discovered_member_rows(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     rows: Vec<DiscoveredMemberRow>,
     banned_pseudonyms: Vec<String>,
@@ -142,47 +166,12 @@ pub(super) fn upsert_discovered_member_rows(
     };
     let cid = community_id.to_string();
     crate::db_helpers::db_fire(pool, "persist discovered registry members", move |conn| {
+        use rekindle_db::repo::members;
         for banned in &banned_pseudonyms {
-            conn.execute(
-                "DELETE FROM community_members WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
-                rusqlite::params![owner_key, cid, banned],
-            )?;
+            members::delete(conn, &owner_key, &cid, banned)?;
         }
         for row in &rows {
-            conn.execute(
-                "INSERT INTO community_members \
-                 (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
-                  subkey_index, segment_index, bio, pronouns, theme_color, badges, \
-                  avatar_ref, banner_ref) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
-                 ON CONFLICT(owner_key, community_id, pseudonym_key) DO UPDATE SET \
-                   display_name = excluded.display_name, \
-                   role_ids = excluded.role_ids, \
-                   subkey_index = excluded.subkey_index, \
-                   segment_index = excluded.segment_index, \
-                   bio = excluded.bio, \
-                   pronouns = excluded.pronouns, \
-                   theme_color = excluded.theme_color, \
-                   badges = excluded.badges, \
-                   avatar_ref = excluded.avatar_ref, \
-                   banner_ref = excluded.banner_ref",
-                rusqlite::params![
-                    owner_key,
-                    cid,
-                    row.pseudonym_key,
-                    row.display_name,
-                    row.role_ids_json,
-                    joined_at,
-                    row.subkey_index,
-                    row.segment_index,
-                    row.bio,
-                    row.pronouns,
-                    row.theme_color,
-                    row.badges_json,
-                    row.avatar_ref,
-                    row.banner_ref,
-                ],
-            )?;
+            members::upsert_discovered(conn, &owner_key, &cid, row, joined_at)?;
         }
         Ok(())
     });

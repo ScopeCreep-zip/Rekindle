@@ -6,11 +6,8 @@
 
 use std::sync::Arc;
 
-use tauri::Manager;
-
 use rekindle_records::retry;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -26,12 +23,12 @@ pub async fn handle_message_notification(
     state: &Arc<AppState>,
     pending: PendingMessageFetch,
 ) -> Result<(), String> {
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    let pool = state.db.current()?;
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Err("owner key unavailable".into());
     }
-    if message_exists(pool.inner(), &owner_key, &pending.message_id).await {
+    if message_exists(&pool, &owner_key, &pending.message_id).await {
         return Ok(());
     }
 
@@ -52,8 +49,8 @@ pub async fn handle_message_notification(
             return Err(error);
         }
     };
-    let message = fetched.message;
-    let forwarded_from_author = fetched.forwarded_from_author;
+    let message = fetched.message.clone();
+    let forwarded_from_author = fetched.forwarded_from_author.clone();
 
     if let Err(error) = verify_notification_message(&pending, &message) {
         if pending.attempt + 1 < retry::MAX_RETRIES {
@@ -82,26 +79,17 @@ pub async fn handle_message_notification(
         return Ok(());
     }
 
-    if !state_helpers::merge_lamport(state, &pending.community_id, message.lamport_ts) {
-        // M9.2 — sender's claimed Lamport is too far ahead of our
-        // local clock. Drop the message: a forged-future timestamp
-        // from a malicious peer must not fast-forward our clock.
-        tracing::trace!(
-            community = %pending.community_id,
-            channel = %pending.channel_id,
-            sender = %message.sender_pseudonym,
-            received_lamport = message.lamport_ts,
-            "lamport drift cap exceeded — dropping message silently"
-        );
-        return Ok(());
-    }
+    // M9.2 — the clock advances past the message's timestamp by at most
+    // MAX_LAMPORT_DRIFT + 1; the message itself is kept and orders by its
+    // own timestamp (a clamp, not a drop — a fresh restart's clock may sit
+    // far below live traffic).
+    state_helpers::merge_message_lamport(state, &pending.community_id, message.lamport_ts);
     let Some(body) = decrypt_message_body(
-        app_handle,
         state,
         &pending.community_id,
         &pending.channel_id,
-        &pending,
-        &message,
+        &fetched,
+        pending.subkey_index,
     ) else {
         let requester_pseudonym = {
             let communities = state.communities.read();
@@ -114,16 +102,19 @@ pub async fn handle_message_notification(
             // a single fire-and-forget send. The previous send dropped silently
             // if the deterministic responder was offline, leaving the message
             // permanently undecryptable until a future rotation broadcast.
-            crate::services::community::spawn_mek_request_with_retry(
-                state.clone(),
-                pending.community_id.clone(),
-                pending.channel_id.clone(),
-                message.mek_generation,
-                requester_pseudonym,
-            );
+            if let Some(scope) =
+                state_helpers::text_scope(state, &pending.community_id, &pending.channel_id)
+            {
+                crate::services::community::spawn_mek_request_with_retry(
+                    state.clone(),
+                    pending.community_id.clone(),
+                    scope,
+                    message.mek_generation,
+                    requester_pseudonym,
+                );
+            }
         }
         emit_message_received(
-            app_handle,
             state,
             &pending,
             message.sender_pseudonym.clone(),
@@ -184,30 +175,26 @@ pub async fn handle_message_notification(
         .unwrap_or_default()
     });
     let flags_for_db = message.flags;
-    db_fire(
-        pool.inner(),
-        "store notified channel message",
-        move |conn| {
-            crate::message_repo::insert_channel_message_full(
-                conn,
-                &crate::message_repo::ChannelMessageInsert {
-                    owner_key: &owner_key,
-                    channel_id: &channel_id,
-                    sender_key: &sender,
-                    body: &body_for_db,
-                    timestamp,
-                    is_read: false,
-                    mek_generation: Some(mek_generation),
-                    message_id: &message_id,
-                    lamport_ts,
-                    automod_blurred,
-                    forwarded_from_author: forwarded_from_author_for_db.as_deref(),
-                    flags: flags_for_db,
-                    attachment_json: attachment_json_for_db.as_deref(),
-                },
-            )
-        },
-    );
+    db_fire(&pool, "store notified channel message", move |conn| {
+        crate::message_repo::insert_channel_message_full(
+            conn,
+            &crate::message_repo::ChannelMessageInsert {
+                owner_key: &owner_key,
+                channel_id: &channel_id,
+                sender_key: &sender,
+                body: &body_for_db,
+                timestamp,
+                is_read: false,
+                mek_generation: Some(mek_generation),
+                message_id: &message_id,
+                lamport_ts,
+                automod_blurred,
+                forwarded_from_author: forwarded_from_author_for_db.as_deref(),
+                flags: flags_for_db,
+                attachment_json: attachment_json_for_db.as_deref(),
+            },
+        )
+    });
 
     update_peer_sequence(
         state,
@@ -219,7 +206,6 @@ pub async fn handle_message_notification(
 
     let sender_pseudonym = message.sender_pseudonym.clone();
     emit_message_received(
-        app_handle,
         state,
         &pending,
         sender_pseudonym.clone(),
@@ -266,7 +252,7 @@ pub async fn handle_message_notification(
     // payloads that never carried these fields.
     if crate::services::community::should_emit_message_notification(
         state,
-        pool.inner(),
+        &pool,
         &pending.community_id,
         &pending.channel_id,
         &message.sender_pseudonym,
@@ -282,7 +268,7 @@ pub async fn handle_message_notification(
         crate::services::community::emit_message_notification(
             app_handle,
             state,
-            pool.inner(),
+            &pool,
             &pending.community_id,
             &pending.channel_id,
             &sender_pseudonym,

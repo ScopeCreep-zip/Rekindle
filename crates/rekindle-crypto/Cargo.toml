@@ -10,28 +10,28 @@ workspace = true
 [dependencies]
 # Tier 1 owns the primitive crypto error taxonomy; this crate wraps it
 # rather than restating it (see src/error.rs).
-rekindle-types = { path = "../rekindle-types" }
-rekindle-secrets = { path = "../rekindle-secrets" }
-ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
-postcard = { version = "1", features = ["use-std"] }
-x25519-dalek = { version = "2", features = ["static_secrets"] }
 aes-gcm = "0.10"
 blake3 = "1"
 chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
+hex = "0.4"
 hkdf = "0.12"
-sha2 = "0.10"
+parking_lot = "0.12"
+postcard = { version = "1", features = [ "use-std" ] }
 rand = "0.8"
-zeroize = { version = "1", features = ["derive"] }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
+sha2 = "0.10"
 thiserror = { workspace = true }
 tracing = { workspace = true }
-hex = "0.4"
-parking_lot = "0.12"
+x25519-dalek = { version = "2", features = [ "static_secrets" ] }
+zeroize = { version = "1", features = [ "derive" ] }
 # Phase 6 — SessionCache infrastructure
+async-trait = "0.1"
 dashmap = "6"
 lru = "0.12"
-async-trait = "0.1"
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = [ "sync" ] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+tokio = { workspace = true, features = [ "sync", "rt", "rt-multi-thread", "macros", "time" ] }

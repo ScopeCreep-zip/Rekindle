@@ -104,6 +104,7 @@ fn main() {
                 .file("../../schemas/presence.capnp")
                 .file("../../schemas/friend.capnp")
                 .file("../../schemas/voice.capnp")
+                .file("../../schemas/voice_packet.capnp")
                 .file("../../schemas/account.capnp")
                 .file("../../schemas/conversation.capnp")
                 // Phase 2 of `.claude/plans/community-envelope-capnp-migration.md`:

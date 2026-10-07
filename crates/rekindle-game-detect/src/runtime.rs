@@ -16,7 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::sync::mpsc;
 
 use crate::scanner::{DetectedGame, GameDetector};
 
@@ -43,8 +42,8 @@ pub trait GameDetectorPublisher: Send + Sync + 'static {
 
 /// Run the poll loop in-place. The caller is responsible for spawning
 /// this on whichever task runtime they own (typically
-/// `tauri::async_runtime::spawn`). Sending `()` on the matching
-/// `mpsc::Sender` (or dropping it) breaks the loop cleanly.
+/// `SessionScope::spawn_with_token`). Cancelling `stop` breaks the loop
+/// cleanly.
 ///
 /// Generic over the publisher type so the compiler monomorphises the
 /// `publish_game_status` call site (matches the plan's port spec
@@ -52,7 +51,7 @@ pub trait GameDetectorPublisher: Send + Sync + 'static {
 pub async fn run<P: GameDetectorPublisher>(
     mut detector: GameDetector,
     publisher: Arc<P>,
-    mut shutdown_rx: mpsc::Receiver<()>,
+    stop: tokio_util::sync::CancellationToken,
     poll_interval: Duration,
 ) {
     tracing::info!("game detection runtime started");
@@ -73,7 +72,7 @@ pub async fn run<P: GameDetectorPublisher>(
                     last_game = current_name;
                 }
             }
-            _ = shutdown_rx.recv() => {
+            () = stop.cancelled() => {
                 tracing::info!("game detection runtime shutting down");
                 break;
             }
@@ -106,15 +105,15 @@ mod tests {
         let publisher = Arc::new(CapturingPublisher {
             events: Mutex::new(Vec::new()),
         });
-        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
+        let stop = tokio_util::sync::CancellationToken::new();
         let handle = tokio::spawn(run(
             detector,
             publisher.clone(),
-            shutdown_rx,
+            stop.clone(),
             Duration::from_millis(10),
         ));
         tokio::time::sleep(Duration::from_millis(30)).await;
-        shutdown_tx.send(()).await.unwrap();
+        stop.cancel();
         handle.await.unwrap();
         // No assertion on events count — sysinfo on macOS doesn't
         // reliably enumerate processes in test env. The point of the

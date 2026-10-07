@@ -13,6 +13,10 @@ use serde::{Deserialize, Serialize};
 use crate::attachment::AttachmentOffer;
 use crate::id::MessageId;
 
+/// Longest slowmode interval: Discord's `rate_limit_per_user` cap
+/// (0-21600 seconds, six hours).
+pub const MAX_SLOWMODE_SECONDS: u32 = 21_600;
+
 /// Bitfield constants for `ChannelEntry::Message.flags`.
 ///
 /// Per architecture §16.4: a message with the `VOICE_MESSAGE` flag carries
@@ -31,6 +35,113 @@ pub mod flags {
     /// Architecture §28.5 — `@here` (online-only) cleartext signal.
     /// Same permission gate as `MENTION_EVERYONE`.
     pub const MENTION_HERE: u32 = 0x80;
+}
+
+/// All supported channel kinds.
+///
+/// Canonical definition — was duplicated verbatim as
+/// `rekindle-protocol::dht::community::types::ChannelKind` (the wire
+/// codec's copy) and `src-tauri::state::community::ChannelType` (the
+/// Tauri frontend's copy, under its own locally-conventional name, plus
+/// a now-pointless `From<ChannelKind> for ChannelType` bridging the
+/// two). Both re-export this one instead; see `docs/research/
+/// 2026-10-harvest-security-infra-audit.md` and
+/// `xtask/src/main.rs::DUPLICATE_BODY_EXCEPTIONS` (plan 4.9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelKind {
+    Text,
+    Voice,
+    Announcement,
+    Forum,
+    Stage,
+    Directory,
+    Media,
+    Events,
+    Dm,
+}
+
+impl ChannelKind {
+    /// Convert from the u8 wire representation.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Text),
+            1 => Some(Self::Voice),
+            2 => Some(Self::Announcement),
+            3 => Some(Self::Forum),
+            4 => Some(Self::Stage),
+            5 => Some(Self::Directory),
+            6 => Some(Self::Media),
+            7 => Some(Self::Events),
+            8 => Some(Self::Dm),
+            _ => None,
+        }
+    }
+
+    /// Convert to the u8 wire representation.
+    #[must_use]
+    pub fn to_u8(self) -> u8 {
+        match self {
+            Self::Text => 0,
+            Self::Voice => 1,
+            Self::Announcement => 2,
+            Self::Forum => 3,
+            Self::Stage => 4,
+            Self::Directory => 5,
+            Self::Media => 6,
+            Self::Events => 7,
+            Self::Dm => 8,
+        }
+    }
+
+    /// String representation matching the serde lowercase format.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Voice => "voice",
+            Self::Announcement => "announcement",
+            Self::Forum => "forum",
+            Self::Stage => "stage",
+            Self::Directory => "directory",
+            Self::Media => "media",
+            Self::Events => "events",
+            Self::Dm => "dm",
+        }
+    }
+}
+
+impl std::fmt::Display for ChannelKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ChannelKind {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "text" => Ok(Self::Text),
+            "voice" => Ok(Self::Voice),
+            "announcement" => Ok(Self::Announcement),
+            "forum" => Ok(Self::Forum),
+            "stage" => Ok(Self::Stage),
+            "directory" => Ok(Self::Directory),
+            "media" => Ok(Self::Media),
+            "events" => Ok(Self::Events),
+            "dm" => Ok(Self::Dm),
+            other => Err(format!("unknown channel kind: {other}")),
+        }
+    }
+}
+
+impl AsRef<str> for ChannelKind {
+    /// Matches the Tauri frontend copy's `AsRef<str>` impl — kept so
+    /// existing `.as_ref()` call sites don't need to change.
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
 }
 
 /// Entry written by a member to their subkey in a channel SMPL record.
@@ -154,6 +265,45 @@ impl ChannelEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channel_kind_roundtrip_u8() {
+        for v in 0..=8u8 {
+            let kind = ChannelKind::from_u8(v).unwrap();
+            assert_eq!(kind.to_u8(), v);
+        }
+        assert!(ChannelKind::from_u8(9).is_none());
+    }
+
+    #[test]
+    fn channel_kind_roundtrip_str() {
+        let kinds = [
+            "text",
+            "voice",
+            "announcement",
+            "forum",
+            "stage",
+            "directory",
+            "media",
+            "events",
+            "dm",
+        ];
+        for s in &kinds {
+            let kind: ChannelKind = s.parse().unwrap();
+            assert_eq!(kind.as_str(), *s);
+            assert_eq!(kind.as_ref(), *s);
+            assert_eq!(kind.to_string(), *s);
+        }
+    }
+
+    #[test]
+    fn channel_kind_serde_json() {
+        let kind = ChannelKind::Forum;
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, "\"forum\"");
+        let back: ChannelKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, kind);
+    }
 
     #[test]
     fn channel_entry_serde_roundtrip() {

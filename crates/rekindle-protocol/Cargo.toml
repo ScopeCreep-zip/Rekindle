@@ -8,29 +8,39 @@ description = "Veilid networking layer and message serialization for Rekindle"
 workspace = true
 
 [dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-thiserror = { workspace = true }
-bytes = { workspace = true }
-futures = { workspace = true }
-parking_lot = { workspace = true }
-capnp = { workspace = true }
+async-trait = "0.1"
 base64 = "0.22"
-bitflags = { version = "2", features = ["serde"] }
+bitflags = { version = "2", features = [ "serde" ] }
 blake2 = "0.10"
-hkdf = "0.12"
+bytes = { workspace = true }
+capnp = { workspace = true }
+ed25519-dalek = { version = "2", features = [ "rand_core" ] }
+futures = { workspace = true }
 hex = "0.4"
-sha2 = "0.10"
+hkdf = "0.12"
+parking_lot = { workspace = true }
+rand = "0.8"
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-records = { path = "../rekindle-records" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-codec = { path = "../rekindle-codec" }
-rekindle-utils = { path = "../rekindle-utils", features = ["retry"] }
-rand = "0.8"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+tracing = { workspace = true }
 veilid-core = { version = "0.5", default-features = true }
 
 [build-dependencies]
 capnpc = { workspace = true }
+
+[dev-dependencies]
+# `tests/log_scrub_veilid.rs` checks the log scrubber against the real
+# Display/Debug output of veilid-core key types (this crate is one of the
+# two allowed to depend on veilid-core).
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }

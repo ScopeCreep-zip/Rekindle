@@ -374,6 +374,11 @@
     background: var(--color-xfire-away);
   }
 
+  /* Media route not available: voice cannot connect (plan C7.9c). */
+  .network-voice-note {
+    color: var(--color-xfire-away);
+  }
+
   /* Community join "dial-in" stepper — per-phase backend join gates */
   .join-stepper {
     display: flex;

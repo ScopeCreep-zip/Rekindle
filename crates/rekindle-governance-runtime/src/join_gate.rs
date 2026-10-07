@@ -8,14 +8,23 @@
 //! *which* phase hung — the backend kept running after the UI gave up,
 //! so the community "appeared" later in a half-open state.
 //!
-//! [`gate`] wraps each phase in its own [`tokio::time::timeout`] and
-//! emits a [`GovernanceRuntimeEvent::JoinProgress`] before and after, so
-//! the timeout/gating logic lives entirely in the backend and the UI is
-//! a pure display of the progress stream. A stuck phase aborts at its
-//! own budget and surfaces a phase-named error instead of a silent hang.
+//! [`gate`] gives each phase its own budget and emits a
+//! [`GovernanceRuntimeEvent::JoinProgress`] before and after, so the
+//! gating logic lives entirely in the backend and the UI is a pure display
+//! of the progress stream. A phase past its budget surfaces a phase-named
+//! error instead of a silent hang.
+//!
+//! The budget is a deadline the phase observes, not a timeout that drops
+//! it: a dropped Veilid call is not cancelled (a slot-claim write could
+//! land with nobody recording it), and Veilid logs a dropped API future as
+//! an error. The deadline rides a task-local, so every checkpoint in the
+//! phase — orchestrator or adapter — stops before its next Veilid call via
+//! [`should_stop`] (plan C4.L1b).
 
 use std::future::Future;
 use std::time::Duration;
+
+use tokio::time::Instant;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::event::{GovernanceRuntimeEvent, JoinStageStatus};
@@ -35,11 +44,10 @@ pub enum JoinPhase {
     ClaimSlot,
     /// Scan the registry for the initial presence/peer set.
     CollectPresence,
-    /// Open governance + registry (writable) + channel-log records and
-    /// mark them tracked.
+    /// Take the governance + registry (writable) + channel-log records
+    /// leases and hand them to the host, which watches them
+    /// (`GovernanceRuntimeDeps::community_records_ready`).
     OpenRecords,
-    /// Establish DHT value watches on the opened records.
-    WatchRecords,
 }
 
 impl JoinPhase {
@@ -57,8 +65,9 @@ impl JoinPhase {
             Self::DecodeInvite => Duration::from_secs(15),
             Self::ClaimSlot => Duration::from_secs(40),
             Self::CollectPresence => Duration::from_secs(10),
-            Self::OpenRecords => Duration::from_secs(20),
-            Self::WatchRecords => Duration::from_secs(12),
+            // The opens and the watches that follow them, which were two
+            // phases of 20 s and 12 s.
+            Self::OpenRecords => Duration::from_secs(32),
         }
     }
 
@@ -71,9 +80,29 @@ impl JoinPhase {
             Self::ClaimSlot => "Claiming your slot",
             Self::CollectPresence => "Finding members",
             Self::OpenRecords => "Connecting to records",
-            Self::WatchRecords => "Subscribing to updates",
         }
     }
+}
+
+tokio::task_local! {
+    /// The running join phase's deadline.
+    static PHASE_UNTIL: Instant;
+}
+
+/// Whether the current join phase is past its budget. `false` outside a
+/// join phase.
+#[must_use]
+pub fn phase_expired() -> bool {
+    PHASE_UNTIL
+        .try_with(|until| Instant::now() >= *until)
+        .unwrap_or(false)
+}
+
+/// The checkpoint every multi-call governance loop runs before its next
+/// Veilid call: the session is ending, or the join phase is out of budget.
+#[must_use]
+pub fn should_stop<D: GovernanceRuntimeDeps + ?Sized>(deps: &D) -> bool {
+    deps.scope().is_closed() || phase_expired()
 }
 
 fn progress(
@@ -88,11 +117,11 @@ fn progress(
     }
 }
 
-/// Run one join phase under its own timeout, emitting `JoinProgress`
-/// `Started` before and `Done`/`Failed`/`TimedOut` after. On timeout the
-/// in-flight future is dropped (cancelled) and a phase-named error is
-/// returned so the caller can abort the whole join with a precise
-/// message rather than hanging.
+/// Run one join phase under its budget, emitting `JoinProgress` `Started`
+/// before and `Done`/`Failed`/`TimedOut` after. The phase runs to its next
+/// checkpoint past the deadline (never dropped mid-call) and a failure
+/// after the deadline is reported as a phase-named timeout, so the caller
+/// can abort the whole join with a precise message rather than hanging.
 pub async fn gate<D, T, F>(
     deps: &D,
     community_id: &str,
@@ -104,16 +133,13 @@ where
     F: Future<Output = Result<T, String>>,
 {
     deps.emit_event(progress(community_id, phase, JoinStageStatus::Started));
-    match tokio::time::timeout(phase.budget(), fut).await {
-        Ok(Ok(value)) => {
+    let until = Instant::now() + phase.budget();
+    match PHASE_UNTIL.scope(until, fut).await {
+        Ok(value) => {
             deps.emit_event(progress(community_id, phase, JoinStageStatus::Done));
             Ok(value)
         }
-        Ok(Err(error)) => {
-            deps.emit_event(progress(community_id, phase, JoinStageStatus::Failed));
-            Err(error)
-        }
-        Err(_elapsed) => {
+        Err(_) if Instant::now() >= until => {
             deps.emit_event(progress(community_id, phase, JoinStageStatus::TimedOut));
             Err(format!(
                 "{} timed out after {}s",
@@ -121,5 +147,49 @@ where
                 phase.budget().as_secs()
             ))
         }
+        Err(error) => {
+            deps.emit_event(progress(community_id, phase, JoinStageStatus::Failed));
+            Err(error)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::deps::MockGovernanceRuntimeDeps;
+
+    fn deps() -> MockGovernanceRuntimeDeps {
+        let mut deps = MockGovernanceRuntimeDeps::new();
+        deps.expect_emit_event().returning(|_| ());
+        deps
+    }
+
+    /// A phase that stops at its own checkpoint once the budget is spent is
+    /// reported as a phase-named timeout, not dropped mid-call.
+    #[tokio::test(start_paused = true)]
+    async fn a_phase_past_its_budget_stops_at_its_checkpoint() {
+        let deps = deps();
+        let result: Result<(), String> = gate(&deps, "c1", JoinPhase::CollectPresence, async {
+            while !phase_expired() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err("stopped at checkpoint".into())
+        })
+        .await;
+        assert_eq!(result, Err("Finding members timed out after 10s".into()));
+        assert!(!phase_expired(), "no phase deadline outside a gate");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_phase_within_its_budget_completes() {
+        let deps = deps();
+        let result = gate(&deps, "c1", JoinPhase::OpenRecords, async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            assert!(!phase_expired());
+            Ok::<_, String>(7)
+        })
+        .await;
+        assert_eq!(result, Ok(7));
     }
 }

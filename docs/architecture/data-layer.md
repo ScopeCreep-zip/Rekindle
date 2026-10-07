@@ -14,19 +14,42 @@ storage for profile data, presence, and community state.
 | SQLite | Local device | Identity, friends, messages, communities, Signal sessions, DMs, sync state, audit chain, analytics, pending envelopes |
 | Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, Signal keying material, MEKs, audit MAC key, slot keypairs |
 | Veilid DHT | Distributed | Profile, presence, mailbox, friend list, community governance / registry / channels, account record, personal sync record |
-| Filesystem | Local device | Lost Cargo per-community chunk cache (`<app_data>/file_cache/<community_id>/...`) |
+| Filesystem | Local device | Lost Cargo per-community chunk cache (`<data>/file_cache/<community_id>/...`) |
 
 The `event_journal` field on `AppState` is **in-memory only** — it
 does not touch SQLite or the vault — but it is the fourth piece of
 persistent state for the event-resume flow within a single process
 lifetime. See [`event-dispatch.md`](event-dispatch.md).
 
+## Data Root
+
+Every host keeps its files under one `DataRoot`
+(`rekindle_utils::paths`, re-exported as `rekindle_db::paths`), named
+after the bundle identifier `com.rekindle.app`. Its directories are
+Tauri 2's app directories, computed with the same `dirs` release Tauri
+uses, so the desktop, `rekindled`, the CLI and the TUI all resolve the
+same folders:
+
+| Field | Location | Holds |
+|---|---|---|
+| `data` | `dirs::data_dir()/com.rekindle.app` | Veilid storage (`veilid/`), the file cache (`file_cache/`), the node lock (`node.lock`) |
+| `state` | `data/state` | `rekindled`'s `session.json` and `audit.jsonl` |
+| `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer), `rekindle.db` and the `{pk}.vault` files (until plan D1 moves them per identity) |
+| `logs` | `~/Library/Logs/com.rekindle.app` (macOS), `dirs::data_local_dir()/com.rekindle.app/logs` elsewhere | `rekindled.log`, `rekindle.log`, `rekindle-tui.log` (the desktop logs to stdout) |
+
+On macOS `data` and `config` are the same folder. `create_dirs` makes
+every directory owner-only (`0700`). `rekindle_db::lock::NodeLock` holds
+`data/node.lock` for the life of the process, so the desktop and
+`rekindled` refuse to run on the same root at once.
+
 ## SQLite Schema
 
-The database file is stored at `{app_config_dir}/rekindle.db`. All
-tables are defined in `src-tauri/migrations/001_init.sql`. The
-current `SCHEMA_VERSION` (in `src-tauri/src/db.rs`) is **71** — bump
-it when the SQL file changes.
+The database file is `DataRoot::database()` (`{config}/rekindle.db`; see
+[Data Root](#data-root)). All tables are defined in
+`crates/rekindle-db/schema/001_init.sql`; `SCHEMA_VERSION` in
+`crates/rekindle-db/src/open.rs` is bumped whenever that file changes.
+The SQL for the tables more than one host uses is in
+`rekindle_db::repo` (see [Repositories](#repositories)).
 
 `001_init.sql` defines 47 tables. The remainder of this section
 groups them by concern.
@@ -143,7 +166,16 @@ groups them by concern.
 
 - **`signal_sessions`** — serialized Signal Protocol session state
   per peer.
-- **`prekeys`** — Signal one-time and signed prekey storage.
+- **`prekeys`** — unused; Signal prekeys live in the vault (see below).
+  Removed when the app database gains its Signal tables.
+
+Prekey lifecycle (PQXDH §3.2–§3.3): the signed prekey and the PQ
+last-resort key are minted once and reused (`current_bundle`, published
+at profile subkey 5 and carried in invites). Every bundle sent to one
+peer (friend request, friend accept, session reset) comes from
+`handout_bundle`, which adds a fresh X25519 and ML-KEM one-time key under
+random ids; the responder deletes them when consumed, and beyond 200
+unclaimed keys per kind the oldest are deleted.
 
 ### Notifications & Settings
 
@@ -200,10 +232,11 @@ in lock-step.
 
 ## Schema Versioning
 
-The schema version is tracked by a `SCHEMA_VERSION` constant in
-`src-tauri/src/db.rs` (currently **71**). When the constant is
-incremented and the application starts, the database detects a
-mismatch and drops all tables, recreating them from `001_init.sql`.
+The schema version is tracked by the `SCHEMA_VERSION` constant in
+`crates/rekindle-db/src/open.rs`. When the constant is incremented and
+the application starts, `rekindle_db::open` detects the mismatch, drops
+all tables and recreates them from `001_init.sql`, reporting
+`schema_reset` so the host wipes the storage below.
 
 Because SQLite, the vault, and Veilid DHT store interrelated state
 (friend keys, DHT record keypairs, Signal sessions), a schema reset
@@ -220,15 +253,37 @@ covers the pre-ship posture and why hard breaks are acceptable today.
 
 ## Database Access Pattern
 
-The connection pool is `tokio_rusqlite::Connection` — an async
-wrapper over `rusqlite` running on a dedicated background thread. All
-database access goes through
+The handle is `rekindle_db::Db`: a `rekindle_asql::Connection` (the
+vendored tokio-rusqlite) running `rusqlite` on a dedicated background
+thread, plus a liveness token plan C6 checks before closing it. In the
+desktop all access goes through
 `db_helpers::{db_call, db_call_or_default, db_fire}`. Read-only state
 lookups go through `state_helpers`.
 
-`rusqlite` 0.37 is used (not `sqlx`) to match `veilid-core`'s
-dependency on the same version and avoid `libsqlite3-sys` build
-conflicts.
+`rusqlite` 0.39 is used (not `sqlx`) to match `veilid-core` 0.5.7's
+`keyvaluedb-sqlite` → `async-sqlite` → `rusqlite` 0.39 chain; one
+`libsqlite3-sys` (0.37, bundled SQLCipher) serves the whole process.
+
+### Repositories
+
+`rekindle_db::repo` holds the queries for the tables more than one host
+uses. Each function takes `&rusqlite::Connection` and runs inside a
+`Db::call` closure, so several share one transaction:
+
+| Module | Table |
+|---|---|
+| `identity` | `identity` |
+| `friends` | `friends` (also read by `SqliteFriendStore`) |
+| `pending_requests` | `pending_friend_requests` |
+| `communities` | `communities` |
+| `members` | `community_members` (owner-scoped; `members::roles` for role sets) |
+| `governance_cache` | `governance_entries_cache` |
+| `audit` | `audit_entries` |
+
+Repository tests run against the real schema. `cargo xtask check-sqlite`
+rejects SQL and SQLite driver dependencies outside `rekindle-db`,
+`rekindle-vault` and `rekindle-asql`, apart from a shrinking list of
+crates the plan's E phase empties.
 
 ## Vault (`rekindle-vault`)
 
@@ -244,7 +299,7 @@ The vault is **double-encrypted**:
 
 The 32-byte salt lives in a sidecar file `{vault_path}.salt` —
 plaintext, since salts only need to be unique per install, not
-secret. The vault DB itself is at `{app_config_dir}/{pubkey}.vault`
+secret. The vault DB itself is at `{config}/{pubkey}.vault`
 (per-identity, so multi-account works without snapshot collisions).
 
 The on-disk schema is a single table:
@@ -259,15 +314,17 @@ CREATE TABLE entries (
 );
 ```
 
-`src-tauri/src/keystore/` wraps the vault with domain-specific
-adapter modules:
+`rekindle_vault::typed` holds one module of typed helpers per kind of
+secret, so every host stores them the same way (the desktop's
+`src-tauri/src/keystore/` only opens the per-identity store and
+re-exports them):
 
-| Vault adapter | Namespace / key pattern | Purpose |
+| Module | Namespace / key pattern | Purpose |
 |---|---|---|
-| `keystore/signal.rs` | `signal` / `identity_keypair`, `signed_prekey`, `prekey_batch`, `pq_secret` | Signal Protocol identity + Double Ratchet + PQXDH secrets |
-| `keystore/community_keys.rs` | `communities` / `mek_{community_id}`, `slot_keypair_{community_id}`, `slot_seed_{community_id}`, `registry_keypair_{community_id}` | Per-community MEK + slot / registry keypairs |
-| `keystore/channel_mek.rs` | `communities` / `channel_mek_{community_id}_{channel_id}_{generation}` | Per-channel + per-generation MEK (gen-tracking for rotation) |
-| `keystore/audit.rs` | `audit` / `mac_key`, `tail_anchor` | BLAKE3-keyed MAC key + tail-anchor for the audit chain |
+| `typed::signal` | `signal` / `trusted:{peer}`, `session:{peer}`, `session_index`, `signed_prekey:{id}`, `prekey:{id}`, `prekey_index`, `pq_lr:{id}`, `pq_ot:{id}`, `pq_ot_index` | Trusted peer identities, Double Ratchet sessions and PQXDH prekeys (indexes list one-time keys oldest first). The Signal identity itself is derived from the Ed25519 identity at login and never stored |
+| `typed::community_keys` | `communities` / `slot_keypair_{community_id}`, `slot_seed_{community_id}`, `registry_keypair_{community_id}` | Per-community slot / registry keypairs and slot seed |
+| `typed::mek` | `communities` / `mek_{community}`, `community_mek_{community}_{generation}`, `community_mek_generations_{community}`, `mek_{community}_{channel}`, `mek_{community}_{channel}_{generation}`, `mek_generations_{community}_{channel}` | Every MEK generation per scope, the scope's latest key, and the generations index that leaving a community erases |
+| `typed::audit` | `audit` / `mac_key`, `tail` | BLAKE3-keyed MAC key + tail anchor for the audit chain |
 
 The identity Ed25519 / X25519 secret bytes live in
 `AppState.identity_secret: Mutex<Option<[u8; 32]>>` while the
@@ -366,7 +423,7 @@ Per-community filesystem cache for chunked attachments managed by
 `rekindle-files`. Path layout:
 
 ```
-<app_data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
+<data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
                                                                 <chunk_index>.meta
 ```
 

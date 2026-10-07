@@ -15,6 +15,7 @@ pub mod session;
 
 // Re-exported so `rekindle_types::presence::SessionLocation` and friends
 // keep resolving — the split is a file-layout change, not an API one.
+use crate::domains;
 pub use session::{
     EncryptedSessionExtras, LastSeenPrecision, MemberSession, PresenceSharingPolicy, SessionExtras,
     SessionLocation, SessionStatus, ShareScope, INVISIBLE_WIRE_VALUE,
@@ -56,8 +57,9 @@ pub struct MemberPresence {
     /// and so the reconcile's route-supersession stops downgrading a
     /// good media route to the general route every poll.
     ///
-    /// Empty when no media route is allocated (readers fall back to
-    /// [`Self::route_blob`]). `skip_serializing_if` keeps a row without a
+    /// Empty when no media route is allocated, and then the peer is
+    /// unreachable for media: readers never substitute
+    /// [`Self::route_blob`] (plan C7.9c). `skip_serializing_if` keeps a row without a
     /// media route byte-identical to the pre-existing wire form, so old
     /// readers still verify the signature (same discipline as
     /// [`Self::departed`] / [`Self::voice_channel_id`]).
@@ -212,8 +214,8 @@ impl MemberPresence {
         let mut canonical = self.clone();
         canonical.signature = Vec::new();
         let json = serde_json::to_vec(&canonical).unwrap_or_default();
-        let mut out = Vec::with_capacity(b"rekindle-presence-v1".len() + json.len());
-        out.extend_from_slice(b"rekindle-presence-v1");
+        let mut out = Vec::with_capacity(domains::PRESENCE_ROW.len() + json.len());
+        out.extend_from_slice(domains::PRESENCE_ROW.as_bytes());
         out.extend_from_slice(&json);
         out
     }
@@ -246,7 +248,8 @@ pub struct EventRSVP {
 /// differing only in `governance_key` — which meant the desktop's
 /// presence adapter mapped the Tier-6 descriptor into the Tier-5 one
 /// field by field and *dropped* the governance key on the way.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SegmentDescriptor {
     /// 0 for the genesis segment; 1.. for each Plate Gate expansion.
     pub segment_index: u32,
@@ -255,6 +258,13 @@ pub struct SegmentDescriptor {
     /// SMPL governance record for this segment. Empty for readers that
     /// only scan presence rows and never merge governance.
     pub governance_key: String,
+    /// Inclusive-exclusive global slot range this segment covers
+    /// (`segment_index * SLOTS_PER_SEGMENT` .. `+ SLOTS_PER_SEGMENT`).
+    /// 0 for readers that only scan presence rows and never merge
+    /// governance — the frontend's capacity math only uses
+    /// `segment_index`/list length, not these bounds.
+    pub slot_range_start: u32,
+    pub slot_range_end: u32,
 }
 
 /// A community member currently believed online, with what we need to

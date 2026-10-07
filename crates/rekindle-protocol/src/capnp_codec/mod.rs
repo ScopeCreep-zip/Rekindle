@@ -166,6 +166,7 @@ pub mod identity;
 pub mod message;
 pub mod presence;
 pub mod voice;
+pub mod voice_packet;
 
 // community.capnp — V1 encode/decode removed (rekindle-server excluded from
 // workspace). Community data now uses JSON via manifest.rs /

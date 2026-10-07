@@ -48,33 +48,24 @@ prev_mac_{i+1} = mac_i
 The crate exposes:
 
 ```rust
-pub struct AuditChain { /* keyed BLAKE3 hasher + prev_mac */ }
+pub struct AuditChain { /* zeroizing key, last_mac, last_cursor */ }
 
 impl AuditChain {
-    pub fn new(mac_key: &[u8; 32]) -> Self;
-    pub fn resume_from(mac_key: &[u8; 32], tail_anchor: [u8; MAC_LEN]) -> Self;
-    pub fn append(&mut self, cursor: u64, payload: &serde_json::Value) -> AuditEntry;
+    pub fn open(key: Zeroizing<[u8; 32]>, last_mac: [u8; MAC_LEN], last_cursor: u64) -> Self;
+    pub fn append(&mut self, record: AuditRecord) -> Result<AuditEntry, serde_json::Error>;
     pub fn verify(&self, entries: &[AuditEntry]) -> Result<(), VerifyError>;
 }
 
-pub struct AuditEntry {
-    pub cursor: u64,
-    pub kind: AuditKind,
-    pub payload_json: serde_json::Value,
-    pub prev_mac: [u8; MAC_LEN],
-    pub mac: [u8; MAC_LEN],
-}
+pub struct AuditRecord { pub at_ms: i64, pub actor_pub: String, pub kind: AuditKind, pub payload: serde_json::Value }
+pub struct AuditEntry { pub cursor: u64, pub prev_mac: [u8; MAC_LEN], pub mac: [u8; MAC_LEN], pub record: AuditRecord }
+pub enum AuditKind { FriendAdded, FriendRemoved, ChannelJoined, ChannelLeft, IdentityRotated, VaultUnlocked }
 
-pub enum AuditKind { /* CommunityCreate, ChannelCreate, MemberBan, … */ }
-
-pub struct AuditRecord { /* AppState handle wiring */ }
-
+pub enum TailCheck { Unanchored, Clean, CatchUp, Tampered { anchor: Tail } } // tail::TailCheck::of(anchor, stored)
 pub const MAC_LEN: usize = 32;
 ```
 
-Single module `chain` plus re-exports. Zero dependencies beyond
-`blake3`, `serde`, and `zeroize` (the `mac_key` zeroises on
-`AuditChain` drop).
+Modules `chain` and `tail`. Dependencies: `blake3`, `hex`, `serde`,
+`serde_json`, `thiserror`, `tracing`, `zeroize` (the key zeroises on drop).
 
 ## Tauri-side persistence (`src-tauri/src/audit_repo/`)
 
@@ -84,10 +75,10 @@ the vault round-trip:
 
 | Module | Responsibility |
 |---|---|
-| `audit_repo/mod.rs` | Public API: `restore_chain`, `append_entry`, `verify_all`, `export_all` |
-| `audit_repo/chain.rs` | Resume the chain from the most-recent stored `tail_anchor` in the vault |
-| `audit_repo/store.rs` | SQLite reads / writes against `audit_entries` |
-| `audit_repo/tests.rs` | Chain integrity test fixtures |
+| `src-tauri/src/audit_repo/chain.rs` | `append_async`, `verify_async`, `restore_chain`: the desktop's chain state, events and toasts |
+| `rekindle_db::repo::audit` | SQLite reads / writes against `audit_entries`, with tests against the real schema (tamper, truncation, owner isolation) |
+| `rekindle_audit::TailCheck` | The vault tail-anchor rule `restore_chain` applies (clean, catch-up, tampered) |
+| `rekindle_vault::typed::audit` | The MAC key and tail anchor in the vault |
 
 On every append, the repo:
 
@@ -95,8 +86,8 @@ On every append, the repo:
 2. Calls `chain.append(cursor, payload)`.
 3. Writes the resulting `AuditEntry` to `audit_entries` via
    `db_helpers::db_call`.
-4. Persists the new tail `mac` to the vault under
-   `("audit", "tail_anchor")` so a process restart can resume
+4. Persists the new tail `(cursor, mac)` to the vault under
+   `("audit", "tail")` so a process restart can resume
    without re-walking the chain.
 
 `audit_view.rs` is the read-side facade: paginated queries, kind
@@ -104,52 +95,40 @@ filters, and the export payload format used by `audit_export`.
 
 ## Audit kinds
 
-Audit kinds the chain currently tracks:
-
-- Community: `CommunityCreate`, `ChannelCreate`, `ChannelDelete`,
-  `RoleCreate`, `RoleEdit`, `RoleDelete`, `MemberBan`, `MemberUnban`,
-  `MemberTimeout`, `MekRotate`, `SegmentAdded`,
-  `OnboardingComplete`.
-- Account: `IdentityCreate`, `LoginSucceeded`, `LoginFailed`,
-  `LogoutClean`, `VaultPassphraseChanged`, `VaultExported`,
-  `DeviceLinked`, `DeviceUnlinked`.
-- Cryptography: `SignalSessionReset`, `PrekeyRotated` (when wired).
-
-The `AuditKind` enum is the source of truth. Adding a new kind is a
-SQL-schema-bump-free change since `audit_entries` stores
-`payload_json` opaquely.
+`AuditKind` is the source of truth: `FriendAdded`, `FriendRemoved`,
+`ChannelJoined`, `ChannelLeft`, `IdentityRotated`, `VaultUnlocked`. Adding
+a kind needs no schema bump: `audit_entries` stores the record as opaque
+JSON.
 
 ## Verification surfaces
 
-Two Tauri commands expose verification to the UI:
+- `audit_verify` (`commands/auth.rs`) re-MACs every entry from cursor 0
+  (`verify_async`). A break emits a `SystemAlert` toast naming the cursor.
+  Login runs the same verify after unlocking the vault.
+- `audit_export` returns the stored entries after a cursor, unsigned;
+  anyone with the MAC key can re-verify them.
 
-- `commands/community/audit::get_audit_log` — paginated read of the
-  current community's audit entries. Implicitly verifies the chain
-  by recomputing each entry's MAC against the stored `prev_mac` and
-  rejecting any mismatch (returns `Error("audit chain broken at
-  cursor N")`).
-- `commands/vault::audit_verify` — manual full-chain walk from
-  cursor 0 to the current tail. Used by the Settings → Security
-  surface and triggered on suspicion of tampering.
-
-A third command `commands/vault::audit_export` produces a signed
-export bundle (the entries plus the current tail MAC, sealed under a
-fresh Ed25519 signature with the identity key) for off-device backup
-or compliance hand-off.
+The community audit log (`get_audit_log`) is a different thing: the
+signed governance audit entries read from the community's DHT records,
+not this chain.
 
 ## Tail-anchor invariant
 
-The vault entry `("audit", "tail_anchor")` is the security
-critical invariant. If it is missing or mismatched on startup, the
-chain refuses to extend — the user is prompted to verify the chain
-manually (re-walk from cursor 0) and either accept the divergence
-(rare-cause: backup restore) or reject and rebuild from the most
-recent verified cursor (more common: corruption).
+Every append writes the new `(cursor, mac)` to the vault under
+`("audit", "tail")` as well as the row to SQLite. Dropping trailing rows
+leaves a chain that still verifies, only shorter; the anchor is what
+shows it. `restore_chain` compares the two at unlock with
+`rekindle_audit::TailCheck`:
 
-The `audit_chain::resume_from` function is the only legitimate path
-to load a non-zero `prev_mac` on construction. Tests pin this
-contract — there is no escape hatch that lets a caller skip the
-resume step.
+| Anchor vs stored tail | Result |
+|---|---|
+| no anchor (new identity) | `Unanchored`: resume from the stored tail |
+| equal | `Clean` |
+| anchor behind | `CatchUp`: an append's vault write was lost (logout or crash between the two writes); resume from the stored tail, and the boot-time verify re-MACs the gap |
+| anchor ahead, or same cursor with another MAC | `Tampered`: resume from the anchor, the last entry known good, and raise `AuditChainBroken` plus a `SystemAlert` |
+
+The vault is a separate, encrypted file, so whoever can edit the
+database cannot move the anchor with it.
 
 ## Why this lives in Tier 2
 
@@ -157,11 +136,9 @@ Tier 2 is the cryptographic and persistent boundary. `rekindle-audit`
 fits because:
 
 - It owns key material (the MAC key).
-- It owns the chain state (tail anchor).
-- Its consumers (`audit_repo`, `commands/community/audit`,
-  `commands/vault`) only call back into the chain through the
-  `AppendOnly` / `Verify` surfaces — they never touch the MAC key
-  themselves.
+- It owns the chain state and the tail-anchor rule.
+- Its consumer (`audit_repo`) only calls `append` / `verify` and
+  `TailCheck`; it never computes a MAC itself.
 
 The Tier-2 placement is enforced by the CI tier-violation lint
 (`grep` for `blake3` in higher tiers — only Tier 2 may import it).

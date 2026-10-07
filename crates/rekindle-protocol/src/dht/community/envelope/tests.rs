@@ -101,7 +101,10 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
             assert_eq!(codec, Codec::H264);
             assert!(keyframe);
             assert_eq!(frame_seq, 7);
-            assert_eq!(transport_seq, 555, "transport_seq must survive the capnp round-trip");
+            assert_eq!(
+                transport_seq, 555,
+                "transport_seq must survive the capnp round-trip"
+            );
         }
         other => panic!("wrong variant after capnp round-trip: {other:?}"),
     }
@@ -138,7 +141,10 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
             assert_eq!(codec, Codec::Vp8);
             assert_eq!(data_count, 4);
             assert_eq!(frame_len, 4096);
-            assert_eq!(transport_seq, 556, "parity transport_seq must survive the capnp round-trip");
+            assert_eq!(
+                transport_seq, 556,
+                "parity transport_seq must survive the capnp round-trip"
+            );
         }
         other => panic!("wrong variant after capnp round-trip: {other:?}"),
     }

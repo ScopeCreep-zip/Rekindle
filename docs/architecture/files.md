@@ -215,6 +215,26 @@ exempt from local LRU eviction.
 This gives communities a way to keep important cargo around without
 relying on every member's individual cache budget.
 
+## Saving, revealing and playing
+
+File paths never cross the IPC boundary. The webview names an
+attachment by `(community, channel, attachment id)`; Rust does the rest.
+
+| Action | Command | What happens |
+|---|---|---|
+| Attach | `upload_attachment` | Native file picker (parented to the window), `tokio::fs::read`, chunk + encrypt + announce. Returns the attachment id, or `null` on cancel. |
+| Download | `download_attachment` | Native save dialog with the uploader's filename passed through `rekindle_files::sanitize_filename` (OWASP rules: last path component, no controls/bidi/reserved characters, no leading `.`/`-`, Windows device stems prefixed, ≤ 255 bytes). Then `fetch_attachment_to_cache` → `assemble_attachment` → write, and the path is stored on the message row. |
+| Show in folder | `reveal_downloaded_attachment` | Looks the stored path up in `messages.attachment_json` and calls the opener's `reveal_item_in_dir`. Nothing is ever opened or executed. |
+| Play a voice message | `get_voice_message_audio` | `fetch_attachment_to_cache` + `assemble_attachment`, returned as a binary IPC response; the player wraps it in a `Blob` and plays a `blob:` URL (CSP `media-src 'self' blob: data:`). Nothing is written outside the chunk cache. |
+
+The webview learns only `downloaded: bool` (`MessageAttachmentDto`,
+`attachmentDownloaded` event): an absolute path carries the OS user
+name.
+
+Every offer is bounded before anything is allocated
+(`manifest::validate_offer`): `total_size ≤ MAX_FILE_SIZE_BYTES`,
+`chunk_count` exactly what `total_size` needs, filename ≤ 255 bytes.
+
 ## Open work
 
 - **BEP-52 binary Merkle tree** for files >28 MB.

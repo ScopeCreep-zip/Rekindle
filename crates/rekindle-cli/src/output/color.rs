@@ -6,6 +6,20 @@
 //! or no-color output.
 
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// The `--no-color` flag, set once at startup.
+static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);
+
+/// Record `--no-color`. Called once from `main.rs`.
+pub fn set_no_color(no_color: bool) {
+    NO_COLOR_FLAG.store(no_color, Ordering::Relaxed);
+}
+
+/// Whether `--no-color` was passed.
+pub fn no_color_flag() -> bool {
+    NO_COLOR_FLAG.load(Ordering::Relaxed)
+}
 
 /// Detected color support level for the current terminal.
 #[derive(Debug, Clone, Copy)]
@@ -85,21 +99,6 @@ impl ColorSupport {
     /// colored header styling (256-color terminals) or plain text.
     pub fn has_256_colors(self) -> bool {
         self.palette_256
-    }
-
-    /// Whether Unicode glyphs can be used (vs ASCII-only fallback).
-    ///
-    /// Heuristic: if TERM=dumb or LANG doesn't contain UTF, fall back to ASCII.
-    pub fn use_unicode() -> bool {
-        let term = std::env::var("TERM").unwrap_or_default();
-        if term == "dumb" {
-            return false;
-        }
-        // Check LANG for UTF-8 indicator
-        let lang = std::env::var("LANG").unwrap_or_default();
-        lang.contains("UTF") || lang.contains("utf")
-            // Most modern terminals support Unicode even without LANG
-            || std::io::stdout().is_terminal()
     }
 }
 

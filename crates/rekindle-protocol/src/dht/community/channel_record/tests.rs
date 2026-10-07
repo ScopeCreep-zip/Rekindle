@@ -169,3 +169,44 @@ fn decode_rejects_tampered_signature() {
     let bytes = serde_json::to_vec(&payload).unwrap();
     assert!(decode_channel_entries(&bytes).is_err());
 }
+
+// ── Plan C7.13: idempotent append, compare-and-swap merge, own pages only ──
+
+fn reaction(expression: &str, lamport: u64) -> ChannelRecordEntry {
+    ChannelRecordEntry::Reaction(ChannelReaction {
+        message_id: "msg-1".into(),
+        expression: expression.into(),
+        added: true,
+        lamport,
+    })
+}
+
+#[test]
+fn an_entry_already_on_the_page_is_found() {
+    let page = vec![
+        ChannelRecordEntry::Message(sample_message()),
+        reaction("👍", 3),
+    ];
+    assert!(super::write::contains_entry(&page, &reaction("👍", 3)));
+    assert!(!super::write::contains_entry(&page, &reaction("👍", 4)));
+}
+
+#[test]
+fn a_merge_keeps_one_copy_of_each_entry_in_lamport_order() {
+    let theirs = vec![reaction("a", 1), reaction("b", 5)];
+    let ours = vec![reaction("a", 1), reaction("c", 3)];
+    let merged = super::write::merge_entries(theirs, ours);
+    let lamports: Vec<u64> = merged.iter().map(ChannelRecordEntry::lamport).collect();
+    assert_eq!(lamports, vec![1, 3, 5], "the duplicate is kept once");
+}
+
+#[test]
+fn only_our_own_page_is_inherited() {
+    let (author, page) = signed_payload_bytes(vec![reaction("a", 1)]);
+    assert!(super::codec::decode_own_page(&page, &author).is_some());
+    let stranger = PseudonymKey([9u8; 32]);
+    assert!(
+        super::codec::decode_own_page(&page, &stranger).is_none(),
+        "a page another key wrote into our slot is not ours to re-sign"
+    );
+}

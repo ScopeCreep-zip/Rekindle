@@ -13,4 +13,3 @@ pub mod prekeys;
 pub use rekindle_crypto::group::pseudonym;
 pub mod signal_session;
 pub mod signal_store;
-pub mod voice_crypto;

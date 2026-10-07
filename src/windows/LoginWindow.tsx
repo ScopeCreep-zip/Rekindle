@@ -9,6 +9,7 @@ import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
 import { truncateKey } from "../utils/formatting";
+import { startEventStream } from "../ipc/channels";
 
 type Mode = "picker" | "login" | "create";
 
@@ -65,6 +66,7 @@ const LoginWindow: Component = () => {
       // below resyncs on the first transition.
     }
     const unlisten = await subscribeLifecycleEvents(setLifecycleState);
+    void startEventStream();
     onCleanup(unlisten);
   });
 

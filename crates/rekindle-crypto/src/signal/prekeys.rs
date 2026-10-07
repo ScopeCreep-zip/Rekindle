@@ -1,18 +1,11 @@
 //! `PreKey` bundle wire type for Signal Protocol session establishment.
 //!
-//! Pre-key bundles are published to DHT profile subkey 5 so that new
-//! contacts can establish a Signal session asynchronously. Generation,
-//! bundle creation, and reuse-on-restart logic all live in
-//! [`crate::signal::session::SignalSessionManager`]:
-//! - `generate_prekey_bundle` — mint fresh keys + persist via the
-//!   PreKeyStore + return a bundle for DHT publication
-//! - `load_existing_prekey_bundle` (P1.2) — reconstruct a bundle from
-//!   already-persisted keys without overwriting them
-//!
-//! Rotation is driven from `auth.rs::initialize_signal_manager`, which
-//! prefers the existing bundle (so peers' cached PreKeyBundles stay
-//! valid across restarts) and only mints fresh keys when the vault is
-//! empty.
+//! Bundles are built by [`crate::signal::session::SignalSessionManager`]:
+//! - `current_bundle` — the long-lived signed prekey and PQ last-resort
+//!   key, with no one-time keys; published to DHT profile subkey 5 and
+//!   carried in invites.
+//! - `handout_bundle` — the current bundle plus a fresh one-time X25519
+//!   and ML-KEM-768 key, for a bundle sent to exactly one peer.
 //!
 //! Phase 3b of the decomposed-harvest plan augmented this struct with
 //! PQXDH ML-KEM-768 fields. Wire format breaks for any peer expecting

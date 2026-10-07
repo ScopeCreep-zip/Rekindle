@@ -31,7 +31,7 @@ pub async fn direct_message(
     dm_log_keypair: Option<veilid_core::KeyPair>,
 ) -> Result<()> {
     debug!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         body_bytes = body.len(),
         has_log = dm_log_keypair.is_some(),
         "dm: direct_message"
@@ -43,8 +43,8 @@ pub async fn direct_message(
 
     // DhtLog path
     if let (Some(log_key), Some(kp)) = (session.dm_log_keys.get(peer_key), dm_log_keypair) {
-        let dht = node.dht()?;
-        let log = DhtLog::open_write(dht.routing_context(), log_key, kp).await?;
+        let pool = node.require_records()?;
+        let log = DhtLog::open_write(&pool, log_key, kp).await?;
         let entry = serde_json::json!({
             "sender_key": session.identity.public_key_hex,
             "body": hex::encode(body),
@@ -55,9 +55,11 @@ pub async fn direct_message(
             serde_json::to_vec(&entry).map_err(|e| TransportError::SerializationFailed {
                 reason: e.to_string(),
             })?;
-        log.append(&entry_bytes).await?;
+        let appended = log.append(&pool, &entry_bytes).await;
+        log.release(&pool).await;
+        appended?;
         info!(
-            peer = &peer_key[..12.min(peer_key.len())],
+            peer = %peer_key,
             "DM sent via DhtLog"
         );
         return Ok(());
@@ -76,7 +78,7 @@ pub async fn typing(
     signing_key: &[u8; 32],
 ) -> Result<()> {
     debug!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         is_typing, "dm: typing"
     );
     let dm = DmPayload::Typing { typing: is_typing };
@@ -98,7 +100,7 @@ pub async fn friend_request(
     signing_key: &[u8; 32],
 ) -> Result<()> {
     info!(
-        target = &target_profile_key[..12.min(target_profile_key.len())],
+        target = %target_profile_key,
         "dm: friend_request"
     );
     let _ = crate::operations::friend::send_friend_request(
@@ -153,7 +155,7 @@ pub async fn friend_request_ack(
     signing_key: &[u8; 32],
 ) -> Result<()> {
     debug!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         "dm: friend_request_ack"
     );
     let dm = DmPayload::FriendRequestAck;
@@ -167,7 +169,7 @@ pub async fn unfriend(
     peer_key: &str,
     signing_key: &[u8; 32],
 ) -> Result<()> {
-    info!(peer = &peer_key[..12.min(peer_key.len())], "dm: unfriend");
+    info!(peer = %peer_key, "dm: unfriend");
     let dm = DmPayload::Unfriend;
     send_dm_payload(node, session, peer_key, &dm, signing_key).await
 }
@@ -180,7 +182,7 @@ pub async fn unfriend_ack(
     signing_key: &[u8; 32],
 ) -> Result<()> {
     debug!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         "dm: unfriend_ack"
     );
     let dm = DmPayload::UnfriendAck;
@@ -196,8 +198,8 @@ pub async fn profile_key_rotated(
     signing_key: &[u8; 32],
 ) -> Result<()> {
     info!(
-        peer = &peer_key[..12.min(peer_key.len())],
-        new_key = &new_profile_dht_key[..12.min(new_profile_dht_key.len())],
+        peer = %peer_key,
+        new_key = %new_profile_dht_key,
         "dm: profile_key_rotated"
     );
     let dm = DmPayload::ProfileKeyRotated {
@@ -216,7 +218,7 @@ pub async fn dm_presence_update(
     signing_key: &[u8; 32],
 ) -> Result<()> {
     debug!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         status, "dm: presence_update"
     );
     let dm = DmPayload::PresenceUpdate { status, game_info };
@@ -226,7 +228,7 @@ pub async fn dm_presence_update(
 /// Remove a friend from the DHT friend list and invalidate their route.
 pub async fn remove_friend(node: &TransportNode, session: &Session, peer_key: &str) -> Result<()> {
     info!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         "dm: remove_friend"
     );
     crate::operations::friend::remove_friend(node, session, peer_key).await
@@ -247,18 +249,19 @@ async fn send_dm_payload(
 ) -> Result<()> {
     let type_id = dm_type_id(dm);
     debug!(
-        peer = &peer_key[..12.min(peer_key.len())],
+        peer = %peer_key,
         type_id = type_id as u8,
         "dm: send_dm_payload"
     );
     let route_blob = resolve_peer_route(node, session, peer_key).await?;
     let target = node.import_route(&route_blob)?;
     let payload_bytes = serialize_dm(dm)?;
-    let type_id = dm_type_id(dm);
+    let recipient = crate::crypto::envelope::recipient_bytes(peer_key)?;
 
     node.sender()
         .send_dm(
             &target,
+            &recipient,
             type_id.class(),
             type_id,
             signing_key,
@@ -295,22 +298,28 @@ async fn resolve_peer_route(
 
     if mailbox_key.is_empty() {
         warn!(
-            peer = &peer_key[..12.min(peer_key.len())],
+            peer = %peer_key,
             "dm: no mailbox key for peer"
         );
         return Err(TransportError::NoRoute {
-            peer: format!("{}… (no mailbox key)", &peer_key[..12.min(peer_key.len())]),
+            peer: format!(
+                "{}… (no mailbox key)",
+                rekindle_utils::text::prefix(peer_key, 12)
+            ),
         });
     }
 
-    let dht = node.dht()?;
-    let blob = dht
-        .mailbox()
-        .read_peer_route(&mailbox_key)
-        .await?
-        .ok_or_else(|| TransportError::NoRoute {
-            peer: format!("{}… (mailbox empty)", &peer_key[..12.min(peer_key.len())]),
-        })?;
+    let blob = rekindle_protocol::dht::mailbox::read_peer_mailbox_route(
+        &*node.require_records()?,
+        &mailbox_key,
+    )
+    .await?
+    .ok_or_else(|| TransportError::NoRoute {
+        peer: format!(
+            "{}… (mailbox empty)",
+            rekindle_utils::text::prefix(peer_key, 12)
+        ),
+    })?;
 
     node.peers().write().cache_route(peer_key, blob.clone());
     Ok(blob)

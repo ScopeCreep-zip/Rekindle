@@ -1,6 +1,6 @@
 //! W16.9 — SQLite-backed [`EnvelopeStore`] for the Tauri shell.
 //!
-//! Reuses the existing [`crate::db::DbPool`] (a `tokio_rusqlite::Connection`)
+//! Reuses the existing [`rekindle_db::Db`] (a `tokio_rusqlite::Connection`)
 //! so the entire reliability layer (retry queue + dedup + active call
 //! state) lives in the same database as chat history, friend records,
 //! and signal sessions. The CLI and daemon use the JSON-on-disk impl
@@ -14,17 +14,17 @@ use rekindle_transport::envelope_store::{
     EnvelopeKind, EnvelopeStore, PendingEnvelope, PersistedCallState, StoreError,
 };
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
+use rekindle_db::Db;
 
-/// SQLite-backed [`EnvelopeStore`]. Cloned cheaply (single `Arc<DbPool>`
+/// SQLite-backed [`EnvelopeStore`]. Cloned cheaply (single `Arc<Db>`
 /// inside).
 pub struct SqliteEnvelopeStore {
-    pool: Arc<DbPool>,
+    pool: Arc<Db>,
 }
 
 impl SqliteEnvelopeStore {
-    pub fn new(pool: Arc<DbPool>) -> Self {
+    pub fn new(pool: Arc<Db>) -> Self {
         Self { pool }
     }
 

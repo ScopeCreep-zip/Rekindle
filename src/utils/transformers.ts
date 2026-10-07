@@ -49,7 +49,7 @@ export function transformMessage(m: IpcMessage): Message {
           mimeType: m.attachment.mimeType,
           totalSize: m.attachment.totalSize,
           chunkCount: m.attachment.chunkCount,
-          localPath: m.attachment.localPath ?? null,
+          downloaded: m.attachment.downloaded,
         }
       : undefined,
     flags: m.flags ?? 0,
@@ -67,16 +67,12 @@ export function transformChannel(ch: { id: string; name: string; channelType: st
 }
 
 export function transformExpression(expression: ExpressionInfo): Expression {
-  const inlineDataUrl = expression.inlineDataBase64
-    ? `data:${expression.mediaType ?? "image/png"};base64,${expression.inlineDataBase64}`
-    : null;
   return {
     id: expression.expressionId,
     name: expression.name,
     kind: expression.kind,
     contentHash: expression.contentHash,
-    inlineDataBase64: expression.inlineDataBase64 ?? null,
-    inlineDataUrl,
+    inlineDataUrl: expression.inlineDataUrl ?? null,
     mediaType: expression.mediaType ?? null,
     animated: expression.animated,
     tags: expression.tags ?? [],

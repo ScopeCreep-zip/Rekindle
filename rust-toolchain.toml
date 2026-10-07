@@ -1,6 +1,6 @@
 [toolchain]
 channel = "1.92.0"
-components = ["rustfmt", "clippy", "rust-src"]
+components = [ "rustfmt", "clippy", "rust-src" ]
 profile = "default"
 
 # Pinned toolchain for the workspace.

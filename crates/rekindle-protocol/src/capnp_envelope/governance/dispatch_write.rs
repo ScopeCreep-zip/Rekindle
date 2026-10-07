@@ -1,4 +1,8 @@
-//! `governance` write dispatcher (router + alphabetical halves).
+//! `governance` write dispatcher.
+//!
+//! One exhaustive match, no wildcard arm — adding a `GovernanceEntry`
+//! variant without a write arm here is a compile error, matching
+//! `ControlPayload`'s encode/decode completeness guarantee.
 
 use crate::community_governance_capnp::governance_entry as schema;
 use rekindle_types::governance::GovernanceEntry;
@@ -27,35 +31,11 @@ use super::onboarding::{write_onboarding_config, write_welcome_screen};
 use super::roles::{
     write_role_archived, write_role_assignment, write_role_definition, write_role_unassignment,
 };
-use super::shared::CategoryUpdate;
 
 pub(in crate::capnp_envelope) fn write_governance_entry(
     b: schema::Builder<'_>,
     e: &GovernanceEntry,
 ) {
-    use GovernanceEntry as G;
-    match e {
-        G::AdminDelete { .. }
-        | G::AttachmentPinned { .. }
-        | G::AutoModRule { .. }
-        | G::BanEntry { .. }
-        | G::CategoryArchived { .. }
-        | G::CategoryCreated { .. }
-        | G::CategoryUpdated { .. }
-        | G::ChannelArchived { .. }
-        | G::ChannelCreated { .. }
-        | G::ChannelSegmentLinked { .. }
-        | G::ChannelUpdated { .. }
-        | G::CommunityMeta { .. }
-        | G::CommunityNotificationDefault { .. }
-        | G::CommunityPolicy { .. }
-        | G::EventArchived { .. }
-        | G::EventCreated { .. }
-        | G::ExpressionAdded { .. } => write_governance_entry_first_half(b, e),
-        _ => write_governance_entry_second_half(b, e),
-    }
-}
-fn write_governance_entry_first_half(b: schema::Builder<'_>, e: &GovernanceEntry) {
     let mut b = b;
     match e {
         GovernanceEntry::AdminDelete {
@@ -80,22 +60,9 @@ fn write_governance_entry_first_half(b: schema::Builder<'_>, e: &GovernanceEntry
             *pinned,
             *lamport,
         ),
-        GovernanceEntry::AutoModRule {
-            rule_id,
-            name,
-            enabled,
-            trigger_json,
-            action,
-            lamport,
-        } => write_auto_mod_rule(
-            b.reborrow().init_auto_mod_rule(),
-            rule_id,
-            name,
-            *enabled,
-            trigger_json,
-            action,
-            *lamport,
-        ),
+        GovernanceEntry::AutoModRule { .. } => {
+            write_auto_mod_rule(b.reborrow().init_auto_mod_rule(), e);
+        }
         GovernanceEntry::BanEntry {
             target,
             reason,
@@ -157,49 +124,12 @@ fn write_governance_entry_first_half(b: schema::Builder<'_>, e: &GovernanceEntry
             record_key,
             *lamport,
         ),
-        GovernanceEntry::ChannelUpdated {
-            channel_id,
-            name,
-            topic,
-            forum_tags,
-            position,
-            slowmode_seconds,
-            nsfw,
-            category_id,
-            lamport,
-        } => {
-            let cat_update = match category_id {
-                None => CategoryUpdate::Unchanged,
-                Some(None) => CategoryUpdate::Cleared,
-                Some(Some(c)) => CategoryUpdate::Set(*c),
-            };
-            write_channel_updated(
-                b.reborrow().init_channel_updated(),
-                *channel_id,
-                name.as_deref(),
-                topic.as_deref(),
-                forum_tags.as_deref(),
-                *position,
-                *slowmode_seconds,
-                *nsfw,
-                cat_update,
-                *lamport,
-            );
+        GovernanceEntry::ChannelUpdated { .. } => {
+            write_channel_updated(b.reborrow().init_channel_updated(), e);
         }
-        GovernanceEntry::CommunityMeta {
-            name,
-            description,
-            icon_hash,
-            banner_hash,
-            lamport,
-        } => write_community_meta(
-            b.reborrow().init_community_meta(),
-            name.as_deref(),
-            description.as_deref(),
-            icon_hash.as_deref(),
-            banner_hash.as_deref(),
-            *lamport,
-        ),
+        GovernanceEntry::CommunityMeta { .. } => {
+            write_community_meta(b.reborrow().init_community_meta(), e);
+        }
         GovernanceEntry::CommunityNotificationDefault { level, lamport } => {
             write_community_notification_default(
                 b.reborrow().init_community_notification_default(),
@@ -228,12 +158,6 @@ fn write_governance_entry_first_half(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::ExpressionAdded { .. } => {
             write_expression_added(b.reborrow().init_expression_added(), e);
         }
-        _ => unreachable!("write_governance_entry_first_half called with second-half variant"),
-    }
-}
-fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntry) {
-    let mut b = b;
-    match e {
         GovernanceEntry::ExpressionRemoved {
             expression_id,
             lamport,
@@ -242,22 +166,9 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             expression_id,
             *lamport,
         ),
-        GovernanceEntry::InviteCreated {
-            invite_id,
-            code_hash,
-            max_uses,
-            expires_at,
-            secrets_record_key,
-            lamport,
-        } => write_invite_created(
-            b.reborrow().init_invite_created(),
-            invite_id,
-            code_hash,
-            *max_uses,
-            *expires_at,
-            secrets_record_key,
-            *lamport,
-        ),
+        GovernanceEntry::InviteCreated { .. } => {
+            write_invite_created(b.reborrow().init_invite_created(), e);
+        }
         GovernanceEntry::InviteRevoked { invite_id, lamport } => {
             write_invite_revoked(b.reborrow().init_invite_revoked(), invite_id, *lamport);
         }
@@ -273,40 +184,12 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             cascade_skipped,
             *lamport,
         ),
-        GovernanceEntry::OnboardingConfig {
-            enabled,
-            mode,
-            default_channels,
-            questions,
-            welcome_message,
-            guide_steps,
-            lamport,
-        } => write_onboarding_config(
-            b.reborrow().init_onboarding_config(),
-            *enabled,
-            mode,
-            default_channels,
-            questions,
-            welcome_message.as_deref(),
-            guide_steps,
-            *lamport,
-        ),
-        GovernanceEntry::PermissionOverwrite {
-            channel_id,
-            target_type,
-            target_id,
-            allow,
-            deny,
-            lamport,
-        } => write_permission_overwrite(
-            b.reborrow().init_permission_overwrite(),
-            *channel_id,
-            target_type,
-            target_id,
-            *allow,
-            *deny,
-            *lamport,
-        ),
+        GovernanceEntry::OnboardingConfig { .. } => {
+            write_onboarding_config(b.reborrow().init_onboarding_config(), e);
+        }
+        GovernanceEntry::PermissionOverwrite { .. } => {
+            write_permission_overwrite(b.reborrow().init_permission_overwrite(), e);
+        }
         GovernanceEntry::RemoveTimeoutEntry { target, lamport } => {
             write_remove_timeout_entry(b.reborrow().init_remove_timeout_entry(), target, *lamport);
         }
@@ -323,30 +206,9 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             *role_id,
             *lamport,
         ),
-        GovernanceEntry::RoleDefinition {
-            role_id,
-            name,
-            permissions,
-            position,
-            color,
-            hoist,
-            mentionable,
-            self_assignable,
-            exclusion_group,
-            lamport,
-        } => write_role_definition(
-            b.reborrow().init_role_definition(),
-            *role_id,
-            name,
-            *permissions,
-            *position,
-            *color,
-            *hoist,
-            *mentionable,
-            *self_assignable,
-            exclusion_group.as_deref(),
-            *lamport,
-        ),
+        GovernanceEntry::RoleDefinition { .. } => {
+            write_role_definition(b.reborrow().init_role_definition(), e);
+        }
         GovernanceEntry::RoleUnassignment {
             target,
             role_id,
@@ -357,61 +219,18 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             *role_id,
             *lamport,
         ),
-        GovernanceEntry::SegmentAdded {
-            segment_index,
-            registry_key,
-            governance_key,
-            slot_range_start,
-            slot_range_end,
-            lamport,
-        } => write_segment_added(
-            b.reborrow().init_segment_added(),
-            *segment_index,
-            registry_key,
-            governance_key,
-            *slot_range_start,
-            *slot_range_end,
-            *lamport,
-        ),
+        GovernanceEntry::SegmentAdded { .. } => {
+            write_segment_added(b.reborrow().init_segment_added(), e);
+        }
         GovernanceEntry::ThreadArchived { thread_id, lamport } => {
             write_thread_archived(b.reborrow().init_thread_archived(), *thread_id, *lamport);
         }
-        GovernanceEntry::ThreadCreated {
-            thread_id,
-            parent_channel_id,
-            name,
-            thread_type,
-            record_key,
-            invited,
-            forum_tag,
-            auto_archive_seconds,
-            lamport,
-        } => write_thread_created(
-            b.reborrow().init_thread_created(),
-            *thread_id,
-            *parent_channel_id,
-            name,
-            thread_type,
-            record_key.as_deref(),
-            invited,
-            forum_tag.as_deref(),
-            *auto_archive_seconds,
-            *lamport,
-        ),
-        GovernanceEntry::TimeoutEntry {
-            target,
-            duration_seconds,
-            reason,
-            started_at,
-            lamport,
-        } => write_timeout_entry(
-            b.reborrow().init_timeout_entry(),
-            target,
-            *duration_seconds,
-            reason.as_deref(),
-            *started_at,
-            *lamport,
-        ),
+        GovernanceEntry::ThreadCreated { .. } => {
+            write_thread_created(b.reborrow().init_thread_created(), e);
+        }
+        GovernanceEntry::TimeoutEntry { .. } => {
+            write_timeout_entry(b.reborrow().init_timeout_entry(), e);
+        }
         GovernanceEntry::UnbanEntry { target, lamport } => {
             write_unban_entry(b.reborrow().init_unban_entry(), target, *lamport);
         }
@@ -451,6 +270,5 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             channels,
             *lamport,
         ),
-        _ => unreachable!("write_governance_entry_second_half called with first-half variant"),
     }
 }

@@ -25,25 +25,21 @@ use tauri::State;
 
 use rekindle_calls::CallKind;
 
-use crate::db::DbPool;
 use crate::services::call_runtime::{
     get_missed_calls_inner, mute_caller_temp_inner, send_call_media_state_inner,
     send_call_reaction_inner,
 };
 use crate::state::SharedState;
+use rekindle_db::Db;
 
 pub use crate::services::call_runtime::MissedCallRow;
 
 fn build_adapter(
     app: tauri::AppHandle,
     state: &State<'_, SharedState>,
-    pool: &State<'_, DbPool>,
+    pool: &Db,
 ) -> std::sync::Arc<crate::services::calls_adapter::CallsAdapter> {
-    crate::services::calls_adapter::CallsAdapter::new(
-        state.inner().clone(),
-        app,
-        pool.inner().clone(),
-    )
+    crate::services::calls_adapter::CallsAdapter::new(state.inner().clone(), app, pool.clone())
 }
 
 // `RING_DURATION_MS` + `generate_call_id` moved into rekindle-calls
@@ -62,8 +58,8 @@ pub async fn start_dm_call(
     video: bool,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<String, String> {
+    let pool = state.db.current()?;
     let kind = if video {
         CallKind::Video
     } else {
@@ -86,8 +82,8 @@ pub async fn accept_dm_call(
     call_id: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::accept_dm_call(adapter.as_ref(), &call_id)
         .await
@@ -120,8 +116,8 @@ pub async fn decline_dm_call(
     reason: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::decline_dm_call(adapter.as_ref(), &call_id, reason)
         .await
@@ -138,8 +134,8 @@ pub async fn end_dm_call(
     reason: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::end_dm_call(adapter.as_ref(), &call_id, reason)
         .await
@@ -156,9 +152,9 @@ pub async fn send_call_media_state(
     video: bool,
     screen: bool,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    send_call_media_state_inner(state.inner(), pool.inner(), call_id, audio, video, screen).await
+    let pool = state.db.current()?;
+    send_call_media_state_inner(state.inner(), &pool, call_id, audio, video, screen).await
 }
 
 /// W12.11 — fire-and-forget emoji reaction.
@@ -167,9 +163,9 @@ pub async fn send_call_reaction(
     call_id: String,
     emoji: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    send_call_reaction_inner(state.inner(), pool.inner(), call_id, emoji).await
+    let pool = state.db.current()?;
+    send_call_reaction_inner(state.inner(), &pool, call_id, emoji).await
 }
 
 /// W12.12 — temp-mute a caller. Future invites from this peer
@@ -199,8 +195,8 @@ pub async fn start_group_call(
     video: bool,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<String, String> {
+    let pool = state.db.current()?;
     if participant_pubkeys.is_empty() {
         return Err("group call requires at least one invitee".into());
     }
@@ -223,8 +219,8 @@ pub async fn accept_group_call(
     call_id: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::accept_group_call(adapter.as_ref(), &call_id)
         .await
@@ -237,8 +233,8 @@ pub async fn decline_group_call(
     reason: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::decline_group_call(adapter.as_ref(), &call_id, reason)
         .await
@@ -251,19 +247,27 @@ pub async fn end_group_call(
     reason: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::end_group_call(adapter.as_ref(), &call_id, reason)
         .map_err(|e| e.to_string())
 }
 
+/// The live 1:1 call a call window shows, read on open; its later changes
+/// arrive as call events.
 #[tauri::command]
-pub async fn get_missed_calls(
-    pool: State<'_, DbPool>,
+pub async fn get_active_call(
+    call_id: String,
     state: State<'_, SharedState>,
-) -> Result<Vec<MissedCallRow>, String> {
-    get_missed_calls_inner(state.inner(), pool.inner()).await
+) -> Result<Option<crate::services::call_runtime::ActiveCallDto>, String> {
+    crate::services::call_runtime::get_active_call_inner(state.inner(), &call_id)
+}
+
+#[tauri::command]
+pub async fn get_missed_calls(state: State<'_, SharedState>) -> Result<Vec<MissedCallRow>, String> {
+    let pool = state.db.current()?;
+    get_missed_calls_inner(state.inner(), &pool).await
 }
 
 // `generate_call_id` deleted in Phase 14.n — moved into

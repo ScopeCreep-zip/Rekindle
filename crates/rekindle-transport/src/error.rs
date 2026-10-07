@@ -118,10 +118,6 @@ pub enum TransportError {
         network_seq: u32,
     },
 
-    /// A DHT watch died (count reached zero or empty subkeys reported).
-    #[error("DHT watch died for record {key}")]
-    WatchDied { key: String },
-
     /// A generic DHT operation failed.
     #[error("DHT error: {reason}")]
     DhtError { reason: String },
@@ -190,6 +186,16 @@ pub enum TransportError {
     /// Friend request could not be delivered.
     #[error("friend request to {target} failed: {reason}")]
     FriendRequestFailed { target: String, reason: String },
+
+    /// Friend-accept notification could not be delivered to the
+    /// requester's inbox — they will not learn they were accepted.
+    #[error("friend accept notification to {requester} failed: {reason}")]
+    FriendAcceptFailed { requester: String, reason: String },
+
+    /// Friend-reject notification could not be delivered to the
+    /// requester's inbox — they will keep re-sending the request.
+    #[error("friend reject notification to {requester} failed: {reason}")]
+    FriendRejectFailed { requester: String, reason: String },
 
     /// Voice session could not be established.
     #[error("voice join failed for {channel}: {reason}")]
@@ -275,21 +281,34 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
             // Both are "the node did not come up"; transport draws no
             // distinction between failing to start and failing to attach.
             P::AttachFailed(reason) | P::NodeStartup(reason) => Self::AttachFailed { reason },
-            P::NodeNotInitialized => Self::NotStarted,
+            // Not started, or the pool's session ended (logout or lock).
+            P::NodeNotInitialized | P::PoolClosed => Self::NotStarted,
             P::PeerNotFound(peer) => Self::NoRoute { peer },
             P::CryptoError(reason) => Self::DecryptionFailed { reason },
             P::Verification(sender) => Self::SignatureVerificationFailed { sender },
             P::UnknownVariant(reason) => Self::InvalidFrame { reason },
-            P::SendFailed(reason) => Self::SendFailed {
+            P::SendFailed(reason) | P::RouteUnusable(reason) => Self::SendFailed {
                 target: "<protocol>".into(),
                 reason,
             },
             // Routing, receive and network failures share no narrower
             // transport variant; their Display already names the kind.
-            other @ (P::RoutingError(_) | P::ReceiveFailed(_) | P::Network(_)) => Self::DhtError {
+            other @ (P::RoutingError(_)
+            | P::ReceiveFailed(_)
+            | P::Network(_)
+            | P::NotStored { .. }
+            | P::NotWritable(_)) => Self::DhtError {
                 reason: other.to_string(),
             },
             P::Internal(reason) => Self::Internal(reason),
+            P::SubkeyTooLarge { subkey, len, cap } => Self::SubkeyTooLarge {
+                subkey,
+                size: len,
+                max: cap,
+            },
+            P::LeaseNotHeld(lease) => Self::RecordNotOpen {
+                key: format!("<lease {lease}>"),
+            },
         }
     }
 }

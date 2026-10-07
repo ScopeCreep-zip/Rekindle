@@ -34,7 +34,6 @@ pub(super) fn channel_info_impl(
         channel_type: channel.channel_type.to_string(),
         slowmode_seconds: channel.slowmode_seconds,
         last_send_at_ms,
-        mek_generation: channel.mek_generation,
         is_forum,
     })
 }

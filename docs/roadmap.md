@@ -7,6 +7,11 @@ new tier-aligned crates since May 2026.
 
 Status legend: `[x]` done · `[~]` in progress · `[ ]` not started.
 
+> **Status source.** The active plan,
+> [`.claude/plans/standards-remediation/00-integration-plan.md`](../.claude/plans/standards-remediation/00-integration-plan.md),
+> is authoritative. Where this roadmap and the plan disagree, the plan wins. An item that the
+> architecture audit showed is not working is `[ ]` here, and names the plan step that owns it.
+
 ## Phase 1: Foundation
 
 **Goal:** Tauri scaffolding, Veilid node startup, identity creation,
@@ -32,17 +37,21 @@ windows.
 
 - [x] Friend request send / receive / accept / reject via Veilid
 - [x] PreKeyBundle generation and DHT publishing
-- [ ] PreKey rotation and one-time prekey replenishment
+- [~] PreKey rotation and one-time prekey replenishment — one-time keys are
+  minted per handout (fresh pair in every per-peer bundle, capped at 200
+  unclaimed); signed-prekey rotation waits for the bundle to carry key ids
 - [x] Signal Protocol session establishment (X3DH)
 - [x] Message encrypt → envelope → Veilid send
 - [x] Message receive → deserialise → decrypt → SQLite store
 - [x] Chat window (MessageList, MessageBubble, MessageInput)
 - [x] Multi-window chat (one window per conversation)
 - [x] Typing indicators (ephemeral, not queued)
-- [x] Presence watching via DHT (online / offline status dots)
+- [ ] Presence watching via DHT (online / offline status dots): the presence beat and member card
+  are plan step E3.4
 - [x] System notifications on new messages
 - [x] Message history persistence in SQLite
-- [x] Offline message queue (`pending_messages` with retry)
+- [ ] Offline message queue: `pending_messages` retries are not durable delivery; plan step E2.5
+  (per-participant DM records and the outbox)
 - [x] Friend groups (create, rename, move friends)
 - [x] Conversation DHT records (per-friend pair)
 - [x] Block / unblock / cancel-request / outgoing-invite tracking
@@ -107,7 +116,8 @@ flat-governance model:
   with RSVPs and reminders, raid detection, per-community
   profiles (bio / pronouns / theme colour / badges / avatar /
   banner), forum channels, stage channels, video / screen-share
-  (`rekindle-video`), DMs and group DMs (`rekindle-dm`).
+  (`rekindle-video`), DMs (`rekindle-dm`). Group DMs are not built:
+  plan step E2.6.
 
 ### Open community work
 
@@ -161,11 +171,15 @@ codec with acceptable latency.
   (`voice_session_events`)
 - [x] Call signaling reliability layer (W13 fire-and-forget +
   W16 `pending_envelopes` retry queue, per-recipient seq_ack,
-  receiver dedup, crash-recovers Dialing / Incoming)
+  receiver dedup)
+- [ ] Call crash recovery (Dialing / Incoming survive a restart): plan
+  step E4.1
+- [ ] Group calls (multi-party call sessions): plan step E4.2
 - [x] Backend-owned call state machine and authoritative event
   emit (W14 / W15) — every frontend renders identical lifecycle
   from the same event stream
-- [x] AEAD audio encryption under derived `call_key` (W13.14)
+- [x] SFrame (RFC 9605) audio encryption with per-sender keys for calls
+  and community voice, MCU mixes included (plan step B3)
 - [x] Phase 14.q `CallRegistry` trait + `active_calls` adapter
   surface in `AppState`
 - [ ] Connection quality monitoring and display
@@ -183,14 +197,14 @@ share, overlay, auto-update.
 - [x] Block list
 - [x] Mailbox DHT records (route blob fallback for offline peers)
 - [x] File sharing via Veilid (Lost Cargo — `rekindle-files`)
-- [x] Strand Relay forwarding (architecture §13) — single-hop:
-  volunteered-friend pool, `blake3(target || blob)` selection,
-  per-relay circuit breaker. Lives in `rekindle-route::relay`,
-  not a `rekindle-relay` crate.
+- [ ] Strand Relay forwarding (architecture §13): the single-hop
+  pieces exist (volunteered-friend pool, `blake3(target || blob)`
+  selection, per-relay circuit breaker in `rekindle-route::relay`),
+  but a message does not relay end to end; plan step E5.5
 - [ ] Strand Relay 3-hop onion envelope (architecture §13)
 - [ ] Relay capacity advertisement — bandwidth / latency / uptime
   (§13; selection currently uses hash affinity + health)
-- [x] Mobile push relay client (`push_relay`)
+- [ ] Mobile push relay: no relay to register with yet; plan step E5.6
 - [x] Cross-device sync foundation (architecture §28.4)
 - [x] Video / screen-share fragmentation pipeline
   (`rekindle-video`)
@@ -208,7 +222,7 @@ The harvest is an ongoing decomposition of `src-tauri/src/services/`
 into tier-aligned crates with the runtime / adapter / pure-logic
 split documented in
 [`architecture/services-pattern.md`](architecture/services-pattern.md).
-Eleven crates have shipped; the services-drain frontier is the
+Twelve crates have shipped; the services-drain frontier is the
 live work.
 
 - [x] `rekindle-events` — `EventDedup` + `SubscriptionState` +
@@ -233,14 +247,25 @@ live work.
   presence orchestrators; see
   [`architecture/presence.md`](architecture/presence.md)
 - [x] `rekindle-analytics` — local-only SQL aggregations
+- [x] `rekindle-idle` — cross-platform OS idle-time detection
+  (CoreGraphics / `GetLastInputInfo` / Wayland `ext-idle-notify-v1`
+  + xprintidle/Mutter/ScreenSaver D-Bus fallbacks) hoisted out of
+  `idle_service.rs`, mirroring `rekindle-game-detect`'s `platform/`
+  shape
 - [~] **Phase 23 services drain** — ongoing harvest of remaining
   `src-tauri/src/services/community/` logic into the appropriate
-  Tier-7 crates; ~37.6 K LoC of services with the runtime /
-  adapter / pure-logic split applied per surface
+  Tier-7 crates; 42.2 K LoC of services remain as of the October 2026
+  re-audit (`docs/research/2026-10-harvest-security-infra-audit.md`)
+  — up from the 37.6 K this line previously claimed, so treat any LoC
+  figure here as a snapshot to re-verify, not a tracked metric
 - [x] **Phase 23.A** event_dispatch single-source emit router;
   see [`architecture/event-dispatch.md`](architecture/event-dispatch.md)
+  (two narrow, documented exceptions pre-dating the dispatch loop
+  itself: `setup.rs`'s bootstrap notification and `windows.rs`'s
+  direct window-targeted emit — see ADR 0007)
 - [x] **Phase 23.B** `state.rs` split into `state/` submodules;
-  AppState now ~47 fields in `state/app_state.rs`
+  AppState is 84 fields in `state/app_state.rs` as of the same
+  re-audit (not ~47 — re-verify before quoting either number again)
 - [~] **Phase 23.C** `*_runtime.rs` orchestration extraction —
   channel, community lifecycle, MEK local-rotate, others ongoing
 - [~] **Phase 23.D** adapter module-dir pattern (Phase 14.r / 23.D)

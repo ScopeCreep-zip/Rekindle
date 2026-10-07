@@ -4,7 +4,7 @@ pub mod dht;
 pub mod error;
 pub mod messaging;
 pub mod node;
-pub mod routing;
+pub mod own_routes;
 pub mod veilid_config;
 
 pub use dht::log::DHTLog;
@@ -37,6 +37,7 @@ capnp_module!(presence_capnp);
 capnp_module!(identity_capnp);
 capnp_module!(friend_capnp);
 capnp_module!(voice_capnp);
+capnp_module!(voice_packet_capnp);
 capnp_module!(account_capnp);
 capnp_module!(conversation_capnp);
 

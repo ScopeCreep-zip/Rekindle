@@ -11,10 +11,8 @@
 //! Public surface unchanged: callers still
 //! `crate::services::friend_runtime::accept_request_inner` etc.
 
-use rusqlite::OptionalExtension;
-
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
+use rekindle_db::Db;
 
 mod accept;
 mod add;
@@ -42,7 +40,7 @@ pub use block::block_user_inner;
 pub use blocked::{get_blocked_users_inner, is_user_blocked, unblock_user_inner, BlockedUser};
 pub use cancel::cancel_request_inner;
 pub use emit_presence::emit_friends_presence_inner;
-pub use from_invite::add_friend_from_invite_inner;
+pub use from_invite::{add_friend_from_invite_inner, MAX_INVITE_AGE_SECS};
 pub use generate_invite::{generate_invite_inner, GenerateInviteResult};
 pub use group_move::move_friend_to_group_inner;
 pub use groups::{create_friend_group_inner, rename_friend_group_inner};
@@ -58,34 +56,16 @@ pub use session_reset::{
     accept_session_reset_inner, decline_session_reset_inner, reset_signal_session_inner,
 };
 
-/// Pending friend request data:
-/// `(profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, invite_id)`.
-pub type PendingRequestData = (
-    Option<String>,
-    Option<String>,
-    Option<Vec<u8>>,
-    Option<Vec<u8>>,
-    Option<String>,
-);
-
-/// Read `profile_dht_key`, `mailbox_dht_key`, `route_blob`,
-/// `prekey_bundle`, and `invite_id` from a pending friend request.
+/// What answering the pending request from `public_key` needs.
 pub async fn read_pending_request_data(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     public_key: &str,
-) -> Result<PendingRequestData, String> {
+) -> Result<rekindle_db::repo::pending_requests::Answer, String> {
     let ok = owner_key.to_string();
     let pk = public_key.to_string();
     db_call(pool, move |conn| {
-        let row: Option<PendingRequestData> = conn
-            .query_row(
-                "SELECT profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, invite_id FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![ok, pk],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-            )
-            .optional()?;
-        Ok(row.unwrap_or((None, None, None, None, None)))
+        rekindle_db::repo::pending_requests::answer(conn, &ok, &pk)
     })
     .await
 }

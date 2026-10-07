@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::{AppState, FriendState, FriendshipState, UserStatus};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Add a friend (pending outbound) — SQLite write + AppState insert +
 /// Veilid send_friend_request + UI emit + audit-chain append.
@@ -16,7 +17,7 @@ use crate::state_helpers;
 /// don't block the user-visible flow (the peer may be offline).
 pub async fn add_friend_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     public_key: String,
     display_name: String,
@@ -46,11 +47,7 @@ pub async fn add_friend_inner(
     let dn = display_name.clone();
     let ok = owner_key.clone();
     db_call(&pool, move |conn| {
-        conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
-            rusqlite::params![ok, pk, dn, timestamp],
-        )?;
-        Ok(())
+        rekindle_db::repo::friends::insert_pending_out(conn, &ok, &pk, &dn, timestamp)
     })
     .await?;
 

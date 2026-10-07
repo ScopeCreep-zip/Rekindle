@@ -10,8 +10,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, watch};
 use tokio::time::interval;
+use tokio_util::sync::CancellationToken;
 
 /// 30-second poll backstop. Tuned by the plan; not configurable
 /// per-instance (one cadence for the whole app). If a peer's `watch`
@@ -37,8 +38,8 @@ pub trait InboxScanner: Send + Sync + 'static {
 }
 
 /// Three-tier coordinator. Constructed once per logged-in identity;
-/// dropped on logout (the `oneshot::Sender<()>` shutdown is the only
-/// way to stop the spawned task).
+/// stopped on logout by cancelling the session's token, the only way to
+/// stop the spawned task.
 pub struct InboxScanCoordinator<S: InboxScanner> {
     scanner: Arc<S>,
     direct_rx: mpsc::Receiver<()>,
@@ -62,11 +63,11 @@ impl<S: InboxScanner> InboxScanCoordinator<S> {
         }
     }
 
-    /// Drive the select-loop until `shutdown` fires. Should be spawned
-    /// onto a dedicated tokio task in production. Returns when shutdown
-    /// fires OR when all senders for both triggers drop (which would be
+    /// Drive the select-loop until `stop` is cancelled. Should be spawned
+    /// onto a dedicated tokio task in production. Returns when `stop` is
+    /// cancelled OR when all senders for both triggers drop (which would be
     /// a logic error — the caller should hold them until shutdown).
-    pub async fn run(mut self, mut shutdown: oneshot::Receiver<()>) {
+    pub async fn run(mut self, stop: CancellationToken) {
         let mut poll = interval(POLL_PERIOD);
         // Skip the immediate tick that `interval` produces — we don't
         // want to scan on coordinator startup; the 30-second backstop
@@ -81,7 +82,7 @@ impl<S: InboxScanner> InboxScanCoordinator<S> {
         loop {
             tokio::select! {
                 biased;
-                _ = &mut shutdown => {
+                () = stop.cancelled() => {
                     tracing::debug!("inbox scan coordinator shutting down");
                     return;
                 }
@@ -182,7 +183,7 @@ mod tests {
     struct Harness {
         direct_tx: mpsc::Sender<()>,
         watch_tx: watch::Sender<u64>,
-        shutdown_tx: Option<oneshot::Sender<()>>,
+        stop: CancellationToken,
         // Kept-alive to keep the scanner Arc count steady; tests read
         // counts via the outer-scope `scanner` reference, not this field.
         _scanner: Arc<MockScanner>,
@@ -193,20 +194,20 @@ mod tests {
         fn start(scanner: Arc<MockScanner>) -> Self {
             let (direct_tx, direct_rx) = mpsc::channel(4);
             let (watch_tx, watch_rx) = watch::channel(0u64);
-            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            let stop = CancellationToken::new();
             let coord = InboxScanCoordinator::new(Arc::clone(&scanner), direct_rx, watch_rx);
-            let join = tokio::spawn(coord.run(shutdown_rx));
+            let join = tokio::spawn(coord.run(stop.clone()));
             Self {
                 direct_tx,
                 watch_tx,
-                shutdown_tx: Some(shutdown_tx),
+                stop,
                 _scanner: scanner,
                 join,
             }
         }
 
-        async fn shutdown(mut self) {
-            let _ = self.shutdown_tx.take().unwrap().send(());
+        async fn shutdown(self) {
+            self.stop.cancel();
             // run() returns immediately when shutdown fires; wait for
             // the join handle so the test observes a clean exit.
             self.join.await.expect("coordinator task panicked");
@@ -326,12 +327,12 @@ mod tests {
         let scanner = MockScanner::new(0);
         let (direct_tx, direct_rx) = mpsc::channel(4);
         let (_watch_tx, watch_rx) = watch::channel(0u64);
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let stop = CancellationToken::new();
         let coord = InboxScanCoordinator::new(Arc::clone(&scanner), direct_rx, watch_rx);
         // Pre-arm both: shutdown signaled first, direct queued.
-        let _ = shutdown_tx.send(());
+        stop.cancel();
         let _ = direct_tx.send(()).await;
-        let join = tokio::spawn(coord.run(shutdown_rx));
+        let join = tokio::spawn(coord.run(stop));
         // Coordinator must exit promptly.
         tokio::time::timeout(Duration::from_secs(2), join)
             .await
@@ -351,9 +352,9 @@ mod tests {
         let scanner = MockScanner::new(0);
         let (_direct_tx, direct_rx) = mpsc::channel(4);
         let (watch_tx, watch_rx) = watch::channel(0u64);
-        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
+        let stop = CancellationToken::new();
         let coord = InboxScanCoordinator::new(Arc::clone(&scanner), direct_rx, watch_rx);
-        let join = tokio::spawn(coord.run(shutdown_rx));
+        let join = tokio::spawn(coord.run(stop.clone()));
         // Sleep so the coordinator enters its select loop.
         tokio::time::sleep(Duration::from_millis(50)).await;
         drop(watch_tx);
@@ -371,9 +372,9 @@ mod tests {
         let scanner = MockScanner::new(0);
         let (direct_tx, direct_rx) = mpsc::channel(4);
         let (_watch_tx, watch_rx) = watch::channel(0u64);
-        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
+        let stop = CancellationToken::new();
         let coord = InboxScanCoordinator::new(Arc::clone(&scanner), direct_rx, watch_rx);
-        let join = tokio::spawn(coord.run(shutdown_rx));
+        let join = tokio::spawn(coord.run(stop.clone()));
         tokio::time::sleep(Duration::from_millis(50)).await;
         drop(direct_tx);
         tokio::time::timeout(Duration::from_secs(2), join)
@@ -401,9 +402,9 @@ mod tests {
         });
         let (direct_tx, direct_rx) = mpsc::channel(4);
         let (_watch_tx, watch_rx) = watch::channel(0u64);
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let stop = CancellationToken::new();
         let coord = InboxScanCoordinator::new(Arc::clone(&scanner), direct_rx, watch_rx);
-        let join = tokio::spawn(coord.run(shutdown_rx));
+        let join = tokio::spawn(coord.run(stop.clone()));
         direct_tx.send(()).await.unwrap();
         let s1 = Arc::clone(&scanner);
         wait_until(
@@ -422,7 +423,7 @@ mod tests {
             .await,
             "coordinator must survive scanner error and continue",
         );
-        let _ = shutdown_tx.send(());
+        stop.cancel();
         join.await.unwrap();
     }
 }

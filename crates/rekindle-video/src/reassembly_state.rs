@@ -126,7 +126,14 @@ impl VideoReassemblyState {
         let window = map
             .entry((community_id.to_string(), sender_hex.to_string()))
             .or_insert_with(|| VideoReceptionWindow::new(now_ms));
-        window.observe(transport_seq, frame_seq, stream_id, channel_id, bytes, now_ms)
+        window.observe(
+            transport_seq,
+            frame_seq,
+            stream_id,
+            channel_id,
+            bytes,
+            now_ms,
+        )
     }
 
     /// Drop pending fragments for a stream — invoked when the local
@@ -148,7 +155,9 @@ impl VideoReassemblyState {
             .lock()
             .retain(|(cid, _), _| cid != community_id);
         self.last_mek_request_ms.lock().remove(community_id);
-        self.reception.lock().retain(|(cid, _), _| cid != community_id);
+        self.reception
+            .lock()
+            .retain(|(cid, _), _| cid != community_id);
     }
 
     pub fn clear(&self) {

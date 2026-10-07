@@ -1,55 +1,9 @@
 //! Phase 23.D.7 — small AppState read/mutation helpers extracted from
 //! `deps_impl.rs` to keep the trait impl under the 500-LoC cap.
-//! Sequence counters, last-send timestamp, MEK cache lookups.
-
-use rekindle_channel::deps::ChannelMek;
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
+//! Sequence counters and last-send timestamp. Keys are read through
+//! `ChannelMessagingDeps::keys` (`state_helpers::key_provider`).
 
 use super::ChannelAdapter;
-
-fn map_mek(mek: &MediaEncryptionKey) -> ChannelMek {
-    ChannelMek {
-        generation: mek.generation(),
-        key_bytes: *mek.as_bytes(),
-    }
-}
-
-pub(super) fn community_mek_impl(
-    adapter: &ChannelAdapter,
-    community_id: &str,
-) -> Option<ChannelMek> {
-    adapter
-        .state
-        .mek_cache
-        .lock()
-        .get(community_id)
-        .map(map_mek)
-}
-
-pub(super) fn channel_or_community_mek_impl(
-    adapter: &ChannelAdapter,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<ChannelMek> {
-    // Same channel-then-community fallback as the media plane; one
-    // implementation in state_helpers rather than a second walk of both
-    // caches here.
-    crate::state_helpers::channel_media_mek_full(&adapter.state, community_id, channel_id)
-        .as_ref()
-        .map(map_mek)
-}
-
-pub(super) fn current_mek_generation_impl(
-    adapter: &ChannelAdapter,
-    community_id: &str,
-) -> Option<u64> {
-    adapter
-        .state
-        .communities
-        .read()
-        .get(community_id)
-        .map(|c| c.mek_generation)
-}
 
 pub(super) fn next_channel_sequence_impl(
     adapter: &ChannelAdapter,

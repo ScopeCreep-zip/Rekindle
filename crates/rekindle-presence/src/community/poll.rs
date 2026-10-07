@@ -74,6 +74,9 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     // Compute history ranges (Shared Locker §14.3) then write our
     // own presence row to the registry.
     let history_ranges = deps.compute_history_ranges(community_id).await;
+    if deps.scope().is_closed() {
+        return Ok(());
+    }
     crate::community::registry::write_our_presence(
         deps.as_ref(),
         crate::community::registry::PresenceWrite {
@@ -106,6 +109,9 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     let mut known_member_keys = std::collections::HashSet::new();
     let mut voice_rows: Vec<crate::deps::VoicePresenceRow> = Vec::new();
     for descriptor in &descriptors {
+        if deps.scope().is_closed() {
+            return Ok(());
+        }
         let skip_subkey = (descriptor.segment_index == creds.my_segment_index).then_some(my_subkey);
         let raw_rows = deps
             .scan_segment_raw(
@@ -156,7 +162,6 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 voice_rows.push(crate::deps::VoicePresenceRow {
                     pseudonym_hex: row.pseudonym_hex.clone(),
                     display_name: row.presence.display_name.clone(),
-                    route_blob: row.presence.route_blob.clone(),
                     media_route_blob: row.presence.media_route_blob.clone(),
                     voice_channel_id: row_voice_channel,
                     fresh: row.online_member.is_some(),
@@ -345,8 +350,6 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use parking_lot::Mutex;
-
     use super::*;
     use crate::community::test_fixture::{MockCommunityDeps, MockState};
     use crate::community::GossipOverlaySnapshot;
@@ -379,10 +382,10 @@ mod tests {
             governance_key: String::new(),
             segment_index: 0,
             registry_key: "reg0".to_string(),
+            slot_range_start: 0,
+            slot_range_end: 0,
         }];
-        Arc::new(MockCommunityDeps {
-            state: Mutex::new(state),
-        })
+        Arc::new(MockCommunityDeps::new(state))
     }
 
     #[test]
@@ -399,9 +402,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_credentials_returns_community_not_found() {
-        let deps = Arc::new(MockCommunityDeps {
-            state: Mutex::new(MockState::default()),
-        });
+        let deps = Arc::new(MockCommunityDeps::new(MockState::default()));
         // ensure_registry_open returns Ok(Some("reg")) by default? No
         // — fixture returns Ok(None). Set the registry result via the
         // fixture's segments + override the credentials-missing path.
@@ -472,7 +473,6 @@ mod tests {
         inject.insert("peer1".to_string(), online_member(&[9, 9, 9]));
         let state = MockState {
             gossip_snapshot: GossipOverlaySnapshot {
-                lamport_counter: 0,
                 needs_initial_sync: false,
                 pending_mesh_broadcasts: queue,
             },

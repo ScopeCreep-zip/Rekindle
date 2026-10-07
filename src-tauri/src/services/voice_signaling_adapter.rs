@@ -1,7 +1,7 @@
 //! Phase 14.k — voice signaling adapter.
 //!
 //! Implements `rekindle_voice::signaling::VoiceSignalingDeps` against
-//! the live `AppState` + `tauri::AppHandle` + `DbPool` + the existing
+//! the live `AppState` + `tauri::AppHandle` + `Db` + the existing
 //! `services::community::*` cross-subsystem functions (which Phase 17 /
 //! 19 / 20 will eventually own). The crate's signaling handlers
 //! (voice_join / voice_leave / stage_update / etc.) consume this trait
@@ -17,9 +17,9 @@ use rekindle_voice::signaling::{CommunityVoiceEvent, StageChannelInfo, VoiceSign
 use rekindle_voice::transport::VoiceTransport;
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::db::DbPool;
 use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// The nine voice-signalling emits below all name the same kind of
 /// scope; spelling out `VoiceScope::Community` at each one cost four
@@ -39,7 +39,7 @@ impl VoiceSignalingAdapter {
     /// doesn't reach SQLite directly — `persist_hand_raise` goes
     /// through `services::community::persist_hand_raise(&AppState, ...)`.
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, _pool: DbPool) -> Arc<Self> {
+    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, _pool: Db) -> Arc<Self> {
         Arc::new(Self { state, app_handle })
     }
 }
@@ -55,18 +55,20 @@ pub fn handle_voice_signaling(
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    let Some(pool) = tauri::Manager::try_state::<DbPool>(app_handle) else {
-        tracing::error!("handle_voice_signaling: DbPool state missing");
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("voice signaling: no identity database — dropped");
         return;
     };
-    let pool = pool.inner().clone();
     let adapter = VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
     let deps: Arc<dyn VoiceSignalingDeps> = adapter;
     let cid = community_id.to_string();
     let sender = sender_pseudonym.to_string();
-    tauri::async_runtime::spawn(async move {
-        rekindle_voice::signaling::handle_voice_signaling(deps, &cid, &sender, payload).await;
-    });
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "voice signaling",
+        async move {
+            rekindle_voice::signaling::handle_voice_signaling(deps, &cid, &sender, payload).await;
+        },
+    );
 }
 
 #[async_trait]
@@ -75,13 +77,12 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         state_helpers::my_pseudonym_key(&self.state, community_id)
     }
 
-    fn our_route_blob(&self) -> Vec<u8> {
-        // The media-class route when we have one — this blob is what
-        // peers import to send us voice and video, so it is the half of
-        // the path that `frame_sender`'s LowLatency + PreferUnordered
-        // context could not reach on its own. Same selection the session
-        // path advertises; falls back to the general route.
-        state_helpers::our_media_or_general_route_blob(&self.state)
+    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
+        // The blob peers import to send us voice and video: the half of
+        // the path `frame_sender`'s LowLatency + PreferUnordered context
+        // cannot reach on its own. Same route the session path
+        // advertises; never the general route (plan C7.9c).
+        state_helpers::our_media_route_blob(&self.state)
     }
 
     fn stage_channel_info(&self, community_id: &str, channel_id: &str) -> Option<StageChannelInfo> {
@@ -272,8 +273,11 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         }
     }
 
-    fn next_lamport(&self, community_id: &str) -> u64 {
-        state_helpers::increment_lamport(&self.state, community_id)
+    fn next_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_message_lamport(&self.state, community_id)
     }
 
     fn stage_speakers(&self, community_id: &str, channel_id: &str) -> Vec<String> {
@@ -296,11 +300,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         // is best-effort — if it's missing, we log and skip rather
         // than panic (matches the legacy services::voice::session
         // facade behavior).
-        let Some(pool) = tauri::Manager::try_state::<DbPool>(&self.app_handle) else {
-            tracing::warn!("start_mcu_loop: DbPool state missing");
+        let Ok(pool) = self.state.db.current() else {
+            tracing::debug!("start_mcu_loop: no identity database");
             return;
         };
-        let pool = pool.inner().clone();
         let adapter = crate::services::voice_adapter::VoiceAdapter::new(
             self.state.clone(),
             self.app_handle.clone(),
@@ -313,10 +316,9 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     async fn stop_mcu_loop(&self) {
-        let Some(pool) = tauri::Manager::try_state::<DbPool>(&self.app_handle) else {
+        let Ok(pool) = self.state.db.current() else {
             return;
         };
-        let pool = pool.inner().clone();
         let adapter = crate::services::voice_adapter::VoiceAdapter::new(
             self.state.clone(),
             self.app_handle.clone(),
@@ -582,7 +584,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         }
     }
 
-    fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
-        state_helpers::register_background_handle(&self.state, handle);
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        state_helpers::login_scope_or_closed(&self.state)
     }
 }

@@ -12,15 +12,20 @@ filename is `NNNN-short-title.md`.
 
 | ID | Title | Status |
 |----|-------|--------|
-| [0001](0001-veilid-as-transport.md) | Adopt Veilid as the sole transport substrate | Accepted |
+| [0001](0001-veilid-as-transport.md) | Adopt Veilid as the sole transport substrate | Accepted; boundary sentence superseded by 0014 |
 | [0002](0002-signal-protocol-for-1to1.md) | Use the Signal Protocol for 1:1 friend messaging | Accepted |
-| [0003](0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model | Accepted (supersedes the v1.0 design) |
+| [0003](0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model | Accepted; write model superseded by 0011 |
 | [0004](0004-tauri-2-frontend.md) | Use Tauri 2 + SolidJS as the desktop frontend | Accepted |
-| [0005](0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app | Accepted |
+| [0005](0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app | Accepted; "Future direction" superseded by 0010 |
 | [0006](0006-vault-replaces-stronghold.md) | Replace `iota_stronghold` with the SQLCipher-backed `rekindle-vault` | Accepted |
-| [0007](0007-event-dispatch-single-source.md) | Route every Rust → Frontend event through one mpsc dispatcher | Accepted |
+| [0007](0007-event-dispatch-single-source.md) | Route every Rust → Frontend event through one mpsc dispatcher | Accepted; delivery and replay superseded by 0013 |
 | [0008](0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` | Accepted |
-| [0009](0009-crate-harvest-tiers.md) | Tier bumps and the eleven harvest crates | Accepted |
+| [0009](0009-crate-harvest-tiers.md) | Tier bumps and the eleven harvest crates | Accepted; veilid-core rule superseded by 0014 |
+| [0010](0010-single-daemon-thin-frontends.md) | One daemon owns the node; GUI, TUI and CLI are thin frontends | Accepted (supersedes 0005 "Future direction") |
+| [0011](0011-member-sovereign-records.md) | Member-sovereign records replace the shared-`slot_seed` write model | Accepted (supersedes the 0003 write model) |
+| [0012](0012-community-keys-stay-on-mek.md) | Community channel keys stay on MEK + deterministic rotator (MLS re-evaluated) | Accepted (re-affirms 0002) |
+| [0013](0013-per-window-event-router.md) | Typed webview events delivered per window, no Tauri `Emitter` | Accepted (supersedes 0007 delivery and replay) |
+| [0014](0014-veilid-boundary-is-transitive.md) | The Veilid boundary is transitive | Accepted (supersedes the 0001 and 0009 boundary sentences) |
 
 ## How to write a new ADR
 

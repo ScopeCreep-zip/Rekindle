@@ -43,12 +43,23 @@ function pushMissedCallNotification(
 /// Wires the call-signalling family into `calls.store`. Components read
 /// from the store; nothing else owns call state.
 ///
+/// Every window that shows a call (buddy list, chat, DM, call) keeps its
+/// store current. Only the `owner` — the buddy list — acts on the user's
+/// behalf: ringing, toasts, missed-call rows, opening the conversation.
+/// Each webview is a separate JS context, so without this split every
+/// open window rang and toasted.
+///
 /// The backend collapsed four 1:1/group variant pairs into one each, so
 /// `incoming`, `connected` and `ended` now branch on their payload
 /// rather than on which of two events arrived. `ended` covers both,
 /// which is why it clears the group slot too — the old `callEnded` arm
 /// did not, and a 1:1 `CallEnd` for a group call left the panel up.
-export function subscribeCallEvents(): Promise<UnlistenFn> {
+export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<UnlistenFn> {
+  /// Run a user-facing side effect only in the owning window.
+  const asOwner = (effect: () => void): void => {
+    if (owner) effect();
+  };
+  const toast = (message: string): void => asOwner(() => addToast(message, "info"));
   return subscribeChatEvents((event) => {
     if (isLegacy(event)) return;
 
@@ -59,8 +70,7 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         // opens/focuses the ChatWindow. The "when" decision (after
         // CallInvite send / after Accept resolution) lives in the
         // backend; we just navigate.
-        const { peerKey, displayName } = msg.conversationFocusRequested;
-        void commands.openChatWindow(peerKey, displayName);
+        if (owner) void commands.openChatWindow(msg.conversationFocusRequested.peerKey);
       }
       return;
     }
@@ -86,7 +96,7 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
       };
       setCallsState("outgoingCall", seed);
       if (settingsState.ringtoneEnabled) {
-        startRing(playOutgoingRingback({ volume: settingsState.ringtoneVolume }));
+        asOwner(() => startRing(playOutgoingRingback({ volume: settingsState.ringtoneVolume })));
       }
       return;
     }
@@ -115,7 +125,7 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         // window-focus path is handled by the backend bringing the
         // window forward (W12-fix.C); the ring is the audio cue.
         if (!settingsState.ringtoneEnabled) return;
-        startRing(playIncomingRing({ volume: settingsState.ringtoneVolume }));
+        asOwner(() => startRing(playIncomingRing({ volume: settingsState.ringtoneVolume })));
         return;
       }
 
@@ -132,24 +142,22 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
       setCallsState("incomingCalls", (prev) => [...prev, entry]);
       // W12-fix.B — ring even when the window is hidden / unfocused;
       // hearing the call is the WHOLE point. Web Audio plays from
-      // background webviews fine. Multi-window overlap is acceptable
-      // (you'll hear the ring louder); the alternative — silent ring
-      // when the window isn't focused — is unusable.
+      // background webviews fine; only the buddy list (the owner) rings.
       // - Already-in-call gets the call-waiting beep instead of a full
       //   ring (Discord/Telegram convention).
       // - User can disable ringtone entirely via settingsState.
       if (!settingsState.ringtoneEnabled) return;
       if (callsState.activeCall != null) {
-        startRing(playBusyTone({ volume: settingsState.ringtoneVolume * 0.6 }));
+        asOwner(() => startRing(playBusyTone({ volume: settingsState.ringtoneVolume * 0.6 })));
       } else {
-        startRing(playIncomingRing({ volume: settingsState.ringtoneVolume }));
+        asOwner(() => startRing(playIncomingRing({ volume: settingsState.ringtoneVolume })));
       }
       return;
     }
 
     if ("connected" in call) {
       const { callId, direct } = call.connected;
-      stopActiveRing();
+      asOwner(stopActiveRing);
 
       if (direct == null) {
         // Wave 12 W12.9 — promote a group call to active. A group call
@@ -199,39 +207,39 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
 
     if ("timedOut" in call) {
       const { callId } = call.timedOut;
-      stopActiveRing();
+      asOwner(stopActiveRing);
       const out = callsState.outgoingCall;
       if (out?.callId === callId) {
-        pushMissedCallNotification(out.callId, out.peerKey, out.kind, true);
+        if (owner) pushMissedCallNotification(out.callId, out.peerKey, out.kind, true);
         setCallsState("outgoingCall", null);
-        addToast("Call timed out — no answer", "info");
+        toast("Call timed out — no answer");
       }
       // Refresh missed list — the backend wrote a row for the
       // local user so the badge ticks up.
-      void refreshMissedCalls();
+      if (owner) void refreshMissedCalls();
       return;
     }
 
     if ("missed" in call) {
       const { callId } = call.missed;
-      stopActiveRing();
+      asOwner(stopActiveRing);
       const idx = callsState.incomingCalls.findIndex((c) => c.callId === callId);
       if (idx >= 0) {
         const entry = callsState.incomingCalls[idx];
-        pushMissedCallNotification(entry.callId, entry.peerKey, entry.kind, false);
+        if (owner) pushMissedCallNotification(entry.callId, entry.peerKey, entry.kind, false);
         setCallsState("incomingCalls", (prev) => prev.filter((_, i) => i !== idx));
       }
-      void refreshMissedCalls();
+      if (owner) void refreshMissedCalls();
       return;
     }
 
     if ("declined" in call) {
       const { callId, reason } = call.declined;
-      stopActiveRing();
+      asOwner(stopActiveRing);
       if (callsState.outgoingCall?.callId === callId) {
         setCallsState("outgoingCall", null);
       }
-      addToast(reason ? `Call declined: ${reason}` : "Call declined", "info");
+      toast(reason ? `Call declined: ${reason}` : "Call declined");
       return;
     }
 
@@ -308,7 +316,7 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
       // the IncomingCallModal stays zombie because head() still
       // returns the entry.
       const { callId, reason } = call.ended;
-      stopActiveRing();
+      asOwner(stopActiveRing);
       if (callsState.activeCall?.callId === callId) {
         setCallsState("activeCall", null);
       }
@@ -322,7 +330,7 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
       setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
       setCallsState("incomingCalls", (prev) => prev.filter((c) => c.callId !== callId));
       if (reason) {
-        addToast(`Call ended: ${reason}`, "info");
+        toast(`Call ended: ${reason}`);
       }
     }
   });

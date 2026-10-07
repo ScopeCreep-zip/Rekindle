@@ -77,7 +77,7 @@ impl CallSignalingDeps for CallsAdapter {
         peer_pubkey_hex: &str,
         payload: MessagePayload,
     ) -> Result<(), CallError> {
-        crate::services::message_service::send_to_peer_raw(
+        crate::services::message_service::send_to_peer(
             &self.state,
             &self.pool,
             peer_pubkey_hex,
@@ -91,13 +91,11 @@ impl CallSignalingDeps for CallsAdapter {
         &self,
         _call_id: &str,
         peer_pubkey_hex: &str,
-        _call_key: [u8; 32],
         _kind: CallKind,
     ) -> Result<(), CallError> {
-        // The crate handler updates the registry with the derived
-        // `call_key` BEFORE invoking this method, so the AEAD context
-        // is already in `state.active_calls`. `start_session` will
-        // pick it up via the existing lookup in `init_engine`.
+        // The crate handler stores the call's media secret in the
+        // registry BEFORE invoking this method; the voice session reads
+        // it (with the call's sender state) through `MediaKeySource`.
         // 1:1 calls pass `peer_pubkey_hex` as the channel-id argument
         // (the function dual-purposes that parameter — `community_id`
         // is `None` for 1:1).
@@ -149,43 +147,53 @@ impl CallSignalingDeps for CallsAdapter {
         let pool = self.pool.clone();
         let now = rekindle_utils::timestamp_ms();
         let remaining = expires_at_ms.saturating_sub(now);
-        let handle = tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(remaining.max(1))).await;
-            let still_dialing = task_state
-                .active_calls
-                .get(&call_id)
-                .is_some_and(|c| matches!(c.status, rekindle_calls::CallStatus::Outgoing));
-            if !still_dialing {
-                return;
-            }
-            task_state.active_calls.remove(&call_id);
-            // Persist missed_calls row (relocated from deleted
-            // `services::calls::mod::persist_missed_call`).
-            if let Ok(owner_key) = state_helpers::current_owner_key(&task_state) {
-                let cid = call_id.clone();
-                let pk = peer_pubkey.clone();
-                let kind_u8 = i64::from(kind.as_u8());
-                let expired = i64::try_from(expires_at_ms).unwrap_or(i64::MAX);
-                crate::db_helpers::db_fire(
-                    &pool,
-                    "persist missed call (dialing timeout)",
-                    move |conn| {
-                        conn.execute(
-                            "INSERT OR IGNORE INTO missed_calls \
+        let ring = std::time::Duration::from_millis(remaining.max(1));
+        state_helpers::spawn_in_login_with_token(
+            &self.state,
+            "call ring timeout (outgoing)",
+            |stop| async move {
+                if stop
+                    .run_until_cancelled(tokio::time::sleep(ring))
+                    .await
+                    .is_none()
+                {
+                    return;
+                }
+                let still_dialing = task_state
+                    .active_calls
+                    .get(&call_id)
+                    .is_some_and(|c| matches!(c.status, rekindle_calls::CallStatus::Outgoing));
+                if !still_dialing {
+                    return;
+                }
+                task_state.active_calls.remove(&call_id);
+                // Persist missed_calls row (relocated from deleted
+                // `services::calls::mod::persist_missed_call`).
+                if let Ok(owner_key) = state_helpers::current_owner_key(&task_state) {
+                    let cid = call_id.clone();
+                    let pk = peer_pubkey.clone();
+                    let kind_u8 = i64::from(kind.as_u8());
+                    let expired = i64::try_from(expires_at_ms).unwrap_or(i64::MAX);
+                    crate::db_helpers::db_fire(
+                        &pool,
+                        "persist missed call (dialing timeout)",
+                        move |conn| {
+                            conn.execute(
+                                "INSERT OR IGNORE INTO missed_calls \
                              (call_id, owner_key, peer_key, kind, expired_at) \
                              VALUES (?1, ?2, ?3, ?4, ?5)",
-                            rusqlite::params![cid, owner_key, pk, kind_u8, expired],
-                        )?;
-                        Ok(())
-                    },
+                                rusqlite::params![cid, owner_key, pk, kind_u8, expired],
+                            )?;
+                            Ok(())
+                        },
+                    );
+                }
+                crate::event_dispatch::emit_call(
+                    &app,
+                    rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
                 );
-            }
-            crate::event_dispatch::emit_call(
-                &app,
-                rekindle_types::subscription_events::CallEvent::TimedOut { call_id },
-            );
-        });
-        self.state.background_handles.lock().push(handle);
+            },
+        );
     }
 
     fn spawn_incoming_call_timeout(
@@ -196,7 +204,7 @@ impl CallSignalingDeps for CallsAdapter {
         expires_at_ms: u64,
     ) {
         // W13.2 — receiver-side 30 s ring timeout. Clones AppState +
-        // AppHandle + DbPool into the spawned task (all Arc-backed +
+        // AppHandle + Db into the spawned task (all Arc-backed +
         // Send), then on fire: check the registry, drop if still
         // Incoming, persist a `missed_calls` row, emit CallMissed.
         // Mirrors the pre-Phase-14 `services::calls::ring_timer::
@@ -207,51 +215,59 @@ impl CallSignalingDeps for CallsAdapter {
         let now = rekindle_utils::timestamp_ms();
         let sleep_ms = expires_at_ms.saturating_sub(now);
 
-        let handle = tauri::async_runtime::spawn(async move {
-            if sleep_ms > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
-            }
-            let still_incoming = state
-                .active_calls
-                .get(&call_id)
-                .is_some_and(|c| matches!(c.status, rekindle_calls::CallStatus::Incoming));
-            if !still_incoming {
-                return;
-            }
-            state.active_calls.remove(&call_id);
+        let ring = std::time::Duration::from_millis(sleep_ms);
+        state_helpers::spawn_in_login_with_token(
+            &self.state,
+            "call ring timeout (incoming)",
+            |stop| async move {
+                if stop
+                    .run_until_cancelled(tokio::time::sleep(ring))
+                    .await
+                    .is_none()
+                {
+                    return;
+                }
+                let still_incoming = state
+                    .active_calls
+                    .get(&call_id)
+                    .is_some_and(|c| matches!(c.status, rekindle_calls::CallStatus::Incoming));
+                if !still_incoming {
+                    return;
+                }
+                state.active_calls.remove(&call_id);
 
-            // Persist missed_calls row (best-effort).
-            if let Ok(owner_key) = state_helpers::current_owner_key(&state) {
-                let cid = call_id.clone();
-                let pk = peer_pubkey.clone();
-                let kind_u8 = i64::from(kind.as_u8());
-                let expired = i64::try_from(expires_at_ms).unwrap_or(i64::MAX);
-                crate::db_helpers::db_fire(
-                    &pool,
-                    "persist missed call (incoming timeout)",
-                    move |conn| {
-                        conn.execute(
-                            "INSERT OR IGNORE INTO missed_calls \
+                // Persist missed_calls row (best-effort).
+                if let Ok(owner_key) = state_helpers::current_owner_key(&state) {
+                    let cid = call_id.clone();
+                    let pk = peer_pubkey.clone();
+                    let kind_u8 = i64::from(kind.as_u8());
+                    let expired = i64::try_from(expires_at_ms).unwrap_or(i64::MAX);
+                    crate::db_helpers::db_fire(
+                        &pool,
+                        "persist missed call (incoming timeout)",
+                        move |conn| {
+                            conn.execute(
+                                "INSERT OR IGNORE INTO missed_calls \
                              (call_id, owner_key, peer_key, kind, expired_at) \
                              VALUES (?1, ?2, ?3, ?4, ?5)",
-                            rusqlite::params![cid, owner_key, pk, kind_u8, expired],
-                        )?;
-                        Ok(())
+                                rusqlite::params![cid, owner_key, pk, kind_u8, expired],
+                            )?;
+                            Ok(())
+                        },
+                    );
+                }
+
+                crate::event_dispatch::emit_call(
+                    &app,
+                    rekindle_types::subscription_events::CallEvent::Missed {
+                        call_id: call_id.clone(),
+                        from: peer_pubkey.clone(),
                     },
                 );
-            }
-
-            crate::event_dispatch::emit_call(
-                &app,
-                rekindle_types::subscription_events::CallEvent::Missed {
-                    call_id: call_id.clone(),
-                    from: peer_pubkey.clone(),
-                },
-            );
-            tracing::info!(call = %call_id, peer = %peer_pubkey,
+                tracing::info!(call = %call_id, peer = %peer_pubkey,
                 "CallMissed — 30s ring with no user accept");
-        });
-        self.state.background_handles.lock().push(handle);
+            },
+        );
     }
 
     fn persist_missed_call(
@@ -279,7 +295,13 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn surface_window_for_call(&self, _call_id: &str) {
-        crate::windows::surface_window_for_call(&self.app_handle);
+        crate::windows::surface_buddy_list(&self.app_handle);
+    }
+
+    fn present_active_call(&self, call_id: &str) {
+        if let Err(e) = crate::windows::open_call_window(&self.app_handle, call_id) {
+            tracing::warn!(error = %e, "could not open the call window");
+        }
     }
 
     fn emit_event(&self, event: CallSignalEvent) {
@@ -497,9 +519,5 @@ impl CallSignalingDeps for CallsAdapter {
                 );
             }
         }
-    }
-
-    fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
-        state_helpers::register_background_handle(&self.state, handle);
     }
 }

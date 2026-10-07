@@ -5,16 +5,16 @@
 //! per-message error logging the original had.
 
 use crate::commands::community::helpers::require_permission;
-use crate::db::DbPool;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 use rekindle_types::permissions;
 
 use super::community_moderation_runtime::{admin_delete_one_message, BULK_DELETE_CAP};
 
 pub async fn bulk_delete_channel_messages_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     channel_id: String,
     message_ids: Vec<String>,

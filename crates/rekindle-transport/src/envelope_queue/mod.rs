@@ -355,6 +355,15 @@ impl EnvelopeQueue {
             }
         };
 
+        let recipient = match crate::crypto::envelope::recipient_bytes(&row.recipient_key) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(id = row.id, error = %e, "envelope recipient is not an identity key; dead-lettering");
+                let _ = self.inner.store.mark_dead(row.id).await;
+                return;
+            }
+        };
+
         // Send via Sender::send_dm. The sender handles framing and signing.
         // W16.3 — pass through seq + correlation_id from the persisted row
         // so the signature covers them and the receiver can dedup.
@@ -364,6 +373,7 @@ impl EnvelopeQueue {
             .sender()
             .send_dm(
                 &target,
+                &recipient,
                 type_id.class(),
                 type_id,
                 &self.inner.sender_secret,
@@ -382,8 +392,9 @@ impl EnvelopeQueue {
 
     /// W16.5b — synchronous RPC dispatch outside the persistence/retry
     /// queue. Used by [`crate::operations::calls::CallRuntime`] for the
-    /// CallInvite handshake (Veilid `app_call`, 5-10 s budget; receiver
-    /// replies synchronously inside `app_call_reply`).
+    /// CallInvite handshake (Veilid `app_call`, bounded by Veilid's own
+    /// reply timeout; receiver replies synchronously inside
+    /// `app_call_reply`).
     ///
     /// Unlike [`Self::send`], this method:
     /// - does NOT persist the request (no row in `pending_envelopes`),
@@ -398,19 +409,19 @@ impl EnvelopeQueue {
         recipient: &str,
         type_id: TypeId,
         payload: &[u8],
-        timeout: Duration,
     ) -> std::result::Result<Vec<u8>, TransportError> {
+        let recipient_key = crate::crypto::envelope::recipient_bytes(recipient)?;
         let target = self.import_route_for(recipient)?;
         self.inner
             .transport
             .caller()
-            .call_with_timeout(
+            .call(
                 &target,
+                &recipient_key,
                 type_id,
                 &self.inner.sender_secret,
                 &self.inner.sender_public_hex,
                 payload,
-                timeout,
             )
             .await
     }

@@ -57,15 +57,12 @@ pub async fn send_dm_message<D: DmDeps + ?Sized>(
     let slot_public = slot_signing.verifying_key().to_bytes();
     let slot_secret = slot_signing.to_bytes();
 
-    deps.dht_open_record(record_key, Some((slot_secret, slot_public)))
-        .await?;
-    deps.dht_write_subkey(
-        record_key,
-        my_subkey,
-        payload_bytes,
-        (slot_secret, slot_public),
-    )
-    .await?;
+    let lease = deps.dht_acquire_record(record_key, None).await?;
+    let written = deps
+        .dht_write_subkey(lease, my_subkey, payload_bytes, (slot_secret, slot_public))
+        .await;
+    deps.dht_release_record(lease).await;
+    written?;
 
     deps.store()
         .persist_message(

@@ -17,8 +17,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use rekindle_gossip::rate_limit::TokenBucket;
-use rekindle_governance::permissions::{compute_permissions, has_capability};
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_governance::permissions::has_capability;
+use rekindle_types::id::ChannelId;
 use rekindle_types::permissions::BYPASS_SLOWMODE;
 
 use crate::state::AppState;
@@ -84,7 +84,7 @@ pub fn check_slowmode(
             .find(|ch| ch.id == channel_id_hex)
             .and_then(|ch| ch.slowmode_seconds)
             .unwrap_or(0);
-        let bypass = sender_has_bypass(community, channel_id_hex, sender, now_secs);
+        let bypass = sender_has_bypass(community, channel_id_hex, sender);
         (slowmode, bypass)
     };
 
@@ -114,28 +114,12 @@ fn sender_has_bypass(
     community: &crate::state::CommunityState,
     channel_id_hex: &str,
     sender: &str,
-    now_secs: u64,
 ) -> bool {
-    let Some(governance_state) = community.governance_state.as_ref() else {
-        return false;
-    };
-    let Some(sender_pseudo) = decode_pseudonym(sender) else {
-        return false;
-    };
     let channel_id_opt = decode_channel_id(channel_id_hex);
-    let perms = compute_permissions(
-        &sender_pseudo,
-        channel_id_opt.as_ref(),
-        governance_state,
-        now_secs,
-    );
+    let perms =
+        crate::state_helpers::permissions_for_pseudonym(community, sender, channel_id_opt.as_ref())
+            .unwrap_or(0);
     has_capability(perms, BYPASS_SLOWMODE)
-}
-
-fn decode_pseudonym(hex_str: &str) -> Option<PseudonymKey> {
-    let bytes = hex::decode(hex_str).ok()?;
-    let array: [u8; 32] = bytes.try_into().ok()?;
-    Some(PseudonymKey(array))
 }
 
 fn decode_channel_id(hex_str: &str) -> Option<ChannelId> {

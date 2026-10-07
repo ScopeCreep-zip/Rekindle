@@ -80,7 +80,7 @@ inventory is [`crates.md`](crates.md); per-crate detail is
 | 6 | `rekindle-governance`, `rekindle-governance-runtime` | Pure CRDT merge (no I/O, no async); async lifecycle layer for community origin / bootstrap / join / segments. |
 | 7 | `rekindle-channel`, `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features built on lower tiers. |
 | — | `rekindle-protocol`, `rekindle-transport`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Cross-cutting integration. `protocol` is the **desktop** Veilid boundary; `transport` is the **daemon** Veilid boundary. |
-| — | `rekindle-node`, `rekindle-cli` | Daemon process + CLI/TUI client. Communicate over Noise-IK IPC bus. |
+| — | `rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui` | Daemon process + the frontends' shared client, the CLI (`rekindle`) and the TUI (`rekindle-tui`). Communicate over the Noise-IK IPC bus. |
 
 Eleven of these crates are recent harvest extractions; see
 [`decisions/0009-crate-harvest-tiers.md`](../decisions/0009-crate-harvest-tiers.md).
@@ -165,22 +165,18 @@ src-tauri/
 │   │                                 dht_records, friends, governance,
 │   │                                 governance_persist, identity, node,
 │   │                                 routes)
-│   ├── db.rs                         SQLite pool, SCHEMA_VERSION = 71
+│   ├── db.rs                         Lenient row helpers (DB: AppState.db)
 │   ├── db_helpers.rs                 db_call / db_call_or_default / db_fire
 │   ├── event_dispatch.rs             Phase 23.A — single-source emit router
-│   ├── keystore/                     VaultStore-backed (no iota_stronghold)
-│   │   ├── signal.rs                 Signal identity / sessions / prekeys / PQ
-│   │   ├── community_keys.rs         Community MEK, slot / registry keypairs
-│   │   ├── channel_mek.rs            Per-channel + per-generation MEK
-│   │   └── audit.rs                  Audit MAC key + tail anchor
-│   ├── audit_repo/                   Audit chain persistence (chain, store)
+│   ├── keystore/                     The per-identity VaultStore handle;
+│   │                                 typed helpers are rekindle_vault::typed
+│   ├── audit_repo/                   Audit chain append / verify / restore
 │   ├── audit_view.rs                 Audit log query / export
 │   ├── channel_materialize.rs        Channel state materialisation
 │   ├── channel_repo.rs               Community channel CRUD
 │   ├── community_loader/             Community state restore on startup
 │   ├── envelope_store_sqlite.rs      Durable pending-envelope queue
-│   ├── friend_store_sqlite.rs        Receive-path friend authority
-│   ├── friend_repo.rs                Friend list CRUD
+│   ├── friend_repo.rs                Fire-and-forget friend-row writes
 │   ├── message_repo.rs               Message persistence
 │   ├── message_view.rs               Message read views
 │   ├── signal_stores.rs              Signal store DB-level access
@@ -201,11 +197,11 @@ src-tauri/
 │   └── services/                     Background services (~229 .rs files,
 │                                     runtime / adapter / pure-logic
 │                                     layering — see services-pattern.md)
-├── migrations/
-│   └── 001_init.sql                  SQLite schema (single source of truth)
 └── Cargo.toml
 
-crates/                               (33 workspace members — see crates.md)
+crates/                               (workspace members — see crates.md;
+                                      the SQLite schema is
+                                      rekindle-db/schema/001_init.sql)
 
 schemas/                              Cap'n Proto schema definitions
 ├── account.capnp                     AccountHeader, ContactEntry, ChatEntry

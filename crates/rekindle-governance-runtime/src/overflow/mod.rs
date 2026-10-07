@@ -37,6 +37,7 @@
 
 use std::collections::HashSet;
 
+use rekindle_records::lease::LeaseId;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
@@ -81,56 +82,83 @@ pub const MAX_OVERFLOW_PAGES: usize = 64;
 /// 60-method composite trait: a test mock implements four methods, not sixty.
 #[async_trait::async_trait]
 pub trait OverflowIo: Send + Sync {
-    async fn get_dht_value(
+    /// Borrow a record from the host's pool (see
+    /// [`GovernanceRuntimeDeps::acquire_record`]).
+    async fn acquire_record(
         &self,
         record_key: &str,
+        writer: Option<String>,
+    ) -> Result<LeaseId, GovernanceRuntimeError>;
+    async fn release_record(&self, lease: LeaseId);
+    async fn get_dht_value(
+        &self,
+        lease: LeaseId,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
     async fn set_dht_value(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
-    async fn open_dht_record(
-        &self,
-        record_key: &str,
-        writer: Option<String>,
-    ) -> Result<(), GovernanceRuntimeError>;
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String;
+    /// Whether the owning session is ending: the reader stops before its
+    /// next call.
+    fn stop_requested(&self) -> bool;
 }
 
 #[async_trait::async_trait]
 impl<D: GovernanceRuntimeDeps> OverflowIo for D {
-    async fn get_dht_value(
+    async fn acquire_record(
         &self,
         record_key: &str,
+        writer: Option<String>,
+    ) -> Result<LeaseId, GovernanceRuntimeError> {
+        GovernanceRuntimeDeps::acquire_record(self, record_key, writer).await
+    }
+    async fn release_record(&self, lease: LeaseId) {
+        GovernanceRuntimeDeps::release_record(self, lease).await;
+    }
+    async fn get_dht_value(
+        &self,
+        lease: LeaseId,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::get_dht_value(self, record_key, subkey, force_refresh).await
+        GovernanceRuntimeDeps::get_dht_value(self, lease, subkey, force_refresh).await
     }
     async fn set_dht_value(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::set_dht_value(self, record_key, subkey, value, writer).await
-    }
-    async fn open_dht_record(
-        &self,
-        record_key: &str,
-        writer: Option<String>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::open_dht_record(self, record_key, writer).await
+        GovernanceRuntimeDeps::set_dht_value(self, lease, subkey, value, writer).await
     }
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         GovernanceRuntimeDeps::format_writer_keypair(self, ed_public, ed_secret)
     }
+    fn stop_requested(&self) -> bool {
+        crate::join_gate::should_stop(self)
+    }
+}
+
+/// Read one subkey of `record_key` on a borrow of its own: acquire, get,
+/// release. While the community holds the record for its session the
+/// acquire is a table hit.
+pub(crate) async fn read_subkey<D: OverflowIo + ?Sized>(
+    deps: &D,
+    record_key: &str,
+    subkey: u32,
+    force_refresh: bool,
+) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
+    let lease = deps.acquire_record(record_key, None).await?;
+    let value = deps.get_dht_value(lease, subkey, force_refresh).await;
+    deps.release_record(lease).await;
+    value
 }
 
 /// Greedily pack a compacted entry log into pages that each serialize within
@@ -253,8 +281,7 @@ pub async fn read_my_chain<D: OverflowIo>(
     let mut entries = Vec::new();
     let mut overflow_keys = Vec::new();
 
-    let primary_bytes = deps
-        .get_dht_value(gov_key, my_slot, false)
+    let primary_bytes = read_subkey(deps, gov_key, my_slot, false)
         .await?
         .filter(|b| !b.is_empty());
     let Some(primary_bytes) = primary_bytes else {
@@ -279,11 +306,11 @@ pub async fn read_my_chain<D: OverflowIo>(
         if overflow_keys.len() >= MAX_OVERFLOW_PAGES || !visited.insert(key.clone()) {
             break;
         }
-        // Read-only open (no writer); tolerate open failure as an empty page.
-        let _ = deps.open_dht_record(&key, None).await;
-        let page_bytes = deps
-            .get_dht_value(&key, OVERFLOW_SUBKEY, false)
-            .await?
+        // A page that cannot be borrowed reads as empty.
+        let page_bytes = read_subkey(deps, &key, OVERFLOW_SUBKEY, false)
+            .await
+            .ok()
+            .flatten()
             .filter(|b| !b.is_empty());
         overflow_keys.push(key);
         let Some(page) = page_bytes
@@ -321,18 +348,12 @@ pub async fn write_overflow_page<D: OverflowIo>(
             cap: DFLT_SUBKEY_MAX_BYTES,
         });
     }
-    deps.open_dht_record(record_key, Some(writer.clone()))
+    let lease = deps
+        .acquire_record(record_key, Some(writer.clone()))
         .await?;
-    let outcome = deps
-        .set_dht_value(record_key, OVERFLOW_SUBKEY, bytes.clone(), Some(writer))
-        .await?;
-    if let Some(stale) = outcome {
-        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
-    }
-    let verify = deps
-        .get_dht_value(record_key, OVERFLOW_SUBKEY, true)
-        .await?
-        .ok_or(GovernanceRuntimeError::VerifyEmpty)?;
+    let written = write_and_read_back(deps, lease, &bytes, writer).await;
+    deps.release_record(lease).await;
+    let verify = written?;
     if verify != bytes {
         return Err(GovernanceRuntimeError::VerifyMismatch {
             read: verify.len(),
@@ -340,6 +361,24 @@ pub async fn write_overflow_page<D: OverflowIo>(
         });
     }
     Ok(())
+}
+
+/// Set the overflow subkey and read it back from the network.
+async fn write_and_read_back<D: OverflowIo>(
+    deps: &D,
+    lease: LeaseId,
+    bytes: &[u8],
+    writer: String,
+) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    if let Some(stale) = deps
+        .set_dht_value(lease, OVERFLOW_SUBKEY, bytes.to_vec(), Some(writer))
+        .await?
+    {
+        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
+    }
+    deps.get_dht_value(lease, OVERFLOW_SUBKEY, true)
+        .await?
+        .ok_or(GovernanceRuntimeError::VerifyEmpty)
 }
 
 /// Format the derived overflow-record owner keypair for `page_index` into the
@@ -385,7 +424,10 @@ pub async fn read_governance_with_overflow<D: OverflowIo>(
     let mut visited: HashSet<String> = HashSet::new();
 
     for &subkey in occupied {
-        let Ok(Some(bytes)) = deps.get_dht_value(gov_key, subkey, false).await else {
+        if deps.stop_requested() {
+            break;
+        }
+        let Ok(Some(bytes)) = read_subkey(deps, gov_key, subkey, false).await else {
             continue;
         };
         if bytes.is_empty() {
@@ -400,7 +442,8 @@ pub async fn read_governance_with_overflow<D: OverflowIo>(
         let mut next = payload.overflow_next;
         let mut depth = 0usize;
         while let Some(key) = next.take() {
-            if depth >= MAX_OVERFLOW_PAGES || !visited.insert(key.clone()) {
+            if deps.stop_requested() || depth >= MAX_OVERFLOW_PAGES || !visited.insert(key.clone())
+            {
                 break;
             }
             depth += 1;
@@ -409,9 +452,7 @@ pub async fn read_governance_with_overflow<D: OverflowIo>(
             // a momentarily-unreachable page must stay in the inventory for a
             // later warm cycle to re-fetch.
             overflow_keys.push(key.clone());
-            let _ = deps.open_dht_record(&key, None).await;
-            let Ok(Some(page_bytes)) = deps.get_dht_value(&key, OVERFLOW_SUBKEY, false).await
-            else {
+            let Ok(Some(page_bytes)) = read_subkey(deps, &key, OVERFLOW_SUBKEY, false).await else {
                 tracing::warn!(
                     overflow_key = %key,
                     "overflow page unreachable — governance may be truncated until a holder warms it",

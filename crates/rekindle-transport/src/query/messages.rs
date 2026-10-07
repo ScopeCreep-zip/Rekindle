@@ -16,8 +16,10 @@ impl QueryEngine {
     /// SMPL segment-record architecture: one record per `(channel,
     /// segment)`, every member writing to their own slot subkey.
     /// `record_keys` is `(segment_index, record_key)` as merged
-    /// governance reports it, and `display_names` maps a pseudonym to
-    /// the name the presence roster observed for it.
+    /// governance reports it, `writers` is `(segment_index, slot)` per
+    /// known member (the roster plus ourselves: only those slots are read,
+    /// plan C7.12), and `display_names` maps a pseudonym to the name the
+    /// presence roster observed for it.
     ///
     /// This used to read the registry's member-index subkey to learn
     /// each member's `DhtLog` spine key. That subkey is a community-wide
@@ -28,21 +30,39 @@ impl QueryEngine {
         community_id: &str,
         channel_id: &str,
         record_keys: &[(u32, String)],
+        writers: &[(u32, u32)],
         display_names: &HashMap<String, String>,
         limit: usize,
+        keys: &dyn rekindle_types::channel_keys::ChannelKeyProvider,
     ) -> Result<Vec<DecryptedMessageDisplay>> {
-        let member_count = crate::payload::dht_types::SLOTS_PER_SEGMENT;
-        let mut raw_messages: Vec<ChannelMessage> = Vec::new();
+        // Channel text is under the channel's text scope (plan D6).
+        let scope = rekindle_types::id::ChannelId::from_hex(channel_id)
+            .map(|channel| keys.scope_for_text(community_id, channel))
+            .ok_or_else(|| {
+                crate::error::TransportError::Internal(format!("not a channel id: {channel_id}"))
+            })?;
+        // (record key, subkey, message): the body's AAD position.
+        let mut raw_messages: Vec<(String, u32, ChannelMessage)> = Vec::new();
 
         for (segment_index, record_key) in record_keys {
-            match crate::broadcast::dht::channel_smpl::read_messages(
-                self.dht.routing_context(),
+            // The segment's writers, from the roster (plan C7.12).
+            let slots: Vec<u32> = writers
+                .iter()
+                .filter(|(segment, _)| segment == segment_index)
+                .map(|(_, slot)| *slot)
+                .collect();
+            match crate::broadcast::dht::channel_smpl::read_message_items(
+                &self.records,
                 record_key,
-                member_count,
+                &slots,
             )
             .await
             {
-                Ok(messages) => raw_messages.extend(messages),
+                Ok(items) => raw_messages.extend(
+                    items
+                        .into_iter()
+                        .map(|(subkey, message)| (record_key.clone(), subkey, message)),
+                ),
                 Err(error) => {
                     // One unreadable segment must not blank the whole
                     // channel — the other segments still hold messages.
@@ -64,18 +84,22 @@ impl QueryEngine {
             "channel_history: scanned channel segment records"
         );
 
-        // Decrypt — lock scoped to this block, no awaits
         let mut messages = Vec::with_capacity(raw_messages.len());
         {
-            let mek_cache = self.mek_cache.read();
-            for channel_msg in &raw_messages {
+            for (record_key, subkey_index, channel_msg) in &raw_messages {
                 let message_id = channel_msg
                     .message_id
                     .clone()
                     .unwrap_or_else(|| format!("seq:{}", channel_msg.sequence));
 
-                let (body, is_encrypted, needs_mek) =
-                    decrypt_channel_body(&mek_cache, community_id, channel_id, channel_msg);
+                let (body, is_encrypted, needs_mek) = decrypt_channel_body(
+                    keys,
+                    community_id,
+                    scope,
+                    record_key,
+                    *subkey_index,
+                    channel_msg,
+                );
 
                 messages.push(DecryptedMessageDisplay {
                     message_id,

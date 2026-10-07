@@ -3,7 +3,7 @@
 //! Pre-port these bodies lived in `src-tauri/services/community/gossip.rs`
 //! and read `state.communities` / `state.identity_secret` / etc. directly.
 //! Here they parameterise over `GossipDeps` so the entire pipeline (sign
-//! + dedup + lamport bump + peer-select + supervised per-peer fan-out
+//! + dedup + peer-select + supervised per-peer fan-out
 //! with route re-resolution) is testable against a mock and free of
 //! `veilid-core` / `tauri` / `rusqlite`.
 
@@ -66,13 +66,13 @@ fn sign_and_record<D: GossipDeps>(
 
     let dedup_key = extract_mesh_dedup_key(envelope);
     deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &dedup_key);
-    deps.increment_lamport(community_id);
 
     Ok(signed)
 }
 
-/// Encode + sign the envelope, insert the dedup key, bump the
-/// community lamport counter, then fan out via `send_to_mesh_raw`.
+/// Encode + sign the envelope, insert the dedup key, then fan out via
+/// `send_to_mesh_raw`. The envelope's Lamport timestamp was taken from
+/// the community clock when it was built — that is the send's one tick.
 pub async fn send_to_mesh<D: GossipDeps>(
     deps: Arc<D>,
     community_id: &str,
@@ -113,18 +113,21 @@ pub async fn send_to_channel_peers<D: GossipDeps>(
 
     let signed_bytes = encode_signed_envelope(&signed);
     let cid_owner = community_id.to_string();
-    tokio::spawn(async move {
-        let mut set = tokio::task::JoinSet::new();
-        for peer in peers {
-            let deps_clone = Arc::clone(&deps);
-            let cid = cid_owner.clone();
-            let data = signed_bytes.clone();
-            set.spawn(async move {
-                send_to_one_peer(deps_clone, cid, peer, data, None).await;
-            });
-        }
-        while set.join_next().await.is_some() {}
-    });
+    // Dropping the supervisor (session end) drops the JoinSet, which
+    // aborts every per-peer send.
+    deps.scope()
+        .spawn_or_drop("channel peer fan-out", async move {
+            let mut set = tokio::task::JoinSet::new();
+            for peer in peers {
+                let deps_clone = Arc::clone(&deps);
+                let cid = cid_owner.clone();
+                let data = signed_bytes.clone();
+                set.spawn(async move {
+                    send_to_one_peer(deps_clone, cid, peer, data, None).await;
+                });
+            }
+            while set.join_next().await.is_some() {}
+        });
     Ok(())
 }
 
@@ -176,7 +179,7 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
         });
 
     let cid_owner = community_id.to_string();
-    tokio::spawn(async move {
+    deps.scope().spawn_or_drop("mesh fan-out", async move {
         let mut set = tokio::task::JoinSet::new();
         for peer in selected {
             let deps_clone = Arc::clone(&deps);
@@ -318,7 +321,6 @@ mod tests {
         route_updates: Vec<(String, String, String, Vec<u8>)>,
         pending_queue: Vec<SignedEnvelope>,
         dedup_inserts: HashSet<(String, String, String)>,
-        lamport_bumps: Vec<String>,
     }
 
     struct MockDeps {
@@ -326,6 +328,7 @@ mod tests {
         identity: Option<[u8; 32]>,
         my_pseudonym: String,
         resolve_gate: crate::resolve_gate::ResolveGate,
+        scope: Arc<rekindle_lifecycle::SessionScope>,
     }
 
     impl MockDeps {
@@ -335,6 +338,7 @@ mod tests {
                 identity: Some([7u8; 32]),
                 my_pseudonym: "me".to_string(),
                 resolve_gate: crate::resolve_gate::ResolveGate::new(),
+                scope: rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {})),
             }
         }
     }
@@ -347,17 +351,14 @@ mod tests {
         fn identity_secret(&self) -> Option<[u8; 32]> {
             self.identity
         }
+        fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
+            Arc::clone(&self.scope)
+        }
         fn check_and_insert_dedup(&self, c: &str, s: &str, k: &str) {
             self.state
                 .lock()
                 .dedup_inserts
                 .insert((c.to_string(), s.to_string(), k.to_string()));
-        }
-        fn increment_lamport(&self, community_id: &str) {
-            self.state
-                .lock()
-                .lamport_bumps
-                .push(community_id.to_string());
         }
         fn current_peers(&self, _c: &str) -> Option<Vec<PeerInfo>> {
             self.state.lock().peers.clone()
@@ -564,7 +565,6 @@ mod tests {
             assert_eq!(signed.community_id, "c1");
         }
         assert!(st.pending_queue.is_empty());
-        assert_eq!(st.lamport_bumps, vec!["c1".to_string()]);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

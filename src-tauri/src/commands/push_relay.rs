@@ -7,7 +7,6 @@
 
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::push_relay;
 use crate::state::SharedState;
 
@@ -18,11 +17,11 @@ pub async fn register_with_push_relay(
     platform: String,
     record_keys: Vec<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     push_relay::register_with_push_relay(
         state.inner(),
-        pool.inner(),
+        &pool,
         &relay_pseudonym,
         &device_push_token,
         &platform,
@@ -35,15 +34,15 @@ pub async fn register_with_push_relay(
 pub async fn unregister_with_push_relay(
     relay_pseudonym: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    push_relay::unregister_with_push_relay(state.inner(), pool.inner(), &relay_pseudonym).await
+    let pool = state.db.current()?;
+    push_relay::unregister_with_push_relay(state.inner(), &pool, &relay_pseudonym).await
 }
 
 #[tauri::command]
 pub async fn list_push_relay_registrations(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<(String, String, String)>, String> {
-    Ok(push_relay::list_registrations(state.inner(), pool.inner()).await)
+    let pool = state.db.current()?;
+    Ok(push_relay::list_registrations(state.inner(), &pool).await)
 }

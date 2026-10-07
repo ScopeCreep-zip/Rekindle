@@ -2,10 +2,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::db::DbPool;
+use rekindle_lifecycle::{ScopeClosed, SessionScope};
+
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 const REMINDER_LEAD_SECONDS: u64 = 10 * 60;
 const IDLE_RECHECK_SECONDS: u64 = 5 * 60;
@@ -19,14 +21,19 @@ struct PendingReminder {
     fire_at: u64,
 }
 
+/// Run the local event-reminder scheduler on the login scope.
+///
+/// # Errors
+/// [`ScopeClosed`] when the session already ended.
 pub fn start_event_reminders(
     state: Arc<AppState>,
-    pool: DbPool,
-) -> tauri::async_runtime::JoinHandle<()> {
+    pool: Db,
+    scope: &Arc<SessionScope>,
+) -> Result<(), ScopeClosed> {
     let (wake_tx, mut wake_rx) = tokio::sync::watch::channel(0u64);
     *state.event_reminder_wake_tx.write() = Some(wake_tx);
 
-    tauri::async_runtime::spawn(async move {
+    scope.spawn_with_token("event reminders", |stop| async move {
         let mut fired = HashSet::new();
 
         loop {
@@ -34,6 +41,7 @@ pub fn start_event_reminders(
                 let sleep = tokio::time::sleep(Duration::from_secs(IDLE_RECHECK_SECONDS));
                 tokio::pin!(sleep);
                 tokio::select! {
+                    () = stop.cancelled() => break,
                     () = &mut sleep => {}
                     changed = wake_rx.changed() => {
                         if changed.is_err() {
@@ -59,6 +67,7 @@ pub fn start_event_reminders(
             let sleep = tokio::time::sleep(Duration::from_secs(wait_secs));
             tokio::pin!(sleep);
             tokio::select! {
+                () = stop.cancelled() => break,
                 () = &mut sleep => {
                     if should_emit_reminder(&state, &pool, &reminder).await {
                         emit_reminder(&state, &reminder);
@@ -83,7 +92,7 @@ pub fn wake_event_reminders(state: &Arc<AppState>) {
 
 async fn next_pending_reminder(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     fired: &HashSet<String>,
 ) -> Option<PendingReminder> {
     let owner_key = state_helpers::current_owner_key(state).ok()?;
@@ -121,7 +130,7 @@ async fn next_pending_reminder(
 
 async fn should_emit_reminder(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     reminder: &PendingReminder,
 ) -> bool {
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {

@@ -1,10 +1,9 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::keystore::KeystoreHandle;
 use crate::services;
 pub use crate::services::auth_cores::LoginResult;
-pub use crate::services::auth_runtime::IdentitySummary;
+pub use crate::services::auth_runtime::{list_identities_inner, IdentitySummary};
 use crate::state::SharedState;
 
 /// Core identity creation logic, separated from `AppHandle` for testability.
@@ -27,15 +26,15 @@ pub async fn create_identity(
     display_name: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<LoginResult, String> {
+    let pool = state.db.current()?;
     services::auth_runtime::create_identity_inner(
         passphrase,
         display_name,
         app,
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         keystore_handle.inner().clone(),
     )
     .await
@@ -52,15 +51,15 @@ pub async fn login(
     passphrase: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<LoginResult, String> {
+    let pool = state.db.current()?;
     services::auth_runtime::login_inner(
         public_key,
         passphrase,
         app,
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         keystore_handle.inner().clone(),
     )
     .await
@@ -99,8 +98,11 @@ pub async fn logout(
 /// Returns summaries of every identity in `SQLite`, ordered by creation date.
 /// No authentication needed — this is called by the login window on mount.
 #[tauri::command]
-pub async fn list_identities(pool: State<'_, DbPool>) -> Result<Vec<IdentitySummary>, String> {
-    services::auth_runtime::list_identities_inner(pool.inner()).await
+pub async fn list_identities(
+    state: State<'_, SharedState>,
+) -> Result<Vec<IdentitySummary>, String> {
+    let pool = state.db.current()?;
+    services::auth_runtime::list_identities_inner(&pool).await
 }
 
 /// Delete a specific identity after verifying the passphrase.
@@ -116,15 +118,15 @@ pub async fn delete_identity(
     passphrase: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     services::auth_runtime::delete_identity_inner(
         public_key,
         passphrase,
         app,
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         keystore_handle.inner().clone(),
     )
     .await
@@ -153,9 +155,9 @@ pub async fn pqxdh_bundle_info(
 pub async fn audit_verify(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<crate::audit_repo::AuditVerifyResult, String> {
-    services::auth_runtime::audit_verify_inner(app, state.inner(), pool.inner()).await
+    let pool = state.db.current()?;
+    services::auth_runtime::audit_verify_inner(app, state.inner(), &pool).await
 }
 
 /// Phase 4 — export audit entries with `cursor > since`. Used by dev tooling
@@ -163,10 +165,10 @@ pub async fn audit_verify(
 #[tauri::command]
 pub async fn audit_export(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     since: u64,
 ) -> Result<Vec<rekindle_audit::AuditEntry>, String> {
-    services::auth_runtime::audit_export_inner(state.inner(), pool.inner(), since).await
+    let pool = state.db.current()?;
+    services::auth_runtime::audit_export_inner(state.inner(), &pool, since).await
 }
 
 /// Phase 5 — read the current lifecycle state.
@@ -191,22 +193,32 @@ pub async fn friendship_scan_now(state: State<'_, SharedState>) -> Result<(), St
     Ok(())
 }
 
+/// Upper bound for `dev_disable_watch`: long enough for the manual
+/// poll-backstop test, short enough that a stray call can't leave the
+/// watch tier off for a whole session.
+#[cfg(debug_assertions)]
+const DEV_DISABLE_WATCH_MAX_MS: u64 = 10 * 60 * 1000;
+
 /// Phase 7 — disable the watch tier for `duration_ms`. Direct triggers
 /// and the 30-second poll backstop continue to operate; only the
 /// Veilid-DHT-ValueChanged → watch_tx path is suppressed. Used by the
 /// plan's manual test: "On B, disable the watch for 60s; send a friend
 /// request; expect arrival within ~30s via poll tier."
 ///
-/// Available in release builds because the watch tier is a production
-/// feature and operators may want to manually verify the poll
-/// backstop. No security impact: local-only Tauri IPC, no secrets, no
-/// privilege bypass — at worst delays friend-request delivery for the
-/// supplied duration on this device only.
+/// Debug-only (compiled out of release together with its
+/// `capabilities-dev/dev.json` grant): it is a test hook, and a shipped
+/// command that silences delivery is an attack surface.
+#[cfg(debug_assertions)]
 #[tauri::command]
 pub async fn dev_disable_watch(
     state: State<'_, SharedState>,
     duration_ms: u64,
 ) -> Result<(), String> {
+    if duration_ms > DEV_DISABLE_WATCH_MAX_MS {
+        return Err(format!(
+            "duration_ms {duration_ms} exceeds the {DEV_DISABLE_WATCH_MAX_MS} ms cap"
+        ));
+    }
     state
         .inner()
         .friendship_handle

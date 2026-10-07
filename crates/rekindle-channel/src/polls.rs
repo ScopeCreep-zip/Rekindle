@@ -96,7 +96,7 @@ pub async fn persist_poll_create<D: ChannelMessagingDeps>(
         multi_select,
         expires_at: duration_seconds
             .map(|seconds| rekindle_utils::timestamp_secs().saturating_add(seconds)),
-        lamport: deps.increment_lamport(community_id),
+        lamport: deps.increment_lamport(community_id)?,
     };
     deps.write_channel_poll_create_smpl(&context, &entry)
         .await?;
@@ -117,11 +117,18 @@ pub async fn persist_poll_vote<D: ChannelMessagingDeps>(
     }
     let context = deps.channel_write_context(community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
-    validate_poll_vote(deps, &context.channel_key, poll_id, &selected_answers).await?;
+    validate_poll_vote(
+        deps,
+        community_id,
+        &context.channel_key,
+        poll_id,
+        &selected_answers,
+    )
+    .await?;
     let entry = ChannelPollVote {
         poll_id,
         selected_answers: dedupe_selected_answers(selected_answers),
-        lamport: deps.increment_lamport(community_id),
+        lamport: deps.increment_lamport(community_id)?,
     };
     deps.write_channel_poll_vote_smpl(&context, &entry).await
 }
@@ -136,11 +143,18 @@ pub async fn persist_poll_close<D: ChannelMessagingDeps>(
     let context = deps.channel_write_context(community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
     if !allow_moderator_override {
-        ensure_poll_author(deps, &context.channel_key, context.slot_index, poll_id).await?;
+        ensure_poll_author(
+            deps,
+            community_id,
+            &context.channel_key,
+            context.slot_index,
+            poll_id,
+        )
+        .await?;
     }
     let entry = ChannelPollClose {
         poll_id,
-        lamport: deps.increment_lamport(community_id),
+        lamport: deps.increment_lamport(community_id)?,
     };
     deps.write_channel_poll_close_smpl(&context, &entry).await
 }
@@ -153,7 +167,7 @@ pub async fn get_poll_results<D: ChannelMessagingDeps>(
 ) -> Result<Vec<u32>, ChannelError> {
     let context = deps.channel_write_context(community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
-    let snapshot = load_poll_snapshot(deps, &context.channel_key, poll_id).await?;
+    let snapshot = load_poll_snapshot(deps, community_id, &context.channel_key, poll_id).await?;
     let mut counts = vec![0_u32; snapshot.answer_count];
     for selected in snapshot.latest_votes.into_values() {
         for index in selected {
@@ -167,11 +181,12 @@ pub async fn get_poll_results<D: ChannelMessagingDeps>(
 
 async fn ensure_poll_author<D: ChannelMessagingDeps>(
     deps: &D,
+    community_id: &str,
     channel_key: &str,
     slot_index: u32,
     poll_id: [u8; 16],
 ) -> Result<(), ChannelError> {
-    let snapshot = load_poll_snapshot(deps, channel_key, poll_id).await?;
+    let snapshot = load_poll_snapshot(deps, community_id, channel_key, poll_id).await?;
     if snapshot.author_subkey == slot_index {
         Ok(())
     } else {
@@ -183,11 +198,12 @@ async fn ensure_poll_author<D: ChannelMessagingDeps>(
 
 async fn validate_poll_vote<D: ChannelMessagingDeps>(
     deps: &D,
+    community_id: &str,
     channel_key: &str,
     poll_id: [u8; 16],
     selected_answers: &[u8],
 ) -> Result<(), ChannelError> {
-    let snapshot = load_poll_snapshot(deps, channel_key, poll_id).await?;
+    let snapshot = load_poll_snapshot(deps, community_id, channel_key, poll_id).await?;
     if snapshot.closed {
         return Err(ChannelError::Adapter("poll is closed".to_string()));
     }
@@ -212,10 +228,13 @@ async fn validate_poll_vote<D: ChannelMessagingDeps>(
 
 async fn load_poll_snapshot<D: ChannelMessagingDeps>(
     deps: &D,
+    community_id: &str,
     channel_key: &str,
     poll_id: [u8; 16],
 ) -> Result<PollSnapshot, ChannelError> {
-    let entries = deps.read_all_channel_entries(channel_key, 255).await?;
+    let entries = deps
+        .read_all_channel_entries(community_id, channel_key)
+        .await?;
 
     let mut author_subkey = None;
     let mut best_create_order = None;

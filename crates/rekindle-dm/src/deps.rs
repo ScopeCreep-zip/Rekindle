@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_protocol::messaging::envelope::MessagePayload;
+use rekindle_records::lease::LeaseId;
 
 use crate::error::DmError;
 use crate::mek::DmMekChain;
@@ -119,40 +120,53 @@ pub trait DmDeps: Send + Sync + 'static {
     fn mek_cache(&self) -> Arc<dyn DmMekCache>;
 
     // --- DHT operations (Veilid is hidden behind these abstractions) ---
+    //
+    // Records are borrowed from the host's record pool (plan C7.5): every
+    // write and watch names a lease. A DM keeps the lease that carries its
+    // watch for the session (`dht_hold_session`); a send borrows and
+    // releases.
 
-    /// Create a fresh SMPL DHT record with the given member slot
-    /// pubkeys (one per subkey, in order). The adapter constructs the
-    /// veilid `DHTSchema::SMPL` and calls `RoutingContext::create_dht_record`.
-    /// Returns the new record key as its canonical string form.
+    /// Create a fresh SMPL DHT record with the given member slot pubkeys
+    /// (one per subkey, in order), held under its creator lease. Returns
+    /// the lease and the record key's canonical string form.
     async fn dht_create_smpl_record(
         &self,
         member_pubkeys: Vec<[u8; 32]>,
-    ) -> Result<String, DmError>;
+    ) -> Result<(LeaseId, String), DmError>;
 
-    /// Open an existing DHT record. If `writer_keypair` is `Some`, the
-    /// record is opened for writing using that slot keypair (Ed25519
-    /// secret + public bytes). If `None`, read-only.
-    async fn dht_open_record(
+    /// Borrow an existing DHT record, writable with `writer_keypair` (slot
+    /// Ed25519 secret + public bytes) when given.
+    async fn dht_acquire_record(
         &self,
         record_key: &str,
         writer_keypair: Option<([u8; 32], [u8; 32])>,
-    ) -> Result<(), DmError>;
+    ) -> Result<LeaseId, DmError>;
 
-    /// Write `value` to `subkey` of `record_key`, signed by the supplied
-    /// slot keypair. Requires the record to have been opened writable
-    /// via `dht_open_record` with the matching keypair.
+    /// End a borrow; the record closes when it was the last.
+    async fn dht_release_record(&self, lease: LeaseId);
+
+    /// Write `value` to `subkey` of the leased record, signed by the
+    /// supplied slot keypair.
     async fn dht_write_subkey(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
         writer_keypair: ([u8; 32], [u8; 32]),
     ) -> Result<(), DmError>;
 
-    /// Install a watch on the listed subkeys of `record_key`. The
-    /// adapter routes resulting `ValueChange` events back into the DM
-    /// dispatch path (`handle_dm_subkey_change`).
-    async fn dht_watch_subkeys(&self, record_key: &str, subkeys: Vec<u32>) -> Result<(), DmError>;
+    /// Watch the listed subkeys of the leased record. The adapter routes
+    /// resulting `ValueChange` events back into the DM dispatch path
+    /// (`handle_dm_subkey_change`).
+    async fn dht_watch_subkeys(&self, lease: LeaseId, subkeys: Vec<u32>) -> Result<(), DmError>;
+
+    /// Hand the DM's watch lease to the host, which keeps it for the
+    /// session (a lease on a record it already holds is released).
+    async fn dht_hold_session(&self, record_key: &str, lease: LeaseId);
+
+    /// Release the DM's held lease (the conversation ended: declined or
+    /// left). A no-op when none is held.
+    async fn dht_release_session(&self, record_key: &str);
 
     // --- Transport ---
 

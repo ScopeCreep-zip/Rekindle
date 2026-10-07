@@ -1,7 +1,7 @@
 //! Phase 18.h — governance runtime adapter.
 //!
 //! Implements `rekindle_governance_runtime::GovernanceRuntimeDeps`
-//! against the live AppState + AppHandle + DbPool. The crate's
+//! against the live AppState + AppHandle + Db. The crate's
 //! `apply::write_entry`, `origin::create_community`,
 //! `bootstrap::build_bootstrap_response`, `segments::*`, and the join
 //! primitives parameterise over this trait so the protocol logic stays
@@ -17,11 +17,10 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-use crate::db::DbPool;
 use crate::state::AppState;
-use crate::state_helpers;
+use rekindle_db::Db;
 use rekindle_types::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
 
 pub mod deps_impl;
@@ -36,29 +35,21 @@ mod state_reads;
 pub(super) const RECENT_MESSAGES_LIMIT: i64 = 50;
 
 /// Adapter — holds the three things every trait method needs: the
-/// shared `AppState`, the Tauri `AppHandle` (for event emit + DbPool
-/// lookup), and the `DbPool` clone (for bootstrap SQL queries).
+/// shared `AppState`, the Tauri `AppHandle` (for event emit + Db
+/// lookup), and the `Db` clone (for bootstrap SQL queries).
 pub struct GovernanceAdapter {
     pub(super) state: Arc<AppState>,
     pub(super) app_handle: AppHandle,
-    pub(super) pool: DbPool,
+    pub(super) pool: Db,
 }
 
 impl GovernanceAdapter {
-    pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: DbPool) -> Self {
+    pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: Db) -> Self {
         Self {
             state,
             app_handle,
             pool,
         }
-    }
-
-    pub(super) fn rc(
-        &self,
-    ) -> Result<veilid_core::RoutingContext, rekindle_governance_runtime::GovernanceRuntimeError>
-    {
-        state_helpers::safe_routing_context(&self.state)
-            .ok_or(rekindle_governance_runtime::GovernanceRuntimeError::NotAttached)
     }
 
     pub(super) fn parse_writer_keypair(
@@ -89,9 +80,11 @@ pub async fn open_community_dht_records(state: &Arc<AppState>) {
         tracing::warn!("open_community_dht_records: app_handle not initialized");
         return;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter =
-        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("governance hydration: no identity database — dropped");
+        return;
+    };
+    let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
     rekindle_governance_runtime::dht_hydration::open_community_dht_records(&adapter).await;
 }
 
@@ -105,9 +98,11 @@ pub async fn republish_active_records(state: &Arc<AppState>) {
         tracing::warn!("republish_active_records: app_handle not initialized");
         return;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter =
-        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("governance hydration: no identity database — dropped");
+        return;
+    };
+    let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
     rekindle_governance_runtime::dht_hydration::republish_active_records(&adapter).await;
 }
 
@@ -118,9 +113,11 @@ pub async fn hydrate_community_state_from_dht(state: &Arc<AppState>) {
         tracing::warn!("hydrate_community_state_from_dht: app_handle not initialized");
         return;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter =
-        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("governance hydration: no identity database — dropped");
+        return;
+    };
+    let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
     rekindle_governance_runtime::dht_hydration::hydrate_community_state_from_dht(&adapter).await;
 }
 
@@ -140,9 +137,11 @@ pub async fn rebuild_governance_from_dht(state: &Arc<AppState>) {
         tracing::warn!("rebuild_governance_from_dht: app_handle not initialized");
         return;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter =
-        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("governance hydration: no identity database — dropped");
+        return;
+    };
+    let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
     rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(&adapter).await;
 }
 
@@ -150,9 +149,18 @@ pub async fn rebuild_governance_from_dht(state: &Arc<AppState>) {
 
 /// Build an adapter from the live AppState + AppHandle. Shared by the
 /// membership-event entry points below (all need the same three fields).
-fn membership_adapter(state: &Arc<AppState>, app_handle: &AppHandle) -> GovernanceAdapter {
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone())
+/// The adapter the membership processors run on; `None` when no identity
+/// database is open, and the inbound event is dropped.
+fn membership_adapter(state: &Arc<AppState>, app_handle: &AppHandle) -> Option<GovernanceAdapter> {
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("membership event: no identity database — dropped");
+        return None;
+    };
+    Some(GovernanceAdapter::new(
+        Arc::clone(state),
+        app_handle.clone(),
+        pool,
+    ))
 }
 
 /// `ControlPayload::JoinAccepted` — cache MEK, persist members, derive
@@ -164,7 +172,9 @@ pub async fn process_join_accepted(
     sender_pseudonym: &str,
     input: rekindle_governance_runtime::membership_events::JoinAcceptedInput<'_>,
 ) {
-    let adapter = membership_adapter(state, app_handle);
+    let Some(adapter) = membership_adapter(state, app_handle) else {
+        return;
+    };
     rekindle_governance_runtime::membership_events::process_join_accepted(
         &adapter,
         community_id,
@@ -182,7 +192,9 @@ pub fn process_member_roles_changed(
     pseudonym_hex: &str,
     role_ids: &[u32],
 ) {
-    let adapter = membership_adapter(state, app_handle);
+    let Some(adapter) = membership_adapter(state, app_handle) else {
+        return;
+    };
     rekindle_governance_runtime::membership_events::process_member_roles_changed(
         &adapter,
         community_id,
@@ -200,7 +212,9 @@ pub fn process_admin_keypair_grant(
     wrapped_owner_keypair: &[u8],
     wrapped_slot_seed: &[u8],
 ) {
-    let adapter = membership_adapter(state, app_handle);
+    let Some(adapter) = membership_adapter(state, app_handle) else {
+        return;
+    };
     rekindle_governance_runtime::membership_events::process_admin_keypair_grant(
         &adapter,
         community_id,
@@ -220,7 +234,9 @@ pub fn process_slot_keypair_grant(
     segment_index: u32,
     wrapped_slot_keypair: &[u8],
 ) {
-    let adapter = membership_adapter(state, app_handle);
+    let Some(adapter) = membership_adapter(state, app_handle) else {
+        return;
+    };
     rekindle_governance_runtime::membership_events::process_slot_keypair_grant(
         &adapter,
         community_id,
@@ -240,7 +256,9 @@ pub async fn process_onboarding_answers(
     sender_pseudonym: &str,
     answers: &[rekindle_protocol::dht::community::envelope::OnboardingAnswer],
 ) {
-    let adapter = membership_adapter(state, app_handle);
+    let Some(adapter) = membership_adapter(state, app_handle) else {
+        return;
+    };
     rekindle_governance_runtime::membership_events::process_onboarding_answers(
         &adapter,
         community_id,
@@ -261,7 +279,9 @@ pub fn process_peer_assisted_join(
     route_blob: Option<&[u8]>,
     invite_code: Option<&str>,
 ) {
-    let adapter = membership_adapter(state, app_handle);
+    let Some(adapter) = membership_adapter(state, app_handle) else {
+        return;
+    };
     rekindle_governance_runtime::membership_events::process_peer_assisted_join(
         &adapter,
         community_id,
@@ -271,24 +291,6 @@ pub fn process_peer_assisted_join(
         route_blob,
         invite_code,
     );
-}
-
-/// Decrypt a channel message with the cached MEK (pure crate fn). Locks
-/// `state.mek_cache`, snapshots the entry, and matches on generation.
-#[must_use]
-pub fn decrypt_channel_message(
-    state: &Arc<AppState>,
-    community_id: &str,
-    ciphertext: &[u8],
-    mek_generation: u64,
-) -> rekindle_governance_runtime::membership_events::MekDecryptResult {
-    let mek_cache = state.mek_cache.lock();
-    rekindle_governance_runtime::membership_events::decrypt_with_cached_mek(
-        &mek_cache,
-        community_id,
-        ciphertext,
-        mek_generation,
-    )
 }
 
 // ---------- Free helpers used by `emit_event` ----------
@@ -314,6 +316,17 @@ pub(super) fn snapshot_roles(state: &Arc<AppState>, community_id: &str) -> Vec<R
                 })
                 .collect()
         })
+        .unwrap_or_default()
+}
+
+pub(super) fn snapshot_segments(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Vec<rekindle_types::presence::SegmentDescriptor> {
+    let communities = state.communities.read();
+    communities
+        .get(community_id)
+        .map(|community| community.segments.clone())
         .unwrap_or_default()
 }
 

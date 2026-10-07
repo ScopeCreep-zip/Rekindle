@@ -2,26 +2,47 @@ use std::sync::Arc;
 
 use rekindle_sync::gap::GapDetector;
 use rekindle_sync::inspect::INSPECT_INTERVAL;
-use tauri::Manager;
 
 use crate::state::AppState;
 use crate::state_helpers;
 
+/// Every record key the community tracks (governance, registry, channels).
+/// The background sync after a suspend inspects all of them: watches may
+/// have lapsed while the process was suspended.
 pub(crate) fn tracked_record_keys(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Option<Vec<String>> {
     let communities = state.communities.read();
-    let community = communities.get(community_id)?;
-    let mut keys = Vec::new();
-    if let Some(key) = community.open_community_records.governance_key.clone() {
-        keys.push(key);
-    }
-    if let Some(key) = community.open_community_records.registry_key.clone() {
-        keys.push(key);
-    }
-    keys.extend(community.open_community_records.channel_keys.clone());
-    Some(keys)
+    let records = &communities.get(community_id)?.open_community_records;
+    Some(
+        records
+            .governance_key
+            .iter()
+            .chain(records.registry_key.iter())
+            .chain(records.channel_keys.iter())
+            .cloned()
+            .collect(),
+    )
+}
+
+/// The tracked records that have no active watch. Only these are inspected
+/// each tick: a watched record already gets Veilid's own fallback inspect
+/// every 30 s, so inspecting it here too only duplicated that (plan C7, v1
+/// R10).
+pub(crate) fn unwatched_record_keys(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Option<Vec<String>> {
+    let tracked = tracked_record_keys(state, community_id)?;
+    let communities = state.communities.read();
+    let watched = &communities.get(community_id)?.watched_records;
+    Some(
+        tracked
+            .into_iter()
+            .filter(|key| !watched.contains(key))
+            .collect(),
+    )
 }
 
 fn changed_subkeys_from_sequences(local_sequences: &[u64], network_sequences: &[u64]) -> Vec<u32> {
@@ -36,48 +57,14 @@ pub(crate) async fn inspect_record(
     community_id: &str,
     record_key: &str,
 ) -> Result<(), String> {
-    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
+    let record_pool = state_helpers::record_pool(state)?;
     let parsed_key = record_key
         .parse::<veilid_core::RecordKey>()
         .map_err(|e| format!("invalid record key: {e}"))?;
-    let report = match rc
-        .inspect_dht_record(
-            parsed_key.clone(),
-            Some(veilid_core::ValueSubkeyRangeSet::full()),
-            veilid_core::DHTReportScope::SyncGet,
-        )
+    let report = record_pool
+        .inspect_once(&parsed_key, None, veilid_core::DHTReportScope::SyncGet)
         .await
-    {
-        Ok(report) => report,
-        // The record is tracked but Veilid no longer has it open (a
-        // login open that failed on a cold network, or a handle dropped
-        // on a route refresh). Left alone this fires 'record not open'
-        // on every inspect tick forever — the dominant error in a live
-        // session — while channel sync silently degrades to watch-only.
-        // Re-open (idempotent, local when already open) and retry once;
-        // the next tick re-heals if the record is still propagating.
-        Err(veilid_core::VeilidAPIError::InvalidArgument { .. }) => {
-            if !crate::services::community::watch::reopen_record(
-                &rc,
-                state,
-                community_id,
-                &parsed_key,
-                record_key,
-            )
-            .await
-            {
-                return Err("inspect skipped — record not open and re-open pending".into());
-            }
-            rc.inspect_dht_record(
-                parsed_key.clone(),
-                Some(veilid_core::ValueSubkeyRangeSet::full()),
-                veilid_core::DHTReportScope::SyncGet,
-            )
-            .await
-            .map_err(|e| format!("inspect_dht_record failed after re-open: {e}"))?
-        }
-        Err(e) => return Err(format!("inspect_dht_record failed: {e}")),
-    };
+        .map_err(|e| format!("inspect failed: {e}"))?;
 
     let mut changed_subkeys = {
         let mut communities = state.communities.write();
@@ -115,18 +102,14 @@ pub(crate) async fn inspect_record(
         "inspect surfaced changes the watch path missed"
     );
 
-    let pool = state_helpers::app_handle(state)
-        .and_then(|app| {
-            app.try_state::<crate::db::DbPool>()
-                .map(|pool| pool.inner().clone())
-        })
-        .ok_or("db pool not available for inspect loop")?;
+    let pool = state.db.current()?;
 
     changed_subkeys.sort_unstable();
     changed_subkeys.dedup();
 
     for subkey in changed_subkeys {
-        rc.get_dht_value(parsed_key.clone(), subkey, true)
+        record_pool
+            .read_once(&parsed_key, subkey, true)
             .await
             .map_err(|e| format!("get_dht_value failed during inspect sync: {e}"))?;
         if !crate::services::sync_communities::handle_community_record_change(
@@ -160,13 +143,16 @@ pub(crate) async fn inspect_record(
 }
 
 pub fn start_inspect_loop(state: Arc<AppState>, community_id: String) {
-    tokio::spawn(async move {
+    let scope = crate::state_helpers::community_scope(&state, &community_id);
+    scope.spawn_with_token_or_drop("community inspect", |stop| async move {
         let mut interval = tokio::time::interval(INSPECT_INTERVAL);
         interval.tick().await;
 
         let mut ticks: u64 = 0;
         loop {
-            interval.tick().await;
+            if stop.run_until_cancelled(interval.tick()).await.is_none() {
+                return;
+            }
             ticks += 1;
             // Periodic miss-rate summary (A8): the number that decides
             // whether INSPECT_INTERVAL can be relaxed post-0.5.7.
@@ -175,21 +161,25 @@ pub fn start_inspect_loop(state: Arc<AppState>, community_id: String) {
                 tracing::debug!(clean, missed, "inspect catch-up telemetry");
             }
 
-            // W-1 #16 — re-attempt watches on any tracked record whose
-            // previous watch died (Veilid renew_watch returned false,
-            // OR establish-time `Ok(false)` at first attempt). Without
-            // this, dead watches stayed dead until the next value-
-            // change event, which by definition cannot fire on a dead
-            // watch — meaning some records would silently lose their
-            // notification stream until the user restarted.
-            super::watch::retry_dead_watches(&state, &community_id).await;
+            // Hold any tracked record the community does not hold yet (a
+            // failed open heals here). A dead watch is the record pool's
+            // to re-arm, not this loop's.
+            super::watch::hold_unheld_records(&state, &community_id, &stop).await;
 
-            let Some(tracked_records) = tracked_record_keys(&state, &community_id) else {
+            let Some(unwatched) = unwatched_record_keys(&state, &community_id) else {
                 return;
             };
 
-            for record_key in tracked_records {
-                if let Err(e) = inspect_record(&state, &community_id, &record_key).await {
+            for record_key in unwatched {
+                // Leaving the community stops this; the pool runs the
+                // inspect's calls on its own scope, so none is dropped (C4.L1).
+                let Some(result) = stop
+                    .run_until_cancelled(inspect_record(&state, &community_id, &record_key))
+                    .await
+                else {
+                    return;
+                };
+                if let Err(e) = result {
                     tracing::debug!(
                         community = %community_id,
                         record_key = %record_key,

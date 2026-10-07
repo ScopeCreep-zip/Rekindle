@@ -26,7 +26,7 @@ export RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rekindle_vide
 # `tauri dev` CLI down too so two watchers don't fight over
 # target/debug. (`pnpm dev`, the beforeDevCommand, clears a stale Vite
 # on :1430 by itself.)
-for pattern in "$ROOT/.*tauri\.js dev" "$ROOT/target/debug/rekindle"; do
+for pattern in "$ROOT/.*tauri\.js dev" "$ROOT/target/debug/rekindle-desktop"; do
     if pgrep -f "$pattern" >/dev/null; then
         echo "→ stopping running dev processes ($pattern)"
         pkill -f "$pattern" || true

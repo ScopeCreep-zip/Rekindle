@@ -7,11 +7,8 @@ import { transformFriendMap } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { withTimeout, DHT_WRITE_TIMEOUT_MS } from "../utils/request-timeout";
 
-export function handleDoubleClickFriend(
-  publicKey: string,
-  displayName: string,
-): void {
-  commands.openChatWindow(publicKey, displayName);
+export function handleDoubleClickFriend(publicKey: string): void {
+  commands.openChatWindow(publicKey);
 }
 
 export async function handleRemoveFriend(publicKey: string): Promise<void> {

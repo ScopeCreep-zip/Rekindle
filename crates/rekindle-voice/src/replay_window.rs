@@ -1,11 +1,13 @@
-//! M9.3 — sliding-window anti-replay for voice packets.
+//! M9.3 — sliding-window anti-replay for voice frames, keyed on the
+//! SFrame CTR (RFC 9605 §9.3 suggests exactly this: RFC 3711 §3.3.2's
+//! counter window over CTR).
 //!
 //! Standard pattern (RFC 4302/4303 §3.4.3, SRTP, WireGuard noise/ratchet):
-//! track a high-water sequence number plus a bitmap of recently-accepted
-//! sequences. Reject any packet whose sequence has already been accepted
+//! track a high-water counter plus a bitmap of recently-accepted
+//! counters. Reject any frame whose counter has already been accepted
 //! (replay) or which falls below the window (too-late reorder).
 //!
-//! Maintained per-peer by the receive loop. Without this, a malicious
+//! Maintained per sender key by the frame opener. Without this, a malicious
 //! relay could capture and replay an accepted voice packet — even with
 //! signatures intact, the receiver would feed duplicate audio into the
 //! jitter buffer. The current `JitterBuffer` drops `seq < next_playback`
@@ -17,28 +19,29 @@
 /// Window width in sequence numbers. 256 chosen as a multiple of the
 /// 64-bit bitmap word size and large enough to absorb realistic
 /// reordering bursts (a 5-second LTE handover at 50 packets/sec ≈ 250).
-pub const WINDOW_SIZE: u32 = 256;
+pub const WINDOW_SIZE: u64 = 256;
 
 /// Number of `u64` words in the bitmap.
-const WINDOW_WORDS: usize = (WINDOW_SIZE as usize).div_ceil(64);
+const WINDOW_WORDS: usize = 4;
+const _: () = assert!(WINDOW_WORDS * 64 == 256 && WINDOW_SIZE == 256);
 
-/// Per-peer voice replay-protection window.
+/// Per-sender-key replay-protection window over SFrame CTR values.
 #[derive(Debug, Clone)]
-pub struct VoiceSeqWindow {
+pub struct CtrWindow {
     /// Highest accepted sequence number. Bit 0 of `bitmap[0]`
     /// corresponds to this number; bit `i` of `bitmap[i/64]` (mod 64)
     /// corresponds to `high_water - i`.
-    high_water: Option<u32>,
+    high_water: Option<u64>,
     bitmap: [u64; WINDOW_WORDS],
 }
 
-impl Default for VoiceSeqWindow {
+impl Default for CtrWindow {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VoiceSeqWindow {
+impl CtrWindow {
     pub fn new() -> Self {
         Self {
             high_water: None,
@@ -49,7 +52,7 @@ impl VoiceSeqWindow {
     /// Try to accept `seq`. Returns `true` if novel; `false` if it's a
     /// replay of an already-accepted sequence or has fallen below the
     /// window. The window is updated only on accept.
-    pub fn check_and_insert(&mut self, seq: u32) -> bool {
+    pub fn check_and_insert(&mut self, seq: u64) -> bool {
         let Some(high) = self.high_water else {
             // First packet — accept and seed the window.
             self.high_water = Some(seq);
@@ -75,7 +78,8 @@ impl VoiceSeqWindow {
             return false;
         }
 
-        let word = (offset / 64) as usize;
+        // `offset < WINDOW_SIZE` = 256, so both fit.
+        let word = usize::try_from(offset / 64).unwrap_or(WINDOW_WORDS - 1);
         let bit = offset % 64;
         let mask = 1u64 << bit;
         if self.bitmap[word] & mask != 0 {
@@ -87,13 +91,14 @@ impl VoiceSeqWindow {
 
     /// Shift the window left by `delta` positions. Bits that fall off
     /// the high end are discarded (those sequences were never seen).
-    fn shift_window(&mut self, delta: u32) {
-        if delta as usize >= WINDOW_SIZE as usize {
+    fn shift_window(&mut self, delta: u64) {
+        if delta >= WINDOW_SIZE {
             // Whole window slid out — wipe it.
             self.bitmap = [0; WINDOW_WORDS];
             return;
         }
-        let word_shift = (delta / 64) as usize;
+        // `delta < WINDOW_SIZE` here, so this is at most 3.
+        let word_shift = usize::try_from(delta / 64).unwrap_or(WINDOW_WORDS);
         let bit_shift = delta % 64;
 
         if word_shift > 0 {
@@ -119,7 +124,7 @@ impl VoiceSeqWindow {
     /// Highest accepted sequence number, if any. Useful for tests and
     /// for stale-peer pruning ("we've seen no packets above N for T
     /// seconds → reset the window").
-    pub fn high_water(&self) -> Option<u32> {
+    pub fn high_water(&self) -> Option<u64> {
         self.high_water
     }
 }
@@ -130,21 +135,21 @@ mod tests {
 
     #[test]
     fn first_packet_accepted() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(42));
         assert_eq!(w.high_water(), Some(42));
     }
 
     #[test]
     fn duplicate_rejected_immediately() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(10));
         assert!(!w.check_and_insert(10));
     }
 
     #[test]
     fn out_of_order_within_window_accepted_once() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(10));
         assert!(w.check_and_insert(20));
         // A reordered packet 15 within the window — accept once.
@@ -155,7 +160,7 @@ mod tests {
 
     #[test]
     fn below_window_rejected() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(1000));
         // Sequence 1 is far below the window — reject (could not be a
         // late-but-novel reorder; window only protects 256 back).
@@ -164,7 +169,7 @@ mod tests {
 
     #[test]
     fn forward_jump_resets_far_window() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(10));
         // Big jump — old bits are all cleared, only the new high_water
         // bit is set.
@@ -175,7 +180,7 @@ mod tests {
 
     #[test]
     fn replay_at_high_water_rejected() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(100));
         assert!(w.check_and_insert(101));
         // Replay of 101 (== current high_water) must be rejected.
@@ -184,8 +189,8 @@ mod tests {
 
     #[test]
     fn many_in_order_packets() {
-        let mut w = VoiceSeqWindow::new();
-        for seq in 0..10_000u32 {
+        let mut w = CtrWindow::new();
+        for seq in 0..10_000u64 {
             assert!(w.check_and_insert(seq), "seq {seq}");
         }
         // Verify replays of recent sequences are rejected.
@@ -196,8 +201,17 @@ mod tests {
     }
 
     #[test]
+    fn counters_beyond_u32_work() {
+        let mut w = CtrWindow::new();
+        let big = u64::from(u32::MAX) + 10;
+        assert!(w.check_and_insert(big));
+        assert!(!w.check_and_insert(big));
+        assert!(w.check_and_insert(big - 1));
+    }
+
+    #[test]
     fn window_edge_boundary() {
-        let mut w = VoiceSeqWindow::new();
+        let mut w = CtrWindow::new();
         assert!(w.check_and_insert(WINDOW_SIZE));
         // Sequence at exactly `WINDOW_SIZE - 1` ago = offset = WINDOW_SIZE - 1
         // is the oldest sequence still in the window — accept.

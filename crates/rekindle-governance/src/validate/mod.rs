@@ -69,6 +69,15 @@ pub fn validate_write(
         {
             return false;
         }
+        // One generation at a time (plan D20). A bump that skips ahead —
+        // `u64::MAX` included — or repeats a generation is not a
+        // rotation, whoever wrote it; the Max-Register merge would
+        // otherwise let one entry freeze the community's generation.
+        GovernanceEntry::MEKGenerationBump { generation, .. }
+            if state.mek_generation.checked_add(1) != Some(*generation) =>
+        {
+            return false;
+        }
         _ => {}
     }
 
@@ -203,15 +212,12 @@ pub fn validate_write(
             matches!(level.as_str(), "all" | "mentions" | "nothing") && has(perms, MANAGE_COMMUNITY)
         }
 
-        // MEK generation bumps use Max-Register (highest generation wins).
-        // Rotator authority is verified by checking trigger_departed + cascade_skipped
-        // against the deterministic rotator selection algorithm. However, since the
-        // merge engine already enforces Max-Register (only highest generation survives),
-        // a rogue bump to generation N is superseded by the legitimate bump to N+1.
-        // Full rotator verification requires cross-referencing presence timestamps
-        // (for cascade_skipped validation), which is done at the sync layer, not here.
-        // At the governance CRDT layer, we enforce: writer is not banned (checked above).
-        GovernanceEntry::MEKGenerationBump { .. } => true,
+        // Only a member who may rotate the community key may bump its
+        // generation (plan D20); the rotator election draws from the same
+        // set. The +1 rule is enforced above, before the creator bypass.
+        GovernanceEntry::MEKGenerationBump { .. } => {
+            crate::permissions::may_rotate_mek(writer, state)
+        }
 
         GovernanceEntry::CategoryCreated { .. } | GovernanceEntry::CategoryArchived { .. } => {
             has(perms, MANAGE_CHANNELS)

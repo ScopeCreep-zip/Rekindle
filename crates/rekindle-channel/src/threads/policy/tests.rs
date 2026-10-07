@@ -55,8 +55,3 @@ fn is_thread_archived_never_archived_when_no_activity_no_archive() {
     // last_activity=0 (no messages yet) + no archived_lamport → live
     assert!(!is_thread_archived(None, 0, 0, 86_400, 1_000_000));
 }
-
-#[test]
-fn member_count_is_segment_max() {
-    assert_eq!(thread_member_count() as usize, MAX_MEMBERS_PER_SEGMENT);
-}

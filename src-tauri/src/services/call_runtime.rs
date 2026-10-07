@@ -8,10 +8,10 @@ use rusqlite::params;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,9 +22,56 @@ pub struct MissedCallRow {
     pub expired_at: i64,
 }
 
+/// A live 1:1 call as a call window shows it on open.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveCallDto {
+    pub call_id: String,
+    pub peer_key: String,
+    pub display_name: String,
+    /// `"audio"` or `"video"`.
+    pub kind: &'static str,
+    pub expires_at_ms: u64,
+    /// The call was accepted (connecting or active), as opposed to still
+    /// ringing out.
+    pub connected: bool,
+}
+
+/// Snapshot of one live 1:1 call, or `None` once it has ended.
+pub fn get_active_call_inner(
+    state: &SharedState,
+    call_id: &str,
+) -> Result<Option<ActiveCallDto>, String> {
+    let call_id = rekindle_types::key_format::call_id(call_id)
+        .map_err(|e| format!("invalid call id: {e}"))?;
+    let Some(call) = state.active_calls.get(call_id.as_str()) else {
+        return Ok(None);
+    };
+    let connected = match call.status {
+        rekindle_calls::CallStatus::Connecting | rekindle_calls::CallStatus::Active => true,
+        rekindle_calls::CallStatus::Outgoing
+        | rekindle_calls::CallStatus::Incoming
+        | rekindle_calls::CallStatus::Missed => false,
+    };
+    let display_name = crate::state_helpers::friend_display_name(state, &call.peer_pubkey)
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| format!("{}…", rekindle_utils::text::prefix(&call.peer_pubkey, 12)));
+    Ok(Some(ActiveCallDto {
+        call_id: call.call_id.clone(),
+        peer_key: call.peer_pubkey.clone(),
+        display_name,
+        kind: match call.kind {
+            rekindle_calls::CallKind::Audio => "audio",
+            rekindle_calls::CallKind::Video => "video",
+        },
+        expires_at_ms: call.expires_at_ms,
+        connected,
+    }))
+}
+
 pub async fn send_call_media_state_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     call_id: String,
     audio: bool,
     video: bool,
@@ -42,14 +89,14 @@ pub async fn send_call_media_state_inner(
         screen,
         timestamp_ms: rekindle_utils::timestamp_ms(),
     };
-    crate::services::message_service::send_to_peer_raw(state, pool, &peer_pubkey, &payload)
+    crate::services::message_service::send_to_peer(state, pool, &peer_pubkey, &payload)
         .await
         .map_err(|e| format!("send_call_media_state: {e}"))
 }
 
 pub async fn send_call_reaction_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     call_id: String,
     emoji: String,
 ) -> Result<(), String> {
@@ -66,14 +113,14 @@ pub async fn send_call_reaction_inner(
         emoji,
         timestamp_ms: rekindle_utils::timestamp_ms(),
     };
-    crate::services::message_service::send_to_peer_raw(state, pool, &peer_pubkey, &payload)
+    crate::services::message_service::send_to_peer(state, pool, &peer_pubkey, &payload)
         .await
         .map_err(|e| format!("send_call_reaction: {e}"))
 }
 
 pub async fn get_missed_calls_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<Vec<MissedCallRow>, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
     db_call(pool, move |conn| {

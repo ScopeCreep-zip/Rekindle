@@ -21,7 +21,7 @@ use rekindle_types::mek::ChannelMekDelivery;
 use rekindle_types::member::MemberInfo;
 use rekindle_types::message::{BootstrapChannelMessages, BootstrapMessage};
 
-use crate::deps::{GovernanceRuntimeDeps, MekSnapshot};
+use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 
@@ -153,10 +153,6 @@ fn wrap_key_material(
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("wrap bootstrap key material: {e}")))
 }
 
-fn mek_to_wire(snapshot: &MekSnapshot) -> Vec<u8> {
-    MediaEncryptionKey::from_bytes(snapshot.key_bytes, snapshot.generation).to_wire_bytes()
-}
-
 /// Build the encoded bytes of `ControlPayload::BootstrapResponse` for a
 /// joiner. Returns the Cap'n Proto-encoded envelope ready for transport.
 pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
@@ -214,48 +210,25 @@ pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
         None => Vec::new(),
     };
 
-    // Per-channel MEKs (architecture §5.2). Prefer per-channel cache;
-    // fall back to community-wide MEK applied to every channel.
-    let channel_meks: Vec<ChannelMekDelivery> = {
-        let per_channel = deps.channel_meks_all(community_id);
-        if per_channel.is_empty() {
-            let community_mek = deps.community_mek(community_id);
-            match community_mek {
-                Some(mek) => {
-                    let wrapped = wrap_key_material(
-                        &bootstrap_signing_key,
-                        &joiner_pseudonym,
-                        &mek_to_wire(&mek),
-                    )?;
-                    membership
-                        .channel_ids
-                        .iter()
-                        .map(|channel_id| ChannelMekDelivery {
-                            channel_id: Some(channel_id.clone()),
-                            generation: mek.generation,
-                            wrapped_mek: wrapped.clone(),
-                        })
-                        .collect()
-                }
-                None => Vec::new(),
-            }
-        } else {
-            per_channel
-                .into_iter()
-                .map(|ChannelMekSnapshotEntry { channel_id, mek }| {
-                    let wrapped = wrap_key_material(
-                        &bootstrap_signing_key,
-                        &joiner_pseudonym,
-                        &mek_to_wire(&mek),
-                    )?;
-                    Ok(ChannelMekDelivery {
-                        channel_id: Some(channel_id),
-                        generation: mek.generation,
-                        wrapped_mek: wrapped,
-                    })
-                })
-                .collect::<Result<Vec<_>, GovernanceRuntimeError>>()?
-        }
+    // The community key — the text plane's scope (plan D6). A voice
+    // channel's own key reaches the joiner when it joins that channel
+    // (architecture §10.5); nothing here substitutes one scope's key for
+    // another's.
+    let channel_meks: Vec<ChannelMekDelivery> = match rekindle_types::channel_keys::current_key(
+        &*deps.keys(),
+        community_id,
+        rekindle_types::channel_keys::KeyScope::Community,
+    ) {
+        Some((epoch, key)) => vec![ChannelMekDelivery {
+            channel_id: None,
+            generation: epoch.0,
+            wrapped_mek: wrap_key_material(
+                &bootstrap_signing_key,
+                &joiner_pseudonym,
+                &MediaEncryptionKey::from_bytes(*key, epoch.0).to_wire_bytes(),
+            )?,
+        }],
+        None => Vec::new(),
     };
 
     // Architecture §14.4 — recent messages snapshot per channel, each
@@ -283,9 +256,6 @@ pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
     Ok(bytes)
 }
 
-/// Local alias so the `channel_meks_all` Vec destructuring above reads cleanly.
-type ChannelMekSnapshotEntry = crate::deps::ChannelMekSnapshot;
-
 async fn build_recent_messages<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -306,17 +276,21 @@ async fn build_recent_messages<D: GovernanceRuntimeDeps>(
     out
 }
 
-/// Re-encrypt each row under the MEK generation it was originally
-/// stored with (architecture §5.2 line 1100). Historical generations
-/// load from Stronghold via `load_historical_channel_mek` the first
-/// time they're needed; the per-call HashMap caches them for the
-/// remainder of the bundle build.
+/// Re-encrypt each row under exactly the generation of the channel's text
+/// key it was originally stored with (architecture §5.2 line 1100), current
+/// or historical. A row whose generation is not held is left out. The
+/// per-call HashMap caches each generation for the rest of the build.
 fn build_channel_envelope<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     rows: &[crate::deps::RecentMessageRow],
 ) -> Option<BootstrapChannelMessages> {
+    let provider = deps.keys();
+    let scope = provider.scope_for_text(
+        community_id,
+        rekindle_types::id::ChannelId::from_hex(channel_id)?,
+    );
     let mut mek_by_gen: HashMap<u64, MediaEncryptionKey> = HashMap::new();
     let mut entries: Vec<BootstrapMessage> = Vec::with_capacity(rows.len());
 
@@ -326,12 +300,14 @@ fn build_channel_envelope<D: GovernanceRuntimeDeps>(
         let mek = match mek_by_gen.entry(row.mek_generation) {
             std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
             std::collections::hash_map::Entry::Vacant(v) => {
-                let snapshot =
-                    deps.load_historical_channel_mek(community_id, channel_id, row.mek_generation)?;
-                v.insert(MediaEncryptionKey::from_bytes(
-                    snapshot.key_bytes,
-                    snapshot.generation,
-                ))
+                let Some(key) = provider.key(
+                    community_id,
+                    scope,
+                    rekindle_types::channel_keys::KeyEpoch(row.mek_generation),
+                ) else {
+                    continue;
+                };
+                v.insert(MediaEncryptionKey::from_bytes(*key, row.mek_generation))
             }
         };
         let Ok(ciphertext) = mek.encrypt(row.body.as_bytes()) else {
@@ -423,17 +399,5 @@ mod tests {
             }
             other => panic!("expected ChannelCreated, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn mek_to_wire_round_trips_through_from_wire_bytes() {
-        let snap = MekSnapshot {
-            generation: 42,
-            key_bytes: [7u8; 32],
-        };
-        let wire = mek_to_wire(&snap);
-        let mek = MediaEncryptionKey::from_wire_bytes(&wire).expect("wire bytes parse");
-        assert_eq!(mek.generation(), 42);
-        assert_eq!(*mek.as_bytes(), [7u8; 32]);
     }
 }

@@ -2,8 +2,9 @@
 
 use tauri::Manager;
 
-use crate::state::{self, SharedState, UserStatus};
-use crate::{commands, db, services, state_helpers};
+use crate::keystore::KeystoreHandle;
+use crate::state::SharedState;
+use crate::{services, state_helpers};
 
 /// Handle the `RunEvent::Exit` event: run [`graceful_shutdown`] with a timeout
 /// and checkpoint the SQLite WAL before the process exits.
@@ -13,111 +14,54 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
     tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
     let state: tauri::State<'_, SharedState> = app_handle.state();
     let state = state.inner().clone();
-    let pool: tauri::State<'_, db::DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
+    let keystore: tauri::State<'_, KeystoreHandle> = app_handle.state();
+    let keystore = keystore.inner().clone();
     tauri::async_runtime::block_on(async move {
-        let shutdown = graceful_shutdown(&state);
+        let shutdown = graceful_shutdown(&state, &keystore);
         if tokio::time::timeout(std::time::Duration::from_secs(5), shutdown)
             .await
             .is_err()
         {
             tracing::warn!("graceful shutdown timed out after 5s — forcing exit");
         }
-        // Checkpoint WAL to prevent Windows NTFS file lock issues.
-        // tokio_rusqlite::Connection drops gracefully after this.
-        let _: Result<(), tokio_rusqlite::Error<rusqlite::Error>> = pool
-            .call(|conn| {
-                conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
-                Ok(())
-            })
-            .await;
+        // Checkpoint the WAL (Windows NTFS holds file locks on it), then
+        // close the database.
+        if let Ok(pool) = state.db.current() {
+            if let Err(e) = pool
+                .call(|conn| conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)"))
+                .await
+            {
+                tracing::warn!(error = %e, "WAL checkpoint at exit failed");
+            }
+        }
+        if let Err(e) = state.db.clear().await {
+            tracing::warn!(error = %e, "database still held at exit");
+        }
     });
 }
 
-/// Shut down all background services before the process exits.
-///
-/// First cleans up user-specific state (DHT records, routes), then sends
-/// shutdown signals to the dispatch loop, and finally shuts down the
-/// Veilid node itself.
-pub async fn graceful_shutdown(state: &SharedState) {
+/// Shut down all background services before the process exits: end the
+/// login session (`services::session::end_session`), then stop the
+/// app-lifetime dispatch loop and the Veilid node.
+pub async fn graceful_shutdown(state: &SharedState, keystore: &KeystoreHandle) {
     tracing::info!("graceful shutdown: stopping background services");
 
-    // 1. Send graceful shutdown signals to all services FIRST.
-    //    This gives them a chance to finish their current operation before
-    //    logout_cleanup aborts any remaining handles.
+    // 1. The login session: its tasks, devices, offline status, records,
+    //    state and keys. No app handle — the app is exiting.
+    services::session::end_session(None, state, keystore).await;
+    state_helpers::clear_meks(state);
 
-    // Signal sync service shutdown
-    let sync_tx = state.sync_shutdown_tx.read().clone();
-    if let Some(tx) = sync_tx {
-        let _ = tx.send(()).await;
-    }
-
-    // Signal game detection shutdown
-    let game_tx = state
-        .game_detector
-        .lock()
-        .as_ref()
-        .map(|h| h.shutdown_tx.clone());
-    if let Some(tx) = game_tx {
-        let _ = tx.send(()).await;
-    }
-
-    // Signal route refresh loop shutdown
-    let route_watchdog_tx = state.route_watchdog_shutdown_tx.write().take();
-    if let Some(tx) = route_watchdog_tx {
-        let _ = tx.send(()).await;
-    }
-
-    // Signal idle service shutdown
-    let idle_tx = state.idle_shutdown_tx.write().take();
-    if let Some(tx) = idle_tx {
-        let _ = tx.send(()).await;
-    }
-
-    // Signal heartbeat shutdown
-    let heartbeat_tx = state.heartbeat_shutdown_tx.write().take();
-    if let Some(tx) = heartbeat_tx {
-        let _ = tx.send(()).await;
-    }
-
-    // Signal dispatch loop shutdown
+    // 2. The app-lifetime dispatch loop.
     let shutdown_tx = state.shutdown_tx.read().clone();
     if let Some(tx) = shutdown_tx {
         let _ = tx.send(()).await;
     }
-
-    // 2. Shut down voice engine (signal loops, await, then stop devices)
-    commands::voice::shutdown_voice(state, &commands::voice::VoiceShutdownOpts::FULL).await;
-
-    // 3. Await the dispatch loop handle (it should have exited after the shutdown signal)
-    {
-        let dispatch_handle = state.dispatch_loop_handle.write().take();
-        if let Some(h) = dispatch_handle {
-            let _ = h.await;
-        }
+    let dispatch_handle = state.dispatch_loop_handle.write().take();
+    if let Some(h) = dispatch_handle {
+        let _ = h.await;
     }
 
-    // 6. Publish Offline to DHT before cleanup closes records
-    {
-        let current_status = state_helpers::identity_status(state);
-        if current_status != Some(state::UserStatus::Offline) {
-            if let Err(e) =
-                services::presence_service::publish_status(state, UserStatus::Offline).await
-            {
-                tracing::warn!(error = %e, "failed to publish offline on shutdown");
-            }
-        }
-    }
-
-    // 7. Now clean up user-specific DHT state (close records, release route,
-    //    abort remaining background handles).
-    //    Pass None for app_handle — the app is exiting, no UI to update.
-    services::veilid::logout_cleanup(None, state).await;
-
-    // Clear community state
-    state.mek_cache.lock().clear();
-
-    // 8. Shut down the Veilid node (only on app exit)
+    // 3. The Veilid node itself.
     services::veilid::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");

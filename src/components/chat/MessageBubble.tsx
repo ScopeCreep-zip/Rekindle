@@ -11,7 +11,8 @@ import AttachmentDisplay from "./AttachmentDisplay";
 import VoiceMessagePlayer from "./VoiceMessagePlayer";
 import { FLAG_VOICE_MESSAGE } from "../../stores/chat.store";
 import { formatTimestamp } from "../../utils/formatting";
-import { linkPreviews } from "../../stores/link_preview.store";
+import { linkPreviewKey, linkPreviews } from "../../stores/link_preview.store";
+import { commands } from "../../ipc/commands";
 import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD } from "../../icons";
 
 interface MessageBubbleProps {
@@ -47,13 +48,13 @@ interface MessageBubbleProps {
 const MessageBubble: Component<MessageBubbleProps> = (props) => {
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
   const [revealedBlurred, setRevealedBlurred] = createSignal(false);
-  // Architecture §28.8 — keyed by serverMessageId; absent when the
-  // sender hadn't fetched a preview (no URL, missing permission,
-  // OpenGraph fetch failed, etc.).
+  // Architecture §28.8 — keyed by (channel, serverMessageId); absent
+  // when the sender hadn't fetched a preview (no URL, missing
+  // permission, OpenGraph fetch failed, etc.).
   const preview = createMemo(() => {
     const id = props.message.serverMessageId;
-    if (!id) return undefined;
-    return linkPreviews[id];
+    if (!id || !props.channelId) return undefined;
+    return linkPreviews[linkPreviewKey(props.channelId, id)];
   });
 
   const senderClass = () =>
@@ -288,16 +289,12 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
        * via `services/community/link_previews.rs::handle_incoming_link_preview`. */}
       <Show when={preview()}>
         {(p) => (
-          <a
+          <button
+            type="button"
             class="message-link-preview"
-            href={p().url}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={() => void commands.openExternalUrl(p().url)}
             aria-label={`Link preview: ${p().title ?? p().url}`}
           >
-            <Show when={p().imageUrl}>
-              <img class="message-link-preview-image" src={p().imageUrl!} alt="" />
-            </Show>
             <div class="message-link-preview-body">
               <Show when={p().siteName}>
                 <div class="message-link-preview-site">{p().siteName}</div>
@@ -309,7 +306,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
                 <div class="message-link-preview-description">{p().description}</div>
               </Show>
             </div>
-          </a>
+          </button>
         )}
       </Show>
 

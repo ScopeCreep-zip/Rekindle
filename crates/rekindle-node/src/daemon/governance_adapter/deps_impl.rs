@@ -8,14 +8,14 @@
 use async_trait::async_trait;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
-    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
-    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow,
-    UserStatusKind,
+    CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
@@ -23,6 +23,10 @@ use super::DaemonGovernanceAdapter;
 
 #[async_trait]
 impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        self.ctx.unlock_scope_or_closed()
+    }
+
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
@@ -55,26 +59,21 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
         self.online_members_impl(community_id)
     }
 
-    fn open_record_keys(&self, community_id: &str) -> Vec<String> {
-        self.open_record_keys_impl(community_id)
-    }
-
     // ---------- Community state (mutation) ----------
 
     fn set_governance_state(&self, community_id: &str, state: GovernanceState) {
         self.set_governance_state_impl(community_id, state);
     }
 
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        self.increment_lamport_impl(community_id)
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        self.next_governance_lamport_impl(community_id)
     }
 
     fn insert_community(&self, community: CommunityInsert) {
         self.insert_community_impl(community);
-    }
-
-    fn mark_open_channel_record(&self, community_id: &str, record_key: String) {
-        self.mark_open_channel_record_impl(community_id, record_key);
     }
 
     // ---------- DHT ----------
@@ -93,7 +92,7 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
     async fn create_overflow_record(
         &self,
         owner_keypair: String,
-    ) -> Result<String, GovernanceRuntimeError> {
+    ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
         self.create_overflow_record_impl(owner_keypair).await
     }
 
@@ -101,68 +100,67 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
         Self::format_writer_keypair_impl(ed_public, ed_secret)
     }
 
-    async fn get_dht_value(
+    async fn acquire_record(
         &self,
         record_key: &str,
+        writer: Option<String>,
+    ) -> Result<LeaseId, GovernanceRuntimeError> {
+        self.acquire_record_impl(record_key, writer).await
+    }
+
+    async fn release_record(&self, lease: LeaseId) {
+        self.release_record_impl(lease).await;
+    }
+
+    async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases) {
+        self.community_records_ready_impl(community_id, leases)
+            .await;
+    }
+
+    async fn get_dht_value(
+        &self,
+        lease: LeaseId,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.get_dht_value_impl(record_key, subkey, force_refresh)
-            .await
+        self.get_dht_value_impl(lease, subkey, force_refresh).await
     }
 
     async fn set_dht_value(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.set_dht_value_impl(record_key, subkey, value, writer)
-            .await
+        self.set_dht_value_impl(lease, subkey, value, writer).await
     }
 
     async fn inspect_dht_record_local_seqs(
         &self,
-        record_key: &str,
+        lease: LeaseId,
     ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-        self.inspect_local_seqs_impl(record_key).await
+        self.inspect_local_seqs_impl(lease).await
     }
 
     async fn inspect_dht_record_update_get_seqs(
         &self,
-        record_key: &str,
+        lease: LeaseId,
     ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-        self.inspect_network_seqs_impl(record_key).await
+        self.inspect_network_seqs_impl(lease).await
     }
 
     async fn inspect_dht_record_present_subkeys(
         &self,
-        record_key: &str,
+        lease: LeaseId,
     ) -> Result<Vec<u32>, GovernanceRuntimeError> {
-        self.inspect_present_subkeys_impl(record_key).await
-    }
-
-    async fn open_dht_record(
-        &self,
-        record_key: &str,
-        writer: Option<String>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.open_dht_record_impl(record_key, writer).await
+        self.inspect_present_subkeys_impl(lease).await
     }
 
     // ---------- MEK cache ----------
 
-    fn community_mek(&self, community_id: &str) -> Option<MekSnapshot> {
-        self.community_mek_impl(community_id)
-    }
-
-    fn channel_mek(&self, community_id: &str, channel_id: &str) -> Option<MekSnapshot> {
-        self.channel_mek_impl(community_id, channel_id)
-    }
-
-    fn channel_meks_all(&self, community_id: &str) -> Vec<ChannelMekSnapshot> {
-        self.channel_meks_all_impl(community_id)
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        crate::daemon::mek_rotation::key_provider(self.ctx)
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {
@@ -171,15 +169,6 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
 
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot) {
         self.insert_channel_mek_impl(community_id, channel_id, &mek);
-    }
-
-    fn load_historical_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Option<MekSnapshot> {
-        self.load_historical_channel_mek_impl(community_id, channel_id, generation)
     }
 
     // ---------- Bootstrap ----------
@@ -232,28 +221,8 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
 
     // ---------- Background lifecycle ----------
 
-    fn spawn_inspect_loop(&self, community_id: &str) {
-        Self::spawn_inspect_loop_impl(community_id);
-    }
-
-    fn spawn_presence_poll(&self, community_id: &str) {
-        Self::spawn_presence_poll_impl(community_id);
-    }
-
-    fn spawn_dht_keepalive(&self, community_id: &str) {
-        Self::spawn_dht_keepalive_impl(community_id);
-    }
-
     fn spawn_history_catchup(&self, community_id: &str) {
         Self::spawn_history_catchup_impl(community_id);
-    }
-
-    async fn watch_community_records(
-        &self,
-        community_id: &str,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.watch_community_records_impl(community_id).await;
-        Ok(())
     }
 
     /// No daemon equivalent yet.
@@ -337,20 +306,12 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
         self.list_communities_for_dht_open_impl()
     }
 
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<String> {
+    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
         self.channel_log_keys_for_community_impl(community_id)
     }
 
     fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
         Self::list_my_active_invite_secret_keys_impl()
-    }
-
-    fn track_open_dht_records(&self, keys: &[String]) {
-        // Keyed per community on this track; the orchestrator's bulk
-        // call has no community context, so records are tracked as they
-        // are opened in `mark_open_channel_record` /
-        // `mark_community_records_open` instead.
-        let _ = keys;
     }
 
     fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]) {
@@ -361,31 +322,13 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
         self.governance_overflow_keys_impl(community_id)
     }
 
-    fn mark_community_records_open(
-        &self,
-        community_id: &str,
-        governance_key: &str,
-        registry_key: Option<&str>,
-        _registry_writer: Option<&str>,
-        channel_keys: Vec<String>,
-    ) {
-        let mut keys = vec![governance_key.to_string()];
-        keys.extend(registry_key.map(ToString::to_string));
-        keys.extend(channel_keys);
-        self.track_open_dht_records_impl(community_id, &keys);
-    }
-
-    async fn watch_community_records_post_open(&self, community_id: &str) {
-        self.watch_community_records_impl(community_id).await;
-    }
-
     async fn apply_governance_rebuild_result(
         &self,
         community_id: &str,
         gov_state: GovernanceState,
-        max_lamport: u64,
+        accepted_clock: u64,
     ) {
-        self.apply_governance_rebuild_result_impl(community_id, gov_state, max_lamport);
+        self.apply_governance_rebuild_result_impl(community_id, gov_state, accepted_clock);
     }
 
     fn persist_governance_entries_cache(

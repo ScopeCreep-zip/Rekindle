@@ -149,19 +149,12 @@ pub struct GossipMesh {
 }
 
 /// Outcome of [`GossipMesh::admit_gossip_at`].
-///
-/// Distinguishes the two rejection reasons rather than returning a
-/// bool: they mean different things operationally — one is a noisy
-/// peer, the other is a peer sending forged-future timestamps — and the
-/// dispatch layer logs them separately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GossipAdmission {
     /// Process the envelope.
     Accept,
     /// Sender is over the per-sender rate floor (§20.2).
     RateLimited,
-    /// Lamport timestamp more than `MAX_LAMPORT_DRIFT` ahead of ours.
-    LamportDrift,
 }
 
 pub use rekindle_types::presence::OnlineMember;
@@ -228,13 +221,10 @@ impl GossipMesh {
     /// 1. **Rate floor** (§20.2) — the sender's token bucket. Honest
     ///    peers dropping the excess is what makes the floor binding on
     ///    a client that ignores its own send-side limiter.
-    /// 2. **Lamport merge** — advances this mesh's clock to
-    ///    `max(local, received) + 1`, or rejects a timestamp more than
-    ///    `MAX_LAMPORT_DRIFT` ahead without advancing.
-    ///
-    /// A drift-rejected envelope has already spent a token. That is
-    /// deliberate: forged timestamps are sender misbehaviour and should
-    /// draw down the same budget as any other traffic.
+    /// 2. **Lamport merge** — advances this mesh's clock past the
+    ///    received timestamp, by at most `MAX_LAMPORT_DRIFT + 1`
+    ///    (`LamportClock::merge` clamps). The envelope is admitted
+    ///    whatever it claims; a forged timestamp cannot pin the clock.
     ///
     /// The caller must have verified the envelope signature first —
     /// neither gate is meaningful for an unauthenticated sender.
@@ -247,9 +237,7 @@ impl GossipMesh {
         if !self.rate_limiter.check_at(sender, now) {
             return GossipAdmission::RateLimited;
         }
-        if self.clock.merge(lamport_ts).is_none() {
-            return GossipAdmission::LamportDrift;
-        }
+        self.clock.merge(lamport_ts);
         GossipAdmission::Accept
     }
 
@@ -290,22 +278,19 @@ mod tests {
     #[test]
     fn lamport_clock_increment_and_merge() {
         let mut clock = LamportClock::new(0);
-        assert_eq!(clock.increment(), 1);
-        assert_eq!(clock.increment(), 2);
-        // `merge` now reports acceptance: the shared clock refuses a
-        // received value more than MAX_LAMPORT_DRIFT ahead instead of
-        // adopting it, so the caller can drop that envelope.
-        assert_eq!(clock.merge(10), Some(11));
-        assert_eq!(clock.merge(5), Some(12)); // max(12, 5) + 1
+        assert_eq!(clock.increment(), Ok(1));
+        assert_eq!(clock.increment(), Ok(2));
+        assert_eq!(clock.merge(10), 11);
+        assert_eq!(clock.merge(5), 12); // max(11, 5) + 1
     }
 
     #[test]
-    fn lamport_clock_rejects_forged_future_timestamp() {
-        // The copy this crate used to carry computed `max(v, recv) + 1`
-        // unchecked, so `u64::MAX` here overflowed the `+ 1` outright.
+    fn lamport_clock_clamps_forged_future_timestamp() {
         let mut clock = LamportClock::new(2);
-        assert_eq!(clock.merge(u64::MAX), None);
-        assert_eq!(clock.current(), 2, "rejected merge must not advance");
+        assert_eq!(
+            clock.merge(u64::MAX),
+            2 + rekindle_gossip::lamport::MAX_LAMPORT_DRIFT + 1
+        );
     }
 
     #[test]
@@ -427,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn admit_gossip_rejects_forged_future_lamport_without_advancing() {
+    fn admit_gossip_admits_forged_future_lamport_but_bounds_the_clock() {
         let mut mesh = GossipMesh::new("c1".to_string());
         let t0 = Instant::now();
         assert_eq!(
@@ -435,22 +420,14 @@ mod tests {
             GossipAdmission::Accept
         );
         let before = mesh.clock.current();
-
         assert_eq!(
             mesh.admit_gossip_at("mallory", u64::MAX, t0),
-            GossipAdmission::LamportDrift
+            GossipAdmission::Accept
         );
         assert_eq!(
             mesh.clock.current(),
-            before,
-            "a rejected envelope must not move the clock — otherwise one \
-             forged message permanently breaks ordering for the community"
-        );
-
-        // And the mesh keeps working afterwards.
-        assert_eq!(
-            mesh.admit_gossip_at("alice", before, t0),
-            GossipAdmission::Accept
+            before + rekindle_gossip::lamport::MAX_LAMPORT_DRIFT + 1,
+            "one forged message moves the clock by at most the drift bound"
         );
     }
 

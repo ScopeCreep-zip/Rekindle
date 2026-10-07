@@ -19,10 +19,6 @@ pub enum VaultKey {
     /// Ed25519 signing private key — `("identity", "ed25519_private")`.
     IdentityEd25519,
 
-    /// Signal identity keypair blob — `("signal", "identity_keypair")`.
-    SignalIdentity,
-    /// Signal registration id — `("signal", "registration_id")`.
-    SignalRegistrationId,
     /// Per-peer trusted identity (trust-on-first-use) —
     /// `("signal", "trusted:{peer}")`.
     SignalTrusted { peer: String },
@@ -41,9 +37,19 @@ pub enum VaultKey {
     SignalPqLastResort { id: u32 },
     /// PQXDH one-time ML-KEM-768 secret — `("signal", "pq_ot:{id}")`.
     SignalPqOneTime { id: u32 },
+    /// Index of stored PQ one-time prekey ids, oldest first —
+    /// `("signal", "pq_ot_index")`.
+    SignalPqOneTimeIndex,
 
     /// Community-level MEK — `("communities", "mek_{community}")`.
     CommunityMek { community: String },
+    /// Community-level MEK at a specific generation, kept so history
+    /// written under a replaced key stays readable —
+    /// `("communities", "community_mek_{community}_{generation}")`.
+    CommunityMekGeneration { community: String, generation: u64 },
+    /// Community-level MEK generations index —
+    /// `("communities", "community_mek_generations_{community}")`.
+    CommunityMekGenerationsIndex { community: String },
     /// Per-channel latest MEK —
     /// `("communities", "mek_{community}_{channel}")`.
     ChannelMek { community: String, channel: String },
@@ -77,17 +83,18 @@ impl VaultKey {
     pub fn namespace(&self) -> &'static str {
         match self {
             Self::IdentityEd25519 => "identity",
-            Self::SignalIdentity
-            | Self::SignalRegistrationId
-            | Self::SignalTrusted { .. }
+            Self::SignalTrusted { .. }
             | Self::SignalSession { .. }
             | Self::SignalSessionIndex
             | Self::SignalPrekey { .. }
             | Self::SignalPrekeyIndex
             | Self::SignalSignedPrekey { .. }
             | Self::SignalPqLastResort { .. }
-            | Self::SignalPqOneTime { .. } => "signal",
+            | Self::SignalPqOneTime { .. }
+            | Self::SignalPqOneTimeIndex => "signal",
             Self::CommunityMek { .. }
+            | Self::CommunityMekGeneration { .. }
+            | Self::CommunityMekGenerationsIndex { .. }
             | Self::ChannelMek { .. }
             | Self::ChannelMekGeneration { .. }
             | Self::ChannelMekGenerationsIndex { .. }
@@ -105,8 +112,6 @@ impl VaultKey {
     pub fn key(&self) -> Cow<'static, str> {
         match self {
             Self::IdentityEd25519 => Cow::Borrowed("ed25519_private"),
-            Self::SignalIdentity => Cow::Borrowed("identity_keypair"),
-            Self::SignalRegistrationId => Cow::Borrowed("registration_id"),
             Self::SignalTrusted { peer } => Cow::Owned(format!("trusted:{peer}")),
             Self::SignalSession { peer } => Cow::Owned(format!("session:{peer}")),
             Self::SignalSessionIndex => Cow::Borrowed("session_index"),
@@ -115,7 +120,15 @@ impl VaultKey {
             Self::SignalSignedPrekey { id } => Cow::Owned(format!("signed_prekey:{id}")),
             Self::SignalPqLastResort { id } => Cow::Owned(format!("pq_lr:{id}")),
             Self::SignalPqOneTime { id } => Cow::Owned(format!("pq_ot:{id}")),
+            Self::SignalPqOneTimeIndex => Cow::Borrowed("pq_ot_index"),
             Self::CommunityMek { community } => Cow::Owned(format!("mek_{community}")),
+            Self::CommunityMekGeneration {
+                community,
+                generation,
+            } => Cow::Owned(format!("community_mek_{community}_{generation}")),
+            Self::CommunityMekGenerationsIndex { community } => {
+                Cow::Owned(format!("community_mek_generations_{community}"))
+            }
             Self::ChannelMek { community, channel } => {
                 Cow::Owned(format!("mek_{community}_{channel}"))
             }
@@ -149,8 +162,6 @@ mod tests {
     fn namespace_and_key_strings_are_byte_stable() {
         let cases: &[(VaultKey, &str, &str)] = &[
             (VaultKey::IdentityEd25519, "identity", "ed25519_private"),
-            (VaultKey::SignalIdentity, "signal", "identity_keypair"),
-            (VaultKey::SignalRegistrationId, "signal", "registration_id"),
             (
                 VaultKey::SignalTrusted {
                     peer: "peer-abc".into(),
@@ -175,12 +186,28 @@ mod tests {
             ),
             (VaultKey::SignalPqLastResort { id: 3 }, "signal", "pq_lr:3"),
             (VaultKey::SignalPqOneTime { id: 4 }, "signal", "pq_ot:4"),
+            (VaultKey::SignalPqOneTimeIndex, "signal", "pq_ot_index"),
             (
                 VaultKey::CommunityMek {
                     community: "c1".into(),
                 },
                 "communities",
                 "mek_c1",
+            ),
+            (
+                VaultKey::CommunityMekGeneration {
+                    community: "c1".into(),
+                    generation: 5,
+                },
+                "communities",
+                "community_mek_c1_5",
+            ),
+            (
+                VaultKey::CommunityMekGenerationsIndex {
+                    community: "c1".into(),
+                },
+                "communities",
+                "community_mek_generations_c1",
             ),
             (
                 VaultKey::ChannelMek {

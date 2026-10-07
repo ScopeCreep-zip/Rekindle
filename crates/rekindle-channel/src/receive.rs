@@ -1,65 +1,9 @@
-//! Phase 19.d — pure channel-receive protocol primitives.
-//!
-//! Ported from src-tauri/services/community/message_notifications.rs
-//! decrypt + mention-signal paths. Chiral split (matches Phase 17/18
-//! and Phase 19.c send.rs): pure decrypt + parse + reader-validate +
-//! mention-signal extraction live here; src-tauri retains the
-//! orchestrator that gathers MEKs, looks up state, and emits events.
+//! Phase 19.d — pure channel-receive protocol primitives: mention-signal
+//! extraction. The body codec is `rekindle_secrets::channel_body`
+//! (re-exported from `send`).
 
-use rekindle_crypto::group::media_key::{ChannelAad, MediaEncryptionKey as CryptoMek};
 use rekindle_protocol::dht::community::channel_record::ChannelMessage;
 use rekindle_types::channel::flags::{MENTION_EVERYONE, MENTION_HERE};
-
-use crate::deps::ChannelMek;
-use crate::error::ChannelError;
-
-/// Symmetric decrypt the ciphertext under the given MEK with AAD
-/// validation `(channel_record_key, subkey_index, lamport_ts)`. The AAD
-/// must match the one the sender used (architecture §8 line 1626);
-/// mismatch triggers a `Decrypt` error.
-pub fn decrypt_channel_body(
-    mek: &ChannelMek,
-    channel_record_key: &str,
-    subkey_index: u32,
-    lamport_ts: u64,
-    ciphertext: &[u8],
-) -> Result<Vec<u8>, ChannelError> {
-    let crypto_mek = CryptoMek::from_bytes(mek.key_bytes, mek.generation);
-    let aad = ChannelAad {
-        channel_record_key: channel_record_key.as_bytes(),
-        subkey_index,
-        lamport_ts,
-    };
-    crypto_mek
-        .decrypt_with_aad(ciphertext, aad)
-        .map_err(|e| ChannelError::Decrypt(format!("MEK AAD decrypt failed: {e}")))
-}
-
-/// Legacy-compatible decrypt: try AAD-bound decrypt first; on failure
-/// fall back to the no-AAD path that pre-AAD messages used. Matches
-/// the src-tauri `message_notifications` decrypt waterfall.
-pub fn decrypt_channel_body_with_legacy_fallback(
-    mek: &ChannelMek,
-    channel_record_key: Option<&str>,
-    subkey_index: u32,
-    lamport_ts: u64,
-    ciphertext: &[u8],
-) -> Result<Vec<u8>, ChannelError> {
-    let crypto_mek = CryptoMek::from_bytes(mek.key_bytes, mek.generation);
-    if let Some(record_key) = channel_record_key {
-        let aad = ChannelAad {
-            channel_record_key: record_key.as_bytes(),
-            subkey_index,
-            lamport_ts,
-        };
-        if let Ok(pt) = crypto_mek.decrypt_with_aad(ciphertext, aad) {
-            return Ok(pt);
-        }
-    }
-    crypto_mek
-        .decrypt(ciphertext)
-        .map_err(|e| ChannelError::Decrypt(format!("legacy MEK decrypt failed: {e}")))
-}
 
 /// Decoded mention signals from a `ChannelMessage.flags + mentioned_*`
 /// payload. The receiver routes notifications based on these without
@@ -125,50 +69,7 @@ pub fn extract_mention_signals(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::send::{build_channel_message, encrypt_channel_body, BuildChannelMessageParams};
-
-    fn sample_mek() -> ChannelMek {
-        ChannelMek {
-            generation: 1,
-            key_bytes: [42u8; 32],
-        }
-    }
-
-    #[test]
-    fn decrypt_roundtrip_through_encrypt() {
-        let mek = sample_mek();
-        let ct = encrypt_channel_body(&mek, "rkey", 7, 99, b"hello").expect("encrypt");
-        let pt = decrypt_channel_body(&mek, "rkey", 7, 99, &ct).expect("decrypt");
-        assert_eq!(pt, b"hello");
-    }
-
-    #[test]
-    fn decrypt_rejects_wrong_aad() {
-        let mek = sample_mek();
-        let ct = encrypt_channel_body(&mek, "rkey", 7, 99, b"hello").expect("encrypt");
-        assert!(decrypt_channel_body(&mek, "rkey", 8, 99, &ct).is_err());
-        assert!(decrypt_channel_body(&mek, "wrong", 7, 99, &ct).is_err());
-        assert!(decrypt_channel_body(&mek, "rkey", 7, 100, &ct).is_err());
-    }
-
-    #[test]
-    fn legacy_fallback_when_no_record_key_supplied() {
-        let mek = sample_mek();
-        let crypto_mek = CryptoMek::from_bytes(mek.key_bytes, mek.generation);
-        // Encrypt WITHOUT AAD (legacy path).
-        let ct = crypto_mek.encrypt(b"legacy body").expect("encrypt");
-        let pt = decrypt_channel_body_with_legacy_fallback(&mek, None, 0, 0, &ct).expect("decrypt");
-        assert_eq!(pt, b"legacy body");
-    }
-
-    #[test]
-    fn legacy_fallback_prefers_aad_path_when_available() {
-        let mek = sample_mek();
-        let ct = encrypt_channel_body(&mek, "rkey", 7, 99, b"new body").expect("encrypt");
-        let pt = decrypt_channel_body_with_legacy_fallback(&mek, Some("rkey"), 7, 99, &ct)
-            .expect("decrypt");
-        assert_eq!(pt, b"new body");
-    }
+    use crate::send::{build_channel_message, BuildChannelMessageParams};
 
     fn sample_message_with(flags: u32, pseudos: Vec<String>, roles: Vec<String>) -> ChannelMessage {
         build_channel_message(BuildChannelMessageParams {

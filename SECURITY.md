@@ -87,9 +87,9 @@ The following are **out of scope**:
 - Reports against `legacy/` artifacts. The `legacy/` directory contains
   reverse-engineering material from the original Xfire installer and is
   static reference data, not running code.
-- Vulnerabilities in upstream dependencies (Veilid, iota_stronghold,
-  rusqlite, Tauri) — please report those directly to the upstream
-  project. We are happy to help coordinate.
+- Vulnerabilities in upstream dependencies (Veilid, SQLCipher, rusqlite,
+  Tauri) — please report those directly to the upstream project. We are
+  happy to help coordinate.
 - DoS via excessive resource use that requires an already-trusted peer
   (community member with `MANAGE_*` permission). Misbehavior by trusted
   peers is governed by the moderation system.

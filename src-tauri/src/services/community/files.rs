@@ -16,10 +16,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rekindle_files::{CacheConfig, ChunkCache};
-use tauri::AppHandle;
 
-use crate::db::DbPool;
 use crate::state::{AppState, SharedState};
+use rekindle_db::Db;
 
 /// 1 GB per spec §28.9 line 3283.
 const DEFAULT_BYTE_BUDGET: u64 = 1024 * 1024 * 1024;
@@ -75,11 +74,11 @@ fn pinned_adapter(
         .read()
         .clone()
         .ok_or_else(|| "app handle not initialized".to_string())?;
-    let pool: tauri::State<'_, DbPool> = tauri::Manager::state::<DbPool>(&app_handle);
+    let pool = state.db.current()?;
     Ok(crate::services::files_adapter::FilesAdapter::new(
         state.clone(),
         app_handle.clone(),
-        pool.inner().clone(),
+        pool,
     ))
 }
 
@@ -94,13 +93,13 @@ fn pinned_adapter(
 // FilesAdapter + delegate to the crate.
 
 /// Helper: build a FilesAdapter from an upload callsite that has
-/// `&SharedState + &DbPool` (no AppHandle on the call surface). We
+/// `&SharedState + &Db` (no AppHandle on the call surface). We
 /// retrieve the AppHandle from state.app_handle, falling back to an
 /// error if it isn't yet wired (commands run after setup so this
 /// should never trigger in practice).
 fn build_files_adapter(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<std::sync::Arc<crate::services::files_adapter::FilesAdapter>, String> {
     let app_handle = state
         .app_handle
@@ -124,7 +123,7 @@ fn build_files_adapter(
 /// Read a file from disk + delegate to [`upload_bytes_as_attachment`].
 pub async fn upload_file(
     state: &SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: &str,
     channel_id: &str,
     file_path: &Path,
@@ -144,7 +143,7 @@ pub async fn upload_file(
 /// [`rekindle_files::send_voice_message_bytes`].
 pub async fn send_voice_message_bytes(
     state: &SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: &str,
     channel_id: &str,
     opus_bytes: Vec<u8>,
@@ -209,7 +208,7 @@ pub fn serve_attachment_request(
 /// FilesAdapter + delegates.
 pub async fn download_attachment(
     state: &SharedState,
-    pool: &crate::db::DbPool,
+    pool: &rekindle_db::Db,
     community_id: &str,
     channel_id: &str,
     attachment_id_hex: &str,
@@ -227,6 +226,62 @@ pub async fn download_attachment(
     .map_err(|e| e.to_string())
 }
 
+/// The plaintext of an attachment, fetched into the chunk cache if needed.
+/// Voice messages play from these bytes; nothing is written outside the
+/// cache.
+pub async fn attachment_bytes(
+    state: &SharedState,
+    pool: &rekindle_db::Db,
+    community_id: &str,
+    channel_id: &str,
+    attachment_id_hex: &str,
+) -> Result<Vec<u8>, String> {
+    let adapter = build_files_adapter(state, pool)?;
+    let fetched = rekindle_files::fetch_attachment_to_cache(
+        adapter.as_ref(),
+        community_id,
+        channel_id,
+        attachment_id_hex,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    rekindle_files::assemble_attachment(adapter.as_ref(), community_id, &fetched)
+        .map_err(|e| e.to_string())
+}
+
+/// The stored attachment record for `attachment_id_hex` in a channel, from
+/// the message row that carries it.
+pub async fn attachment_record(
+    state: &SharedState,
+    pool: &rekindle_db::Db,
+    channel_id: &str,
+    attachment_id_hex: &str,
+) -> Result<Option<rekindle_files::AttachmentRecordJson>, String> {
+    let owner = crate::state_helpers::current_owner_key(state)?;
+    let channel = channel_id.to_owned();
+    let wanted = attachment_id_hex.to_owned();
+    crate::db_helpers::db_call(pool, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT attachment_json FROM messages \
+             WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+             AND attachment_json IS NOT NULL",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![owner, channel], |row| {
+            row.get::<_, String>(0)
+        })?;
+        for json in rows {
+            if let Ok(record) = serde_json::from_str::<rekindle_files::AttachmentRecordJson>(&json?)
+            {
+                if record.attachment_id == wanted {
+                    return Ok(Some(record));
+                }
+            }
+        }
+        Ok(None)
+    })
+    .await
+}
+
 // ─── Phase 4: pin / unpin command body ─────────────────────────────────
 
 /// Phase 23.D.8 — orchestration ported into `rekindle_files::set_attachment_pinned`.
@@ -240,25 +295,4 @@ pub async fn set_attachment_pinned(
     rekindle_files::set_attachment_pinned(adapter.as_ref(), community_id, attachment_id_hex, pinned)
         .await
         .map_err(|e| e.to_string())
-}
-
-// ─── Phase 4: progress event for the UI ────────────────────────────────
-
-pub fn emit_attachment_complete(
-    app_handle: &AppHandle,
-    community_id: &str,
-    channel_id: &str,
-    attachment_id_hex: &str,
-    local_path: &Path,
-) {
-    crate::event_dispatch::emit_live(
-        app_handle,
-        "community-event",
-        &crate::channels::CommunityEvent::AttachmentDownloaded {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
-            attachment_id: attachment_id_hex.to_string(),
-            local_path: local_path.display().to_string(),
-        },
-    );
 }

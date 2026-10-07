@@ -13,9 +13,9 @@ use std::sync::Arc;
 
 use rekindle_types::id::{PseudonymKey, RoleId};
 
-use crate::db::DbPool;
 use crate::state::{AppState, EventRsvpEntry, MemberProfileSnapshot};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 // ---------- Phase 21.i-fixup.b — role merge primitives ----------
 
@@ -75,7 +75,7 @@ pub(super) fn apply_member_state_update(
 
 pub(super) async fn load_known_event_ids(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
 ) -> Vec<String> {
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {

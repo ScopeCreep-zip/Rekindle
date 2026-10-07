@@ -42,6 +42,7 @@ pub mod moderation;
 pub mod origin;
 pub mod overflow;
 pub mod ownership;
+pub(crate) mod records;
 pub mod roles;
 pub mod roster;
 pub mod segments;
@@ -49,13 +50,12 @@ pub mod segments;
 pub use apply::write_entry;
 pub use bootstrap::build_bootstrap_response;
 pub use deps::{
-    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
-    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow,
-    UserStatusKind,
+    CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 pub use dht_hydration::{
     hydrate_community_state_from_dht, open_and_track_one_community, open_community_dht_records,
-    open_one_community_dht_records, rebuild_governance_from_dht, republish_active_records,
+    rebuild_governance_from_dht, republish_active_records,
 };
 pub use error::GovernanceRuntimeError;
 pub use event::{GovernanceRuntimeEvent, JoinStageStatus};
@@ -65,16 +65,15 @@ pub use join::{
     inspect_invite_in_entries, merge_presence_entry, InitialPresence, InviteGovStatus,
     JoinIdentity, JoinOnlineMember,
 };
-pub use join_gate::{gate, JoinPhase};
+pub use join_gate::{gate, phase_expired, should_stop, JoinPhase};
 pub use join_stages::{
     claim_registry_slot, collect_initial_presence_state, load_governance_snapshot, ClaimedSlot,
     GovernanceSnapshot, SlotClaimCtx,
 };
 pub use membership_events::{
-    decrypt_with_cached_mek, process_admin_keypair_grant, process_join_accepted,
-    process_member_roles_changed, process_onboarding_answers, process_peer_assisted_join,
-    process_slot_keypair_grant, JoinAcceptedInput, MekDecryptResult, MemberUpsertRow,
-    MembershipEventDeps, SlotGrantUpdate,
+    process_admin_keypair_grant, process_join_accepted, process_member_roles_changed,
+    process_onboarding_answers, process_peer_assisted_join, process_slot_keypair_grant,
+    JoinAcceptedInput, MemberUpsertRow, MembershipEventDeps, SlotGrantUpdate,
 };
 pub use origin::create_community;
 pub use overflow::{

@@ -8,11 +8,12 @@
 
 use std::sync::Arc;
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::{AppState, FriendState, FriendshipState, UserStatus};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::setup_invite_contact;
 
@@ -20,11 +21,11 @@ use super::setup_invite_contact;
 /// harvests a link, the window caps how long the harvest remains
 /// useful (vulnerable-user safety stance: leaked links shouldn't
 /// grant indefinite reach).
-const MAX_INVITE_AGE_SECS: u64 = 7 * 24 * 3600;
+pub const MAX_INVITE_AGE_SECS: u64 = 7 * 24 * 3600;
 
 pub async fn add_friend_from_invite_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     invite_string: String,
 ) -> Result<(), String> {
@@ -48,10 +49,7 @@ pub async fn add_friend_from_invite_inner(
     {
         let is_stale = state_helpers::is_friend(&state, &blob.public_key);
         if is_stale {
-            let mut dht_mgr = state.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                mgr.manager.invalidate_route_for_peer(&blob.public_key);
-            }
+            state_helpers::invalidate_cached_peer_route(&state, &blob.public_key);
             state.friends.write().remove(&blob.public_key);
         }
     }
@@ -62,13 +60,15 @@ pub async fn add_friend_from_invite_inner(
     let profile_key = blob.profile_dht_key.clone();
     let mailbox_key = blob.mailbox_dht_key.clone();
     db_call(&pool, move |conn| {
-        crate::friend_repo::delete_friend(conn, &ok, &pk)?;
-        conn.execute(
-            "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
-            rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
-        )?;
-        Ok(())
+        rekindle_db::repo::friends::replace_with_invited(
+            conn,
+            &ok,
+            &pk,
+            &dn,
+            timestamp,
+            &profile_key,
+            &mailbox_key,
+        )
     })
     .await?;
 

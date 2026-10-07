@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::services::presence_adapter::build_adapter;
 use crate::state::{AppState, UserStatus};
@@ -66,12 +66,20 @@ pub async fn publish_status(state: &Arc<AppState>, status: UserStatus) -> Result
         .map_err(|e| e.to_string())
 }
 
-/// Run the periodic status heartbeat loop until `shutdown_rx` fires.
-pub async fn start_heartbeat_loop(state: Arc<AppState>, shutdown_rx: mpsc::Receiver<()>) {
+/// Ask the session's STATUS publisher to write the current status now
+/// (plan C7.8c). Every status change goes through it, so a stale status
+/// read can never land after a newer one.
+pub fn request_status_publish(state: &AppState) {
+    state.status_wake.notify_one();
+}
+
+/// Run the session's one STATUS publisher (status changes and the
+/// heartbeat) until `stop` is cancelled.
+pub async fn run_status_publisher(state: Arc<AppState>, stop: CancellationToken) {
     let Some(adapter) = build_adapter(&state) else {
-        tracing::warn!("start_heartbeat_loop: adapter unavailable — heartbeat skipped");
+        tracing::warn!("status publisher: adapter unavailable — not started");
         return;
     };
-    let adapter = Arc::new(adapter);
-    rekindle_presence::start_heartbeat_loop(adapter, shutdown_rx).await;
+    let wake = Arc::clone(&state.status_wake);
+    rekindle_presence::run_status_publisher(Arc::new(adapter), wake, stop).await;
 }

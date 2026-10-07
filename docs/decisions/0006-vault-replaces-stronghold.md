@@ -89,10 +89,11 @@ one shot; iterative updates would be O(N) on every write.
 
 Chosen: **Option A — `rekindle-vault`**.
 
-The crate is Tier 2 alongside `rekindle-secrets`. The
-`src-tauri/src/keystore/` module wraps it with domain adapters
-(signal, community_keys, channel_mek, audit) so call sites do not
-need to know about the underlying SQLCipher / GCM split.
+The crate is Tier 2 alongside `rekindle-secrets`. Its typed helpers
+(`rekindle_vault::typed::{signal, community_keys, mek, audit}`) give
+every host the same storage per kind of secret, so call sites do not
+need to know about the underlying SQLCipher / GCM split (moved out of
+`src-tauri/src/keystore/` by plan C5.4).
 
 ## Consequences
 
@@ -125,9 +126,9 @@ need to know about the underlying SQLCipher / GCM split.
 **Boundaries.**
 
 - `rekindle-vault` is the sole on-disk store for secret material.
-  Every other crate that touches secrets goes through the keystore
-  adapters in `src-tauri/src/keystore/`. Enforced by code review
-  and grep gauntlet.
+  Every other crate that touches secrets goes through its typed
+  helpers (`rekindle_vault::typed`). Enforced by code review and grep
+  gauntlet.
 
 ## More information
 

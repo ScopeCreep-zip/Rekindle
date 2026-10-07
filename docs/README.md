@@ -65,7 +65,7 @@ shaped the cryptographic choices.
 | [`game-detect.md`](architecture/game-detect.md) | Cross-platform process scanning, JSON game DB, rich presence |
 | [`files.md`](architecture/files.md) | Lost Cargo file delivery (chunking, BLAKE3, swarm fetch, LRU cache) |
 | [`sync.md`](architecture/sync.md) | Cross-device sync (personal DFLT record, pairing, gap detection) |
-| [`daemon-cli.md`](architecture/daemon-cli.md) | Daemon + CLI architecture (`rekindle-node`, `rekindle-cli`, Noise IK IPC bus) |
+| [`daemon-cli.md`](architecture/daemon-cli.md) | Daemon + frontends (`rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui`, Noise IK IPC bus) |
 | [`ui-skin.md`](architecture/ui-skin.md) | Frameless titlebar, Xfire colour palette, window catalogue, asset usage |
 
 ### Protocol (`protocol/`)
@@ -148,14 +148,15 @@ src-tauri/                          Tauri 2 Rust backend
       relay/                        Strand Relay forwarding
       dm/                           Direct messages
       search/                       Message search
-  migrations/001_init.sql           SQLite schema (single file, edit in place)
 crates/                             22 workspace members — see architecture/crates.md
   # Tiered pure-logic crates (zero Tauri, zero veilid-core)
   rekindle-types/                   Tier 1: shared IDs, enums, error taxonomy
   rekindle-secrets/                 Tier 2: keys, MEK, signing — sole crypto boundary
   rekindle-codec/                   Tier 3: signed envelope build/verify, dedup
   rekindle-records/                 Tier 3: DHT record lifecycle, retry, SMPL schemas
-  rekindle-utils/                   Time helpers, shared utilities
+  rekindle-db/                      Tier 3: SQLite schema, Db handle, repositories, node lock
+  rekindle-vault/                   Tier 2: SQLCipher vault + typed secret helpers
+  rekindle-utils/                   Shared utilities; DataRoot (the shared data root)
   rekindle-route/                   Tier 4: private route lifecycle, peer cache
   rekindle-gossip/                  Tier 5: gossip mesh primitives
   rekindle-governance/              Tier 6: pure CRDT merge, permission resolution

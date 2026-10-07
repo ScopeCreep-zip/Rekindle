@@ -8,16 +8,18 @@ description = "Cross-platform game detection via process scanning for Rekindle"
 workspace = true
 
 [dependencies]
-sysinfo = "0.32"
+async-trait = "0.1"
+open = "5"
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
+sysinfo = "0.32"
 thiserror = { workspace = true }
 tokio = { workspace = true }
-async-trait = "0.1"
-rekindle-utils = { path = "../rekindle-utils" }
-open = "5"
+tokio-util = "0.7"
+tracing = { workspace = true }
 
 [dev-dependencies]
 parking_lot = { workspace = true }
-tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = [ "test-util", "macros", "rt-multi-thread" ] }

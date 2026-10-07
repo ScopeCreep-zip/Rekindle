@@ -19,16 +19,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::audio_processing::AudioProcessor;
 use crate::codec::OpusCodec;
 use crate::liveness::MediaLiveness;
+use crate::media_crypto::{FrameSealer, MediaKeys, MediaScope};
 use crate::receiver_report::VoiceReceiverReport;
 use crate::send_loop::quality::PeerLink;
-use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
-use crate::transport::VoiceTransport;
+use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
+use crate::transport::{OutboundFrame, VoiceTransport};
 use crate::VoiceMode;
 
 /// Steady-state rate-limit for the route-heal hook (and the warn re-log):
@@ -46,14 +46,16 @@ const ROUTE_HEAL_FIRST: u64 = 3;
 pub struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
     pub transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
-    pub shutdown_rx: mpsc::Receiver<()>,
+    /// Cancelled when the loop's session scope shuts down.
+    pub stop: tokio_util::sync::CancellationToken,
     pub deps: Arc<dyn VoiceSessionDeps>,
     pub public_key: String,
     pub noise_suppression: bool,
     pub echo_cancellation: bool,
     pub muted_flag: Arc<AtomicBool>,
     pub speaker_ref_rx: broadcast::Receiver<Vec<f32>>,
-    /// Community ID for MEK encryption. `None` for 1:1 calls.
+    /// Community ID (the channel-media MEK keys the session). `None` for
+    /// 1:1 calls, whose channel id is the peer.
     pub community_id: Option<String>,
     /// Voice channel ID we're transmitting in. Used with the stage
     /// gate (§10.7) to drop frames from non-speakers.
@@ -77,7 +79,7 @@ pub struct VoiceSendParams {
 struct VoiceSendLoop {
     capture_rx: mpsc::Receiver<Vec<f32>>,
     transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
-    shutdown_rx: mpsc::Receiver<()>,
+    stop: tokio_util::sync::CancellationToken,
     deps: Arc<dyn VoiceSessionDeps>,
     public_key: String,
     codec: OpusCodec,
@@ -108,6 +110,8 @@ struct VoiceSendLoop {
     /// classification, not be declared lost for staying quiet.
     peer_links: HashMap<String, PeerLink>,
     media_liveness: Arc<MediaLiveness>,
+    /// SFrame-seals every outbound frame under our sender key.
+    sealer: FrameSealer,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -146,10 +150,16 @@ impl VoiceSendLoop {
             frame_duration_ms,
         );
 
+        let key_source: Arc<dyn MediaKeySource> = params.deps.clone();
+        let keys = Arc::new(MediaKeys::new(
+            key_source,
+            MediaScope::of_session(params.community_id.as_deref(), &params.channel_id),
+        ));
         Some(Self {
+            sealer: FrameSealer::new(keys),
             capture_rx,
             transport: params.transport,
-            shutdown_rx: params.shutdown_rx,
+            stop: params.stop,
             deps: params.deps,
             public_key: params.public_key,
             codec,
@@ -179,7 +189,7 @@ impl VoiceSendLoop {
         loop {
             tokio::select! {
                 biased;
-                _ = self.shutdown_rx.recv() => {
+                () = self.stop.cancelled() => {
                     tracing::info!("voice send loop: shutdown signal received");
                     break;
                 }
@@ -296,43 +306,34 @@ impl VoiceSendLoop {
         encoded.timestamp = rekindle_utils::timestamp_ms();
         self.sequence = self.sequence.wrapping_add(1);
 
-        // Encrypt with the channel-media MEK (§10.5 hierarchy: channel
-        // MEK when the join/leave rotation distributed one, community
-        // MEK otherwise). The generation rides the wire so receivers
-        // detect rotation races instead of decrypt-failing blind. NO
-        // key → DROP the frame: community voice must never leave this
-        // node in plaintext (the old `if let Some` silently skipped
-        // encryption when the cache was empty).
-        if let Some(ref cid) = self.community_id {
-            let Some((mek_bytes, generation)) = self.deps.channel_media_mek(cid, &self.channel_id)
-            else {
-                tracing::warn!(
-                    community = %cid,
-                    channel = %self.channel_id,
-                    "no channel-media MEK — voice frame dropped (never sent plaintext)"
-                );
-                return;
-            };
-            let mek = MediaEncryptionKey::from_bytes(mek_bytes, generation);
-            match mek.encrypt(&encoded.data) {
-                Ok(ciphertext) => {
-                    encoded.data = ciphertext;
-                    encoded.mek_generation = generation;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "voice MEK encrypt failed");
-                    return;
-                }
-            }
-        }
-
         {
             let transport = self.transport.lock().await;
             if transport.is_connected() {
+                // No key for the scope yet → DROP: voice never leaves this
+                // node in the clear.
+                let Some(sframe) = self.sealer.seal(
+                    transport.sender_key(),
+                    encoded.sequence,
+                    encoded.timestamp,
+                    0,
+                    &encoded.data,
+                ) else {
+                    tracing::debug!(
+                        channel = %self.channel_id,
+                        "no media key yet — voice frame dropped (never sent plaintext)"
+                    );
+                    return;
+                };
+                let frame = OutboundFrame {
+                    sequence: encoded.sequence,
+                    timestamp: encoded.timestamp,
+                    transport_seq: 0,
+                    sframe,
+                };
                 let (roster, errors) = match transport.mode() {
                     VoiceMode::Mesh => {
                         let roster = transport.peer_keys();
-                        let errors = transport.broadcast(&encoded).await;
+                        let errors = transport.broadcast(&frame).await;
                         (roster, errors)
                     }
                     VoiceMode::Mcu { ref host_pseudonym } if *host_pseudonym == self.public_key => {
@@ -342,7 +343,7 @@ impl VoiceSendLoop {
                     VoiceMode::Mcu { ref host_pseudonym } => {
                         // Non-host: send only to the MCU host.
                         let roster = vec![host_pseudonym.clone()];
-                        let errors = match transport.send_to_peer(host_pseudonym, &encoded).await {
+                        let errors = match transport.send_to_peer(host_pseudonym, &frame).await {
                             Ok(()) => Vec::new(),
                             Err(e) => vec![(host_pseudonym.clone(), e)],
                         };
@@ -417,27 +418,29 @@ impl VoiceSendLoop {
         };
         let deps = Arc::clone(&self.deps);
         let transport = Arc::clone(&self.transport);
-        let handle = tokio::spawn(async move {
-            let Some(fresh) = deps.resolve_peer_route_from_dht(&community_id, &peer).await else {
-                tracing::warn!(
+        self.deps
+            .scope()
+            .spawn_or_drop("voice route heal", async move {
+                let Some(fresh) = deps.resolve_peer_route_from_dht(&community_id, &peer).await
+                else {
+                    tracing::warn!(
+                        community = %community_id,
+                        peer = %peer,
+                        "voice route heal: no fresh route in presence registry"
+                    );
+                    return;
+                };
+                if fresh.is_empty() {
+                    return;
+                }
+                let refreshed = transport.lock().await.refresh_peer_route(&peer, &fresh);
+                tracing::info!(
                     community = %community_id,
                     peer = %peer,
-                    "voice route heal: no fresh route in presence registry"
+                    refreshed,
+                    "voice route heal: presence re-resolve applied"
                 );
-                return;
-            };
-            if fresh.is_empty() {
-                return;
-            }
-            let refreshed = transport.lock().await.refresh_peer_route(&peer, &fresh);
-            tracing::info!(
-                community = %community_id,
-                peer = %peer,
-                refreshed,
-                "voice route heal: presence re-resolve applied"
-            );
-        });
-        self.deps.register_background_handle(handle);
+            });
     }
 
     fn flip_speaking_off_if_needed(&mut self) {

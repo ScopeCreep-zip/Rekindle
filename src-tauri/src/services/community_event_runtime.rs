@@ -6,9 +6,9 @@ use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayl
 use rekindle_types::permissions;
 
 use crate::channels::community_channel::EventInfoDto;
-use crate::db::DbPool;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub fn parse_event_id(id: &str) -> rekindle_types::id::EventId {
     let stripped = id.strip_prefix("evt_").unwrap_or(id);
@@ -100,7 +100,8 @@ pub async fn create_event_inner(
         location: location.clone(),
     };
 
-    let lamport = state_helpers::increment_lamport(state, community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, community_id).map_err(|e| e.to_string())?;
     let governance_event_id = parse_event_id(&event_id);
     crate::services::community::write_entry(
         state,
@@ -135,7 +136,7 @@ pub async fn create_event_inner(
 
 pub async fn edit_event_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     event_id: String,
     title: Option<String>,
@@ -194,7 +195,7 @@ pub fn delete_event_inner(
 
 pub async fn cancel_event_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     event_id: String,
 ) -> Result<(), String> {
@@ -220,7 +221,7 @@ pub async fn cancel_event_inner(
 
 pub async fn set_event_rsvp_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     event_id: String,
     status: String,
@@ -302,19 +303,22 @@ pub async fn set_event_rsvp_inner(
     }
     let state_clone = state.clone();
     let community_id_clone = community_id.clone();
-    tauri::async_runtime::spawn(async move {
-        let _ = crate::services::community::presence_poll_tick_public(
-            &state_clone,
-            &community_id_clone,
-        )
-        .await;
-    });
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "event RSVP publish",
+        async move {
+            let _ = crate::services::community::presence_poll_tick_public(
+                &state_clone,
+                &community_id_clone,
+            )
+            .await;
+        },
+    );
     Ok(())
 }
 
 pub async fn get_events_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
 ) -> Result<Vec<EventInfoDto>, String> {
     use crate::channels::community_channel::EventRsvpInfoDto;

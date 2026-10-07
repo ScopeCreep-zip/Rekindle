@@ -19,6 +19,7 @@ use rekindle_crypto::group::mek_distribution::wrap_mek;
 use rekindle_protocol::dht::community::envelope::{
     CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
 };
+use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 
 use crate::pseudonym_hex::pseudonym_from_hex;
@@ -31,9 +32,8 @@ use crate::event::MekRotationEvent;
 /// Wait until it's our turn to attempt the rotation at `cascade_index`,
 /// or yield if a peer already rotated.
 ///
-/// `channel_id = None` means community-wide MEK rotation (e.g. text
-/// channel after a member departure); `Some(channel)` means the
-/// channel-scoped MEK (e.g. voice channel membership change).
+/// `scope` is the key being rotated: the community key after a member
+/// departure, a channel's key on a voice membership change.
 ///
 /// Returns `Some(higher_priority_candidates)` if we should still
 /// proceed (the slice we should NOT include in the recipient set when
@@ -43,35 +43,30 @@ use crate::event::MekRotationEvent;
 pub async fn wait_for_rotation_slot<D: MekDistributeDeps>(
     deps: &D,
     community_id: &str,
-    channel_id: Option<&str>,
+    scope: KeyScope,
     candidates: &[PseudonymKey],
     initial_generation: u64,
 ) -> Option<Vec<PseudonymKey>> {
     let me = deps.my_pseudonym(community_id)?;
     let index = candidates.iter().position(|candidate| candidate == &me)?;
 
-    // Cascade levels >0 wait their backoff so the rightful primary mints first.
+    // Cascade levels >0 wait their backoff so the rightful primary mints
+    // first. A session that ends during the wait does not rotate.
     if index > 0 {
-        tokio::time::sleep(cascade_delay(index)).await;
+        let token = deps.scope().token();
+        token
+            .run_until_cancelled(tokio::time::sleep(cascade_delay(index)))
+            .await?;
     }
 
     // Final guard before claiming the slot — for EVERY index, INCLUDING the
-    // primary (index 0). If another rotator already advanced this channel's
-    // generation while we were electing/waiting, stand down rather than mint a
-    // competing same-generation key. Previously only cascade levels (index > 0)
-    // checked, so two peers that both believed they were the primary (divergent
-    // presence views) would each mint at the same generation. Applying it to
-    // index 0 closes that window.
-    //
-    // Channel-scoped only: the community-wide (None) generation lives in a
-    // separate cache (`state.mek_cache`), not the channel cache this
-    // `current_generation` reads, so checking it here would be a no-op. The
-    // deterministic same-generation rank convergence (the cache-resolution
-    // layer) is the backstop for community-wide rotations.
-    if let Some(channel) = channel_id {
-        if deps.cache().current_generation(community_id, channel) > initial_generation {
-            return None;
-        }
+    // primary (index 0), and for every scope. If another rotator already
+    // advanced this scope's generation while we were electing/waiting,
+    // stand down rather than mint a competing same-generation key. Two
+    // peers that both believed they were the primary (divergent presence
+    // views) would otherwise each mint at the same generation.
+    if deps.cache().current_generation(community_id, scope) > initial_generation {
+        return None;
     }
 
     Some(candidates.iter().take(index).cloned().collect())
@@ -87,7 +82,7 @@ pub async fn wait_for_rotation_slot<D: MekDistributeDeps>(
 pub async fn distribute_mek<D: MekDistributeDeps>(
     deps: &D,
     community_id: &str,
-    channel_id: Option<&str>,
+    scope: KeyScope,
     new_mek: &MediaEncryptionKey,
     recipients: &[RotationRecipient],
 ) -> Result<(), MekRotationError> {
@@ -101,16 +96,20 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
     let my_pseudonym_hex = hex::encode(my_pseudonym.0);
     let generation = new_mek.generation();
-    let event_channel = channel_id.unwrap_or("").to_string();
 
     deps.emit_event(MekRotationEvent::RotationStarted {
         community_id: community_id.to_string(),
-        channel_id: event_channel.clone(),
+        scope,
         new_generation: generation,
         initiator_pseudonym_hex: my_pseudonym_hex.clone(),
     });
 
     for recipient in recipients {
+        // A rotation cut short by the session ending is repaired like one
+        // nobody was online to receive: peers request the key.
+        if deps.scope().is_closed() {
+            break;
+        }
         if recipient.pseudonym_hex == my_pseudonym_hex {
             // Defensive: should already have been excluded.
             continue;
@@ -129,7 +128,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         .map_err(|e| MekRotationError::Crypto(format!("wrap MEK: {e}")))?;
         let payload = CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
             community_id: community_id.to_string(),
-            channel_id: channel_id.map(ToOwned::to_owned),
+            channel_id: scope.wire_channel(),
             generation,
             sender_pseudonym: my_pseudonym_hex.clone(),
             wrapped_mek: wrapped,
@@ -149,7 +148,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         inspect_reply(
             community_id,
             &recipient.pseudonym_hex,
-            channel_id,
+            scope,
             generation,
             &reply,
         );
@@ -157,7 +156,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
 
     deps.emit_event(MekRotationEvent::RotationComplete {
         community_id: community_id.to_string(),
-        channel_id: event_channel,
+        scope,
         generation,
     });
 
@@ -173,7 +172,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
 fn inspect_reply(
     community_id: &str,
     recipient_hex: &str,
-    expected_channel: Option<&str>,
+    expected_scope: KeyScope,
     expected_generation: u64,
     reply: &[u8],
 ) {
@@ -203,11 +202,11 @@ fn inspect_reply(
                     ack_gen,
                     "MekTransferAck generation mismatch"
                 );
-            } else if ack_channel.as_deref() != expected_channel {
+            } else if KeyScope::from_wire(ack_channel.as_deref()) != Some(expected_scope) {
                 tracing::warn!(
                     community = %community_id,
                     recipient = %recipient_hex,
-                    sent_channel = ?expected_channel,
+                    sent_scope = %expected_scope,
                     ack_channel = ?ack_channel,
                     "MekTransferAck channel_id mismatch"
                 );

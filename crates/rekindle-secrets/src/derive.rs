@@ -5,6 +5,7 @@
 
 use ed25519_dalek::SigningKey;
 use hkdf::Hkdf;
+use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
 use sha2::Sha256;
 use x25519_dalek::StaticSecret;
@@ -15,7 +16,7 @@ use x25519_dalek::StaticSecret;
 /// produce the same keypair. Different community IDs produce different
 /// keypairs, making cross-community identity correlation impossible.
 pub fn derive_community_pseudonym(master_secret: &[u8; 32], community_id: &str) -> SigningKey {
-    let hkdf = Hkdf::<Sha256>::new(Some(b"rekindle-community-pseudonym-v1"), master_secret);
+    let hkdf = Hkdf::<Sha256>::new(Some(domains::COMMUNITY_PSEUDONYM.as_bytes()), master_secret);
     let mut seed = [0u8; 32];
     hkdf.expand(community_id.as_bytes(), &mut seed)
         .expect("32-byte output is a valid HKDF-SHA256 length");
@@ -41,7 +42,7 @@ pub fn derive_governance_overflow_keypair(
     community_id: &str,
     page_index: u32,
 ) -> SigningKey {
-    let hkdf = Hkdf::<Sha256>::new(Some(b"rekindle-gov-overflow-v1"), master_secret);
+    let hkdf = Hkdf::<Sha256>::new(Some(domains::GOV_OVERFLOW.as_bytes()), master_secret);
     let mut seed = [0u8; 32];
     hkdf.expand(format!("{community_id}:{page_index}").as_bytes(), &mut seed)
         .expect("32-byte output is a valid HKDF-SHA256 length");
@@ -90,7 +91,7 @@ pub fn pseudonym_to_x25519(key: &SigningKey) -> StaticSecret {
 /// universal SMPL schema (Q-pid equation).
 pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<SigningKey, CryptoError> {
     let hk = Hkdf::<Sha256>::new(None, seed);
-    let info = format!("rekindle-slot-{slot}");
+    let info = format!("{}{slot}", domains::SLOT_KEY_PREFIX);
     let mut okm = [0u8; 32];
     hk.expand(info.as_bytes(), &mut okm)
         .map_err(|_| CryptoError::KeyGeneration("HKDF expand failed for slot keypair".into()))?;

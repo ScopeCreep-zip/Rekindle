@@ -18,7 +18,6 @@ use tracing::{debug, info, warn};
 use rekindle_transport::{
     payload::dm::DmPayload,
     payload::rpc::{CallResponse, InboundCall},
-    payload::voice::VoicePayload,
     InboundHandler, PendingFriendRequest, Session, SubscriptionManager, TransportEvent,
     VerifiedSender,
 };
@@ -89,6 +88,22 @@ impl DaemonHandler {
         }
     }
 
+    /// Whether we hold a personal route, and what the media route is doing
+    /// (plan C7.9c): the route facts the network status carries. Route
+    /// state lives on the transport's route owner, not the manager.
+    fn route_status(&self) -> (bool, rekindle_types::subscription_events::RouteAvailability) {
+        use rekindle_protocol::own_routes::RouteClass;
+        let routes = self.transport.read().as_ref().and_then(|t| t.own_routes());
+        let Some(routes) = routes else {
+            return (
+                false,
+                rekindle_types::subscription_events::RouteAvailability::Idle,
+            );
+        };
+        let media = routes.state(RouteClass::Media).borrow().availability();
+        (routes.blob(RouteClass::General).is_some(), media)
+    }
+
     /// Persist a friend request to session before forwarding to SubscriptionManager.
     /// This must happen synchronously before the event pipeline because the session
     /// state is read by the subscription manager's state_effects.
@@ -132,6 +147,12 @@ impl DaemonHandler {
 }
 
 impl InboundHandler for DaemonHandler {
+    fn local_identity(&self) -> Option<[u8; 32]> {
+        let guard = self.session.read();
+        let hex = &guard.as_ref()?.identity.public_key_hex;
+        rekindle_transport::recipient_bytes(hex).ok()
+    }
+
     async fn on_dm(
         &self,
         sender: &VerifiedSender,
@@ -141,7 +162,7 @@ impl InboundHandler for DaemonHandler {
         _correlation_id: Option<&str>,
     ) {
         debug!(
-            sender = &sender.public_key[..12.min(sender.public_key.len())],
+            sender = %sender.public_key,
             "handler: on_dm"
         );
 
@@ -211,7 +232,7 @@ impl InboundHandler for DaemonHandler {
     ) {
         debug!(
             community = community_id,
-            sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+            sender = %sender_pseudonym,
             "handler: on_gossip"
         );
 
@@ -230,6 +251,25 @@ impl InboundHandler for DaemonHandler {
             return;
         }
 
+        // A kick rotates the keys the kicked member holds (plan D20). The
+        // worker checks the sender's authority before acting.
+        if let CommunityEnvelope::Control(ControlPayload::Kick {
+            ref target_pseudonym,
+        }) = envelope
+        {
+            let request = super::mek_rotation::MekRotationRequest::kick(
+                community_id,
+                target_pseudonym.clone(),
+                sender_pseudonym,
+            );
+            if self.mek_rotation_tx.send(request).is_err() {
+                debug!(
+                    community = community_id,
+                    "MEK rotation worker stopped — kick not rotated"
+                );
+            }
+        }
+
         // Tier 2: If this is a JoinAccepted for a pending join, cache MEK + complete oneshot.
         // Check BEFORE forwarding to SubscriptionManager (which takes ownership).
         if let CommunityEnvelope::Control(ControlPayload::JoinAccepted {
@@ -239,30 +279,30 @@ impl InboundHandler for DaemonHandler {
             ..
         }) = &envelope
         {
-            // Cache MEK from direct notification (bypasses DHT vault propagation)
+            // The accept carries the community key as MEK wire bytes, the
+            // same reading the desktop's `process_join_accepted` applies.
+            // It is the community scope, installed under the shared
+            // convergence rule.
             if !mek_encrypted.is_empty() && *mek_generation > 0 {
-                if let Some(ref sk_handle) = *self.signing_key.read() {
-                    let transfer = rekindle_transport::payload::rpc::MekTransferPayload {
-                        channel_id: String::new(), // first channel — will be resolved by community governance
-                        generation: *mek_generation,
-                        rotator_pseudonym_hex: String::new(),
-                        wrapped_mek: mek_encrypted.clone(),
-                    };
-                    match rekindle_transport::operations::mek::receive_mek_transfer_payload(
-                        &transfer,
-                        sk_handle.as_bytes(),
+                if let Some(mek) =
+                    rekindle_transport::crypto::mek::Mek::from_wire_bytes(mek_encrypted)
+                {
+                    rekindle_mek_rotation::ChannelMekCache::insert(
+                        &super::mek_rotation::MekCacheAdapter::new(Arc::clone(&self.mek_cache)),
                         community_id,
-                        &self.mek_cache,
-                    ) {
-                        Ok(_) => info!(
-                            community = community_id,
-                            generation = mek_generation,
-                            "MEK cached from JoinAccepted notification (tier 2)"
-                        ),
-                        Err(e) => {
-                            debug!(community = community_id, error = %e, "MEK cache from notification failed — will read vault");
-                        }
-                    }
+                        rekindle_types::channel_keys::KeyScope::Community,
+                        mek,
+                    );
+                    info!(
+                        community = community_id,
+                        generation = mek_generation,
+                        "community MEK cached from JoinAccepted"
+                    );
+                } else {
+                    debug!(
+                        community = community_id,
+                        "JoinAccepted carried invalid MEK wire bytes"
+                    );
                 }
             }
             let mut pending = self.pending_joins.lock();
@@ -288,10 +328,6 @@ impl InboundHandler for DaemonHandler {
     /// a relayed message still attributable to whoever wrote it.
     async fn on_gossip_forward(&self, envelope: &SignedEnvelope) {
         crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
-    }
-
-    async fn on_voice(&self, _sender_key: &str, _packet: VoicePayload) {
-        // Voice packet dispatch — handled by voice session manager
     }
 
     async fn on_call(&self, sender_pseudonym: Option<&str>, request: InboundCall) -> CallResponse {
@@ -392,26 +428,38 @@ impl InboundHandler for DaemonHandler {
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             match event {
                 TransportEvent::AttachmentChanged {
+                    state,
                     is_attached,
                     public_internet_ready,
-                    ..
                 } => {
-                    sub_mgr.on_route_change(0, vec![]); // triggers NetworkStateChanged render
-                    let _ = (is_attached, public_internet_ready); // used by attachment handler
+                    let (has_route, media_route) = self.route_status();
+                    sub_mgr.on_attachment_change(
+                        state,
+                        is_attached,
+                        public_internet_ready,
+                        has_route,
+                        media_route,
+                    );
+                }
+                TransportEvent::RoutesChanged => {
+                    let Some(transport) = self.transport.read().clone() else {
+                        return;
+                    };
+                    let shared = transport.shared();
+                    let (has_route, media_route) = self.route_status();
+                    sub_mgr.on_attachment_change(
+                        shared.attachment_state().to_string(),
+                        shared.is_attached(),
+                        shared.public_internet_ready(),
+                        has_route,
+                        media_route,
+                    );
                 }
                 TransportEvent::LocalRoutesDied { count } => {
                     sub_mgr.on_route_change(count, vec![]);
                 }
                 TransportEvent::RemoteRoutesDied { peer_keys } => {
                     sub_mgr.on_route_change(0, peer_keys);
-                }
-                TransportEvent::WatchDied { record_key } => {
-                    // The renewal loop would eventually re-watch this,
-                    // but on a 4-minute cadence. This is the only signal
-                    // Veilid gives that a watch failed, so acting on it
-                    // immediately is the difference between a gap and a
-                    // blackout.
-                    sub_mgr.on_watch_died(&record_key);
                 }
             }
         }

@@ -10,26 +10,27 @@
 use std::sync::Arc;
 
 use rekindle_secrets::sync_key::{decrypt_subkey, SyncKey};
-use rekindle_types::cross_device_sync::{
-    DeviceList, ReadState, SyncManifest, SyncPreferences, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST,
-};
-use tauri::AppHandle;
-use veilid_core::{RecordKey, ValueSubkey, ValueSubkeyRangeSet};
+use rekindle_types::cross_device_sync::{ReadState, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST};
+use veilid_core::{RecordKey, ValueSubkey};
 
-use super::merge::{merge_device_list, merge_manifest, merge_preferences};
 use super::record::{open_personal_sync_record, PersonalSyncRecordHandle};
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Open the personal sync record (if one exists) and request a watch
 /// over all 4 active subkeys. Idempotent.
-pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
+pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &Db) -> Result<(), String> {
     let Some(handle) = open_personal_sync_record(state, pool).await else {
         return Ok(());
     };
-    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
+    // The watch rides a lease the session keeps (`personal_sync_lease`),
+    // so a transaction's borrow and release never cancels it.
+    if state.personal_sync_lease.lock().is_some() {
+        return Ok(());
+    }
+    let record_pool = state_helpers::record_pool(state)?;
     let key: RecordKey = handle
         .record_key
         .parse()
@@ -38,18 +39,21 @@ pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &DbPool) -> 
         .owner_keypair_hex
         .parse()
         .map_err(|e| format!("invalid sync owner keypair: {e}"))?;
-    let _ = rc
-        .open_dht_record(key.clone(), Some(owner_kp))
+    let lease = record_pool
+        .acquire(&key, Some(owner_kp))
         .await
         .map_err(|e| format!("open personal sync record: {e}"))?;
-    let mut subkeys = ValueSubkeyRangeSet::new();
-    for sk in SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST {
-        subkeys = subkeys.union(&ValueSubkeyRangeSet::single(sk));
-    }
-    let _ = rc
-        .watch_dht_values(key, Some(subkeys), None, None)
+    if let Err(e) = record_pool
+        .watch(lease, (SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).collect())
         .await
-        .map_err(|e| format!("watch personal sync: {e}"))?;
+    {
+        record_pool.release(lease).await;
+        return Err(format!("watch personal sync: {e}"));
+    }
+    let previous = state.personal_sync_lease.lock().replace(lease);
+    if let Some(previous) = previous {
+        record_pool.release(previous).await;
+    }
     Ok(())
 }
 
@@ -57,9 +61,8 @@ pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &DbPool) -> 
 /// record and the change was handled. Called from the central DHT
 /// watch dispatcher.
 pub async fn try_handle_personal_sync_change(
-    app_handle: &AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
     subkeys: &[ValueSubkey],
     inline_value: Option<&[u8]>,
@@ -82,13 +85,13 @@ pub async fn try_handle_personal_sync_change(
         let blob = if subkeys.first() == Some(&subkey) && inline_value.is_some() {
             inline_value.map(<[u8]>::to_vec).unwrap_or_default()
         } else {
-            let Some(rc) = state_helpers::safe_routing_context(state) else {
+            let Ok(record_pool) = state_helpers::record_pool(state) else {
                 return true;
             };
             let Ok(key) = handle.record_key.parse::<RecordKey>() else {
                 return true;
             };
-            match rc.get_dht_value(key, subkey, true).await {
+            match record_pool.read_once(&key, subkey, true).await {
                 Ok(Some(v)) => v.data().to_vec(),
                 Ok(None) | Err(_) => continue,
             }
@@ -100,65 +103,59 @@ pub async fn try_handle_personal_sync_change(
                 continue;
             }
         };
-        apply_remote_subkey(app_handle, pool, &handle, subkey, &plaintext);
+        apply_remote_subkey(pool, &handle, subkey, &plaintext);
     }
     true
 }
 
 fn apply_remote_subkey(
-    app_handle: &AppHandle,
-    pool: &DbPool,
+    pool: &Db,
     handle: &PersonalSyncRecordHandle,
     subkey: ValueSubkey,
     plaintext: &[u8],
 ) {
     // Pure decode via the crate; this function owns the per-variant
-    // side effect (DB upsert for ReadState, event emit for the
-    // rest). Unknown subkeys + JSON-decode failures yield `None`
-    // and are silently skipped — matches pre-port behaviour.
+    // side effect. Unknown subkeys + JSON-decode failures yield `None`
+    // and are skipped.
+    //
+    // Read state is merged into the DB here. Preferences, the manifest and
+    // the device list are read on demand by the settings commands; applying
+    // a remote change to the live preferences (merged against the local
+    // ones) and announcing it is plan step E6 (`preferences-changed`). The
+    // previous emit went to a channel no window listened on, merged against
+    // defaults rather than local values.
     let Some(decoded) = rekindle_sync::classify_remote_subkey(subkey, plaintext) else {
         return;
     };
     match decoded {
         rekindle_sync::RemoteSubkeyDecoded::ReadState(remote) => {
-            merge_read_state_into_db(pool, &handle.device_id, remote);
+            merge_read_state_into_db(pool, &handle.owner_key, &handle.device_id, remote);
         }
-        rekindle_sync::RemoteSubkeyDecoded::Preferences(remote) => {
-            crate::event_dispatch::emit_live(
-                app_handle,
-                "cross-device-sync",
-                &SyncEvent::Preferences(merge_preferences(SyncPreferences::default(), remote)),
-            );
-        }
-        rekindle_sync::RemoteSubkeyDecoded::Manifest(remote) => {
-            crate::event_dispatch::emit_live(
-                app_handle,
-                "cross-device-sync",
-                &SyncEvent::Manifest(merge_manifest(SyncManifest::default(), remote)),
-            );
-        }
-        rekindle_sync::RemoteSubkeyDecoded::DeviceList(remote) => {
-            crate::event_dispatch::emit_live(
-                app_handle,
-                "cross-device-sync",
-                &SyncEvent::DeviceList(merge_device_list(DeviceList::default(), remote)),
-            );
+        rekindle_sync::RemoteSubkeyDecoded::Preferences(_)
+        | rekindle_sync::RemoteSubkeyDecoded::Manifest(_)
+        | rekindle_sync::RemoteSubkeyDecoded::DeviceList(_) => {
+            tracing::debug!(subkey, "remote personal-sync subkey changed");
         }
     }
 }
 
-fn merge_read_state_into_db(pool: &DbPool, _device_id: &str, remote: ReadState) {
+/// Merge a paired device's read state into `owner_key`'s rows: the
+/// read markers only advance, and onboarding finished on the other device
+/// finishes here.
+fn merge_read_state_into_db(pool: &Db, owner_key: &str, _device_id: &str, remote: ReadState) {
     let now = rekindle_utils::timestamp_ms_i64();
+    let owner_key = owner_key.to_string();
     db_fire(pool, "merge remote read state", move |conn| {
         let tx = conn.transaction()?;
         for entry in &remote.entries {
             tx.execute(
                 "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
-                 SELECT public_key, ?1, ?2, ?3, ?4 FROM identity LIMIT 1 \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
                  ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
                    last_read_lamport = MAX(last_read_lamport, excluded.last_read_lamport), \
                    updated_at = excluded.updated_at",
                 rusqlite::params![
+                    owner_key,
                     entry.community_id,
                     entry.channel_id,
                     i64::try_from(entry.last_read_lamport).unwrap_or(i64::MAX),
@@ -166,37 +163,20 @@ fn merge_read_state_into_db(pool: &DbPool, _device_id: &str, remote: ReadState) 
                 ],
             )?;
         }
-        // Architecture §28.4 — apply the SMPL `onboarding_complete` map
-        // to the local SQLite mirror. The per-community pseudonym is
-        // deterministic per identity, so the same `(owner_key,
-        // community_id, my_pseudonym_key)` row exists on every paired
-        // device; flipping it to 1 here is what stops the wizard from
-        // re-showing on the device that received the SMPL update.
+        // Architecture §28.4: the per-community pseudonym is deterministic
+        // per identity, so the same member row exists on every paired
+        // device; marking it here stops the wizard re-showing on the
+        // device that received the update.
         for (community_id, completed) in &remote.onboarding_complete {
-            if !*completed {
-                continue;
+            if *completed {
+                rekindle_db::repo::members::set_my_onboarding_complete(
+                    &tx,
+                    &owner_key,
+                    community_id,
+                )?;
             }
-            tx.execute(
-                "UPDATE community_members \
-                 SET onboarding_complete = 1 \
-                 WHERE community_id = ?1 \
-                   AND owner_key = (SELECT public_key FROM identity LIMIT 1) \
-                   AND pseudonym_key = ( \
-                     SELECT my_pseudonym_key FROM communities \
-                      WHERE id = ?1 AND owner_key = (SELECT public_key FROM identity LIMIT 1) \
-                   )",
-                rusqlite::params![community_id],
-            )?;
         }
         tx.commit()?;
         Ok(())
     });
-}
-
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(tag = "type", content = "data", rename_all = "camelCase")]
-enum SyncEvent {
-    Manifest(SyncManifest),
-    Preferences(SyncPreferences),
-    DeviceList(DeviceList),
 }

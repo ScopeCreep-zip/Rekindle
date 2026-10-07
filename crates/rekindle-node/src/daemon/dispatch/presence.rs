@@ -1,8 +1,7 @@
 //! Presence and voice dispatch handlers.
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::validation;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
 
@@ -15,26 +14,35 @@ pub(crate) async fn handle_set(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Err(e) = validation::validate_status(status) {
-        return e;
-    }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
+    use rekindle_presence::UserStatusKind as S;
+    let kind = match status {
+        "online" => S::Online,
+        "away" => S::Away,
+        "busy" => S::Busy,
+        "offline" => S::Offline,
+        "invisible" => S::Invisible,
+        other => return IpcResponse::error(400, format!("invalid status: {other}")),
     };
-    let session = match ctx.require_session(Clone::clone) {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-
-    match rekindle_transport::operations::presence::set_status(
-        &transport, &session, status, message,
-    )
-    .await
-    {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "status": status })),
-        Err(e) => IpcResponse::error(500, format!("presence set failed: {e}")),
+    if let Some(message) = message {
+        let transport = match ctx.require_transport() {
+            Ok(t) => t,
+            Err(e) => return e,
+        };
+        let session = match ctx.require_session(Clone::clone) {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        if let Err(e) = rekindle_transport::operations::presence::set_status_message(
+            &transport, &session, message,
+        )
+        .await
+        {
+            return IpcResponse::error(500, format!("status message failed: {e}"));
+        }
     }
+    // The unlock's STATUS publisher writes it (plan C7.8c).
+    crate::daemon::status::set(ctx, kind);
+    IpcResponse::ok(&serde_json::json!({ "status": status }))
 }
 
 pub(crate) async fn handle_game_set(
@@ -92,7 +100,7 @@ pub(crate) async fn handle_game_clear(ctx: &DaemonContext, state: DaemonState) -
     }
 }
 
-pub(crate) async fn handle_voice_join(
+pub(crate) fn handle_voice_join(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -116,12 +124,10 @@ pub(crate) async fn handle_voice_join(
         &transport,
         &membership,
         channel,
-        &ctx.mek_cache,
+        &*crate::daemon::mek_rotation::key_provider(ctx),
         muted,
         deafened,
-    )
-    .await
-    {
+    ) {
         Ok(session) => IpcResponse::ok(&serde_json::json!({
             "joined": true,
             "community": session.community_id,
@@ -137,7 +143,9 @@ pub(crate) fn handle_voice_leave(_ctx: &DaemonContext, state: DaemonState) -> Ip
     if !state.can_write() {
         return state_error(state, "write");
     }
-    // Voice leave is local state cleanup — the transport operation is sync
-    // and the gossip broadcast is the caller's responsibility.
-    IpcResponse::ok(&serde_json::json!({ "left": true }))
+    // The daemon keeps no voice session yet (`VoiceJoin` hands its session
+    // back without holding it), so there is nothing to leave and no leave
+    // to announce. Answering "left" would be a success that did not happen;
+    // the daemon's voice engine arrives in plan E4.
+    IpcResponse::error(501, "voice sessions are not held by the daemon yet")
 }

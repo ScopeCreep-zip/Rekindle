@@ -32,6 +32,7 @@ pub mod error;
 pub mod jitter;
 pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
+pub mod media_crypto; // RFC 9605 SFrame sealing/opening of voice frames.
 pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
 pub mod playback;
@@ -50,8 +51,8 @@ pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
 pub use liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
 pub use session_deps::{
-    AudioPrefs, CallKeyInfo, VoiceIdentity, VoicePeer, VoiceSessionDeps, VoiceSessionEvent,
-    VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,
+    AudioPrefs, CallMediaKeys, MediaKeySource, VoiceIdentity, VoiceLoopScopes, VoicePeer,
+    VoiceSessionDeps, VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownOpts,
 };
 pub use transport::{VoiceFrameSender, VoiceMode};
 
@@ -288,10 +289,10 @@ impl VoiceEngine {
         self.playback_tx.take()
     }
 
-    /// Process an incoming voice packet from the network.
-    pub fn process_incoming(&mut self, packet: transport::VoicePacket) {
+    /// Queue an opened inbound frame for playout.
+    pub fn process_incoming(&mut self, frame: jitter::JitterFrame) {
         let arrival_ms = u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX);
-        self.jitter_buffer.push(packet, arrival_ms);
+        self.jitter_buffer.push(frame, arrival_ms);
     }
 
     /// Set mute state (flag only — does NOT stop capture device).

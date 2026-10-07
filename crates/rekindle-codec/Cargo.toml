@@ -9,10 +9,10 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-rekindle-types = { path = "../rekindle-types" }
+blake2 = "0.10"
+blake3 = "1"
+hex = "0.4"
 rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-blake2 = "0.10"
-hex = "0.4"
-blake3 = "1"

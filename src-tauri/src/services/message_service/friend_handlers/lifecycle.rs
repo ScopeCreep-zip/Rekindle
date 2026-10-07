@@ -7,17 +7,17 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::IncomingFriendRequest;
-use crate::services::message_service::{push_friend_list_update, send_to_peer_raw};
+use crate::services::message_service::{push_friend_list_update, send_to_peer};
 
 pub(crate) async fn handle_profile_key_rotated(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     new_profile_dht_key: &str,
 ) {
@@ -59,15 +59,11 @@ pub(crate) async fn handle_profile_key_rotated(
 ///
 /// Called during cross-request auto-accept, unfriend handling, and friend removal
 /// to ensure stale rows don't block future `INSERT OR REPLACE`.
-pub(super) fn delete_pending_request_row(state: &Arc<AppState>, pool: &DbPool, peer_key: &str) {
+pub(super) fn delete_pending_request_row(state: &Arc<AppState>, pool: &Db, peer_key: &str) {
     let owner_key = state_helpers::owner_key_or_default(state);
     let pk = peer_key.to_string();
     db_fire(pool, "delete pending request row", move |conn| {
-        conn.execute(
-            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![owner_key, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::pending_requests::delete(conn, &owner_key, &pk)
     });
 }
 
@@ -77,7 +73,7 @@ pub(super) fn delete_pending_request_row(state: &Arc<AppState>, pool: &DbPool, p
 /// or when a peer unfriends us (drop any queued messages to them).
 pub(crate) fn delete_pending_messages_to_recipient(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     recipient_key: &str,
 ) {
     let owner_key = state_helpers::owner_key_or_default(state);
@@ -93,7 +89,7 @@ pub(crate) fn delete_pending_messages_to_recipient(
 
 /// Handle an incoming `UnfriendedAck`: the peer confirms they processed our
 /// `Unfriended` message. Clear any remaining retry queue entries for them.
-pub(crate) fn handle_unfriended_ack(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) {
+pub(crate) fn handle_unfriended_ack(state: &Arc<AppState>, pool: &Db, sender_hex: &str) {
     delete_pending_messages_to_recipient(state, pool, sender_hex);
     tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
 }
@@ -103,7 +99,7 @@ pub(crate) fn handle_unfriended_ack(state: &Arc<AppState>, pool: &DbPool, sender
 pub(crate) fn handle_friend_reject(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
 ) {
     let is_pending_out = state_helpers::friend_field(state, sender_hex, |f| {
@@ -145,7 +141,7 @@ pub(crate) fn handle_friend_reject(
 pub(crate) async fn handle_unfriended(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
 ) {
     // Only act if the sender is actually in our friends list
@@ -171,7 +167,7 @@ pub(crate) async fn handle_unfriended(
     delete_pending_messages_to_recipient(state, pool, sender_hex);
 
     // Send ACK back so the peer can clear their retry queue
-    let _ = send_to_peer_raw(state, pool, sender_hex, &MessagePayload::UnfriendedAck).await;
+    let _ = send_to_peer(state, pool, sender_hex, &MessagePayload::UnfriendedAck).await;
 
     // Remove from in-memory state and unregister DHT key
     let dht_key = {
@@ -179,6 +175,16 @@ pub(crate) async fn handle_unfriended(
         let removed = friends.remove(sender_hex);
         removed.and_then(|f| f.dht_record_key)
     };
+    // The session ends with the friendship; a later re-add handshakes anew.
+    {
+        let signal = state.signal_manager.read();
+        if let Some(handle) = signal.as_ref() {
+            if let Err(e) = handle.manager.delete_session(sender_hex) {
+                tracing::error!(from = %sender_hex, error = %e,
+                    "failed to delete Signal session after peer unfriended us");
+            }
+        }
+    }
     if let Some(ref dht_key) = dht_key {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
@@ -203,14 +209,76 @@ pub(crate) async fn handle_unfriended(
     tracing::info!(from = %sender_hex, "removed by peer (Unfriended)");
 }
 
+/// Our side of a crossing handshake.
+enum CrossRole {
+    /// We initiated; the session init goes out in our `FriendAccept`.
+    Initiator(rekindle_crypto::signal::SessionInitInfo),
+    /// The peer initiates; we answer their `FriendAccept`.
+    Responder,
+    /// The handshake failed and the user was told; both sides are already
+    /// `Accepted` (each received the other's request), so 'Reset Secure
+    /// Session' recovers it.
+    Failed,
+}
+
+/// Drop any prior session with the peer and, if we are the initiator,
+/// establish a new one from their bundle.
+fn cross_request_session_init(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    req: &IncomingFriendRequest<'_>,
+) -> CrossRole {
+    let result = (|| -> Result<CrossRole, String> {
+        let bundle =
+            serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
+                .map_err(|e| format!("unparseable prekey bundle: {e}"))?;
+        let their_identity = hex::decode(req.sender_hex).map_err(|e| format!("sender key: {e}"))?;
+        let signal = state.signal_manager.read();
+        let handle = signal.as_ref().ok_or("signal manager not initialized")?;
+        let manager = &handle.manager;
+        manager
+            .delete_session(req.sender_hex)
+            .map_err(|e| e.to_string())?;
+        if !manager
+            .initiates_crossing_handshake(&their_identity)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(CrossRole::Responder);
+        }
+        let info = manager
+            .establish_session(req.sender_hex, &bundle)
+            .map_err(|e| e.to_string())?;
+        tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
+        Ok(CrossRole::Initiator(info))
+    })();
+    result.unwrap_or_else(|e| {
+        tracing::error!(peer = %req.sender_hex, error = %e,
+            "cross-request Signal handshake failed");
+        let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
+            .unwrap_or_else(|| format!("{}…", rekindle_utils::text::prefix(req.sender_hex, 16)));
+        crate::event_dispatch::emit_notification(
+            app_handle,
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title: "Couldn't establish secure session".into(),
+                body: format!(
+                    "Cross-request auto-accept with {peer_label} failed at the Signal \
+                     handshake: {e}. Click 'Reset Secure Session' from their friend menu \
+                     after verifying their safety number out-of-band."
+                ),
+            },
+        );
+        CrossRole::Failed
+    })
+}
+
 /// Auto-accept a cross-request: both parties sent friend requests to each other.
 ///
-/// Transitions the local friend from `PendingOut` to `Accepted`, establishes
-/// a Signal session, sends a `FriendAccept` back, and starts watching their DHT.
+/// Transitions the local friend from `PendingOut` to `Accepted`, runs our
+/// half of the handshake (see [`CrossRole`]), and starts watching their DHT.
 pub(super) async fn auto_accept_cross_request(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     req: &IncomingFriendRequest<'_>,
 ) {
     // 0. Clean up any lingering pending_friend_requests row so future requests start fresh
@@ -251,81 +319,28 @@ pub(super) async fn auto_accept_cross_request(
         );
     }
 
-    // 2. Establish Signal session from their prekey bundle
-    //
-    // W16.10e (fix B variant) — same idempotency guard as the
-    // accept_request path: skip establish_session if we already have a
-    // working session AND the bundle's identity_key matches our trusted
-    // record. Without this, network-duplicated cross-request handling
-    // wipes the working session on the second arrival.
-    let session_init = if req.prekey_bundle.is_empty() {
-        None
-    } else {
-        let signal = state.signal_manager.read();
-        if let Some(handle) = signal.as_ref() {
-            if let Ok(bundle) =
-                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
-            {
-                let already_established =
-                    handle.manager.has_session(req.sender_hex).unwrap_or(false)
-                        && handle
-                            .manager
-                            .is_trusted_identity(req.sender_hex, &bundle.identity_key)
-                            .unwrap_or(false);
-                if already_established {
-                    tracing::info!(peer = %req.sender_hex,
-                        "session already established for peer — skipping establish_session \
-                         on cross-request (W16.10e idempotency)");
-                    None
-                } else {
-                    match handle.manager.establish_session(req.sender_hex, &bundle) {
-                        Ok(info) => {
-                            tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
-                            Some(info)
-                        }
-                        Err(e) => {
-                            // W16.10d — was silent warn. Surface so user
-                            // can act if cross-request handshake fails.
-                            tracing::error!(peer = %req.sender_hex, error = %e,
-                            "failed to establish Signal session on cross-request — peer's encrypted DMs will fail AEAD on us");
-                            let peer_label =
-                                state_helpers::friend_display_name(state, req.sender_hex)
-                                    .unwrap_or_else(|| {
-                                        format!(
-                                            "{}…",
-                                            &req.sender_hex[..16.min(req.sender_hex.len())]
-                                        )
-                                    });
-                            crate::event_dispatch::emit_notification(
-                                app_handle,
-                                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-                                    title: "Couldn't establish secure session".into(),
-                                    body: format!(
-                                    "Cross-request auto-accept with {peer_label} failed at the \
-                                     Signal handshake: {e}. Click 'Reset Secure Session' from \
-                                     their friend menu after verifying their safety number \
-                                     out-of-band."
-                                ),
-                                },
-                            );
-                            None
-                        }
-                    }
-                }
-            } else {
-                None
-            }
-        } else {
-            None
+    // 2–3. Exactly one side initiates: the lower identity establishes and
+    // sends `FriendAccept` with the session init; the higher side sends
+    // nothing and answers that init in `handle_friend_accept`.
+    match cross_request_session_init(app_handle, state, req) {
+        CrossRole::Initiator(session_init) => {
+            crate::services::message_service::send_friend_accept(
+                state,
+                pool,
+                req.sender_hex,
+                Some(session_init),
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to send friend accept for cross-request");
+            });
         }
-    };
-
-    // 3. Send FriendAccept back
-    crate::services::message_service::send_friend_accept(state, pool, req.sender_hex, session_init)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "failed to send friend accept for cross-request");
-        });
+        CrossRole::Responder => {
+            tracing::info!(peer = %req.sender_hex,
+                "cross-request: peer initiates — awaiting their FriendAccept");
+        }
+        CrossRole::Failed => {}
+    }
 
     // 4. Watch their DHT profile for presence
     if !req.profile_dht_key.is_empty() {

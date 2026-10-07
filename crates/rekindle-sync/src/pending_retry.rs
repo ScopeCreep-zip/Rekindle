@@ -47,7 +47,10 @@ pub fn is_retry_eligible(retry_count: i64, max_retries: i64) -> bool {
 ///    body + sends via the appropriate transport.
 /// 5. Apply the per-row outcome — delete on `Delivered` /
 ///    `Unrecognized`, bump retry on `Failed`.
-pub async fn process_pending_retry_queue<D: SyncDeps>(deps: &D) {
+pub async fn process_pending_retry_queue<D: SyncDeps>(
+    deps: &D,
+    stop: &tokio_util::sync::CancellationToken,
+) {
     let owner_key = deps.current_owner_key();
     if owner_key.is_empty() {
         return;
@@ -59,6 +62,10 @@ pub async fn process_pending_retry_queue<D: SyncDeps>(deps: &D) {
     tracing::debug!(count = pending.len(), "retrying pending messages");
 
     for row in pending {
+        // Stop before the next send once the session ends (plan C4.L1).
+        if stop.is_cancelled() {
+            return;
+        }
         if should_drop_pending(row.retry_count, MAX_PENDING_RETRIES) {
             tracing::warn!(
                 id = row.id,
@@ -78,6 +85,7 @@ pub async fn process_pending_retry_queue<D: SyncDeps>(deps: &D) {
                 tracing::debug!(id = row.id, "pending message retry failed");
                 deps.increment_pending_retry(row.id).await;
             }
+            PendingRetryOutcome::Interrupted => return,
             PendingRetryOutcome::Unrecognized => {
                 tracing::warn!(
                     id = row.id,
@@ -187,7 +195,7 @@ mod tests {
     #[tokio::test]
     async fn empty_owner_key_is_a_no_op() {
         let deps = MockDeps::default();
-        process_pending_retry_queue(&deps).await;
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
         assert!(deps.attempts.lock().is_empty());
         assert!(deps.deletes.lock().is_empty());
     }
@@ -206,7 +214,7 @@ mod tests {
             ),
             ..Default::default()
         };
-        process_pending_retry_queue(&deps).await;
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
         assert_eq!(*deps.attempts.lock(), vec![1, 2]);
         assert_eq!(*deps.deletes.lock(), vec![1, 2]);
         assert!(deps.increments.lock().is_empty());
@@ -220,10 +228,26 @@ mod tests {
             outcomes: Mutex::new([PendingRetryOutcome::Failed].into()),
             ..Default::default()
         };
-        process_pending_retry_queue(&deps).await;
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
         assert_eq!(*deps.attempts.lock(), vec![7]);
         assert!(deps.deletes.lock().is_empty());
         assert_eq!(*deps.increments.lock(), vec![7]);
+    }
+
+    /// An attempt cut short by the session ending is neither counted nor
+    /// deleted, and the tick stops: the next session retries it.
+    #[tokio::test]
+    async fn interrupted_attempt_ends_the_tick_uncounted() {
+        let deps = MockDeps {
+            owner_key: "me".into(),
+            pending: Mutex::new(vec![row(4, 2), row(5, 0)]),
+            outcomes: Mutex::new([PendingRetryOutcome::Interrupted].into()),
+            ..Default::default()
+        };
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
+        assert_eq!(*deps.attempts.lock(), vec![4]);
+        assert!(deps.deletes.lock().is_empty());
+        assert!(deps.increments.lock().is_empty());
     }
 
     #[tokio::test]
@@ -234,7 +258,7 @@ mod tests {
             outcomes: Mutex::new([PendingRetryOutcome::Unrecognized].into()),
             ..Default::default()
         };
-        process_pending_retry_queue(&deps).await;
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
         assert_eq!(*deps.attempts.lock(), vec![9]);
         assert_eq!(*deps.deletes.lock(), vec![9]);
         assert!(deps.increments.lock().is_empty());
@@ -248,7 +272,7 @@ mod tests {
             outcomes: Mutex::new(VecDeque::new()),
             ..Default::default()
         };
-        process_pending_retry_queue(&deps).await;
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
         // Over budget — never attempted, immediately deleted.
         assert!(deps.attempts.lock().is_empty());
         assert_eq!(*deps.deletes.lock(), vec![100]);
@@ -269,7 +293,7 @@ mod tests {
             ),
             ..Default::default()
         };
-        process_pending_retry_queue(&deps).await;
+        process_pending_retry_queue(&deps, &tokio_util::sync::CancellationToken::new()).await;
         // Order preserved verbatim — adapter is responsible for the
         // FIFO `ORDER BY id` SQL.
         assert_eq!(*deps.attempts.lock(), vec![3, 1, 2]);

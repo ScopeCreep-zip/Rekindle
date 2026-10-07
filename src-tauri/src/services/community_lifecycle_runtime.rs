@@ -10,15 +10,20 @@
 //! entry. Pre-Phase-23 this was a ~110-LoC inline body in the
 //! `leave_community` Tauri command.
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
+use rekindle_types::channel_keys::KeyScope;
+
+/// How long a left community's tasks get to stop.
+const COMMUNITY_STOP_DEADLINE: std::time::Duration =
+    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
 
 pub async fn leave_community_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     keystore_handle: &KeystoreHandle,
     community_id: &str,
 ) -> Result<(), String> {
@@ -31,6 +36,19 @@ pub async fn leave_community_inner(
             .and_then(|community| community.my_pseudonym_key.clone())
             .unwrap_or_default()
     };
+    // The community's loops stop first, so none writes to a record this
+    // leave is about to clear or close. The closed scope stays on the
+    // community until it is removed below, refusing late spawns.
+    let tasks = state
+        .communities
+        .read()
+        .get(community_id)
+        .and_then(|community| community.tasks.clone());
+    if let Some(tasks) = tasks {
+        if let Err(stuck) = tasks.shutdown(COMMUNITY_STOP_DEADLINE).await {
+            tracing::warn!(community = %community_id, %stuck, "community tasks did not stop in time");
+        }
+    }
     let _ = crate::services::community::send_to_mesh(
         state,
         community_id,
@@ -51,31 +69,20 @@ pub async fn leave_community_inner(
         );
     }
 
-    {
-        let record_keys = state_helpers::collect_and_clear_community_records(state, community_id);
-        if !record_keys.is_empty() {
-            if let Some(rc) = state_helpers::routing_context(state) {
-                for key_str in &record_keys {
-                    if let Ok(record_key) = key_str.parse::<veilid_core::RecordKey>() {
-                        let _ = rc.close_dht_record(record_key).await;
-                    }
-                }
-                tracing::debug!(
-                    count = record_keys.len(),
-                    community = %community_id,
-                    "closed community DHT records"
-                );
-            }
-            state_helpers::untrack_records(state, &record_keys);
-        }
-    }
+    // The community's records go back to the pool; the last borrower's
+    // release closes each one (plan C7.5).
+    crate::services::community::leases::release_all(state, community_id).await;
 
-    state.mek_cache.lock().remove(community_id);
+    // Every key of every scope goes, live and stored: a member who left
+    // keeps nothing that opens the community's past or future traffic.
+    let scopes = state_helpers::forget_community_keys(state, community_id);
 
     {
         let ks = keystore_handle.lock();
         if let Some(ref keystore) = *ks {
-            crate::keystore::delete_mek(keystore, community_id);
+            for scope in scopes {
+                crate::keystore::delete_scope_meks(keystore, community_id, scope);
+            }
             crate::keystore::delete_slot_keypair(keystore, community_id);
             crate::keystore::delete_slot_seed(keystore, community_id);
             crate::keystore::delete_registry_keypair(keystore, community_id);
@@ -97,11 +104,7 @@ pub async fn leave_community_inner(
     let community_id_clone = community_id.to_string();
     let owner_key_for_db = owner_key.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "DELETE FROM communities WHERE owner_key = ? AND id = ?",
-            rusqlite::params![owner_key_for_db, community_id_clone],
-        )?;
-        Ok(())
+        rekindle_db::repo::communities::delete(conn, &owner_key_for_db, &community_id_clone)
     })
     .await?;
 
@@ -120,7 +123,7 @@ pub async fn leave_community_inner(
 
 pub async fn create_community_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     keystore_handle: &KeystoreHandle,
     name: String,
     admission: rekindle_types::governance::AdmissionMode,
@@ -134,11 +137,14 @@ pub async fn create_community_inner(
     {
         let ks = keystore_handle.lock();
         if let Some(ref keystore) = *ks {
-            let mek_cache = state.mek_cache.lock();
-            if let Some(mek) = mek_cache.get(&community_id) {
-                crate::keystore::persist_mek(keystore, &community_id, mek);
+            if let Some(mek) = state_helpers::current_mek(state, &community_id, KeyScope::Community)
+            {
+                if let Err(e) =
+                    crate::keystore::persist_mek(keystore, &community_id, KeyScope::Community, &mek)
+                {
+                    tracing::warn!(community = %community_id, error = %e, "community MEK not persisted");
+                }
             }
-            drop(mek_cache);
 
             let communities = state.communities.read();
             if let Some(community) = communities.get(&community_id) {
@@ -183,11 +189,22 @@ pub async fn create_community_inner(
     let mek_gen = community.mek_generation.cast_signed();
     let ok = owner_key;
     db_call(pool, move |conn| {
-        let owner_role_ids = serde_json::to_string(&[0u32, u32::MAX]).unwrap_or_default();
-        conn.execute(
-            "INSERT INTO communities (owner_key, id, name, my_role_ids, joined_at, dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, my_subkey_index, my_segment_index, governance_key) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)",
-            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_owner_keypair, pseudonym_key, mek_gen, member_registry_key_db, governance_key_db],
+        let owner_role_ids = [0u32, u32::MAX];
+        rekindle_db::repo::communities::insert(
+            conn,
+            &ok,
+            &rekindle_db::repo::communities::NewCommunity {
+                id: &community_id_clone,
+                name: &name_clone,
+                my_role_ids: &owner_role_ids,
+                joined_at: now,
+                dht_owner_keypair: dht_owner_keypair.as_deref(),
+                my_pseudonym_key: &pseudonym_key,
+                mek_generation: mek_gen,
+                member_registry_key: member_registry_key_db.as_deref(),
+                my_subkey_index: Some(0),
+                governance_key: governance_key_db.as_deref(),
+            },
         )?;
 
         for role in &roles_to_persist {
@@ -206,13 +223,15 @@ pub async fn create_community_inner(
             crate::channel_repo::insert_channel(conn, &ok, channel, &community_id_clone)?;
         }
 
-        conn.execute(
-            "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, pseudonym_key, creator_name, owner_role_ids, now],
-        )?;
-
-        Ok(())
+        rekindle_db::repo::members::insert_if_absent(
+            conn,
+            &ok,
+            &community_id_clone,
+            &pseudonym_key,
+            &creator_name,
+            &owner_role_ids,
+            now,
+        )
     })
     .await?;
 
@@ -221,23 +240,16 @@ pub async fn create_community_inner(
 
 pub async fn join_community_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     keystore_handle: &KeystoreHandle,
-    community_id: String,
-    invite_code: Option<String>,
-    secrets_record_key: Option<String>,
+    link: &rekindle_types::invite::InviteLink,
 ) -> Result<(), String> {
     use crate::db;
     use crate::services;
 
     let owner_key = state_helpers::current_owner_key(state)?;
-    services::community::join_community(
-        state,
-        &community_id,
-        invite_code.as_deref(),
-        secrets_record_key.as_deref(),
-    )
-    .await?;
+    services::community::join_community(state, link).await?;
+    let community_id = link.governance_key.as_str().to_owned();
 
     let (
         name,
@@ -272,17 +284,14 @@ pub async fn join_community_inner(
     let pseudonym_key = my_pseudonym_key.unwrap_or_else(|| owner_key.clone());
     let joiner_name = state_helpers::identity_display_name(state);
 
-    {
-        let mek_cache = state.mek_cache.lock();
-        if let Some(mek) = mek_cache.get(&community_id) {
-            let ks = keystore_handle.lock();
-            let keystore = ks.as_ref().ok_or_else(|| {
-                "Stronghold keystore not open — MEK persist requires unlocked vault. \
-                 Try logging out and back in."
-                    .to_string()
-            })?;
-            crate::keystore::persist_mek_strict(keystore, &community_id, mek)?;
-        }
+    if let Some(mek) = state_helpers::current_mek(state, &community_id, KeyScope::Community) {
+        let ks = keystore_handle.lock();
+        let keystore = ks.as_ref().ok_or_else(|| {
+            "Stronghold keystore not open — MEK persist requires unlocked vault. \
+             Try logging out and back in."
+                .to_string()
+        })?;
+        crate::keystore::persist_mek(keystore, &community_id, KeyScope::Community, &mek)?;
     }
 
     if let Some(ref seed) = slot_seed {
@@ -292,27 +301,38 @@ pub async fn join_community_inner(
         }
     }
 
-    let role_ids_json = serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0,1]".to_string());
     let now = db::timestamp_now();
     let community_id_clone = community_id.clone();
     let ok = owner_key.clone();
     let pk = pseudonym_key.clone();
     let mg = mek_generation.cast_signed();
-    let rij = role_ids_json;
-    let subkey_idx = my_subkey_index.map(i64::from);
     let name_for_db = name.clone();
     let channels_for_db = channels.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role_ids, joined_at, my_pseudonym_key, mek_generation, member_registry_key, my_subkey_index, my_segment_index, governance_key) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
-            rusqlite::params![ok, community_id_clone, name_for_db, rij, now, pk, mg, member_registry_key, subkey_idx, governance_key_db],
+        rekindle_db::repo::communities::insert_if_absent(
+            conn,
+            &ok,
+            &rekindle_db::repo::communities::NewCommunity {
+                id: &community_id_clone,
+                name: &name_for_db,
+                my_role_ids: &my_role_ids,
+                joined_at: now,
+                dht_owner_keypair: None,
+                my_pseudonym_key: &pk,
+                mek_generation: mg,
+                member_registry_key: member_registry_key.as_deref(),
+                my_subkey_index,
+                governance_key: governance_key_db.as_deref(),
+            },
         )?;
-
-        conn.execute(
-            "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, pk, joiner_name, rij, now],
+        rekindle_db::repo::members::insert_if_absent(
+            conn,
+            &ok,
+            &community_id_clone,
+            &pk,
+            &joiner_name,
+            &my_role_ids,
+            now,
         )?;
 
         for channel in &channels_for_db {
@@ -353,7 +373,7 @@ pub async fn join_community_inner(
 
 pub async fn update_community_info_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     name: Option<String>,
     description: Option<String>,
@@ -386,7 +406,8 @@ pub async fn update_community_info_inner(
     let next_icon = icon_hash.clone().or(current_icon);
     let next_banner = banner_hash.clone().or(current_banner);
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -425,29 +446,17 @@ pub async fn update_community_info_inner(
     let icon_hash_for_db = icon_hash.clone();
     let banner_hash_for_db = banner_hash.clone();
     db_call(pool, move |conn| {
-        if let Some(ref new_name) = name_for_db {
-            conn.execute(
-                "UPDATE communities SET name = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_name, owner_key, cid_for_db],
-            )?;
-        }
-        if let Some(ref new_description) = description_for_db {
-            conn.execute(
-                "UPDATE communities SET description = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_description, owner_key, cid_for_db],
-            )?;
-        }
-        if let Some(ref new_icon) = icon_hash_for_db {
-            conn.execute(
-                "UPDATE communities SET icon_hash = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_icon, owner_key, cid_for_db],
-            )?;
-        }
-        if let Some(ref new_banner) = banner_hash_for_db {
-            conn.execute(
-                "UPDATE communities SET banner_hash = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_banner, owner_key, cid_for_db],
-            )?;
+        use rekindle_db::repo::communities::{set, Column};
+        let fields = [
+            (Column::Name, name_for_db),
+            (Column::Description, description_for_db),
+            (Column::IconHash, icon_hash_for_db),
+            (Column::BannerHash, banner_hash_for_db),
+        ];
+        for (column, value) in fields {
+            if let Some(value) = value {
+                set(conn, &owner_key, &cid_for_db, column, value)?;
+            }
         }
         Ok(())
     })

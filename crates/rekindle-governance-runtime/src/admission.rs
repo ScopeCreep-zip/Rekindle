@@ -47,7 +47,7 @@ pub async fn request_join<D: GovernanceRuntimeDeps>(
         .and_then(|m| m.my_pseudonym_hex)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
 
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -67,7 +67,7 @@ pub async fn approve_member<D: GovernanceRuntimeDeps>(
     community_id: &str,
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -86,7 +86,7 @@ pub async fn reject_member<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,

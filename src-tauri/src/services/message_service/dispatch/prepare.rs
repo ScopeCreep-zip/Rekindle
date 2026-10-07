@@ -1,17 +1,21 @@
-//! Envelope verification + Signal decrypt + block-list + non-friend
-//! filter. Run before any handler fans out the `MessagePayload`. Used
-//! by `dispatch::mod::handle_incoming_message` and by the `app_call`
-//! reply path (`try_handle_dm_invite_app_call`).
+//! Envelope verification (recipient, freshness, replay) + sealing check +
+//! Signal decrypt + block-list + non-friend filter. Run before any handler
+//! fans out the `MessagePayload`. Used by
+//! `dispatch::mod::handle_incoming_message` and by the `app_call` reply
+//! path (`try_handle_dm_invite_app_call`).
 
 use std::sync::Arc;
 
-use rekindle_protocol::messaging::envelope::MessagePayload;
-use rekindle_protocol::messaging::receiver::{parse_payload, process_incoming};
+use rekindle_protocol::messaging::envelope::{MessagePayload, Sealing};
+use rekindle_protocol::messaging::receiver::{
+    parse_sealed_payload, process_incoming, received_sealing,
+};
+use rekindle_protocol::messaging::replay::Sighting;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call_or_default;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::PreparedMessage;
 
@@ -21,18 +25,44 @@ use super::PreparedMessage;
 pub(super) async fn prepare_incoming(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     raw_message: &[u8],
 ) -> Option<PreparedMessage> {
-    let envelope = match process_incoming(raw_message) {
+    let my_key = match state_helpers::current_owner_key(state)
+        .and_then(|k| super::super::seal::recipient_key(&k))
+    {
+        Ok(key) => key,
+        Err(e) => {
+            tracing::debug!(error = %e, "dropping envelope: no local identity");
+            return None;
+        }
+    };
+    let now = rekindle_utils::timestamp_ms();
+    let envelope = match process_incoming(raw_message, &my_key, now) {
         Ok(env) => env,
         Err(e) => {
-            tracing::error!(error = %e, "failed to parse/verify incoming message envelope");
+            tracing::warn!(error = %e, "dropping incoming envelope");
             return None;
         }
     };
 
     let sender_hex = hex::encode(&envelope.sender_key);
+    match state.envelope_replay.lock().observe(
+        &envelope.sender_key,
+        &envelope.nonce,
+        envelope.timestamp,
+        now,
+    ) {
+        Sighting::First => {}
+        Sighting::Duplicate => {
+            tracing::debug!(from = %sender_hex, "dropping duplicate envelope");
+            return None;
+        }
+        Sighting::Full => {
+            tracing::warn!(from = %sender_hex, "replay guard full — dropping envelope");
+            return None;
+        }
+    }
     tracing::debug!(from = %sender_hex, payload_len = envelope.payload.len(), "processing verified envelope");
 
     if is_blocked(state, pool, &sender_hex).await {
@@ -40,12 +70,17 @@ pub(super) async fn prepare_incoming(
         return None;
     }
 
-    let payload_bytes = decrypt_payload(state, app_handle, &sender_hex, &envelope.payload).await?;
-
-    let payload = match parse_payload(&payload_bytes) {
+    let received = received_sealing(&envelope.payload);
+    let opened = match received {
+        Sealing::Plain => envelope.payload.clone(),
+        Sealing::Session => {
+            decrypt_payload(state, app_handle, &sender_hex, &envelope.payload).await?
+        }
+    };
+    let payload = match parse_sealed_payload(&opened, received) {
         Ok(p) => p,
         Err(e) => {
-            tracing::error!(error = %e, from = %sender_hex, "failed to parse message payload");
+            tracing::warn!(error = %e, from = %sender_hex, "dropping message payload");
             return None;
         }
     };
@@ -81,20 +116,16 @@ pub(super) async fn prepare_incoming(
     })
 }
 
-/// Attempt Signal decryption; pass through if already valid JSON (plaintext).
+/// Signal-decrypt a session-sealed payload.
 ///
 /// Returns `None` on decrypt failure (after emitting a notification to the frontend)
-/// or if no Signal manager is available for a non-JSON payload.
+/// or if no Signal manager is available.
 async fn decrypt_payload(
     state: &Arc<AppState>,
     app_handle: &tauri::AppHandle,
     sender_hex: &str,
     raw_payload: &[u8],
 ) -> Option<Vec<u8>> {
-    if serde_json::from_slice::<serde_json::Value>(raw_payload).is_ok() {
-        return Some(raw_payload.to_vec());
-    }
-
     // Phase 6 — clone the Arc out of the read-guard so we can `.await`
     // on the now-async decrypt without holding a parking_lot guard
     // across the await (the guard is !Send).
@@ -114,8 +145,9 @@ async fn decrypt_payload(
                     "encrypted message could not be decrypted (Signal AEAD failure — most likely cause: responder-side respond_to_session failed during friend-add, see prior 'Couldn't establish secure session' alerts)"
                 );
                 let display_name = state_helpers::friend_display_name(state, sender_hex);
-                let from_label = display_name
-                    .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
+                let from_label = display_name.unwrap_or_else(|| {
+                    format!("{}...", rekindle_utils::text::prefix(sender_hex, 8))
+                });
                 crate::event_dispatch::emit_notification(
                     app_handle,
                     rekindle_types::subscription_events::NotificationEvent::SystemAlert {
@@ -132,12 +164,12 @@ async fn decrypt_payload(
             }
         }
     } else {
-        tracing::warn!(from = %sender_hex, "received non-JSON payload but no signal manager");
+        tracing::warn!(from = %sender_hex, "received session-sealed payload but no signal manager");
         None
     }
 }
 
-async fn is_blocked(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) -> bool {
+async fn is_blocked(state: &Arc<AppState>, pool: &Db, sender_hex: &str) -> bool {
     let owner_key = state_helpers::owner_key_or_default(state);
     let pk = sender_hex.to_string();
     db_call_or_default(pool, move |conn| {

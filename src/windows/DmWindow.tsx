@@ -7,11 +7,12 @@ import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { dmState, setDmState } from "../stores/dm.store";
 import { subscribeDmInbox } from "../handlers/dm.handlers";
+import { subscribeCallEvents } from "../handlers/calls.handlers";
+import { startEventStream } from "../ipc/channels";
 import { handleSendDm, handleListDms } from "../actions/dm.actions";
 import { handleStartDmCall } from "../actions/calls.actions";
 import { callsState } from "../stores/calls.store";
 import { commands } from "../ipc/commands";
-import ActiveCallPanel from "../components/voice/ActiveCallPanel";
 import type { Message } from "../stores/chat.store";
 
 function getRecordKeyFromUrl(): string {
@@ -45,11 +46,14 @@ const DmWindow: Component = () => {
 
   const messages = createMemo<Message[]>(() => dmState.messages[recordKey] ?? []);
 
-  let unlisten: Promise<UnlistenFn> | undefined;
+  const unlisteners: Promise<UnlistenFn>[] = [];
 
   onMount(async () => {
     setDmState("activeRecordKey", recordKey);
-    unlisten = subscribeDmInbox(() => ownPublicKey());
+    unlisteners.push(subscribeDmInbox(() => ownPublicKey()));
+    // Keeps the call bar in step with a call to this DM's peer.
+    unlisteners.push(subscribeCallEvents({ owner: false }));
+    void startEventStream();
     // Hydrate conversation list (we may have been launched directly into
     // the DM window without ever populating the buddy list's dm map).
     await handleListDms();
@@ -67,7 +71,7 @@ const DmWindow: Component = () => {
   });
 
   onCleanup(() => {
-    unlisten?.then((u) => u());
+    for (const p of unlisteners) p.then((u) => u());
   });
 
   async function onSend(_id: string, body: string): Promise<void> {
@@ -145,13 +149,20 @@ const DmWindow: Component = () => {
                 </div>
               }
             >
-              {/* Wave 12 W12.5 — replaces the bare "Call active + Hangup"
-               * indicator with the full ActiveCallPanel: timer, mute,
-               * deafen, hangup, camera toggle, audio device pickers,
-               * speaking indicator, connection-quality bars. The panel
-               * also mounts VideoCallPanel mode="dm" when cameraOn is
-               * true. */}
-              {(active) => <ActiveCallPanel call={active()} mode="inline" />}
+              {/* The call's controls and media run only in its own call
+               *  window (one camera pipeline per call). */}
+              {(active) => (
+                <div class="dm-call-bar">
+                  <span class="dm-call-bar-label">Call in progress</span>
+                  <button
+                    type="button"
+                    class="form-btn-secondary"
+                    onClick={() => void commands.openCallWindow(active().callId)}
+                  >
+                    Open call window
+                  </button>
+                </div>
+              )}
             </Show>
           </Show>
           <MessageList

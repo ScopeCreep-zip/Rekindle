@@ -17,7 +17,7 @@ mod types;
 mod write;
 
 pub use codec::decode_channel_entries;
-pub use read::{read_all_channel_entries, read_all_channel_messages, watch_channel};
+pub use read::{read_all_channel_entries, read_all_channel_messages};
 pub use types::{
     ChannelAttachmentCached, ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose,
     ChannelPollCreate, ChannelPollVote, ChannelReaction, ChannelRecordEntry, ChannelRecordItem,
@@ -26,7 +26,7 @@ pub use types::{
 pub use write::{
     create_smpl_channel_record, write_member_attachment_cached, write_member_forward,
     write_member_hand_raise, write_member_message, write_member_poll_close,
-    write_member_poll_create, write_member_poll_vote, write_member_reaction,
+    write_member_poll_create, write_member_poll_vote, write_member_reaction, AppendOutcome,
 };
 
 #[cfg(test)]

@@ -6,7 +6,6 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_files::{ChunkCache, FilesDeps, FilesError, FilesEvent, PinnedSet};
 use rekindle_protocol::dht::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
@@ -73,39 +72,8 @@ impl FilesDeps for FilesAdapter {
         })
     }
 
-    fn mek_generation(&self, community_id: &str) -> Result<u64, FilesError> {
-        self.state
-            .communities
-            .read()
-            .get(community_id)
-            .map(|c| c.mek_generation)
-            .ok_or_else(|| FilesError::NotFound(format!("community {community_id}")))
-    }
-
-    fn channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<MediaEncryptionKey, FilesError> {
-        state_helpers::channel_media_mek_full(&self.state, community_id, channel_id).ok_or_else(
-            || FilesError::MekUnavailable {
-                community: community_id.to_string(),
-                generation: 0,
-            },
-        )
-    }
-
-    fn historical_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Option<MediaEncryptionKey> {
-        helpers::historical_channel_mek_impl(&self.state, community_id, channel_id, generation)
-    }
-
-    fn community_mek(&self, community_id: &str) -> Option<MediaEncryptionKey> {
-        self.state.mek_cache.lock().get(community_id).cloned()
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        state_helpers::key_provider(&self.state)
     }
 
     // ── Permissions + slowmode + mentions ──────────────────────────
@@ -146,8 +114,18 @@ impl FilesDeps for FilesAdapter {
 
     // ── Lamport + sequence ─────────────────────────────────────────
 
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        state_helpers::increment_lamport(&self.state, community_id)
+    fn increment_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_message_lamport(&self.state, community_id)
+    }
+
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_governance_lamport(&self.state, community_id)
     }
 
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64 {
@@ -300,7 +278,7 @@ impl FilesDeps for FilesAdapter {
 
     fn emit_event(&self, event: FilesEvent) {
         let mapped = helpers::map_files_event(event);
-        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+        crate::event_dispatch::emit_community(&self.app_handle, mapped);
     }
 
     // ── DHT operations (async, real impls) ─────────────────────────
@@ -350,11 +328,10 @@ impl FilesDeps for FilesAdapter {
         let record_key = channel_log_key
             .parse::<veilid_core::RecordKey>()
             .map_err(|e| FilesError::Transport(format!("invalid channel record key: {e}")))?;
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or_else(|| FilesError::Transport("not attached".into()))?;
+        let pool = state_helpers::record_pool(&self.state).map_err(FilesError::Transport)?;
         let mut all = Vec::new();
         for subkey in 0u32..255 {
-            let Ok(Some(value)) = rc.get_dht_value(record_key.clone(), subkey, false).await else {
+            let Ok(Some(value)) = pool.read_once(&record_key, subkey, false).await else {
                 continue;
             };
             let Ok(entries) =
@@ -374,16 +351,9 @@ impl FilesDeps for FilesAdapter {
         route_blob: &[u8],
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, FilesError> {
-        let api = state_helpers::veilid_api(&self.state)
-            .ok_or_else(|| FilesError::Transport("Veilid API unavailable".into()))?;
-        let route_id = api
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| FilesError::Transport(format!("import route: {e}")))?;
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or_else(|| FilesError::Transport("not attached".into()))?;
-        rc.app_call(veilid_core::Target::RouteId(route_id), payload)
+        state_helpers::call_route_blob(&self.state, route_blob, payload)
             .await
-            .map_err(|e| FilesError::Transport(format!("app_call: {e}")))
+            .map_err(FilesError::Transport)
     }
 
     async fn insert_channel_message_full(

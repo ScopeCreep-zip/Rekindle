@@ -1,20 +1,19 @@
-//! DM envelope construction and verification.
+//! DM envelope construction and verification: an Ed25519-signed,
+//! recipient-bound envelope around a DM payload.
 //!
-//! DM messages use Signal Protocol for encryption (handled by `rekindle-secrets`)
-//! and Ed25519 for envelope-level integrity. This module builds the outer
-//! envelope that wraps the Signal-encrypted ciphertext.
+//! **The daemon track does not encrypt DMs today** (audit V7). The payload this
+//! module signs is not Signal ciphertext: `broadcast/dm.rs` either appends the
+//! body hex-encoded to a DHT log or sends it as signed-only postcard. The
+//! signature gives integrity and sender authenticity, not confidentiality, so a
+//! daemon-track DM is readable by relays and storage nodes. Plan step E2.1
+//! deletes this path in favour of the desktop's ported Signal runtime, and E2.3
+//! moves DMs onto ratchet-sealed `DmFrame`s.
 //!
-//! The crypto flow is:
-//! 1. Plaintext → Signal Protocol encrypt (caller, via rekindle-secrets)
-//! 2. Ciphertext → Ed25519 sign (this module)
-//! 3. Signed envelope → frame encode → Veilid app_message
-//!
-//! On receive:
-//! 1. Frame decode → signature verify (dispatch.rs calls crypto/envelope.rs)
-//! 2. Ciphertext → Signal Protocol decrypt (caller, via rekindle-secrets)
-//! 3. Plaintext → deserialize to DmPayload
+//! Send: payload → Ed25519 sign (this module) → frame encode → Veilid
+//! app_message. Receive: frame decode → signature verify (`dispatch.rs` calls
+//! `crypto/envelope.rs`) → deserialize to `DmPayload`.
 
-use crate::crypto::envelope::{sign_payload, SignedPayload};
+use crate::crypto::envelope::{sign_payload, Addressing, SignedPayload};
 
 /// Build a signed DM envelope from pre-encrypted Signal ciphertext.
 ///
@@ -28,6 +27,9 @@ use crate::crypto::envelope::{sign_payload, SignedPayload};
 /// payload is plaintext serialized bytes — the signature still provides
 /// integrity and sender authentication.
 ///
+/// `to` names the recipient's identity key and the frame `TypeId`; the
+/// signature is bound to both.
+///
 /// W16.3 — `seq` and `correlation_id` are envelope-level metadata for
 /// the receiver-side dedup primitive. Callers from outside the queue
 /// (e.g. one-shot DM body sends) pass `seq=0`, `correlation_id=None`;
@@ -35,6 +37,7 @@ use crate::crypto::envelope::{sign_payload, SignedPayload};
 pub fn build_dm_envelope(
     sender_secret: &[u8; 32],
     sender_public_hex: &str,
+    to: Addressing<'_>,
     seq: u64,
     correlation_id: Option<&str>,
     payload_bytes: &[u8],
@@ -42,6 +45,7 @@ pub fn build_dm_envelope(
     sign_payload(
         sender_secret,
         sender_public_hex,
+        to,
         seq,
         correlation_id,
         payload_bytes,

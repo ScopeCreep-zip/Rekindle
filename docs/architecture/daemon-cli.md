@@ -37,8 +37,8 @@ desktop shell as well.
 
 ```
               ┌────────────────────────────┐
-              │ rekindle-cli               │   clap + ratatui
-              │ (CLI / TUI client)         │
+              │ rekindle (CLI), rekindle-tui│  frontends, over
+              │ via rekindle-client        │   rekindle-client
               └─────────────┬──────────────┘
                             │ IPC (Noise IK over Unix socket)
                             ▼
@@ -62,7 +62,7 @@ desktop shell as well.
 
 A hard rule on this track: **only `rekindle-transport::broadcast/` and
 `rekindle-transport::subscriptions/` import `veilid_core`.** Every
-other module — including all of `rekindle-node` and `rekindle-cli` —
+other module — including all of `rekindle-node` and every frontend —
 talks to Veilid through the `TransportNode` / `Sender` / `Session` /
 `InboundHandler` / `QueryEngine` API exposed at the crate boundary.
 This keeps the Veilid version surface centralised and lets the rest of
@@ -92,35 +92,74 @@ crates/rekindle-transport/src/
 └── error.rs           TransportError
 ```
 
-Public re-exports include `TransportNode`, `Sender`, `RouteManager`,
+Public re-exports include `TransportNode` (its routes via
+`TransportNode::own_routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `Session`, `QueryEngine`,
 `SignalSessionManager`, plus the per-feature operation modules.
 
-## `rekindle-node` — the daemon
+## `rekindle-ipc` — the bus
+
+Tier 3, `#![forbid(unsafe_code)]`. No Veilid, no storage: every frontend
+and the daemon link it.
+
+```
+crates/rekindle-ipc/src/
+├── server/              bus server (accept loop, per-connection Noise, routing)
+├── client.rs            BusClient (consumed by rekindle-cli; later rekindle-client)
+├── transport.rs         platform listener/stream, peer credentials, socket path
+├── framing.rs           u16 BE per Noise message; reader task per connection
+├── noise.rs             Noise IK handshake (Noise_IK_25519_ChaChaPoly_BLAKE2s)
+├── noise_keys.rs        bus key files, agent-name validation
+├── protocol/            IpcRequest / IpcResponse enums (exhaustive match)
+├── registry.rs          ClearanceRegistry (shared with the host's dispatch)
+├── event_router.rs      push events to subscribed clients
+├── event_source.rs      follow the subscription source across lock cycles
+├── media_channel.rs     drop-oldest media queue
+└── message.rs           Message<T> envelope, AgentType, SecurityLevel
+```
+
+**Local transport and access control** (`transport.rs`):
+
+| Platform | Transport | Who may connect |
+|---|---|---|
+| Linux | `$XDG_RUNTIME_DIR/rekindle/daemon.sock` | `0700` dir, `0600` socket, and every peer's UID (`SO_PEERCRED`) must equal the daemon's |
+| macOS | `~/Library/Application Support/rekindle/daemon.sock` | the same; tokio reads the peer's UID with `getpeereid` and its PID with `LOCAL_PEEREPID` |
+| Windows | `\\.\pipe\rekindle-<tag of the user profile>` | the pipe's protected DACL `D:P(A;;GA;;;OW)(A;;GA;;;SY)` — the pipe's owner and LocalSystem only — checked by the OS at open; remote clients refused. Bus key files in `%LOCALAPPDATA%\rekindle\` |
+
+The Windows side goes through `interprocess`'s safe security-descriptor
+API, so the crate has no `unsafe`. Microsoft documents the descriptor as
+what controls access to both ends of a pipe; the default one grants
+Everyone read access, which is why it is replaced. Research:
+`.claude/plans/standards-remediation/evidence/c1-windows-ipc-research.md`.
+
+## `rekindle-node` — the daemon (`rekindled`)
 
 ```
 crates/rekindle-node/src/
-├── lib.rs               crate-level docs + re-exports
+├── lib.rs               crate-level docs
+├── bin/rekindled.rs     the `rekindled` binary
+├── host/                composition root
+│   ├── mod.rs           run(): lock, policy, bus key, transport, context, bus
+│   ├── lock.rs          NodeLock — one rekindled per data root
+│   ├── policy.rs        admin policy: one fail-closed loader (startup + PolicyReload)
+│   ├── bus_key.rs       bus Noise keypair with tamper detection
+│   └── watchdog.rs      sd_notify READY=1 + watchdog
 ├── validation.rs        input validation
-├── ipc/                 encrypted IPC bus
-│   ├── server.rs        bus server (UnixListener)
-│   ├── client.rs        client side (consumed by rekindle-cli)
-│   ├── transport.rs     UCred extraction, socket-path resolution
-│   ├── framing.rs       length-prefixed frames
-│   ├── noise.rs         Noise IK handshake (Noise_IK_25519_ChaChaPoly_BLAKE2s)
-│   ├── noise_keys.rs    OS keyring storage for the daemon long-term key
-│   ├── protocol.rs      IpcRequest / IpcResponse enums (exhaustive match)
-│   ├── registry.rs      connected-client registry, UCred-pinned
-│   └── message.rs       Message<T> envelope, AgentType, SecurityLevel
 ├── daemon/              lifecycle + RPC handlers
 │   ├── mod.rs           DaemonState state machine
 │   ├── handler.rs       top-level request dispatch
 │   ├── community_rpc.rs / governance_rpc.rs
 │   ├── friend_inbox.rs  inbound friend-request queue
-│   ├── event_router.rs  push events to subscribed clients
 │   └── dispatch/        per-operation dispatch tables
 └── state/               session, config, paths
 ```
+
+**One daemon per data root.** `host::run` takes `NodeLock` on
+`<state>/node.lock` before touching the vault, `veilid/` or the bus: a
+second `rekindled` exits with "another rekindled is running on <root>
+(pid N)" and never reaches `BusServer::bind`, so it cannot take a live
+daemon's socket. The lock is `std::fs::File::try_lock` (`flock` /
+`LockFileEx`), released when the process ends, crash included.
 
 ### Lifecycle state machine
 
@@ -167,51 +206,43 @@ moment. The `can_query()`, `can_write()`, `can_unlock()` methods on
 `DaemonState` are the canonical capability checks — they are not just
 discriminant comparisons.
 
-### IPC bus (Noise IK over Unix socket)
+### IPC bus (Noise IK over the local socket)
 
 ```
-Client                                    Daemon (rekindle-node)
-──────                                    ──────────────────────
-Connect to /run/user/<uid>/rekindle.sock
-                            ───tcp───▶
-                                          extract_ucred(stream) → (PID, UID)
-                                          look up agent in registry
+Client                                    Daemon (rekindled)
+──────                                    ──────────────────
+connect to the per-user socket / pipe
+                                          peer credentials → UID (PID if the OS gives one)
+                                          refuse a UID other than the daemon's
+        ◀──── Noise IK handshake (1 RTT) ────▶
+                                          prologue: "REKINDLE-IPC-v2" ‖ lo_uid ‖ hi_uid
+                                                    ‖ socket path   (no PIDs)
+                                          registry lookup: Noise static key → name, clearance
                                                    │
                                                    ▼
-                                          Noise IK handshake
-        ◀──── 1 round-trip handshake ────▶
-                                          prologue mixes UCred:
-                                          REKINDLE-IPC-v1:lo_pid:lo_uid:hi_pid:hi_uid
-                                                   │
-                                                   ▼
-                                          forward-secret transport
-                                          ChaCha20-Poly1305 + BLAKE2s
-                                          frames up to 16 MiB (chunked)
-
-IpcRequest::FriendList   ───▶  daemon::dispatch  ───▶  rekindle-transport::QueryEngine
-                         ◀─── IpcResponse ──────────────
+                                          transport: ChaCha20-Poly1305 + BLAKE2s
+                                          each Noise message ≤ 65535 bytes behind a
+                                          u16 big-endian length (Noise §13); a frame's
+                                          total length (≤ 16 MiB) is authenticated in
+                                          its first message before anything is allocated
 ```
 
 Pattern: **`Noise_IK_25519_ChaChaPoly_BLAKE2s`** via `snow`.
 
 | Property | Mechanism |
 |----------|-----------|
-| Mutual authentication | Noise IK — initiator's static key transmitted, responder's static key pre-known |
-| Forward secrecy | Noise transport uses ephemeral DH per session |
+| Mutual authentication | Noise IK: the initiator's static key is transmitted, the responder's is known in advance |
+| Forward secrecy | Ephemeral DH per session |
 | Confidentiality | ChaCha20-Poly1305 AEAD |
-| OS-binding | UCred (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS) mixed into the Noise prologue |
-| Anti-confused-deputy | UCred binding cryptographically prevents a different process from MITM-ing the bus |
+| Local binding | Both UIDs and the socket path are in the prologue, so a handshake relayed to another user's or another path's bus fails. PIDs are not: a PID-namespaced client has none to give |
+| Cancel safety | A reader task per connection owns the socket's read half and hands whole ciphertext messages over a channel; snow advances the receive nonce only on a successful decrypt |
+| Sender stamping | The server overwrites `verified_sender_name` and `verified_sender_key` (the connection's Noise static key) on every routed frame; `WIRE_VERSION` 2, other versions are dropped |
+| Response routing | A correlated frame is accepted only from the daemon's own connection, so a client cannot answer another client's request |
 | Rate limit | 100 requests/sec per connection, refill bucket |
-| Frame chunking | Noise's 65535-byte transport limit handled with chunk-count headers |
 | Handshake DoS protection | 5-second handshake timeout |
 
-`SO_PEERCRED` extraction is platform-gated `#[cfg(unix)]` — both Linux
-and macOS get it via tokio's Unix socket support. Windows uses a named
-pipe with named-pipe credentials.
-
 The daemon's long-term Ed25519 key lives in the OS keyring (`keyring`
-crate) — Apple Keychain on macOS, Windows Credential Manager on Windows,
-Secret Service on Linux.
+crate) until plan D1 moves it into the vault.
 
 ### IpcRequest dispatch
 
@@ -238,7 +269,34 @@ waited on the response for a generation number needs to subscribe
 instead.
 
 Variants containing secrets (`Unlock`, `IdentityCreate`) have custom
-`Debug` impls that redact sensitive fields.
+`Debug` impls that redact sensitive fields. The audit log records only
+`IpcRequest::name()`, never a field.
+
+**Validation.** `rekindle-node/src/validation.rs::validate_request` checks
+every field of every variant once, in `router::dispatch`, before any
+handler runs (exhaustive, no wildcard). Keys use
+`rekindle_types::key_format`; free text has caps taken from documented
+platform limits (message 2000, topic 1024, reason/note 512, description
+255, status 100 — sources in
+`.claude/plans/standards-remediation/evidence/c2-ipc-robustness-research.md`).
+A malformed key is a 400, never a panic: `clippy::string_slice` is denied
+in every crate on this path.
+
+**Concurrency.** Every request runs as its own task. `IpcRequest::lane()`
+puts it in one of three lanes: `Query` (no lock), `Write` (shared) or
+`Exclusive` (Unlock, Lock, Shutdown, Identity Create/Rotate/Destroy/Wipe),
+which waits for in-flight writes and holds the lane alone. tokio's
+`RwLock` is FIFO-fair, so a queued `Exclusive` holds back later writes.
+
+**A panicking handler** answers its own request 500, then the daemon
+shuts down gracefully and exits 70 (`EX_SOFTWARE`) for its supervisor to
+restart it. Shared state behind a lock whose holder panicked "is likely
+tainted" (Rust `std::sync::poison`), and the daemon's locks do not
+poison, so continuing would serve from half-mutated state.
+
+**Caller context.** Handlers receive `CallerContext { verified_name,
+static_key, level }`, all server-stamped. `AgentRegister` registers the
+caller's own Noise key (effective on its next connection).
 
 ### Subscription / event push
 
@@ -250,65 +308,128 @@ matching client.
 
 `MAX_FILTERS_PER_CONNECTION` caps subscription cost per client.
 
-## `rekindle-cli` — the first client
+Both the bus's event delivery and the daemon's tier-3 inbox consumer
+follow the event source with `rekindle_ipc::event_source::follow`: unlock
+publishes the `SubscriptionManager` broadcast, lock clears it, and each
+follower re-subscribes after every unlock.
+
+### Lock, unlock and shutdown
+
+`teardown_unlocked` releases everything an unlock created (presence polls,
+subscription loops, the broadcast mesh, cached channel keys, the event
+source, then the signing key) and is shared by Lock, a failed Unlock,
+Destroy, Wipe and process exit. Lock while locked answers 409; an Unlock
+whose resume fails returns to Locked and answers 503.
+
+Shutdown (IPC `Shutdown`, SIGTERM, SIGINT, or a handler panic) runs in
+this order, within systemd's `TimeoutStopSec=15`:
+
+1. `STOPPING=1`;
+2. the bus subscriber stops reading and answers every request in flight
+   (5 s; anything still running is answered 503);
+3. the bus server stops accepting, waits for the daemon's connection to
+   close, then closes each client once its queued replies are written
+   (2 s) — this is how `node stop` gets its answer;
+4. the workers stop at their next await (2 s);
+5. `teardown_unlocked`, then the transport;
+6. after a Wipe, the Veilid storage is deleted, now that the transport
+   no longer holds it open.
+
+| Exit | Meaning | systemd |
+|---|---|---|
+| 0 | stop requested | not restarted (clean exit) |
+| 1 | startup failed: transport, audit log, node lock | restarted (`on-failure`) |
+| 70 `EX_SOFTWARE` | a handler panicked | restarted from fresh state |
+| 75 `EX_TEMPFAIL` | identity destroyed or data wiped | restarted empty (`RestartForceExitStatus=75`) |
+| 78 `EX_CONFIG` | unparsable policy; incomplete, malformed or tampered bus key | not restarted (`RestartPreventExitStatus=78`) |
+
+## The frontends: `rekindle-client`, `rekindle` and `rekindle-tui`
+
+Plan C3 split the old CLI-with-a-TUI-feature into three crates with no
+features. `cargo xtask check-frontend-boundaries` walks each one's
+resolved normal-dependency graph and fails if any reaches `veilid-core`,
+`rekindle-transport`, `rekindle-protocol`, `rekindle-vault`,
+`rekindle-db`, `rekindle-node` or `rekindle-desktop`.
+
+| Crate | Binary | Holds |
+|---|---|---|
+| `rekindle-client` | — | `DaemonClient` (requests, `subscribe`, the typed event stream), `spawn::{connect_or_spawn, start_detached, run_foreground}`, `config::load`, `fmt` formatters, `term::use_unicode`, `log::init` (scrubbed file log), `ClientError`, `CLI_BIN`/`cli_cmd!` |
+| `rekindle-cli` | `rekindle` | clap commands, `output/` (text, JSON, JSONL), `watch.rs`, the confirmation and passphrase prompts |
+| `rekindle-tui` | `rekindle-tui` | the ratatui dashboard and views, `[tui]` theming and keybindings (`keymap/`), color-eyre |
+
+The desktop app is the `rekindle-desktop` package (product name
+"Rekindle"); it joins the frontends at plan F1.
+
+### Starting the daemon on demand
+
+A frontend that needs `rekindled` starts it, as gpg starts gpg-agent
+("automatically started on demand … no reason to start it manually",
+GnuPG manual). `connect_or_spawn` connects if a daemon answers, otherwise
+runs the `rekindled` beside the frontend's own executable and waits for a
+`Status` answer. Until the daemon's own subscriber connects, the bus
+answers every request 503 "daemon starting" rather than dropping it, and
+`READY=1` is sent only once the subscriber is connected. If two frontends
+start the daemon at once, the node lock lets one run; the other's
+`rekindled` exits and that frontend waits for the winner.
+
+The CLI starts the daemon for every command except `status` (which
+reports a stopped daemon honestly) and `node stop`.
 
 ```
-crates/rekindle-cli/src/
-├── main.rs              clap entry point
-├── cli/                 clap subcommand definitions
-├── tui/                 ratatui interactive mode (feature `tui`)
-├── views/               TUI screens
-├── output/              JSON / table renderers
-├── config/              config file loading (toml)
-├── transport.rs         IPC client wrapper (over rekindle-node::ipc::client)
-├── node_daemon.rs       (feature `daemon`) embedded daemon mode
-├── identity.rs / keys.rs / network.rs / presence.rs
-├── friends.rs / dm.rs / community.rs / channel.rs / governance.rs / voice.rs
-├── helpers.rs / error.rs
+$ rekindle friend list                 # starts rekindled if needed
+$ rekindle node start                  # detached; returns once it answers
+$ rekindle node start --foreground     # becomes `rekindled` in this terminal
+$ rekindle channel watch -c Dev -C general   # stream until Ctrl-C
+$ rekindle --format jsonl dm watch     # one JSON event per line
+$ rekindle-tui                         # the terminal UI
+$ rekindled                            # or run the host directly
 ```
 
-### Binary name
+`channel watch`, `dm watch` and `voice join --watch` subscribe on the bus
+and print each matching event until Ctrl-C. Peer-controlled text goes
+through `sanitize_for_display` before it reaches the terminal.
 
-The CLI binary is named **`rekindle-cli`** (renamed from `rekindle` to
-avoid colliding with the desktop app's binary under `src-tauri/`,
-which is named `rekindle` and produces `Rekindle.app` etc.).
+### Configuration
 
-### Default features
+One `config.toml` schema (`rekindle_types::config::user::UserConfig`)
+serves every reader: `rekindled` takes `[network]` (the transport
+configuration itself), `rekindle-tui` takes `[tui]`, and `rekindle config
+validate` checks all of it. Every table rejects unknown keys.
 
-| Feature | Default | Adds |
-|---------|---------|------|
-| `tui` | yes | `ratatui`, `crossterm`, `ratatui-textarea`, `arboard` — interactive screen-based UI |
-| `daemon` | yes | embeds the daemon in the same binary for solo-developer workflows; pulls in `rekindle-transport`, `snow`, `sd-notify`, `rustix`, `postcard` |
+Layers, lowest precedence first (`rekindle_utils::config_layers`):
+`/etc/rekindle/config.toml` (`%ProgramData%\rekindle` on Windows), its
+`config.d/*.toml`, the user file in the data root's config dir
+(`DataRoot::config`, `<config dir>/com.rekindle.app`, the folder the desktop
+uses), its
+`config.d/*.toml`, `$REKINDLE_CONFIG`, then `--config`. Layers merge by key
+presence, like systemd drop-ins: a later layer can set a value back to its
+default, and a key it leaves out is untouched. An invalid config stops
+`rekindled` with exit 78. `policy.toml` lives in the same system and user
+dirs.
 
-Both can be disabled for a minimal CLI-only build:
+Every frontend command builds an `IpcRequest`, sends it, and renders the
+response. No frontend touches `TransportNode`, `Session` or the OS
+keyring.
 
-```
-cargo build -p rekindle-cli --no-default-features --features=""
-```
+Input follows clig.dev:
 
-### Operating modes
+- prompts appear only when stdin is a terminal and `--no-input` was not
+  passed; otherwise the command fails and names the flag to use;
+- `unlock` and `init` read the passphrase from a no-echo prompt or from
+  `--passphrase-file <PATH>` (`-` is stdin), never from a flag value or
+  the environment;
+- severe actions (`identity destroy`, `init --wipe-all-data`) are
+  confirmed by typing the phrase, or with `--confirm="<phrase>"`; the
+  daemon checks the phrase;
+- other confirmations are skipped with `--force`.
 
-```
-$ rekindle-cli --help
-... usage ...
-
-# One-shot CLI commands (default)
-$ rekindle-cli friend list
-$ rekindle-cli community join <invite>
-$ rekindle-cli channel send #general "hello"
-
-# Interactive TUI
-$ rekindle-cli tui
-
-# Embedded daemon mode (feature=daemon, useful in dev)
-$ rekindle-cli daemon start --foreground
-```
-
-Every CLI command builds an `IpcRequest`, dials the bus, sends, awaits
-the `IpcResponse`, and renders. The CLI never touches `TransportNode`,
-`Session`, or the OS keyring directly — that strict boundary makes the
-CLI safe to run as a non-privileged user even when the daemon holds
-elevated credentials.
+Exit codes: 0 success, 1 error, 2 timeout, 3 auth, 4 daemon state (409,
+503), 69 (`EX_UNAVAILABLE`) for a command that is not implemented yet.
+With `--format json|jsonl` an error is printed on stdout as
+`{"error": {"message", "daemon_code", "remediation", "exit_code"}}`.
+Hints name the binary as built (`env!("CARGO_BIN_NAME")`); the daemon's
+own remediation names an action, not a command, since the GUI reads it
+too.
 
 `#![deny(clippy::print_stdout)]` is enforced in the CLI: every output
 goes through the `output/` renderers (JSON or comfy-table) so machine
@@ -316,16 +437,19 @@ consumers and humans get equivalent data.
 
 ## systemd integration
 
-On Linux, `rekindle-node` integrates with systemd:
+`crates/rekindle-node/contrib/systemd/rekindled.service` (the Docker test
+harness ships the same unit under `.config/docker/`):
 
-- **`READY=1`** sent via `sd_notify` once the daemon reaches `LOCKED`
-  (network attached, socket bound, ready to accept clients).
-- **Watchdog keepalive** at the configured `WatchdogSec` interval —
-  systemd will restart the daemon if it stops sending watchdog pings,
-  catching deadlocks that don't crash the process.
-
-This makes `rekindle-node` deployable as a per-user `systemd --user`
-service or a system-level service for headless deployments.
+- `Type=notify`, `ExecStart=rekindled` in the foreground — with
+  `WatchdogSec=` set, `NotifyAccess` defaults to `main`, so the notifying
+  process must be the one systemd started;
+- no `ExecStop=`: systemd's SIGTERM triggers the drain above;
+- **`READY=1`** once the bus is bound and the daemon is Locked;
+- **watchdog** pings every `$WATCHDOG_USEC / 2` (`sd_watchdog_enabled(3)`)
+  while the bus subscriber's heartbeat is fresh; a stalled subscriber
+  sends `WATCHDOG=trigger`;
+- `RestartForceExitStatus=75`, `RestartPreventExitStatus=78`, and
+  `StartLimitBurst=5` per 300 s bound a crash loop.
 
 ## Where to look
 
@@ -339,11 +463,21 @@ service or a system-level service for headless deployments.
 | Channel lifecycle | `crates/rekindle-governance-runtime/src/channels.rs` — record + `ChannelCreated` in one call, shared by daemon and desktop |
 | Daemon entry / lib | `crates/rekindle-node/src/lib.rs` |
 | Lifecycle state machine | `crates/rekindle-node/src/daemon/mod.rs` |
-| IPC server | `crates/rekindle-node/src/ipc/server.rs` |
-| Noise IK handshake | `crates/rekindle-node/src/ipc/noise.rs` |
-| `IpcRequest` / `IpcResponse` | `crates/rekindle-node/src/ipc/protocol.rs` |
-| UCred extraction | `crates/rekindle-node/src/ipc/transport.rs` |
-| Long-term key OS keyring | `crates/rekindle-node/src/ipc/noise_keys.rs` |
+| Host composition root | `crates/rekindle-node/src/host/mod.rs` |
+| Node lock | `crates/rekindle-node/src/host/lock.rs` |
+| Admin policy | `crates/rekindle-node/src/host/policy.rs` |
+| IPC server | `crates/rekindle-ipc/src/server/` |
+| Noise IK handshake | `crates/rekindle-ipc/src/noise.rs` |
+| `IpcRequest` / `IpcResponse` | `crates/rekindle-ipc/src/protocol/` |
+| Local transport, peer credentials | `crates/rekindle-ipc/src/transport.rs` |
+| Bus key files | `crates/rekindle-ipc/src/noise_keys.rs`, `crates/rekindle-node/src/host/bus_key.rs` |
+| Request validation | `crates/rekindle-node/src/validation.rs` |
+| Per-request tasks, panic policy | `crates/rekindle-node/src/daemon/dispatch/{in_flight,context}.rs` |
+| Shutdown signal, exit reasons | `crates/rekindle-node/src/daemon/shutdown.rs`, `host/signals.rs` |
+| Watchdog | `crates/rekindle-node/src/host/watchdog.rs`, `daemon/heartbeat.rs` |
+| systemd unit | `crates/rekindle-node/contrib/systemd/rekindled.service` |
 | CLI entry | `crates/rekindle-cli/src/main.rs` |
-| TUI screens | `crates/rekindle-cli/src/tui/`, `crates/rekindle-cli/src/views/` |
-| Embedded-daemon mode | `crates/rekindle-cli/src/node_daemon.rs` |
+| TUI | `crates/rekindle-tui/src/` |
+| Daemon connection, on-demand start | `crates/rekindle-client/src/{client,spawn}.rs` |
+| Config schema and layers | `crates/rekindle-types/src/config/`, `crates/rekindle-utils/src/config_layers.rs` |
+| Frontend boundary gate | `xtask/src/frontend_boundaries.rs` |

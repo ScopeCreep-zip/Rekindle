@@ -2,7 +2,6 @@ import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_su
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
-import { showSystemNotification } from "../notification-events.handlers";
 import { transformEvent } from "../../actions/community/shared";
 
 
@@ -161,7 +160,6 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
 
   if ("eventReminder" in s) {
     const { title, minutesUntilStart } = s.eventReminder;
-    void showSystemNotification("Event Reminder", `${title} starts in ${minutesUntilStart} min`);
     addToast(`Event "${title}" starts in ${minutesUntilStart} min`, "info");
   }
 }

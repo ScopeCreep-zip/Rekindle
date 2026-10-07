@@ -1,12 +1,12 @@
 //! Network and status commands.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::NetworkCmd;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
-use crate::transport::DaemonClient;
+use rekindle_client::DaemonClient;
 
 fn dir_size(path: &std::path::Path) -> u64 {
     fn walk(path: &std::path::Path) -> u64 {
@@ -56,7 +56,11 @@ pub async fn cmd_status(
         let mut checks = snapshot.checks;
         let storage_info = helpers::storage_dir(None).map_or("unknown".into(), |p| {
             let size = dir_size(&p);
-            format!("{} ({})", p.display(), helpers::format_bytes(size))
+            format!(
+                "{} ({})",
+                p.display(),
+                rekindle_client::fmt::format_bytes(size)
+            )
         });
         checks.push(Check::pass("local.storage", "local", storage_info));
         checks.push(Check::pass(
@@ -121,7 +125,10 @@ fn print_status_compact(
         ),
         ("Peers", snapshot.peer_count.to_string()),
         ("Route", route),
-        ("Uptime", helpers::format_uptime(snapshot.uptime_secs)),
+        (
+            "Uptime",
+            rekindle_client::fmt::format_uptime(snapshot.uptime_secs),
+        ),
         ("Communities", snapshot.community_count.to_string()),
         ("Watches", snapshot.active_watches.to_string()),
         (
@@ -139,7 +146,11 @@ fn print_status_compact(
 pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
     let storage_info = helpers::storage_dir(None).map_or("unknown".into(), |p| {
         let size = dir_size(&p);
-        format!("{} ({})", p.display(), helpers::format_bytes(size))
+        format!(
+            "{} ({})",
+            p.display(),
+            rekindle_client::fmt::format_bytes(size)
+        )
     });
     let session_exists = helpers::session_path().map(|p| p.exists()).unwrap_or(false);
 
@@ -159,13 +170,16 @@ pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
             if session_exists {
                 "exists".into()
             } else {
-                "not found — run: rekindle init".into()
+                concat!("not found — run: ", crate::error::cmd!("init")).into()
             },
         ),
         ("Storage", storage_info),
     ];
     format::print_kv(&pairs, mode)?;
-    format::print_text("\n  start the daemon: rekindle node start")
+    format::print_text(concat!(
+        "\n  start the daemon: ",
+        crate::error::cmd!("node start")
+    ))
 }
 
 pub async fn dispatch(

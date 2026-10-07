@@ -14,22 +14,22 @@
 //! `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md`.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use parking_lot::Mutex;
 use rekindle_friendship::{InboxScanCoordinator, VeilidInboxScanner, WatchTrigger};
-use tokio::sync::{mpsc, oneshot, watch};
+use rekindle_lifecycle::{ScopeClosed, SessionScope};
+use tokio::sync::{mpsc, watch};
 
 use super::friendship_deps::ScannerDeps;
 use crate::state::AppState;
 
-/// Adapter held on `AppState` that owns the three coordinator channel
-/// senders plus the `WatchTrigger`. Replaces the five separate
+/// Adapter held on `AppState` that owns the coordinator's trigger
+/// senders plus the `WatchTrigger`. The coordinator itself stops with the
+/// login scope. Replaces the five separate
 /// friendship fields that used to live directly on `AppState`.
 pub struct FriendshipHandle {
     watch_trigger: Arc<WatchTrigger>,
     direct_tx: Mutex<Option<mpsc::Sender<()>>>,
-    shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl FriendshipHandle {
@@ -38,7 +38,6 @@ impl FriendshipHandle {
         Arc::new(Self {
             watch_trigger: Arc::new(WatchTrigger::new()),
             direct_tx: Mutex::new(None),
-            shutdown_tx: Mutex::new(None),
         })
     }
 
@@ -58,7 +57,8 @@ impl FriendshipHandle {
     /// Dev-only: disable the watch tier for the given duration. While
     /// the deadline is in the future, `fire_watch_trigger` no-ops; only
     /// the 30-second poll backstop + direct triggers deliver scans.
-    pub fn dev_disable_watch(&self, duration: Duration) {
+    #[cfg(debug_assertions)]
+    pub fn dev_disable_watch(&self, duration: std::time::Duration) {
         self.watch_trigger.disable_for(duration);
     }
 
@@ -68,42 +68,36 @@ impl FriendshipHandle {
         self.watch_trigger.fire();
     }
 
-    /// Send the shutdown signal (if a coordinator is running), drop the
-    /// direct-trigger sender, and clear the watch trigger's sender +
-    /// dev-disable deadline. Called by `logout_cleanup` so the
-    /// coordinator task exits and a re-login installs a fresh one.
-    /// Mirrors the pre-Phase-12 cleanup which explicitly nulled all
-    /// three senders + the deadline.
-    pub fn shutdown(&self) {
-        if let Some(prev) = self.shutdown_tx.lock().take() {
-            let _ = prev.send(());
-        }
+    /// Drop the direct-trigger sender and clear the watch trigger's
+    /// sender + dev-disable deadline, so triggers fired while logged out
+    /// reach no coordinator. Called by `logout_cleanup`; the coordinator
+    /// task itself already stopped with the login scope.
+    pub fn clear(&self) {
         *self.direct_tx.lock() = None;
         self.watch_trigger.clear();
     }
 }
 
-/// Spawn the inbox-scan coordinator for the current identity. Wires
-/// the three channels into `state.friendship_handle` so Tauri commands
-/// (scan_now, dev_disable_watch) and the DHT dispatch path
-/// (fire_watch_trigger) can drive them.
+/// Spawn the inbox-scan coordinator for the current identity on the
+/// login scope. Wires the trigger channels into
+/// `state.friendship_handle` so Tauri commands (scan_now,
+/// dev_disable_watch) and the DHT dispatch path (fire_watch_trigger) can
+/// drive them.
 ///
-/// Safe to call again after logout — the prior coordinator's shutdown
-/// is signaled first. Returns the spawned task's join handle so the
-/// caller can register it under `state.background_handles`.
+/// # Errors
+/// [`ScopeClosed`] when the session ended before the coordinator started.
 pub fn spawn_coordinator(
     state: &Arc<AppState>,
     app_handle: tauri::AppHandle,
-) -> tauri::async_runtime::JoinHandle<()> {
+    scope: &Arc<SessionScope>,
+) -> Result<(), ScopeClosed> {
     let handle = Arc::clone(&state.friendship_handle);
-    handle.shutdown();
+    handle.clear();
 
     let (direct_tx, direct_rx) = mpsc::channel(8);
     let (watch_tx, watch_rx) = watch::channel(0u64);
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     *handle.direct_tx.lock() = Some(direct_tx);
-    *handle.shutdown_tx.lock() = Some(shutdown_tx);
     handle.watch_trigger.install_sender(watch_tx);
 
     let deps = Arc::new(ScannerDeps {
@@ -112,5 +106,5 @@ pub fn spawn_coordinator(
     });
     let scanner = Arc::new(VeilidInboxScanner::new(deps));
     let coord = InboxScanCoordinator::new(scanner, direct_rx, watch_rx);
-    tauri::async_runtime::spawn(async move { coord.run(shutdown_rx).await })
+    scope.spawn_with_token("friendship inbox coordinator", |stop| coord.run(stop))
 }

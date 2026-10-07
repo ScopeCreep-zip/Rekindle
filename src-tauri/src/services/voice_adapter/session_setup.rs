@@ -11,13 +11,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use rekindle_voice::{
-    VoiceError, VoiceSessionDeps, VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,
+    VoiceError, VoiceLoopScopes, VoiceSessionDeps, VoiceSessionStartup, VoiceShutdownOpts,
 };
 
 use super::VoiceAdapter;
-use crate::db::DbPool;
 use crate::state::{AppState, VoiceEngineHandle};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Channels and config needed to spawn the voice loops. Internal to
 /// `spawn_voice_loops_impl`.
@@ -69,17 +69,9 @@ pub(super) fn init_voice_session_impl(
         transport: Arc::new(tokio::sync::Mutex::new(
             rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
         )),
-        // Set below once the real transport (and its concrete frame
-        // sender) is built. Placeholder session has no sender yet.
-        frame_sender: None,
-        send_loop_shutdown: None,
-        send_loop_handle: None,
-        recv_loop_shutdown: None,
-        recv_loop_handle: None,
-        device_monitor_shutdown: None,
-        device_monitor_handle: None,
-        mcu_loop_shutdown: None,
-        mcu_loop_handle: None,
+        loops: None,
+        monitor: None,
+        mcu: None,
         channel_id: channel_id.to_string(),
         community_id: community_id.map(String::from),
         muted_flag: Arc::clone(&muted_flag),
@@ -125,7 +117,7 @@ pub(super) fn init_voice_session_impl(
     if self_voice_id.is_empty() {
         return Err(VoiceError::IdentityNotLoaded);
     }
-    let (transport, frame_sender) = create_transport_impl(
+    let transport = create_transport_impl(
         state,
         &self_voice_id,
         channel_id,
@@ -134,15 +126,11 @@ pub(super) fn init_voice_session_impl(
     );
     let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
 
-    // Install the real transport + its concrete frame sender on the
-    // handle (overwrite the placeholder). The frame sender is kept so the
-    // veilid host can evict its cached route imports by RouteId on a
-    // `dead_remote_routes` event (Piece 4 mechanism B).
+    // Install the real transport on the handle (overwrite the placeholder).
     {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.transport = Arc::clone(&shared_transport);
-            handle.frame_sender = frame_sender;
         }
     }
 
@@ -153,57 +141,34 @@ pub(super) fn init_voice_session_impl(
     })
 }
 
-/// Body of `VoiceSessionDeps::take_shutdown_handles` — extracted to
-/// keep deps_impl readable. Drains the shutdown senders + join
-/// handles for whatever loops the opts request; returns them so the
-/// crate-side teardown can `.send(())` then `.await` each.
-pub(super) fn take_shutdown_handles_impl(
-    state: &AppState,
-    opts: VoiceShutdownOpts,
-) -> VoiceShutdownHandles {
+/// Body of `VoiceSessionDeps::take_loop_scopes`: takes the scopes of
+/// whatever loops the opts request off the engine, for the crate-side
+/// teardown to shut down.
+pub(super) fn take_loop_scopes_impl(state: &AppState, opts: VoiceShutdownOpts) -> VoiceLoopScopes {
     let mut ve = state.voice_engine.lock();
-    if let Some(ref mut handle) = *ve {
-        let (send_tx, send_h, recv_tx, recv_h, mcu_tx, mcu_h) = if opts.stop_loops {
-            (
-                handle.send_loop_shutdown.take(),
-                handle.send_loop_handle.take(),
-                handle.recv_loop_shutdown.take(),
-                handle.recv_loop_handle.take(),
-                handle.mcu_loop_shutdown.take(),
-                handle.mcu_loop_handle.take(),
-            )
-        } else {
-            (None, None, None, None, None, None)
+    let Some(ref mut handle) = *ve else {
+        return VoiceLoopScopes {
+            loops: None,
+            monitor: None,
+            mcu: None,
         };
-        let (monitor_tx, monitor_h) = if opts.stop_monitor {
-            (
-                handle.device_monitor_shutdown.take(),
-                handle.device_monitor_handle.take(),
-            )
+    };
+    VoiceLoopScopes {
+        loops: if opts.stop_loops {
+            handle.loops.take()
         } else {
-            (None, None)
-        };
-        VoiceShutdownHandles {
-            send_loop_shutdown: send_tx,
-            send_loop_handle: send_h,
-            recv_loop_shutdown: recv_tx,
-            recv_loop_handle: recv_h,
-            monitor_shutdown: monitor_tx,
-            monitor_handle: monitor_h,
-            mcu_shutdown: mcu_tx,
-            mcu_handle: mcu_h,
-        }
-    } else {
-        VoiceShutdownHandles {
-            send_loop_shutdown: None,
-            send_loop_handle: None,
-            recv_loop_shutdown: None,
-            recv_loop_handle: None,
-            monitor_shutdown: None,
-            monitor_handle: None,
-            mcu_shutdown: None,
-            mcu_handle: None,
-        }
+            None
+        },
+        mcu: if opts.stop_loops {
+            handle.mcu.take()
+        } else {
+            None
+        },
+        monitor: if opts.stop_monitor {
+            handle.monitor.take()
+        } else {
+            None
+        },
     }
 }
 
@@ -216,23 +181,25 @@ fn create_transport_impl(
     channel_id: &str,
     community_id: Option<&str>,
     resolved_peer_route: Option<&[u8]>,
-) -> (
-    rekindle_voice::transport::VoiceTransport,
-    Option<Arc<super::frame_sender::VeilidVoiceFrameSender>>,
-) {
+) -> rekindle_voice::transport::VoiceTransport {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
     let api = state_helpers::veilid_api(state);
     let sender_key = hex::decode(self_voice_id).unwrap_or_default();
 
-    // Build the concrete frame sender once and keep a clone: the transport
-    // gets it coerced to `dyn VoiceFrameSender`, the handle gets the
-    // concrete `Arc` so `dead_remote_routes` can invalidate by RouteId.
-    // Both share the same route-import cache.
-    let frame_sender = if let Some(api) = api {
-        let concrete = Arc::new(super::frame_sender::VeilidVoiceFrameSender::new(api));
-        // Method-call `.clone()` (not `Arc::clone`) so the unsized
-        // coercion Arc<Concrete> → Arc<dyn Trait> applies at the binding.
-        let sender: Arc<dyn rekindle_voice::VoiceFrameSender> = concrete.clone();
+    // Routes resolve through the process's one importer (plan C7.6).
+    let sender = match (api, state_helpers::route_imports(state)) {
+        (Some(api), Ok(imports)) => {
+            match super::frame_sender::VeilidVoiceFrameSender::new(&api, imports) {
+                Ok(sender) => Some(Arc::new(sender) as Arc<dyn rekindle_voice::VoiceFrameSender>),
+                Err(e) => {
+                    tracing::warn!(error = %e, "voice frame sender unavailable");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    if let Some(sender) = sender {
         if community_id.is_some() {
             transport.init(sender, sender_key);
         } else if let Some(blob) = resolved_peer_route {
@@ -242,10 +209,7 @@ fn create_transport_impl(
         } else {
             transport.init(sender, sender_key);
         }
-        Some(concrete)
-    } else {
-        None
-    };
+    }
 
     if let Some(cid) = community_id {
         if let Ok((_, signing_key)) = state_helpers::pseudonym_credentials(state, cid) {
@@ -263,22 +227,9 @@ fn create_transport_impl(
             tracing::warn!(channel = %channel_id,
                 "voice transport: local identity secret unavailable, 1:1 call audio will be silent");
         }
-        let call_key_opt = state
-            .active_calls
-            .list_all()
-            .into_iter()
-            .find(|c| c.peer_pubkey == channel_id)
-            .and_then(|c| c.call_key);
-        if let Some(key) = call_key_opt {
-            tracing::info!(channel = %channel_id, "1:1 voice transport: call_key installed (AEAD active)");
-            transport.set_call_key(key);
-        } else {
-            tracing::warn!(channel = %channel_id,
-                "1:1 voice transport: NO call_key on CallState — audio will fail AEAD on receiver");
-        }
     }
 
-    (transport, frame_sender)
+    transport
 }
 
 fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {
@@ -304,7 +255,7 @@ fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {
 pub(super) fn spawn_voice_loops_impl(
     state: &Arc<AppState>,
     app: &tauri::AppHandle,
-    pool: &DbPool,
+    pool: &Db,
     public_key: &str,
     transport: &Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     muted_flag: &Arc<AtomicBool>,
@@ -386,50 +337,68 @@ pub(super) fn spawn_voice_loops_impl(
     let (report_tx, report_rx) = mpsc::channel(32);
     *state.voice_report_tx.write() = Some(report_tx);
 
-    let (send_shutdown_tx, send_shutdown_rx) = mpsc::channel::<()>(1);
-    let send_handle = tokio::spawn(rekindle_voice::send_loop::run(
-        rekindle_voice::send_loop::VoiceSendParams {
+    // The loops run in a child of the login scope: they end with the
+    // voice session, and at the latest with the login (plan C4).
+    let login = state_helpers::login_scope(state)
+        .ok_or_else(|| "voice needs a login session".to_string())?;
+    let loops = login.child("voice loops");
+    let send_params = {
+        let transport = Arc::clone(transport);
+        let muted_flag = Arc::clone(muted_flag);
+        let media_liveness = Arc::clone(&media_liveness);
+        let our_pseudonym = voice_community_id
+            .as_deref()
+            .and_then(|cid| crate::state_helpers::my_pseudonym_key(state, cid));
+        let community_id = voice_community_id.clone();
+        let channel_id = voice_channel_id.clone();
+        let public_key = public_key.to_string();
+        move |stop| rekindle_voice::send_loop::VoiceSendParams {
             capture_rx: bundle.capture_rx,
-            transport: Arc::clone(transport),
-            shutdown_rx: send_shutdown_rx,
+            transport,
+            stop,
             deps: adapter_for_send,
-            public_key: public_key.to_string(),
+            public_key,
             noise_suppression: bundle.noise_suppression,
             echo_cancellation: bundle.echo_cancellation,
-            muted_flag: Arc::clone(muted_flag),
+            muted_flag,
             speaker_ref_rx,
-            community_id: voice_community_id.clone(),
-            channel_id: voice_channel_id.clone(),
-            our_pseudonym: voice_community_id
-                .as_deref()
-                .and_then(|cid| crate::state_helpers::my_pseudonym_key(state, cid)),
+            community_id,
+            channel_id,
+            our_pseudonym,
             report_rx,
-            media_liveness: Arc::clone(&media_liveness),
-        },
-    ));
-
-    let (recv_shutdown_tx, recv_shutdown_rx) = mpsc::channel::<()>(1);
-    let recv_handle = tokio::spawn(rekindle_voice::receive_loop::run(
-        rekindle_voice::receive_loop::VoiceReceiveParams {
-            packet_rx: voice_packet_rx,
-            playback_tx: bundle.playback_tx,
-            shutdown_rx: recv_shutdown_rx,
-            deps: adapter_for_recv,
-            our_public_key: public_key.to_string(),
-            deafened_flag: Arc::clone(deafened_flag),
-            speaker_ref_tx,
-            community_id: voice_community_id,
-            channel_id: if voice_channel_id.is_empty() {
-                None
-            } else {
-                Some(voice_channel_id)
-            },
-            member_names,
-            jitter_base_ms: bundle.jitter_base_ms,
-            report_signing_key,
             media_liveness,
+        }
+    };
+    loops
+        .spawn_with_token("voice send loop", |stop| {
+            rekindle_voice::send_loop::run(send_params(stop))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let recv_params = move |stop| rekindle_voice::receive_loop::VoiceReceiveParams {
+        packet_rx: voice_packet_rx,
+        playback_tx: bundle.playback_tx,
+        stop,
+        deps: adapter_for_recv,
+        our_public_key: public_key.to_string(),
+        deafened_flag: Arc::clone(deafened_flag),
+        speaker_ref_tx,
+        community_id: voice_community_id,
+        channel_id: if voice_channel_id.is_empty() {
+            None
+        } else {
+            Some(voice_channel_id)
         },
-    ));
+        member_names,
+        jitter_base_ms: bundle.jitter_base_ms,
+        report_signing_key,
+        media_liveness,
+    };
+    loops
+        .spawn_with_token("voice receive loop", |stop| {
+            rekindle_voice::receive_loop::run(recv_params(stop))
+        })
+        .map_err(|e| e.to_string())?;
 
     let device_error_rx = {
         let mut ve = state.voice_engine.lock();
@@ -439,28 +408,28 @@ pub(super) fn spawn_voice_loops_impl(
                 .or_else(|| Some(h.engine.refresh_device_error_channels()))
         })
     };
-    let (monitor_shutdown_tx, monitor_shutdown_rx) = mpsc::channel::<()>(1);
-    let monitor_handle = device_error_rx.map(|error_rx| {
+    let monitor = login.child("voice device monitor");
+    if let Some(error_rx) = device_error_rx {
         let adapter_for_monitor: Arc<dyn VoiceSessionDeps> =
             VoiceAdapter::new(state.clone(), app.clone(), pool.clone());
-        tokio::spawn(rekindle_voice::session::device_monitor::run(
-            rekindle_voice::session::device_monitor::DeviceMonitorParams {
-                device_error_rx: error_rx,
-                shutdown_rx: monitor_shutdown_rx,
-                deps: adapter_for_monitor,
-            },
-        ))
-    });
+        monitor
+            .spawn_with_token("voice device monitor", |stop| {
+                rekindle_voice::session::device_monitor::run(
+                    rekindle_voice::session::device_monitor::DeviceMonitorParams {
+                        device_error_rx: error_rx,
+                        stop,
+                        deps: adapter_for_monitor,
+                    },
+                )
+            })
+            .map_err(|e| e.to_string())?;
+    }
 
     {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
-            handle.send_loop_shutdown = Some(send_shutdown_tx);
-            handle.send_loop_handle = Some(send_handle);
-            handle.recv_loop_shutdown = Some(recv_shutdown_tx);
-            handle.recv_loop_handle = Some(recv_handle);
-            handle.device_monitor_shutdown = Some(monitor_shutdown_tx);
-            handle.device_monitor_handle = monitor_handle;
+            handle.loops = Some(Arc::clone(&loops));
+            handle.monitor = Some(monitor);
         }
     }
 
@@ -479,20 +448,16 @@ pub(super) fn spawn_voice_loops_impl(
             // encoder-target conversion read it from this watch.
             let (share_tx, share_rx) =
                 tokio::sync::watch::channel(rekindle_video::START_PAYLOAD_SHARE_Q10);
-            let (pacer_shutdown_tx, pacer_shutdown_rx) = mpsc::channel::<()>(1);
             let pacer_deps =
                 crate::services::video_adapter::VideoAdapter::new(state.clone(), app.clone());
-            tokio::spawn(rekindle_video::run_video_pacer(
-                pacer_deps,
-                frame_rx,
-                rate_rx,
-                share_tx,
-                pacer_shutdown_rx,
-            ));
+            loops
+                .spawn_with_token("video pacer", |stop| {
+                    rekindle_video::run_video_pacer(pacer_deps, frame_rx, rate_rx, share_tx, stop)
+                })
+                .map_err(|e| e.to_string())?;
             *state.video_pacer_tx.write() = Some(frame_tx);
             *state.video_pacer_rate_tx.write() = Some(rate_tx);
             *state.video_payload_share_rx.write() = Some(share_rx);
-            *state.video_pacer_shutdown_tx.write() = Some(pacer_shutdown_tx);
         }
     }
     Ok(())
@@ -511,11 +476,23 @@ pub(super) fn seed_community_media_session(
 ) {
     // Seed the media-ready gate BEFORE the config emit below, so its
     // `session_config_emitted` hook lands on a slot whose other inputs
-    // already reflect reality. MEK presence uses the §10.5 channel-media
-    // resolution (channel key, else community key — stage channels
-    // resolve community by construction).
+    // already reflect reality. MEK presence is the channel's media scope
+    // (its own key for a voice channel, the community key for a stage).
+    if !crate::state_helpers::media_key_present(&adapter.state, community_id, channel_id) {
+        // A voice channel's media is under its own key; joining one we
+        // hold no key for, we mint its first (plan B5.4). Members already
+        // here rotate on our join and supersede it.
+        if let Err(e) = crate::services::community::mint_first_channel_key(
+            &adapter.app_handle,
+            &adapter.state,
+            community_id,
+            channel_id,
+        ) {
+            tracing::warn!(community = %community_id, channel = %channel_id, error = %e, "first channel key not minted");
+        }
+    }
     let mek_present =
-        crate::state_helpers::channel_media_mek(&adapter.state, community_id, channel_id).is_some();
+        crate::state_helpers::media_key_present(&adapter.state, community_id, channel_id);
     if !mek_present {
         // Deterministic acquisition: fire the RequestMEK cascade NOW
         // instead of waiting for the first undecryptable frame

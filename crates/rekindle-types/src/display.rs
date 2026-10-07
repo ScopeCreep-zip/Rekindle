@@ -201,7 +201,6 @@ pub struct StatusSnapshot {
     pub dedup_entries: usize,
     pub dedup_suppressed: u64,
     pub poll_loop_active: bool,
-    pub renewal_loop_active: bool,
 
     // ── Social ──────────────────────────────────────────────
     pub community_count: usize,
@@ -241,7 +240,8 @@ pub struct PeerSnapshot {
 /// Display-ready snapshot of a single cached MEK entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MekCacheEntrySnapshot {
-    pub channel_id: String,
+    /// The channel whose own key this is; `None` for the community key.
+    pub channel_id: Option<String>,
     pub generation: u64,
     pub age_secs: u64,
 }

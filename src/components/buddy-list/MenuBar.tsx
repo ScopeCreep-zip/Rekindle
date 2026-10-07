@@ -1,13 +1,13 @@
 import { Component } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands } from "../../ipc/commands";
+import type { SettingsTab } from "../../ipc/commands/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { setBuddyListUI } from "../../stores/buddylist-ui.store";
 
 const REPO_URL = "https://github.com/ScopeCreep-zip/Rekindle";
 
-function openSettingsTab(tab: string): void {
+function openSettingsTab(tab: SettingsTab): void {
   commands.openSettingsWindow(tab);
 }
 
@@ -16,11 +16,11 @@ function handleQuit(): void {
 }
 
 function handleOpenDocs(): void {
-  openUrl(`${REPO_URL}/tree/main/docs`);
+  void commands.openExternalUrl(`${REPO_URL}/tree/main/docs`);
 }
 
 function handleReportBug(): void {
-  openUrl(`${REPO_URL}/issues/new`);
+  void commands.openExternalUrl(`${REPO_URL}/issues/new`);
 }
 
 const MenuBar: Component = () => {

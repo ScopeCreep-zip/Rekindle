@@ -24,11 +24,13 @@ pub(crate) mod community;
 mod context;
 pub(crate) mod governance;
 mod identity;
+mod in_flight;
 mod keys;
 mod lifecycle;
 mod presence;
 mod router;
 mod social;
+mod status;
 
 use std::sync::Arc;
 
@@ -36,27 +38,27 @@ use parking_lot::RwLock;
 
 use rekindle_transport::{crypto::mek::MekCache, Session, TransportNode};
 
-use crate::ipc::registry::ClearanceRegistry;
 use crate::state::keystore::SigningKeyHandle;
+use rekindle_ipc::registry::ClearanceRegistry;
 
-pub(crate) use context::state_error;
+pub(crate) use context::{state_error, transition};
+pub(crate) use lifecycle::teardown_unlocked;
 pub use router::dispatch;
 
-/// Active authorization policy loaded from disk.
+use crate::host::policy::PolicyConfig;
+
+/// Who sent the request being dispatched, as the bus server verified it.
 ///
-/// Admin policy constraints that cannot be overridden by user config.
-/// Fields are additive: they set minimums/maximums, they never disable
-/// features that users enabled.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PolicyConfig {
-    /// Minimum allowed hop_count for any safety profile.
-    pub min_hop_count: Option<u8>,
-    /// Whether signature verification can be disabled.
-    #[serde(default)]
-    pub require_signature_verification: bool,
-    /// Maximum allowed gossip TTL.
-    pub max_gossip_ttl: Option<u8>,
+/// Every field is server-stamped from the sender's connection; nothing
+/// here comes from the client's own claims.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallerContext {
+    /// The agent name the sender's Noise key is registered under, if any.
+    pub verified_name: Option<String>,
+    /// The sender's Noise static key, proven by the handshake.
+    pub static_key: Option<[u8; 32]>,
+    /// The clearance the request was sent at.
+    pub level: rekindle_ipc::message::SecurityLevel,
 }
 
 /// Build a governance adapter over this request's context.
@@ -162,20 +164,61 @@ pub struct DaemonContext {
     /// partial translations. See `daemon::gossip`.
     pub gossip_tx: crate::daemon::gossip::GossipSender,
     pub mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
-    /// Shutdown handles for the per-community presence polls, keyed by
-    /// governance key.
-    ///
-    /// The polls hold an `Arc<DaemonContext>` and write presence rows,
-    /// so locking has to stop them — otherwise the daemon keeps
-    /// advertising a member whose identity is no longer unlocked.
-    pub presence_shutdowns:
-        parking_lot::Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<()>>>,
+    /// The unlock's scope (plan C4): every task that needs the unlocked
+    /// identity runs in it, and `teardown_unlocked` shuts it down first.
+    /// `None` while locked. A panic in one of its tasks exits the daemon
+    /// (`ExitReason::HandlerPanic`), as a handler panic does.
+    pub unlock_scope: RwLock<Option<Arc<rekindle_lifecycle::SessionScope>>>,
+    /// Per-community children of the unlock scope (the presence poll),
+    /// keyed by governance key. The polls hold an `Arc<DaemonContext>` and
+    /// write presence rows, so leaving a community shuts its scope down
+    /// and locking shuts them all down with the unlock scope.
+    pub community_scopes: parking_lot::Mutex<
+        std::collections::HashMap<String, Arc<rekindle_lifecycle::SessionScope>>,
+    >,
     /// Asks the presence supervisor to start polls. Sent on unlock,
     /// once the signing key and broadcast manager exist.
     pub presence_start_tx: crate::daemon::presence_adapter::supervisor::PresenceStartSender,
+    /// The unlock's own status, written by its one STATUS publisher
+    /// (plan C7.8c); Online at unlock.
+    pub status: Arc<RwLock<rekindle_presence::UserStatusKind>>,
+    /// Wakes that publisher.
+    pub status_wake: Arc<tokio::sync::Notify>,
+    /// The dispatch lane (`IpcRequest::lane`): `Write` requests hold it
+    /// shared, `Exclusive` ones alone. A lock, unlock or identity change
+    /// therefore never overlaps a write that may hold the signing key.
+    pub write_lane: tokio::sync::RwLock<()>,
+    /// The bus subscriber's liveness, which gates the systemd watchdog.
+    pub subscriber_heartbeat: crate::daemon::heartbeat::Heartbeat,
+    /// The daemon-wide shutdown signal and the reason it was raised.
+    /// Shared with the unlock scope's panic hook.
+    pub shutdown: Arc<crate::daemon::shutdown::Shutdown>,
 }
 
 impl DaemonContext {
+    /// The unlock scope, or a closed one while locked, so work spawned
+    /// with no unlocked identity to own it is dropped.
+    pub fn unlock_scope_or_closed(&self) -> Arc<rekindle_lifecycle::SessionScope> {
+        self.unlock_scope
+            .read()
+            .clone()
+            .unwrap_or_else(|| rekindle_lifecycle::SessionScope::closed("unlock"))
+    }
+
+    /// The scope of one community's tasks, a child of the unlock scope
+    /// created on first use; a closed scope while locked.
+    pub fn community_scope(&self, community_id: &str) -> Arc<rekindle_lifecycle::SessionScope> {
+        let Some(unlock) = self.unlock_scope.read().clone() else {
+            return rekindle_lifecycle::SessionScope::closed("community");
+        };
+        Arc::clone(
+            self.community_scopes
+                .lock()
+                .entry(community_id.to_string())
+                .or_insert_with(|| unlock.child("community")),
+        )
+    }
+
     /// Our pseudonym in one community, or `""` when we are not a member.
     ///
     /// Every adapter needs this and three of them had written the same

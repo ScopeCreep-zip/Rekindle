@@ -101,12 +101,7 @@ pub fn build_voice_session_deps(
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<std::sync::Arc<dyn rekindle_voice::VoiceSessionDeps>, String> {
-    use tauri::Manager as _;
-    let pool = app
-        .try_state::<crate::db::DbPool>()
-        .ok_or("DbPool not installed")?
-        .inner()
-        .clone();
+    let pool = state.db.current()?;
     Ok(crate::services::voice_adapter::VoiceAdapter::new(
         state.clone(),
         app.clone(),
@@ -118,12 +113,7 @@ pub fn build_voice_signaling_deps(
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<std::sync::Arc<dyn rekindle_voice::signaling::VoiceSignalingDeps>, String> {
-    use tauri::Manager as _;
-    let pool = app
-        .try_state::<crate::db::DbPool>()
-        .ok_or("DbPool not installed")?
-        .inner()
-        .clone();
+    let pool = state.db.current()?;
     Ok(
         crate::services::voice_signaling_adapter::VoiceSignalingAdapter::new(
             state.clone(),

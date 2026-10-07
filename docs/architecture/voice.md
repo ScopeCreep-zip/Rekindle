@@ -157,9 +157,8 @@ does **not** use `SafetySelection::Unsafe`:
    cost of the relay hops is the deliberate price of anonymity (see the
    ITU-T G.114 budget in `crates/rekindle-voice/tests/latency_budget.rs`).
 3. Each voice packet exposes only that *some* route is sending audio at
-   timestamp T. The actual audio is encrypted with the channel MEK
-   (community voice) or the X25519-derived call key (1:1, see
-   [`rekindle-calls`](crates.md#rekindle-calls)).
+   timestamp T. The audio is an RFC 9605 SFrame ciphertext (see
+   "Frame encryption" below).
 
 The transport layer (`VoiceTransport`) wraps `routing_context.app_message`
 with the route blob from the per-peer registry entry. **Voice frames are
@@ -259,7 +258,7 @@ the recipient set for both voice frames and directed channel video.
 
 **Active call state is intentionally NOT persisted** — matches Signal
 RingRTC and Discord Voice Gateway. Voice transport state (cpal stream
-identity, opus encoder state, AEAD nonce counters, jitter buffer state,
+identity, opus encoder state, jitter buffer state,
 signing key context) is process-bound and cannot meaningfully resume
 across crash. Only Dialing/Incoming envelopes persist (W16.3) so a
 30 s ring window survives a quick app restart.
@@ -286,6 +285,37 @@ termination. The merged receiver is consumed by
 
 This makes Bluetooth headset switches, USB audio interface unplugs, and
 default-device changes survivable without dropping a call.
+
+## Frame encryption (SFrame)
+
+Every voice frame — 1:1 call, community channel, and the MCU host's
+mixes — is sealed with SFrame (RFC 9605, cipher suite 0x0005
+`AES_256_GCM_SHA512_128`) by `rekindle-voice::media_crypto`, on the
+primitive in `rekindle-secrets::sframe`.
+
+- **Sender keys (RFC 9605 §5.1).** Each sender encrypts under its own
+  base key: `HKDF-SHA512(scope_secret, "rekindle-voice-sender-key-v1" ‖
+  sender_key ‖ tag)`. The scope secret is the call secret (1:1) or the
+  channel-media MEK (community). The receiver derives the key from the
+  packet's signed `sender_key`, so a frame opens only as the member who
+  signed it, and no shared member ordering is needed (MatrixRTC
+  MSC4143 `m.per_member` uses the same per-member model).
+- **KID** = 56-bit random per-session sender tag ‖ low 8 bits of the key
+  generation (0 for calls, the MEK generation for channels). The tag
+  makes every session's key fresh, so a long-lived MEK never repeats a
+  `(key, nonce)` across restarts.
+- **Counter.** The CTR lives with the call (`CallState.media_sender`) or
+  per channel and generation (`ChannelSframeSenders`), so a rebuilt
+  transport (route heal, device switch) continues it (§9.1).
+- **Metadata.** The packet's `sender_key ‖ sequence ‖ timestamp ‖
+  transport_seq` is SFrame metadata (§9.4): a relay cannot splice a
+  frame under another sender or position.
+- **Replay.** A per-sender, per-KID window over CTR (RFC 3711 §3.3.2
+  style, §9.3); failures are counted, never logged per frame (§4.4.4).
+
+The wire packet is `schemas/voice_packet.capnp` behind the one-byte
+`'V'` media tag, signed under `rekindle-voice-packet-v2`. The SFrame
+plaintext is a VAD level byte followed by the Opus frame.
 
 ## Voice MEK rotation
 

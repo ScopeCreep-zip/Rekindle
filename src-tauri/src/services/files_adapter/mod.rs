@@ -1,7 +1,7 @@
 //! Phase 15 — Files domain adapter.
 //!
 //! Implements `rekindle_files::FilesDeps` against the live `AppState`
-//! + `tauri::AppHandle` + `DbPool`. The crate's upload / download /
+//! + `tauri::AppHandle` + `Db`. The crate's upload / download /
 //! expression_fetch flows parameterise over this trait so the protocol
 //! logic stays free of Tauri/Veilid concerns (Invariant 2).
 //!
@@ -21,8 +21,8 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 pub mod deps_impl;
 pub mod helpers;
@@ -30,12 +30,12 @@ pub mod helpers;
 pub struct FilesAdapter {
     pub(crate) state: Arc<AppState>,
     pub(crate) app_handle: tauri::AppHandle,
-    pub(crate) pool: DbPool,
+    pub(crate) pool: Db,
 }
 
 impl FilesAdapter {
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: DbPool) -> Arc<Self> {
+    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         Arc::new(Self {
             state,
             app_handle,

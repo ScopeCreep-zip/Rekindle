@@ -8,14 +8,14 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 pub async fn handle_incoming_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     record_key: &str,
     slot_seed: &[u8],
@@ -41,7 +41,7 @@ pub async fn handle_incoming_dm_invite(
 
 pub async fn handle_incoming_dm_decline(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
 ) -> Result<(), String> {
     let app_handle = crate::state_helpers::app_handle(state)
@@ -55,7 +55,7 @@ pub async fn handle_incoming_dm_decline(
 pub async fn handle_incoming_group_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     record_key: &str,
     slot_seed: &[u8],
@@ -83,7 +83,7 @@ pub async fn handle_incoming_group_dm_invite(
 
 pub async fn handle_incoming_dm_leave(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     record_key: &str,
 ) -> Result<(), String> {

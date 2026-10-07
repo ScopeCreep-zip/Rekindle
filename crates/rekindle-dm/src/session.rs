@@ -51,14 +51,7 @@ pub async fn start_dm<D: DmDeps + ?Sized>(
     let alice_slot_pub = alice_slot_keypair.verifying_key().to_bytes();
     let bob_slot_pub = bob_slot_keypair.verifying_key().to_bytes();
 
-    // 3. Create the SMPL record with both members declared at o_cnt=0.
-    //    The adapter constructs the veilid schema from the supplied
-    //    member pubkeys.
-    let record_key = deps
-        .dht_create_smpl_record(vec![alice_slot_pub, bob_slot_pub])
-        .await?;
-
-    // 4. Derive the deterministic ECDH MEK and stash it locally.
+    // 3. Derive the deterministic ECDH MEK (stashed once the record exists).
     let alice_x25519_secret = alice_identity.to_x25519_secret();
     let bob_x25519_pub = rekindle_crypto::Identity::peer_ed25519_to_x25519(&bob_ed_pub_bytes)
         .map_err(|e| DmError::InvalidInput(format!("peer ed25519→x25519: {e}")))?;
@@ -68,6 +61,14 @@ pub async fn start_dm<D: DmDeps + ?Sized>(
         &alice_ed_pub,
         &bob_ed_pub_bytes,
     )?;
+
+    // 4. Create the SMPL record with both members declared at o_cnt=0.
+    //    The adapter constructs the veilid schema from the supplied
+    //    member pubkeys. Everything that can fail before it runs first,
+    //    and a failure after it releases the creator lease.
+    let (lease, record_key) = deps
+        .dht_create_smpl_record(vec![alice_slot_pub, bob_slot_pub])
+        .await?;
     deps.mek_cache().insert(&record_key, DmMekChain::new(mek));
 
     // 5. Persist the conversation. Alice owns subkey 0, Bob owns subkey 1.
@@ -84,7 +85,8 @@ pub async fn start_dm<D: DmDeps + ?Sized>(
         },
     ];
     let owner_key = deps.owner_key()?;
-    deps.store()
+    let persisted = deps
+        .store()
         .persist_invite_pending(
             &owner_key,
             DmInvitePending {
@@ -101,12 +103,20 @@ pub async fn start_dm<D: DmDeps + ?Sized>(
                     .unwrap_or(i64::MAX),
             },
         )
-        .await?;
+        .await;
+    if let Err(e) = persisted {
+        deps.dht_release_record(lease).await;
+        return Err(e);
+    }
 
     // 6. Watch Bob's subkey so his replies arrive via the same
     //    DHT-watch pipeline community channels use (architecture §5.3
     //    line 1206).
-    deps.dht_watch_subkeys(&record_key, vec![1]).await?;
+    if let Err(e) = deps.dht_watch_subkeys(lease, vec![1]).await {
+        deps.dht_release_record(lease).await;
+        return Err(e);
+    }
+    deps.dht_hold_session(&record_key, lease).await;
 
     // 7. Ship the invite via `app_call` for an explicit
     //    DmAccept/DmDecline reply (architecture §27.1 line 2916). The
@@ -203,15 +213,20 @@ pub async fn accept_dm_invite<D: DmDeps + ?Sized>(
         .map_err(|e| DmError::InvalidSessionState(format!("dm chain restore: {e}")))?;
     deps.mek_cache().insert(record_key, chain);
 
-    // 4. Open read-only + watch all peer subkeys (everyone except us).
-    deps.dht_open_record(record_key, None).await?;
+    // 4. Borrow the record and watch all peer subkeys (everyone except
+    //    us); the host keeps the lease for the session.
     let peer_subkeys = peer_subkeys_for_watch(meta.is_group, meta.my_subkey, &meta.participants);
     if peer_subkeys.is_empty() {
         return Err(DmError::InvalidSessionState(
             "no peer subkeys to watch — invite shape is invalid".into(),
         ));
     }
-    deps.dht_watch_subkeys(record_key, peer_subkeys).await?;
+    let lease = deps.dht_acquire_record(record_key, None).await?;
+    if let Err(e) = deps.dht_watch_subkeys(lease, peer_subkeys).await {
+        deps.dht_release_record(lease).await;
+        return Err(e);
+    }
+    deps.dht_hold_session(record_key, lease).await;
     Ok(())
 }
 

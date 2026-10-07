@@ -4,7 +4,7 @@
 //! already owns; nothing leaves the device. Every entry point takes a
 //! `rusqlite::Connection` + `owner_key` + `community_id` — no AppState,
 //! no Tauri, no Veilid. The src-tauri facade
-//! (`services/community/analytics`) wraps these with `DbPool` +
+//! (`services/community/analytics`) wraps these with `Db` +
 //! permission gating.
 //!
 //! Tier 3 — depends only on `rekindle-types` (DTO definitions for

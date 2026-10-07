@@ -16,7 +16,8 @@ pub struct GossipDiagnostics {
     pub online_member_count: usize,
     pub known_member_count: usize,
     pub needs_initial_sync: bool,
-    pub lamport_counter: u64,
+    pub message_clock: u64,
+    pub governance_clock: u64,
     pub has_route_blob: bool,
     pub my_pseudonym_key: Option<String>,
     pub my_subkey_index: Option<u32>,
@@ -38,21 +39,25 @@ pub fn debug_gossip_state_inner(
         .ok_or("community not found")?;
 
     let has_route_blob = state_helpers::our_route_blob(state).is_some_and(|b| !b.is_empty());
-    let has_mek = state.mek_cache.lock().contains_key(&community_id);
+    let has_mek = state_helpers::current_mek(
+        state,
+        &community_id,
+        rekindle_types::channel_keys::KeyScope::Community,
+    )
+    .is_some();
 
-    let (has_gossip, peer_count, online_count, needs_sync, lamport, peer_keys, online_keys) =
+    let (has_gossip, peer_count, online_count, needs_sync, peer_keys, online_keys) =
         if let Some(ref g) = cs.gossip {
             (
                 true,
                 g.peers.len(),
                 g.online_members.len(),
                 g.needs_initial_sync,
-                g.lamport_counter,
                 g.peers.keys().cloned().collect::<Vec<_>>(),
                 g.online_members.keys().cloned().collect::<Vec<_>>(),
             )
         } else {
-            (false, 0, 0, true, 0, vec![], vec![])
+            (false, 0, 0, true, vec![], vec![])
         };
 
     Ok(GossipDiagnostics {
@@ -62,7 +67,8 @@ pub fn debug_gossip_state_inner(
         online_member_count: online_count,
         known_member_count: cs.known_members.len(),
         needs_initial_sync: needs_sync,
-        lamport_counter: lamport,
+        message_clock: cs.message_clock,
+        governance_clock: cs.governance_clock,
         has_route_blob,
         my_pseudonym_key: cs.my_pseudonym_key.clone(),
         my_subkey_index: cs.my_subkey_index,

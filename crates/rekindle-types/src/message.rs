@@ -113,6 +113,17 @@ mod tests {
     }
 }
 
+// ── Signed 1:1 envelope freshness ──
+
+/// How old a signed 1:1 envelope may be when it arrives, on both tracks.
+/// Senders sign at send time (a retry re-signs), so this only has to cover
+/// transit and clock skew; anything older is a replay.
+pub const ENVELOPE_FRESHNESS_WINDOW_MS: u64 = 300_000;
+
+/// How far in the future a signed 1:1 envelope's timestamp may be (clock
+/// skew between the two peers).
+pub const ENVELOPE_MAX_FUTURE_SKEW_MS: u64 = 60_000;
+
 // ── Phase 9 — Per-class message taxonomy for SafetyProfile selection ──
 
 /// Per-class message taxonomy. Carried alongside the payload through

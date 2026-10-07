@@ -25,7 +25,7 @@ pub async fn create_thread<D: ChannelMessagingDeps>(
         Some(secs) => validate_auto_archive_seconds(secs)?,
         None => default_auto_archive_seconds(&thread_type),
     };
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     let forum_tag_for_entry = forum_tag.clone();
 
     deps.write_governance_entry(
@@ -75,7 +75,7 @@ pub async fn archive_thread<D: ChannelMessagingDeps>(
     community_id: &str,
     thread_id: &str,
 ) -> Result<(), ChannelError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::ThreadArchived {

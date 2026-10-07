@@ -43,7 +43,6 @@ export type CommunityEvent =
         url: string;
         title?: string;
         description?: string;
-        imageUrl?: string;
         siteName?: string;
         fetchedAt: number;
       };
@@ -364,7 +363,6 @@ export type CommunityEvent =
         communityId: string;
         channelId: string;
         attachmentId: string;
-        localPath: string;
       };
     }
   | CommunityVideoEvent;

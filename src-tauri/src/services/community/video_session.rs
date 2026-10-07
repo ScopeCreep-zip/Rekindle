@@ -241,7 +241,10 @@ fn apply_outcome(
                     peers,
                 },
             );
-            crate::event_dispatch::emit_now(state, "community-event", &event);
+            crate::event_dispatch::emit_from_state(
+                state,
+                crate::event_dispatch::WebviewEvent::Community(event),
+            );
         }
     }
 }
@@ -312,7 +315,10 @@ fn emit_session_config(
         channel_id: channel_id.to_string(),
         config,
     });
-    crate::event_dispatch::emit_now(state, "community-event", &event);
+    crate::event_dispatch::emit_from_state(
+        state,
+        crate::event_dispatch::WebviewEvent::Community(event),
+    );
 }
 
 /// Frontend (WebCodecs probe matrix) reported the WebView's real

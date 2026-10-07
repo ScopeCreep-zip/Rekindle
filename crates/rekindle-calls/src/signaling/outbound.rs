@@ -44,7 +44,8 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
         expires_at_ms,
         my_x25519_secret: Some(my_secret),
         peer_x25519_pub: None,
-        call_key: None,
+        media_secret: None,
+        media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
         // Filled from the peer's CallAccept.
         peer_video_decode_codecs: Vec::new(),
     });
@@ -128,12 +129,12 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
     let (my_secret, my_pub) = fresh_keypair();
     let call_key = derive_call_key(&my_secret, &peer_x25519, call_id)?;
 
-    // Persist the new state on the registry entry: my_secret + call_key
-    // + status=Connecting. Read kind back out for the voice session
+    // Persist the new state on the registry entry: my_secret + media
+    // secret + status=Connecting. Read kind back out for the voice session
     // start + the final CallConnected emit.
     let kind = if let Some(mut call) = registry.get(call_id) {
         call.my_x25519_secret = Some(my_secret);
-        call.call_key = Some(call_key);
+        call.media_secret = Some(zeroize::Zeroizing::new(call_key));
         call.status = CallStatus::Connecting;
         let kind = call.kind;
         registry.insert(call);
@@ -144,10 +145,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
 
     // Start voice BEFORE sending the accept so we're ready for the
     // caller's first packets.
-    if let Err(e) = deps
-        .start_voice_session(call_id, &peer_pubkey, call_key, kind)
-        .await
-    {
+    if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
         deps.shutdown_voice_session().await;
         // Tell the caller we couldn't accept.
@@ -188,6 +186,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
         peer_public_key: peer_pubkey.clone(),
         kind,
     });
+    deps.present_active_call(call_id);
     let display_name = {
         let name = deps.friend_display_name(&peer_pubkey);
         if name.is_empty() {

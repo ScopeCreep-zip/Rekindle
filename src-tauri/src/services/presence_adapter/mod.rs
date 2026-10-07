@@ -2,7 +2,7 @@
 //!
 //! Implements `rekindle_presence::{FriendPresenceDeps,
 //! CommunityPresenceDeps}` against the live AppState + AppHandle +
-//! DbPool. Split into per-trait files (Invariant 1 ≤500 LoC):
+//! Db. Split into per-trait files (Invariant 1 ≤500 LoC):
 //!
 //! - `friend_deps.rs` — `FriendPresenceDeps` impl (20 methods)
 //! - `community_deps.rs` — `CommunityPresenceDeps` impl (21 methods)
@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 mod auto_expand;
 pub mod community_deps;
@@ -34,11 +34,20 @@ mod state_reads;
 pub struct PresenceAdapter {
     pub(super) state: Arc<AppState>,
     pub(super) app_handle: AppHandle,
-    pub(super) pool: DbPool,
+    pub(super) pool: Db,
 }
 
 impl PresenceAdapter {
-    pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: DbPool) -> Self {
+    /// The session's record pool; `NotAttached` while logged out.
+    pub(super) fn record_pool(
+        &self,
+    ) -> Result<Arc<rekindle_protocol::dht::pool::RecordPool>, rekindle_presence::PresenceError>
+    {
+        crate::state_helpers::record_pool(&self.state)
+            .map_err(|_| rekindle_presence::PresenceError::NotAttached)
+    }
+
+    pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: Db) -> Self {
         Self {
             state,
             app_handle,

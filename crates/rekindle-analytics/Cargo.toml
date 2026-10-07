@@ -10,7 +10,8 @@ workspace = true
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.39", features = [ "bundled" ] }
 
 [dev-dependencies]
-rusqlite = { version = "0.39", features = ["bundled"] }
+rekindle-db = { path = "../rekindle-db" }
+rusqlite = { version = "0.39", features = [ "bundled" ] }

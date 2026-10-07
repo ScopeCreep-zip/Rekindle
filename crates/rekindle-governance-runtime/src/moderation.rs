@@ -33,7 +33,7 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, BAN_MEMBERS)?;
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -55,14 +55,14 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
 /// Lift a ban. Requires `BAN_MEMBERS`.
 ///
 /// The merge requires a strictly higher lamport than the ban it
-/// reverses, which `increment_lamport` guarantees for our own writes.
+/// reverses, which `next_governance_lamport` guarantees for our own writes.
 pub async fn unban_member<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, BAN_MEMBERS)?;
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -83,7 +83,7 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, KICK_MEMBERS)?;
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -107,7 +107,7 @@ pub async fn remove_timeout<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, KICK_MEMBERS)?;
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,

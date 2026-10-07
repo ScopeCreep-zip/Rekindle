@@ -1,113 +1,8 @@
 //! Lamport logical clock utilities for deterministic gossip ordering.
+//! The clock itself lives in `rekindle_types::lamport` (tier 1), so the
+//! pure governance merge can share it.
 
-/// M9.2 — maximum acceptable forward drift on a received Lamport
-/// timestamp. A peer pushing `received = local + MAX_LAMPORT_DRIFT + 1`
-/// or higher is silently rejected; the local clock does not advance.
-///
-/// Without this cap, a single malicious envelope carrying
-/// `lamport = u64::MAX` would fast-forward every honest peer's clock
-/// permanently, breaking causal ordering for the rest of the
-/// community's lifetime. The cap bounds the worst-case advance per
-/// received envelope to a known constant.
-///
-/// 10_000 chosen to comfortably exceed legitimate clock divergence
-/// (community at 100 msg/s for 100 seconds = 10_000 ticks) while
-/// rejecting any envelope that's clearly forged-future.
-pub const MAX_LAMPORT_DRIFT: u64 = 10_000;
-
-/// Simple Lamport logical clock.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LamportClock {
-    value: u64,
-}
-
-impl LamportClock {
-    /// Create a clock starting at the provided value.
-    pub fn new(value: u64) -> Self {
-        Self { value }
-    }
-
-    /// Get the current clock value.
-    pub fn current(self) -> u64 {
-        self.value
-    }
-
-    /// Increment for a local send.
-    pub fn increment(&mut self) -> u64 {
-        self.value += 1;
-        self.value
-    }
-
-    /// Merge a received Lamport value with drift protection (M9.2).
-    ///
-    /// Returns `Some(new_value)` on accept (clock advanced to
-    /// `max(local, received) + 1`), or `None` on rejection (received
-    /// exceeded local by more than `MAX_LAMPORT_DRIFT`, OR the merge
-    /// would overflow `u64`). Clock unchanged on rejection; caller
-    /// should drop the corresponding envelope.
-    pub fn merge(&mut self, received: u64) -> Option<u64> {
-        // Reject anything beyond the drift window. `checked_add` also
-        // catches the boundary case where `value + drift` would
-        // saturate to `u64::MAX` and inadvertently accept a forged
-        // `u64::MAX` envelope.
-        let cap = self.value.checked_add(MAX_LAMPORT_DRIFT)?;
-        if received > cap {
-            return None;
-        }
-        // Reject merges that would advance the clock past `u64::MAX`.
-        // At the absolute ceiling the gossip community has bigger
-        // problems than message ordering — refuse rather than wrap.
-        let advanced = self.value.max(received).checked_add(1)?;
-        self.value = advanced;
-        Some(self.value)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::LamportClock;
-
-    #[test]
-    fn merge_is_max_plus_one() {
-        let mut clock = LamportClock::new(7);
-        assert_eq!(clock.merge(3), Some(8));
-        assert_eq!(clock.merge(11), Some(12));
-        assert_eq!(clock.current(), 12);
-    }
-
-    #[test]
-    fn merge_rejects_drift_above_cap() {
-        // M9.2 — a peer claiming a Lamport value far ahead of ours is
-        // silently rejected; the clock does not advance.
-        let mut clock = LamportClock::new(100);
-        let forged = 100 + super::MAX_LAMPORT_DRIFT + 1;
-        assert_eq!(clock.merge(forged), None);
-        assert_eq!(clock.current(), 100);
-    }
-
-    #[test]
-    fn merge_accepts_drift_at_cap_boundary() {
-        // Exactly at-cap is accepted; the cap is "more than", not "≥".
-        let mut clock = LamportClock::new(100);
-        let edge = 100 + super::MAX_LAMPORT_DRIFT;
-        assert_eq!(clock.merge(edge), Some(edge + 1));
-    }
-
-    #[test]
-    fn merge_handles_u64_overflow_safely() {
-        // saturating_add prevents the cap calculation from wrapping.
-        let mut clock = LamportClock::new(u64::MAX - 1);
-        assert_eq!(clock.merge(u64::MAX), None);
-        assert_eq!(clock.current(), u64::MAX - 1);
-    }
-
-    #[test]
-    fn increment_advances_by_one() {
-        let mut clock = LamportClock::new(5);
-        assert_eq!(clock.increment(), 6);
-        assert_eq!(clock.increment(), 7);
-    }
-}
+pub use rekindle_types::lamport::{LamportClock, MAX_LAMPORT_DRIFT};
 
 /// Property-based tests for Lamport clock ordering convergence.
 /// Proves the Chiral Network's deterministic ordering guarantee:
@@ -168,12 +63,11 @@ mod proptests {
             local_val in 0..(u64::MAX - crate::lamport::MAX_LAMPORT_DRIFT - 1),
             offset in 0..crate::lamport::MAX_LAMPORT_DRIFT,
         ) {
-            // Bound `received` to the drift window so we test the
-            // accept path; out-of-window values are tested separately
-            // via `merge_rejects_drift_above_cap`.
+            // Within the drift window the clock lands at received + 1;
+            // beyond it, `merge_clamps_drift_above_cap` covers the bound.
             let received = local_val + offset;
             let mut clock = crate::lamport::LamportClock::new(local_val);
-            let result = clock.merge(received).expect("within drift window must accept");
+            let result = clock.merge(received);
             prop_assert!(result > local_val);
             prop_assert!(result > received);
         }

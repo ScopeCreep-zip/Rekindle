@@ -35,20 +35,26 @@ pub(super) fn write_unban_entry(
 
 pub(super) fn write_timeout_entry(
     mut p: schema_pkg::timeout_entry_payload::Builder<'_>,
-    target: &PseudonymKey,
-    duration_seconds: u64,
-    reason: Option<&str>,
-    started_at: u64,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::TimeoutEntry {
+        target,
+        duration_seconds,
+        reason,
+        started_at,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_timeout_entry: variant mismatch")
+    };
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_duration_seconds(duration_seconds);
+    p.set_duration_seconds(*duration_seconds);
     p.set_has_reason(reason.is_some());
     if let Some(r) = reason {
         p.set_reason(r);
     }
-    p.set_started_at(started_at);
-    p.set_lamport(lamport);
+    p.set_started_at(*started_at);
+    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_remove_timeout_entry(
@@ -78,19 +84,25 @@ pub(super) fn write_admin_delete(
 
 pub(super) fn write_auto_mod_rule(
     mut p: schema_pkg::auto_mod_rule_entry::Builder<'_>,
-    rule_id: &[u8; 16],
-    name: &str,
-    enabled: bool,
-    trigger_json: &str,
-    action: &str,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::AutoModRule {
+        rule_id,
+        name,
+        enabled,
+        trigger_json,
+        action,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_auto_mod_rule: variant mismatch")
+    };
     uuid16_to_capnp(p.reborrow().init_rule_id(), rule_id);
     p.set_name(name);
-    p.set_enabled(enabled);
+    p.set_enabled(*enabled);
     p.set_trigger_json(trigger_json);
     p.set_action(action);
-    p.set_lamport(lamport);
+    p.set_lamport(*lamport);
 }
 
 pub(super) fn read_ban_entry(

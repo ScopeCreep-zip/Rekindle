@@ -4,14 +4,14 @@
 //! an empty value to that subkey of the SMPL member registry — used by
 //! the lifecycle (member leaves) and moderation (kick) flows.
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn clear_registry_presence_slot(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     pseudonym_key: &str,
 ) -> Result<(), String> {
@@ -39,15 +39,11 @@ pub async fn clear_registry_presence_slot(
         let cid = community_id.to_string();
         let pk = pseudonym_key.to_string();
         db_call(pool, move |conn| {
-            conn.query_row(
-                "SELECT subkey_index FROM community_members \
-                 WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
-                rusqlite::params![owner_key, cid, pk],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|idx| u32::try_from(idx).unwrap_or(0))
+            rekindle_db::repo::members::slot(conn, &owner_key, &cid, &pk)
         })
         .await?
+        .ok_or("member's registry slot is not known yet")?
+        .0
     };
 
     let slot_seed_bytes: [u8; 32] = hex::decode(&slot_seed_hex)
@@ -58,16 +54,15 @@ pub async fn clear_registry_presence_slot(
         rekindle_secrets::derive::derive_slot_keypair(&slot_seed_bytes, subkey_index)
             .map_err(|e| format!("slot keypair derivation failed: {e}"))?;
     let writer = crate::services::community::create::slot_signing_to_veilid(&slot_keypair);
-    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let record_key = registry_key
         .parse::<veilid_core::RecordKey>()
         .map_err(|e| format!("invalid registry key: {e}"))?;
-    let write_opts = veilid_core::SetDHTValueOptions {
-        writer: Some(writer),
-        ..Default::default()
-    };
-    rc.set_dht_value(record_key, subkey_index, Vec::new(), Some(write_opts))
+    let outcome = state_helpers::record_pool(state)?
+        .write_once(&record_key, subkey_index, Vec::new(), Some(writer))
         .await
         .map_err(|e| format!("registry slot clear failed: {e}"))?;
+    if outcome.missed() {
+        return Err(format!("registry slot clear not stored ({outcome:?})"));
+    }
     Ok(())
 }

@@ -17,6 +17,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, TransportError};
+use rekindle_types::domains;
 
 // ── Session ─────────────────────────────────────────────────────────────
 
@@ -132,23 +133,23 @@ impl Session {
             Ok(bytes) => {
                 let content = String::from_utf8_lossy(&bytes);
                 // Split MAC from session JSON
-                let (json_str, verified) = if let Some(idx) = content.rfind("\n---MAC---\n") {
-                    let json_part = &content[..idx];
-                    let mac_hex = content[idx + 11..].trim();
-                    let expected = blake3::keyed_hash(session_mac_key(), json_part.as_bytes());
-                    let stored = hex::decode(mac_hex).unwrap_or_default();
-                    if stored.len() == 32 && stored == expected.as_bytes() {
-                        (json_part.to_string(), true)
+                let (json_str, verified) =
+                    if let Some((json_part, mac)) = content.rsplit_once("\n---MAC---\n") {
+                        let mac_hex = mac.trim();
+                        let expected = blake3::keyed_hash(session_mac_key(), json_part.as_bytes());
+                        let stored = hex::decode(mac_hex).unwrap_or_default();
+                        if stored.len() == 32 && stored == expected.as_bytes() {
+                            (json_part.to_string(), true)
+                        } else {
+                            return Err(TransportError::Internal(
+                                "session.json integrity check FAILED — file may be tampered".into(),
+                            ));
+                        }
                     } else {
-                        return Err(TransportError::Internal(
-                            "session.json integrity check FAILED — file may be tampered".into(),
-                        ));
-                    }
-                } else {
-                    // No MAC separator — treat entire content as JSON (should not happen in normal flow)
-                    tracing::warn!("session.json has no integrity MAC — will add on next save");
-                    (content.into_owned(), false)
-                };
+                        // No MAC separator — treat entire content as JSON (should not happen in normal flow)
+                        tracing::warn!("session.json has no integrity MAC — will add on next save");
+                        (content.into_owned(), false)
+                    };
                 let _ = verified;
                 let session: Self = serde_json::from_str(&json_str).map_err(|e| {
                     TransportError::DeserializationFailed {
@@ -352,7 +353,7 @@ impl Session {
 /// we'd need to verify after unlock — which changes the startup flow.
 fn session_mac_key() -> &'static [u8; 32] {
     static KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
-    KEY.get_or_init(|| *blake3::hash(b"rekindle-session-integrity-v1").as_bytes())
+    KEY.get_or_init(|| *blake3::hash(domains::SESSION_INTEGRITY.as_bytes()).as_bytes())
 }
 
 // ── Atomic file write ───────────────────────────────────────────────────

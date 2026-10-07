@@ -106,15 +106,25 @@ async fn release_registry_slot(
         reason: e.to_string(),
     })?;
 
-    crate::broadcast::dht_writes::open_writable(node, &membership.registry_key, slot_kp).await?;
-    crate::broadcast::dht_writes::set(
+    // A table hit while the community holds its registry (the slot writer
+    // is already its sticky writer); the write names the slot keypair
+    // either way, and a miss is an error, never a queued write.
+    let lease = crate::broadcast::dht_writes::acquire_str(
         node,
         &membership.registry_key,
-        membership.slot_index,
-        bytes,
-        None,
+        Some(&slot_kp.to_string()),
     )
     .await?;
+    let written = crate::broadcast::dht_writes::set_leased_str(
+        node,
+        lease,
+        membership.slot_index,
+        bytes,
+        Some(&slot_kp.to_string()),
+    )
+    .await;
+    crate::broadcast::dht_writes::release(node, lease).await;
+    written?;
     info!(
         community = %membership.community_name,
         slot = membership.slot_index,

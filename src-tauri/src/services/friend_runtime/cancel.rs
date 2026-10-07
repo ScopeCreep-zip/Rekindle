@@ -4,14 +4,14 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::{AppState, FriendshipState};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn cancel_request_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     public_key: String,
 ) -> Result<(), String> {
@@ -29,7 +29,7 @@ pub async fn cancel_request_inner(
     let pk = public_key.clone();
     let ok = owner_key;
     db_call(&pool, move |conn| {
-        crate::friend_repo::delete_friend(conn, &ok, &pk)
+        rekindle_db::repo::friends::delete(conn, &ok, &pk)
     })
     .await?;
 

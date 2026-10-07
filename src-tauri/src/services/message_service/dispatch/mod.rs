@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 use super::call_signaling::handle_call_signaling_payload;
 use super::dm_dispatch::handle_dm_payload;
@@ -46,7 +46,7 @@ struct PreparedMessage {
 pub async fn try_handle_dm_invite_app_call(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     raw_message: &[u8],
 ) -> Option<Vec<u8>> {
     let prepared = prepare_incoming(app_handle, state, pool, raw_message).await?;
@@ -122,7 +122,7 @@ pub async fn try_handle_dm_invite_app_call(
 pub async fn handle_incoming_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     raw_message: &[u8],
 ) {
     let Some(msg) = prepare_incoming(app_handle, state, pool, raw_message).await else {
@@ -131,20 +131,12 @@ pub async fn handle_incoming_message(
 
     match msg.payload {
         MessagePayload::DirectMessage { body, .. } => {
-            handle_direct_message(
-                app_handle,
-                state,
-                pool,
-                &msg.sender_hex,
-                &body,
-                msg.timestamp,
-            );
+            handle_direct_message(state, pool, &msg.sender_hex, &body, msg.timestamp);
         }
         MessagePayload::ChannelMessage {
             channel_id, body, ..
         } => {
             handle_channel_message(
-                app_handle,
                 state,
                 pool,
                 &msg.sender_hex,

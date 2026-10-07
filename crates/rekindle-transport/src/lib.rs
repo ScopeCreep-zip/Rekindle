@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "512"]
+// Byte-index string slicing panics inside a multi-byte character; cut with
+// `rekindle_utils::text::{prefix, abbreviate}` instead (plan C2).
+#![deny(clippy::string_slice)]
 //! Unified network transport layer for Rekindle.
 //!
 //! This crate is the **sole boundary** between Rekindle and the Veilid network.
@@ -25,7 +28,6 @@ pub mod envelope_queue;
 pub mod envelope_store;
 pub mod error;
 pub mod frame;
-pub mod friend_store;
 pub mod gossip;
 pub mod handler;
 pub mod operations;
@@ -41,10 +43,8 @@ mod tests;
 // ── Public API re-exports ────────────────────────────────────────────
 
 // Core lifecycle (from broadcast/)
-pub use broadcast::dht::DhtStore;
 pub use broadcast::node::TransportNode;
 pub use broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot, PeerTarget};
-pub use broadcast::peer_route::RouteManager;
 pub use broadcast::send::{BroadcastReport, Caller, Sender};
 
 // Inbound handler trait
@@ -88,7 +88,6 @@ pub use envelope_queue::{EnvelopeQueue, QueueError, RetryConfig, DEFAULT_REPLY_T
 pub use seq_tracker::SeqTracker;
 
 // Track A.1 — Receive-path friend authority (Phase 2 DHT-Inbox Pivot)
-pub use friend_store::{FriendRecord, FriendStatus, FriendStore, MemoryFriendStore};
 
 // Query engine
 pub use query::{
@@ -104,9 +103,8 @@ pub use frame::TypeId;
 pub use rekindle_utils::{timestamp_ms, timestamp_secs};
 
 // Crypto (for app-layer use)
-pub use crypto::envelope::{sign_payload, verify_signed_payload};
+pub use crypto::envelope::{recipient_bytes, sign_payload, verify_signed_payload, Addressing};
 pub use crypto::mek::{unwrap_mek, wrap_mek, Mek, MekCache};
-pub use crypto::voice_crypto::VoiceSessionKey;
 
 // Subscriptions (consolidated inbound signal handling)
 pub use subscriptions::events::SubscriptionEvent;
@@ -121,7 +119,6 @@ pub use payload::rpc::{
     CallResponse, ChannelEntrySummary, CommunityLeaveNotification, InboundCall, MekTransferPayload,
     SyncRequest, SyncResponse,
 };
-pub use payload::voice::VoicePayload;
 
 // Re-export node::deserialize_keypair for daemon use
 pub use broadcast::node::deserialize_keypair;

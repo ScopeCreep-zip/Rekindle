@@ -1,4 +1,8 @@
-use crate::dht::DHTManager;
+use rekindle_records::lease::LeaseId;
+use veilid_core::{DHTSchema, KeyPair};
+
+use super::parse_record_key;
+use super::pool::{RecordPool, SetOutcome};
 use crate::error::ProtocolError;
 
 // Subkey constants for the user profile DHT record.
@@ -11,58 +15,194 @@ pub use rekindle_types::dht_layout::profile::{
     AVATAR as SUBKEY_AVATAR, DISPLAY_NAME as SUBKEY_DISPLAY_NAME, GAME_INFO as SUBKEY_GAME_INFO,
     METADATA as SUBKEY_METADATA, PREKEY_BUNDLE as SUBKEY_PREKEY_BUNDLE,
     RELAY_POOL as SUBKEY_RELAY_POOL, ROUTE_BLOB as SUBKEY_ROUTE_BLOB, STATUS as SUBKEY_STATUS,
-    STATUS_MESSAGE as SUBKEY_STATUS_MESSAGE, SUBKEY_COUNT as PROFILE_SUBKEY_COUNT,
+    STATUS_MESSAGE as SUBKEY_STATUS_MESSAGE, STATUS_ONLINE, SUBKEY_COUNT as PROFILE_SUBKEY_COUNT,
 };
 
-/// Create a new profile DHT record and initialize subkeys.
-///
-/// Returns `(record_key, owner_keypair)`. The keypair must be persisted to retain
-/// write access across sessions.
-pub async fn create_profile(
-    dht: &DHTManager,
-    display_name: &str,
-    status_message: &str,
-    prekey_bundle: &[u8],
-    route_blob: &[u8],
-) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
-    let (key, owner_keypair) = dht.create_record(PROFILE_SUBKEY_COUNT).await?;
-
-    // Set initial values
-    dht.set_value(&key, SUBKEY_DISPLAY_NAME, display_name.as_bytes().to_vec())
-        .await?;
-    dht.set_value(
-        &key,
-        SUBKEY_STATUS_MESSAGE,
-        status_message.as_bytes().to_vec(),
-    )
-    .await?;
-    let ts: i64 = rekindle_utils::timestamp_ms_i64();
-    let mut status_payload = Vec::with_capacity(9);
-    status_payload.push(0u8);
-    status_payload.extend_from_slice(&ts.to_be_bytes());
-    dht.set_value(&key, SUBKEY_STATUS, status_payload).await?; // 0 = online
-    dht.set_value(&key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec())
-        .await?;
-    tracing::info!(
-        subkey = SUBKEY_PREKEY_BUNDLE,
-        bytes = prekey_bundle.len(),
-        "pqxdh_bundle_published kind=LastResort+OneTimeBatch (profile create)",
-    );
-    dht.set_value(&key, SUBKEY_ROUTE_BLOB, route_blob.to_vec())
-        .await?;
-
-    tracing::info!(key = %key, name = %display_name, "profile record created");
-    Ok((key, owner_keypair))
+/// What login publishes to our profile record.
+#[derive(Debug, Clone, Copy)]
+pub struct ProfileFields<'a> {
+    pub display_name: &'a str,
+    pub status_message: &'a str,
+    pub prekey_bundle: &'a [u8],
+    pub route_blob: &'a [u8],
 }
 
-/// Update a specific profile subkey.
-pub async fn update_subkey(
-    dht: &DHTManager,
-    profile_key: &str,
+/// Create our profile record (a fresh owner key), publish `fields`, and
+/// hold it writable for the session. Returns the session lease (released
+/// when the profile is rotated away, else at logout), the record key, its
+/// owner keypair (which the caller must persist), and how the writes went.
+///
+/// The key is random per create (V4), so a profile is created once, when
+/// the identity has none, and re-opened by [`open_profile`] on every later
+/// login.
+///
+/// # Errors
+/// The record could not be created, or a write failed outright.
+pub async fn create_profile(
+    pool: &RecordPool,
+    fields: ProfileFields<'_>,
+) -> Result<(LeaseId, String, KeyPair, SetOutcome), ProtocolError> {
+    let schema = DHTSchema::dflt(
+        u16::try_from(PROFILE_SUBKEY_COUNT)
+            .map_err(|e| ProtocolError::DhtError(format!("profile subkey count: {e}")))?,
+    )
+    .map_err(|e| ProtocolError::DhtError(format!("invalid profile schema: {e}")))?;
+    let (lease, key, keypair) = pool.create(schema, None).await?;
+    let key = key.to_string();
+    let outcome = publish_fields(pool, &key, fields, "profile create").await?;
+    tracing::info!(key = %key, name = %fields.display_name, ?outcome, "profile record created");
+    Ok((lease, key, keypair, outcome))
+}
+
+/// Hold our existing profile record writable for the session. Returns the
+/// session lease.
+///
+/// # Errors
+/// The record could not be opened within the pool's retry budget. That is
+/// login's to report: re-creating would change the key peers know.
+pub async fn open_profile(
+    pool: &RecordPool,
+    key: &str,
+    owner_keypair: KeyPair,
+) -> Result<LeaseId, ProtocolError> {
+    let lease = pool
+        .acquire(&parse_record_key(key)?, Some(owner_keypair))
+        .await?;
+    tracing::info!(key, "profile record reopened");
+    Ok(lease)
+}
+
+/// Publish the login fields to our profile (needs the session lease from
+/// [`open_profile`]). Returns the first missed outcome
+/// ([`SetOutcome::missed`]), or `Landed`.
+///
+/// # Errors
+/// The record could not be reached, or a write failed outright.
+pub async fn publish_profile_fields(
+    pool: &RecordPool,
+    key: &str,
+    fields: ProfileFields<'_>,
+) -> Result<SetOutcome, ProtocolError> {
+    publish_fields(pool, key, fields, "profile reopen").await
+}
+
+/// Write one subkey of our own profile. Needs the session's writable lease
+/// (taken at login by [`create_profile`] or [`open_profile`]): the write is
+/// signed by that lease's writer, and fails if there is none. Durable: a
+/// write that misses consensus is held and re-pushed by the pool until it
+/// lands (`RecordPool::set_durable`).
+///
+/// # Errors
+/// The record could not be reached, or the write failed outright.
+pub async fn set_own_profile_subkey(
+    pool: &RecordPool,
+    key: &str,
     subkey: u32,
     value: Vec<u8>,
-) -> Result<(), ProtocolError> {
-    dht.set_value(profile_key, subkey, value).await
+) -> Result<SetOutcome, ProtocolError> {
+    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
+    let outcome = pool.set_durable(lease, subkey, value).await;
+    pool.release(lease).await;
+    outcome
+}
+
+/// Write our own STATUS subkey (status byte + time). Present-tense: a plain
+/// write, never held for re-push, because a status landing late would tell
+/// readers we were reachable when we were not (`pool/durable.rs`); the 120 s
+/// heartbeat writes it again. Needs the session's writable profile lease.
+///
+/// # Errors
+/// The record could not be reached, or the write failed outright.
+pub async fn set_own_profile_status(
+    pool: &RecordPool,
+    key: &str,
+    value: Vec<u8>,
+) -> Result<SetOutcome, ProtocolError> {
+    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
+    let outcome = pool.set(lease, SUBKEY_STATUS, value, None).await;
+    pool.release(lease).await;
+    outcome
+}
+
+/// One subkey of a profile, or `None` if it has not been published.
+/// `force_refresh` asks the network rather than the local copy.
+///
+/// # Errors
+/// The record could not be opened or read.
+pub async fn read_profile_subkey(
+    pool: &RecordPool,
+    key: &str,
+    subkey: u32,
+    force_refresh: bool,
+) -> Result<Option<Vec<u8>>, ProtocolError> {
+    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
+    let value = pool.get(lease, subkey, force_refresh).await;
+    pool.release(lease).await;
+    Ok(value?.map(|v| v.data().to_vec()))
+}
+
+/// The status subkey's payload: the status byte, then the time in ms.
+#[must_use]
+pub fn status_payload(status: u8) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(9);
+    payload.push(status);
+    payload.extend_from_slice(&rekindle_utils::timestamp_ms_i64().to_be_bytes());
+    payload
+}
+
+/// Write the login fields (display name, status message, prekey bundle,
+/// route blob), all durable. Not the STATUS: the session's one STATUS
+/// publisher writes it once the profile is open, so login never writes a
+/// status over one the user already picked (plan C7.8c). Returns the first
+/// missed outcome ([`SetOutcome::missed`]), or `Landed`.
+async fn publish_fields(
+    pool: &RecordPool,
+    key: &str,
+    fields: ProfileFields<'_>,
+    context: &str,
+) -> Result<SetOutcome, ProtocolError> {
+    let writes = [
+        (SUBKEY_DISPLAY_NAME, fields.display_name.as_bytes().to_vec()),
+        (
+            SUBKEY_STATUS_MESSAGE,
+            fields.status_message.as_bytes().to_vec(),
+        ),
+        (SUBKEY_PREKEY_BUNDLE, fields.prekey_bundle.to_vec()),
+        (SUBKEY_ROUTE_BLOB, fields.route_blob.to_vec()),
+    ];
+    let mut first_miss = SetOutcome::Landed;
+    for (subkey, value) in writes {
+        let outcome = set_own_profile_subkey(pool, key, subkey, value).await?;
+        if subkey == SUBKEY_PREKEY_BUNDLE {
+            tracing::info!(
+                subkey,
+                bytes = fields.prekey_bundle.len(),
+                ?outcome,
+                "pqxdh_bundle_published kind=LastResort+OneTimeBatch ({context})",
+            );
+        }
+        if outcome.missed() {
+            if matches!(outcome, SetOutcome::Superseded(_)) {
+                // A newer write of ours (another device of this identity) won.
+                tracing::info!(
+                    key,
+                    subkey,
+                    "profile subkey already newer on the network ({context})"
+                );
+            } else {
+                tracing::warn!(
+                    key,
+                    subkey,
+                    ?outcome,
+                    "profile subkey not stored at consensus ({context})"
+                );
+            }
+            if !first_miss.missed() {
+                first_miss = outcome;
+            }
+        }
+    }
+    Ok(first_miss)
 }
 
 // The five pull accessors that lived here — `read_subkey`,
@@ -71,110 +211,5 @@ pub async fn update_subkey(
 // subkey on demand: display name, status and route blob arrive through
 // the presence watch, and a peer's prekey bundle arrives in the friend
 // request or invite payload that needs it. Push won; the pull half was
-// never wired to anything.
-
-/// Open an existing profile DHT record and update all subkeys, or create a new one.
-///
-/// On reopen: opens with write access via the owner keypair, then updates subkeys
-/// 0 (display name), 1 (status message), 2 (status=online), 5 (prekey bundle),
-/// and 6 (route blob). If the open or any subkey write fails, falls back to
-/// creating a fresh profile record.
-///
-/// Returns `(key, keypair, is_new)`. When `is_new` is true the keypair must be
-/// persisted to `SQLite`.
-pub async fn open_or_create_profile(
-    dht: &DHTManager,
-    existing_key: Option<&str>,
-    owner_keypair: Option<veilid_core::KeyPair>,
-    display_name: &str,
-    status_message: &str,
-    prekey_bundle: &[u8],
-    route_blob: &[u8],
-) -> Result<(String, Option<veilid_core::KeyPair>, bool), ProtocolError> {
-    // Try to reopen and update existing record
-    if let (Some(key), Some(ref keypair)) = (existing_key, &owner_keypair) {
-        match try_reopen_and_update(
-            dht,
-            key,
-            keypair.clone(),
-            display_name,
-            status_message,
-            prekey_bundle,
-            route_blob,
-        )
-        .await
-        {
-            Ok(()) => {
-                tracing::info!(key, "reusing existing DHT profile record");
-                return Ok((key.to_string(), owner_keypair, false));
-            }
-            Err(e) => {
-                tracing::warn!(
-                    key, error = %e,
-                    "failed to reuse existing DHT profile — creating new one"
-                );
-            }
-        }
-    } else if existing_key.is_some() {
-        tracing::warn!("no owner keypair for existing profile — creating new one");
-    }
-
-    let (key, keypair) =
-        create_profile(dht, display_name, status_message, prekey_bundle, route_blob).await?;
-    Ok((key, keypair, true))
-}
-
-/// Open an existing profile record writable and update all content subkeys.
-///
-/// Returns `Err` if the open fails OR any subkey write fails — the caller
-/// should fall back to creating a new record.
-async fn try_reopen_and_update(
-    dht: &DHTManager,
-    key: &str,
-    owner_keypair: veilid_core::KeyPair,
-    display_name: &str,
-    status_message: &str,
-    prekey_bundle: &[u8],
-    route_blob: &[u8],
-) -> Result<(), ProtocolError> {
-    // Retry transient unreachability before letting the caller recreate — the
-    // profile key is random, so a premature recreate on a sparse cold-start
-    // routing table orphans the real record.
-    dht.open_record_writable_with_retry(
-        key,
-        owner_keypair,
-        super::DEFAULT_DHT_OPEN_ATTEMPTS,
-        super::DEFAULT_DHT_OPEN_DELAY,
-    )
-    .await?;
-
-    update_subkey(
-        dht,
-        key,
-        SUBKEY_DISPLAY_NAME,
-        display_name.as_bytes().to_vec(),
-    )
-    .await?;
-    update_subkey(
-        dht,
-        key,
-        SUBKEY_STATUS_MESSAGE,
-        status_message.as_bytes().to_vec(),
-    )
-    .await?;
-    // Status = online (0) + timestamp
-    let ts: i64 = rekindle_utils::timestamp_ms_i64();
-    let mut status_payload = Vec::with_capacity(9);
-    status_payload.push(0u8);
-    status_payload.extend_from_slice(&ts.to_be_bytes());
-    update_subkey(dht, key, SUBKEY_STATUS, status_payload).await?;
-    update_subkey(dht, key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec()).await?;
-    tracing::info!(
-        subkey = SUBKEY_PREKEY_BUNDLE,
-        bytes = prekey_bundle.len(),
-        "pqxdh_bundle_published kind=LastResort+OneTimeBatch (profile update)",
-    );
-    update_subkey(dht, key, SUBKEY_ROUTE_BLOB, route_blob.to_vec()).await?;
-
-    Ok(())
-}
+// never wired to anything. (`read_profile_subkey` above serves the daemon's
+// friend-request flow and its friend-list queries.)

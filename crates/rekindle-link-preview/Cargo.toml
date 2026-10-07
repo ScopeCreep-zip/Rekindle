@@ -9,11 +9,11 @@ license = "MIT"
 workspace = true
 
 [dependencies]
+futures = { workspace = true }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "charset", "stream"] }
-url = "2"
-tracing = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = [ "rustls-tls", "gzip", "brotli", "charset", "stream" ] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-futures = { workspace = true }
+tracing = { workspace = true }
+url = "2"

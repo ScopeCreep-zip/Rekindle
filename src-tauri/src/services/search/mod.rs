@@ -20,14 +20,14 @@ use rekindle_types::search::{
     MessageSearch, SearchHit, SearchResult, SearchSort, MAX_SEARCH_LIMIT,
 };
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn search_messages(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     mut req: MessageSearch,
 ) -> Result<SearchResult, String> {
     let owner_key = state_helpers::current_owner_key(state)?;

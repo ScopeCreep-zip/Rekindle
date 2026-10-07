@@ -24,7 +24,8 @@ pub fn start_presence_poll(state: &Arc<AppState>, community_id: String) {
         );
         return;
     };
-    rekindle_presence::start_presence_poll(Arc::new(adapter), community_id);
+    let scope = crate::state_helpers::community_scope(state, &community_id);
+    rekindle_presence::start_presence_poll(Arc::new(adapter), community_id, &scope);
 }
 
 /// Run one presence-poll tick on demand. Public entry point used by
@@ -37,7 +38,17 @@ pub async fn presence_poll_tick_public(
     let Some(adapter) = crate::services::presence_adapter::build_adapter(state) else {
         return Err("adapter unavailable".to_string());
     };
-    rekindle_presence::presence_poll_tick(Arc::new(adapter), community_id).await
+    let stop = crate::state_helpers::community_scope(state, community_id).token();
+    // Leaving the community stops its scope, which the pool's drain does not
+    // cover (that is logout's, C7.6g). The tick's DHT work is record-pool
+    // calls only (its sends are queued to the gossip sender), and the pool
+    // runs each call on its own scope, so leaving it drops none (C4.L1).
+    stop.run_until_cancelled(rekindle_presence::presence_poll_tick(
+        Arc::new(adapter),
+        community_id,
+    ))
+    .await
+    .unwrap_or(Ok(()))
 }
 
 /// Kick a single presence-poll tick for a community NOW, in the
@@ -58,13 +69,16 @@ pub async fn presence_poll_tick_public(
 pub fn nudge_presence_poll(state: &Arc<AppState>, community_id: &str) {
     let state = Arc::clone(state);
     let community_id = community_id.to_string();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = presence_poll_tick_public(&state, &community_id).await {
-            tracing::debug!(
-                community = %community_id,
-                error = %e,
-                "presence poll nudge skipped",
-            );
-        }
-    });
+    crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
+        "presence poll nudge",
+        async move {
+            if let Err(e) = presence_poll_tick_public(&state, &community_id).await {
+                tracing::debug!(
+                    community = %community_id,
+                    error = %e,
+                    "presence poll nudge skipped",
+                );
+            }
+        },
+    );
 }

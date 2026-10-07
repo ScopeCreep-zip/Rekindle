@@ -519,15 +519,16 @@ result.
 hop count (TTL=5); (2) the Veilid DHT record TTL (~1 hour without
 refresh). Distinct from the network-stack-level TTL.
 
-**TUI (Text User Interface).** `rekindle-cli`'s ratatui-based
-interactive screen UI, an alternative to one-shot CLI commands.
-Toggleable via the `tui` cargo feature.
+**TUI (Text User Interface).** `rekindle-tui`, the ratatui-based
+terminal frontend: a separate binary and crate (plan C3), a client of
+`rekindled` like the CLI (`rekindle`) and the desktop app.
 
-**UCred.** Process-level credentials extracted from a Unix domain
-socket (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS): peer
-PID and UID. Mixed into the Noise IK prologue on the IPC bus to
-cryptographically bind OS-level identity to the encrypted
-channel.
+**UCred.** Peer credentials of a Unix domain socket connection
+(`SO_PEERCRED` on Linux; `getpeereid` and `LOCAL_PEEREPID` on macOS):
+the peer's UID, and its PID where the OS gives one. The bus refuses a
+peer whose UID is not the daemon's, and binds both UIDs and the socket
+path into the Noise IK prologue (`REKINDLE-IPC-v2`); PIDs are logged,
+not bound.
 
 **VICE (Veilid Internet Connectivity Establishment).** Veilid's
 NAT-traversal subsystem. Handles symmetric NAT detection, UDP

@@ -48,7 +48,9 @@ Double-encrypted SQLCipher store that **replaces** the previous
 
 The 32-byte salt lives in `{vault_path}.salt` sidecar (plaintext — salts
 only need to be unique per install). Modules: `key`, `schema`, `store`,
-`error`. See [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md).
+`error`, and `typed::{signal, community_keys, mek, audit}`: one module of
+helpers per kind of secret, so every host stores them the same way (plan
+C5.4). See [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md).
 
 ### rekindle-audit
 
@@ -73,6 +75,23 @@ seen-at), `envelope` (`SignedEnvelope` build/verify, `CommunityEnvelope`
 payloads).
 
 Dependencies: `rekindle-types`, `rekindle-secrets`, `blake2`.
+
+### rekindle-db
+
+The storage foundation every host shares (plan C5): the SQLite schema
+(`schema/001_init.sql`, `SCHEMA_VERSION`), `open` (pragmas, version check,
+reset), the `Db` handle every query goes through, the repositories for
+the tables more than one host uses (`repo::{identity, friends,
+pending_requests, communities, members, governance_cache, audit}`),
+`SqliteFriendStore`, and `lock::NodeLock` (one node per data root).
+`paths` re-exports `rekindle_utils::paths::DataRoot`. Repository
+functions take `&rusqlite::Connection` so several share one transaction;
+`cargo xtask check-sqlite` keeps SQL here, in `rekindle-vault` and in
+`rekindle-asql`.
+
+Dependencies: `rekindle-types`, `rekindle-audit`, `rekindle-utils`,
+`rekindle-asql`, `rusqlite` (bundled SQLCipher, as `rekindle-vault`
+builds it), `serde`, `serde_json`, `thiserror`, `tracing`.
 
 ### rekindle-records
 
@@ -127,7 +146,7 @@ acceptance), `rotate` (rotation entry points), `cache`
 I/O + persistence), `event` (`MekRotationEvent` to UI), `error`.
 
 Parameterised over `MekDistributeDeps`, which **both** shells implement:
-src-tauri's `services/mek_adapter.rs` against AppState / DbPool /
+src-tauri's `services/mek_adapter.rs` against AppState / Db /
 AppHandle, and the daemon's `daemon/mek_rotation/` against
 `DaemonContext`. The daemon adapter delegates identity, Lamport counter,
 membership and the online roster to its `GovernanceRuntimeDeps` adapter
@@ -169,11 +188,12 @@ Dependencies: `rekindle-types`, `rusqlite`.
 
 ### rekindle-route
 
-Private route lifecycle: allocation, refresh, peer route cache.
-Modules: `cache` (`RouteCache` — per-peer route blob + TTL eviction),
-`contexts` (per-purpose `RoutingContext` factories — priv route, safety
-route, unsafe), `lifecycle` (`RouteLifecycle` — periodic refresh, dead-
-route detection).
+Route policy and the peer route cache. Our own routes are allocated,
+healed and released by `rekindle_protocol::own_routes::OwnRoutes` (plan
+C7.9: one owner per node, a general and a media class, no fallback between
+them). Modules: `cache` (`RouteCache` — per-peer route blob + TTL eviction),
+`contexts` (per-purpose `RoutingContext` factories), `lifecycle` (the
+watchdog cadence and the peer-cache TTL).
 
 Dependencies: `rekindle-types`, `blake3`, `tokio`. **No `veilid-core`** —
 contexts are passed in from above.
@@ -186,10 +206,14 @@ is in its boot/login/shutdown cycle. Capability gates (`can_query`,
 `can_write`, `can_unlock`) advertise which commands are safe; mutating
 commands wrap their body in `TransportGuard::write` to reject calls in
 states where the side effect can't be safely produced. Modules: `state`
-(`AppLifecycle`, `LifecycleState`), `guard` (`TransportGuard`), `error`.
+(`AppLifecycle`, `LifecycleState`), `guard` (`TransportGuard`), `error`,
+and `scope` (`SessionScope`: the tasks of one session — a desktop login,
+a daemon unlock, a community, a call — spawned, named, cancelled and
+waited for together; plan C4).
 See [`lifecycle-fsm.md`](lifecycle-fsm.md).
 
-Dependencies: `tokio`.
+Dependencies: `tokio`, `tokio-util` (`rt`), `futures-util` (`catch_unwind`),
+`parking_lot`.
 
 ## Tier 5 — Gossip Mesh & Presence
 
@@ -198,8 +222,9 @@ Dependencies: `tokio`.
 Transport-agnostic gossip mesh primitives. Pure logic — does not call
 `app_message` itself; the integration layer plumbs the broadcast
 helpers into Veilid. Modules: `broadcast` (generic broadcast helpers),
-`dedup` (`DedupCache` re-exported into `AppState`), `lamport` (clock
-arithmetic plus the `MAX_LAMPORT_DRIFT` cap), `mesh` (`fanout_degree()`
+`dedup` (`DedupCache` re-exported into `AppState`), `lamport`
+(re-export of `rekindle_types::lamport::LamportClock`: checked
+increment, receive rule clamped by `MAX_LAMPORT_DRIFT`), `mesh` (`fanout_degree()`
 — adaptive D selection: ≤20 → min(N, 6); 21–60 → 6; 61+ → 8),
 `rate_limit` (token bucket, 10 msg/s floor), `mesh_broadcast`,
 `peer_select`.
@@ -322,8 +347,11 @@ ECDH plus HKDF-SHA256 (`HKDF_INFO = b"rekindle-call-key-v1"`,
 salt = call ID), giving both sides the same shared secret. The `state`
 module tracks ringing/answered/missed state and the `signaling::CallRegistry`
 trait powers the Tauri-side `AppState.active_calls` (Phase 14.q).
-`rekindle-voice` consumes `call_key` to encrypt frames over
-`app_message`; this crate has no Veilid, no audio I/O, no Tauri.
+The derived secret is the call's SFrame scope secret
+(`CallState.media_secret`), held with our sender state
+(`CallState.media_sender`); `rekindle-voice` reads both through
+`MediaKeySource` to seal frames. This crate has no Veilid, no audio I/O,
+no Tauri.
 
 Dependencies: `rekindle-types`, `rekindle-utils`, `x25519-dalek`, `hkdf`,
 `sha2`, `aes-gcm`, `tokio`, `async-trait`.
@@ -428,8 +456,13 @@ Parameterised over a `SyncDeps` trait.
 
 ### rekindle-utils
 
-Time helpers (`now_ms`, `now_secs`, monotonic timestamps). Single
-module `time`. Zero external deps beyond `std`.
+Shared utilities, most behind features so a consumer pulls only what it
+uses: `time`, `hash`, `random`, `text` (always on); `retry`
+(`retry` feature); `log_scrub` (`log-scrub`); `config_layers` (`config`);
+and `paths` (`paths`): `DataRoot`, the directories every host and frontend
+resolves its files in, on the `dirs` release Tauri uses. It lives here,
+not in `rekindle-db`, because the thin frontends must not link the
+backend (`check-frontend-boundaries`).
 
 ### rekindle-e2e-server
 
@@ -454,7 +487,8 @@ modules and a body of pure logic:
   `community/`, `gossip.rs`, `frame.rs`, `query.rs`, `handler.rs`, …)
   contains zero `veilid_core` imports.
 
-Public API re-exports include `TransportNode`, `Sender`, `RouteManager`,
+Public API re-exports include `TransportNode` (its routes via
+`TransportNode::own_routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `InboundHandler`, `GossipMesh`,
 `SignalSessionManager`, `Session`, `QueryEngine`, plus per-feature
 operation modules (`operations::{community, channel, dm, friend, voice,
@@ -469,34 +503,50 @@ Dependencies: `rekindle-types`, `rekindle-utils`, `rekindle-events`,
 
 The Rekindle **daemon**. Owns the `TransportNode`, manages persistent
 state, and serves CLI/TUI/Tauri frontends plus automation bots over a
-Noise-IK encrypted IPC bus. Modules: `validation` (request validation),
-`ipc/` (`server`, `client`, `transport`, `framing`, `noise` (Noise IK
-handshake), `noise_keys` (OS keyring for daemon long-term key),
-`protocol` (`IpcRequest` / `IpcResponse`), `registry` (UCred-pinned
-client registry), `message`), `daemon/` (`handler`, `community_rpc`,
-`governance_rpc`, `friend_inbox`, `event_router`, `dispatch/`),
-`state/` (session, config, path).
+Noise-IK encrypted IPC bus (`rekindle-ipc`). It ships as the `rekindled`
+binary (`src/bin/rekindled.rs`). Modules: `host/` (composition root:
+`lock` — one daemon per data root, `policy` — the fail-closed admin-policy
+loader, `bus_key`, `watchdog`), `validation` (request validation),
+`daemon/` (`handler`, `community_rpc`, `governance_rpc`, `friend_inbox`,
+`dispatch/`), `state/` (session, config, path).
 
-`rekindle-node` depends on `rekindle-transport`, `rekindle-types`,
-`rekindle-lifecycle`, `snow` (Noise), `keyring`, `rustix` (for safe
-`SO_PEERCRED`), and `sd-notify` (systemd `READY=1` + watchdog). It
+`rekindle-node` depends on `rekindle-ipc`, `rekindle-transport`,
+`rekindle-types`, `rekindle-lifecycle`, `snow` (the bus keypair),
+`keyring`, `rustix`, and `sd-notify` (systemd `READY=1` + watchdog). It
 never imports `veilid-core` directly.
+
+### rekindle-ipc
+
+Tier 3, `#![forbid(unsafe_code)]`. The IPC bus every frontend and the
+daemon link: wire protocol (`IpcRequest` / `IpcResponse`), Noise IK
+handshake and transport, framing, `BusClient`, `BusServer`, the
+`ClearanceRegistry`, the `EventRouter`, the drop-oldest media queue, and
+the platform transport — Unix domain sockets with a same-UID peer check,
+or (Windows) a named pipe whose protected DACL admits only its owner and
+LocalSystem, built through `interprocess`'s safe API. Depends on
+`rekindle-types`, `rekindle-utils`, `snow`, tokio; no Veilid, no storage.
+
+### rekindle-client
+
+What every frontend shares: `DaemonClient` over `rekindle-ipc`,
+`spawn::connect_or_spawn` (starts the sibling `rekindled` on demand),
+`config::load` (the layered `config.toml`), display formatters, the
+scrubbed file logger and `ClientError`. No Veilid, no storage.
 
 ### rekindle-cli
 
-CLI and TUI for the daemon track. Binary name `rekindle-cli` (renamed
-from `rekindle` to avoid collision with the desktop app's
-`src-tauri/` binary). Every CLI command sends an `IpcRequest` over the
-Noise-IK bus and renders the `IpcResponse` — the CLI never touches
-`TransportNode`, `Session`, or the OS keyring directly. Modules: `cli/`
-(clap subcommands), `tui/` (ratatui interactive mode), `views/` (12
-screen renderers), `output/` (JSON / table), `config/`, `transport`
-(IPC client wrapper), `node_daemon` (embedded daemon mode behind the
-`daemon` feature), `identity`, `keys`, `network`, `presence`,
-`friends`, `dm`, `community`, `channel`, `governance`, `voice`,
-`helpers`, `error`.
+The command-line frontend, binary `rekindle`. Every command sends an
+`IpcRequest` over the Noise-IK bus and renders the `IpcResponse`.
+Modules: `cli/` (clap), `output/` (text / JSON / JSONL), `watch`
+(streaming commands), `config/` (`rekindle config`), the per-domain
+command files, `helpers` (prompts), `error` (exit codes). No features.
 
-Default features: `tui` (ratatui + crossterm + textarea + arboard) and
-`daemon` (embeds the daemon in the same binary for solo-developer
-setups, gated on `rekindle-transport`, `snow`, `sd-notify`, `rustix`,
-`postcard`). Both can be disabled for a minimal CLI-only build.
+### rekindle-tui
+
+The terminal UI, binary `rekindle-tui`: ratatui dashboard, channel,
+DM, voice, friend, doctor and community views, rendered from the
+daemon's event stream; `keymap/` holds the default keybindings.
+
+`cargo xtask check-frontend-boundaries` verifies that none of these three
+links `veilid-core`, `rekindle-transport`, `rekindle-protocol`,
+`rekindle-vault`, `rekindle-db`, `rekindle-node` or `rekindle-desktop`.

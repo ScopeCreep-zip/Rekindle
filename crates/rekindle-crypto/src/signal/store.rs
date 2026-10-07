@@ -46,6 +46,9 @@ pub trait PreKeyStore: Send + Sync {
     /// Remove a consumed classical one-time prekey.
     fn remove_prekey(&self, prekey_id: u32) -> Result<(), CryptoError>;
 
+    /// IDs of the stored classical one-time prekeys, oldest first.
+    fn list_prekey_ids(&self) -> Result<Vec<u32>, CryptoError>;
+
     /// Load the current classical signed prekey.
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError>;
 
@@ -76,6 +79,9 @@ pub trait PreKeyStore: Send + Sync {
     /// Phase 3b — remove a consumed PQ one-time prekey. No-op for
     /// `LastResort` (which is rotated, not consumed).
     fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<(), CryptoError>;
+
+    /// IDs of the stored PQ one-time prekeys, oldest first.
+    fn list_pq_one_time_ids(&self) -> Result<Vec<u32>, CryptoError>;
 }
 
 /// Storage trait for Signal Protocol sessions.

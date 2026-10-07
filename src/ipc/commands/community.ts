@@ -80,12 +80,8 @@ export const communityCommands = {
   }),
   createCommunity: (name: string) =>
     invoke<string>("create_community", { name }),
-  joinCommunity: (communityId: string, inviteCode?: string, secretsRecordKey?: string) =>
-    invoke<void>("join_community", {
-      communityId,
-      inviteCode: inviteCode ?? null,
-      secretsRecordKey: secretsRecordKey ?? null,
-    }),
+  /// Returns the joined community's id.
+  joinCommunity: (inviteUrl: string) => invoke<string>("join_community", { inviteUrl }),
   createChannel: (
     communityId: string,
     name: string,
@@ -146,14 +142,19 @@ export const communityCommands = {
     destCommunityId,
     destChannelId,
   }),
-  uploadAttachment: (communityId: string, channelId: string, filePath: string) =>
-    invoke<string>("upload_attachment", { communityId, channelId, filePath }),
-  downloadAttachment: (
-    communityId: string,
-    channelId: string,
-    attachmentId: string,
-    savePath: string,
-  ) => invoke<void>("download_attachment", { communityId, channelId, attachmentId, savePath }),
+  /// Opens a native file picker; resolves to the new attachment id, or
+  /// null if the user cancelled.
+  uploadAttachment: (communityId: string, channelId: string) =>
+    invoke<string | null>("upload_attachment", { communityId, channelId }),
+  /// Opens a native save dialog; resolves to false if the user cancelled.
+  downloadAttachment: (communityId: string, channelId: string, attachmentId: string) =>
+    invoke<boolean>("download_attachment", { communityId, channelId, attachmentId }),
+  /// A voice message's audio, fetched into the chunk cache if needed.
+  getVoiceMessageAudio: (communityId: string, channelId: string, attachmentId: string) =>
+    invoke<ArrayBuffer>("get_voice_message_audio", { communityId, channelId, attachmentId }),
+  /// Show a downloaded attachment in the OS file manager.
+  revealDownloadedAttachment: (communityId: string, channelId: string, attachmentId: string) =>
+    invoke<void>("reveal_downloaded_attachment", { communityId, channelId, attachmentId }),
   pinAttachment: (communityId: string, attachmentId: string, pinned: boolean) =>
     invoke<void>("pin_attachment", { communityId, attachmentId, pinned }),
   sendVoiceMessage: (

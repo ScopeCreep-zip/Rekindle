@@ -93,17 +93,23 @@ pub(super) async fn reclaimable_slots<D: GovernanceRuntimeDeps>(
     let banned: HashSet<String> = gov_state.bans.iter().map(|p| hex::encode(p.0)).collect();
 
     let mut out = Vec::new();
+    // An unborrowable registry reclaims nothing: no slot is evidence of
+    // vacancy.
+    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+        return out;
+    };
     for &subkey in occupied {
         // A read failure is not evidence of vacancy — a slot we could
         // not fetch stays occupied. Reclaiming on a transient DHT error
         // would hand a live member's slot to a joiner.
-        let Ok(Some(raw)) = deps.get_dht_value(registry_key, subkey, false).await else {
+        let Ok(Some(raw)) = deps.get_dht_value(lease, subkey, false).await else {
             continue;
         };
         if is_reclaimable(&raw, &banned) {
             out.push(subkey);
         }
     }
+    deps.release_record(lease).await;
     out.sort_unstable();
     out
 }

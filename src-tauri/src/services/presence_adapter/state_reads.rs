@@ -9,7 +9,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use rekindle_presence::{PresenceCredentials, SegmentDescriptor};
-use rekindle_protocol::dht::DHTManager;
 
 use crate::services::community::join::try_derive_slot_keypair;
 use crate::state::AppState;
@@ -27,12 +26,9 @@ pub(super) async fn ensure_registry_open(
     let Some(registry_key) = registry_key else {
         return Ok(None);
     };
-    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
-    let mgr = DHTManager::new(rc);
     crate::services::community::presence::registry::ensure_registry_open(
         state,
         community_id,
-        &mgr,
         &registry_key,
     )
     .await?;
@@ -129,14 +125,6 @@ pub(super) fn channel_log_keys_for_community(
                 .collect()
         })
         .unwrap_or_default()
-}
-
-pub(super) fn member_count_for_community(state: &Arc<AppState>, community_id: &str) -> u32 {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map_or(0, |c| u32::try_from(c.known_members.len()).unwrap_or(255))
 }
 
 pub(super) fn mark_pending_sync(

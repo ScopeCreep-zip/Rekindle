@@ -8,12 +8,13 @@ description = "Three-tier inbox-scan coordinator (watch + 30s poll + direct) for
 workspace = true
 
 [dependencies]
-tokio = { workspace = true, features = ["sync", "macros", "time", "rt"] }
-async-trait = "0.1"
-thiserror = { workspace = true }
 anyhow = { workspace = true }
-tracing = { workspace = true }
+async-trait = "0.1"
 parking_lot = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [ "sync", "macros", "time", "rt" ] }
+tokio-util = "0.7"
+tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["sync", "macros", "time", "rt", "rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = [ "sync", "macros", "time", "rt", "rt-multi-thread", "test-util" ] }

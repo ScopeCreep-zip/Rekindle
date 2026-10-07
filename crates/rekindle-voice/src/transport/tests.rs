@@ -2,7 +2,6 @@
 //! to keep `mod.rs` under the file-size ceiling.
 
 use super::*;
-use crate::codec::EncodedFrame;
 
 /// Fails only for `dead_blob` — mirrors the frame-sender adapter's
 /// wrapping of a veilid `NoConnection` into `VoiceError::Transport`.
@@ -31,12 +30,12 @@ fn test_transport(dead_blob: Vec<u8>) -> VoiceTransport {
     t
 }
 
-fn frame() -> EncodedFrame {
-    EncodedFrame {
-        data: vec![0u8; 8],
-        timestamp: 1,
+fn frame() -> OutboundFrame {
+    OutboundFrame {
         sequence: 1,
-        mek_generation: 0,
+        timestamp: 1,
+        transport_seq: 0,
+        sframe: vec![0u8; 8],
     }
 }
 

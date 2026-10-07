@@ -2,8 +2,10 @@
 //!
 //! Architecture §6.2 steps 1-9: governance snapshot → identity → ban
 //! check → invite decode → slot claim → initial presence. Generic over
-//! `GovernanceRuntimeDeps`, so the Tauri host and the daemon run the
-//! same sequence rather than one each.
+//! `GovernanceRuntimeDeps` so every host can run it; today only the daemon
+//! does (`rekindle-node` `dispatch/community/lifecycle.rs`). The desktop
+//! still joins through its own `services/community/join/flow.rs`; ADR 0010
+//! moves the desktop onto the daemon (F1), which retires that copy.
 //!
 //! That mattered: the daemon had no v2.0 join at all. It submitted a
 //! request to an inbox and waited for an operator to *assign* it a slot,
@@ -61,14 +63,14 @@ pub struct JoinStagesOutcome {
 
 /// Decrypt the invite and reconcile it with governance.
 ///
-/// Governance is consulted to *enforce* revocation and expiry when the
-/// entry is visible, and to recover the inviter for the invite-quota
-/// check — never as the sole source of the secrets pointer, which rides
-/// in the deep link (chiral §12).
+/// The secrets pointer comes from the invite link (chiral §12).
+/// Governance is consulted only to *enforce* revocation and expiry when
+/// the entry is visible, and to recover the inviter for the invite-quota
+/// check.
 async fn decode_invite<D: GovernanceRuntimeDeps>(
     deps: &D,
     invite_code: &str,
-    link_secrets_record_key: Option<&str>,
+    secrets_record_key: &str,
     all_entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
 ) -> Result<InviteContext, GovernanceRuntimeError> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
@@ -85,19 +87,6 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
         _ => {}
     }
 
-    let secrets_record_key = link_secrets_record_key
-        .map(str::to_string)
-        .or_else(|| match &status {
-            InviteGovStatus::Active {
-                secrets_record_key, ..
-            } => Some(secrets_record_key.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            GovernanceRuntimeError::Adapter(
-                "invite has no secrets pointer (no link pointer and no governance entry)".into(),
-            )
-        })?;
     let inviter_pseudonym = match status {
         InviteGovStatus::Active { inviter, .. } => Some(inviter),
         _ => None,
@@ -105,7 +94,7 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
 
     // Governance carries only a pointer; the encrypted blob lives in its
     // own DFLT record.
-    let encrypted_b64 = crate::invite_secrets::fetch_invite_secrets(deps, &secrets_record_key)
+    let encrypted_b64 = crate::invite_secrets::fetch_invite_secrets(deps, secrets_record_key)
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("fetch invite secrets: {e}")))?;
     let encrypted = {
@@ -140,10 +129,9 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
 /// under concurrent joins.
 pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     deps: &D,
-    governance_key: &str,
-    invite_code: &str,
-    secrets_record_key: Option<&str>,
+    link: &rekindle_types::invite::InviteLink,
 ) -> Result<JoinStagesOutcome, GovernanceRuntimeError> {
+    let governance_key = link.governance_key.as_str();
     // 1. Multi-segment governance snapshot (DHT scan + signature verify
     //    + CRDT re-merge).
     let snapshot = crate::join_stages::load_governance_snapshot(deps, governance_key).await?;
@@ -166,8 +154,13 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     // 4. Decode the invite — this is where the shared slot seed comes
     //    from. Deriving it locally cannot work: the registry's member
     //    keys were generated from the creator's seed.
-    let invite =
-        decode_invite(deps, invite_code, secrets_record_key, &snapshot.all_entries).await?;
+    let invite = decode_invite(
+        deps,
+        link.invite_code.as_str(),
+        link.secrets_record_key.as_str(),
+        &snapshot.all_entries,
+    )
+    .await?;
 
     // 5. Claim a slot (CAS, retrying past contention, auto-expanding
     //    the Plate Gate when every segment is full).

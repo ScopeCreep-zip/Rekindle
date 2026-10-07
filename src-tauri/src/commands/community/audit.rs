@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_audit_runtime::get_audit_log_inner;
 use crate::state::SharedState;
 
@@ -10,7 +9,6 @@ use super::types::AuditLogEntryInfoDto;
 #[tauri::command]
 pub async fn get_audit_log(
     state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
     community_id: String,
     before_timestamp: Option<u64>,
     limit: u32,

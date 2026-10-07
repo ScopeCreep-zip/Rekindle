@@ -54,14 +54,14 @@ export async function handleUpdateCommunityProfile(
   }
 }
 
+/// Pick a file in the native dialog and upload it. Null if cancelled.
 export async function handleUploadAttachment(
   communityId: string,
   channelId: string,
-  filePath: string,
 ): Promise<string | null> {
   try {
-    const id = await commands.uploadAttachment(communityId, channelId, filePath);
-    addToast("File uploaded", "success");
+    const id = await commands.uploadAttachment(communityId, channelId);
+    if (id) addToast("File uploaded", "success");
     return id;
   } catch (e) {
     const msg = typeof e === "string" ? e : "Upload failed";
@@ -71,23 +71,52 @@ export async function handleUploadAttachment(
   }
 }
 
+/// Pick a save location in the native dialog and download there. False if
+/// cancelled.
 export async function handleDownloadAttachment(
   communityId: string,
   channelId: string,
   attachmentId: string,
-  defaultFilename: string,
 ): Promise<boolean> {
   try {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const savePath = await save({ defaultPath: defaultFilename });
-    if (!savePath) return false;
-    await commands.downloadAttachment(communityId, channelId, attachmentId, savePath as string);
-    return true;
+    return await commands.downloadAttachment(communityId, channelId, attachmentId);
   } catch (e) {
     const msg = typeof e === "string" ? e : "Download failed";
     console.error("Download failed:", e);
     addToast(msg, "error");
     return false;
+  }
+}
+
+export async function handleRevealAttachment(
+  communityId: string,
+  channelId: string,
+  attachmentId: string,
+): Promise<void> {
+  try {
+    await commands.revealDownloadedAttachment(communityId, channelId, attachmentId);
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Could not show the file";
+    console.error("Reveal failed:", e);
+    addToast(msg, "error");
+  }
+}
+
+/// A voice message's audio as a Blob, or null if it could not be fetched.
+export async function handleLoadVoiceMessage(
+  communityId: string,
+  channelId: string,
+  attachmentId: string,
+  mimeType: string,
+): Promise<Blob | null> {
+  try {
+    const bytes = await commands.getVoiceMessageAudio(communityId, channelId, attachmentId);
+    return new Blob([bytes], { type: mimeType });
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Could not load voice message";
+    console.error("Voice message fetch failed:", e);
+    addToast(msg, "error");
+    return null;
   }
 }
 

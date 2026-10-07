@@ -4,7 +4,7 @@ import { setCommunityState, communityState } from "../../stores/community.store"
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
-import { setLinkPreviews } from "../../stores/link_preview.store";
+import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { truncateKey } from "../../utils/formatting";
 import { transformMessages } from "../../utils/transformers";
 import { setTypingUsers, typingTimers } from "../../actions/community/shared";
@@ -15,14 +15,13 @@ import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 export function reduceMessages(event: CommunityEvent): boolean {
   if (event.type === "linkPreviewReceived") {
     // Architecture §28.8 — sender pre-fetched OpenGraph metadata.
-    // Persist keyed by messageId so MessageBubble can render the
-    // card under the message body.
-    const { messageId, url, title, description, imageUrl, siteName, fetchedAt } = event.data;
-    setLinkPreviews(messageId, {
+    // Keyed by (channel, message) so MessageBubble renders the card
+    // under exactly the message it belongs to.
+    const { channelId, messageId, url, title, description, siteName, fetchedAt } = event.data;
+    setLinkPreviews(linkPreviewKey(channelId, messageId), {
       url,
       title,
       description,
-      imageUrl,
       siteName,
       fetchedAt,
     });
@@ -44,19 +43,21 @@ export function reduceMessages(event: CommunityEvent): boolean {
       const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
       if (idx >= 0) {
         setCommunityState("channelMessages", channelId, idx, "status", "failed");
-        addToast("Message delivery failed after retries", "error");
+        // The network holds a newer copy of our channel page that lacks this
+        // message (plan C7.13); a resend merges it back.
+        addToast("Message not delivered. Resend it.", "error");
       }
     }
     return true;
   } else if (event.type === "attachmentDownloaded") {
-    const { communityId, channelId, attachmentId, localPath } = event.data;
+    const { communityId, channelId, attachmentId } = event.data;
     const messages = communityState.channelMessages[channelId];
     if (!messages) return true;
     const idx = messages.findIndex((m) => m.attachment?.attachmentId === attachmentId);
     if (idx < 0) return true;
     const _ = communityId;
     setCommunityState("channelMessages", channelId, idx, "attachment", (att) =>
-      att ? { ...att, localPath } : att,
+      att ? { ...att, downloaded: true } : att,
     );
     return true;
   }

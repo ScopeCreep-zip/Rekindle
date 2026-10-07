@@ -12,10 +12,11 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
-/// Handle a `b'V'` voice packet or a `b'R'` receiver report.
+/// Handle a `b'V'` voice packet (SFrame, Cap'n Proto) or a `b'R'`
+/// receiver report.
 /// Returns `true` if the message was one of them and is now dealt with.
 pub(super) fn handle_media_tag(state: &Arc<AppState>, message: &[u8]) -> bool {
-    if !message.is_empty() && message[0] == b'V' {
+    if message.first() == Some(&rekindle_voice::transport::VOICE_PACKET_TAG) {
         let voice_data = &message[1..];
         match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
             Ok(packet) => {

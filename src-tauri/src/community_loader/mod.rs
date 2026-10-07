@@ -29,16 +29,13 @@ pub mod rows;
 pub use friends::load_friends_from_db;
 pub use restore::restore_community_pseudonyms_and_meks;
 
-use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
-
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
+use rekindle_db::Db;
 
 /// Load communities and channels from `SQLite` into `AppState`, scoped to the given identity.
 pub async fn load_communities_from_db(
-    pool: &DbPool,
+    pool: &Db,
     state: &SharedState,
     owner_key: &str,
 ) -> Result<(), String> {
@@ -65,7 +62,7 @@ pub async fn load_communities_from_db(
 ///
 /// The cache stores the lossless CRDT merge *input* —
 /// `Vec<(PseudonymKey, Vec<GovernanceEntry>)>` — so re-running
-/// [`rekindle_governance::merge::merge`] reproduces an identical
+/// [`rekindle_governance::merge::merge_with_accepted`] reproduces an identical
 /// `GovernanceState` (a denormalized SQLite view would not, since merge
 /// is reader-validates and drops entries from unauthorized authors).
 ///
@@ -74,42 +71,22 @@ pub async fn load_communities_from_db(
 /// `cs.my_pseudonym_key` to sync `my_role_ids`. Best-effort —
 /// corrupt/empty rows are skipped, never fatal to login.
 pub async fn restore_governance_from_cache(
-    pool: &DbPool,
+    pool: &Db,
     state: &SharedState,
     owner_key: &str,
 ) -> Result<(), String> {
     let ok = owner_key.to_string();
     let cached = db_call(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT community_id, entries_json FROM governance_entries_cache \
-                 WHERE owner_key = ?1",
-        )?;
-        let rows = stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<(String, String)>, _>>()?;
-        Ok(rows)
+        rekindle_db::repo::governance_cache::load(conn, &ok)
     })
     .await?;
 
-    for (community_id, entries_json) in cached {
-        let entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> =
-            match serde_json::from_str(&entries_json) {
-                Ok(e) => e,
-                Err(error) => {
-                    tracing::warn!(
-                        community = %community_id,
-                        %error,
-                        "skipping corrupt governance cache row",
-                    );
-                    continue;
-                }
-            };
+    for (community_id, entries) in cached {
         if entries.is_empty() {
             continue;
         }
-        let gov_state = rekindle_governance::merge::merge(&entries);
+        let (gov_state, accepted_clock) = rekindle_governance::merge::merge_with_accepted(&entries);
+        crate::state_helpers::observe_governance_lamport(state, &community_id, accepted_clock);
         crate::state_helpers::set_governance_state(state, &community_id, gov_state);
     }
     Ok(())

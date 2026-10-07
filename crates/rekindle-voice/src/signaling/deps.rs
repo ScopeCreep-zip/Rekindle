@@ -9,7 +9,7 @@
 //! frontend emit.
 //!
 //! The src-tauri adapter implements this trait against `AppState` +
-//! `tauri::AppHandle` + `DbPool` + `services::community::*` (where
+//! `tauri::AppHandle` + `Db` + `services::community::*` (where
 //! `rotate_voice_mek_for_membership`, `send_to_mesh`, and
 //! `persist_hand_raise` still live until Phases 17/19/20 take
 //! ownership of MEK rotation, gossip mesh, and channel persistence
@@ -157,11 +157,12 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// a member.
     fn my_pseudonym(&self, community_id: &str) -> Option<String>;
 
-    /// Our own Veilid private route blob — the authoritative route
-    /// peers use to reach us. Same source the send path stamps onto
-    /// the outbound VoiceJoin; used to advertise self in a roster
-    /// broadcast so a later joiner can reach us.
-    fn our_route_blob(&self) -> Vec<u8>;
+    /// Our media-class inbound route: the route peers send us media
+    /// over. Same source the send path stamps onto the outbound
+    /// VoiceJoin; used to advertise self in acks and roster broadcasts so
+    /// a later joiner can reach us. `None` while we hold none; the general
+    /// route is never substituted (plan C7.9c).
+    fn our_media_route_blob(&self) -> Option<Vec<u8>>;
 
     /// Snapshot of stage-channel state. `None` if community/channel
     /// not found. `is_stage = false` for non-stage channels.
@@ -289,11 +290,12 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// Fire-and-forget: failures log.
     async fn persist_hand_raise(&self, community_id: String, channel_id: String, raised: bool);
 
-    /// Increment + return the per-community Lamport counter. Phase
-    /// 20 (rekindle-gossip) eventually owns this; today the adapter
-    /// delegates to `state_helpers::increment_lamport`. Used to tag
-    /// gossip envelopes (SpeakRequest, SpeakResponse, StageUpdate).
-    fn next_lamport(&self, community_id: &str) -> u64;
+    /// Next message-clock value. Used to tag gossip envelopes
+    /// (SpeakRequest, SpeakResponse, StageUpdate).
+    fn next_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     /// Look up a channel's current stage_speakers list. Used by
     /// `respond_to_speak_request` to compose the StageUpdate that
@@ -320,8 +322,7 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     fn emit_event(&self, event: CommunityVoiceEvent);
 
     // ── Background tasks ───────────────────────────────────────
-
-    /// Register a spawned background task so it can be aborted on
-    /// app shutdown.
-    fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>);
+    /// The scope this session's background work runs in; it ends with the
+    /// session (plan C4).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
 }

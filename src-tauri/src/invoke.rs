@@ -21,8 +21,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::auth::audit_export,
         commands::auth::lifecycle_current,
         commands::auth::friendship_scan_now,
+        #[cfg(debug_assertions)]
         commands::auth::dev_disable_watch,
-        commands::event::event_resume,
+        commands::event::subscribe_events,
         // chat
         commands::chat::prepare_chat_session,
         commands::chat::send_message,
@@ -90,6 +91,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::forward_channel_message,
         commands::community::upload_attachment,
         commands::community::download_attachment,
+        commands::community::get_voice_message_audio,
+        commands::community::reveal_downloaded_attachment,
         commands::community::pin_attachment,
         commands::community::send_voice_message,
         commands::community::expand_community_segment,
@@ -135,6 +138,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::set_community_avatar,
         commands::community::set_community_banner,
         commands::community::get_community_avatar_data_url,
+        #[cfg(debug_assertions)]
         commands::community::debug_gossip_state,
         commands::community::send_channel_typing,
         commands::community::set_active_channel,
@@ -225,6 +229,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::calls::accept_group_call,
         commands::calls::decline_group_call,
         commands::calls::end_group_call,
+        commands::calls::get_active_call,
         commands::calls::get_missed_calls,
         commands::calls::dm_peer_video_decode_codecs,
         // status
@@ -276,9 +281,13 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::settings::set_preferences,
         commands::settings::check_for_updates,
         // notifications
-        commands::notification::show_os_notification,
         // windows
         commands::window::show_buddy_list,
+        commands::window::open_external_url,
+        // deep links (consent flow)
+        commands::deep_link::get_pending_deep_link,
+        commands::deep_link::confirm_deep_link,
+        commands::deep_link::dismiss_deep_link,
         commands::window::open_chat_window,
         commands::window::open_dm_window,
         commands::window::open_settings_window,

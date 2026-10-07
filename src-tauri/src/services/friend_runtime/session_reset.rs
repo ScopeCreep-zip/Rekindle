@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn reset_signal_session_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     peer_public_key: String,
 ) -> Result<(), String> {
     if peer_public_key.is_empty() {
@@ -30,8 +30,8 @@ pub async fn reset_signal_session_inner(
             .map_err(|e| format!("delete_session: {e}"))?;
         let bundle = handle
             .manager
-            .generate_prekey_bundle(1, Some(1), Some(1))
-            .map_err(|e| format!("generate_prekey_bundle: {e}"))?;
+            .handout_bundle()
+            .map_err(|e| format!("handout_bundle: {e}"))?;
         serde_json::to_vec(&bundle).map_err(|e| format!("serialize PreKeyBundle: {e}"))?
     };
     tracing::info!(
@@ -41,7 +41,7 @@ pub async fn reset_signal_session_inner(
     let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetRequest {
         our_prekey_bundle,
     };
-    crate::services::message_service::send_to_peer_raw(&state, &pool, &peer_public_key, &payload)
+    crate::services::message_service::send_to_peer(&state, &pool, &peer_public_key, &payload)
         .await
         .map_err(|e| format!("send SessionResetRequest: {e}"))?;
     Ok(())
@@ -49,7 +49,7 @@ pub async fn reset_signal_session_inner(
 
 pub async fn accept_session_reset_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     peer_public_key: String,
 ) -> Result<(), String> {
     if !state_helpers::is_friend(&state, &peer_public_key) {
@@ -87,7 +87,7 @@ pub async fn accept_session_reset_inner(
         ml_kem_ciphertext: session_init.ml_kem_ciphertext,
         used_ot_pqpk_id: session_init.used_ot_pqpk_id,
     };
-    crate::services::message_service::send_to_peer_raw(&state, &pool, &peer_public_key, &payload)
+    crate::services::message_service::send_to_peer(&state, &pool, &peer_public_key, &payload)
         .await
         .map_err(|e| format!("send SessionResetAccept: {e}"))?;
     tracing::info!(
@@ -99,7 +99,7 @@ pub async fn accept_session_reset_inner(
 
 pub async fn decline_session_reset_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     peer_public_key: String,
     reason: Option<String>,
 ) -> Result<(), String> {
@@ -107,12 +107,8 @@ pub async fn decline_session_reset_inner(
     let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetDecline {
         reason: reason.unwrap_or_default(),
     };
-    let _ = crate::services::message_service::send_to_peer_raw(
-        &state,
-        &pool,
-        &peer_public_key,
-        &payload,
-    )
-    .await;
+    let _ =
+        crate::services::message_service::send_to_peer(&state, &pool, &peer_public_key, &payload)
+            .await;
     Ok(())
 }

@@ -21,6 +21,7 @@ use rekindle_protocol::dht::community::channel_record::{
     ChannelPollVote, ChannelReaction, ChannelRecordEntry,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
@@ -30,16 +31,6 @@ use crate::event::ChannelEvent;
 
 // ---------- DTOs ----------
 
-/// MEK material for symmetric encrypt/decrypt across the crate
-/// boundary. The 32-byte raw key + generation pair lets the crate
-/// reconstruct the underlying `MediaEncryptionKey` without importing
-/// the cache type itself.
-#[derive(Debug, Clone)]
-pub struct ChannelMek {
-    pub generation: u64,
-    pub key_bytes: [u8; 32],
-}
-
 /// Channel-level config snapshot needed by the send pipeline
 /// (slowmode + max body size + mention rules).
 #[derive(Debug, Clone)]
@@ -48,7 +39,6 @@ pub struct ChannelInfoSnapshot {
     pub channel_type: String,
     pub slowmode_seconds: Option<u32>,
     pub last_send_at_ms: Option<i64>,
-    pub mek_generation: u64,
     pub is_forum: bool,
 }
 
@@ -161,7 +151,9 @@ pub struct ExpressionView {
     pub name: String,
     pub kind: String,
     pub content_hash: String,
-    pub inline_data_base64: Option<String>,
+    /// `data:` URL of the cached bytes, for a media type on the kind's
+    /// allowlist (PNG/WebP/GIF images; Ogg/WebM/MP3 soundboard clips).
+    pub inline_data_url: Option<String>,
     pub media_type: Option<String>,
     pub animated: bool,
     pub tags: Vec<String>,
@@ -171,18 +163,30 @@ pub struct ExpressionView {
     pub available_to_peers: bool,
 }
 
-/// Pending write payload for the channel write retry queue (subkey +
-/// envelope bytes). Mirrors `rekindle_records::retry::PendingWrite`.
-#[derive(Debug, Clone)]
-pub struct PendingChannelWrite {
-    pub record_key: String,
-    pub subkey: u32,
-    pub data: Vec<u8>,
+/// What a channel record write did (plan C7.13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DhtWrite {
+    /// Stored at consensus.
+    Stored,
+    /// Missed consensus; the host's record pool holds the write, re-pushes
+    /// it until it lands, and reports the settle
+    /// ([`crate::on_write_settled`]).
+    Held,
+}
+
+/// A sent message whose write is held: it is delivered (or not) when its
+/// record slot settles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingDelivery {
+    pub community: String,
+    pub channel: String,
+    pub message: String,
 }
 
 /// Sent-message echo for the local "you said this" UI event.
 #[derive(Debug, Clone)]
 pub struct SentChannelMessageEcho {
+    pub community_id: String,
     pub message_id: String,
     pub sender_pseudonym: String,
     pub timestamp_ms: u64,
@@ -217,9 +221,9 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String>;
 
-    fn community_mek(&self, community_id: &str) -> Option<ChannelMek>;
-    fn channel_or_community_mek(&self, community_id: &str, channel_id: &str) -> Option<ChannelMek>;
-    fn current_mek_generation(&self, community_id: &str) -> Option<u64>;
+    /// Community and channel keys (plan D6). Channel text, threads and
+    /// attachments are under `scope_for_text`.
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
 
     fn governance_state(&self, community_id: &str) -> Option<GovernanceState>;
 
@@ -253,8 +257,17 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
     fn next_thread_sequence(&self, community_id: &str) -> u64;
     fn mark_last_send_at(&self, community_id: &str, channel_id: &str, now_ms: i64);
-    fn increment_lamport(&self, community_id: &str) -> u64;
-    fn track_open_records(&self, community_id: &str, record_keys: &[String]);
+    /// Next message-clock value (channel messages, polls, stage, reactions).
+    fn increment_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
+    /// Next governance-clock value (threads, expressions — anything written
+    /// as a `GovernanceEntry`).
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     // ---------- DHT ----------
 
@@ -262,13 +275,13 @@ pub trait ChannelMessagingDeps: Send + Sync {
         &self,
         context: &ChannelWriteContext,
         channel_msg: &ChannelMessage,
-    ) -> Result<(), ChannelError>;
+    ) -> Result<DhtWrite, ChannelError>;
 
     async fn write_channel_forward_smpl(
         &self,
         context: &ChannelWriteContext,
         forward: &ChannelForward,
-    ) -> Result<(), ChannelError>;
+    ) -> Result<DhtWrite, ChannelError>;
 
     async fn write_member_reaction_smpl(
         &self,
@@ -310,26 +323,37 @@ pub trait ChannelMessagingDeps: Send + Sync {
         community_id: &str,
     ) -> Result<std::collections::HashMap<u32, String>, ChannelError>;
 
-    /// Create a lazy thread SMPL record. Returns the record key the
-    /// adapter persists into `community.open_community_records`.
+    /// Create a lazy thread SMPL record, held under its creator lease.
+    /// Returns the lease and the record key.
     async fn create_smpl_thread_record(
         &self,
         slot_seed_bytes: &[u8; 32],
-    ) -> Result<String, ChannelError>;
+    ) -> Result<(LeaseId, String), ChannelError>;
 
+    /// End a borrow of the host's record pool.
+    async fn release_record(&self, lease: LeaseId);
+
+    /// Every entry of `record_key`, a channel or thread record of
+    /// `community_id`, read through the host's writer index: only the
+    /// slots of members it knows are read, and only changed ones from the
+    /// network (plan C7.12).
     async fn read_all_channel_entries(
         &self,
+        community_id: &str,
         record_key: &str,
-        member_count: u32,
     ) -> Result<Vec<ChannelEntryItem>, ChannelError>;
 
+    /// The messages of [`read_all_channel_entries`](Self::read_all_channel_entries).
     async fn read_all_channel_messages(
         &self,
+        community_id: &str,
         record_key: &str,
-        member_count: u32,
     ) -> Result<Vec<ChannelMessage>, ChannelError>;
 
-    async fn watch_community_records(&self, community_id: &str) -> Result<(), ChannelError>;
+    /// Hand records the community keeps for its session to the host,
+    /// which holds and watches them (the governance runtime's hook of the
+    /// same name; plan C7.5).
+    async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
 
     /// Plate Gate (architecture §15.4): ensure a per-segment channel
     /// SMPL record exists for the local writer before a send. Returns
@@ -342,10 +366,14 @@ pub trait ChannelMessagingDeps: Send + Sync {
         channel_id: &str,
     ) -> Result<String, ChannelError>;
 
-    // ---------- Retry queue ----------
+    // ---------- Held writes (plan C7.13) ----------
 
-    async fn enqueue_channel_retry(&self, pending: PendingChannelWrite)
-        -> Result<(), ChannelError>;
+    /// Remember a sent message whose write to `record_key`/`subkey` is
+    /// held, until that slot settles.
+    fn track_pending_delivery(&self, record_key: &str, subkey: u32, pending: PendingDelivery);
+
+    /// Forget and return the messages waiting on `record_key`/`subkey`.
+    fn take_pending_deliveries(&self, record_key: &str, subkey: u32) -> Vec<PendingDelivery>;
 
     // ---------- DB (channel messages) ----------
 

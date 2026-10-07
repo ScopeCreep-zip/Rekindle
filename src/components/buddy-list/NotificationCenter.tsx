@@ -123,8 +123,7 @@ const NotificationCenter: Component = () => {
                             title="Send a message"
                             onClick={() => {
                               const peerKey = notification.peerKey!;
-                              const name = notification.body.split(" (")[0];
-                              void commands.openChatWindow(peerKey, name);
+                              void commands.openChatWindow(peerKey);
                               markNotificationRead(notification.id);
                             }}
                           >

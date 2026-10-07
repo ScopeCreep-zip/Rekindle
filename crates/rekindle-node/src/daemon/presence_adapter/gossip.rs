@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use rekindle_presence::community::{GossipOverlayPlan, GossipOverlaySnapshot};
+use rekindle_presence::community::GossipOverlayPlan;
 use rekindle_presence::deps::OnlineMember;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
@@ -51,29 +51,6 @@ impl DaemonPresenceAdapter {
     /// `daemon::gossip`.
     pub(super) fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
         crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
-    }
-
-    /// The overlay's rebuild inputs: gossip clock, sync gate, and any
-    /// envelopes queued while the mesh had no peers.
-    pub(super) fn gossip_snapshot_impl(&self, community_id: &str) -> GossipOverlaySnapshot {
-        let guard = self.ctx.subscriptions.read();
-        let Some(manager) = guard.as_ref() else {
-            return GossipOverlaySnapshot::default();
-        };
-        let meshes = manager.meshes().read();
-        let Some(mesh) = meshes.get(community_id) else {
-            return GossipOverlaySnapshot::default();
-        };
-        GossipOverlaySnapshot {
-            lamport_counter: mesh.clock.current(),
-            // The daemon syncs on unlock via `SubscriptionManager`
-            // rather than gating on this flag.
-            needs_initial_sync: false,
-            // No queue on this track: `BroadcastManager` sends through
-            // the mesh directly, so there is nothing held back to
-            // replay once peers appear.
-            pending_mesh_broadcasts: std::collections::VecDeque::new(),
-        }
     }
 
     /// The live online set, read straight from the mesh.
@@ -165,10 +142,5 @@ impl DaemonPresenceAdapter {
         };
         mesh.online_members = to_mesh_members(plan.online_members);
         mesh.peers = to_mesh_members(plan.peers);
-        // `merge`, not an assignment: it is the drift-capped advance
-        // (4.8), so a plan carrying a wild counter cannot push this
-        // mesh's clock somewhere it can never come back from. A plan
-        // that is merely behind is absorbed without moving us backwards.
-        mesh.clock.merge(plan.lamport_counter);
     }
 }

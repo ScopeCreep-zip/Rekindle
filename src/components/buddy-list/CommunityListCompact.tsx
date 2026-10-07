@@ -26,7 +26,7 @@ const CommunityListCompact: Component = () => {
   );
 
   function handleDoubleClick(community: Community): void {
-    commands.openCommunityWindow(community.id, community.name);
+    commands.openCommunityWindow(community.id);
   }
 
   return (

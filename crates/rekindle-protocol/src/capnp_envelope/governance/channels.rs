@@ -53,16 +53,34 @@ pub(super) fn write_channel_archived(
 
 pub(super) fn write_channel_updated(
     mut p: schema_pkg::channel_updated_entry::Builder<'_>,
-    channel_id: ChannelId,
-    name: Option<&str>,
-    topic: Option<&str>,
-    forum_tags: Option<&[String]>,
-    position: Option<u32>,
-    slowmode_seconds: Option<u32>,
-    nsfw: Option<bool>,
-    category_id: CategoryUpdate,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::ChannelUpdated {
+        channel_id,
+        name,
+        topic,
+        forum_tags,
+        position,
+        slowmode_seconds,
+        nsfw,
+        category_id,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_channel_updated: variant mismatch")
+    };
+    let name = name.as_deref();
+    let topic = topic.as_deref();
+    let forum_tags = forum_tags.as_deref();
+    let position = *position;
+    let slowmode_seconds = *slowmode_seconds;
+    let nsfw = *nsfw;
+    let category_id = match category_id {
+        None => CategoryUpdate::Unchanged,
+        Some(None) => CategoryUpdate::Cleared,
+        Some(Some(c)) => CategoryUpdate::Set(*c),
+    };
+    let lamport = *lamport;
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
     p.set_has_name(name.is_some());
     if let Some(n) = name {
@@ -132,13 +150,22 @@ pub(super) fn write_category_archived(
 
 pub(super) fn write_permission_overwrite(
     mut p: schema_pkg::permission_overwrite_entry::Builder<'_>,
-    channel_id: ChannelId,
-    target_type: &str,
-    target_id: &str,
-    allow: u64,
-    deny: u64,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::PermissionOverwrite {
+        channel_id,
+        target_type,
+        target_id,
+        allow,
+        deny,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_permission_overwrite: variant mismatch")
+    };
+    let allow = *allow;
+    let deny = *deny;
+    let lamport = *lamport;
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
     p.set_target_type(target_type);
     p.set_target_id(target_id);

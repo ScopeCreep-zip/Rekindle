@@ -1,12 +1,11 @@
 //! Key management commands: MEK list/rotate/request, prekey status/replenish, inspect.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::KeyCmd;
-use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
-use crate::transport::DaemonClient;
+use rekindle_client::DaemonClient;
 
 pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
@@ -26,8 +25,6 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
                         channel: channel.clone(),
                     })
                     .await?;
-                let target = format!("{community}/{channel}");
-                helpers::audit_log("mek_rotate", &target, "ok");
                 format::print_structured(&value, mode)
             }
             crate::cli::MekCmd::Request { community, channel } => {

@@ -2,15 +2,15 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::{AppState, FriendshipState};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn remove_friend_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     public_key: String,
 ) -> Result<(), String> {
@@ -27,12 +27,8 @@ pub async fn remove_friend_inner(
     let pk = public_key.clone();
     let ok = owner_key.clone();
     db_call(&pool, move |conn| {
-        crate::friend_repo::delete_friend(conn, &ok, &pk)?;
-        conn.execute(
-            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::friends::delete(conn, &ok, &pk)?;
+        rekindle_db::repo::pending_requests::delete(conn, &ok, &pk)
     })
     .await?;
 
@@ -66,56 +62,62 @@ pub async fn remove_friend_inner(
     let state_clone = Arc::clone(&state);
     let pool_clone = pool.clone();
     let pk_clone = public_key.clone();
-    tokio::spawn(async move {
-        if let Err(e) = services::message_service::send_to_peer_raw(
-            &state_clone,
-            &pool_clone,
-            &pk_clone,
-            &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
-        )
-        .await
-        {
-            tracing::warn!(to = %pk_clone, error = %e, "failed to send unfriend notification");
-        }
+    crate::state_helpers::spawn_in_login_with_token(
+        &state,
+        "friend removal cleanup",
+        |stop| async move {
+            if let Err(e) = services::message_service::send_to_peer(
+                &state_clone,
+                &pool_clone,
+                &pk_clone,
+                &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+            )
+            .await
+            {
+                tracing::warn!(to = %pk_clone, error = %e, "failed to send unfriend notification");
+            }
 
-        let dht_key = state_helpers::friend_dht_key(&state_clone, &pk_clone);
-        {
-            let mut dht_mgr = state_clone.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                if let Some(ref dht_key) = dht_key {
-                    mgr.unregister_friend_dht_key(dht_key);
+            let dht_key = state_helpers::friend_dht_key(&state_clone, &pk_clone);
+            {
+                let mut dht_mgr = state_clone.dht_manager.write();
+                if let Some(mgr) = dht_mgr.as_mut() {
+                    if let Some(ref dht_key) = dht_key {
+                        mgr.unregister_friend_dht_key(dht_key);
+                    }
                 }
-                mgr.manager.invalidate_route_for_peer(&pk_clone);
             }
-        }
+            state_helpers::invalidate_cached_peer_route(&state_clone, &pk_clone);
 
-        // Unregistering the mapping above does not stop the watch —
-        // it only drops the `dht_key_to_friend` entry. Closing the
-        // record is what cancels it. Deliberately outside the guard:
-        // `close_and_untrack` takes `dht_manager.write()` itself and
-        // parking_lot guards are not reentrant.
-        if let Some(ref dht_key) = dht_key {
-            state_helpers::close_and_untrack(&state_clone, dht_key).await;
-        }
+            // Unregistering the mapping above does not stop the watch —
+            // it only drops the `dht_key_to_friend` entry. Releasing the
+            // friend's lease closes the record, which cancels it.
+            state_helpers::release_friend_record(&state_clone, &pk_clone).await;
 
-        if let Err(e) = services::message_service::push_friend_list_update(&state_clone).await {
-            tracing::warn!(error = %e, "failed to update DHT friend list after removal");
-        }
-
-        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
-        let mut friends = state_clone.friends.write();
-        if friends
-            .get(&pk_clone)
-            .is_some_and(|f| matches!(f.friendship_state, FriendshipState::Removing))
-        {
-            friends.remove(&pk_clone);
-            let signal = state_clone.signal_manager.read();
-            if let Some(handle) = signal.as_ref() {
-                let _ = handle.manager.delete_session(&pk_clone);
+            if let Err(e) = services::message_service::push_friend_list_update(&state_clone).await {
+                tracing::warn!(error = %e, "failed to update DHT friend list after removal");
             }
-            tracing::debug!(public_key = %pk_clone, "cleaned up Removing friend after grace period");
-        }
-    });
+
+            let grace = tokio::time::sleep(std::time::Duration::from_secs(600));
+            if stop.run_until_cancelled(grace).await.is_none() {
+                return;
+            }
+            let mut friends = state_clone.friends.write();
+            if friends
+                .get(&pk_clone)
+                .is_some_and(|f| matches!(f.friendship_state, FriendshipState::Removing))
+            {
+                friends.remove(&pk_clone);
+                let signal = state_clone.signal_manager.read();
+                if let Some(handle) = signal.as_ref() {
+                    if let Err(e) = handle.manager.delete_session(&pk_clone) {
+                        tracing::error!(public_key = %pk_clone, error = %e,
+                        "failed to delete Signal session of removed friend");
+                    }
+                }
+                tracing::debug!(public_key = %pk_clone, "cleaned up Removing friend after grace period");
+            }
+        },
+    );
 
     Ok(())
 }

@@ -2,26 +2,25 @@ import { commands } from "../../ipc/commands";
 import { setCommunityState } from "../../stores/community.store";
 import { authState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
-import type { InviteDto } from "../../ipc/commands/dto";
+import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
 
 export async function handleCreateCommunityInvite(
   communityId: string,
   maxUses?: number,
   expiresInSeconds?: number,
-): Promise<{ code: string; governanceKey: string; secretsRecordKey: string } | null> {
+): Promise<InviteCreated | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
     // Optimistic store update — the raw code is only available to the creator
     const now = Math.floor(Date.now() / 1000);
     const newInvite: InviteDto = {
-      codeHash: "pending", // Will be replaced by InviteCreated event
+      codeHash: result.codeHash,
       createdBy: authState.publicKey ?? "",
       maxUses: maxUses ?? null,
       uses: 0,
       expiresAt: expiresInSeconds ? now + expiresInSeconds : null,
       createdAt: now,
-      code: result.code,
-      secretsRecordKey: result.secretsRecordKey,
+      url: result.url,
     };
     setCommunityState("communityInvites", communityId, (prev) => [newInvite, ...(prev ?? [])]);
     return result;

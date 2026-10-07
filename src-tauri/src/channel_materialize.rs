@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::commands::chat::{Message, MessagePoll, MessagePollAnswer, ReactionGroup};
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 use rekindle_protocol::dht::community::channel_record::{ChannelRecordEntry, ChannelRecordItem};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -224,74 +224,36 @@ pub(crate) fn build_poll_states(
         .collect()
 }
 
-/// Architecture §8 line 1626 — context required to reconstruct the
-/// AAD that the sender bound when encrypting. None of these are
-/// secret; they're derived from the SMPL channel record + the
-/// inbound `ChannelMessage`'s lamport timestamp.
-#[derive(Clone, Copy)]
-pub(crate) struct ChannelDecryptContext<'a> {
-    pub channel_record_key: Option<&'a str>,
-    pub subkey_index: u32,
-    pub lamport_ts: u64,
-}
-
+/// Open a channel message body: exactly the generation it names of the
+/// channel's text key (plan D6), bound to the record, subkey and Lamport
+/// position it was read from (architecture §8). There is no other key and
+/// no decrypt without the position — a body that does not open there is
+/// `decryption_failed`, and a generation we do not hold stays unreadable
+/// until the key arrives.
 pub(crate) fn decrypt_channel_record_message(
     state: &SharedState,
     community_id: &str,
     channel_id: &str,
     mek_generation: u64,
     ciphertext: &[u8],
-    ctx: ChannelDecryptContext<'_>,
+    at: rekindle_secrets::channel_body::BodyPosition<'_>,
 ) -> DecryptedMessageBody {
-    let aad = ctx
-        .channel_record_key
-        .map(|key| rekindle_crypto::group::media_key::ChannelAad {
-            channel_record_key: key.as_bytes(),
-            subkey_index: ctx.subkey_index,
-            lamport_ts: ctx.lamport_ts,
-        });
-    let try_decrypt = |mek: &rekindle_crypto::group::media_key::MediaEncryptionKey| {
-        if let Some(aad) = aad {
-            if let Ok(bytes) = mek.decrypt_with_aad(ciphertext, aad) {
-                return Some(bytes);
-            }
-        }
-        // Architecture §8 fallback for legacy messages written before AAD.
-        mek.decrypt(ciphertext).ok()
-    };
-    {
-        let channel_mek_cache = state.channel_mek_cache.lock();
-        if let Some(mek) =
-            channel_mek_cache.get(&(community_id.to_string(), channel_id.to_string()))
-        {
-            if mek.generation() == mek_generation {
-                if let Some(bytes) = try_decrypt(mek) {
-                    return DecryptedMessageBody {
-                        body: String::from_utf8_lossy(&bytes).into_owned(),
-                        decryption_failed: false,
-                    };
-                }
-                return DecryptedMessageBody {
-                    body: String::new(),
-                    decryption_failed: true,
-                };
-            }
-        }
-    }
-
-    let mek_cache = state.mek_cache.lock();
-    match mek_cache.get(community_id) {
-        Some(mek) if mek.generation() == mek_generation => match try_decrypt(mek) {
-            Some(bytes) => DecryptedMessageBody {
-                body: String::from_utf8_lossy(&bytes).into_owned(),
-                decryption_failed: false,
-            },
-            None => DecryptedMessageBody {
-                body: String::new(),
-                decryption_failed: true,
-            },
+    let opened = rekindle_types::id::ChannelId::from_hex(channel_id).and_then(|channel| {
+        let keys = state_helpers::key_provider(state);
+        let scope = keys.scope_for_text(community_id, channel);
+        let key = keys.key(
+            community_id,
+            scope,
+            rekindle_types::channel_keys::KeyEpoch(mek_generation),
+        )?;
+        rekindle_secrets::channel_body::decrypt_channel_body(&key, at, ciphertext).ok()
+    });
+    match opened {
+        Some(bytes) => DecryptedMessageBody {
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+            decryption_failed: false,
         },
-        Some(_) | None => DecryptedMessageBody {
+        None => DecryptedMessageBody {
             body: String::new(),
             decryption_failed: true,
         },
@@ -326,7 +288,7 @@ fn sanitize_selected_answers(
 
 pub(crate) async fn load_channel_messages_from_smpl(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     before_timestamp: Option<u64>,
@@ -345,17 +307,22 @@ pub(crate) async fn load_channel_messages_from_smpl(
     let Some(channel_key) = channel_key else {
         return Ok(Vec::new());
     };
-    let Some(rc) = state_helpers::routing_context(state) else {
+    // Logged out: no history to read.
+    let Ok(record_pool) = state_helpers::record_pool(state) else {
         return Ok(Vec::new());
     };
 
-    let channel_entries = read_all_channel_entries(&rc, &channel_key, 255)
+    // The writer index: which slots to read, and whose each slot is
+    // (plan C7.12).
+    let subkey_pseudonyms: HashMap<u32, String> =
+        crate::services::community::writers::writer_slots(state, pool, community_id)
+            .await?
+            .into_iter()
+            .collect();
+    let slots: Vec<u32> = subkey_pseudonyms.keys().copied().collect();
+    let channel_entries = read_all_channel_entries(&record_pool, &channel_key, &slots)
         .await
         .map_err(|e| format!("read SMPL channel history: {e}"))?;
-
-    let subkey_pseudonyms = load_channel_subkey_pseudonyms(state, pool, community_id)
-        .await
-        .unwrap_or_default();
     let reaction_groups = build_reaction_groups(&channel_entries, &subkey_pseudonyms);
     let poll_states = build_poll_states(&channel_entries, &subkey_pseudonyms, &my_pseudonym);
     let mut filtered: Vec<(
@@ -381,15 +348,6 @@ pub(crate) async fn load_channel_messages_from_smpl(
         return Ok(Vec::new());
     }
 
-    let channel_record_key_owned = {
-        let communities = state.communities.read();
-        communities.get(community_id).and_then(|c| {
-            c.channels
-                .iter()
-                .find(|ch| ch.id == channel_id)
-                .and_then(|ch| ch.message_record_key.clone())
-        })
-    };
     let hydrated_messages: Vec<Message> = filtered
         .iter()
         .map(|(subkey_index, message)| {
@@ -399,8 +357,8 @@ pub(crate) async fn load_channel_messages_from_smpl(
                 channel_id,
                 message.mek_generation,
                 &message.ciphertext,
-                ChannelDecryptContext {
-                    channel_record_key: channel_record_key_owned.as_deref(),
+                rekindle_secrets::channel_body::BodyPosition {
+                    channel_record_key: &channel_key,
                     subkey_index: *subkey_index,
                     lamport_ts: message.lamport_ts,
                 },
@@ -437,7 +395,7 @@ pub(crate) async fn load_channel_messages_from_smpl(
         let state_for_db = state.clone();
         let community_id_for_db = community_id.to_string();
         let channel_id_for_db = channel_id.to_string();
-        let channel_record_key_for_db = channel_record_key_owned.clone();
+        let channel_record_key_for_db = channel_key.clone();
         let _ = db_call(pool, move |conn| {
             for (subkey_index, message) in &messages_for_db {
                 let Some(message_id) = message.message_id.as_deref() else {
@@ -449,8 +407,8 @@ pub(crate) async fn load_channel_messages_from_smpl(
                     &channel_id_for_db,
                     message.mek_generation,
                     &message.ciphertext,
-                    ChannelDecryptContext {
-                        channel_record_key: channel_record_key_for_db.as_deref(),
+                    rekindle_secrets::channel_body::BodyPosition {
+                        channel_record_key: &channel_record_key_for_db,
                         subkey_index: *subkey_index,
                         lamport_ts: message.lamport_ts,
                     },
@@ -475,46 +433,6 @@ pub(crate) async fn load_channel_messages_from_smpl(
     }
 
     Ok(hydrated_messages)
-}
-
-async fn load_channel_subkey_pseudonyms(
-    state: &SharedState,
-    pool: &DbPool,
-    community_id: &str,
-) -> Result<HashMap<u32, String>, String> {
-    let mut subkeys = {
-        let communities = state.communities.read();
-        let mut subkeys = HashMap::new();
-        if let Some(community) = communities.get(community_id) {
-            if let (Some(my_subkey_index), Some(my_pseudonym_key)) = (
-                community.my_subkey_index,
-                community.my_pseudonym_key.clone(),
-            ) {
-                subkeys.insert(my_subkey_index, my_pseudonym_key);
-            }
-        }
-        subkeys
-    };
-    let owner_key = state_helpers::current_owner_key(state)?;
-    let community_id = community_id.to_string();
-    let db_subkeys = db_call(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT pseudonym_key, subkey_index FROM community_members \
-             WHERE owner_key = ?1 AND community_id = ?2 AND subkey_index IS NOT NULL",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![owner_key, community_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                u32::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
-            ))
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()
-    })
-    .await?;
-    for (pseudonym_key, subkey_index) in db_subkeys {
-        subkeys.insert(subkey_index, pseudonym_key);
-    }
-    Ok(subkeys)
 }
 
 #[cfg(test)]

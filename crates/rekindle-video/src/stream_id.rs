@@ -41,22 +41,22 @@ mod tests {
 
     #[test]
     fn camera_and_screen_share_get_distinct_stream_ids() {
-        let camera = derive_stream_id("ch1", "alice", CAMERA);
-        let screen = derive_stream_id("ch1", "alice", SCREEN);
+        let camera = derive_stream_id("11111111111111111111111111111111", "alice", CAMERA);
+        let screen = derive_stream_id("11111111111111111111111111111111", "alice", SCREEN);
         assert_ne!(camera, screen);
     }
 
     #[test]
     fn same_label_is_deterministic_across_calls() {
-        let a = derive_stream_id("ch1", "alice", CAMERA);
-        let b = derive_stream_id("ch1", "alice", CAMERA);
+        let a = derive_stream_id("11111111111111111111111111111111", "alice", CAMERA);
+        let b = derive_stream_id("11111111111111111111111111111111", "alice", CAMERA);
         assert_eq!(a, b);
     }
 
     #[test]
     fn distinct_senders_get_distinct_stream_ids() {
-        let alice = derive_stream_id("ch1", "alice", CAMERA);
-        let bob = derive_stream_id("ch1", "bob", CAMERA);
+        let alice = derive_stream_id("11111111111111111111111111111111", "alice", CAMERA);
+        let bob = derive_stream_id("11111111111111111111111111111111", "bob", CAMERA);
         assert_ne!(alice, bob);
     }
 }

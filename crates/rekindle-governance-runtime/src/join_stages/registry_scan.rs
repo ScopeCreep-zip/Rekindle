@@ -32,11 +32,20 @@ pub(crate) async fn fetch_occupied<D: GovernanceRuntimeDeps>(
     occupied: &[u32],
 ) -> Vec<(u32, Vec<u8>)> {
     let mut rows = Vec::with_capacity(occupied.len());
+    // One borrow for the whole scan: a record the community does not hold
+    // yet is opened once, not once per slot.
+    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+        return rows;
+    };
     for &subkey in occupied {
-        if let Ok(Some(raw)) = deps.get_dht_value(registry_key, subkey, false).await {
+        if crate::join_gate::should_stop(deps) {
+            break;
+        }
+        if let Ok(Some(raw)) = deps.get_dht_value(lease, subkey, false).await {
             rows.push((subkey, raw));
         }
     }
+    deps.release_record(lease).await;
     rows.sort_unstable_by_key(|(subkey, _)| *subkey);
     rows
 }

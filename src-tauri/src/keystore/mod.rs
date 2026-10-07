@@ -1,34 +1,23 @@
-//! VaultStore-backed keystore (Phase 2 of the decomposed-harvest plan
-//! replaced the prior `iota_stronghold` backend). The type name is kept as
-//! `StrongholdKeystore` so the 30+ persist/load/delete helpers in the
-//! submodules and the consumer files across src-tauri don't need a rename.
-//!
-//! Submodules group the persistence helpers by domain:
-//! - [`community_keys`] — community MEK, slot/registry keypairs, slot seed.
-//! - [`channel_mek`] — per-channel + per-generation MEK persistence.
-//! - [`signal`] — Signal identity/sessions/prekeys/PQ secrets + string index.
-//! - [`audit`] — audit MAC key + tail anchor.
+//! The desktop's vault handle: one `VaultStore` per identity, opened at
+//! login. The typed helpers for each kind of secret are
+//! `rekindle_vault::typed` (plan C5.4); they take the store this wraps.
 
-mod audit;
-mod channel_mek;
-mod community_keys;
-mod signal;
-
-pub use audit::{load_audit_tail, load_or_create_audit_mac_key, persist_audit_tail};
-pub use channel_mek::{
-    delete_channel_mek, load_all_channel_mek_generations, load_all_meks, load_channel_mek,
-    load_channel_mek_generation, persist_channel_mek, persist_channel_mek_generation, store_mek,
+pub use rekindle_vault::typed::audit::{
+    load_audit_tail, load_or_create_audit_mac_key, persist_audit_tail,
 };
-pub use community_keys::{
-    delete_mek, delete_registry_keypair, delete_slot_keypair, delete_slot_seed, load_mek,
-    load_registry_keypair, load_slot_keypair, load_slot_seed, persist_mek, persist_mek_strict,
-    persist_registry_keypair, persist_slot_keypair, persist_slot_seed,
+pub use rekindle_vault::typed::community_keys::{
+    delete_registry_keypair, delete_slot_keypair, delete_slot_seed, load_registry_keypair,
+    load_slot_keypair, load_slot_seed, persist_registry_keypair, persist_slot_keypair,
+    persist_slot_seed,
 };
-pub use signal::{
-    delete_signal_pq_secret, delete_signal_prekey, delete_signal_session, list_signal_prekey_ids,
-    list_signal_sessions, load_signal_identity, load_signal_pq_secret, load_signal_prekey,
-    load_signal_session, load_signal_signed_prekey, load_trusted_identity, persist_signal_identity,
-    persist_signal_pq_secret, persist_signal_prekey, persist_signal_session,
+pub use rekindle_vault::typed::mek::{
+    delete_scope_meks, load_latest_mek, load_mek_generation, persist_mek,
+};
+pub use rekindle_vault::typed::signal::{
+    delete_signal_pq_one_time, delete_signal_prekey, delete_signal_session,
+    list_signal_pq_one_time_ids, list_signal_prekey_ids, list_signal_sessions,
+    load_signal_pq_secret, load_signal_prekey, load_signal_session, load_signal_signed_prekey,
+    load_trusted_identity, persist_signal_pq_secret, persist_signal_prekey, persist_signal_session,
     persist_signal_signed_prekey, persist_trusted_identity,
 };
 
@@ -50,6 +39,15 @@ use rekindle_vault::{VaultKey, VaultStore};
 /// derived from the same passphrase.
 pub struct StrongholdKeystore {
     vault: VaultStore,
+}
+
+/// The typed helpers in `rekindle_vault::typed` take the store itself.
+impl std::ops::Deref for StrongholdKeystore {
+    type Target = VaultStore;
+
+    fn deref(&self) -> &VaultStore {
+        &self.vault
+    }
 }
 
 /// Thread-safe handle to the keystore, stored in Tauri managed state.
@@ -120,10 +118,9 @@ impl StrongholdKeystore {
         self.vault.path()
     }
 
-    /// Seal and store `data` under the typed `vault_key`. The persistence
-    /// helpers in the submodules go through these four inherent methods —
-    /// the typed [`VaultKey`] is the storage security boundary, so there is
-    /// no stringly `(namespace, key)` entry point to misuse.
+    /// Seal and store `data` under the typed `vault_key` (the typed
+    /// [`VaultKey`] is the storage security boundary: there is no stringly
+    /// `(namespace, key)` entry point to misuse).
     pub(crate) fn vault_put(&self, vault_key: &VaultKey, data: &[u8]) -> Result<(), CryptoError> {
         self.vault
             .put(vault_key, data)
@@ -136,13 +133,6 @@ impl StrongholdKeystore {
             .get(vault_key)
             .map(|opt| opt.map(|z| z.to_vec()))
             .map_err(|e| CryptoError::storage(format!("vault get: {e}")))
-    }
-
-    /// Remove the entry addressed by `vault_key` (idempotent).
-    pub(crate) fn vault_delete(&self, vault_key: &VaultKey) -> Result<(), CryptoError> {
-        self.vault
-            .delete(vault_key)
-            .map_err(|e| CryptoError::storage(format!("vault delete: {e}")))
     }
 }
 
@@ -239,7 +229,7 @@ mod tests {
         ks.vault_put(&VaultKey::IdentityEd25519, &[1u8; 32])
             .unwrap();
         assert!(ks.vault_get(&VaultKey::IdentityEd25519).unwrap().is_some());
-        ks.vault_delete(&VaultKey::IdentityEd25519).unwrap();
+        ks.delete(&VaultKey::IdentityEd25519).unwrap();
         assert!(ks.vault_get(&VaultKey::IdentityEd25519).unwrap().is_none());
     }
 }

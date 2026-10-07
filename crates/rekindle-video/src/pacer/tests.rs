@@ -258,7 +258,10 @@ fn transport_seq_is_gapfree_over_released_fragments_across_expiry() {
     p.enqueue(fec_keyframe(1, 3, 1, 2_000, 0), 0);
     p.enqueue(frame(2, false, 1, 2_000, 10), 10);
     // Let a delta age past the 500 ms TTL, then push a fresh one.
-    p.enqueue(frame(3, false, 1, 2_000, MAX_QUEUE_AGE_MS + 20), MAX_QUEUE_AGE_MS + 20);
+    p.enqueue(
+        frame(3, false, 1, 2_000, MAX_QUEUE_AGE_MS + 20),
+        MAX_QUEUE_AGE_MS + 20,
+    );
 
     let mut released = Vec::new();
     let mut t = 0u64;

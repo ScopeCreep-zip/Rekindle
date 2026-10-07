@@ -3,7 +3,9 @@
 //! Phase 3a of the decomposed-harvest plan. Sole consumer of
 //! [`libcrux_ml_kem::mlkem768`] in the workspace (per the
 //! `xtask::check_boundaries::CRYPTO_ALLOWED` invariant). All secret key
-//! material is wrapped in types that implement `ZeroizeOnDrop`.
+//! material is zeroized on drop — [`MlKemSecret`] via a manual `Drop`
+//! (the wrapped `libcrux` type has no `Zeroize` impl of its own to
+//! derive against) and the shared secrets it produces via `Zeroizing`.
 //!
 //! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.9/src/`)
 //!
@@ -132,29 +134,35 @@ impl MlKemSecret {
     }
 }
 
+impl MlKemSecret {
+    /// Zero the private key bytes in place, without consuming `self`.
+    ///
+    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.9's `MlKemPrivateKey<SIZE>`,
+    /// via its `impl_generic_struct!` macro) implements neither `Zeroize`
+    /// nor `AsMut<[u8]>` — but the same macro DOES give it `Default`
+    /// (all-zero) and `From<Self> for [u8; SIZE]` (by value). That pair is
+    /// enough to zero the real heap allocation, not just a local copy:
+    /// `mem::take` writes `Default::default()` (zeros) into `*self.inner`
+    /// IN PLACE and moves the actual secret out as `owned`, so the box's
+    /// backing memory holds zeros immediately — not "eventually, whenever
+    /// the allocator reclaims it," which is what the previous empty-bodied
+    /// `Drop` here actually left us with. `owned` is then converted to a
+    /// plain array and zeroized too, so the one remaining copy (now on
+    /// this frame, not the heap) doesn't outlive this function either.
+    ///
+    /// Exists as its own method, called by `Drop::drop` below, so the
+    /// zeroing can be exercised and verified by a test without relying on
+    /// reading memory after deallocation (which would be UB).
+    fn zeroize_in_place(&mut self) {
+        let owned = std::mem::take(self.inner.as_mut());
+        let mut raw: [u8; ML_KEM_SECRET_KEY_BYTES] = owned.into();
+        zeroize::Zeroize::zeroize(&mut raw);
+    }
+}
+
 impl Drop for MlKemSecret {
     fn drop(&mut self) {
-        // `MlKem768PrivateKey` does not implement Zeroize directly. Reach
-        // into the `value` field via AsMut equivalent: we go through a
-        // mutable byte slice. The `value` field is `pub(crate)`, so we
-        // can't touch it directly from here — but we can overwrite via
-        // `as_ref()` won't help (immutable). The libcrux struct does not
-        // expose a `zeroize()` method.
-        //
-        // Workaround: serialize the private key, zeroize THAT, then drop
-        // the struct (which drops the [u8; 2400] inline value). On drop,
-        // Rust runs default Drop for the boxed array which does NOT
-        // zeroize. So we accept that on-stack bytes are gone but the
-        // heap allocation contents may linger until the allocator
-        // reclaims them.
-        //
-        // The defense in depth above (Box + Zeroizing wrapper on the
-        // SHARED SECRET) is the actual win — ML-KEM-768's threat model
-        // assumes the private key bytes can be recovered from memory
-        // dumps, hence the implicit rejection in decapsulate(). For our
-        // use case (Phase 6 will persist the private key via VaultStore
-        // which is encrypted at rest), in-memory zeroization is best-
-        // effort.
+        self.zeroize_in_place();
     }
 }
 
@@ -282,5 +290,21 @@ mod tests {
         let sk_bytes = sk.as_secret_bytes().to_vec();
         let restored = MlKemSecret::from_secret_bytes(&sk_bytes).expect("valid length");
         assert_eq!(restored.public().as_bytes(), pk.as_bytes());
+    }
+
+    #[test]
+    fn drop_zeroizes_the_private_key_bytes() {
+        // Exercises exactly the logic `Drop::drop` runs, without reading
+        // memory after deallocation (undefined behavior) to prove it.
+        let (mut sk, _pk) = MlKemSecret::generate();
+        assert!(
+            sk.as_secret_bytes().iter().any(|&b| b != 0),
+            "freshly generated key should not already be all-zero"
+        );
+        sk.zeroize_in_place();
+        assert!(
+            sk.as_secret_bytes().iter().all(|&b| b == 0),
+            "private key bytes must be zero after the zeroize Drop runs"
+        );
     }
 }

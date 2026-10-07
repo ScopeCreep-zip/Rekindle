@@ -4,11 +4,11 @@
 //! via EventRouter — they never reach daemon dispatch.
 
 use crate::daemon::DaemonState;
-use crate::ipc::message::AgentType;
-use crate::ipc::noise_keys::validate_agent_name;
-use crate::ipc::protocol::IpcResponse;
+use rekindle_ipc::message::{AgentType, SecurityLevel};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::server::DAEMON_AGENT_NAME;
 
-use super::{state_error, DaemonContext, PolicyConfig};
+use super::{state_error, CallerContext, DaemonContext};
 
 // ── Network ─────────────────────────────────────────────────────────────
 
@@ -61,38 +61,45 @@ pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> I
 
 // ── Agent Management ────────────────────────────────────────────────────
 
-/// Handle AgentRegister — register a named agent in the ClearanceRegistry.
+/// Handle AgentRegister — register the calling connection under `name`.
 ///
-/// Validates the agent name (path-traversal safe), then inserts into the
-/// shared registry with the declared capabilities. The agent's Noise IK
-/// static pubkey is used as the registry key — this is extracted from the
-/// connection state by the server layer and will be wired through when
-/// dispatch receives connection context.
-///
-/// For now, we register with a zero pubkey placeholder. The server layer
-/// should call `registry.register()` with the real pubkey after dispatch
-/// returns success.
+/// The registry key is the caller's Noise static key, which the bus server
+/// stamped from the handshake (`CallerContext::static_key`), so an agent
+/// can only ever register itself. The registration takes effect on the
+/// agent's next connection, whose handshake looks the key up. Clearance
+/// stays `Open`; raising it is the D1 clearance gate.
 pub(crate) async fn handle_agent_register(
     ctx: &DaemonContext,
+    caller: &CallerContext,
     name: &str,
     agent_type: AgentType,
     capabilities: &[String],
 ) -> IpcResponse {
-    if let Err(e) = validate_agent_name(name) {
-        return IpcResponse::error(400, format!("invalid agent name: {e}"));
-    }
-
-    // Check if name is already registered. Dispatch runs on the
-    // runtime, so the registry lock must be awaited — a blocking read
-    // here panics the tokio worker.
-    let registry = ctx.registry.read().await;
+    let Some(static_key) = caller.static_key else {
+        return IpcResponse::error(500, "the bus server did not stamp the caller's key");
+    };
+    // Dispatch runs on the runtime, so the registry lock must be awaited
+    // — a blocking lock here panics the tokio worker.
+    let mut registry = ctx.registry.write().await;
     if registry.find_by_name(name).is_some() {
         return IpcResponse::error(409, format!("agent '{name}' is already registered"));
     }
+    if let Some(existing) = registry.lookup_name(&static_key) {
+        return IpcResponse::error(
+            409,
+            format!("this connection's key is already registered as '{existing}'"),
+        );
+    }
+    registry.register(
+        name.to_owned(),
+        static_key,
+        SecurityLevel::Open,
+        agent_type,
+        capabilities.to_vec(),
+    );
     drop(registry);
+    tracing::info!(agent = name, ?agent_type, "agent registered");
 
-    // The actual pubkey-keyed registration happens in the server layer
-    // after this response is sent back. We validate and ack here.
     IpcResponse::ok(&serde_json::json!({
         "registered": true,
         "name": name,
@@ -101,12 +108,13 @@ pub(crate) async fn handle_agent_register(
     }))
 }
 
-/// Handle AgentRevoke — remove an agent from the ClearanceRegistry.
+/// Handle AgentRevoke — remove an agent from the ClearanceRegistry. The
+/// daemon's own registration is not revocable: it is how the bus routes
+/// every request.
 pub(crate) async fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcResponse {
-    if let Err(e) = validate_agent_name(name) {
-        return IpcResponse::error(400, format!("invalid agent name: {e}"));
+    if name == DAEMON_AGENT_NAME {
+        return IpcResponse::error(409, "the daemon's own registration cannot be revoked");
     }
-
     let mut registry = ctx.registry.write().await;
     match registry.revoke_by_name(name) {
         Some(identity) => {
@@ -127,139 +135,21 @@ pub(crate) async fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcR
 
 // ── Policy ──────────────────────────────────────────────────────────────
 
-/// Handle PolicyReload — reload authorization policy from disk.
-///
-/// Loads policy from two paths in order:
-/// 1. `/etc/rekindle/policy.toml` (system-wide, set by admin)
-/// 2. `~/.config/rekindle/policy.toml` (user-level override)
-///
-/// System policy fields override user policy (admin constraints are
-/// additive and cannot be weakened by user config).
+/// Handle PolicyReload — reload authorization policy from disk through the
+/// host's one loader (`host::policy::load_layered`): the system layer, then
+/// the user layer, each only tightening. A layer that does not parse fails
+/// the reload and leaves the active policy unchanged.
 pub(crate) fn handle_policy_reload(ctx: &DaemonContext) -> IpcResponse {
-    let system_path = std::path::Path::new("/etc/rekindle/policy.toml");
-    let user_path = ctx.config_dir.join("policy.toml");
-
-    let mut policy = PolicyConfig::default();
-
-    // Load system policy first (admin authority)
-    if system_path.exists() {
-        match load_policy_file(system_path) {
-            Ok(sys) => {
-                merge_policy(&mut policy, &sys);
-                tracing::info!("system policy loaded from {}", system_path.display());
-            }
-            Err(e) => {
-                return IpcResponse::error(
-                    500,
-                    format!(
-                        "system policy parse failed ({}): {e}",
-                        system_path.display()
-                    ),
-                );
-            }
-        }
-    }
-
-    // Load user policy (cannot weaken system policy)
-    if user_path.exists() {
-        match load_policy_file(&user_path) {
-            Ok(usr) => {
-                merge_policy(&mut policy, &usr);
-                tracing::info!("user policy loaded from {}", user_path.display());
-            }
-            Err(e) => {
-                return IpcResponse::error(
-                    500,
-                    format!("user policy parse failed ({}): {e}", user_path.display()),
-                );
-            }
-        }
-    }
+    let policy = match crate::host::policy::load_layered() {
+        Ok(policy) => policy,
+        Err(e) => return IpcResponse::error(500, e.to_string()),
+    };
 
     *ctx.policy.write() = policy.clone();
 
     IpcResponse::ok(&serde_json::json!({
         "reloaded": true,
         "min_hop_count": policy.min_hop_count,
-        "require_signature_verification": policy.require_signature_verification,
         "max_gossip_ttl": policy.max_gossip_ttl,
     }))
-}
-
-fn load_policy_file(path: &std::path::Path) -> Result<PolicyConfig, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("read failed: {e}"))?;
-    toml::from_str(&content).map_err(|e| format!("parse failed: {e}"))
-}
-
-/// Merge a loaded policy layer into the active policy.
-///
-/// Constraint direction is one-way: each successive layer can only
-/// tighten constraints, never relax them. This means:
-///
-/// - `/etc/rekindle/policy.toml` (system admin) establishes the floor.
-/// - `~/.config/rekindle/policy.toml` (user) can raise the floor higher
-///   (more hops, stricter verification, lower TTL) but can never lower it.
-///
-/// A user who sets `min_hop_count = 0` when the system requires `2` gets `2`.
-/// A user who sets `min_hop_count = 4` when the system requires `2` gets `4`.
-fn merge_policy(active: &mut PolicyConfig, loaded: &PolicyConfig) {
-    // min_hop_count: higher value wins (more privacy, never less)
-    match (active.min_hop_count, loaded.min_hop_count) {
-        (Some(a), Some(b)) => active.min_hop_count = Some(a.max(b)),
-        (None, Some(b)) => active.min_hop_count = Some(b),
-        _ => {}
-    }
-    // require_signature_verification: once true, cannot be set false
-    if loaded.require_signature_verification {
-        active.require_signature_verification = true;
-    }
-    // max_gossip_ttl: lower value wins (more restrictive, never more)
-    match (active.max_gossip_ttl, loaded.max_gossip_ttl) {
-        (Some(a), Some(b)) => active.max_gossip_ttl = Some(a.min(b)),
-        (None, Some(b)) => active.max_gossip_ttl = Some(b),
-        _ => {}
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn merge_policy_tightens_constraints() {
-        let mut active = PolicyConfig {
-            min_hop_count: Some(1),
-            require_signature_verification: false,
-            max_gossip_ttl: Some(5),
-        };
-        let loaded = PolicyConfig {
-            min_hop_count: Some(2),
-            require_signature_verification: true,
-            max_gossip_ttl: Some(3),
-        };
-        merge_policy(&mut active, &loaded);
-        assert_eq!(active.min_hop_count, Some(2)); // higher = more privacy
-        assert!(active.require_signature_verification); // true wins
-        assert_eq!(active.max_gossip_ttl, Some(3)); // lower = more restrictive
-    }
-
-    #[test]
-    fn merge_policy_does_not_loosen() {
-        let mut active = PolicyConfig {
-            min_hop_count: Some(3),
-            require_signature_verification: true,
-            max_gossip_ttl: Some(2),
-        };
-        let loaded = PolicyConfig {
-            min_hop_count: Some(1),
-            require_signature_verification: false,
-            max_gossip_ttl: Some(8),
-        };
-        merge_policy(&mut active, &loaded);
-        assert_eq!(active.min_hop_count, Some(3)); // not lowered
-        assert!(active.require_signature_verification); // not disabled
-        assert_eq!(active.max_gossip_ttl, Some(2)); // not raised
-    }
-
-    // Subscribe/Unsubscribe tests moved to event_router.rs — server-side handling.
 }

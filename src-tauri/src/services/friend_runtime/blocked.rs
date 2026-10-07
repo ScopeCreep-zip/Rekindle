@@ -4,10 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// A blocked user entry returned by `get_blocked_users`.
 #[derive(Debug, Serialize, Deserialize)]
@@ -18,7 +18,7 @@ pub struct BlockedUser {
     pub blocked_at: i64,
 }
 
-pub async fn is_user_blocked(pool: &DbPool, owner_key: &str, public_key: &str) -> bool {
+pub async fn is_user_blocked(pool: &Db, owner_key: &str, public_key: &str) -> bool {
     let ok = owner_key.to_string();
     let pk = public_key.to_string();
     db_call_or_default(pool, move |conn| {
@@ -36,7 +36,7 @@ pub async fn is_user_blocked(pool: &DbPool, owner_key: &str, public_key: &str) -
 
 pub async fn unblock_user_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     public_key: String,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -57,7 +57,7 @@ pub async fn unblock_user_inner(
 
 pub async fn get_blocked_users_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<Vec<BlockedUser>, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
     db_call(pool, move |conn| {

@@ -12,12 +12,23 @@ use rekindle_types::id::PseudonymKey;
 
 pub(super) fn write_community_meta(
     mut p: schema_pkg::community_meta_entry::Builder<'_>,
-    name: Option<&str>,
-    description: Option<&str>,
-    icon_hash: Option<&str>,
-    banner_hash: Option<&str>,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::CommunityMeta {
+        name,
+        description,
+        icon_hash,
+        banner_hash,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_community_meta: variant mismatch")
+    };
+    let name = name.as_deref();
+    let description = description.as_deref();
+    let icon_hash = icon_hash.as_deref();
+    let banner_hash = banner_hash.as_deref();
+    let lamport = *lamport;
     p.set_has_name(name.is_some());
     if let Some(n) = name {
         p.set_name(n);
@@ -66,39 +77,51 @@ pub(super) fn write_mek_generation_bump(
 
 pub(super) fn write_segment_added(
     mut p: schema_pkg::segment_added_entry::Builder<'_>,
-    segment_index: u32,
-    registry_key: &str,
-    governance_key: &str,
-    slot_range_start: u32,
-    slot_range_end: u32,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
-    p.set_segment_index(segment_index);
+    let GovernanceEntry::SegmentAdded {
+        segment_index,
+        registry_key,
+        governance_key,
+        slot_range_start,
+        slot_range_end,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_segment_added: variant mismatch")
+    };
+    p.set_segment_index(*segment_index);
     p.set_registry_key(registry_key);
     p.set_governance_key(governance_key);
-    p.set_slot_range_start(slot_range_start);
-    p.set_slot_range_end(slot_range_end);
-    p.set_lamport(lamport);
+    p.set_slot_range_start(*slot_range_start);
+    p.set_slot_range_end(*slot_range_end);
+    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_invite_created(
     mut p: schema_pkg::invite_created_entry::Builder<'_>,
-    invite_id: &[u8; 16],
-    code_hash: &str,
-    max_uses: u32,
-    expires_at: Option<u64>,
-    secrets_record_key: &str,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::InviteCreated {
+        invite_id,
+        code_hash,
+        max_uses,
+        expires_at,
+        secrets_record_key,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_invite_created: variant mismatch")
+    };
     uuid16_to_capnp(p.reborrow().init_invite_id(), invite_id);
     p.set_code_hash(code_hash);
-    p.set_max_uses(max_uses);
+    p.set_max_uses(*max_uses);
     p.set_has_expires_at(expires_at.is_some());
     if let Some(t) = expires_at {
-        p.set_expires_at(t);
+        p.set_expires_at(*t);
     }
     p.set_secrets_record_key(secrets_record_key);
-    p.set_lamport(lamport);
+    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_invite_revoked(

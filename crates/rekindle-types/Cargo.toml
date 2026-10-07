@@ -9,11 +9,16 @@ license = "MIT"
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
 hex = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+parking_lot = { workspace = true }
+serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+zeroize = "1"
 
 [dev-dependencies]
-postcard = { version = "1", features = ["use-std"] }
+postcard = { version = "1", features = [ "use-std" ] }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = [ "macros", "rt" ] }
+toml = "0.9"

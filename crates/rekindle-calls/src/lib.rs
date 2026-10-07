@@ -42,12 +42,8 @@ pub fn short_pubkey_helper(pk: &str) -> String {
 // Wave 12 W12.9 — re-export the X25519 types so consumer crates
 // (src-tauri/services/group_calls.rs) don't have to depend on
 // x25519-dalek directly.
+use rekindle_types::domains;
 pub use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
-
-/// HKDF info string. Distinct from the friend / DM key derivations so
-/// the same X25519 keypair can never produce the same secret across
-/// contexts (domain separation per RFC 5869 §3.2).
-const HKDF_INFO: &[u8] = b"rekindle-call-key-v1";
 
 #[derive(Debug, Error)]
 pub enum CallKeyError {
@@ -84,7 +80,7 @@ pub fn derive_call_key(
 
     let hk = Hkdf::<Sha256>::new(Some(call_id.as_bytes()), shared.as_bytes());
     let mut out = [0u8; 32];
-    hk.expand(HKDF_INFO, &mut out)
+    hk.expand(domains::CALL_KEY.as_bytes(), &mut out)
         .map_err(|e| CallKeyError::Hkdf(e.to_string()))?;
     Ok(out)
 }

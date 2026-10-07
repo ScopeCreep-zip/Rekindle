@@ -3,7 +3,7 @@
 //! Pre-Phase-13 this file held the SQLite CRUD + types directly. Now
 //! the CRUD lives in `rekindle-dm::store` and this file is the
 //! src-tauri adapter: extracts `owner_key` from `AppState` via
-//! `state_helpers`, wraps the `DbPool` in a `SqliteDmStore`, and
+//! `state_helpers`, wraps the `Db` in a `SqliteDmStore`, and
 //! delegates each public function to the trait method.
 //!
 //! The pub-use re-exports preserve the prior type aliases at
@@ -15,14 +15,14 @@ use std::sync::Arc;
 
 use rekindle_dm::{DmStore, SqliteDmStore};
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 // Re-export the moved types so existing call sites keep their imports.
 pub use rekindle_dm::{DmConversation, DmMessageRecord};
 
-pub async fn list_dm_conversations(state: &Arc<AppState>, pool: &DbPool) -> Vec<DmConversation> {
+pub async fn list_dm_conversations(state: &Arc<AppState>, pool: &Db) -> Vec<DmConversation> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Vec::new();
@@ -36,7 +36,7 @@ pub async fn list_dm_conversations(state: &Arc<AppState>, pool: &DbPool) -> Vec<
 
 pub async fn load_dm_messages(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
     limit: i64,
 ) -> Vec<DmMessageRecord> {
@@ -53,7 +53,7 @@ pub async fn load_dm_messages(
 
 pub async fn decline_dm_invite(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
 ) -> Result<(), String> {
     let owner_key = state_helpers::owner_key_or_default(state);

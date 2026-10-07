@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::status_runtime::{
     get_avatar_inner, set_avatar_inner, set_nickname_inner, set_status_inner,
     set_status_message_inner,
@@ -19,9 +18,9 @@ pub async fn set_nickname(
     nickname: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    set_nickname_inner(state.inner(), pool.inner(), &app, nickname).await
+    let pool = state.db.current()?;
+    set_nickname_inner(state.inner(), &pool, &app, nickname).await
 }
 
 /// Set avatar image: compress to WebP, persist to `SQLite`, and push update to DHT.
@@ -30,9 +29,9 @@ pub async fn set_avatar(
     avatar_data: Vec<u8>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    set_avatar_inner(state.inner(), pool.inner(), &app, avatar_data).await
+    let pool = state.db.current()?;
+    set_avatar_inner(state.inner(), &pool, &app, avatar_data).await
 }
 
 /// Retrieve a user's avatar as WebP bytes.
@@ -40,9 +39,9 @@ pub async fn set_avatar(
 pub async fn get_avatar(
     public_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Option<Vec<u8>>, String> {
-    get_avatar_inner(state.inner(), pool.inner(), public_key).await
+    let pool = state.db.current()?;
+    get_avatar_inner(state.inner(), &pool, public_key).await
 }
 
 /// Set status message and push update to DHT.

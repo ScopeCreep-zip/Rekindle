@@ -11,13 +11,12 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::Manager as _;
 
-use crate::commands::voice::{shutdown_voice, VoiceShutdownOpts};
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
-use crate::state::{AppState, SharedState, UserStatus};
+use crate::state::{AppState, SharedState};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Summary of a persisted identity, used by the account picker.
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,57 +56,13 @@ pub async fn logout_inner(
     state: Arc<AppState>,
     keystore_handle: KeystoreHandle,
 ) -> Result<(), String> {
-    let _ = state
+    // The lifecycle is the single-flight gate: a logout already under way
+    // (or no session) refuses the transition, and a second concurrent
+    // teardown is never started (plan C4.L2).
+    state
         .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Locking);
-
-    keystore_handle.lock().take();
-
-    let sync_tx = state.sync_shutdown_tx.read().clone();
-    if let Some(tx) = sync_tx {
-        let _ = tx.send(()).await;
-    }
-
-    let game_shutdown_tx = state
-        .game_detector
-        .lock()
-        .as_ref()
-        .map(|h| h.shutdown_tx.clone());
-    if let Some(tx) = game_shutdown_tx {
-        let _ = tx.send(()).await;
-    }
-
-    shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
-
-    {
-        let tx = state.route_watchdog_shutdown_tx.write().take();
-        if let Some(tx) = tx {
-            let _ = tx.send(()).await;
-        }
-    }
-
-    {
-        let tx = state.idle_shutdown_tx.write().take();
-        if let Some(tx) = tx {
-            let _ = tx.send(()).await;
-        }
-    }
-    *state.pre_away_status.write() = None;
-
-    {
-        let tx = state.heartbeat_shutdown_tx.write().take();
-        if let Some(tx) = tx {
-            let _ = tx.send(()).await;
-        }
-    }
-
-    if state_helpers::identity_status(&state) != Some(UserStatus::Offline) {
-        if let Err(e) =
-            services::presence_service::publish_status(&state, UserStatus::Offline).await
-        {
-            tracing::warn!(error = %e, "failed to publish offline status on logout");
-        }
-    }
+        .transition(rekindle_lifecycle::LifecycleState::Locking)
+        .map_err(|e| format!("cannot log out now: {e}"))?;
 
     let active_key = state
         .identity
@@ -115,18 +70,20 @@ pub async fn logout_inner(
         .as_ref()
         .map(|id| id.public_key.clone());
 
-    services::veilid::logout_cleanup(Some(&app), &state).await;
+    services::session::end_session(Some(&app), &state, &keystore_handle).await;
 
-    crate::windows::open_login(&app, active_key.as_deref())?;
+    let preselect = active_key
+        .as_deref()
+        .map(rekindle_types::key_format::public_key_hex)
+        .transpose()
+        .map_err(|e| format!("active identity key: {e}"))?;
+    crate::windows::open_login(&app, preselect.as_ref())?;
 
     for (label, window) in app.webview_windows() {
-        if label != "login" {
+        if label != crate::window_labels::LOGIN {
             let _ = window.destroy();
         }
     }
-
-    *state.sync_shutdown_tx.write() = None;
-    *state.game_detector.lock() = None;
 
     let _ = state
         .lifecycle
@@ -140,10 +97,10 @@ pub async fn delete_identity_inner(
     passphrase: String,
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     keystore_handle: KeystoreHandle,
 ) -> Result<(), String> {
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
 
     StrongholdKeystore::initialize_for_identity(&config_dir, &public_key, &passphrase)
         .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
@@ -155,61 +112,17 @@ pub async fn delete_identity_inner(
         .is_some_and(|id| id.public_key == public_key);
 
     if is_active {
-        keystore_handle.lock().take();
-
-        let sync_tx = state.sync_shutdown_tx.read().clone();
-        if let Some(tx) = sync_tx {
-            let _ = tx.send(()).await;
-        }
-        let game_shutdown_tx = state
-            .game_detector
-            .lock()
-            .as_ref()
-            .map(|h| h.shutdown_tx.clone());
-        if let Some(tx) = game_shutdown_tx {
-            let _ = tx.send(()).await;
-        }
-
-        shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
-
-        {
-            let tx = state.route_watchdog_shutdown_tx.write().take();
-            if let Some(tx) = tx {
-                let _ = tx.send(()).await;
-            }
-        }
-
-        {
-            let tx = state.idle_shutdown_tx.write().take();
-            if let Some(tx) = tx {
-                let _ = tx.send(()).await;
-            }
-        }
-        *state.pre_away_status.write() = None;
-
-        if state_helpers::identity_status(&state) != Some(UserStatus::Offline) {
-            let _ = services::presence_service::publish_status(&state, UserStatus::Offline).await;
-        }
-
-        services::veilid::logout_cleanup(Some(&app), &state).await;
-
+        services::session::end_session(Some(&app), &state, &keystore_handle).await;
         for (label, window) in app.webview_windows() {
-            if label != "login" {
+            if label != crate::window_labels::LOGIN {
                 let _ = window.destroy();
             }
         }
-
-        *state.sync_shutdown_tx.write() = None;
-        *state.game_detector.lock() = None;
     }
 
     let pk = public_key.clone();
     db_call(&pool, move |conn| {
-        conn.execute(
-            "DELETE FROM identity WHERE public_key = ?1",
-            rusqlite::params![pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::identity::delete(conn, &pk)
     })
     .await?;
 
@@ -225,13 +138,13 @@ pub async fn create_identity_inner(
     display_name: Option<String>,
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     keystore_handle: KeystoreHandle,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::create_identity_core;
     use crate::services::login_runtime::{start_background_services, DhtKeysConfig};
 
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
 
     // Wait for Starting → Locked (async Veilid attach) before unlocking —
     // mirrors Briar's waitForStartup() / the daemon's can_unlock() gate. The
@@ -247,6 +160,9 @@ pub async fn create_identity_inner(
         .lifecycle
         .transition(rekindle_lifecycle::LifecycleState::Resuming)
         .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
+    // The session begins before the identity loads: loading it already
+    // spawns session work (governance re-merge, reliability flush).
+    let login_scope = services::session::begin(&app, &state);
 
     let (result, secret_bytes) = match create_identity_core(
         &config_dir,
@@ -261,6 +177,7 @@ pub async fn create_identity_inner(
     {
         Ok(v) => v,
         Err(e) => {
+            services::session::stop_scope(&state).await;
             let _ = state
                 .lifecycle
                 .transition(rekindle_lifecycle::LifecycleState::Locked);
@@ -268,9 +185,10 @@ pub async fn create_identity_inner(
         }
     };
 
-    start_background_services(
+    if let Err(e) = start_background_services(
         &app,
         &state,
+        &login_scope,
         &pool,
         &secret_bytes,
         DhtKeysConfig {
@@ -282,10 +200,17 @@ pub async fn create_identity_inner(
             account_owner_keypair: None,
             mailbox_dht_key: None,
         },
-    );
+    )
+    .await
+    {
+        return Err(abort_unlock(&app, &state, &keystore_handle, e).await);
+    }
 
-    let coord_handle = crate::services::friendship::spawn_coordinator(&state, app.clone());
-    state.background_handles.lock().push(coord_handle);
+    if let Err(closed) =
+        crate::services::friendship::spawn_coordinator(&state, app.clone(), &login_scope)
+    {
+        return Err(abort_unlock(&app, &state, &keystore_handle, closed.to_string()).await);
+    }
 
     if let Err(e) = state
         .lifecycle
@@ -297,18 +222,34 @@ pub async fn create_identity_inner(
     Ok(result)
 }
 
+/// Undo an unlock whose post-unlock setup failed: lock the vault, drop
+/// every piece of per-user state, return to `Locked`, and hand back `error`.
+async fn abort_unlock(
+    app: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    keystore_handle: &KeystoreHandle,
+    error: String,
+) -> String {
+    tracing::error!(error = %error, "post-unlock setup failed — locking again");
+    services::session::end_session(Some(app), state, keystore_handle).await;
+    let _ = state
+        .lifecycle
+        .transition(rekindle_lifecycle::LifecycleState::Locked);
+    error
+}
+
 pub async fn login_inner(
     public_key: String,
     passphrase: String,
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     keystore_handle: KeystoreHandle,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::login_core;
     use crate::services::login_runtime::{start_background_services, DhtKeysConfig};
 
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
 
     // Wait for Starting → Locked (async Veilid attach) before unlocking —
     // mirrors Briar's waitForStartup() / the daemon's can_unlock() gate. The
@@ -324,6 +265,9 @@ pub async fn login_inner(
         .lifecycle
         .transition(rekindle_lifecycle::LifecycleState::Resuming)
         .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
+    // The session begins before the identity loads: loading it already
+    // spawns session work (governance re-merge, reliability flush).
+    let login_scope = services::session::begin(&app, &state);
 
     let (result, secret_key, dht_cols) = match login_core(
         &config_dir,
@@ -338,6 +282,7 @@ pub async fn login_inner(
     {
         Ok(v) => v,
         Err(e) => {
+            services::session::stop_scope(&state).await;
             let _ = state
                 .lifecycle
                 .transition(rekindle_lifecycle::LifecycleState::Locked);
@@ -345,9 +290,10 @@ pub async fn login_inner(
         }
     };
 
-    start_background_services(
+    if let Err(e) = start_background_services(
         &app,
         &state,
+        &login_scope,
         &pool,
         &secret_key,
         DhtKeysConfig {
@@ -359,7 +305,11 @@ pub async fn login_inner(
             account_owner_keypair: dht_cols.account_owner_keypair,
             mailbox_dht_key: dht_cols.mailbox_dht_key,
         },
-    );
+    )
+    .await
+    {
+        return Err(abort_unlock(&app, &state, &keystore_handle, e).await);
+    }
 
     {
         let mut rx = state.network_ready_rx.clone();
@@ -385,10 +335,11 @@ pub async fn login_inner(
         }
     }
 
-    crate::deep_links::emit_pending_deep_link(&app);
-
-    let coord_handle = crate::services::friendship::spawn_coordinator(&state, app.clone());
-    state.background_handles.lock().push(coord_handle);
+    if let Err(closed) =
+        crate::services::friendship::spawn_coordinator(&state, app.clone(), &login_scope)
+    {
+        return Err(abort_unlock(&app, &state, &keystore_handle, closed.to_string()).await);
+    }
 
     if let Err(e) = state
         .lifecycle
@@ -400,33 +351,24 @@ pub async fn login_inner(
     Ok(result)
 }
 
-pub async fn list_identities_inner(pool: &DbPool) -> Result<Vec<IdentitySummary>, String> {
-    db_call(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT public_key, display_name, created_at, avatar_webp \
-                 FROM identity ORDER BY created_at ASC",
-        )?;
-        let rows = stmt
-            .query_map([], |row| {
-                let avatar_base64 = row
-                    .get::<_, Option<Vec<u8>>>("avatar_webp")
-                    .unwrap_or(None)
-                    .map(|bytes| {
-                        use base64::Engine as _;
-                        base64::engine::general_purpose::STANDARD.encode(&bytes)
-                    });
-                Ok(IdentitySummary {
-                    public_key: crate::db::get_str(row, "public_key"),
-                    display_name: row.get::<_, String>("display_name").unwrap_or_default(),
-                    created_at: crate::db::get_i64(row, "created_at"),
-                    has_avatar: avatar_base64.is_some(),
-                    avatar_base64,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
-    })
-    .await
+pub async fn list_identities_inner(pool: &Db) -> Result<Vec<IdentitySummary>, String> {
+    use base64::Engine as _;
+    let rows = db_call(pool, |conn| rekindle_db::repo::identity::list(conn)).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let avatar_base64 = row
+                .avatar_webp
+                .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
+            IdentitySummary {
+                public_key: row.public_key,
+                display_name: row.display_name,
+                created_at: row.created_at,
+                has_avatar: avatar_base64.is_some(),
+                avatar_base64,
+            }
+        })
+        .collect())
 }
 
 #[cfg(debug_assertions)]
@@ -439,9 +381,8 @@ pub fn pqxdh_bundle_info_inner(state: &Arc<AppState>) -> Result<PqxdhBundleInfo,
         .ok_or("signal manager not initialized")?;
     let bundle = handle
         .manager
-        .load_existing_prekey_bundle(1, Some(1), Some(1))
-        .map_err(|e| format!("load existing bundle: {e}"))?
-        .ok_or("no bundle in store — log in first")?;
+        .current_bundle()
+        .map_err(|e| format!("current bundle: {e}"))?;
     Ok(PqxdhBundleInfo {
         identity_key_len: bundle.identity_key.len(),
         signed_prekey_len: bundle.signed_prekey.len(),
@@ -458,7 +399,7 @@ pub fn pqxdh_bundle_info_inner(state: &Arc<AppState>) -> Result<PqxdhBundleInfo,
 pub async fn audit_verify_inner(
     app: tauri::AppHandle,
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<crate::audit_repo::AuditVerifyResult, String> {
     let owner = state_helpers::current_owner_key(state)?;
     Ok(crate::audit_repo::verify_async(&app, state, pool, &owner).await)
@@ -466,13 +407,13 @@ pub async fn audit_verify_inner(
 
 pub async fn audit_export_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     since: u64,
 ) -> Result<Vec<rekindle_audit::AuditEntry>, String> {
     let owner = state_helpers::current_owner_key(state)?;
     let owner_clone = owner.clone();
     db_call(pool, move |conn| {
-        crate::audit_repo::load_since(conn, &owner_clone, since)
+        rekindle_db::repo::audit::load_since(conn, &owner_clone, since)
     })
     .await
     .map_err(|e| format!("audit export: {e}"))

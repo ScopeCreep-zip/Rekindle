@@ -3,14 +3,12 @@
 //! voice-session start/stop. Also the `app_call` CallInvite dispatch
 //! path.
 
-use std::time::Duration;
-
 use rekindle_calls::{CallInput, Effect};
 use rekindle_utils::timestamp_ms;
 use tracing::{debug, warn};
 
 use super::util::{classify_call_invite_error, kind_str, status_str};
-use super::{CallRuntime, EffectsFuture, TimerKind, CALL_INVITE_RPC_TIMEOUT_MS};
+use super::{CallRuntime, EffectsFuture, TimerKind};
 use crate::envelope_store::{EnvelopeKind, PersistedCallState};
 use crate::payload::dm::{serialize_dm, DmPayload};
 
@@ -102,12 +100,11 @@ impl CallRuntime {
                 call_id,
                 peer,
                 kind,
-                call_key,
             } => {
                 if let Err(reason) = self
                     .inner
                     .voice_launcher
-                    .start_voice_session(&call_id, &peer, kind, call_key)
+                    .start_voice_session(&call_id, &peer, kind)
                     .await
                 {
                     warn!(
@@ -267,12 +264,7 @@ impl CallRuntime {
         let result = self
             .inner
             .queue
-            .send_app_call(
-                recipient,
-                TypeId::CallInvite,
-                &payload_bytes,
-                Duration::from_millis(CALL_INVITE_RPC_TIMEOUT_MS),
-            )
+            .send_app_call(recipient, TypeId::CallInvite, &payload_bytes)
             .await;
 
         match result {

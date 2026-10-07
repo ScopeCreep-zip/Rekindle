@@ -12,13 +12,12 @@ use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::permissions::{BYPASS_SLOWMODE, SEND_MESSAGES};
 
 use crate::deps::{
-    ChannelMessagingDeps, ChannelSendOutcome, ChannelWriteContext, PendingChannelWrite,
-    SentChannelMessageEcho,
+    ChannelMessagingDeps, ChannelSendOutcome, DhtWrite, PendingDelivery, SentChannelMessageEcho,
 };
 use crate::error::ChannelError;
 use crate::mentions::resolve_outbound_mentions;
 use crate::send::{
-    build_channel_message, channel_message_subkey, encrypt_channel_body, slowmode_check,
+    build_channel_message, channel_message_subkey, slowmode_check, BodyPosition,
     BuildChannelMessageParams,
 };
 
@@ -141,8 +140,6 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
             "forum channels accept posts only through thread creation".into(),
         ));
     }
-    let mek_generation = info.mek_generation;
-
     deps.ensure_channel_segment_record(community_id, channel_id)
         .await?;
     deps.require_channel_permission(community_id, Some(channel_id), SEND_MESSAGES)?;
@@ -152,19 +149,17 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         .my_pseudonym_hex(community_id)
         .or_else(|| deps.owner_key())
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
-    let lamport_ts = deps.increment_lamport(community_id);
+    let lamport_ts = deps.increment_lamport(community_id)?;
     let context = deps.channel_write_context(community_id, channel_id)?;
-    let mek = deps
-        .community_mek(community_id)
-        .ok_or_else(|| ChannelError::MekMissing {
-            community: community_id.into(),
-            channel: channel_id.into(),
-        })?;
-    let ciphertext = encrypt_channel_body(
-        &mek,
-        &context.channel_key,
-        context.slot_index,
-        lamport_ts,
+    let (ciphertext, mek_generation) = crate::text_keys::seal_text(
+        deps,
+        community_id,
+        channel_id,
+        BodyPosition {
+            channel_record_key: &context.channel_key,
+            subkey_index: channel_message_subkey(context.slot_index),
+            lamport_ts,
+        },
         body.as_bytes(),
     )?;
     let message_id = random_message_id("msg_");
@@ -202,33 +197,42 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         mentioned_roles,
     });
 
+    // The SMPL write is authoritative and gossip is the fast path, sent
+    // either way: a held write is on its way (plan C7.13).
     let status = match deps
         .write_channel_message_smpl(&context, &channel_msg)
         .await
     {
-        Ok(()) => {
+        Ok(written) => {
             let notification =
                 build_message_notification(channel_id, &channel_msg, context.slot_index)?;
-            // gossip is best-effort — the SMPL write is authoritative
             let _ = deps.send_to_mesh(community_id, &notification);
-            "delivered".to_string()
+            match written {
+                DhtWrite::Stored => "delivered".to_string(),
+                DhtWrite::Held => {
+                    deps.track_pending_delivery(
+                        &context.channel_key,
+                        channel_message_subkey(context.slot_index),
+                        PendingDelivery {
+                            community: community_id.to_string(),
+                            channel: channel_id.to_string(),
+                            message: message_id.clone(),
+                        },
+                    );
+                    "queued".to_string()
+                }
+            }
         }
+        // Not a network miss (the pool holds those): the write cannot be made.
         Err(error) => {
-            tracing::warn!(error = %error, "channel delivery failed; queueing retry");
-            let bytes = serde_json::to_vec(&channel_msg)
-                .map_err(|e| ChannelError::Encoding(format!("serialize retry write: {e}")))?;
-            deps.enqueue_channel_retry(PendingChannelWrite {
-                record_key: context.channel_key.clone(),
-                subkey: channel_message_subkey(context.slot_index),
-                data: bytes,
-            })
-            .await?;
-            "queued".to_string()
+            tracing::warn!(error = %error, "channel write failed");
+            "failed".to_string()
         }
     };
 
     let timestamp_u64 = u64::try_from(timestamp_ms).unwrap_or_default();
     let echo = SentChannelMessageEcho {
+        community_id: community_id.to_string(),
         message_id: message_id.clone(),
         sender_pseudonym: sender_key.clone(),
         timestamp_ms: timestamp_u64,
@@ -294,25 +298,22 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         .await
         .ok_or_else(|| ChannelError::Adapter("source message not in local cache".into()))?;
 
-    let dest_mek_generation = dest_info.mek_generation;
     let forwarder_pseudonym = deps
         .my_pseudonym_hex(dest_community_id)
         .or_else(|| deps.owner_key())
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(dest_community_id.into()))?;
     let new_message_id = random_message_id("msg_");
-    let lamport_ts = deps.increment_lamport(dest_community_id);
+    let lamport_ts = deps.increment_lamport(dest_community_id)?;
     let dest_context = deps.channel_write_context(dest_community_id, dest_channel_id)?;
-    let mek = deps
-        .community_mek(dest_community_id)
-        .ok_or_else(|| ChannelError::MekMissing {
-            community: dest_community_id.into(),
-            channel: dest_channel_id.into(),
-        })?;
-    let dest_ciphertext = encrypt_channel_body(
-        &mek,
-        &dest_context.channel_key,
-        dest_context.slot_index,
-        lamport_ts,
+    let (dest_ciphertext, dest_mek_generation) = crate::text_keys::seal_text(
+        deps,
+        dest_community_id,
+        dest_channel_id,
+        BodyPosition {
+            channel_record_key: &dest_context.channel_key,
+            subkey_index: channel_message_subkey(dest_context.slot_index),
+            lamport_ts,
+        },
         source.body.as_bytes(),
     )?;
     let sequence = deps.next_channel_sequence(dest_community_id, dest_channel_id);
@@ -353,7 +354,7 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         .write_channel_forward_smpl(&dest_context, &forward_payload)
         .await
     {
-        Ok(()) => {
+        Ok(written) => {
             let notification = build_forward_notification(
                 dest_channel_id,
                 &forward_payload,
@@ -364,7 +365,21 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
             let _ = deps
                 .persist_slowmode_state(dest_community_id, dest_channel_id, timestamp_ms)
                 .await;
-            "delivered".to_string()
+            match written {
+                DhtWrite::Stored => "delivered".to_string(),
+                DhtWrite::Held => {
+                    deps.track_pending_delivery(
+                        &dest_context.channel_key,
+                        channel_message_subkey(dest_context.slot_index),
+                        PendingDelivery {
+                            community: dest_community_id.to_string(),
+                            channel: dest_channel_id.to_string(),
+                            message: new_message_id.clone(),
+                        },
+                    );
+                    "queued".to_string()
+                }
+            }
         }
         Err(error) => {
             tracing::warn!(error = %error, "channel forward write failed");
@@ -372,34 +387,45 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         }
     };
 
+    let timestamp_u64 = u64::try_from(timestamp_ms).unwrap_or_default();
+    deps.emit_chat_event_local(&SentChannelMessageEcho {
+        community_id: dest_community_id.to_string(),
+        message_id: new_message_id.clone(),
+        sender_pseudonym: forwarder_pseudonym.clone(),
+        timestamp_ms: timestamp_u64,
+        body: source.body.clone(),
+        channel_id: dest_channel_id.to_string(),
+    });
+
     Ok(ChannelSendResult {
         status,
         message_id: new_message_id,
         sender_pseudonym: forwarder_pseudonym,
-        timestamp_ms: u64::try_from(timestamp_ms).unwrap_or_default(),
+        timestamp_ms: timestamp_u64,
         body: source.body,
     })
 }
 
-/// Process a single retry attempt from the channel write queue. Used
-/// by the src-tauri retry-loop worker — it pops a `PendingChannelWrite`
-/// from the receiver and calls this for each.
-///
-/// Adapter is responsible for backoff between attempts; the crate
-/// only carries the protocol step.
-pub async fn process_retry_write<D: ChannelMessagingDeps>(
+/// A held channel write settled (`RecordPool::settled`, plan C7.13): every
+/// message waiting on that slot is delivered when it landed. When the
+/// network superseded it, our page was replaced by one we did not write and
+/// those messages did not land: they fail visibly, and a resend merges.
+pub fn on_write_settled<D: ChannelMessagingDeps>(
     deps: &D,
-    pending: &PendingChannelWrite,
-    context: &ChannelWriteContext,
-) -> Result<(), ChannelError> {
-    let message: ChannelMessage = serde_json::from_slice(&pending.data)
-        .map_err(|e| ChannelError::Encoding(format!("deserialize queued channel message: {e}")))?;
-    deps.write_channel_message_smpl(context, &message).await?;
-    let notification =
-        build_message_notification(&context.channel_id, &message, context.slot_index)?;
-    let _ = deps.send_to_mesh(&context.community_id, &notification);
-    if let Some(msg_id) = message.message_id {
-        deps.emit_delivery_succeeded(&context.community_id, &context.channel_id, &msg_id);
+    record_key: &str,
+    subkey: u32,
+    landed: bool,
+) {
+    for pending in deps.take_pending_deliveries(record_key, subkey) {
+        tracing::info!(
+            message = %pending.message,
+            landed,
+            "held channel write settled: message delivery resolved"
+        );
+        if landed {
+            deps.emit_delivery_succeeded(&pending.community, &pending.channel, &pending.message);
+        } else {
+            deps.emit_delivery_failed(&pending.community, &pending.channel, &pending.message);
+        }
     }
-    Ok(())
 }

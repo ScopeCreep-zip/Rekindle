@@ -73,7 +73,7 @@ test.describe("CSP — enforced policy", () => {
     const connectSrc = (csp!.match(/connect-src[^;]*/) ?? [""])[0];
     // The known Tauri internal hostnames are allowed; arbitrary http is
     // not.
-    const allowedHosts = ["ipc:", "ipc.localhost", "asset.localhost"];
+    const allowedHosts = ["ipc:", "ipc.localhost"];
     const tokens = connectSrc
       .split(/\s+/)
       .filter((t) => t.startsWith("http:") || t.startsWith("https:"));

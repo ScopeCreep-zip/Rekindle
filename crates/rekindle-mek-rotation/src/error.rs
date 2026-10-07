@@ -4,6 +4,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum MekRotationError {
+    /// The community's Lamport clock could not produce a timestamp.
+    #[error(transparent)]
+    Lamport(#[from] rekindle_types::lamport::LamportError),
+
     #[error("cache: {0}")]
     Cache(String),
 
@@ -18,6 +22,11 @@ pub enum MekRotationError {
 
     #[error("no eligible rotator — all online members exhausted cascade attempts")]
     NoEligibleRotator,
+
+    /// This member holds none of the rotation permissions (KICK, BAN,
+    /// MANAGE_COMMUNITY), so it may not rotate the community key.
+    #[error("not permitted to rotate the community key")]
+    NotPermitted,
 
     #[error("generation mismatch: expected {expected}, got {actual}")]
     GenerationMismatch { expected: u64, actual: u64 },

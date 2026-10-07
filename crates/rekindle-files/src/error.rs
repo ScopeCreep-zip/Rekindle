@@ -5,6 +5,10 @@ use thiserror::Error;
 /// "the announcer or the file itself is corrupt" (`MerkleRootMismatch`).
 #[derive(Debug, Error)]
 pub enum FilesError {
+    /// The community's Lamport clock could not produce a timestamp.
+    #[error(transparent)]
+    Lamport(#[from] rekindle_types::lamport::LamportError),
+
     #[error("file too large: {actual} bytes (max {max})")]
     FileTooLarge { actual: u64, max: u64 },
 

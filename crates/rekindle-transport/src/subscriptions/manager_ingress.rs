@@ -30,7 +30,7 @@ impl SubscriptionManager {
     ) {
         debug!(
             community = community_id,
-            sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+            sender = %sender_pseudonym,
             lamport = lamport_ts,
             "sub: on_gossip"
         );
@@ -60,17 +60,8 @@ impl SubscriptionManager {
             GossipAdmission::RateLimited => {
                 debug!(
                     community = community_id,
-                    sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+                    sender = %sender_pseudonym,
                     "sub: gossip dropped — sender over rate floor"
-                );
-                return;
-            }
-            GossipAdmission::LamportDrift => {
-                debug!(
-                    community = community_id,
-                    sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
-                    lamport = lamport_ts,
-                    "sub: gossip dropped — Lamport drift beyond cap"
                 );
                 return;
             }
@@ -91,7 +82,7 @@ impl SubscriptionManager {
     /// Pipeline: payload.into_event() → state_effects → dedup → emit
     pub fn on_dm(&self, sender_key: &str, payload: DmPayload, timestamp: u64) {
         debug!(
-            sender = &sender_key[..12.min(sender_key.len())],
+            sender = %sender_key,
             timestamp, "sub: on_dm"
         );
         // W16.4 — call signaling and DM invites return None (they

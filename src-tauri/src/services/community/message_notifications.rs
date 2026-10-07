@@ -4,13 +4,12 @@ use rekindle_protocol::dht::community::channel_record::{
     decode_channel_entries, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_records::retry;
-use tauri::Manager;
 
 use crate::channels::ChatEvent;
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 #[derive(Clone)]
 pub struct PendingMessageFetch {
@@ -31,7 +30,6 @@ pub(super) fn verify_notification_message(
 }
 
 pub(super) fn emit_message_received(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pending: &PendingMessageFetch,
     from: String,
@@ -51,131 +49,43 @@ pub(super) fn emit_message_received(
         reply_to_id: None,
         sender_display_name: None,
     };
-    // Phase 10 — journal + emit so a hard-quit mid-stream client can
-    // resume from the last cursor it saw and have this community message
-    // replayed on cold start.
-    crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
+    // Journaled so a community window that reloads mid-stream gets it.
+    crate::event_dispatch::emit_journaled(
+        state,
+        crate::event_dispatch::WebviewEvent::ChannelChat {
+            community_id: Some(pending.community_id.clone()),
+            event,
+        },
+    );
 }
 
-/// Resolve the channel's SMPL record key (string form) for AAD
-/// reconstruction. Returns `None` when the channel hasn't been merged
-/// from governance yet — callers fall back to the no-AAD path below
-/// for backward-compat with messages written before §8 line 1626 was
-/// implemented.
-fn channel_record_key_for(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<String> {
-    let communities = state.communities.read();
-    communities
-        .get(community_id)?
-        .channels
-        .iter()
-        .find(|ch| ch.id == channel_id)?
-        .message_record_key
-        .clone()
-}
-
+/// Open a fetched message body under exactly its generation of the
+/// channel's text key, bound to the record and subkey it was fetched from
+/// (see `channel_materialize::decrypt_channel_record_message`). `None`
+/// when that generation is not held or the body does not open there.
 pub(super) fn decrypt_message_body(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
     channel_id: &str,
-    pending: &PendingMessageFetch,
-    message: &ChannelMessage,
+    fetched: &FetchedChannelEntry,
+    subkey_index: u32,
 ) -> Option<String> {
-    // Architecture §8 line 1626 — reconstruct the same AAD the sender
-    // bound. If the SMPL record key isn't known yet, fall back to the
-    // no-AAD path below for legacy messages written before AAD landed.
-    let record_key = channel_record_key_for(state, community_id, channel_id);
-    let aad_owned = record_key
-        .as_ref()
-        .map(|key| rekindle_crypto::group::media_key::ChannelAad {
-            channel_record_key: key.as_bytes(),
-            subkey_index: pending.subkey_index,
-            lamport_ts: message.lamport_ts,
-        });
-
-    {
-        let channel_mek_cache = state.channel_mek_cache.lock();
-        if let Some(mek) =
-            channel_mek_cache.get(&(community_id.to_string(), channel_id.to_string()))
-        {
-            if mek.generation() == message.mek_generation {
-                if let Some(aad) = aad_owned {
-                    if let Ok(bytes) = mek.decrypt_with_aad(&message.ciphertext, aad) {
-                        return String::from_utf8(bytes).ok();
-                    }
-                }
-                // Legacy fallback for messages written before AAD landed.
-                return mek
-                    .decrypt(&message.ciphertext)
-                    .ok()
-                    .and_then(|bytes| String::from_utf8(bytes).ok());
-            }
-        }
-    }
-
-    let mek_cache = state.mek_cache.lock();
-    let decrypted = mek_cache
-        .get(community_id)
-        .filter(|mek| mek.generation() == message.mek_generation)
-        .and_then(|mek| {
-            if let Some(aad) = aad_owned {
-                if let Ok(bytes) = mek.decrypt_with_aad(&message.ciphertext, aad) {
-                    return Some(bytes);
-                }
-            }
-            mek.decrypt(&message.ciphertext).ok()
-        })
-        .and_then(|bytes| String::from_utf8(bytes).ok());
-    drop(mek_cache);
-    if decrypted.is_some() {
-        return decrypted;
-    }
-
-    let keystore: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
-    let guard = keystore.lock();
-    let ks = guard.as_ref()?;
-    if let Some(mek) = crate::keystore::load_channel_mek_generation(
-        ks,
+    let opened = crate::channel_materialize::decrypt_channel_record_message(
+        state,
         community_id,
         channel_id,
-        message.mek_generation,
-    ) {
-        let plaintext = mek
-            .decrypt(&message.ciphertext)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok())?;
-        // Centralized resolver — a lazily-loaded historical channel key must
-        // not downgrade/clobber the live one (it carries provenance from
-        // Stronghold's wire round-trip).
-        crate::state_helpers::install_channel_mek(state, community_id, channel_id, mek);
-        return Some(plaintext);
-    }
-
-    crate::keystore::load_mek(ks, community_id)
-        .filter(|mek| mek.generation() == message.mek_generation)
-        .and_then(|mek| {
-            let plaintext = mek
-                .decrypt(&message.ciphertext)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())?;
-            // Centralized resolver: a lazily-loaded persisted key must not
-            // downgrade a newer live key or clobber a canonical same-gen one.
-            if crate::state_helpers::install_community_mek(state, community_id, mek) {
-                crate::services::community::media_ready_runtime::on_mek_updated(
-                    state,
-                    community_id,
-                    None,
-                );
-            }
-            Some(plaintext)
-        })
+        fetched.message.mek_generation,
+        &fetched.message.ciphertext,
+        rekindle_secrets::channel_body::BodyPosition {
+            channel_record_key: &fetched.record_key,
+            subkey_index,
+            lamport_ts: fetched.message.lamport_ts,
+        },
+    );
+    (!opened.decryption_failed).then_some(opened.body)
 }
 
-pub(super) async fn message_exists(pool: &DbPool, owner_key: &str, message_id: &str) -> bool {
+pub(super) async fn message_exists(pool: &Db, owner_key: &str, message_id: &str) -> bool {
     let owner = owner_key.to_string();
     let mid = message_id.to_string();
     db_call(pool, move |conn| {
@@ -195,6 +105,8 @@ pub(super) async fn message_exists(pool: &DbPool, owner_key: &str, message_id: &
 /// or a forward (which carries an `original_author` for attribution).
 pub(super) struct FetchedChannelEntry {
     pub message: ChannelMessage,
+    /// The segment record the entry was read from — part of its AAD.
+    pub record_key: String,
     /// `Some(pseudonym_hex)` when the entry came from a `ChannelRecordEntry::Forward`.
     pub forwarded_from_author: Option<String>,
 }
@@ -219,7 +131,7 @@ pub(super) async fn fetch_channel_message(
     if segment_records.is_empty() {
         return Err("channel record key not found".into());
     }
-    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
+    let pool = state_helpers::record_pool(state)?;
     let mut last_error: Option<String> = None;
     for (_segment_index, record_key_str) in segment_records {
         let record_key = match record_key_str.parse::<veilid_core::RecordKey>() {
@@ -229,7 +141,7 @@ pub(super) async fn fetch_channel_message(
                 continue;
             }
         };
-        let value = match rc.get_dht_value(record_key, subkey_index, true).await {
+        let value = match pool.read_once(&record_key, subkey_index, true).await {
             Ok(Some(v)) => v,
             Ok(None) => {
                 continue;
@@ -252,6 +164,7 @@ pub(super) async fn fetch_channel_message(
             {
                 Some(FetchedChannelEntry {
                     message,
+                    record_key: record_key_str.clone(),
                     forwarded_from_author: None,
                 })
             }
@@ -280,6 +193,7 @@ pub(super) async fn fetch_channel_message(
                         mentioned_pseudonyms: Vec::new(),
                         mentioned_roles: Vec::new(),
                     },
+                    record_key: record_key_str.clone(),
                     forwarded_from_author: Some(original_author),
                 })
             }
@@ -316,31 +230,9 @@ pub(super) fn emit_automod_alert(
     message_id: &str,
     rule_name: &str,
 ) {
-    let can_moderate = {
-        let communities = state.communities.read();
-        let Some(community) = communities.get(community_id) else {
-            return;
-        };
-        let Some(gov) = community.governance_state.as_ref() else {
-            return;
-        };
-        let Some(pk_hex) = community.my_pseudonym_key.as_ref() else {
-            return;
-        };
-        let Ok(pk_bytes) = hex::decode(pk_hex) else {
-            return;
-        };
-        let Ok(pk_arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) else {
-            return;
-        };
-        let perms = rekindle_governance::permissions::compute_permissions(
-            &rekindle_types::id::PseudonymKey(pk_arr),
-            None,
-            gov,
-            rekindle_utils::timestamp_secs(),
-        );
-        rekindle_governance::permissions::has_moderation_capability(perms)
-    };
+    let can_moderate = rekindle_governance::permissions::has_moderation_capability(
+        state_helpers::my_permissions(state, community_id, None),
+    );
     if can_moderate {
         crate::event_dispatch::emit_subscription(
             app_handle,
@@ -357,18 +249,25 @@ pub(super) fn emit_automod_alert(
 }
 
 pub fn queue_message_fetch_retry(state: Arc<AppState>, pending: PendingMessageFetch) {
-    tokio::spawn(async move {
-        tokio::time::sleep(retry::backoff_duration(pending.attempt)).await;
-        if let Some(app_handle) = state_helpers::app_handle(&state) {
-            let _ = super::message_notifications_handle::handle_message_notification(
-                &app_handle,
-                &state,
-                PendingMessageFetch {
-                    attempt: pending.attempt + 1,
-                    ..pending
-                },
-            )
-            .await;
-        }
-    });
+    crate::state_helpers::spawn_in_login_with_token(
+        &state.clone(),
+        "message fetch retry",
+        |stop| async move {
+            let backoff = tokio::time::sleep(retry::backoff_duration(pending.attempt));
+            if stop.run_until_cancelled(backoff).await.is_none() {
+                return;
+            }
+            if let Some(app_handle) = state_helpers::app_handle(&state) {
+                let _ = super::message_notifications_handle::handle_message_notification(
+                    &app_handle,
+                    &state,
+                    PendingMessageFetch {
+                        attempt: pending.attempt + 1,
+                        ..pending
+                    },
+                )
+                .await;
+            }
+        },
+    );
 }

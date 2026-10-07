@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { Component, Show, createSignal } from "solid-js";
 import { handleToggleAddFriend } from "../../actions/buddy.actions";
 import { handleLogout } from "../../actions/auth.actions";
 import { setFriendsState } from "../../stores/friends.store";
@@ -18,6 +18,17 @@ function handleToggleJoinCommunity(): void {
 }
 
 const BottomActionBar: Component = () => {
+  // The backend refuses a second concurrent logout; the button reflects
+  // the one in flight.
+  const [loggingOut, setLoggingOut] = createSignal(false);
+  const logout = async (): Promise<void> => {
+    setLoggingOut(true);
+    try {
+      await handleLogout();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
   return (
     <div class="action-bar">
       <Show when={buddyListUI.activeTab === "friends"}>
@@ -37,7 +48,7 @@ const BottomActionBar: Component = () => {
         </button>
       </Show>
       <div class="action-bar-spacer" />
-      <button class="logout-icon-btn" onClick={handleLogout} title="Logout" aria-label="Logout">
+      <button class="logout-icon-btn" onClick={logout} disabled={loggingOut()} title="Logout" aria-label="Logout">
         <span class="nf-icon" aria-hidden="true">{ICON_LOGOUT}</span>
       </button>
     </div>

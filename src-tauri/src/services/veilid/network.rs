@@ -1,9 +1,7 @@
 use std::sync::Arc;
-use std::time::Instant;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-use crate::db::DbPool;
 use crate::services::{message_service, sync_service};
 use crate::state::AppState;
 use crate::state_helpers;
@@ -35,11 +33,12 @@ pub async fn handle_app_call(
     if let Ok(rekindle_types::cross_device_sync::SyncEnvelope::PairingRequest(payload)) =
         serde_json::from_slice(&message)
     {
-        let pool: tauri::State<'_, DbPool> = app_handle.state();
+        let Ok(pool) = state.db.current() else {
+            tracing::debug!("inbound app_call: no identity database — dropped");
+            return;
+        };
         let reply = match crate::services::cross_device_sync::handle_pairing_app_call(
-            state,
-            pool.inner(),
-            payload,
+            state, &pool, payload,
         )
         .await
         {
@@ -102,14 +101,19 @@ pub async fn handle_app_call(
             // On unwrap failure we still reply `b"ACK"` so the
             // responder's app_call await resolves; the caller's
             // tracing surfaces the error path.
-            match crate::services::community::handle_incoming_mek_transfer(
-                app_handle,
-                state,
-                &community_id,
-                channel_id.as_deref(),
-                &sender_pseudonym,
-                &wrapped_mek,
-            ) {
+            let received = rekindle_types::channel_keys::KeyScope::from_wire(channel_id.as_deref())
+                .ok_or_else(|| format!("MekTransfer names no key scope: {channel_id:?}"))
+                .and_then(|scope| {
+                    crate::services::community::handle_incoming_mek_transfer(
+                        app_handle,
+                        state,
+                        &community_id,
+                        scope,
+                        &sender_pseudonym,
+                        &wrapped_mek,
+                    )
+                });
+            match received {
                 Ok(_) => {
                     let requester_pseudonym = {
                         let communities = state.communities.read();
@@ -180,23 +184,21 @@ pub async fn handle_app_call(
             }
         }
         _ => {
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("inbound app_call: no identity database — dropped");
+                return;
+            };
             // Architecture §27.1: a DmInvite arriving via app_call must
             // get a structured DmAccept/DmDecline reply, not a bare
             // ACK. Try that path first; fall through to the generic
             // handler for everything else.
-            if let Some(reply) = message_service::try_handle_dm_invite_app_call(
-                app_handle,
-                state,
-                pool.inner(),
-                &message,
-            )
-            .await
+            if let Some(reply) =
+                message_service::try_handle_dm_invite_app_call(app_handle, state, &pool, &message)
+                    .await
             {
                 reply
             } else {
-                message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
-                    .await;
+                message_service::handle_incoming_message(app_handle, state, &pool, &message).await;
                 b"ACK".to_vec()
             }
         }
@@ -216,6 +218,7 @@ pub fn handle_attachment(
 ) {
     let attached = attachment.state.is_attached();
     let public_internet_ready = attachment.public_internet_ready;
+    state.network_ready.send_replace(public_internet_ready);
     let state_str = attachment.state.to_string();
     tracing::info!(
         state = %state_str,
@@ -269,298 +272,57 @@ pub fn handle_attachment(
             "network reconnected; invalidating watches, rebuilding governance, triggering friend resync"
         );
         invalidate_all_watches(state);
-        let routeless = {
-            let node = state.node.read();
-            node.as_ref().is_some_and(|nh| nh.route_blob.is_none())
-        };
         let state = state.clone();
         let app_handle = app_handle.clone();
-        tokio::spawn(async move {
-            // Heal the route FIRST — the governance/presence republish
-            // below and every send path need a live inbound route.
-            if routeless {
-                allocate_fresh_private_route(&app_handle, &state).await;
-            }
-            crate::services::governance_adapter::open_community_dht_records(&state).await;
-            crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
-            let _ = sync_service::sync_friends_now(&state, &app_handle).await;
-        });
+        crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
+            "attachment heal",
+            async move {
+                // A route that died while detached was reported dead and is
+                // being reallocated by its owner (plan C7.9b).
+                crate::services::governance_adapter::open_community_dht_records(&state).await;
+                crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
+                let _ = sync_service::sync_friends_now(&state, &app_handle).await;
+            },
+        );
     }
 }
 
-pub async fn handle_route_change(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    change: &veilid_core::VeilidRouteChange,
-) {
+pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRouteChange) {
     tracing::debug!(
         dead_routes = change.dead_routes.len(),
         dead_remote_routes = change.dead_remote_routes.len(),
         "route change event"
     );
 
-    let our_route_died = {
-        let rm = state.routing_manager.read();
-        rm.as_ref().is_some_and(|handle| {
-            handle
-                .manager
-                .route_id()
-                .is_some_and(|our_id| change.dead_routes.contains(&our_id))
-        })
-    };
-
-    if our_route_died {
-        let heal_admitted = {
-            let mut rm = state.routing_manager.write();
-            match *rm {
-                Some(ref mut handle) => {
-                    handle.manager.forget_private_route();
-                    let admitted = handle.heal_gate.try_begin(Instant::now());
-                    // A8 telemetry: admitted/suppressed ratio is the
-                    // baseline for retuning HEAL_COOLDOWN post-0.5.7.
-                    if admitted {
-                        handle.heal_attempts_admitted += 1;
-                    } else {
-                        handle.heal_attempts_suppressed += 1;
-                    }
-                    admitted
-                }
-                None => false,
-            }
-        };
-        // The dead blob must not linger as Some — the routeless
-        // watchdog keys off `route_blob.is_none()`.
-        if let Some(ref mut nh) = *state.node.write() {
-            nh.route_blob = None;
-        }
-        let attached = state_helpers::is_attached(state);
-        if attached && heal_admitted {
-            allocate_fresh_private_route(app_handle, state).await;
-        } else {
-            // Detached (reattach hook heals) or within the heal
-            // cooldown during a flap (watchdog backstops within 30s).
-            tracing::debug!(
-                attached,
-                heal_admitted,
-                "dead route heal deferred (flap guard / detached)"
-            );
+    // Our own routes among the dead are forgotten (never released: Veilid
+    // already dropped them) and reallocated by their owner, off this
+    // receive loop (plan C7.9b).
+    if let Some(routes) = state_helpers::own_routes(state) {
+        routes.on_dead(&change.dead_routes);
+    }
+    // A relay route among them is re-volunteered with a fresh offer to its
+    // friend (plan C7.9f).
+    if !change.dead_routes.is_empty() {
+        if let Ok(pool) = state.db.current() {
+            let state_c = Arc::clone(state);
+            let dead = change.dead_routes.clone();
+            state_helpers::spawn_in_login(state, "relay route re-volunteer", async move {
+                crate::services::relay::offer::on_dead_relay_routes(&state_c, &pool, &dead).await;
+            });
         }
     }
-
-    // Sibling heal for the media-class route (LowLatency + PreferUnordered).
-    // Our own dead media route also lands in `dead_routes`; it has an
-    // independent lifetime from the general route (its own blob + heal-gate),
-    // so it is handled separately rather than folded into the branch above.
-    super::media_route::heal_dead_media_route(state, change).await;
 
     if !change.dead_remote_routes.is_empty() {
-        let affected_pubkeys = {
-            let mut dht_mgr = state.dht_manager.write();
-            dht_mgr.as_mut().map_or_else(Vec::new, |mgr| {
-                mgr.manager
-                    .invalidate_dead_routes(&change.dead_remote_routes)
-            })
-        };
-        // The DHTManager caches aren't the only copy: the live
-        // peer-route cache holds the same blobs and must drop them too,
-        // or sends keep importing a route Veilid just declared dead.
-        if !affected_pubkeys.is_empty() {
-            let mut rm = state.routing_manager.write();
-            if let Some(ref mut handle) = *rm {
-                for pubkey in &affected_pubkeys {
-                    handle.peer_route_cache.remove(pubkey);
-                }
-            }
-        }
-
-        // The active voice frame sender caches imported routes by blob as
-        // well, keyed by RouteId internally. A route Veilid just declared
-        // dead must be evicted there too — otherwise every voice frame
-        // short-circuits on the reaped RouteId until the next failed send
-        // self-heals it (Piece 4 mechanism A). This proactively evicts
-        // even while the send loop is idle (a muted peer, between frames).
-        // Clone the concrete sender out of the (parking_lot, !Send) guard
-        // before invalidating.
-        let voice_frame_sender = {
-            let ve = state.voice_engine.lock();
-            ve.as_ref().and_then(|h| h.frame_sender.clone())
-        };
-        if let Some(frame_sender) = voice_frame_sender {
-            frame_sender.invalidate_route_ids(&change.dead_remote_routes);
+        // The importer forgets the dead routes (Veilid already dropped
+        // them, so nothing is released) and the peers whose cached blob was
+        // one of them lose it, so the next send re-fetches a fresh route.
+        // Voice resolves its routes through the same importer, so it holds
+        // no copy of its own to evict.
+        let affected = state_helpers::on_dead_remote_routes(state, &change.dead_remote_routes);
+        if !affected.is_empty() {
+            tracing::debug!(peers = affected.len(), "dropped dead remote routes");
         }
     }
-}
-
-/// Route-allocation failure — distinguishes "Veilid rejected the
-/// allocation" (transient: peerinfo / relay readiness can lag a route
-/// death or network-ready signal by seconds) from "the API handle is
-/// gone" (hard: logout/shutdown mid-retry — do not keep trying).
-enum RouteAllocError {
-    ApiGone,
-    Veilid(veilid_core::VeilidAPIError),
-}
-
-impl std::fmt::Display for RouteAllocError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ApiGone => write!(f, "veilid API no longer available"),
-            Self::Veilid(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-/// Attempt `api.new_private_route()` up to `attempts` times with a fixed
-/// 3-second delay — THE private-route allocation retry for the Tauri host
-/// (login startup and dead-route healing both come through here). The API
-/// handle is re-fetched from state on every attempt so a logout mid-retry
-/// aborts instead of spinning. Built on [`rekindle_utils::retry`] — the
-/// one retry loop shared across the workspace.
-pub(crate) async fn new_private_route_with_retry(
-    state: &Arc<AppState>,
-    attempts: u32,
-) -> Option<veilid_core::RouteBlob> {
-    rekindle_utils::retry::retry_with_backoff(
-        rekindle_utils::retry::RetryPolicy::fixed(attempts, std::time::Duration::from_secs(3)),
-        "private-route-allocate",
-        |e| matches!(e, RouteAllocError::Veilid(_)),
-        || async {
-            let api = state_helpers::veilid_api(state).ok_or(RouteAllocError::ApiGone)?;
-            api.new_private_route()
-                .await
-                .map_err(RouteAllocError::Veilid)
-        },
-    )
-    .await
-    .map_err(|e| {
-        tracing::warn!(attempts, error = %e, "private route allocation failed");
-    })
-    .ok()
-}
-
-/// Allocate the **media-class** inbound private route.
-///
-/// Same hop count as the general route — `hop_count: 0` resolves to the
-/// configured `default_route_hop_count`, so anonymity is byte-for-byte
-/// unchanged. The only difference is what the relays are selected for.
-///
-/// `PrivateSpec::default()`, which the general route uses, is
-/// `Stability::Reliable` + `Sequencing::PreferOrdered`. Reading
-/// veilid-core's `route_spec_store/route_allocate.rs`, that means the
-/// relays carrying our inbound media are:
-///
-/// - filtered and then *sorted to prefer* ordered — i.e. TCP/WS —
-///   dial info (`has_sequencing_matched_dial_info`, and the
-///   `PreferOrdered` sort at line 669), and
-/// - sorted by `cmp_oldest_reliable`: **longest uptime, regardless of
-///   speed**.
-///
-/// Both are wrong for realtime media, and it is exactly the property
-/// Session identified as fatal when they moved calls off TCP-based
-/// onion routing onto Lokinet's datagram path. `LowLatency` instead
-/// sorts by `tm90` (trimmed mean of the fastest 90 % of samples), and
-/// `PreferUnordered` stops steering the relay choice toward
-/// connection-oriented transports.
-///
-/// veilid-core's own doc for `new_custom_private_route` says it plainly:
-/// "Faster connections may be possible with `Stability::LowLatency`,
-/// and `Sequencing::PreferUnordered` at the expense of some loss of
-/// messages." Lossy is the correct trade here — FEC and the jitter
-/// buffer exist for it, and a late frame is worthless anyway.
-pub(crate) async fn new_media_route_with_retry(
-    state: &Arc<AppState>,
-    attempts: u32,
-) -> Option<veilid_core::RouteBlob> {
-    rekindle_utils::retry::retry_with_backoff(
-        rekindle_utils::retry::RetryPolicy::fixed(attempts, std::time::Duration::from_secs(3)),
-        "media-route-allocate",
-        |e| matches!(e, RouteAllocError::Veilid(_)),
-        || async {
-            let api = state_helpers::veilid_api(state).ok_or(RouteAllocError::ApiGone)?;
-            api.new_custom_private_route(veilid_core::PrivateSpec {
-                // Empty = all available crypto kinds, as the default does.
-                crypto_kinds: Vec::new(),
-                // 0 = the configured `default_route_hop_count`. Identical
-                // to the general route; this experiment changes one thing.
-                hop_count: 0,
-                stability: veilid_core::Stability::LowLatency,
-                sequencing: veilid_core::Sequencing::PreferUnordered,
-            })
-            .await
-            .map_err(RouteAllocError::Veilid)
-        },
-    )
-    .await
-    .map_err(|e| {
-        tracing::warn!(attempts, error = %e, "media route allocation failed");
-    })
-    .ok()
-}
-
-pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
-    let Some(route_blob) = new_private_route_with_retry(state, 5).await else {
-        tracing::warn!(
-            "dead-route recovery: all allocation attempts failed; refresh-loop backstop will retry"
-        );
-        return;
-    };
-
-    {
-        let mut rm = state.routing_manager.write();
-        if let Some(ref mut handle) = *rm {
-            handle
-                .manager
-                .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
-        }
-    }
-    if let Some(ref mut nh) = *state.node.write() {
-        nh.route_blob = Some(route_blob.blob.clone());
-    }
-    super::emit_network_status(app_handle, state);
-
-    if let Err(e) = message_service::push_profile_update(state, 6, route_blob.blob.clone()).await {
-        tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
-    }
-
-    let mailbox_key = {
-        let node = state.node.read();
-        node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
-    };
-    if let Some(mailbox_key) = mailbox_key {
-        let rc = {
-            let node = state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        };
-        if let Some(rc) = rc {
-            if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
-                &rc,
-                &mailbox_key,
-                &route_blob.blob,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "failed to update mailbox route blob");
-            }
-        }
-    }
-
-    // SMPL presence registry rows carry our route blob — targeted
-    // re-write per joined community so gossip peers pick the new blob
-    // up on their next poll/watch (replaces the old refresh-loop's
-    // full rejoin + needs_initial_sync storm).
-    let community_ids: Vec<String> = {
-        let communities = state.communities.read();
-        communities.keys().cloned().collect()
-    };
-    for community_id in &community_ids {
-        crate::services::community::presence::registry::write_our_presence(state, community_id)
-            .await;
-    }
-
-    // Dead-route recovery is the worst case for voice peers — the blob
-    // they hold died with the route. Re-announce immediately.
-    crate::services::voice_adapter::reannounce_voice_route(state);
-
-    tracing::info!("re-allocated private route");
 }
 
 fn invalidate_all_watches(state: &Arc<AppState>) {

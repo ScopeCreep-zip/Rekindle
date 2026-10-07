@@ -177,7 +177,8 @@ pub fn notify_video_topology_change_inner(
     reason: String,
 ) -> Result<(), String> {
     let stream_id = decode_stream_id(stream_id_hex)?;
-    let lamport = state_helpers::increment_lamport(state, community_id);
+    let lamport =
+        state_helpers::next_message_lamport(state, community_id).map_err(|e| e.to_string())?;
     let envelope = CommunityEnvelope::Control(ControlPayload::TopologyChange {
         channel_id: channel_id.to_string(),
         stream_id,

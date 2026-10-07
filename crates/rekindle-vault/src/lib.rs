@@ -39,6 +39,7 @@ pub mod error;
 pub mod key;
 pub mod schema;
 pub mod store;
+pub mod typed;
 
 pub use error::VaultError;
 pub use key::VaultKey;

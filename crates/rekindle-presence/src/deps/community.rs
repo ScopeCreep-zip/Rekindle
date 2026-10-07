@@ -12,6 +12,10 @@ use crate::deps::PresenceError;
 
 #[async_trait]
 pub trait CommunityPresenceDeps: Send + Sync + 'static {
+    /// The scope of the session this work belongs to. A poll tick stops
+    /// before its next Veilid call once it is closed (plan C4.L1).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
     // === Initial-sync handshake surface (21.k-REDO) ===
 
     /// Pseudonym key (hex) the local user holds in `community_id`,
@@ -26,8 +30,9 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// Our media-class inbound route blob (LowLatency + PreferUnordered),
     /// written onto the presence row so peers found via the reconcile
     /// send our realtime media over the FAST route, not the general one.
-    /// `None` when no media route is allocated (readers fall back to
-    /// `our_route_blob`).
+    /// `None` when no media route is allocated: the row then carries no
+    /// media blob, and readers never substitute `our_route_blob` (plan
+    /// C7.9c).
     fn our_media_route_blob(&self) -> Option<Vec<u8>>;
 
     /// String form of the local user's current presence status —
@@ -51,10 +56,11 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// has an SMPL log record allocated.
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
 
-    /// Total known-member count (capped at u32). The orchestrator
-    /// uses this as the upper bound when scanning SMPL channel
-    /// records (one subkey per member).
-    fn member_count_for_community(&self, community_id: &str) -> u32;
+    /// The community's writer index: the slot of every member the
+    /// presence scan placed in our segment, and our own. A channel
+    /// catch-up reads only these slots, never the whole range (plan
+    /// C7.12); slots are where members joined, not `0..member count`.
+    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32>;
 
     /// Fire-and-forget gossip broadcast of a community envelope.
     /// Mirrors `services::community::send_to_mesh` semantics: the
@@ -75,23 +81,34 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// outstanding requests).
     fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32);
 
-    /// Read every populated subkey from the SMPL channel log record.
-    /// Returns the (sequence, sender, ciphertext, timestamp, …)
-    /// tuples that haven't been broadcast yet via mesh, so the
-    /// orchestrator can persist them into the local message log.
-    async fn read_all_channel_messages(
+    /// Read the `member_slots` of an SMPL channel record that hold a
+    /// value: each message with the subkey it was written to. The record
+    /// key and subkey are the body's AAD position, so a reader that drops
+    /// them cannot open the body.
+    async fn read_channel_message_items(
         &self,
         record_key: &str,
-        member_count: u32,
-    ) -> Result<Vec<rekindle_protocol::dht::community::channel_record::ChannelMessage>, PresenceError>;
+        member_slots: &[u32],
+    ) -> Result<
+        Vec<(
+            u32,
+            rekindle_protocol::dht::community::channel_record::ChannelMessage,
+        )>,
+        PresenceError,
+    >;
 
-    /// Persist a batch of newly-fetched channel messages into the
-    /// local message log (skips rows already stored by message_id).
+    /// Persist a batch of newly-fetched channel messages, read from
+    /// `record_key`, into the local message log (skips rows already
+    /// stored by message_id). The host opens each body at its position.
     fn persist_channel_catchup(
         &self,
         community_id: &str,
         channel_id: &str,
-        messages: Vec<rekindle_protocol::dht::community::channel_record::ChannelMessage>,
+        record_key: &str,
+        messages: Vec<(
+            u32,
+            rekindle_protocol::dht::community::channel_record::ChannelMessage,
+        )>,
     );
 
     /// Flip `gossip.needs_initial_sync` to false after the initial
@@ -216,24 +233,14 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// loop logs and continues.
     async fn run_presence_poll_tick(&self, community_id: &str) -> Result<(), String>;
 
-    /// Install the shutdown sender on the community so callers
-    /// (`leave_community`, `cleanup`) can stop the loop. Pre-port
-    /// this was set on `community.presence_poll_shutdown_tx`
-    /// directly inside `start_presence_poll`; lifted here so the
-    /// crate's outer loop can install it before the first tick
-    /// fires.
-    fn install_presence_poll_shutdown(
-        &self,
-        community_id: &str,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-    );
-
     // === presence_poll_tick surface (21.i-REDO) ===
 
-    /// Ensure the member-registry DHT record is open for read +
-    /// write (best effort) and return its key. Adapter mutates
-    /// `community.open_community_records` as a side effect. `Err`
-    /// when the community isn't joined or DHT isn't attached.
+    /// Ensure the community holds its member-registry record's lease in
+    /// the record pool (plan C7.5), writable when a writer keypair is
+    /// known, and return the record key. When the lease is already held
+    /// this does no Veilid call; otherwise it borrows the record and hands
+    /// the lease to the community. `Err` when the community isn't joined
+    /// or the record cannot be opened.
     async fn ensure_registry_open(&self, community_id: &str) -> Result<Option<String>, String>;
 
     /// Snapshot the local user's per-community presence credentials:
@@ -373,7 +380,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// community state. The orchestrator passes the plan returned
     /// from `compute_rebuild_plan` after the write lock releases —
     /// the adapter does the actual `peers` / `online_members` /
-    /// `lamport_counter` / `needs_initial_sync` /
+    /// `needs_initial_sync` /
     /// `pending_mesh_broadcasts` writes under one lock.
     fn apply_gossip_rebuild_plan(
         &self,
@@ -459,12 +466,11 @@ pub use rekindle_types::presence::SegmentDescriptor;
 pub struct VoicePresenceRow {
     pub pseudonym_hex: String,
     pub display_name: Option<String>,
-    /// GENERAL route (Reliable + PreferOrdered) from the presence row.
-    pub route_blob: Vec<u8>,
-    /// MEDIA route (LowLatency + PreferUnordered) from the presence row —
-    /// what the voice roster reconcile should add/supersede with, so
-    /// media flows over the fast route. Empty when the peer published no
-    /// media route (reconcile falls back to `route_blob`).
+    /// MEDIA route (LowLatency + PreferUnordered) from the presence row:
+    /// what the voice roster reconcile adds and supersedes with. Empty
+    /// when the peer published none, and then the peer is unreachable for
+    /// media; the general route is never substituted (plan C7.9c), so the
+    /// row carries no general route.
     pub media_route_blob: Vec<u8>,
     /// MEK-decrypted voice channel claim from the row's SessionExtras.
     /// `None` when not in a channel or when our MEK can't decrypt.
@@ -503,20 +509,6 @@ pub struct SelfPresenceSnapshot {
     pub banner_ref: Option<String>,
 }
 
-/// Materialised SQLite row built from one discovered presence entry.
-/// Mirrors the pre-port `MemberPersistRow` shape so the upsert path
-/// in the adapter stays trivially transcribable.
-#[derive(Debug, Clone)]
-pub struct DiscoveredMemberRow {
-    pub pseudonym_key: String,
-    pub display_name: Option<String>,
-    pub role_ids_json: String,
-    pub subkey_index: i64,
-    pub segment_index: i64,
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
-    pub theme_color: Option<i64>,
-    pub badges_json: String,
-    pub avatar_ref: Option<String>,
-    pub banner_ref: Option<String>,
-}
+/// The `community_members` row built from one discovered presence entry;
+/// the table's repository owns the shape.
+pub use rekindle_db::repo::members::DiscoveredMemberRow;

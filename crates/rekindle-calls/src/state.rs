@@ -5,8 +5,11 @@
 //! Outgoing → Missed on the 30 s ring timeout, etc.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+use rekindle_secrets::sframe::SframeSender;
 use x25519_dalek::StaticSecret;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 /// Whether the call is audio-only or video.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,8 +64,8 @@ pub enum CallStatus {
 ///
 /// `my_x25519_secret` is dropped (and zeroized) when the entry leaves
 /// `AppState.active_calls`, preventing the secret from outliving the
-/// call. `call_key` is computed once on accept and handed to the voice
-/// transport.
+/// call. `media_secret` is computed once on accept; the voice session
+/// reads it, with `media_sender`, through its `MediaKeySource`.
 #[derive(Clone)]
 pub struct CallState {
     pub call_id: String,
@@ -73,29 +76,25 @@ pub struct CallState {
     /// Unix milliseconds when the ring expires. The Outgoing-side ring
     /// timer also writes a `missed_calls` row at this instant.
     pub expires_at_ms: u64,
-    /// Local X25519 secret. Once `Active`, derived `call_key` lives in
-    /// the voice transport — this secret can be dropped.
+    /// Local X25519 secret, kept until the call ends.
     pub my_x25519_secret: Option<StaticSecret>,
     /// Peer's X25519 public key, captured from `CallOffer` (Incoming
     /// side) or `CallAccept` (Outgoing side).
     pub peer_x25519_pub: Option<[u8; 32]>,
-    /// Derived 32-byte symmetric key. `None` until both sides have
-    /// exchanged X25519 publics. Zeroized when this struct is dropped.
-    pub call_key: Option<[u8; 32]>,
+    /// The call's SFrame scope secret (X25519 ECDH + HKDF, see
+    /// [`crate::derive_call_key`]). `None` until both sides have
+    /// exchanged X25519 publics. Zeroized on drop.
+    pub media_secret: Option<Zeroizing<[u8; 32]>>,
+    /// Our SFrame sender state for this call (session tag + CTR). Shared
+    /// by every clone of the state, so a rebuilt voice transport
+    /// continues the counter (RFC 9605 §9.1).
+    pub media_sender: Arc<SframeSender>,
     /// Phase 5 — codecs the PEER's WebView can decode
     /// (preference-ordered wire strings: "vp9" / "vp8" / "h264").
     /// Captured from `CallInvite` (Incoming side) or `CallAccept`
     /// (Outgoing side). Empty = peer predates its probe (or sent
     /// nothing) — senders treat that as the VP9 floor.
     pub peer_video_decode_codecs: Vec<String>,
-}
-
-impl Drop for CallState {
-    fn drop(&mut self) {
-        if let Some(ref mut k) = self.call_key {
-            k.zeroize();
-        }
-    }
 }
 
 impl std::fmt::Debug for CallState {
@@ -108,7 +107,8 @@ impl std::fmt::Debug for CallState {
             .field("expires_at_ms", &self.expires_at_ms)
             .field("has_secret", &self.my_x25519_secret.is_some())
             .field("has_peer_pub", &self.peer_x25519_pub.is_some())
-            .field("has_call_key", &self.call_key.is_some())
+            .field("has_media_secret", &self.media_secret.is_some())
+            .field("media_sender", &self.media_sender)
             .field("peer_video_decode_codecs", &self.peer_video_decode_codecs)
             .finish()
     }

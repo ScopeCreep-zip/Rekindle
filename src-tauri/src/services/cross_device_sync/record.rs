@@ -8,17 +8,18 @@
 use std::sync::Arc;
 
 use rekindle_protocol::dht::schema::personal_sync_dflt_schema;
-use veilid_core::CRYPTO_KIND_VLD0;
 
-use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Lightweight handle used by the rest of `cross_device_sync` to read
 /// and write the personal record. Cloned freely.
 #[derive(Clone, Debug)]
 pub struct PersonalSyncRecordHandle {
+    /// The identity whose record this is; remote changes apply to its rows.
+    pub owner_key: String,
     pub record_key: String,
     pub owner_keypair_hex: String,
     pub device_id: String,
@@ -29,31 +30,25 @@ pub struct PersonalSyncRecordHandle {
 /// stores them. Caller must be logged in.
 pub async fn ensure_personal_sync_record(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<PersonalSyncRecordHandle, String> {
     if let Some(handle) = open_personal_sync_record(state, pool).await {
         return Ok(handle);
     }
 
     let owner_key = state_helpers::current_owner_key(state)?;
-    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
-    let desc = rc
-        .create_dht_record(
-            CRYPTO_KIND_VLD0,
+    let record_pool = state_helpers::record_pool(state)?;
+    let (lease, key, owner) = record_pool
+        .create(
             personal_sync_dflt_schema().map_err(|e| format!("schema: {e}"))?,
             None,
         )
         .await
         .map_err(|e| format!("personal sync record creation failed: {e}"))?;
-
-    let record_key = desc.key().to_string();
-    let owner_keypair_hex = desc
-        .owner_secret()
-        .map(|s| {
-            let kp = veilid_core::KeyPair::new_from_parts(desc.owner().clone(), s.value());
-            kp.to_string()
-        })
-        .ok_or("personal sync record missing owner secret")?;
+    // The session's watch takes its own lease; the create's is not kept.
+    record_pool.release(lease).await;
+    let record_key = key.to_string();
+    let owner_keypair_hex = owner.to_string();
 
     let device_id = generate_device_id();
     persist_to_identity(
@@ -66,6 +61,7 @@ pub async fn ensure_personal_sync_record(
     .await?;
 
     Ok(PersonalSyncRecordHandle {
+        owner_key,
         record_key,
         owner_keypair_hex,
         device_id,
@@ -78,30 +74,17 @@ pub async fn ensure_personal_sync_record(
 /// create one.
 pub async fn open_personal_sync_record(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Option<PersonalSyncRecordHandle> {
     let owner_key = state_helpers::current_owner_key(state).ok()?;
+    let ok = owner_key.clone();
     let row: Option<(String, String, String)> = db_call_or_default(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT personal_sync_record_key, personal_sync_owner_keypair, device_id \
-               FROM identity WHERE public_key = ?1",
-        )?;
-        let mut rows = stmt.query(rusqlite::params![owner_key])?;
-        if let Some(row) = rows.next()? {
-            let key: Option<String> = row.get(0)?;
-            let kp: Option<String> = row.get(1)?;
-            let id: Option<String> = row.get(2)?;
-            if let (Some(k), Some(p), Some(d)) = (key, kp, id) {
-                if !k.is_empty() && !p.is_empty() && !d.is_empty() {
-                    return Ok(Some((k, p, d)));
-                }
-            }
-        }
-        Ok(None)
+        rekindle_db::repo::identity::personal_sync(conn, &ok)
     })
     .await;
     row.map(
         |(record_key, owner_keypair_hex, device_id)| PersonalSyncRecordHandle {
+            owner_key,
             record_key,
             owner_keypair_hex,
             device_id,
@@ -110,7 +93,7 @@ pub async fn open_personal_sync_record(
 }
 
 async fn persist_to_identity(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     record_key: &str,
     owner_keypair_hex: &str,
@@ -121,13 +104,13 @@ async fn persist_to_identity(
     let kp_owned = owner_keypair_hex.to_string();
     let did_owned = device_id.to_string();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE identity SET personal_sync_record_key = ?1, \
-                 personal_sync_owner_keypair = ?2, device_id = ?3 \
-              WHERE public_key = ?4",
-            rusqlite::params![key_owned, kp_owned, did_owned, owner_owned],
-        )?;
-        Ok(())
+        rekindle_db::repo::identity::set_personal_sync(
+            conn,
+            &owner_owned,
+            &key_owned,
+            &kp_owned,
+            &did_owned,
+        )
     })
     .await
 }

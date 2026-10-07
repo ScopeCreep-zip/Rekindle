@@ -55,8 +55,8 @@ speak the same Veilid protocol and SMPL governance.
 | Path | What lives here |
 |------|-----------------|
 | `src/` | SolidJS frontend (windows, components, stores, handlers, styles) |
-| `src-tauri/` | Tauri 2 backend — commands, services, channels, app state, SQLite, Stronghold |
-| `crates/` | 22 Rust crates implementing the protocol, crypto, voice, game detection, daemon/CLI |
+| `src-tauri/` | Tauri 2 backend — commands, services, channels, app state, SQLite, `rekindle-vault` |
+| `crates/` | 38 Rust crates implementing the protocol, crypto, voice, game detection, daemon/CLI |
 | `schemas/` | Cap'n Proto schema definitions |
 | `e2e/` | Playwright E2E tests |
 | `docs/` | All technical documentation (start at [`docs/README.md`](docs/README.md)) |
@@ -72,7 +72,7 @@ speak the same Veilid protocol and SMPL governance.
 | How are communities structured? | [`docs/architecture/communities.md`](docs/architecture/communities.md) — chiral-network v2.0 |
 | What's the wire format? | [`docs/protocol/overview.md`](docs/protocol/overview.md) and [`schemas/`](schemas/) |
 | How is the encryption layered? | [`docs/security/overview.md`](docs/security/overview.md) and the rest of [`docs/security/`](docs/security/) |
-| Where does data persist? | [`docs/architecture/data-layer.md`](docs/architecture/data-layer.md) — SQLite, Stronghold, DHT |
+| Where does data persist? | [`docs/architecture/data-layer.md`](docs/architecture/data-layer.md) — SQLite, `rekindle-vault`, DHT |
 | How are crates organised? | [`docs/architecture/crates.md`](docs/architecture/crates.md) — every crate, its tier, its role |
 | How does the SolidJS UI work? | [`docs/architecture/frontend.md`](docs/architecture/frontend.md) — windows, stores, IPC layer |
 | How do Tauri commands and services hook up? | [`docs/architecture/tauri-backend.md`](docs/architecture/tauri-backend.md) |
@@ -95,7 +95,7 @@ side effects.
 | 6 | `rekindle-governance` | Pure CRDT merge, reader-validates permissions |
 | 7 | `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features |
 | Cross-cutting | `rekindle-protocol`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Veilid plumbing, Signal sessions, audio pipeline, scanner, sync workers |
-| Daemon/CLI track | `rekindle-transport`, `rekindle-node`, `rekindle-cli` | Sole Veilid boundary + daemon + CLI/TUI |
+| Daemon/CLI track | `rekindle-transport`, `rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui` | Sole Veilid boundary + daemon + the shared client, CLI (`rekindle`) and TUI (`rekindle-tui`) |
 
 ## Protocol at a glance
 
@@ -108,7 +108,8 @@ side effects.
   - Layer 3 — Ed25519 signatures on every envelope.
   - Layer 4 — AES-256-GCM with per-channel MEK (communities) or Signal
     Protocol (1:1 friends).
-  - Layer 5 — Stronghold vault (Argon2id + XChaCha20-Poly1305) at rest.
+  - Layer 5 — `rekindle-vault` at rest: SQLCipher page-level AES-256-CBC
+    + per-entry AES-256-GCM, keyed by an Argon2id-derived master secret.
 - **Identity:** Ed25519 keypairs. No usernames or passwords. Pseudonyms
   per community for unlinkability.
 - **Community governance:** SMPL DHT records with `o_cnt: 0` (creation
@@ -124,8 +125,9 @@ side effects.
 - **No `#[allow(dead_code)]`.** Wire it up or delete it.
 - **No legacy compatibility shims.** Pre-release; replace fields, drop
   columns, delete old code paths.
-- **Database schema** is one file (`src-tauri/migrations/001_init.sql`).
-  Edit in place, bump `SCHEMA_VERSION` in `db.rs`.
+- **Database schema** is one file (`crates/rekindle-db/schema/001_init.sql`).
+  Edit in place, bump `SCHEMA_VERSION` in `crates/rekindle-db/src/open.rs`. Queries on shared
+  tables live in `rekindle_db::repo` (`cargo xtask check-sqlite`).
 - **Tailwind** lives in `src/styles/`. No inline classes in components.
 - **Frontend is thin.** All business logic in the Rust backend.
 

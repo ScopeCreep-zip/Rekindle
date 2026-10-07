@@ -6,7 +6,6 @@
 use rekindle_types::link_preview::LinkPreview;
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community::link_previews;
 use crate::services::community_link_previews_runtime::{
     get_link_previews_enabled_inner, set_link_previews_enabled_inner,
@@ -30,16 +29,14 @@ pub async fn fetch_link_preview(
 #[tauri::command]
 pub async fn set_link_previews_enabled(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     enabled: bool,
 ) -> Result<(), String> {
-    set_link_previews_enabled_inner(state.inner(), pool.inner(), enabled).await
+    let pool = state.db.current()?;
+    set_link_previews_enabled_inner(state.inner(), &pool, enabled).await
 }
 
 #[tauri::command]
-pub async fn get_link_previews_enabled(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<bool, String> {
-    get_link_previews_enabled_inner(state.inner(), pool.inner()).await
+pub async fn get_link_previews_enabled(state: State<'_, SharedState>) -> Result<bool, String> {
+    let pool = state.db.current()?;
+    get_link_previews_enabled_inner(state.inner(), &pool).await
 }

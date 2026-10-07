@@ -1,0 +1,48 @@
+[package]
+name = "rekindle-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "Rekindle IPC bus — wire protocol, Noise IK, framing, client, server, event router (Tier 3; no Veilid, no storage)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+blake3 = "1"
+dirs = "6"
+parking_lot = { workspace = true }
+postcard = { version = "1", features = [ "use-std" ] }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { version = "1", features = [ "v4", "v7", "serde" ] }
+zeroize = { version = "1", features = [ "derive" ] }
+
+# TaskTracker and CancellationToken for the graceful bus drain.
+tokio-util = { version = "0.7", features = [ "rt" ] }
+
+# Constant-time comparison of key-file checksums.
+subtle = "2"
+
+# IPC transport encryption (Noise IK)
+snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b" }
+
+[target.'cfg(unix)'.dependencies]
+# Safe syscalls (current UID for the Noise prologue)
+rustix = { version = "1", features = [ "process" ] }
+
+[target.'cfg(windows)'.dependencies]
+# Named pipes with an owner-only security descriptor, through a safe API
+# (evidence/c1-windows-ipc-research.md).
+interprocess = { version = "2.4", features = [ "tokio" ] }
+# The SDDL string `interprocess`'s `SecurityDescriptor::deserialize` takes.
+widestring = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = [ "test-util", "macros" ] }

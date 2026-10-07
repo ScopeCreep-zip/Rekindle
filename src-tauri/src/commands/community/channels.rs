@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_channel_runtime::{
     create_category_inner, delete_category_inner, move_channel_inner, rename_category_inner,
     reorder_categories_inner, reorder_channels_inner, set_channel_forum_tags_inner,
@@ -31,13 +30,13 @@ pub async fn create_channel(
     parent_voice_channel_id: Option<String>,
     idempotency_key: uuid::Uuid,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<String, String> {
+    let pool = state.db.current()?;
     // Phase 5 — gate writes on lifecycle.
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let state_clone = state.inner().clone();
-    let pool_clone = pool.inner().clone();
+    let pool_clone = pool.clone();
     state
         .idempotency_string
         .wrap(idempotency_key, || async move {

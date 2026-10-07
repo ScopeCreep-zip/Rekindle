@@ -22,13 +22,15 @@ services:
       container: docker
     volumes:
       # Release binaries from host build (patchelf'd for FHS)
+      - ../../target/release/rekindled:/usr/local/bin/rekindled:ro
       - ../../target/release/rekindle:/usr/local/bin/rekindle:ro
       # Per-node identity: display name read by rekindle-init.sh
       - ./nodes/alice/display-name:/etc/rekindle/display-name:ro
+      - ./nodes/alice/passphrase:/etc/rekindle/passphrase:ro
       # Persistent state
-      - alice-veilid:/home/rekindle/.local/share/rekindle/veilid
-      - alice-config:/home/rekindle/.config/rekindle
-      - alice-logs:/home/rekindle/.local/state/rekindle/logs
+      - alice-data:/home/rekindle/.local/share/com.rekindle.app
+      - alice-config:/home/rekindle/.config/com.rekindle.app
+      - alice-logs:/home/rekindle/.local/share/com.rekindle.app/logs
       - alice-nix:/nix
     tmpfs:
       - /run:exec,mode=755
@@ -36,7 +38,7 @@ services:
       - /tmp:exec,mode=1777
 
 volumes:
-  alice-veilid:
+  alice-data:
     driver: local
   alice-config:
     driver: local

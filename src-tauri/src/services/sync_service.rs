@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Start the periodic sync service.
 ///
@@ -15,9 +15,9 @@ use crate::state_helpers;
 /// - Retry: Attempt to deliver queued pending messages
 pub async fn start_sync_loop(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app_handle: tauri::AppHandle,
-    mut shutdown_rx: mpsc::Receiver<()>,
+    stop: CancellationToken,
 ) {
     tracing::info!("sync service started");
 
@@ -29,43 +29,52 @@ pub async fn start_sync_loop(
     let mut first_tick = true;
     let mut tick_count: u32 = 0;
 
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
-                tick_count += 1;
-                let force_all = tick_count.is_multiple_of(10);
-                if let Err(e) = sync_friends(&state, &mut watched_keys, first_tick, force_all).await {
-                    tracing::warn!(error = %e, "friend sync failed");
-                }
-                first_tick = false;
-                // After the first 3 rapid ticks, switch to the normal 30s cadence
-                if tick_count == 3 {
-                    interval = tokio::time::interval(std::time::Duration::from_secs(30));
-                }
-                if let Err(e) = sync_conversations(&state).await {
-                    tracing::warn!(error = %e, "conversation sync failed");
-                }
-                if let Err(e) = crate::services::sync_communities::sync_communities(&state, &pool).await {
-                    tracing::warn!(error = %e, "community sync failed");
-                }
-                if let Err(e) = retry_pending_messages(&state, &pool).await {
-                    tracing::warn!(error = %e, "pending message retry failed");
-                }
-                // Every ~6th tick (~3 minutes) — expire stale pending requests + invites
-                if tick_count.is_multiple_of(6) {
-                    expire_stale_requests(&state, &pool, &app_handle).await;
-                    let owner_key = state_helpers::owner_key_or_default(&state);
-                    if !owner_key.is_empty() {
-                        crate::invite_helpers::expire_stale_invites(&pool, &owner_key);
-                    }
-                }
-            }
-            _ = shutdown_rx.recv() => {
-                tracing::info!("sync service shutting down");
-                break;
+    // The tick's phases run outside the `select!` and check the token
+    // between phases and between items: each is a series of Veilid calls,
+    // which are never dropped mid-flight (plan C4.L1). A phase waiting on a
+    // record-pool call is released by the pool's drain at logout (C7.6g).
+    while stop.run_until_cancelled(interval.tick()).await.is_some() {
+        tick_count += 1;
+        let force_all = tick_count.is_multiple_of(10);
+        if let Err(e) = sync_friends(&state, &mut watched_keys, first_tick, force_all, &stop).await
+        {
+            tracing::warn!(error = %e, "friend sync failed");
+        }
+        first_tick = false;
+        // After the first 3 rapid ticks, switch to the normal 30s cadence
+        if tick_count == 3 {
+            interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        }
+        if stop.is_cancelled() {
+            break;
+        }
+        if let Err(e) = sync_conversations(&state, &stop).await {
+            tracing::warn!(error = %e, "conversation sync failed");
+        }
+        if stop.is_cancelled() {
+            break;
+        }
+        if let Err(e) =
+            crate::services::sync_communities::sync_communities(&state, &pool, &stop).await
+        {
+            tracing::warn!(error = %e, "community sync failed");
+        }
+        if stop.is_cancelled() {
+            break;
+        }
+        if let Err(e) = retry_pending_messages(&state, &pool, &stop).await {
+            tracing::warn!(error = %e, "pending message retry failed");
+        }
+        // Every ~6th tick (~3 minutes) — expire stale pending requests + invites
+        if tick_count.is_multiple_of(6) && !stop.is_cancelled() {
+            expire_stale_requests(&state, &pool, &app_handle).await;
+            let owner_key = state_helpers::owner_key_or_default(&state);
+            if !owner_key.is_empty() {
+                crate::invite_helpers::expire_stale_invites(&pool, &owner_key);
             }
         }
     }
+    tracing::info!("sync service shutting down");
 }
 
 /// Run a single friend sync immediately (called from auth on login).
@@ -80,7 +89,8 @@ pub async fn sync_friends_now(
     _app_handle: &tauri::AppHandle,
 ) -> Result<(), String> {
     let mut watched_keys = std::collections::HashSet::new();
-    sync_friends(state, &mut watched_keys, true, true).await
+    let stop = state_helpers::login_scope_or_closed(state).token();
+    sync_friends(state, &mut watched_keys, true, true, &stop).await
 }
 
 /// Friend-sync tick. Delegates to the crate orchestrator after
@@ -90,11 +100,15 @@ async fn sync_friends(
     watched_keys: &mut std::collections::HashSet<String>,
     first_tick: bool,
     force_all: bool,
+    stop: &CancellationToken,
 ) -> Result<(), String> {
     let Some(adapter) = crate::services::presence_adapter::build_adapter(state) else {
         return Ok(());
     };
-    rekindle_presence::sync_friends(Arc::new(adapter), watched_keys, first_tick, force_all).await;
+    // Friend sync is record-pool work only (the friend deps make no sends):
+    // at logout the pool's drain releases it (plan C7.6g).
+    rekindle_presence::sync_friends(Arc::new(adapter), watched_keys, first_tick, force_all, stop)
+        .await;
     Ok(())
 }
 
@@ -108,11 +122,7 @@ async fn sync_friends(
 /// src-tauri-side cleanup: this isn't friend-sync (which lives in
 /// `rekindle_presence::sync_friends`) — it's pure SQLite + state
 /// pruning the periodic sync loop fires every 6th tick.
-async fn expire_stale_requests(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    app_handle: &tauri::AppHandle,
-) {
+async fn expire_stale_requests(state: &Arc<AppState>, pool: &Db, app_handle: &tauri::AppHandle) {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return;
@@ -124,10 +134,8 @@ async fn expire_stale_requests(
     // 1. Delete expired pending_friend_requests (fire-and-forget).
     let ok = owner_key.clone();
     crate::db_helpers::db_fire(pool, "expire stale incoming requests", move |conn| {
-        let deleted = conn.execute(
-            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND received_at < ?2",
-            rusqlite::params![ok, cutoff],
-        )?;
+        let deleted =
+            rekindle_db::repo::pending_requests::delete_received_before(conn, &ok, cutoff)?;
         if deleted > 0 {
             tracing::info!(deleted, "expired stale incoming friend requests");
         }
@@ -137,18 +145,7 @@ async fn expire_stale_requests(
     // 2. Find and remove expired pending_out friends.
     let ok = owner_key;
     let expired_pending: Vec<String> = crate::db_helpers::db_call_or_default(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT public_key FROM friends \
-                 WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
-        )?;
-        let rows = stmt
-            .query_map(rusqlite::params![ok, cutoff], |row| row.get::<_, String>(0))?
-            .filter_map(std::result::Result::ok)
-            .collect::<Vec<_>>();
-        for pk in &rows {
-            crate::friend_repo::delete_friend(conn, &ok, pk)?;
-        }
-        Ok(rows)
+        rekindle_db::repo::friends::delete_pending_out_before(conn, &ok, cutoff)
     })
     .await;
 
@@ -174,11 +171,11 @@ async fn expire_stale_requests(
 /// Sync conversation records for friends that have remote conversation keys.
 ///
 /// For each friend with a `remote_conversation_key`, derives the DH shared secret,
-/// opens the conversation record read-only, reads the header, and caches the
+/// reads the conversation record's header through the record pool, and caches the
 /// route blob and profile snapshot.
-async fn sync_conversations(state: &Arc<AppState>) -> Result<(), String> {
-    let Some(routing_context) = state_helpers::safe_routing_context(state) else {
-        return Ok(()); // Not connected yet
+async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> Result<(), String> {
+    let Ok(record_pool) = state_helpers::record_pool(state) else {
+        return Ok(()); // Not logged in
     };
 
     let Some(secret_bytes) = *state.identity_secret.lock() else {
@@ -199,9 +196,12 @@ async fn sync_conversations(state: &Arc<AppState>) -> Result<(), String> {
     };
 
     for (friend_key, remote_conv_key) in &friends_with_conversations {
+        if stop.is_cancelled() {
+            return Ok(());
+        }
         sync_single_conversation(
             state,
-            &routing_context,
+            &record_pool,
             &secret_bytes,
             friend_key,
             remote_conv_key,
@@ -222,7 +222,7 @@ async fn sync_conversations(state: &Arc<AppState>) -> Result<(), String> {
 /// Sync a single friend's conversation record from DHT.
 async fn sync_single_conversation(
     state: &Arc<AppState>,
-    routing_context: &veilid_core::RoutingContext,
+    record_pool: &rekindle_protocol::dht::pool::RecordPool,
     my_secret_bytes: &[u8; 32],
     friend_key: &str,
     remote_conv_key: &str,
@@ -245,35 +245,15 @@ async fn sync_single_conversation(
         &friend_x25519_public,
     );
 
-    // Open the remote conversation record read-only
-    let record = match rekindle_protocol::dht::conversation::ConversationRecord::open_read(
-        routing_context,
+    // Read header and cache route blob + profile
+    match rekindle_protocol::dht::conversation::read_conversation_header(
+        record_pool,
         remote_conv_key,
-        encryption_key,
+        &encryption_key,
     )
     .await
     {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::trace!(
-                friend = %friend_key, key = %remote_conv_key,
-                error = %e, "failed to open remote conversation record"
-            );
-            return;
-        }
-    };
-
-    // Track the opened record key for cleanup on logout/exit
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = dht_mgr.as_mut() {
-            mgr.track_open_record(remote_conv_key.to_string());
-        }
-    }
-
-    // Read header and cache route blob + profile
-    match record.read_header().await {
-        Ok(header) => {
+        Ok(Some(header)) => {
             // The header's route blob is a snapshot from conversation
             // creation — the rotation path re-publishes profile
             // subkey 6 + mailbox, never conversation headers — so it
@@ -300,6 +280,7 @@ async fn sync_single_conversation(
                 }
             }
         }
+        Ok(None) => {}
         Err(e) => {
             tracing::trace!(
                 friend = %friend_key, key = %remote_conv_key,
@@ -307,13 +288,11 @@ async fn sync_single_conversation(
             );
         }
     }
-
-    // Best-effort close
-    let _ = record.close().await;
 }
+
 pub(super) async fn request_channel_sync(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
 ) {
@@ -354,7 +333,11 @@ pub(super) async fn request_channel_sync(
 /// adapter parses the body, dispatches via the appropriate
 /// transport, and reports per-row outcomes. This facade just
 /// builds the adapter + delegates.
-async fn retry_pending_messages(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
-    crate::services::sync_adapter::run_pending_retry_tick(state, pool).await;
+async fn retry_pending_messages(
+    state: &Arc<AppState>,
+    pool: &Db,
+    stop: &CancellationToken,
+) -> Result<(), String> {
+    crate::services::sync_adapter::run_pending_retry_tick(state, pool, stop).await;
     Ok(())
 }

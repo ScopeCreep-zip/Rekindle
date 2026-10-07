@@ -12,6 +12,7 @@ pub mod community_audit_runtime; // Phase 23.C — audit-log read + ban-list run
 pub mod community_automod_runtime; // Phase 23.C — automod rule list/set/delete orchestration lifted from commands/community/automod.rs.
 pub mod community_channel_admin_runtime; // Phase 23.C — channel delete/rename orchestration lifted from commands/community/channel_admin.rs.
 pub mod community_channel_runtime; // Phase 23.C — channel creation runtime orchestration lifted from commands/community/channels.rs.
+#[cfg(debug_assertions)]
 pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body lifted from commands/community/diagnostics.rs.
 pub mod community_event_runtime; // Phase 23.C — event creation orchestration lifted from commands/community/events.rs.
 pub mod community_files_runtime; // Phase 23.C — Lost Cargo file-handler orchestration lifted from commands/community/files.rs.
@@ -42,7 +43,6 @@ pub mod dht_publish_service;
 pub mod dm;
 pub mod dm_adapter; // Phase 13 — DmDeps + DmMekCache impls.
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
-pub mod event_resume_runtime; // Phase 23.C — event_resume orchestration lifted from commands/event.rs.
 pub mod files_adapter; // Phase 15 — FilesDeps impl + Tier-9 facades.
 pub mod friend_runtime; // Phase 23.C — friend-handler runtime orchestration lifted from commands/friends.rs.
 pub mod friendship;
@@ -61,8 +61,10 @@ pub mod native_video; // Linux-native GStreamer camera capture facade (plan rosy
 pub mod presence_adapter; // Phase 21.e-REDO — FriendPresenceDeps impl for friend presence.
 pub mod presence_service;
 pub mod push_relay;
+pub mod record_pool; // Plan C7.3 — the session's RecordPool (start at login, end at logout).
 pub mod relay;
 pub mod search;
+pub mod session; // Plan C4 — the login scope and the one session teardown.
 pub mod status_runtime; // Phase 23.C — status-handler runtime orchestration lifted from commands/status.rs.
 pub mod sync_adapter; // Phase 22.f-REDO — SyncDeps impl for pending-message retry.
 pub mod sync_communities;
@@ -77,17 +79,17 @@ pub mod window_runtime; // Phase 23.C — window helpers (get_network_status bod
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 /// Build a service adapter from the live app context.
 ///
 /// Every adapter in this module takes the same three things —
-/// `Arc<AppState>`, the `AppHandle` and the `DbPool` — so every callsite
+/// `Arc<AppState>`, the `AppHandle` and the `Db` — so every callsite
 /// grew its own local `build_adapter` to fetch them. Fifteen of those
 /// accumulated, and six were byte-identical in two groups of three that
 /// differed *only* in the message they returned for the same failure:
-/// "app handle or DbPool unavailable" against "app handle not
+/// "app handle or Db unavailable" against "app handle not
 /// initialized". That is what this duplication actually cost — not the
 /// lines, but two names for one condition, which is how a caller ends up
 /// matching on the wrong one.
@@ -97,9 +99,9 @@ use crate::state::AppState;
 /// this exact shape, whether it returns `Self` or `Arc<Self>`.
 pub fn build_adapter<A>(
     state: &Arc<AppState>,
-    new: fn(Arc<AppState>, tauri::AppHandle, DbPool) -> A,
+    new: fn(Arc<AppState>, tauri::AppHandle, Db) -> A,
 ) -> Result<A, String> {
     let (app_handle, pool) = crate::state_helpers::app_context(state)
-        .ok_or_else(|| "app handle or DbPool unavailable".to_string())?;
+        .ok_or_else(|| "app handle or Db unavailable".to_string())?;
     Ok(new(Arc::clone(state), app_handle, pool))
 }

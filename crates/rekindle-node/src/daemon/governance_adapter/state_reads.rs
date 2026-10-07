@@ -42,9 +42,7 @@ impl DaemonGovernanceAdapter<'_> {
         let Ok(transport) = self.transport() else {
             return Vec::new();
         };
-        let routes = transport.routes();
-        let guard = routes.read();
-        guard.route_blob().map(<[u8]>::to_vec).unwrap_or_default()
+        transport.personal_route_blob().unwrap_or_default()
     }
 
     /// Project the daemon's persisted membership onto the boundary
@@ -90,7 +88,7 @@ impl DaemonGovernanceAdapter<'_> {
             // session.json, so it is fetched by the DHT paths that
             // actually need a writer rather than eagerly here.
             dht_owner_keypair: None,
-            lamport_counter: membership.lamport_counter,
+            governance_clock: membership.lamport_counter,
             channel_log_keys: self.channel_record_keys_impl(community_id, membership),
             channel_ids: self.channel_ids_impl(community_id, membership),
             mek_generation: membership.mek_generation,
@@ -160,10 +158,6 @@ impl DaemonGovernanceAdapter<'_> {
             .collect()
     }
 
-    pub(super) fn open_record_keys_impl(&self, community_id: &str) -> Vec<String> {
-        self.ctx.community_runtime.open_record_keys(community_id)
-    }
-
     /// Every joined community's `(id, governance_key)`.
     ///
     /// On this track `governance_key` is non-optional in the persisted
@@ -204,13 +198,17 @@ impl DaemonGovernanceAdapter<'_> {
     }
 
     /// Channel message-record keys for a community.
-    pub(super) fn channel_log_keys_for_community_impl(&self, community_id: &str) -> Vec<String> {
+    /// `(channel id hex, record key)` for each of the community's channels.
+    pub(super) fn channel_log_keys_for_community_impl(
+        &self,
+        community_id: &str,
+    ) -> Vec<(String, String)> {
         let guard = self.ctx.session.read();
         let Some(membership) = guard.as_ref().and_then(|s| s.communities.get(community_id)) else {
             return Vec::new();
         };
         self.channel_record_keys_impl(community_id, membership)
-            .into_values()
+            .into_iter()
             .collect()
     }
 

@@ -78,8 +78,7 @@ pub fn on_mek_updated(state: &Arc<AppState>, community_id: &str, channel_id: Opt
     if channel_id.is_some_and(|ch| ch != bound_channel) {
         return; // a different channel's key — this session unaffected
     }
-    let present =
-        crate::state_helpers::channel_media_mek(state, community_id, &bound_channel).is_some();
+    let present = crate::state_helpers::media_key_present(state, community_id, &bound_channel);
     update_media_ready(state, community_id, &bound_channel, |i| {
         i.mek_present = present;
     });
@@ -117,8 +116,9 @@ fn emit(state: &Arc<AppState>, community_id: &str, channel_id: &str, ready: bool
             reason,
         },
     );
-    // `emit_now` rather than `emit_voice`: this runs off the state
-    // handle, not an `AppHandle`, and the channel name has to be
-    // spelled out here. It matches what `channel_for` would pick.
-    crate::event_dispatch::emit_now(state, "voice-event", &event);
+    // Off the state handle, not an `AppHandle`.
+    crate::event_dispatch::emit_from_state(
+        state,
+        crate::event_dispatch::WebviewEvent::Subscription(event),
+    );
 }

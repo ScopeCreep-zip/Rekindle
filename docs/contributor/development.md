@@ -305,25 +305,27 @@ CSS files.
 
 ### Database Schema
 
-The schema is defined in `src-tauri/migrations/001_init.sql`. There are no
+The schema is defined in `crates/rekindle-db/schema/001_init.sql`. There are no
 migration files — the schema is edited directly since it is not yet deployed
-to production.
+to production. Queries on the tables more than one host uses belong in
+`rekindle_db::repo`; `cargo xtask check-sqlite` rejects SQL outside the
+storage crates.
 
-A `SCHEMA_VERSION` constant in `src-tauri/src/db.rs` (currently **71**) is
-incremented whenever `001_init.sql` changes. On startup, if the stored
-version does not match, all SQLite tables are dropped, the vault file (and
-its salt sidecar) is deleted, the Veilid local storage is wiped, and the
-Lost Cargo file cache is removed. This ensures the data stores remain
-synchronised.
+The `SCHEMA_VERSION` constant in `crates/rekindle-db/src/open.rs` is incremented whenever
+`001_init.sql` changes. On startup, if the stored version does not match,
+all SQLite tables are dropped, the vault files (and their salt sidecars) are
+deleted and the Veilid local storage is wiped. This keeps the data stores
+synchronised. The files live under the shared data root; see
+[`data-layer.md`](../architecture/data-layer.md#data-root).
 
 ### Concurrency
 
 - `parking_lot` guards are `!Send` — clone data out before `.await` points
 - `Veilid RoutingContext` and `VeilidAPI` are `Arc`-based and `Clone` — clone
   from `NodeHandle` before async DHT or routing calls
-- `tokio_rusqlite::Connection` for the DbPool — async wrapper around
-  `rusqlite` on a dedicated background thread. Use the `db_helpers`
-  module (`db_call`, `db_call_or_default`, `db_fire`)
+- The database is `state.db.current()` (`rekindle_db::DbHandle` → `Db`, an
+  async wrapper around `rusqlite` on a dedicated background thread). Use the
+  `db_helpers` module (`db_call`, `db_call_or_default`, `db_fire`)
 - `cpal::Stream` is `!Send` on macOS — audio streams live on dedicated OS
   threads, communicating via `mpsc` channels
 

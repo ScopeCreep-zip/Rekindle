@@ -56,7 +56,7 @@ pub(super) fn next_lamport<D: ChannelMessagingDeps>(
             "governance state not loaded for this community".into(),
         ));
     }
-    Ok(deps.increment_lamport(community_id))
+    Ok(deps.next_governance_lamport(community_id)?)
 }
 
 pub async fn upload_emoji<D: ChannelMessagingDeps>(

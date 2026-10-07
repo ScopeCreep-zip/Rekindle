@@ -2,14 +2,14 @@
 //! `commands/community/link_previews.rs`. Hosts the
 //! `app_settings.link_previews_enabled` get/set SQLite operations.
 
-use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn set_link_previews_enabled_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     enabled: bool,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -27,10 +27,17 @@ pub async fn set_link_previews_enabled_inner(
 
 pub async fn get_link_previews_enabled_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<bool, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
-    Ok(db_call_or_default(pool, move |conn| {
+    Ok(link_previews_enabled(pool, owner_key).await)
+}
+
+/// The user's link-preview setting. Previews reveal this device's IP to
+/// the linked site, so anything short of an explicit "on" (no settings
+/// row, a DB error) means off.
+pub async fn link_previews_enabled(pool: &Db, owner_key: String) -> bool {
+    db_call_or_default(pool, move |conn| {
         let value: Option<i64> = conn
             .query_row(
                 "SELECT link_previews_enabled FROM app_settings WHERE owner_key = ?1",
@@ -38,7 +45,7 @@ pub async fn get_link_previews_enabled_inner(
                 |row| row.get(0),
             )
             .ok();
-        Ok(value.unwrap_or(1) != 0)
+        Ok(value.is_some_and(|v| v != 0))
     })
-    .await)
+    .await
 }

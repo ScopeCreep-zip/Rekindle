@@ -17,9 +17,12 @@ use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions;
 use rekindle_types::presence::MemberPresence;
 
-use crate::deps::{CommunityInsert, DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot};
+use crate::deps::{
+    CommunityInsert, DhtRecordInfo, DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot,
+};
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+use rekindle_records::lease::CommunityLeases;
 
 // Slots per segment record — imported, not redeclared. See segments.rs.
 use rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT;
@@ -139,10 +142,51 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         member_pubkeys.push(sk.verifying_key().to_bytes());
     }
 
-    // 3-5. Create the three SMPL records.
+    // 3-5. Create the three SMPL records. Each comes with its creator
+    // lease; a failure before they reach the host releases them.
     let gov_record = deps.create_smpl_record(&member_pubkeys).await?;
-    let reg_record = deps.create_smpl_record(&member_pubkeys).await?;
-    let ch_record = deps.create_smpl_record(&member_pubkeys).await?;
+    let reg_record = match deps.create_smpl_record(&member_pubkeys).await {
+        Ok(record) => record,
+        Err(e) => {
+            deps.release_record(gov_record.lease).await;
+            return Err(e);
+        }
+    };
+    let ch_record = match deps.create_smpl_record(&member_pubkeys).await {
+        Ok(record) => record,
+        Err(e) => {
+            deps.release_record(gov_record.lease).await;
+            deps.release_record(reg_record.lease).await;
+            return Err(e);
+        }
+    };
+    let creator_leases = [gov_record.lease, reg_record.lease, ch_record.lease];
+    match seed_community(
+        deps, name, admission, &slot_seed, gov_record, reg_record, ch_record,
+    )
+    .await
+    {
+        Ok(gov_key) => Ok(gov_key),
+        Err(e) => {
+            for lease in creator_leases {
+                deps.release_record(lease).await;
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Steps 6-13 of [`create_community`]: genesis, the creator's registry row,
+/// the first MEK, the local install, and handing the records to the host.
+async fn seed_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    name: &str,
+    admission: AdmissionMode,
+    slot_seed: &SlotSeed,
+    gov_record: DhtRecordInfo,
+    reg_record: DhtRecordInfo,
+    ch_record: DhtRecordInfo,
+) -> Result<String, GovernanceRuntimeError> {
     let gov_key = gov_record.record_key.clone();
     let reg_key = reg_record.record_key.clone();
     let ch_key = ch_record.record_key.clone();
@@ -187,7 +231,7 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     })?;
     let write_outcome = deps
         .set_dht_value(
-            &gov_key,
+            gov_record.lease,
             CREATOR_SLOT,
             gov_payload,
             Some(creator_writer.clone()),
@@ -214,7 +258,7 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     })?;
     let reg_outcome = deps
         .set_dht_value(
-            &reg_key,
+            reg_record.lease,
             CREATOR_SLOT,
             presence_bytes,
             Some(creator_writer.clone()),
@@ -255,7 +299,7 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         my_pseudonym_hex: my_pseudo_hex.clone(),
         mek: mek_snapshot,
         governance_state: gov_state,
-        lamport_counter: 5,
+        governance_clock: 5,
         creator_role_ids: creator_role_ids.clone(),
     };
     deps.insert_community(insert);
@@ -274,10 +318,23 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         }],
     );
 
-    // 13. Background services: watch + presence poll + DHT keepalive.
-    deps.watch_community_records(&gov_key).await?;
-    deps.spawn_presence_poll(&gov_key);
-    deps.spawn_dht_keepalive(&gov_key);
+    // 12b. Publish the channel record: genesis and the creator's row
+    //     published the governance and registry records; nothing else
+    //     writes the channel record until a first message (plan C7.6d).
+    crate::records::publish_created(deps, ch_record.lease, &slot_seed.0, 0).await?;
+
+    // 13. Hand the records to the host, which watches them and starts the
+    //     community's inspect, keepalive and presence loops (plan C7.5).
+    deps.community_records_ready(
+        &gov_key,
+        CommunityLeases {
+            governance: Some(gov_record.lease),
+            registry: Some(reg_record.lease),
+            channels: std::collections::HashMap::from([(channel_id, ch_record.lease)]),
+            ..CommunityLeases::default()
+        },
+    )
+    .await;
 
     deps.emit_event(GovernanceRuntimeEvent::CommunityCreated {
         community_id: gov_key.clone(),

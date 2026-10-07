@@ -270,5 +270,5 @@ periodic background fetch.
 | **Strand Relay** wire types (`RelayOffer/Withdraw/Ack/Envelope`) | `crates/rekindle-protocol/src/messaging/envelope.rs` |
 | **Push Relay**: client-side registration | `src-tauri/src/services/push_relay.rs` |
 | **Push Relay** wire types (`RegisterPushRelay`, `UnregisterPushRelay`, `WakeNotify`) | `crates/rekindle-protocol/src/messaging/envelope.rs` |
-| **Push Relay** SQLite schema | `src-tauri/migrations/001_init.sql` (`push_relay_registrations` table) |
+| **Push Relay** SQLite schema | `crates/rekindle-db/schema/001_init.sql` (`push_relay_registrations` table) |
 | Reliability tracking for gossip ziplines | `services/community/` (peer reliability dirty set, flushed every 30 s) |

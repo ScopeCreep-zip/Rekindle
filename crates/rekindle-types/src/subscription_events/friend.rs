@@ -56,4 +56,10 @@ pub enum FriendEvent {
         peer_key: String,
         new_profile_dht_key: String,
     },
+    /// We set or cleared our local nickname for a friend.
+    /// Triggered by: the `set_friend_nickname` action.
+    NicknameChanged {
+        peer_key: String,
+        nickname: Option<String>,
+    },
 }

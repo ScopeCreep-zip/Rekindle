@@ -102,7 +102,6 @@ impl DaemonGovernanceAdapter<'_> {
                     .import_route(target_route_blob)
                     .map_err(|e| GovernanceRuntimeError::Adapter(format!("import route: {e}")))?,
                 payload,
-                std::time::Duration::from_secs(10),
             )
             .await
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("app_call: {e}")))
@@ -126,19 +125,24 @@ impl DaemonGovernanceAdapter<'_> {
         session
             .communities
             .values()
-            .map(|m| CommunityDhtOpenSetup {
-                id: m.governance_key.clone(),
-                governance_key: m.governance_key.clone(),
-                registry_key: (!m.registry_key.is_empty()).then(|| m.registry_key.clone()),
+            .map(|m| {
                 // Under `o_cnt: 0` there is no registry owner; a member
-                // writes with its derived slot keypair.
-                registry_writer: m.slot_seed.as_ref().and_then(|seed| {
+                // writes the registry and its channel slots with its derived
+                // slot keypair.
+                let slot_writer = m.slot_seed.as_ref().and_then(|seed| {
                     rekindle_transport::broadcast::dht_writes::derive_slot_keypair_str(
                         seed,
                         m.slot_index,
                     )
                     .ok()
-                }),
+                });
+                CommunityDhtOpenSetup {
+                    id: m.governance_key.clone(),
+                    governance_key: m.governance_key.clone(),
+                    registry_key: (!m.registry_key.is_empty()).then(|| m.registry_key.clone()),
+                    registry_writer: slot_writer.clone(),
+                    slot_writer,
+                }
             })
             .collect()
     }
@@ -159,7 +163,7 @@ impl DaemonGovernanceAdapter<'_> {
         &self,
         community_id: &str,
         gov_state: GovernanceState,
-        max_lamport: u64,
+        accepted_clock: u64,
     ) {
         let changed = {
             let mut guard = self.ctx.session.write();
@@ -167,10 +171,10 @@ impl DaemonGovernanceAdapter<'_> {
                 .as_mut()
                 .and_then(|s| s.communities.get_mut(community_id))
             {
-                Some(m) if m.lamport_counter < max_lamport => {
+                Some(m) if m.lamport_counter < accepted_clock => {
                     // max(), never overwrite: our own unsent entries may
                     // already have advanced past what the DHT shows.
-                    m.lamport_counter = max_lamport;
+                    m.lamport_counter = accepted_clock;
                     true
                 }
                 _ => false,
@@ -247,27 +251,12 @@ impl DaemonGovernanceAdapter<'_> {
 
     // ---------- Background tasks ----------
     //
-    // These four are spawned by the Tauri host as per-community loops.
-    // On the daemon they are already covered by existing machinery:
+    // The Tauri host spawns per-community loops here. On the daemon the
     // `SubscriptionManager` runs the watch/poll tiers for every joined
-    // community, and the keepalive is part of its renewal loop. Spawning
-    // a second set here would double the DHT traffic against the same
-    // records. Traced so the coverage decision is visible.
-
-    pub(super) fn spawn_inspect_loop_impl(community_id: &str) {
-        tracing::debug!(community_id, "inspect tier: covered by SubscriptionManager");
-    }
-
-    pub(super) fn spawn_presence_poll_impl(community_id: &str) {
-        tracing::debug!(
-            community_id,
-            "presence poll: covered by SubscriptionManager"
-        );
-    }
-
-    pub(super) fn spawn_dht_keepalive_impl(community_id: &str) {
-        tracing::debug!(community_id, "dht keepalive: covered by watch renewal");
-    }
+    // community, so a second set would double the DHT traffic against the
+    // same records. The record keepalive (`RecordPool::rehydrate`) has no
+    // daemon equivalent yet: plan item C7.8b. Traced so the coverage
+    // decision is visible.
 
     pub(super) fn spawn_history_catchup_impl(community_id: &str) {
         tracing::debug!(community_id, "history catchup: covered by SMPL catchup");

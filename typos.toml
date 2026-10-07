@@ -33,6 +33,9 @@ xfire = "xfire"
 veilidchat = "veilidchat"
 mlkem = "mlkem"
 pqxdh = "pqxdh"
+# MediaEncryptionKey abbreviation (MekRotate, MekRequest, etc.) —
+# `typos` reads it as a truncated "Me".
+mek = "mek"
 
 [files]
 extend-exclude = [

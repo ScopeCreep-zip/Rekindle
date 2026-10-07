@@ -5,84 +5,34 @@
 //! `dht::profile`, `dht::friends`, and `dht::account` modules; this module
 //! handles state storage and `SQLite` persistence.
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
 use crate::state_helpers::DhtRecordType;
+use rekindle_db::Db;
 
 // ── Column mapping for generic persist ──────────────────────────────────────
 
-/// Pair of column names in the `identity` table for a DHT record key
-/// and its owner keypair. Used by [`persist_dht_key_to_db`].
-struct DhtKeyColumns {
-    key_column: &'static str,
-    /// Empty string means no keypair column (mailbox).
-    keypair_column: &'static str,
-}
-
-const PROFILE_COLUMNS: DhtKeyColumns = DhtKeyColumns {
-    key_column: "dht_record_key",
-    keypair_column: "dht_owner_keypair",
-};
-
-const FRIEND_LIST_COLUMNS: DhtKeyColumns = DhtKeyColumns {
-    key_column: "friend_list_dht_key",
-    keypair_column: "friend_list_owner_keypair",
-};
-
-const ACCOUNT_COLUMNS: DhtKeyColumns = DhtKeyColumns {
-    key_column: "account_dht_key",
-    keypair_column: "account_owner_keypair",
-};
-
-const MAILBOX_COLUMNS: DhtKeyColumns = DhtKeyColumns {
-    key_column: "mailbox_dht_key",
-    keypair_column: "",
-};
+use rekindle_db::repo::identity::OwnedRecord;
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
-/// Persist a DHT record key (and optionally its owner keypair) to the identity table.
-///
-/// Uses `COALESCE` so an existing keypair is preserved when `new_keypair` is `None`
-/// (record was reopened, not freshly created).
+/// Persist an owned DHT record's key, and its owner keypair when the
+/// record was just created (a reopened record keeps the stored one).
 async fn persist_dht_key_to_db(
-    pool: &DbPool,
+    pool: &Db,
     public_key: &str,
     dht_key: &str,
     new_keypair: Option<veilid_core::KeyPair>,
-    columns: &DhtKeyColumns,
+    record: OwnedRecord,
 ) -> Result<(), String> {
     let pk = public_key.to_string();
     let dk = dht_key.to_string();
-    let key_col = columns.key_column;
-
-    if columns.keypair_column.is_empty() {
-        db_call(pool, move |conn| {
-            conn.execute(
-                &format!("UPDATE identity SET {key_col} = ?1 WHERE public_key = ?2"),
-                rusqlite::params![dk, pk],
-            )?;
-            Ok(())
-        })
-        .await
-    } else {
-        let kp_col = columns.keypair_column;
-        let keypair_str = new_keypair.map(|kp| kp.to_string());
-        db_call(pool, move |conn| {
-            conn.execute(
-                &format!(
-                    "UPDATE identity SET {key_col} = ?1, \
-                     {kp_col} = COALESCE(?3, {kp_col}) \
-                     WHERE public_key = ?2"
-                ),
-                rusqlite::params![dk, pk, keypair_str],
-            )?;
-            Ok(())
-        })
-        .await
-    }
+    let keypair = new_keypair.map(|kp| kp.to_string());
+    db_call(pool, move |conn| {
+        rekindle_db::repo::identity::set_owned_record(conn, &pk, record, &dk, keypair.as_deref())
+    })
+    .await
 }
 
 /// Parse an optional keypair string into a `KeyPair`, logging a warning on failure.
@@ -97,24 +47,6 @@ fn parse_stored_keypair(keypair_str: Option<&String>, label: &str) -> Option<vei
     })
 }
 
-/// Create a fresh account DHT record (helper for `publish_account`).
-async fn create_fresh_account_record(
-    routing_context: &veilid_core::RoutingContext,
-    encryption_key: rekindle_crypto::DhtRecordKey,
-    display_name: &str,
-    status_message: &str,
-) -> Result<(String, Option<veilid_core::KeyPair>), String> {
-    let (record, kp) = rekindle_protocol::dht::account::AccountRecord::create(
-        routing_context,
-        encryption_key,
-        display_name,
-        status_message,
-    )
-    .await
-    .map_err(|e| format!("create account record: {e}"))?;
-    Ok((record.record_key(), Some(kp)))
-}
-
 // ── Publish functions ───────────────────────────────────────────────────────
 
 /// Create or reopen the mailbox DHT record and publish the current route blob.
@@ -123,7 +55,7 @@ async fn create_fresh_account_record(
 /// making the record key deterministic and permanent for this identity.
 pub async fn publish_mailbox(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     existing_mailbox_key: Option<&String>,
     route_blob: Option<&[u8]>,
 ) -> Result<(), String> {
@@ -134,8 +66,6 @@ pub async fn publish_mailbox(
         *secret.as_ref().ok_or("identity secret not available")?
     };
 
-    let routing_context = state_helpers::require_safe_routing_context(state)?;
-
     // Build a Veilid KeyPair from our Ed25519 identity keys.
     let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
     let pub_bytes = identity.public_key_bytes();
@@ -144,70 +74,63 @@ pub async fn publish_mailbox(
     let veilid_pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
     let veilid_keypair = veilid_core::KeyPair::new_from_parts(veilid_pubkey, bare_secret);
 
+    // An existing mailbox is re-opened, never replaced: its key is random
+    // per create (V4) and peers hold it. A failure is login's to report.
+    let record_pool = state_helpers::record_pool(state)?;
     let mailbox_key = if let Some(existing_key) = existing_mailbox_key {
-        // Retry transient unreachability (sparse routing on a fresh node)
-        // before recreating — otherwise a momentary KeyNotFound churns the
-        // mailbox key. (Mailbox keys are identity-deterministic so a recreate
-        // is harmless, but the retry avoids a redundant create + DHT write.)
-        match rekindle_protocol::dht::retry_on_unreachable(
-            rekindle_protocol::dht::DEFAULT_DHT_OPEN_ATTEMPTS,
-            rekindle_protocol::dht::DEFAULT_DHT_OPEN_DELAY,
-            || {
-                rekindle_protocol::dht::mailbox::open_mailbox_writable(
-                    &routing_context,
-                    existing_key,
-                    veilid_keypair.clone(),
-                )
-            },
+        rekindle_protocol::dht::mailbox::open_mailbox_writable(
+            &record_pool,
+            existing_key,
+            veilid_keypair,
         )
         .await
-        {
-            Ok(()) => {
-                tracing::info!(key = %existing_key, "reopened existing mailbox");
-                existing_key.clone()
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to reopen mailbox after retries — creating new one");
-                rekindle_protocol::dht::mailbox::create_mailbox(&routing_context, veilid_keypair)
-                    .await
-                    .map_err(|e| format!("create mailbox: {e}"))?
-            }
-        }
+        .map_err(|e| format!("reopen mailbox: {e}"))?;
+        tracing::info!(key = %existing_key, "reopened existing mailbox");
+        existing_key.clone()
     } else {
-        rekindle_protocol::dht::mailbox::create_mailbox(&routing_context, veilid_keypair)
+        rekindle_protocol::dht::mailbox::create_mailbox(&record_pool, veilid_keypair)
             .await
             .map_err(|e| format!("create mailbox: {e}"))?
+            .1
     };
 
     // Write route blob to mailbox subkey 0
     if let Some(blob) = route_blob {
         if !blob.is_empty() {
-            rekindle_protocol::dht::mailbox::update_mailbox_route(
-                &routing_context,
+            let outcome = rekindle_protocol::dht::mailbox::update_mailbox_route(
+                &record_pool,
                 &mailbox_key,
                 blob,
             )
             .await
             .map_err(|e| format!("update mailbox route: {e}"))?;
+            if outcome.missed() {
+                tracing::warn!(?outcome, "mailbox route blob not stored at consensus");
+            }
         }
     }
 
     state_helpers::store_dht_record(state, &mailbox_key, &DhtRecordType::Mailbox);
 
-    persist_dht_key_to_db(pool, &public_key, &mailbox_key, None, &MAILBOX_COLUMNS).await?;
+    let (pk, mk) = (public_key.clone(), mailbox_key.clone());
+    db_call(pool, move |conn| {
+        rekindle_db::repo::identity::set_mailbox_key(conn, &pk, &mk)
+    })
+    .await?;
 
     tracing::info!(mailbox_key = %mailbox_key, "mailbox published to DHT");
     Ok(())
 }
 
-/// Create or reopen a DHT profile record and publish identity data.
+/// Re-open our DHT profile record (or create it when the identity has
+/// none) and publish identity data.
 ///
 /// Publishes display name, status message, online status, `PreKeyBundle`, and route
 /// blob so that friends can discover our presence and establish encrypted sessions.
 pub async fn publish_profile(
     state: &SharedState,
-    pool: &DbPool,
-    prekey_bundle_bytes: Option<Vec<u8>>,
+    pool: &Db,
+    prekey_bundle_bytes: Vec<u8>,
     existing_dht_key: Option<String>,
     dht_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
@@ -216,43 +139,74 @@ pub async fn publish_profile(
     let (public_key, display_name, status_message) =
         (id.public_key, id.display_name, id.status_message);
     let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
-    let routing_context = state_helpers::require_safe_routing_context(state)?;
-    let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
-
-    let bundle = prekey_bundle_bytes.as_deref().unwrap_or(&[]);
+    let record_pool = state_helpers::record_pool(state)?;
+    let fields = rekindle_protocol::dht::profile::ProfileFields {
+        display_name: &display_name,
+        status_message: &status_message,
+        prekey_bundle: &prekey_bundle_bytes,
+        route_blob: &route_blob,
+    };
     let owner_keypair = parse_stored_keypair(dht_owner_keypair_str.as_ref(), "profile");
 
-    let (profile_key, keypair, is_new) = rekindle_protocol::dht::profile::open_or_create_profile(
-        &temp_dht,
-        existing_dht_key.as_deref(),
-        owner_keypair,
-        &display_name,
-        &status_message,
-        bundle,
-        &route_blob,
-    )
-    .await
-    .map_err(|e| format!("DHT profile publish: {e}"))?;
+    // An existing profile is re-opened, never replaced: its key is random
+    // per create (V4), and peers know it. A failure, or a key stored
+    // without its owner keypair, is login's to report.
+    let (lease, profile_key, keypair, new_keypair, outcome) =
+        match (existing_dht_key, owner_keypair) {
+            (Some(key), Some(keypair)) => {
+                let lease = rekindle_protocol::dht::profile::open_profile(
+                    &record_pool,
+                    &key,
+                    keypair.clone(),
+                )
+                .await
+                .map_err(|e| format!("reopen profile record: {e}"))?;
+                let outcome = rekindle_protocol::dht::profile::publish_profile_fields(
+                    &record_pool,
+                    &key,
+                    fields,
+                )
+                .await
+                .map_err(|e| format!("publish profile fields: {e}"))?;
+                (lease, key, keypair, None, outcome)
+            }
+            (Some(key), None) => {
+                return Err(format!("profile record {key} has no stored owner keypair"));
+            }
+            (None, _) => {
+                let (lease, key, keypair, outcome) =
+                    rekindle_protocol::dht::profile::create_profile(&record_pool, fields)
+                        .await
+                        .map_err(|e| format!("create profile record: {e}"))?;
+                (lease, key, keypair.clone(), Some(keypair), outcome)
+            }
+        };
+    match outcome {
+        rekindle_protocol::dht::pool::SetOutcome::Superseded(_) => {
+            tracing::info!("profile publish: a field was already newer on the network");
+        }
+        missed if missed.missed() => {
+            tracing::warn!(outcome = ?missed, "profile fields not all stored at consensus");
+        }
+        _ => {}
+    }
 
-    state_helpers::store_dht_record(
-        state,
-        &profile_key,
-        &DhtRecordType::Profile(keypair.clone()),
-    );
-
-    let new_keypair = if is_new { keypair } else { None };
+    let is_new = new_keypair.is_some();
+    state_helpers::store_dht_record(state, &profile_key, &DhtRecordType::Profile(keypair, lease));
+    // The profile is open: the STATUS publisher writes the current status
+    // (login's field publish no longer writes one, plan C7.8c).
+    crate::services::presence_service::request_status_publish(state);
     persist_dht_key_to_db(
         pool,
         &public_key,
         &profile_key,
         new_keypair,
-        &PROFILE_COLUMNS,
+        OwnedRecord::Profile,
     )
     .await?;
 
     tracing::info!(
         profile_key = %profile_key,
-        has_prekey_bundle = prekey_bundle_bytes.is_some(),
         has_route_blob = !route_blob.is_empty(),
         is_new,
         "published profile to DHT"
@@ -260,43 +214,51 @@ pub async fn publish_profile(
     Ok(())
 }
 
-/// Create or reopen a DHT friend list record.
+/// Re-open our DHT friend list record, or create it when the identity has
+/// none.
 pub async fn publish_friend_list(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     existing_friend_list_key: Option<String>,
     friend_list_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
     let public_key = state_helpers::current_owner_key(state)
         .map_err(|_| "identity not set before friend list publish".to_string())?;
-
-    let routing_context = state_helpers::require_safe_routing_context(state)?;
-    let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
-
+    let record_pool = state_helpers::record_pool(state)?;
     let owner_keypair = parse_stored_keypair(friend_list_owner_keypair_str.as_ref(), "friend list");
 
-    let (friend_list_key, keypair, is_new) =
-        rekindle_protocol::dht::friends::open_or_create_friend_list(
-            &temp_dht,
-            existing_friend_list_key.as_deref(),
-            owner_keypair,
-        )
-        .await
-        .map_err(|e| format!("DHT friend list publish: {e}"))?;
+    let (friend_list_key, keypair, new_keypair) = match (existing_friend_list_key, owner_keypair) {
+        (Some(key), Some(keypair)) => {
+            rekindle_protocol::dht::friends::open_friend_list(&record_pool, &key, keypair.clone())
+                .await
+                .map_err(|e| format!("reopen friend list record: {e}"))?;
+            (key, keypair, None)
+        }
+        (Some(key), None) => {
+            return Err(format!(
+                "friend list record {key} has no stored owner keypair"
+            ));
+        }
+        (None, _) => {
+            let (key, keypair, outcome) =
+                rekindle_protocol::dht::friends::create_friend_list(&record_pool)
+                    .await
+                    .map_err(|e| format!("create friend list record: {e}"))?;
+            if outcome.missed() {
+                tracing::warn!(?outcome, "empty friend list not stored at consensus");
+            }
+            (key, keypair.clone(), Some(keypair))
+        }
+    };
 
-    state_helpers::store_dht_record(
-        state,
-        &friend_list_key,
-        &DhtRecordType::FriendList(keypair.clone()),
-    );
-
-    let new_keypair = if is_new { keypair } else { None };
+    let is_new = new_keypair.is_some();
+    state_helpers::store_dht_record(state, &friend_list_key, &DhtRecordType::FriendList(keypair));
     persist_dht_key_to_db(
         pool,
         &public_key,
         &friend_list_key,
         new_keypair,
-        &FRIEND_LIST_COLUMNS,
+        OwnedRecord::FriendList,
     )
     .await?;
 
@@ -315,7 +277,7 @@ pub async fn publish_friend_list(
 /// `DHTShortArray`s.
 pub async fn publish_account(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     existing_account_key: Option<String>,
     account_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
@@ -330,72 +292,47 @@ pub async fn publish_account(
         .ok_or("identity secret not available for account key derivation")?;
     let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
 
-    let routing_context = state_helpers::require_safe_routing_context(state)?;
-
     let owner_keypair = parse_stored_keypair(account_owner_keypair_str.as_ref(), "account");
+    let record_pool = state_helpers::record_pool(state)?;
 
-    let (account_key, new_keypair) = if let Some(ref existing_key) = existing_account_key {
-        if let Some(keypair) = owner_keypair {
-            // Retry transient unreachability before recreating: the account
-            // record's key is random, so a premature recreate on a sparse
-            // cold-start routing table orphans the real record (the entry point
-            // peers resolve). `DhtRecordKey` is ZeroizeOnDrop/non-Clone, so the
-            // closure re-derives a fresh one per attempt (cheap HKDF) from the
-            // already-copied-out `secret_bytes` — no lock is held across awaits.
-            match rekindle_protocol::dht::retry_on_unreachable(
-                rekindle_protocol::dht::DEFAULT_DHT_OPEN_ATTEMPTS,
-                rekindle_protocol::dht::DEFAULT_DHT_OPEN_DELAY,
-                || {
-                    let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-                    rekindle_protocol::dht::account::AccountRecord::open(
-                        &routing_context,
-                        existing_key,
-                        keypair.clone(),
-                        enc_key,
-                    )
-                },
+    // An existing account record is re-opened, never replaced: its key is
+    // random per create (V4), and a replacement would orphan the record
+    // peers resolve. A failure, or a key stored without its owner keypair,
+    // is login's to report.
+    let (account_key, new_keypair) = match (existing_account_key, owner_keypair) {
+        (Some(existing_key), Some(keypair)) => {
+            let record = rekindle_protocol::dht::account::AccountRecord::open(
+                &record_pool,
+                &existing_key,
+                keypair,
+                encryption_key,
             )
             .await
-            {
-                Ok(record) => {
-                    tracing::info!(key = %existing_key, "reusing existing account DHT record");
-                    state_helpers::store_dht_record(
-                        state,
-                        &record.record_key(),
-                        &DhtRecordType::Account,
-                    );
-                    state_helpers::track_open_records(state, &record.all_record_keys());
-                    return Ok(());
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        key = %existing_key, error = %e,
-                        "failed to open existing account record after retries — creating new one"
-                    );
-                    let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-                    create_fresh_account_record(
-                        &routing_context,
-                        enc_key,
-                        &display_name,
-                        &status_message,
-                    )
-                    .await?
-                }
-            }
-        } else {
-            tracing::warn!("no account owner keypair — creating new account record");
-            let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-            create_fresh_account_record(&routing_context, enc_key, &display_name, &status_message)
-                .await?
+            .map_err(|e| format!("reopen account record: {e}"))?;
+            tracing::info!(key = %existing_key, "reusing existing account DHT record");
+            state_helpers::store_dht_record(state, &record.record_key(), &DhtRecordType::Account);
+            return Ok(());
         }
-    } else {
-        create_fresh_account_record(
-            &routing_context,
-            encryption_key,
-            &display_name,
-            &status_message,
-        )
-        .await?
+        (Some(existing_key), None) => {
+            return Err(format!(
+                "account record {existing_key} has no stored owner keypair"
+            ));
+        }
+        (None, _) => {
+            let (record, keypair, outcome) =
+                rekindle_protocol::dht::account::AccountRecord::create(
+                    &record_pool,
+                    encryption_key,
+                    &display_name,
+                    &status_message,
+                )
+                .await
+                .map_err(|e| format!("create account record: {e}"))?;
+            if outcome.missed() {
+                tracing::warn!(?outcome, "account header not stored at consensus");
+            }
+            (record.record_key(), Some(keypair))
+        }
     };
 
     state_helpers::store_dht_record(state, &account_key, &DhtRecordType::Account);
@@ -405,7 +342,7 @@ pub async fn publish_account(
         &public_key,
         &account_key,
         new_keypair,
-        &ACCOUNT_COLUMNS,
+        OwnedRecord::Account,
     )
     .await?;
 

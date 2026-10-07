@@ -15,7 +15,7 @@ pub enum CommunityEvent {
     /// Architecture §18.4 — eager-fetched expression bytes have landed in
     /// the local cache. Frontend should re-query `list_expressions` so
     /// the picker swaps the `:emojiname:` placeholder for the resolved
-    /// inline_data_base64.
+    /// inline data URL.
     #[serde(rename_all = "camelCase")]
     ExpressionAssetReady {
         community_id: String,
@@ -74,18 +74,17 @@ pub enum CommunityEvent {
         url: String,
         title: Option<String>,
         description: Option<String>,
-        image_url: Option<String>,
         site_name: Option<String>,
         fetched_at: u64,
     },
-    /// Lost Cargo: a download finished — `local_path` is the on-disk file.
-    /// Frontend updates the message bubble's "Download" button to "Open".
+    /// Lost Cargo: a download was saved to disk. The frontend flips the
+    /// message bubble's "Download" button to "Show in folder"; the path
+    /// itself stays in the backend.
     #[serde(rename_all = "camelCase")]
     AttachmentDownloaded {
         community_id: String,
         channel_id: String,
         attachment_id: String,
-        local_path: String,
     },
 }
 

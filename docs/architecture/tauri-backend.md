@@ -42,23 +42,28 @@ lives in [`tauri-state.md`](tauri-state.md).
 ## Plugin Registration
 
 Only the `login` window is declared in `tauri.conf.json`. All other
-windows are created at runtime by `src-tauri/src/windows.rs`. Plugins
+windows are created at runtime by `src-tauri/src/windows/`. Plugins
 are registered in this order:
 
 | Order | Plugin | Rationale |
 |-------|--------|-----------|
 | 1 | `single-instance` | Must be first — prevents duplicate processes; deep links re-route to existing instance |
-| 2 | `notification` | System notifications |
-| 3 | `store` | Persistent user preferences |
-| 4 | `opener` | URL/file opening via system default handler |
-| 5 | `dialog` | File dialogs (e.g. attachment uploads) |
-| 6 | `process` | Process info (for updater) |
-| 7 | `deep-link` | `rekindle://` URL scheme |
-| 8 | `autostart` | Launch at system boot (LaunchAgent on macOS) |
-| 9 | `global-shortcut` | Registered in `setup()` for state access |
+| 2 | `store` | Persistent user preferences |
+| 3 | `opener` | Opens confirmed https links (`open_external_url`) and reveals downloads, from Rust; its JS link interception is off |
+| 4 | `dialog` | Native file and confirmation dialogs, from Rust |
+| 5 | `deep-link` | `rekindle://` URL scheme (consent flow in `deep_links.rs`) |
+| 6 | `autostart` | Launch at system boot (LaunchAgent on macOS); applied by `set_preferences`, read back by `get_preferences` |
+| 7 | `global-shortcut` | Registered in `setup()` for state access |
+
+Plugins are driven from Rust; the webview holds only the specific plugin
+permissions its window uses (no `*:default` bundles), granted in the
+per-window `capabilities/app-*.json` files — see
+[`../security/threat-model.md` §5b W4](../security/threat-model.md) and
+[`../contributor/architecture-rules.md` §3](../contributor/architecture-rules.md).
 
 Notable absences:
 
+- `tauri-plugin-process` — removed; nothing in Rust or the frontend used it.
 - `tauri-plugin-window-state` — removed due to infinite `windowDidMove`
   loop on macOS combined with `prevent_exit()`. (See tauri#11489.)
 - `tauri-plugin-stronghold` — Stronghold has been replaced entirely by
@@ -151,9 +156,12 @@ expressions, files, link previews, audit, automod, raid detection.
 ### `notification-event` + `network-status`
 (`channels/notification_channel.rs`)
 
-`NotificationEvent { MessageReceived, SystemAlert, UpdateAvailable }`
-plus a flat `NetworkStatusEvent` struct
-(`attachmentState`, `isAttached`, `publicInternetReady`, `hasRoute`).
+`NotificationEvent { MessageReceived, SystemAlert, UpdateAvailable, SessionResetRequested,
+CallIncoming }` (delivered to the buddy list only; the OS notification is decided in Rust,
+see [`event-dispatch.md`](event-dispatch.md)) plus the `NetworkEvent` family.
+
+All of these logical channels ride each window's own event stream; see
+[`event-dispatch.md`](event-dispatch.md) for routing.
 
 ## Background Services
 
@@ -200,7 +208,9 @@ delegates:
   `services/community/watch` (community records), or
   `services/cross_device_sync/watch` (personal sync records)
 - `Attachment` → update `NodeHandle` state, emit `NetworkStatusEvent`
-- `RouteChange` → re-allocate private routes via `routing_manager`
+- `RouteChange` → our dead routes to `OwnRoutes::on_dead` (forgotten, never
+  released, reallocated off the loop; plan C7.9), dead peer routes to the
+  importer, dead relay routes re-volunteered
 
 ## Window Management
 

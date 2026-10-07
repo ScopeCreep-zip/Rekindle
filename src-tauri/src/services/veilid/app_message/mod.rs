@@ -2,9 +2,8 @@ mod media;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-use crate::db::DbPool;
 use crate::services::message_service;
 use crate::state::{AppState, OnlineMember};
 use crate::state_helpers;
@@ -65,9 +64,11 @@ pub(crate) async fn process_ingress_item(
             handle_gossip_envelope(app_handle, state, signed).await;
         }
         IngressItem::Legacy(message) => {
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
-            message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
-                .await;
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("inbound message: no identity database — dropped");
+                return;
+            };
+            message_service::handle_incoming_message(app_handle, state, &pool, &message).await;
         }
     }
 }
@@ -285,10 +286,6 @@ fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnve
     forward.ttl = forward.ttl.saturating_sub(1);
     let signed_bytes = encode_signed_envelope(&forward);
 
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
-        return;
-    };
-
     let peers: Vec<Vec<u8>> = {
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else {
@@ -310,20 +307,19 @@ fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnve
     }
 
     for route_blob in peers {
-        let rc = rc.clone();
         let data = signed_bytes.clone();
-        tokio::spawn(async move {
-            match rc.api().import_remote_private_route(route_blob) {
-                Ok(route_id) => {
-                    let _ = rc
-                        .app_message(veilid_core::Target::RouteId(route_id), data)
-                        .await;
+        let forward_state = Arc::clone(state);
+        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+            "gossip forward",
+            async move {
+                if let Err(e) =
+                    crate::state_helpers::message_route_blob(&forward_state, &route_blob, data)
+                        .await
+                {
+                    tracing::trace!(error = %e, "gossip forward failed");
                 }
-                Err(e) => {
-                    tracing::trace!(error = %e, "gossip forward: route import failed");
-                }
-            }
-        });
+            },
+        );
     }
 }
 
@@ -471,7 +467,10 @@ async fn handle_relayed_envelope(
             );
         }
         CommunityEnvelope::Control(payload) => {
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("inbound message: no identity database — dropped");
+                return;
+            };
             super::control::handle_relayed_control(
                 app_handle,
                 state,
@@ -516,11 +515,10 @@ async fn handle_relayed_envelope(
                 return;
             }
 
-            let routing_context = state_helpers::safe_routing_context(state);
-            if let Some(rc) = routing_context {
+            if let Ok(pool) = state_helpers::record_pool(state) {
                 let parsed = record_key.parse::<veilid_core::RecordKey>();
                 if let Ok(parsed) = parsed {
-                    if let Ok(Some(value)) = rc.get_dht_value(parsed, subkey, true).await {
+                    if let Ok(Some(value)) = pool.read_once(&parsed, subkey, true).await {
                         let actual = blake3::hash(value.data()).to_hex().to_string();
                         if actual == content_hash {
                             crate::services::presence_service::handle_value_change(

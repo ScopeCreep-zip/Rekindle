@@ -161,137 +161,22 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
 
     let mut last_full_segment: Option<u32> = None;
     for candidate in &candidates {
-        if let Err(e) = deps.open_dht_record(&candidate.registry_key, None).await {
-            tracing::warn!(
-                segment = candidate.segment_index,
-                error = %e,
-                "claim_registry_slot: failed to open segment registry — skipping"
-            );
-            continue;
-        }
-        // Architecture §6.2 Step 7: one inspect fanout → the present-subkey set.
-        // Empty = "no value present" (not "seq == 0") so an occupied-but-seq-0
-        // slot is never mis-claimed; the same set is reused by Step 12 presence
-        // collection so it reads only occupied slots, never a blind 0..255 sweep.
-        let present = deps
-            .inspect_dht_record_present_subkeys(&candidate.registry_key)
-            .await?;
-        let mut present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
-
-        // Architecture §6.2 Step 9: "on conflict, retry next slot
-        // (max 5)". A fixed 255-subkey array makes two joiners picking
-        // "the lowest free subkey" contend by design, so a contended
-        // subkey joins the occupied set and the next attempt skips it
-        // rather than re-racing the same index. `reclaim` documents why
-        // the array is fixed at all.
-        let mut claimed_slot = None;
-        // Checked at most once per segment and only when it looks full,
-        // so an ordinary join still costs one inspect and no row fetches.
-        let mut reclaim_checked = false;
-        for _attempt in 0..MAX_SLOT_CLAIM_ATTEMPTS {
-            // Ascending `find` is MLS RFC 9420 §7.1's leftmost-blank rule.
-            let mut pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
-            if pick.is_none() && !reclaim_checked {
-                reclaim_checked = true;
-                let reusable = reclaim::reclaimable_slots(
-                    deps,
-                    &candidate.registry_key,
-                    &present,
-                    ctx.gov_state,
-                )
-                .await;
-                tracing::debug!(
+        let lease = match deps.acquire_record(&candidate.registry_key, None).await {
+            Ok(lease) => lease,
+            Err(e) => {
+                tracing::warn!(
                     segment = candidate.segment_index,
-                    reusable = reusable.len(),
-                    "segment full; checked for non-member slots"
+                    error = %e,
+                    "claim_registry_slot: failed to open segment registry — skipping"
                 );
-                for subkey in reusable {
-                    present_set.remove(&subkey);
-                }
-                pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
-            }
-            let Some(local_subkey) = pick else {
-                last_full_segment = Some(candidate.segment_index);
-                break;
-            };
-
-            let global_slot = candidate.slot_range_start + local_subkey;
-            let slot_kp =
-                derive::derive_slot_keypair(slot_seed_bytes, global_slot).map_err(|e| {
-                    GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}"))
-                })?;
-            let slot_kp_str =
-                deps.format_writer_keypair(slot_kp.verifying_key().to_bytes(), slot_kp.to_bytes());
-
-            let mut presence = MemberPresence {
-                pseudonym_key: ctx.my_pseudo.clone(),
-                display_name: ctx.display_name.clone(),
-                status: ctx.join_status_label.into(),
-                route_blob: vec![],
-                last_heartbeat: rekindle_utils::timestamp_secs(),
-                ..Default::default()
-            };
-            let presence_sig =
-                derive::sign_with_pseudonym(ctx.pseudonym_signing, &presence.signing_bytes());
-            presence.signature = presence_sig.to_vec();
-            let presence_bytes = serde_json::to_vec(&presence).map_err(|e| {
-                GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}"))
-            })?;
-
-            // The compare-and-swap. `Some(_)` means the network already
-            // held a newer value for this subkey — someone beat us to it.
-            // This branch was unreachable until `record::set` stopped
-            // discarding veilid's return value, which is what made two
-            // joiners able to both believe they had claimed one slot.
-            let write_outcome = deps
-                .set_dht_value(
-                    &candidate.registry_key,
-                    local_subkey,
-                    presence_bytes,
-                    Some(slot_kp_str.clone()),
-                )
-                .await?;
-            if write_outcome.is_some() {
-                tracing::debug!(
-                    segment = candidate.segment_index,
-                    local_subkey,
-                    "slot claim lost the race — trying the next free subkey"
-                );
-                present_set.insert(local_subkey);
                 continue;
             }
-
-            let verify_bytes = deps
-                .get_dht_value(&candidate.registry_key, local_subkey, true)
-                .await?
-                .ok_or(GovernanceRuntimeError::VerifyEmpty)?;
-            let written: MemberPresence = serde_json::from_slice(&verify_bytes).map_err(|e| {
-                GovernanceRuntimeError::Encoding(format!(
-                    "slot read-back deserialization failed: {e}"
-                ))
-            })?;
-            // Read-back mismatch is the same race seen a moment later:
-            // our write landed but was overwritten before we re-read.
-            // Treat it exactly like a CAS failure rather than aborting.
-            if written.pseudonym_key != *ctx.my_pseudo {
-                tracing::debug!(
-                    segment = candidate.segment_index,
-                    local_subkey,
-                    "slot read-back shows another member — trying the next free subkey"
-                );
-                present_set.insert(local_subkey);
-                continue;
-            }
-
-            claimed_slot = Some(ClaimedSlot {
-                registry_key: candidate.registry_key.clone(),
-                segment_index: candidate.segment_index,
-                local_subkey,
-                slot_keypair_str: slot_kp_str,
-                occupied_subkeys: present_set.iter().copied().collect(),
-                self_presence: written,
-            });
-            break;
+        };
+        let attempt = claim_in_candidate(deps, ctx, slot_seed_bytes, candidate, lease).await;
+        deps.release_record(lease).await;
+        let (claimed_slot, segment_full) = attempt?;
+        if segment_full {
+            last_full_segment = Some(candidate.segment_index);
         }
 
         if let Some(claimed) = claimed_slot {
@@ -306,6 +191,137 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
         claimed: None,
         last_full_segment,
     })
+}
+
+/// One candidate segment's claim attempts, on a borrow of its registry.
+/// Returns the slot it claimed, and whether the segment proved full.
+async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    ctx: &SlotClaimCtx<'_>,
+    slot_seed_bytes: &[u8; 32],
+    candidate: &SegmentClaimCandidate,
+    lease: rekindle_records::lease::LeaseId,
+) -> Result<(Option<ClaimedSlot>, bool), GovernanceRuntimeError> {
+    let mut segment_full = false;
+    // Architecture §6.2 Step 7: one inspect fanout → the present-subkey set.
+    // Empty = "no value present" (not "seq == 0") so an occupied-but-seq-0
+    // slot is never mis-claimed; the same set is reused by Step 12 presence
+    // collection so it reads only occupied slots, never a blind 0..255 sweep.
+    let present = deps.inspect_dht_record_present_subkeys(lease).await?;
+    let mut present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
+
+    // Architecture §6.2 Step 9: "on conflict, retry next slot
+    // (max 5)". A fixed 255-subkey array makes two joiners picking
+    // "the lowest free subkey" contend by design, so a contended
+    // subkey joins the occupied set and the next attempt skips it
+    // rather than re-racing the same index. `reclaim` documents why
+    // the array is fixed at all.
+    let mut claimed_slot = None;
+    // Checked at most once per segment and only when it looks full,
+    // so an ordinary join still costs one inspect and no row fetches.
+    let mut reclaim_checked = false;
+    for _attempt in 0..MAX_SLOT_CLAIM_ATTEMPTS {
+        if crate::join_gate::should_stop(deps) {
+            break;
+        }
+        // Ascending `find` is MLS RFC 9420 §7.1's leftmost-blank rule.
+        let mut pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
+        if pick.is_none() && !reclaim_checked {
+            reclaim_checked = true;
+            let reusable =
+                reclaim::reclaimable_slots(deps, &candidate.registry_key, &present, ctx.gov_state)
+                    .await;
+            tracing::debug!(
+                segment = candidate.segment_index,
+                reusable = reusable.len(),
+                "segment full; checked for non-member slots"
+            );
+            for subkey in reusable {
+                present_set.remove(&subkey);
+            }
+            pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
+        }
+        let Some(local_subkey) = pick else {
+            segment_full = true;
+            break;
+        };
+
+        let global_slot = candidate.slot_range_start + local_subkey;
+        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot).map_err(|e| {
+            GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}"))
+        })?;
+        let slot_kp_str =
+            deps.format_writer_keypair(slot_kp.verifying_key().to_bytes(), slot_kp.to_bytes());
+
+        let mut presence = MemberPresence {
+            pseudonym_key: ctx.my_pseudo.clone(),
+            display_name: ctx.display_name.clone(),
+            status: ctx.join_status_label.into(),
+            route_blob: vec![],
+            last_heartbeat: rekindle_utils::timestamp_secs(),
+            ..Default::default()
+        };
+        let presence_sig =
+            derive::sign_with_pseudonym(ctx.pseudonym_signing, &presence.signing_bytes());
+        presence.signature = presence_sig.to_vec();
+        let presence_bytes = serde_json::to_vec(&presence).map_err(|e| {
+            GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}"))
+        })?;
+
+        // The compare-and-swap. `Some(_)` means the network already
+        // held a newer value for this subkey — someone beat us to it.
+        // This branch was unreachable until `record::set` stopped
+        // discarding veilid's return value, which is what made two
+        // joiners able to both believe they had claimed one slot.
+        let write_outcome = deps
+            .set_dht_value(
+                lease,
+                local_subkey,
+                presence_bytes,
+                Some(slot_kp_str.clone()),
+            )
+            .await?;
+        if write_outcome.is_some() {
+            tracing::debug!(
+                segment = candidate.segment_index,
+                local_subkey,
+                "slot claim lost the race — trying the next free subkey"
+            );
+            present_set.insert(local_subkey);
+            continue;
+        }
+
+        let verify_bytes = deps
+            .get_dht_value(lease, local_subkey, true)
+            .await?
+            .ok_or(GovernanceRuntimeError::VerifyEmpty)?;
+        let written: MemberPresence = serde_json::from_slice(&verify_bytes).map_err(|e| {
+            GovernanceRuntimeError::Encoding(format!("slot read-back deserialization failed: {e}"))
+        })?;
+        // Read-back mismatch is the same race seen a moment later:
+        // our write landed but was overwritten before we re-read.
+        // Treat it exactly like a CAS failure rather than aborting.
+        if written.pseudonym_key != *ctx.my_pseudo {
+            tracing::debug!(
+                segment = candidate.segment_index,
+                local_subkey,
+                "slot read-back shows another member — trying the next free subkey"
+            );
+            present_set.insert(local_subkey);
+            continue;
+        }
+
+        claimed_slot = Some(ClaimedSlot {
+            registry_key: candidate.registry_key.clone(),
+            segment_index: candidate.segment_index,
+            local_subkey,
+            slot_keypair_str: slot_kp_str,
+            occupied_subkeys: present_set.iter().copied().collect(),
+            self_presence: written,
+        });
+        break;
+    }
+    Ok((claimed_slot, segment_full))
 }
 
 async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
@@ -371,7 +387,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
         if max_seg > full_segment_index {
             break;
         }
-        if std::time::Instant::now() >= deadline {
+        if std::time::Instant::now() >= deadline || crate::join_gate::should_stop(deps) {
             return Err(GovernanceRuntimeError::Adapter(format!(
                 "Community is full and no admin expanded within 30s. The community has {} active segment(s); admins must run expand_community_segment to grow it.",
                 new_segments.len() + 1
@@ -416,6 +432,10 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     // steady-state presence poll (`flow.rs`) and the DHT value watches backfill
     // anyone who claimed a slot after our Step 7 inspect.
     const SCAN_PARALLELISM: usize = 16;
+    // One borrow for the whole scan, released once every read is done.
+    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+        return presence;
+    };
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(SCAN_PARALLELISM));
     let mut scans = FuturesUnordered::new();
     for &subkey in occupied_subkeys {
@@ -425,10 +445,7 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
         let sem = std::sync::Arc::clone(&sem);
         scans.push(async move {
             let _permit = sem.acquire().await.expect("scan semaphore not closed");
-            (
-                subkey,
-                deps.get_dht_value(registry_key, subkey, false).await,
-            )
+            (subkey, deps.get_dht_value(lease, subkey, false).await)
         });
     }
 
@@ -466,6 +483,8 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
         presence.discovered.push((subkey, row));
         verified += 1;
     }
+    drop(scans);
+    deps.release_record(lease).await;
 
     tracing::info!(
         registry = %registry_key,

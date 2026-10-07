@@ -2,38 +2,50 @@
 
 use super::*;
 
+fn bump(generation: u64, lamport: u64) -> GovernanceEntry {
+    GovernanceEntry::MEKGenerationBump {
+        generation,
+        trigger_departed: PseudonymKey([0xBB; 32]),
+        cascade_skipped: vec![],
+        lamport,
+    }
+}
+
+/// Generations advance one at a time (plan D20): each bump must name
+/// `current + 1`. A jump — `u64::MAX` included — and a replay are refused
+/// even from the creator.
 #[test]
-fn mek_max_register() {
+fn mek_generation_advances_by_one() {
     let creator = pseudo(1);
     let entries = vec![
-        GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-            lamport: 1,
-        },
-        GovernanceEntry::MEKGenerationBump {
-            generation: 3,
-            trigger_departed: PseudonymKey([0xBB; 32]),
-            cascade_skipped: vec![],
-            lamport: 2,
-        },
-        GovernanceEntry::MEKGenerationBump {
-            generation: 1,
-            trigger_departed: PseudonymKey([0xCC; 32]),
-            cascade_skipped: vec![],
-            lamport: 3,
-        },
-        GovernanceEntry::MEKGenerationBump {
-            generation: 5,
-            trigger_departed: PseudonymKey([0xDD; 32]),
-            cascade_skipped: vec![],
-            lamport: 4,
-        },
+        bump(1, 1),
+        bump(2, 2),
+        bump(5, 3),
+        bump(2, 4),
+        bump(u64::MAX, 5),
+        bump(3, 6),
     ];
     let state = merge(&[(creator, entries)]);
-    assert_eq!(state.mek_generation, 5);
+    assert_eq!(state.mek_generation, 3);
+}
+
+/// A member without KICK, BAN or MANAGE_COMMUNITY cannot bump.
+#[test]
+fn mek_bump_needs_a_rotation_permission() {
+    let creator = pseudo(1);
+    let member = pseudo(2);
+    let state = merge(&[(creator, vec![meta_entry(1)]), (member, vec![bump(1, 2)])]);
+    assert_eq!(state.mek_generation, 0);
+}
+
+fn meta_entry(lamport: u64) -> GovernanceEntry {
+    GovernanceEntry::CommunityMeta {
+        name: Some("C".into()),
+        description: None,
+        icon_hash: None,
+        banner_hash: None,
+        lamport,
+    }
 }
 
 #[test]

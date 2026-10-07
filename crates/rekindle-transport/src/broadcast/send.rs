@@ -5,7 +5,6 @@
 //! safety-profile-to-Veilid mapping.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use tracing::debug;
 use veilid_core::{Target, VeilidAPI};
@@ -13,7 +12,7 @@ use veilid_core::{Target, VeilidAPI};
 use super::node::build_routing_context;
 use super::peer_registry::PeerTarget;
 use crate::config::TransportConfig;
-use crate::crypto::envelope::sign_payload;
+use crate::crypto::envelope::{sign_payload, Addressing};
 use crate::error::{Result, TransportError};
 use crate::frame::{self, TypeId};
 
@@ -29,12 +28,11 @@ pub struct BroadcastReport {
 /// Fire-and-forget message sender (wraps `app_message`).
 pub struct Sender {
     api: VeilidAPI,
-    config: Arc<TransportConfig>,
 }
 
 impl Sender {
-    pub(crate) fn new(api: VeilidAPI, config: Arc<TransportConfig>) -> Self {
-        Self { api, config }
+    pub(crate) fn new(api: VeilidAPI) -> Self {
+        Self { api }
     }
 
     /// Send a class-tagged message to a single peer.
@@ -47,9 +45,12 @@ impl Sender {
     /// stability/sequencing. Threat model: see
     /// `docs/security/threat-model.md` Z12 (social graph leakage) and
     /// `docs/security/privacy-properties.md` § 1.2 (sender anonymity).
+    /// `recipient` is the peer's identity key; the signature is bound to
+    /// it and to `type_id`.
     pub async fn send_dm(
         &self,
         target: &PeerTarget,
+        recipient: &[u8; 32],
         class: rekindle_types::message::MessageClass,
         type_id: TypeId,
         sender_secret: &[u8; 32],
@@ -61,6 +62,7 @@ impl Sender {
         let signed = sign_payload(
             sender_secret,
             sender_public_hex,
+            Addressing { recipient, type_id },
             seq,
             correlation_id,
             payload,
@@ -88,116 +90,58 @@ impl Sender {
         );
         Ok(())
     }
-
-    /// Send an encrypted, signed voice packet to a single peer.
-    ///
-    /// The payload must already be a serialized `VoicePayload` with signature
-    /// and HMAC populated by the caller. The transport layer frames and sends.
-    pub async fn send_voice(&self, target: &PeerTarget, payload: &[u8]) -> Result<()> {
-        let frame_bytes = frame::encode(TypeId::VoicePacket, payload)?;
-        let rc = build_routing_context(&self.api, &self.config.safety.voice)?;
-        rc.app_message(Target::RouteId(target.route_id.clone()), frame_bytes)
-            .await
-            .map_err(|e| TransportError::SendFailed {
-                target: format!("{:?}", target.route_id),
-                reason: e.to_string(),
-            })
-    }
-
-    /// Broadcast voice to multiple peers (mesh mode).
-    pub async fn broadcast_voice(&self, targets: &[PeerTarget], payload: &[u8]) -> BroadcastReport {
-        let frame_bytes = match frame::encode(TypeId::VoicePacket, payload) {
-            Ok(f) => f,
-            Err(e) => {
-                return BroadcastReport {
-                    delivered: 0,
-                    failures: vec![("*".into(), format!("{e}"))],
-                }
-            }
-        };
-
-        let rc = match build_routing_context(&self.api, &self.config.safety.voice) {
-            Ok(rc) => rc,
-            Err(e) => {
-                return BroadcastReport {
-                    delivered: 0,
-                    failures: vec![("*".into(), format!("{e}"))],
-                }
-            }
-        };
-
-        let mut report = BroadcastReport::default();
-        for target in targets {
-            match rc
-                .app_message(
-                    Target::RouteId(target.route_id.clone()),
-                    frame_bytes.clone(),
-                )
-                .await
-            {
-                Ok(()) => report.delivered += 1,
-                Err(e) => report.failures.push((String::new(), e.to_string())),
-            }
-        }
-        report
-    }
 }
 
 /// Request/response RPC caller (wraps `app_call`).
 pub struct Caller {
     api: VeilidAPI,
     config: Arc<TransportConfig>,
+    /// The process's one route importer (plan C7.3, D4).
+    route_imports: Arc<rekindle_protocol::dht::route_imports::RouteImports>,
 }
 
 impl Caller {
-    pub(crate) fn new(api: VeilidAPI, config: Arc<TransportConfig>) -> Self {
-        Self { api, config }
+    pub(crate) fn new(
+        api: VeilidAPI,
+        config: Arc<TransportConfig>,
+        route_imports: Arc<rekindle_protocol::dht::route_imports::RouteImports>,
+    ) -> Self {
+        Self {
+            api,
+            config,
+            route_imports,
+        }
     }
 
     /// Send a signed RPC request and await the response.
     ///
-    /// Uses the default RPC timeout from config. For operations that need
-    /// longer timeouts (MEK transfer through relays, bootstrap), use
-    /// `call_with_timeout`.
+    /// Bounded by Veilid's own reply timeout for the route's hop count
+    /// (`rpc_processor::get_safety_selection_timeout`: 5 s plus 500 ms
+    /// per hop above four, 6–7 s at our 3–4-hop safety routes). Not
+    /// wrapped in a timeout of ours: dropping the call would not cancel
+    /// it, and Veilid logs a dropped API future as an error (plan
+    /// C4.L1b).
     pub async fn call(
         &self,
         target: &PeerTarget,
+        recipient: &[u8; 32],
         type_id: TypeId,
         sender_secret: &[u8; 32],
         sender_public_hex: &str,
         request_payload: &[u8],
-    ) -> Result<Vec<u8>> {
-        let timeout = Duration::from_millis(self.config.rpc_timeout_ms);
-        self.call_with_timeout(
-            target,
-            type_id,
-            sender_secret,
-            sender_public_hex,
-            request_payload,
-            timeout,
-        )
-        .await
-    }
-
-    /// Send a signed RPC request with a caller-specified timeout.
-    ///
-    /// The timeout controls how long to wait for the Veilid `app_call`
-    /// round-trip. Operations that route through relays (MEK transfer,
-    /// bootstrap, sync) need longer timeouts than direct peer RPCs.
-    pub async fn call_with_timeout(
-        &self,
-        target: &PeerTarget,
-        type_id: TypeId,
-        sender_secret: &[u8; 32],
-        sender_public_hex: &str,
-        request_payload: &[u8],
-        timeout: Duration,
     ) -> Result<Vec<u8>> {
         // RPC paths don't go through envelope_queue's dedup (they're
         // synchronous one-shots, not retry-driven). seq=0 / correlation=None
         // is the convention for non-queued sends — receiver's
         // SeqTracker only applies on the app_message dispatch path.
-        let signed = sign_payload(sender_secret, sender_public_hex, 0, None, request_payload);
+        let signed = sign_payload(
+            sender_secret,
+            sender_public_hex,
+            Addressing { recipient, type_id },
+            0,
+            None,
+            request_payload,
+        );
         let signed_bytes =
             postcard::to_stdvec(&signed).map_err(|e| TransportError::SerializationFailed {
                 reason: e.to_string(),
@@ -206,21 +150,13 @@ impl Caller {
 
         let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
 
-        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-
-        let response = tokio::time::timeout(
-            timeout,
-            rc.app_call(Target::RouteId(target.route_id.clone()), frame_bytes),
-        )
-        .await
-        .map_err(|_| TransportError::Timeout {
-            operation: format!("app_call(0x{:02x})", type_id as u8),
-            duration_ms: timeout_ms,
-        })?
-        .map_err(|e| TransportError::SendFailed {
-            target: format!("{:?}", target.route_id),
-            reason: e.to_string(),
-        })?;
+        let response = rc
+            .app_call(Target::RouteId(target.route_id.clone()), frame_bytes)
+            .await
+            .map_err(|e| TransportError::SendFailed {
+                target: format!("{:?}", target.route_id),
+                reason: e.to_string(),
+            })?;
 
         debug!(
             type_id = type_id as u8,
@@ -256,24 +192,16 @@ impl Caller {
         &self,
         target: &PeerTarget,
         envelope_bytes: Vec<u8>,
-        timeout: Duration,
     ) -> Result<Vec<u8>> {
         let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
-        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
 
-        let response = tokio::time::timeout(
-            timeout,
-            rc.app_call(Target::RouteId(target.route_id.clone()), envelope_bytes),
-        )
-        .await
-        .map_err(|_| TransportError::Timeout {
-            operation: "app_call(community-envelope)".to_string(),
-            duration_ms: timeout_ms,
-        })?
-        .map_err(|e| TransportError::SendFailed {
-            target: format!("{:?}", target.route_id),
-            reason: e.to_string(),
-        })?;
+        let response = rc
+            .app_call(Target::RouteId(target.route_id.clone()), envelope_bytes)
+            .await
+            .map_err(|e| TransportError::SendFailed {
+                target: format!("{:?}", target.route_id),
+                reason: e.to_string(),
+            })?;
 
         debug!(
             response_len = response.len(),
@@ -298,19 +226,29 @@ impl Caller {
     /// Takes the route blob rather than an imported `PeerTarget` so the
     /// caller never names a Veilid type; the import happens here.
     pub async fn send_unframed_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
-        let route_id = self
-            .api
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| TransportError::SendFailed {
+        let route_id = self.route_imports.get_or_import(route_blob).map_err(|e| {
+            TransportError::SendFailed {
                 target: "route-blob".to_string(),
                 reason: format!("import route: {e}"),
-            })?;
+            }
+        })?;
         let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
-        rc.app_message(Target::RouteId(route_id), data)
+        rc.app_message(Target::RouteId(route_id.clone()), data)
             .await
-            .map_err(|e| TransportError::SendFailed {
-                target: "route-blob".to_string(),
-                reason: e.to_string(),
+            .map_err(|e| {
+                // An unusable route is forgotten, so the next send re-imports
+                // the peer's current blob (plan C7.9e).
+                if matches!(
+                    e,
+                    veilid_core::VeilidAPIError::NoConnection { .. }
+                        | veilid_core::VeilidAPIError::InvalidTarget { .. }
+                ) {
+                    self.route_imports.invalidate_after_send_failure(&route_id);
+                }
+                TransportError::SendFailed {
+                    target: "route-blob".to_string(),
+                    reason: e.to_string(),
+                }
             })
     }
 }

@@ -18,16 +18,29 @@ pub use crate::handler::TransportEvent;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::{debug, info, trace, warn};
+use tracing::{info, trace, warn};
 use veilid_core::VeilidUpdate;
 
 use crate::config::TransportConfig;
-use crate::crypto::envelope::SignedPayload;
+use crate::crypto::envelope::{Addressing, SignedPayload};
 use crate::frame::{self, TypeId};
 use crate::gossip::DedupCache;
 use crate::handler::{InboundHandler, VerifiedSender};
-use crate::payload::voice::VoicePayload;
 use crate::shared::{AttachmentState, SharedState};
+
+/// The route owners the dispatch loop reports `RouteChange` to.
+pub(crate) struct RouteOwners {
+    /// Our own routes.
+    pub own: Arc<
+        rekindle_protocol::own_routes::OwnRoutes<
+            rekindle_protocol::own_routes::VeilidRouteAllocator,
+        >,
+    >,
+    /// The process's importer of peers' routes.
+    pub imports: Arc<rekindle_protocol::dht::route_imports::RouteImports>,
+    /// The peers' cached route blobs.
+    pub peers: Arc<parking_lot::RwLock<crate::broadcast::peer_registry::PeerRegistry>>,
+}
 
 /// Run the inbound dispatch loop until a shutdown signal is received.
 pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
@@ -37,7 +50,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     mut shutdown_rx: mpsc::Receiver<()>,
     api: veilid_core::VeilidAPI,
     shared: Arc<SharedState>,
-    heal_tx: Option<mpsc::Sender<crate::broadcast::node::RouteAuthorityEvent>>,
+    routes: RouteOwners,
 ) {
     let mut dedup = DedupCache::new(config.dedup_cache_capacity);
     info!("transport dispatch loop started");
@@ -45,7 +58,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     loop {
         tokio::select! {
             Some(update) = update_rx.recv() => {
-                dispatch_update(&handler, &config, &mut dedup, &api, &shared, heal_tx.as_ref(), update).await;
+                dispatch_update(&handler, &config, &mut dedup, &api, &shared, &routes, update).await;
             }
             _ = shutdown_rx.recv() => {
                 info!("transport dispatch loop shutting down");
@@ -61,7 +74,7 @@ async fn dispatch_update<H: InboundHandler>(
     dedup: &mut DedupCache,
     api: &veilid_core::VeilidAPI,
     shared: &SharedState,
-    heal_tx: Option<&mpsc::Sender<crate::broadcast::node::RouteAuthorityEvent>>,
+    routes: &RouteOwners,
     update: VeilidUpdate,
 ) {
     match update {
@@ -101,7 +114,7 @@ async fn dispatch_update<H: InboundHandler>(
                 .await;
         }
         VeilidUpdate::RouteChange(change) => {
-            dispatch_route_change(handler, shared, heal_tx, &change).await;
+            dispatch_route_change(handler, routes, &change).await;
         }
         VeilidUpdate::Shutdown => {
             info!("veilid shutdown event received");
@@ -153,9 +166,6 @@ async fn dispatch_app_message<H: InboundHandler>(
         // the desktop; the framed postcard form existed only on this
         // track and no peer could read it. Falls through to the
         // "unexpected type" arm if one ever arrives.
-        TypeId::VoicePacket => {
-            dispatch_voice(handler, payload).await;
-        }
         tid if !tid.is_rpc() => {
             dispatch_dm(handler, tid, payload, shared).await;
         }
@@ -217,7 +227,16 @@ async fn dispatch_app_call<H: InboundHandler>(
         }
     };
 
-    if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed) {
+    let Some(me) = handler.local_identity() else {
+        warn!("dropping app_call: no unlocked identity");
+        reply_nak(api, call_id).await;
+        return;
+    };
+    let to_me = Addressing {
+        recipient: &me,
+        type_id,
+    };
+    if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed, to_me) {
         warn!(error = %e, sender = %signed.sender_key_hex, "dropping app_call: bad signature");
         reply_nak(api, call_id).await;
         return;
@@ -351,7 +370,15 @@ async fn dispatch_dm<H: InboundHandler>(
         }
     };
 
-    if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed) {
+    let Some(me) = handler.local_identity() else {
+        warn!(type_id = type_id as u8, "dropping DM: no unlocked identity");
+        return;
+    };
+    let to_me = Addressing {
+        recipient: &me,
+        type_id,
+    };
+    if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed, to_me) {
         warn!(error = %e, sender = %signed.sender_key_hex, "dropping DM: bad signature");
         return;
     }
@@ -384,109 +411,47 @@ async fn dispatch_dm<H: InboundHandler>(
         .await;
 }
 
-async fn dispatch_voice<H: InboundHandler>(handler: &Arc<H>, payload: &[u8]) {
-    let voice: VoicePayload = match postcard::from_bytes(payload) {
-        Ok(v) => v,
-        Err(e) => {
-            trace!(error = %e, "dropping voice: deserialization failed");
-            return;
-        }
-    };
-
-    if !voice.signature.is_empty() {
-        let sig_data = voice.signature_data();
-        let sig_result = verify_voice_signature(&voice.sender_key_hex, &sig_data, &voice.signature);
-        if let Err(e) = sig_result {
-            warn!(error = %e, sender = %voice.sender_key_hex, "dropping voice: bad signature");
-            return;
-        }
-    }
-
-    let sender_key = voice.sender_key_hex.clone();
-    handler.on_voice(&sender_key, voice).await;
-}
-
-fn verify_voice_signature(
-    sender_hex: &str,
-    data: &[u8],
-    signature: &[u8],
-) -> crate::error::Result<()> {
-    let key_bytes = hex::decode(sender_hex).map_err(|e| {
-        crate::error::TransportError::SignatureVerificationFailed {
-            sender: format!("invalid hex: {e}"),
-        }
-    })?;
-    let key_arr: [u8; 32] = key_bytes.try_into().map_err(|_| {
-        crate::error::TransportError::SignatureVerificationFailed {
-            sender: "voice key must be 32 bytes".into(),
-        }
-    })?;
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&key_arr).map_err(|e| {
-        crate::error::TransportError::SignatureVerificationFailed {
-            sender: format!("invalid Ed25519 key: {e}"),
-        }
-    })?;
-    let sig_arr: [u8; 64] = signature.try_into().map_err(|_| {
-        crate::error::TransportError::SignatureVerificationFailed {
-            sender: "voice signature must be 64 bytes".into(),
-        }
-    })?;
-    let sig = ed25519_dalek::Signature::from_bytes(&sig_arr);
-    verifying_key.verify_strict(data, &sig).map_err(|_| {
-        crate::error::TransportError::SignatureVerificationFailed {
-            sender: sender_hex.to_string(),
-        }
-    })
-}
-
 async fn dispatch_value_change<H: InboundHandler>(
     handler: &Arc<H>,
-    _shared: &SharedState,
+    shared: &SharedState,
     change: &veilid_core::VeilidValueChange,
 ) {
     let key = change.key.to_string();
     let subkeys: Vec<u32> = change.subkeys.iter().collect();
     let first_value = change.value.as_ref().map(|v| v.data().to_vec());
-
-    if change.count == 0 || subkeys.is_empty() {
-        debug!(key = %key, count = change.count, "DHT watch died");
-        handler
-            .on_event(TransportEvent::WatchDied { record_key: key })
-            .await;
-        return;
+    // The pool is the one owner of watch death (plan C7.8): it re-arms the
+    // watch of a record it holds, and a record it does not hold was
+    // released, so its watch ends by design.
+    if let Some(pool) = shared.records() {
+        pool.on_value_change(change);
     }
 
-    handler.on_value_change(&key, subkeys, first_value).await;
+    // A watch's last notification (`count == 0`) can still carry changes.
+    if !subkeys.is_empty() {
+        handler.on_value_change(&key, subkeys, first_value).await;
+    }
 }
 
 async fn dispatch_route_change<H: InboundHandler>(
     handler: &Arc<H>,
-    _shared: &SharedState,
-    heal_tx: Option<&mpsc::Sender<crate::broadcast::node::RouteAuthorityEvent>>,
+    routes: &RouteOwners,
     change: &veilid_core::VeilidRouteChange,
 ) {
     if !change.dead_routes.is_empty() {
-        // Feed the route authority loop (event-driven heal). try_send:
-        // a full channel means heals are already queued — dropping the
-        // duplicate signal is correct (the loop coalesces bursts).
-        if let Some(tx) = heal_tx {
-            let _ = tx.try_send(
-                crate::broadcast::node::RouteAuthorityEvent::DeadLocalRoutes(
-                    change.dead_routes.clone(),
-                ),
-            );
-        }
+        // Ours among the dead are forgotten (never released: Veilid already
+        // dropped them) and reallocated by their owner, off this loop.
+        routes.own.on_dead(&change.dead_routes);
         let count = change.dead_routes.len();
         handler
             .on_event(TransportEvent::LocalRoutesDied { count })
             .await;
     }
     if !change.dead_remote_routes.is_empty() {
-        let peer_keys: Vec<String> = change
-            .dead_remote_routes
-            .iter()
-            .map(ToString::to_string)
-            .collect();
+        // The importer forgets them (Veilid already released them) and the
+        // peers holding one of those blobs lose it, so their next send
+        // fetches a fresh route (plan C7.9e).
+        let blobs = routes.imports.on_dead_remote(&change.dead_remote_routes);
+        let peer_keys = routes.peers.write().invalidate_blobs(&blobs);
         handler
             .on_event(TransportEvent::RemoteRoutesDied { peer_keys })
             .await;

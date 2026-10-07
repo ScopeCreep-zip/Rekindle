@@ -14,9 +14,9 @@ use x25519_dalek::SharedSecret;
 use zeroize::Zeroizing;
 
 use super::PqxdhError;
+use rekindle_types::domains;
 
 const F_BYTES: [u8; 32] = [0xFF; 32];
-const INFO: &[u8] = b"rekindle-pqxdh-root-v1";
 
 /// Derive a 32-byte root key from the four DH outputs (DH4 optional) and
 /// the ML-KEM shared secret. Returns a zeroizing buffer.
@@ -39,7 +39,7 @@ pub fn derive_root_key(
 
     let hk = Hkdf::<Sha256>::new(None, &ikm);
     let mut out = Zeroizing::new([0u8; 32]);
-    hk.expand(INFO, &mut *out)
+    hk.expand(domains::PQXDH_ROOT.as_bytes(), &mut *out)
         .map_err(|e| PqxdhError::Hkdf(e.to_string()))?;
     Ok(out)
 }

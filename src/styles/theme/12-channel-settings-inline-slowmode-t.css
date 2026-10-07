@@ -49,18 +49,16 @@
     text-decoration: none;
     color: inherit;
     max-width: 480px;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
 
   .message-link-preview:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-secondary));
-  }
-
-  .message-link-preview-image {
-    width: 64px;
-    height: 64px;
-    object-fit: cover;
-    border-radius: 3px;
-    flex-shrink: 0;
   }
 
   .message-link-preview-body {

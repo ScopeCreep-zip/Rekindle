@@ -4,7 +4,7 @@
 //! orchestration (session lifecycle, shutdown, device hot-swap) calls
 //! into for every outside-world operation: voice engine handle access,
 //! voice-packet channel staging (W14.1), community state lookups (MEK,
-//! member names, stage gate), identity, active call_key lookup
+//! member names, stage gate), identity, active call media keys
 //! (1:1 calls), Tauri emit, background task registration.
 //!
 //! Network frame IO (Veilid `app_message`) is delegated through the
@@ -34,12 +34,13 @@ pub struct VoicePeer {
     pub route_blob: Option<Vec<u8>>,
 }
 
-/// Snapshot of the call_key + kind for a 1:1 call (used by the receive
-/// loop to decrypt audio AEAD frames W13.14).
-#[derive(Debug, Clone)]
-pub struct CallKeyInfo {
-    pub call_key: [u8; 32],
-    pub peer_pubkey: String,
+/// A call's media keying: the call's shared secret (the SFrame scope
+/// secret every participant holds) and our sender state for it, which
+/// lives with the call so a rebuilt transport continues the counter.
+#[derive(Clone)]
+pub struct CallMediaKeys {
+    pub secret: zeroize::Zeroizing<[u8; 32]>,
+    pub sender: Arc<rekindle_secrets::sframe::SframeSender>,
 }
 
 /// Audio preferences pulled from the Tauri store. The adapter
@@ -110,24 +111,45 @@ impl VoiceShutdownOpts {
     };
 }
 
-/// Loop shutdown handles taken from the engine in one batch. The
-/// shutdown orchestrator signals each `Sender<()>` and then awaits
-/// each `JoinHandle`. Whichever set was opted out of via
+/// The scopes of a voice session's loops, taken from the engine in one
+/// batch for shutdown. Whichever set was opted out of via
 /// `VoiceShutdownOpts` arrives as `None`.
-pub struct VoiceShutdownHandles {
-    pub send_loop_shutdown: Option<tokio::sync::mpsc::Sender<()>>,
-    pub send_loop_handle: Option<tokio::task::JoinHandle<()>>,
-    pub recv_loop_shutdown: Option<tokio::sync::mpsc::Sender<()>>,
-    pub recv_loop_handle: Option<tokio::task::JoinHandle<()>>,
-    pub monitor_shutdown: Option<tokio::sync::mpsc::Sender<()>>,
-    pub monitor_handle: Option<tokio::task::JoinHandle<()>>,
-    pub mcu_shutdown: Option<tokio::sync::mpsc::Sender<()>>,
-    pub mcu_handle: Option<tokio::task::JoinHandle<()>>,
+pub struct VoiceLoopScopes {
+    /// The send and receive loops (and the video pacer).
+    pub loops: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The device monitor.
+    pub monitor: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The MCU mix loop, while this peer is the voice host.
+    pub mcu: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+}
+
+/// The key sources SFrame needs for a voice session (`media_crypto`):
+/// the call secret and our sender state for a 1:1 call; the channel key
+/// provider and our sender state per generation for a community channel.
+pub trait MediaKeySource: Send + Sync {
+    /// Community and channel keys (plan D6). A channel's media is under
+    /// `scope_for_media`: its own key for a voice channel (rotated on each
+    /// join and leave, §10.5), the community key for a stage (§10.7).
+    fn keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
+
+    /// Our SFrame sender state for `(community, channel)` at MEK
+    /// `generation`, created on first use and kept for the app run so
+    /// every transport the session builds continues one counter.
+    fn channel_media_sender(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        generation: u64,
+    ) -> Arc<rekindle_secrets::sframe::SframeSender>;
+
+    /// The media keys of the active 1:1 call with `peer_pubkey`, or
+    /// `None` when there is no such call or it has no key yet.
+    fn call_media(&self, peer_pubkey: &str) -> Option<CallMediaKeys>;
 }
 
 /// Orchestration port for voice session work.
 #[async_trait]
-pub trait VoiceSessionDeps: Send + Sync + 'static {
+pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     // --- Identity ---
 
     /// Current owner key (Ed25519 public key hex). Errors if no
@@ -178,21 +200,6 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
 
     // --- Community state lookups (for community voice channels) ---
 
-    /// The MEK for CHANNEL MEDIA in `(community, channel)` with its
-    /// generation: the per-channel MEK when the §10.5 join/leave
-    /// rotation has distributed one, otherwise the community MEK every
-    /// member holds from join (the same hierarchy the text plane
-    /// uses). Stage channels never rotate (§10.7) and so resolve to
-    /// the community MEK by construction. `None` only when neither
-    /// key is cached (fresh device pre-MEK).
-    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)>;
-
-    /// The key the live channel MEK replaced, while inside the
-    /// rotation retention window (~10s) — lets in-flight old-generation
-    /// voice packets decrypt during a rotation instead of dropping.
-    fn previous_channel_mek(&self, community_id: &str, channel_id: &str)
-        -> Option<([u8; 32], u64)>;
-
     /// Snapshot of peers in a community voice channel (with their
     /// pseudonym, display name, route blob). Used at session start
     /// + on roster updates.
@@ -204,7 +211,7 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     fn channel_is_stage(&self, community_id: &str, channel_id: &str) -> bool;
 
     /// Fire the RequestMEK cascade naming the EXACT generation needed
-    /// (from the undecryptable packet's wire field; `0` = "send me your
+    /// (resolved from the undecryptable frame's KID; `0` = "send me your
     /// current"). Called when inbound media can't be decrypted (no key
     /// cached, generation mismatch, or AEAD failure after a rotation
     /// race). The adapter owns retry/cascade policy; the loop
@@ -239,13 +246,6 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
         sender_pseudonym: &str,
     ) -> bool;
 
-    // --- 1:1 call_key lookup (W13.14 audio AEAD) ---
-
-    /// Look up the call_key + peer pubkey for an active 1:1 call from a
-    /// specific peer. Returns `None` if no matching call. Used by
-    /// receive_loop to decrypt audio AEAD frames in 1:1 calls.
-    fn call_key_for_peer(&self, peer_pubkey: &str) -> Option<CallKeyInfo>;
-
     // --- Telemetry ---
 
     /// Increment the packet-drop counter (W14.4 — exposed via
@@ -278,10 +278,9 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
         community_id: &str,
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>>;
-
-    /// Register a spawned background task so it can be aborted on app
-    /// shutdown.
-    fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>);
+    /// The scope this session's background work runs in; it ends with the
+    /// session (plan C4).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
 
     // --- Session orchestration (Phase 14.l) ---
     //
@@ -424,14 +423,11 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// dedicated trait method.)
     fn log_voice_membership(&self, community_id: &str, channel_id: &str, joined: bool);
 
-    /// Snapshot the route blob peers import to send us inbound
-    /// voice/video, for inclusion in a VoiceJoin envelope. The adapter
-    /// returns its media-class (low-latency, unordered) inbound route
-    /// when one is allocated, so this is the authoritative
-    /// media-reachability blob — not necessarily the general route used
-    /// for chat/presence. Returns an empty `Vec` when we have no
-    /// advertised route.
-    fn our_route_blob(&self) -> Vec<u8>;
+    /// Our media-class (low-latency, unordered) inbound route: the blob
+    /// peers import to send us voice and video, carried in VoiceJoin.
+    /// `None` while we hold none; the general route is never substituted
+    /// (plan C7.9c).
+    fn our_media_route_blob(&self) -> Option<Vec<u8>>;
 
     /// Our self-sovereign display name for the join handshake —
     /// identity rides VoiceJoin so peers' rosters never depend on
@@ -445,16 +441,12 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// loop to drain.
     fn pre_stage_mcu_channel(&self) -> tokio::sync::mpsc::Receiver<crate::transport::VoicePacket>;
 
-    /// Store the MCU loop's shutdown tx + JoinHandle on the engine
-    /// handle so shutdown can abort cleanly.
-    fn register_mcu_task(
-        &self,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-        handle: tokio::task::JoinHandle<()>,
-    );
+    /// A fresh scope for the MCU loop, installed on the engine so
+    /// shutdown can stop it; `None` when no voice engine is running.
+    fn begin_mcu_scope(&self) -> Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>;
 
-    /// Take + drop the MCU loop's shutdown tx + JoinHandle. Signals
-    /// shutdown and awaits the loop's exit. No-op if MCU isn't running.
+    /// Take the MCU scope off the engine and shut it down. No-op if the
+    /// MCU isn't running.
     async fn stop_active_mcu(&self);
 
     // ── Shutdown + device-monitor deps (Phase 14.l-shutdown) ────────
@@ -463,7 +455,7 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// engine in one atomic operation (under the engine lock).
     /// Subsets controlled by `opts` — handles for opted-out loops
     /// stay on the engine, returned as `None` in the bundle.
-    fn take_shutdown_handles(&self, opts: VoiceShutdownOpts) -> VoiceShutdownHandles;
+    fn take_loop_scopes(&self, opts: VoiceShutdownOpts) -> VoiceLoopScopes;
 
     /// Stop cpal capture + playback AND clear the voice engine
     /// handle (set to `None`). Used by `shutdown_voice(FULL)`.

@@ -1,7 +1,7 @@
 use super::*;
 
 async fn in_memory_store_with_schema() -> SqliteDmStore {
-    let conn = tokio_rusqlite::Connection::open_in_memory().await.unwrap();
+    let conn = rekindle_db::Db::from(rekindle_asql::Connection::open_in_memory().await.unwrap());
     conn.call(|c| -> rusqlite::Result<()> {
         c.execute_batch(
             "CREATE TABLE dms (

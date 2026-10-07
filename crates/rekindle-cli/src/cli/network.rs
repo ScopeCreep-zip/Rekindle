@@ -5,13 +5,9 @@ use clap::Subcommand;
 /// Transport node lifecycle subcommands.
 #[derive(Subcommand)]
 pub enum NodeCmd {
-    /// Start the Veilid transport node.
+    /// Start `rekindled`, the backend host.
     Start {
-        /// Max wait for network attachment in seconds.
-        #[arg(long, default_value = "30")]
-        attach_timeout: u64,
-
-        /// Run in foreground (don't daemonize).
+        /// Run it in this terminal instead of detached.
         #[arg(long)]
         foreground: bool,
     },

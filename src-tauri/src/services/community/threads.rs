@@ -8,8 +8,8 @@
 
 use crate::channels::community_channel::ThreadInfoDto;
 use crate::commands::chat::Message;
-use crate::db::DbPool;
 use crate::state::SharedState;
+use rekindle_db::Db;
 
 fn build_adapter(
     state: &SharedState,
@@ -38,7 +38,7 @@ fn view_to_message(view: rekindle_channel::ThreadMessageView) -> Message {
         id: 0,
         sender_id: view.sender_pseudonym,
         body: view.body,
-        decryption_failed: false,
+        decryption_failed: view.decryption_failed,
         automod_blurred: false,
         timestamp: i64::try_from(view.timestamp_ms).unwrap_or(i64::MAX),
         is_own: view.is_own,
@@ -54,7 +54,7 @@ fn view_to_message(view: rekindle_channel::ThreadMessageView) -> Message {
 
 pub async fn create_thread(
     state: &SharedState,
-    _pool: &DbPool,
+    _pool: &Db,
     community_id: &str,
     channel_id: &str,
     name: &str,
@@ -78,7 +78,7 @@ pub async fn create_thread(
 
 pub async fn list_threads(
     state: &SharedState,
-    _pool: &DbPool,
+    _pool: &Db,
     community_id: &str,
     channel_id: &str,
 ) -> Result<Vec<ThreadInfoDto>, String> {
@@ -91,7 +91,7 @@ pub async fn list_threads(
 
 pub async fn list_active_threads(
     state: &SharedState,
-    _pool: &DbPool,
+    _pool: &Db,
     community_id: &str,
     channel_id: &str,
 ) -> Result<Vec<ThreadInfoDto>, String> {

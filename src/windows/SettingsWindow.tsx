@@ -1,9 +1,11 @@
 import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { startEventStream, subscribeSettingsTab } from "../ipc/channels";
 import Titlebar from "../components/titlebar/Titlebar";
 import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
 import { handleLoadSettings } from "../actions/settings.actions";
 import { hydrateState } from "../stores/hydrate";
+import type { SettingsTab } from "../ipc/commands/types";
 import ProfileTab from "./settings/ProfileTab";
 import ApplicationTab from "./settings/ApplicationTab";
 import NotificationsTab from "./settings/NotificationsTab";
@@ -13,7 +15,6 @@ import PrivacyTab from "./settings/PrivacyTab";
 import DevicesTab from "./settings/DevicesTab";
 import AboutTab from "./settings/AboutTab";
 
-type SettingsTab = "profile" | "application" | "notifications" | "audio" | "video" | "privacy" | "devices" | "mobile" | "about";
 
 const VALID_TABS: SettingsTab[] = ["profile", "application", "notifications", "audio", "video", "privacy", "devices", "mobile", "about"];
 
@@ -48,11 +49,8 @@ const SettingsWindow: Component = () => {
     void hydrateState();
     handleLoadSettings();
 
-    unlistenSwitchTab = listen<string>("settings-switch-tab", (event) => {
-      if (VALID_TABS.includes(event.payload as SettingsTab)) {
-        setActiveTab(event.payload as SettingsTab);
-      }
-    });
+    unlistenSwitchTab = subscribeSettingsTab(setActiveTab);
+    void startEventStream();
   });
 
   onCleanup(() => {

@@ -30,7 +30,7 @@ export default defineConfig({
       ? [
           {
             command:
-              "cargo run -p rekindle --bin e2e-server --features e2e-server",
+              "cargo run -p rekindle-e2e-server --bin e2e-server",
             url: E2E_BACKEND_HEALTH_URL,
             reuseExistingServer: !process.env.CI,
             timeout: 120_000,

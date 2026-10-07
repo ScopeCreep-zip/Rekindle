@@ -9,17 +9,14 @@
 
 use rusqlite::Connection;
 
-/// The live schema. `SCHEMA_VERSION` in `db.rs` is bumped whenever this
-/// file changes, so tests always run against the shipping schema rather
-/// than a hand-maintained subset.
-const MIGRATION: &str = include_str!("../migrations/001_init.sql");
-
 /// An in-memory database with the full schema applied and one identity
-/// row seeded, which the foreign keys on most tables require.
+/// row seeded, which the foreign keys on most tables require. The schema is
+/// the shipping one (`rekindle_db::SCHEMA`), never a hand-maintained subset.
 #[must_use]
 pub fn open_seeded_db() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.execute_batch(MIGRATION).expect("apply migration");
+    conn.execute_batch(rekindle_db::SCHEMA)
+        .expect("apply schema");
     conn.execute(
         "INSERT INTO identity (id, public_key, created_at) VALUES (1, 'owner_pk', 0)",
         [],

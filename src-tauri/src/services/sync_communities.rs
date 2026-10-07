@@ -7,22 +7,35 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::sync_service::request_channel_sync;
 
 /// Sync communities by re-announcing our mesh presence.
-pub(super) async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
+pub(super) async fn sync_communities(
+    state: &Arc<AppState>,
+    pool: &Db,
+    stop: &tokio_util::sync::CancellationToken,
+) -> Result<(), String> {
     if state_helpers::safe_routing_context(state).is_none() {
         return Ok(()); // Not connected yet
     }
 
     let communities_with_governance = state_helpers::communities_with_governance_keys(state);
     for (community_id, governance_key) in &communities_with_governance {
+        if stop.is_cancelled() {
+            return Ok(());
+        }
         sync_community_governance(state, community_id, governance_key).await;
-        sync_community_channels(state, pool, community_id).await;
+        if stop.is_cancelled() {
+            return Ok(());
+        }
+        sync_community_channels(state, pool, community_id, stop).await;
+        if stop.is_cancelled() {
+            return Ok(());
+        }
         if let Err(e) = crate::services::community::rejoin_community(state, community_id).await {
             tracing::trace!(community = %community_id, error = %e, "community rejoin failed");
         }
@@ -37,7 +50,7 @@ pub(super) async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Re
 
 pub(crate) async fn handle_community_record_change(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     dht_key: &str,
 ) -> bool {
     enum ChangedRecord {
@@ -151,18 +164,14 @@ async fn sync_community_governance(
     community_id: &str,
     governance_key: &str,
 ) {
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
+    let Ok(pool) = state_helpers::record_pool(state) else {
         return;
     };
     let Ok(record_key) = governance_key.parse::<veilid_core::RecordKey>() else {
         return;
     };
-    let report = match rc
-        .inspect_dht_record(
-            record_key,
-            Some(veilid_core::ValueSubkeyRangeSet::full()),
-            veilid_core::DHTReportScope::UpdateGet,
-        )
+    let report = match pool
+        .inspect_once(&record_key, None, veilid_core::DHTReportScope::UpdateGet)
         .await
     {
         Ok(report) => report,
@@ -190,11 +199,14 @@ async fn sync_community_governance(
     }
 }
 
+/// Borrow every channel record governance now names that the community does
+/// not hold yet, and hand the leases to it (`leases::records_ready`: held,
+/// recorded in the inventory, watched).
 async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
+    let Ok(pool) = state_helpers::record_pool(state) else {
         return;
     };
-    let (channel_pairs, opened_keys) = {
+    let (channel_pairs, opened_keys, slot_writer) = {
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else {
             return;
@@ -209,21 +221,32 @@ async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
                 .iter()
                 .cloned()
                 .collect::<std::collections::HashSet<_>>(),
+            // Our slot writer: channel records share the registry's slot
+            // seed, so a held channel write restored after a re-login
+            // re-pushes as us (plan C7.13).
+            cs.slot_keypair
+                .as_deref()
+                .and_then(|kp| kp.parse::<veilid_core::KeyPair>().ok()),
         )
     };
 
-    let mut newly_opened = Vec::new();
-    for (_channel_id, record_key) in channel_pairs {
+    let mut leases = rekindle_records::lease::CommunityLeases::default();
+    for (channel_id, record_key) in channel_pairs {
         if opened_keys.contains(&record_key) {
             continue;
         }
-        let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
+        let (Ok(parsed_key), Some(channel)) = (
+            record_key.parse::<veilid_core::RecordKey>(),
+            hex::decode(&channel_id)
+                .ok()
+                .and_then(|b| <[u8; 16]>::try_from(b).ok())
+                .map(rekindle_types::id::ChannelId),
+        ) else {
             continue;
         };
-        match rc.open_dht_record(parsed_key, None).await {
-            Ok(_) => {
-                newly_opened.push(record_key.clone());
-                state_helpers::track_open_records(state, std::slice::from_ref(&record_key));
+        match pool.acquire(&parsed_key, slot_writer.clone()).await {
+            Ok(lease) => {
+                leases.channels.insert(channel, lease);
             }
             Err(e) => {
                 tracing::trace!(
@@ -235,21 +258,18 @@ async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
             }
         }
     }
-
-    if !newly_opened.is_empty() {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            for record_key in newly_opened {
-                if !cs.open_community_records.channel_keys.contains(&record_key) {
-                    cs.open_community_records.channel_keys.push(record_key);
-                }
-            }
-        }
+    if !leases.channels.is_empty() {
+        crate::services::community::leases::records_ready(state, community_id, leases).await;
     }
 }
 
-async fn sync_community_channels(state: &Arc<AppState>, pool: &DbPool, community_id: &str) {
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
+async fn sync_community_channels(
+    state: &Arc<AppState>,
+    pool: &Db,
+    community_id: &str,
+    stop: &tokio_util::sync::CancellationToken,
+) {
+    let Ok(record_pool) = state_helpers::record_pool(state) else {
         return;
     };
     let channel_pairs = {
@@ -264,15 +284,14 @@ async fn sync_community_channels(state: &Arc<AppState>, pool: &DbPool, community
     };
 
     for (channel_id, record_key) in channel_pairs {
+        if stop.is_cancelled() {
+            return;
+        }
         let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
             continue;
         };
-        let report = match rc
-            .inspect_dht_record(
-                parsed_key,
-                Some(veilid_core::ValueSubkeyRangeSet::full()),
-                veilid_core::DHTReportScope::UpdateGet,
-            )
+        let report = match record_pool
+            .inspect_once(&parsed_key, None, veilid_core::DHTReportScope::UpdateGet)
             .await
         {
             Ok(report) => report,

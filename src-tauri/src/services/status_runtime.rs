@@ -12,11 +12,11 @@ use std::io::Cursor;
 
 use image::ImageReader;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::{SharedState, UserStatus};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn set_status_inner(state: &SharedState, status: String) -> Result<(), String> {
     let status_enum = match status.as_str() {
@@ -39,14 +39,14 @@ pub async fn set_status_inner(state: &SharedState, status: String) -> Result<(),
 
     *state.pre_away_status.write() = None;
 
-    services::presence_service::publish_status(state, status_enum).await?;
+    services::presence_service::request_status_publish(state);
 
     Ok(())
 }
 
 pub async fn set_nickname_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     app: &tauri::AppHandle,
     nickname: String,
 ) -> Result<(), String> {
@@ -60,15 +60,11 @@ pub async fn set_nickname_inner(
     let nickname_clone = nickname.clone();
     let pk_clone = public_key.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE identity SET display_name = ? WHERE public_key = ?",
-            rusqlite::params![nickname_clone, pk_clone],
-        )?;
-        Ok(())
+        rekindle_db::repo::identity::set_display_name(conn, &pk_clone, &nickname_clone)
     })
     .await?;
 
-    crate::event_dispatch::emit_live(app, "profile-updated", &());
+    crate::event_dispatch::emit(app, crate::event_dispatch::WebviewEvent::ProfileUpdated);
 
     services::message_service::push_profile_update(state, 0, nickname.into_bytes()).await
 }
@@ -102,7 +98,7 @@ fn compress_avatar_to_webp(raw: &[u8]) -> Result<Vec<u8>, String> {
 
 pub async fn set_avatar_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     app: &tauri::AppHandle,
     avatar_data: Vec<u8>,
 ) -> Result<(), String> {
@@ -115,11 +111,7 @@ pub async fn set_avatar_inner(
     let pk_clone = public_key.clone();
     let webp_for_db = webp_bytes.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE identity SET avatar_webp = ? WHERE public_key = ?",
-            rusqlite::params![webp_for_db, pk_clone],
-        )?;
-        Ok(())
+        rekindle_db::repo::identity::set_avatar(conn, &pk_clone, &webp_for_db)
     })
     .await?;
 
@@ -129,41 +121,22 @@ pub async fn set_avatar_inner(
         "avatar compressed and persisted"
     );
 
-    crate::event_dispatch::emit_live(app, "profile-updated", &());
+    crate::event_dispatch::emit(app, crate::event_dispatch::WebviewEvent::ProfileUpdated);
 
     services::message_service::push_profile_update(state, 3, webp_bytes).await
 }
 
 pub async fn get_avatar_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     public_key: String,
 ) -> Result<Option<Vec<u8>>, String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     db_call(pool, move |conn| {
-        let own: Option<Vec<u8>> = conn
-            .query_row(
-                "SELECT avatar_webp FROM identity WHERE public_key = ?1",
-                rusqlite::params![public_key],
-                |row| row.get(0),
-            )
-            .ok()
-            .flatten();
-
-        if own.is_some() {
-            return Ok(own);
+        if let Some(own) = rekindle_db::repo::identity::avatar(conn, &public_key)? {
+            return Ok(Some(own));
         }
-
-        let friend: Option<Vec<u8>> = conn
-            .query_row(
-                "SELECT avatar_webp FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![owner_key, public_key],
-                |row| row.get(0),
-            )
-            .ok()
-            .flatten();
-
-        Ok(friend)
+        rekindle_db::repo::friends::avatar(conn, &owner_key, &public_key)
     })
     .await
 }

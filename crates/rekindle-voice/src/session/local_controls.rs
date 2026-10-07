@@ -39,11 +39,19 @@ pub async fn join_voice_channel<D: VoiceSessionDeps + ?Sized>(
     channel_id: &str,
     community_id: Option<&str>,
 ) -> Result<(), VoiceError> {
+    // A community join advertises our media route; without one no peer
+    // could send us media, so the join fails before a session starts.
+    let route_blob = match community_id {
+        Some(_) => Some(
+            deps.our_media_route_blob()
+                .ok_or(VoiceError::MediaRouteUnavailable)?,
+        ),
+        None => None,
+    };
     crate::session::start_session(deps, channel_id, community_id).await?;
 
-    if let Some(cid) = community_id {
+    if let (Some(cid), Some(route_blob)) = (community_id, route_blob) {
         deps.log_voice_membership(cid, channel_id, true);
-        let route_blob = deps.our_route_blob();
         let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
             channel_id: channel_id.to_string(),
             route_blob,
@@ -70,15 +78,14 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
     let Some(cid) = community_id else {
         return;
     };
-    let route_blob = deps.our_route_blob();
-    if route_blob.is_empty() {
+    let Some(route_blob) = deps.our_media_route_blob() else {
         tracing::warn!(
             community = %cid,
             channel = %channel_id,
-            "voice route re-announce skipped — no route blob available",
+            "voice route re-announce skipped: no media route",
         );
         return;
-    }
+    };
     let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
         channel_id: channel_id.clone(),
         route_blob,
@@ -139,8 +146,8 @@ pub async fn change_audio_devices<D: VoiceSessionDeps + ?Sized>(
 /// Switch voice mode between mesh and MCU. Stops any existing MCU
 /// loop, flips the transport mode, and (if we're the new host)
 /// starts the MCU mixing loop on the shared transport.
-pub async fn set_voice_mode<D: VoiceSessionDeps + ?Sized>(
-    deps: &Arc<D>,
+pub async fn set_voice_mode(
+    deps: &Arc<dyn VoiceSessionDeps>,
     mode: &str,
     host_pseudonym: Option<String>,
 ) -> Result<(), VoiceError> {

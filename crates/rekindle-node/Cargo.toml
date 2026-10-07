@@ -8,12 +8,18 @@ license = "MIT"
 [lints]
 workspace = true
 
+[[bin]]
+name = "rekindled"
+path = "src/bin/rekindled.rs"
+
 [dependencies]
 # Workspace crates — rekindle-transport is the SOLE Veilid boundary.
 # rekindle-node NEVER imports veilid-core directly.
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils" }
+# The IPC bus (protocol, Noise, client/server, event router).
+rekindle-ipc = { path = "../rekindle-ipc" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub", "config" ] }
 # Tier-6 CRDT state type for the daemon's cached governance merge.
 rekindle-governance = { path = "../rekindle-governance" }
 # The v2.0 governance lifecycle (origin, bootstrap, join, segments,
@@ -22,8 +28,10 @@ rekindle-governance = { path = "../rekindle-governance" }
 rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # CommunityEnvelope only — the gossip payload type crossing the Deps
 # boundary. No veilid_core types are named from this crate.
-rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-db = { path = "../rekindle-db" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-records = { path = "../rekindle-records" }
 # Tier 5. The shared gossip stack — Cap'n Proto `CommunityEnvelope`
 # over unframed `app_message`, the format the desktop already used.
 # Before this the daemon had its own postcard `GossipPayload` and the
@@ -42,52 +50,53 @@ rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 
 # Async runtime
-tokio = { workspace = true }
 futures = { workspace = true }
+tokio = { workspace = true }
+# CancellationToken and TaskTracker: tokio's graceful-shutdown primitives.
+tokio-util = { version = "0.7", features = [ "rt" ] }
 
 # Serialization
-serde = { workspace = true }
 async-trait = "0.1"
+serde = { workspace = true }
 serde_json = { workspace = true }
-postcard = { version = "1", features = ["use-std"] }
 toml = "0.8"
 
 # IPC transport encryption (Noise IK)
 snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b" }
 
 # Crypto utilities
-blake3 = "1"
-zeroize = { version = "1", features = ["derive"] }
-ed25519-dalek = { version = "2", features = ["rand_core"] }
 aes-gcm = "0.10"
+blake3 = "1"
 rand = "0.8"
-subtle = "2"
+zeroize = { version = "1", features = [ "derive" ] }
 
 # Identifiers
-uuid = { version = "1", features = ["v4", "v7", "serde"] }
+uuid = { version = "1", features = [ "v4", "v7", "serde" ] }
 
-# Safe syscalls (UCred extraction)
-rustix = { version = "1", features = ["process"] }
+# Safe syscalls
+rustix = { version = "1", features = [ "process" ] }
 
 # Logging and errors
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Concurrency
 parking_lot = { workspace = true }
+
+# `rekindled` command line and log file
+clap = { version = "4", features = [ "derive", "std", "help", "usage", "error-context" ] }
+tracing-appender = "0.2"
 
 # systemd integration (sd_notify READY=1, watchdog keepalive)
 sd-notify = "0.4"
 
 # OS keyring for signing key storage
-keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 hex = "0.4"
+keyring = { version = "3", default-features = false, features = [ "apple-native", "windows-native", "linux-native" ] }
 
-# Filesystem paths (used in macOS socket-path resolution at ipc/transport.rs)
-dirs = "6"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = "3"
+tokio = { workspace = true, features = [ "test-util", "macros" ] }

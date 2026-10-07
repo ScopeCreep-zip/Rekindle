@@ -1,13 +1,19 @@
 //! Phase 15 — Lost Cargo download orchestration.
 //!
-//! Architecture §28.9 — fetch the AttachmentOffer from the channel
-//! SMPL record, unwrap the FEK using the historical channel MEK that
-//! wrapped it, discover peers advertising chunks via AttachmentCached
-//! entries, request missing chunks from each source in arrival order,
-//! verify each chunk against the offer's plaintext SHA-256, cache the
-//! re-encrypted ciphertext, reassemble the plaintext + write to disk,
-//! advertise full possession, and persist the local path so the UI
-//! flips the message bubble from "Download" to "Open".
+//! Architecture §28.9, in three steps:
+//! - [`fetch_attachment_to_cache`]: fetch the AttachmentOffer from the
+//!   channel SMPL record, unwrap the FEK using the historical channel MEK
+//!   that wrapped it, discover peers advertising chunks via
+//!   AttachmentCached entries, request missing chunks from each source in
+//!   arrival order, verify each chunk against the offer's plaintext
+//!   SHA-256, cache the re-encrypted ciphertext, and advertise full
+//!   possession;
+//! - [`assemble_attachment`]: decrypt the cached chunks into the file;
+//! - [`download_attachment`]: both, then write the file to disk and record
+//!   its path so "Show in folder" can find it.
+//!
+//! Voice messages play from [`assemble_attachment`]'s bytes and never touch
+//! the filesystem outside the chunk cache.
 //!
 //! Parameterised over `FilesDeps`. The src-tauri `FilesAdapter`
 //! supplies the concrete DHT + transport + DB + cache + governance
@@ -15,11 +21,12 @@
 
 use std::path::Path;
 
+use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 use uuid::Uuid;
 
-use crate::deps::FilesDeps;
+use crate::deps::{FilesDeps, FilesEvent};
 use crate::dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};
 use crate::error::FilesError;
 use crate::fek::unwrap_fek_for_offer;
@@ -28,17 +35,27 @@ use crate::verify::{verify_chunk, verify_merkle_root};
 use rekindle_protocol::dht::community::channel_record::ChannelAttachmentCached;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
 
-/// Download an attachment by hex id to `save_path`. v1 strategy: ask
-/// each discovered source in turn for missing chunks; verify each
-/// chunk against the offer's hash list; reassemble + write to disk;
-/// advertise full possession via `AttachmentCached`.
-pub async fn download_attachment<D: FilesDeps>(
+/// An attachment whose chunks are all in the local cache, with the key
+/// that decrypts them.
+pub struct FetchedAttachment {
+    pub offer: AttachmentOffer,
+    fek: MediaEncryptionKey,
+}
+
+/// Bring every chunk of an attachment into the local cache.
+///
+/// Reads and validates the offer, unwraps its FEK with the historical
+/// channel MEK, and, unless the cache already holds every chunk, asks each
+/// advertising peer in arrival order for the chunks still missing. Each
+/// chunk is verified against the offer's plaintext SHA-256 before it is
+/// cached. On completing a fetch, advertises full possession with an
+/// `AttachmentCached` entry so other members can fetch from us.
+pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     attachment_id_hex: &str,
-    save_path: &Path,
-) -> Result<(), FilesError> {
+) -> Result<FetchedAttachment, FilesError> {
     deps.require_permission(community_id, permissions::READ_HISTORY)?;
     deps.ensure_cache_open(community_id)?;
 
@@ -51,12 +68,8 @@ pub async fn download_attachment<D: FilesDeps>(
     let chunk_count = offer.chunk_count;
 
     // Load + unwrap FEK using the historical channel MEK that wrapped it.
-    let channel_mek = deps
-        .historical_channel_mek(community_id, channel_id, offer.fek_mek_generation)
-        .ok_or(FilesError::MekUnavailable {
-            community: community_id.to_string(),
-            generation: offer.fek_mek_generation,
-        })?;
+    let channel_mek =
+        crate::keys::text_key_at(deps, community_id, channel_id, offer.fek_mek_generation)?;
     let fek = unwrap_fek_for_offer(&channel_mek, &offer)?;
 
     // Compute current-bitmap of what we already have locally.
@@ -72,6 +85,9 @@ pub async fn download_attachment<D: FilesDeps>(
         })?;
         bitmap.ok_or_else(|| FilesError::NotFound(format!("cache for {community_id}")))?
     };
+    if have.is_complete() {
+        return Ok(FetchedAttachment { offer, fek });
+    }
 
     let sources =
         discover_sources(deps, community_id, channel_id, attachment_id, chunk_count).await?;
@@ -137,40 +153,6 @@ pub async fn download_attachment<D: FilesDeps>(
         });
     }
 
-    // Reassemble plaintext + write to disk. Uses `with_cache_mut`
-    // because ChunkCache::get takes `&mut self` (LRU touch).
-    let mut out: Vec<u8> = Vec::with_capacity(usize::try_from(offer.total_size).unwrap_or(0));
-    {
-        let mut buffer: Option<Vec<u8>> = Some(Vec::with_capacity(out.capacity()));
-        deps.with_cache_mut(community_id, &mut |cache, _pinned| {
-            let buf = buffer.as_mut().expect("buffer present");
-            for idx in 0..chunk_count {
-                let ciphertext = cache
-                    .get(attachment_uuid, idx)
-                    .map_err(|e| FilesError::Db(format!("cache get {idx}: {e}")))?
-                    .ok_or_else(|| {
-                        FilesError::NotFound(format!("chunk {idx} missing mid-reassembly"))
-                    })?;
-                let plaintext = fek
-                    .decrypt(&ciphertext)
-                    .map_err(|e| FilesError::Decrypt(format!("reassembly {idx}: {e}")))?;
-                buf.extend_from_slice(&plaintext);
-            }
-            Ok(())
-        })?;
-        out = buffer.unwrap_or_default();
-    }
-    if let Some(parent) = save_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| FilesError::Io {
-            path: parent.display().to_string(),
-            source: e,
-        })?;
-    }
-    std::fs::write(save_path, &out).map_err(|e| FilesError::Io {
-        path: save_path.display().to_string(),
-        source: e,
-    })?;
-
     // Advertise full possession to the swarm.
     let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
     let slot_keypair = deps.slot_keypair(community_id)?;
@@ -181,7 +163,7 @@ pub async fn download_attachment<D: FilesDeps>(
         chunk_bitmap: AttachmentBitmap::full(chunk_count).as_bytes().to_vec(),
         chunk_count,
         author_pseudonym: sender_pseudonym,
-        lamport_ts: deps.increment_lamport(community_id),
+        lamport_ts: deps.increment_lamport(community_id)?,
     };
     deps.write_attachment_cached_to_smpl(
         community_id,
@@ -192,11 +174,84 @@ pub async fn download_attachment<D: FilesDeps>(
     )
     .await?;
 
-    // Update SQLite row's local_path so the UI flips to "Open" instead of "Download".
+    Ok(FetchedAttachment { offer, fek })
+}
+
+/// Decrypt and concatenate a fetched attachment's cached chunks. The
+/// result is exactly `offer.total_size` bytes; `validate_offer` bounds it
+/// by `MAX_FILE_SIZE_BYTES` before anything is allocated.
+pub fn assemble_attachment<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    fetched: &FetchedAttachment,
+) -> Result<Vec<u8>, FilesError> {
+    let offer = &fetched.offer;
+    let attachment_uuid = Uuid::from_bytes(offer.attachment_id);
+    let total = usize::try_from(offer.total_size)
+        .map_err(|_| FilesError::OfferInvalid("total_size exceeds memory".into()))?;
+    let mut out: Vec<u8> = Vec::with_capacity(total);
+    // `with_cache_mut` because ChunkCache::get takes `&mut self` (LRU touch).
+    deps.with_cache_mut(community_id, &mut |cache, _pinned| {
+        for idx in 0..offer.chunk_count {
+            let ciphertext = cache
+                .get(attachment_uuid, idx)
+                .map_err(|e| FilesError::Db(format!("cache get {idx}: {e}")))?
+                .ok_or_else(|| {
+                    FilesError::NotFound(format!("chunk {idx} missing mid-reassembly"))
+                })?;
+            let plaintext = fetched
+                .fek
+                .decrypt(&ciphertext)
+                .map_err(|e| FilesError::Decrypt(format!("reassembly {idx}: {e}")))?;
+            out.extend_from_slice(&plaintext);
+        }
+        Ok(())
+    })?;
+    if out.len() != total {
+        return Err(FilesError::OfferInvalid(format!(
+            "assembled {} bytes, offer says {total}",
+            out.len()
+        )));
+    }
+    Ok(out)
+}
+
+/// Fetch an attachment, write it to `save_path`, record the path on the
+/// message row, and emit [`FilesEvent::AttachmentDownloaded`].
+pub async fn download_attachment<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+    attachment_id_hex: &str,
+    save_path: &Path,
+) -> Result<(), FilesError> {
+    let fetched =
+        fetch_attachment_to_cache(deps, community_id, channel_id, attachment_id_hex).await?;
+    let bytes = assemble_attachment(deps, community_id, &fetched)?;
+    if let Some(parent) = save_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| FilesError::Io {
+                path: parent.display().to_string(),
+                source: e,
+            })?;
+    }
+    tokio::fs::write(save_path, &bytes)
+        .await
+        .map_err(|e| FilesError::Io {
+            path: save_path.display().to_string(),
+            source: e,
+        })?;
+
+    // The message row keeps the path so "Show in folder" can find the file.
     let owner_key = deps.owner_key()?;
     deps.persist_local_path(&owner_key, channel_id, attachment_id_hex, save_path)
         .await?;
-
+    deps.emit_event(FilesEvent::AttachmentDownloaded {
+        community_id: community_id.to_string(),
+        channel_id: channel_id.to_string(),
+        attachment_id_hex: attachment_id_hex.to_string(),
+    });
     Ok(())
 }
 
@@ -344,11 +399,11 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_attachment_id_hex_is_rejected() {
-        let deps = MockDeps::new("c1", "ch1");
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111");
         let err = download_attachment(
             &deps,
             "c1",
-            "ch1",
+            "11111111111111111111111111111111",
             "not-hex",
             std::path::Path::new("/tmp/x"),
         )
@@ -359,11 +414,11 @@ mod tests {
 
     #[tokio::test]
     async fn offer_not_found_returns_not_found() {
-        let deps = MockDeps::new("c1", "ch1"); // no entries
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111"); // no entries
         let err = download_attachment(
             &deps,
             "c1",
-            "ch1",
+            "11111111111111111111111111111111",
             &"de".repeat(16),
             std::path::Path::new("/tmp/x"),
         )
@@ -374,12 +429,12 @@ mod tests {
 
     #[tokio::test]
     async fn permission_denied_blocks_download() {
-        let mut deps = MockDeps::new("c1", "ch1");
+        let mut deps = MockDeps::new("c1", "11111111111111111111111111111111");
         deps.permission_pass = false;
         let err = download_attachment(
             &deps,
             "c1",
-            "ch1",
+            "11111111111111111111111111111111",
             &"00".repeat(16),
             std::path::Path::new("/tmp/x"),
         )
@@ -394,7 +449,8 @@ mod tests {
         // chunk_hashes are all-zero but merkle_root claims something
         // else → verify_merkle_root fails.
         let aid = [3u8; 16];
-        let deps = MockDeps::new("c1", "ch1").with_entries(vec![build_offer_entry(aid, 2)]);
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111")
+            .with_entries(vec![build_offer_entry(aid, 2)]);
         // Tamper: make the offer's merkle_root non-zero so it doesn't
         // match the empty-hash recomputation.
         if let Some(ChannelRecordEntry::Message(msg)) = deps.channel_entries.lock().get_mut(0) {
@@ -405,7 +461,7 @@ mod tests {
         let err = download_attachment(
             &deps,
             "c1",
-            "ch1",
+            "11111111111111111111111111111111",
             &hex::encode(aid),
             std::path::Path::new("/tmp/x"),
         )

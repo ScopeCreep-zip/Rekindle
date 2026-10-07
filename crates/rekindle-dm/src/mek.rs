@@ -26,6 +26,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 use crate::error::DmError;
+use rekindle_types::domains;
 
 pub const MEK_LEN: usize = 32;
 
@@ -81,7 +82,7 @@ pub fn derive_dm_mek(
 
     let hk = Hkdf::<Sha256>::new(Some(&salt), shared.as_bytes());
     let mut mek = [0u8; MEK_LEN];
-    hk.expand(b"rekindle-dm-mek-v1", &mut mek)
+    hk.expand(domains::DM_MEK.as_bytes(), &mut mek)
         .map_err(|e| DmError::Hkdf(e.to_string()))?;
     Ok(DmMek(mek))
 }
@@ -90,7 +91,7 @@ pub fn derive_dm_mek(
 pub fn ratchet_dm_mek(prev: &DmMek) -> Result<DmMek, DmError> {
     let hk = Hkdf::<Sha256>::new(None, prev.as_bytes());
     let mut next = [0u8; MEK_LEN];
-    hk.expand(b"rekindle-dm-ratchet-v1", &mut next)
+    hk.expand(domains::DM_MEK_RATCHET.as_bytes(), &mut next)
         .map_err(|e| DmError::Hkdf(e.to_string()))?;
     Ok(DmMek(next))
 }

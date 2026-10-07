@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use crate::error::MekRotationError;
 use crate::event::MekRotationEvent;
@@ -23,52 +24,64 @@ pub struct RotationRecipient {
     pub route_blob: Vec<u8>,
 }
 
-/// In-memory MEK cache backing `ChannelMekCache`. The src-tauri
-/// adapter implements this against the existing
-/// `state.channel_mek_cache: Mutex<HashMap<(String, String), MediaEncryptionKey>>`.
+/// A host's in-memory community and channel keys, addressed by
+/// [`KeyScope`]. The desktop implements it over its `mek_cache` (community
+/// scope) and `channel_mek_cache` (channel scopes); the daemon over
+/// `rekindle_transport::crypto::mek::MekCache`.
 pub trait ChannelMekCache: Send + Sync {
-    /// Return the cached MEK for `(community, channel)` at the
-    /// matching `generation`. None if the cache holds a different
-    /// generation or no entry.
+    /// The scope's current key.
+    fn current(&self, community_id: &str, scope: KeyScope) -> Option<MediaEncryptionKey>;
+
+    /// The scope's key at exactly `generation`, if held in memory. A cache
+    /// that keeps only the current key answers from it; one that retains
+    /// older generations overrides this.
     fn get(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
-    ) -> Option<MediaEncryptionKey>;
+    ) -> Option<MediaEncryptionKey> {
+        self.current(community_id, scope)
+            .filter(|mek| mek.generation() == generation)
+    }
 
-    /// Replace (or insert) the cached MEK for `(community, channel)`.
-    /// The existing generation is overwritten — callers must not
-    /// downgrade.
-    fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey);
+    /// Install a key under the convergence rule every host shares: an
+    /// older generation is refused (rollback), a newer one replaces, and
+    /// an equal generation is kept by the lowest election rank
+    /// (`convergence::incoming_wins_same_generation`). Returns whether the
+    /// key was installed.
+    fn insert(&self, community_id: &str, scope: KeyScope, mek: MediaEncryptionKey) -> bool;
 
-    /// Convenience: return the current cached generation for
-    /// `(community, channel)`, or 0 if no entry.
-    fn current_generation(&self, community_id: &str, channel_id: &str) -> u64;
+    /// How long the scope's current key has been current, or `None` when
+    /// no key is held.
+    fn current_age(&self, community_id: &str, scope: KeyScope) -> Option<std::time::Duration>;
+
+    /// The scope's current generation, or 0 when no key is held.
+    fn current_generation(&self, community_id: &str, scope: KeyScope) -> u64 {
+        self.current(community_id, scope)
+            .map_or(0, |mek| mek.generation())
+    }
 }
 
 /// Durable MEK persistence — the keystore-backed store that survives
-/// process restarts. Used at rotation time to write the new
-/// generation's wrapped bytes; used on cold-start to repopulate the
-/// in-memory cache.
+/// process restarts.
 #[async_trait]
 pub trait MekPersist: Send + Sync {
-    /// Store the wrapped MEK bytes for `(community, channel,
-    /// generation)`. Returns Ok even if the row already exists.
+    /// Store the key bytes for `(community, scope, generation)`. Returns
+    /// Ok even if the entry already exists.
     async fn store_mek_for_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
-        wrapped_bytes: Vec<u8>,
+        key_bytes: Vec<u8>,
     ) -> Result<(), MekRotationError>;
 
-    /// Load the wrapped MEK bytes for `(community, channel,
-    /// generation)` if previously stored.
+    /// Load the key bytes for `(community, scope, generation)` if stored.
     async fn load_mek_for_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
     ) -> Result<Option<Vec<u8>>, MekRotationError>;
 }
@@ -80,6 +93,10 @@ pub trait MekPersist: Send + Sync {
 /// enumeration, broadcast, event emit, Lamport clock.
 #[async_trait]
 pub trait MekDistributeDeps: Send + Sync {
+    /// The scope of the session this rotation belongs to. The cascade wait
+    /// and the per-recipient sends stop once it is closed (plan C4.L1).
+    fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope>;
+
     /// In-memory MEK cache (typically a parking_lot-backed HashMap on
     /// AppState).
     fn cache(&self) -> Arc<dyn ChannelMekCache>;
@@ -90,6 +107,11 @@ pub trait MekDistributeDeps: Send + Sync {
     /// Local member's pseudonym for `community_id`. None if not a
     /// member or identity is locked.
     fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey>;
+
+    /// Whether `member` may rotate the community key under the merged
+    /// governance (`Permissions::may_rotate_mek`, plan D20) — the same
+    /// rule readers apply to the resulting `MEKGenerationBump`.
+    fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool;
 
     /// Snapshot of online recipients in the community. `exclude_pseudonym`
     /// is the departed/triggering peer the rotation should skip.
@@ -107,7 +129,7 @@ pub trait MekDistributeDeps: Send + Sync {
     async fn voice_recipients(
         &self,
         community_id: &str,
-        channel_id: &str,
+        channel: ChannelId,
         trigger_pseudonym: &str,
         include_trigger_in_recipients: bool,
     ) -> Vec<RotationRecipient>;
@@ -127,39 +149,34 @@ pub trait MekDistributeDeps: Send + Sync {
     /// Emit a UI-facing rotation event.
     fn emit_event(&self, event: MekRotationEvent);
 
-    /// Current per-community Lamport counter (read-only).
-    fn current_lamport(&self, community_id: &str) -> u64;
-
-    /// Increment + return the per-community Lamport counter. Used by
-    /// the rotator to stamp the wrap envelope.
-    fn increment_lamport(&self, community_id: &str) -> u64;
+    /// Next governance-clock value, for the `MEKGenerationBump` entry.
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     /// Identity secret bytes (for deriving the rotator's own
     /// pseudonym signing key in distribute.rs).
     fn identity_secret(&self) -> Option<[u8; 32]>;
 
-    /// Apply a received MEK to the cache + bump the matching generation
-    /// state. `channel_id = None` (or empty) targets the community-wide
-    /// MEK; `Some(ch)` targets the per-channel MEK.
+    /// Apply a received MEK to the scope's cache + bump the matching
+    /// generation state. Returns whether the key was installed; a key the
+    /// convergence rule refuses must not be persisted either, or it would
+    /// overwrite the winning key's stored copy.
     fn apply_received_mek_to_state(
         &self,
         community_id: &str,
-        channel_id: Option<&str>,
+        scope: KeyScope,
         mek: &MediaEncryptionKey,
-    );
+    ) -> bool;
 
     /// Persist a received MEK to the keystore so it survives restart.
-    fn persist_received_mek(
-        &self,
-        community_id: &str,
-        channel_id: Option<&str>,
-        mek: &MediaEncryptionKey,
-    );
+    fn persist_received_mek(&self, community_id: &str, scope: KeyScope, mek: &MediaEncryptionKey);
 
     /// UI-facing rotation event for an *incoming* MEK transfer (sender
     /// is a remote peer). Distinct from `emit_event` (used for
     /// rotator-initiated lifecycle states like `RotationStarted`).
-    fn emit_rotation_received(&self, community_id: &str, channel_id: Option<&str>, generation: u64);
+    fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64);
 
     /// Write a governance entry to the merged CRDT state. Used by
     /// `rotate_text_mek_for_departure` to stamp the

@@ -3,7 +3,7 @@
 //!
 //! Read helpers acquire a read lock, clone out the needed value(s), and drop
 //! the guard immediately — safe to call before `.await` points. Write helpers
-//! (`store_dht_record`, `track_open_records`, `cache_peer_route`, etc.) acquire
+//! (`store_dht_record`, `cache_peer_route`, etc.) acquire
 //! write locks with the same acquire-then-drop discipline.
 //!
 //! Helpers are grouped by domain into submodules and re-exported flat so all
@@ -17,6 +17,7 @@
 //! - [`communities`] — community channel-list write helpers.
 //! - [`governance`] — v2.0 CRDT governance state read/write.
 //! - [`governance_persist`] — SQLite snapshot of merged governance.
+//! - [`meks`] — live community/channel keys and the `ChannelKeyProvider`.
 //! - [`voice`] — running voice-engine accessors.
 
 mod circuit_breaker;
@@ -26,43 +27,47 @@ mod friends;
 mod governance;
 mod governance_persist;
 mod identity;
+mod meks;
 mod node;
 mod routes;
 mod voice;
 
 pub use circuit_breaker::{is_circuit_open, reset_circuit_breaker, trip_circuit_breaker};
 pub use communities::{
-    channel_media_mek, channel_media_mek_full, communities_with_governance_keys,
-    install_channel_mek, install_community_mek, my_pseudonym_key, previous_channel_mek,
-    push_community_channel, set_community_channels,
+    channel_is_stage, communities_with_governance_keys, community_scope, my_pseudonym_key,
+    push_community_channel, set_community_channels, spawn_in_community,
+    spawn_in_community_with_token,
 };
-pub use dht_records::{
-    close_and_untrack, collect_and_clear_community_records, store_dht_record, track_open_records,
-    untrack_records, DhtRecordType,
-};
+pub use dht_records::{release_friend_record, store_dht_record, DhtRecordType};
 pub use friends::{
     accepted_friend_keys, friend_dht_key, friend_display_name, friend_field, friend_mailbox_key,
     friends_with_dht_keys, is_active_friend_authoritative, is_friend, is_friend_accepted,
 };
 pub use governance::{
-    governance_key, governance_state, increment_lamport, lamport_counter, merge_lamport,
-    my_permissions, set_governance_state,
+    governance_clock, governance_key, governance_state, merge_message_lamport, my_permissions,
+    next_governance_lamport, next_message_lamport, observe_governance_lamport, permissions_for,
+    permissions_for_pseudonym, set_governance_state,
 };
 pub use governance_persist::persist_governance_snapshot_to_sqlite;
 pub use identity::{
     current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,
     owner_key_or_default, pseudonym_credentials, voice_self_identity,
 };
+pub use meks::{
+    clear_meks, current_mek, forget_community_keys, install_mek, key_provider, media_key_present,
+    media_scope, text_scope, LiveMek, LiveMekCache,
+};
 pub use node::{
-    api_and_routing_context, app_context, app_handle, friend_list_dht_key,
-    friend_list_owner_keypair, is_attached, our_media_or_general_route_blob, our_media_route_blob,
-    our_route_blob, profile_dht_info, register_background_handle, require_routing_context,
-    require_safe_routing_context, routing_context, safe_api_and_routing_context,
-    safe_routing_context, veilid_api,
+    app_context, app_handle, friend_list_dht_key, friend_list_owner_keypair, is_attached,
+    login_scope, login_scope_or_closed, our_media_route_blob, our_route_blob, own_routes,
+    profile_dht_info, record_pool, require_safe_routing_context, safe_api_and_routing_context,
+    safe_routing_context, spawn_in_login, spawn_in_login_with_token, veilid_api,
 };
 pub use routes::{
-    cache_peer_route, cached_route_blob, evict_stale_peer_routes, friend_for_dht_key,
-    import_route_blob, invalidate_cached_peer_route, try_import_peer_route,
+    cache_peer_route, cached_route_blob, call_route_blob, evict_stale_peer_routes,
+    friend_for_dht_key, import_route_blob, invalidate_cached_peer_route, message_route_blob,
+    note_send_result, on_dead_remote_routes, route_imports, route_send_failed,
+    try_import_peer_route,
 };
 pub use voice::{
     current_voice_scope, media_live_peers, set_voice_engine_deafened, set_voice_engine_muted,
@@ -74,20 +79,9 @@ pub use voice::{
 pub(super) fn safe_routing_context_from(
     routing_context: veilid_core::RoutingContext,
 ) -> Option<veilid_core::RoutingContext> {
-    let spec = rekindle_route::contexts::RouteContextSpec::rc_safe();
+    let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
     routing_context
-        .with_safety(veilid_core::SafetySelection::Safe(
-            veilid_core::SafetySpec {
-                preferred_route: None,
-                hop_count: spec.hop_count,
-                stability: veilid_core::Stability::Reliable,
-                sequencing: if spec.ordered {
-                    veilid_core::Sequencing::PreferOrdered
-                } else {
-                    veilid_core::Sequencing::PreferUnordered
-                },
-            },
-        ))
+        .with_safety(rekindle_protocol::dht::pool::safety_selection(&profile))
         .ok()
 }
 

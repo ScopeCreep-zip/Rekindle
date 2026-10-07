@@ -7,14 +7,13 @@
 //! cap.
 
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
-use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_voice::{
-    AudioPrefs, CallKeyInfo, VoiceError, VoiceIdentity, VoicePeer, VoiceSessionDeps,
-    VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,
+    AudioPrefs, VoiceError, VoiceIdentity, VoiceLoopScopes, VoicePeer, VoiceSessionDeps,
+    VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownOpts,
 };
 
 use super::{event_mapping, io_helpers, session_setup, VoiceAdapter};
@@ -61,21 +60,9 @@ impl VoiceSessionDeps for VoiceAdapter {
         *self.state.voice_report_tx.write() = None;
     }
 
-    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)> {
-        crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
-    }
-
-    fn previous_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<([u8; 32], u64)> {
-        crate::state_helpers::previous_channel_mek(&self.state, community_id, channel_id)
-    }
-
     fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64) {
-        // Exact-generation request from the undecryptable packet's
-        // wire field (0 = "send me your current") — never a guess; the
+        // Exact-generation request resolved from the undecryptable
+        // frame's KID (0 = "send me your current") — never a guess; the
         // responder can always satisfy it, so recovery converges.
         let Some(my_pseudonym) = self
             .state
@@ -86,10 +73,14 @@ impl VoiceSessionDeps for VoiceAdapter {
         else {
             return;
         };
+        let Some(scope) = crate::state_helpers::media_scope(&self.state, community_id, channel_id)
+        else {
+            return;
+        };
         crate::services::community::mek_rotation::spawn_mek_request_with_retry(
             std::sync::Arc::clone(&self.state),
             community_id.to_string(),
-            channel_id.to_string(),
+            scope,
             needed_generation,
             my_pseudonym,
         );
@@ -97,6 +88,7 @@ impl VoiceSessionDeps for VoiceAdapter {
 
     fn send_receiver_report(&self, peer_pubkey_hex: &str, wire: Vec<u8>) {
         io_helpers::send_receiver_report_impl(
+            &self.state,
             self.current_shared_transport(),
             peer_pubkey_hex,
             wire,
@@ -123,14 +115,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn channel_is_stage(&self, community_id: &str, channel_id: &str) -> bool {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
-            return false;
-        };
-        let Some(channel) = community.channels.iter().find(|ch| ch.id == channel_id) else {
-            return false;
-        };
-        matches!(channel.channel_type, crate::state::ChannelType::Stage)
+        state_helpers::channel_is_stage(&self.state, community_id, channel_id)
     }
 
     fn we_are_stage_speaker(
@@ -172,20 +157,6 @@ impl VoiceSessionDeps for VoiceAdapter {
         channel.stage_speakers.iter().any(|s| s == sender_pseudonym)
     }
 
-    fn call_key_for_peer(&self, peer_pubkey: &str) -> Option<CallKeyInfo> {
-        self.state
-            .active_calls
-            .list_all()
-            .into_iter()
-            .find(|c| c.peer_pubkey == peer_pubkey)
-            .and_then(|c| {
-                c.call_key.map(|k| CallKeyInfo {
-                    call_key: k,
-                    peer_pubkey: peer_pubkey.to_string(),
-                })
-            })
-    }
-
     fn record_packet_drop(&self) {
         self.state.voice_pkt_drops.fetch_add(1, Ordering::Relaxed);
     }
@@ -223,8 +194,8 @@ impl VoiceSessionDeps for VoiceAdapter {
         );
     }
 
-    fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
-        state_helpers::register_background_handle(&self.state, handle);
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        state_helpers::login_scope_or_closed(&self.state)
     }
 
     // ── Phase 14.l — session orchestration deps ─────────────────
@@ -424,15 +395,12 @@ impl VoiceSessionDeps for VoiceAdapter {
         );
     }
 
-    fn our_route_blob(&self) -> Vec<u8> {
-        // Advertise the media-class inbound route (LowLatency +
-        // PreferUnordered) — the blob peers import to send us inbound
-        // voice/video — with a general-route fallback. The general route
-        // prefers oldest-reliable ordered TCP relays that HOL-block
-        // realtime media. Consumed solely by the voice JOIN + re-announce
-        // path (`session::local_controls`), so presence/governance/chat
-        // stay on the general route.
-        state_helpers::our_media_or_general_route_blob(&self.state)
+    fn our_media_route_blob(&self) -> Option<Vec<u8>> {
+        // The media-class inbound route (LowLatency + PreferUnordered):
+        // the blob peers import to send us voice and video. Never the
+        // general route, whose ordered TCP relays head-of-line block
+        // realtime media (plan C7.9c).
+        state_helpers::our_media_route_blob(&self.state)
     }
 
     fn my_display_name(&self) -> Option<String> {
@@ -448,20 +416,17 @@ impl VoiceSessionDeps for VoiceAdapter {
         rx
     }
 
-    fn register_mcu_task(
-        &self,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-        handle: tokio::task::JoinHandle<()>,
-    ) {
+    fn begin_mcu_scope(&self) -> Option<Arc<rekindle_lifecycle::SessionScope>> {
+        let login = state_helpers::login_scope(&self.state)?;
         let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut h) = *ve {
-            h.mcu_loop_shutdown = Some(shutdown_tx);
-            h.mcu_loop_handle = Some(handle);
-        }
+        let handle = ve.as_mut()?;
+        let scope = login.child("voice mcu");
+        handle.mcu = Some(Arc::clone(&scope));
+        Some(scope)
     }
 
-    fn take_shutdown_handles(&self, opts: VoiceShutdownOpts) -> VoiceShutdownHandles {
-        session_setup::take_shutdown_handles_impl(&self.state, opts)
+    fn take_loop_scopes(&self, opts: VoiceShutdownOpts) -> VoiceLoopScopes {
+        session_setup::take_loop_scopes_impl(&self.state, opts)
     }
 
     fn stop_devices_and_clear_engine(&self) {
@@ -519,22 +484,19 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     async fn stop_active_mcu(&self) {
-        let (mcu_tx, mcu_h) = {
-            let mut ve = self.state.voice_engine.lock();
-            if let Some(ref mut handle) = *ve {
-                (
-                    handle.mcu_loop_shutdown.take(),
-                    handle.mcu_loop_handle.take(),
-                )
-            } else {
-                (None, None)
+        let scope = self
+            .state
+            .voice_engine
+            .lock()
+            .as_mut()
+            .and_then(|handle| handle.mcu.take());
+        if let Some(scope) = scope {
+            if let Err(stuck) = scope
+                .shutdown(rekindle_voice::session::shutdown::LOOP_STOP_DEADLINE)
+                .await
+            {
+                tracing::warn!(%stuck, "voice MCU did not stop in time");
             }
-        };
-        if let Some(tx) = mcu_tx {
-            let _ = tx.send(()).await;
-        }
-        if let Some(h) = mcu_h {
-            let _ = h.await;
         }
     }
 
@@ -543,24 +505,12 @@ impl VoiceSessionDeps for VoiceAdapter {
         community_id: &str,
         pseudonym: &str,
     ) -> Option<String> {
+        let owner_key = state_helpers::current_owner_key(&self.state).ok()?;
         let community = community_id.to_string();
         let pseu = pseudonym.to_string();
-        let names: HashMap<String, String> = db_call_or_default(&self.pool, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT display_name FROM community_members
-                 WHERE community_id = ?1 AND pseudonym_key = ?2 LIMIT 1",
-            )?;
-            let mut rows = stmt.query(rusqlite::params![community, pseu])?;
-            let mut map = HashMap::new();
-            if let Some(row) = rows.next()? {
-                let name: Option<String> = row.get(0)?;
-                if let Some(n) = name {
-                    map.insert(String::new(), n);
-                }
-            }
-            Ok(map)
+        db_call_or_default(&self.pool, move |conn| {
+            rekindle_db::repo::members::display_name(conn, &owner_key, &community, &pseu)
         })
-        .await;
-        names.into_values().next()
+        .await
     }
 }

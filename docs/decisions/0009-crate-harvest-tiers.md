@@ -1,6 +1,8 @@
 # 0009 — Tier bumps and the eleven harvest crates
 
 - **Status:** Accepted
+- **Superseded in part by [0014](0014-veilid-boundary-is-transitive.md):** the "Boundaries"
+  rule on which crates may add `veilid-core` (the boundary is transitive linkage).
 - **Date:** 2026-06
 
 ## Context and problem statement

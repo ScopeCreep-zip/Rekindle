@@ -3,7 +3,7 @@
 use rekindle_protocol::dht::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 
-use super::policy::{thread_member_count, ThreadMessageView};
+use super::policy::ThreadMessageView;
 use super::support::{decrypt_thread_body, ensure_thread_record_and_message, thread_write_context};
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
@@ -24,6 +24,8 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
     // temporary context — the slot bits come from community state but
     // the channel_key is the thread's record_key.
     let parent_context = thread_write_context(deps, community_id, &record_key)?;
+    // Stored or held: a held thread write lands through the record pool.
+    // Thread messages carry no delivery status.
     deps.write_channel_message_smpl(&parent_context, &channel_message)
         .await?;
 
@@ -41,7 +43,8 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
 }
 
 /// Phase 19.e — load thread messages from the thread's SMPL record,
-/// decrypt with AAD waterfall, and return rendered `ThreadMessageView`s.
+/// open each under its exact key generation and AAD position, and return
+/// rendered `ThreadMessageView`s.
 pub async fn load_thread_messages<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -56,7 +59,7 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
         return Ok(Vec::new());
     };
     let entries = deps
-        .read_all_channel_entries(&record_key, thread_member_count())
+        .read_all_channel_entries(community_id, &record_key)
         .await?;
     let mut items: Vec<(u32, ChannelMessage)> = entries
         .into_iter()
@@ -82,16 +85,16 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
             let body = decrypt_thread_body(
                 deps,
                 community_id,
+                &thread.parent_channel_id_hex,
                 &record_key,
                 subkey_index,
-                message.lamport_ts,
-                &message.ciphertext,
-                message.mek_generation,
+                &message,
             );
             ThreadMessageView {
                 is_own: message.sender_pseudonym == my_pseudonym,
                 sender_pseudonym: message.sender_pseudonym.clone(),
-                body,
+                decryption_failed: body.is_none(),
+                body: body.unwrap_or_default(),
                 timestamp_ms: message.timestamp,
                 server_message_id: message.message_id.clone(),
                 mek_generation: message.mek_generation,

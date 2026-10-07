@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::state::SharedState;
 
 use crate::services::community_audit_runtime::BannedMemberInfo;
@@ -22,12 +21,12 @@ pub async fn remove_community_member(
     pseudonym_key: String,
     idempotency_key: uuid::Uuid,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let s = state.inner().clone();
-    let p = pool.inner().clone();
+    let p = pool.clone();
     state
         .idempotency
         .wrap(idempotency_key, || async move {
@@ -43,11 +42,11 @@ pub async fn timeout_member(
     duration_seconds: u64,
     reason: Option<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     timeout_member_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         pseudonym_key,
         duration_seconds,
@@ -61,9 +60,9 @@ pub async fn remove_timeout(
     community_id: String,
     pseudonym_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    remove_timeout_inner(state.inner(), pool.inner(), community_id, pseudonym_key).await
+    let pool = state.db.current()?;
+    remove_timeout_inner(state.inner(), &pool, community_id, pseudonym_key).await
 }
 
 #[tauri::command]
@@ -75,11 +74,11 @@ pub async fn set_channel_overwrite(
     allow: u64,
     deny: u64,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     set_channel_overwrite_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         channel_id,
         target_type,
@@ -97,11 +96,11 @@ pub async fn delete_channel_overwrite(
     target_type: String,
     target_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     delete_channel_overwrite_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         channel_id,
         target_type,
@@ -149,11 +148,11 @@ pub async fn admin_delete_channel_message(
     message_id: String,
     reason: Option<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     admin_delete_channel_message_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         channel_id,
         message_id,
@@ -176,11 +175,11 @@ pub async fn bulk_delete_channel_messages(
     message_ids: Vec<String>,
     reason: Option<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<u32, String> {
+    let pool = state.db.current()?;
     crate::services::community_moderation_bulk::bulk_delete_channel_messages_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         channel_id,
         message_ids,
@@ -194,7 +193,6 @@ pub async fn bulk_delete_channel_messages(
 pub async fn get_ban_list(
     community_id: String,
     state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
 ) -> Result<Vec<BannedMemberInfo>, String> {
     crate::services::community_audit_runtime::get_ban_list_inner(state.inner(), &community_id)
 }

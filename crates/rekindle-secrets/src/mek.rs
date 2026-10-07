@@ -40,9 +40,7 @@ use x25519_dalek::PublicKey as X25519PublicKey;
 use zeroize::Zeroizing;
 
 use crate::derive::pseudonym_to_x25519;
-
-/// HKDF info label for MEK wrapping key derivation.
-const HKDF_INFO: &[u8] = b"rekindle-mek-wrap-v1";
+use rekindle_types::domains;
 
 /// Derive an AES-256-GCM wrapping key from an X25519 shared secret.
 /// The return type wraps the bytes in `Zeroizing` so the wrapping key
@@ -51,7 +49,7 @@ const HKDF_INFO: &[u8] = b"rekindle-mek-wrap-v1";
 fn derive_wrapping_key(shared_secret: &x25519_dalek::SharedSecret) -> Zeroizing<[u8; 32]> {
     let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());
     let mut key = Zeroizing::new([0u8; 32]);
-    hkdf.expand(HKDF_INFO, key.as_mut())
+    hkdf.expand(domains::MEK_WRAP.as_bytes(), key.as_mut())
         .expect("32-byte output is valid for HKDF-SHA256");
     key
 }
@@ -96,10 +94,6 @@ pub fn wrap_mek(
 
 /// Version byte prefixing HPKE-wrapped (v2) MEK blobs.
 pub const HPKE_MEK_VERSION: u8 = 0x02;
-
-/// HPKE info label for MEK wrapping (v2). Deliberately Rekindle-owned —
-/// never Veilid's `veilid-hpke/1` (see module docs).
-const HPKE_MEK_INFO: &[u8] = b"rekindle-mek/1";
 
 type HpkeKem = hpke::kem::X25519HkdfSha256;
 type HpkeKdf = hpke::kdf::HkdfSha256;
@@ -148,7 +142,7 @@ pub fn hpke_wrap_mek(
     let (enc, ciphertext) = hpke::single_shot_seal::<HpkeAead, HpkeKdf, HpkeKem>(
         &hpke::OpModeS::Auth((our_sk, our_pk)),
         &their_pk,
-        HPKE_MEK_INFO,
+        domains::HPKE_MEK_INFO.as_bytes(),
         mek_wire_bytes,
         b"",
     )
@@ -182,7 +176,7 @@ pub fn hpke_open_mek(
         &hpke::OpModeR::Auth(their_pk),
         &our_sk,
         &enc,
-        HPKE_MEK_INFO,
+        domains::HPKE_MEK_INFO.as_bytes(),
         &wrapped_mek[33..],
         b"",
     )

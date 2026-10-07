@@ -15,6 +15,7 @@ pub use community::{
 };
 pub use friend::{
     FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, SetFriendStatusOutcome,
+    StatusPublisherDeps,
 };
 
 /// Errors surfaced by the public entry points across both traits.

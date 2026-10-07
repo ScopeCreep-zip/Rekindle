@@ -3,6 +3,7 @@ use rand::rngs::OsRng;
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
+use rekindle_types::domains;
 
 /// A user's cryptographic identity.
 ///
@@ -120,7 +121,7 @@ pub fn safety_number(key_a: &[u8], key_b: &[u8]) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(keys[0]);
     hasher.update(keys[1]);
-    hasher.update(b"rekindle-safety-v1");
+    hasher.update(domains::SAFETY_NUMBER.as_bytes());
     let hash = hasher.finalize();
     hex::encode(&hash.as_bytes()[..4])
 }

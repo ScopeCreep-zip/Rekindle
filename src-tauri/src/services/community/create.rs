@@ -13,7 +13,6 @@
 use std::sync::Arc;
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use tauri::Manager;
 use veilid_core::CRYPTO_KIND_VLD0;
 
 use crate::state::AppState;
@@ -28,11 +27,7 @@ pub async fn create_community(
         .read()
         .clone()
         .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()
-        .ok_or_else(|| "DbPool state missing".to_string())?
-        .inner()
-        .clone();
+    let pool = state.db.current()?;
     let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
         Arc::clone(state),
         app_handle,

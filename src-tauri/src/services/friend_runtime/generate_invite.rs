@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,7 +22,7 @@ pub struct GenerateInviteResult {
 
 pub async fn generate_invite_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
 ) -> Result<GenerateInviteResult, String> {
     let (public_key, display_name, secret_key) = {
         let identity = state.identity.read();
@@ -55,13 +55,11 @@ pub async fn generate_invite_inner(
         "generate_invite: route blob from state"
     );
 
-    if let Some(api) = state_helpers::veilid_api(&state) {
-        match api.import_remote_private_route(route_blob.clone()) {
-            Ok(_) => tracing::info!("generate_invite: route blob self-import OK"),
-            Err(e) => {
-                tracing::error!(error = %e, "generate_invite: OUR OWN route blob fails to import!");
-                return Err(format!("route blob is invalid: {e}"));
-            }
+    match state_helpers::import_route_blob(&state, &route_blob) {
+        Ok(_) => tracing::info!("generate_invite: route blob self-import OK"),
+        Err(e) => {
+            tracing::error!(error = %e, "generate_invite: OUR OWN route blob fails to import!");
+            return Err(format!("route blob is invalid: {e}"));
         }
     }
 
@@ -70,8 +68,8 @@ pub async fn generate_invite_inner(
         let handle = signal.as_ref().ok_or("signal manager not initialized")?;
         let bundle = handle
             .manager
-            .generate_prekey_bundle(1, Some(1), Some(1))
-            .map_err(|e| format!("generate prekey bundle: {e}"))?;
+            .current_bundle()
+            .map_err(|e| format!("prekey bundle: {e}"))?;
         serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))?
     };
 

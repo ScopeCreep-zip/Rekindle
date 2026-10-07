@@ -1,13 +1,9 @@
 //! Phase 23.D.4 — SQLite persist + retry-queue bodies extracted from
 //! `deps_impl.rs`. Each helper resolves the current owner_key and
 //! delegates to `crate::message_repo` or executes the
-//! channel_slowmode_state / channels SQL directly via the DbPool.
+//! channel_slowmode_state / channels SQL directly via the Db.
 
-use std::collections::HashMap;
-
-use rekindle_channel::deps::{
-    ChannelMessageRow, ChannelSendOutcome, PendingChannelWrite, ThreadInfoSnapshot,
-};
+use rekindle_channel::deps::{ChannelMessageRow, ChannelSendOutcome, ThreadInfoSnapshot};
 use rekindle_channel::error::ChannelError;
 
 use crate::channels::community_channel::ThreadInfoDto;
@@ -15,22 +11,6 @@ use crate::db_helpers::{db_call, db_fire};
 use crate::state_helpers;
 
 use super::ChannelAdapter;
-
-pub(super) async fn enqueue_channel_retry_impl(
-    adapter: &ChannelAdapter,
-    pending: PendingChannelWrite,
-) -> Result<(), ChannelError> {
-    let handle = adapter
-        .state
-        .channel_write_retry_tx
-        .read()
-        .clone()
-        .ok_or_else(|| ChannelError::Adapter("channel write retry queue unavailable".into()))?;
-    handle
-        .enqueue(pending.record_key, pending.subkey, pending.data)
-        .await;
-    Ok(())
-}
 
 pub(super) async fn persist_sent_message_impl(
     adapter: &ChannelAdapter,
@@ -228,47 +208,4 @@ pub(super) async fn load_thread_metadata_impl(
         last_message_at: dto.last_message_at,
         message_count: dto.message_count,
     })
-}
-
-pub(super) async fn stage_pseudonyms_by_subkey_impl(
-    adapter: &ChannelAdapter,
-    community_id: &str,
-) -> Result<HashMap<u32, String>, ChannelError> {
-    let community = adapter
-        .state
-        .communities
-        .read()
-        .get(community_id)
-        .cloned()
-        .ok_or_else(|| ChannelError::CommunityNotFound(community_id.into()))?;
-
-    let mut pseudonyms: HashMap<u32, String> = HashMap::new();
-    if let (Some(my_subkey_index), Some(my_pseudonym)) =
-        (community.my_subkey_index, community.my_pseudonym_key)
-    {
-        pseudonyms.insert(my_subkey_index, my_pseudonym);
-    }
-
-    let owner_key =
-        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
-    let cid = community_id.to_string();
-    let rows = db_call(&adapter.pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT pseudonym_key, subkey_index FROM community_members \
-             WHERE owner_key = ?1 AND community_id = ?2 AND subkey_index IS NOT NULL",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![owner_key, cid], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                u32::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
-            ))
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()
-    })
-    .await
-    .map_err(ChannelError::Adapter)?;
-    for (pseudonym_key, subkey_index) in rows {
-        pseudonyms.insert(subkey_index, pseudonym_key);
-    }
-    Ok(pseudonyms)
 }

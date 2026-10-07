@@ -8,22 +8,22 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::lifecycle::{auto_accept_cross_request, delete_pending_request_row};
 use super::session::{handle_friend_accept, handle_friend_request};
 use super::{IncomingFriendAccept, IncomingFriendRequest};
 use crate::services::message_service::{
-    build_and_queue_envelope, send_friend_reject, send_to_peer_raw,
+    build_and_queue_envelope, send_friend_reject, send_to_peer,
 };
 
 pub(crate) async fn handle_friend_request_full(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     req: &IncomingFriendRequest<'_>,
 ) {
     handle_friend_request(req.sender_hex, req.prekey_bundle);
@@ -96,7 +96,7 @@ pub(crate) async fn handle_friend_request_full(
                     "FriendRequest from already-Accepted peer with matching identity — \
                      treating as retry, re-sending ACK"
                 );
-                if let Err(e) = send_to_peer_raw(
+                if let Err(e) = send_to_peer(
                     state,
                     pool,
                     req.sender_hex,
@@ -124,7 +124,9 @@ pub(crate) async fn handle_friend_request_full(
             // user's friendship + session stay untouched until they
             // explicitly confirm.
             let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
-                .unwrap_or_else(|| format!("{}…", &req.sender_hex[..16.min(req.sender_hex.len())]));
+                .unwrap_or_else(|| {
+                    format!("{}…", rekindle_utils::text::prefix(req.sender_hex, 16))
+                });
             tracing::error!(
                 from = %req.sender_hex,
                 "FriendRequest from already-Accepted peer with DIFFERENT identity_key — \
@@ -178,7 +180,30 @@ pub(crate) async fn handle_friend_request_full(
         let owner_key = state_helpers::owner_key_or_default(state);
         if crate::invite_helpers::is_invite_cancelled(pool, &owner_key, iid).await {
             tracing::info!(from = %req.sender_hex, %iid, "rejecting request for cancelled invite");
-            let _ = send_friend_reject(state, pool, req.sender_hex).await;
+            // Same silent-swallow class the FriendRequestReceived ACK below
+            // guards against: a dropped rejection means the sender never
+            // learns the invite was cancelled and keeps re-sending the
+            // request. Log it, and queue for sync_service retry same as
+            // the ACK does.
+            if let Err(e) = send_friend_reject(state, pool, req.sender_hex).await {
+                tracing::info!(
+                    to = %req.sender_hex, error = %e,
+                    "FriendReject send failed, queueing for sync_service retry"
+                );
+                if let Err(e) = build_and_queue_envelope(
+                    state,
+                    pool,
+                    req.sender_hex,
+                    &MessagePayload::FriendReject,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        to = %req.sender_hex, error = %e,
+                        "failed to queue FriendReject for retry — sender may keep re-sending the cancelled invite"
+                    );
+                }
+            }
             return;
         }
         crate::invite_helpers::mark_invite_responded(pool, &owner_key, iid, req.sender_hex);
@@ -203,7 +228,10 @@ pub(crate) async fn handle_friend_request_full(
             message: req.message.to_string(),
         },
     );
-    crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
+    crate::event_dispatch::emit_journaled(
+        state,
+        crate::event_dispatch::WebviewEvent::Subscription(event),
+    );
 
     // B10/P3.4 — try the ACK send immediately; if it fails (peer offline,
     // route stale, app_message rejected), queue for retry through the
@@ -213,7 +241,7 @@ pub(crate) async fn handle_friend_request_full(
     // duplicate-spammy in the receiver's buddy list. The queue is bounded
     // (20 retries × 30s = 10 minutes per the existing sync_service drop
     // policy) so this can't loop forever.
-    if let Err(e) = send_to_peer_raw(
+    if let Err(e) = send_to_peer(
         state,
         pool,
         req.sender_hex,
@@ -247,7 +275,7 @@ pub(crate) async fn handle_friend_request_full(
 pub(crate) async fn handle_friend_accept_full(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     a: &IncomingFriendAccept<'_>,
 ) {
     // Guard: ignore FriendAccept if we are in the process of removing this friend
@@ -318,12 +346,15 @@ pub(crate) async fn handle_friend_accept_full(
             display_name: Some(display_name),
         },
     );
-    crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
+    crate::event_dispatch::emit_journaled(
+        state,
+        crate::event_dispatch::WebviewEvent::Subscription(event),
+    );
 }
 
 async fn persist_friend_request(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     req: &IncomingFriendRequest<'_>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::owner_key_or_default(state);
@@ -337,13 +368,21 @@ async fn persist_friend_request(
     let iid = req.invite_id.map(str::to_string);
     let now = crate::db::timestamp_now();
     db_call(pool, move |conn| {
-        conn.execute(
-            "INSERT OR REPLACE INTO pending_friend_requests \
-             (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle, invite_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb, iid],
-        )?;
-        Ok(())
+        rekindle_db::repo::pending_requests::upsert(
+            conn,
+            &owner_key,
+            &rekindle_db::repo::pending_requests::Incoming {
+                public_key: &pk,
+                display_name: &dn,
+                message: &msg,
+                received_at: now,
+                profile_dht_key: &pdk,
+                route_blob: &rb,
+                mailbox_dht_key: &mdk,
+                prekey_bundle: &pkb,
+                invite_id: iid.as_deref(),
+            },
+        )
     })
     .await
 }

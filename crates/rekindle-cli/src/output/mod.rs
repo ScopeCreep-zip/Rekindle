@@ -8,14 +8,12 @@ pub mod color;
 pub mod format;
 pub mod table;
 
-/// Output mode — determines formatting, color, and TUI behavior.
+/// Output mode — determines formatting and color.
 ///
 /// Resolved once at startup via `detect()`. Never changes during a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
-    /// Full TUI: alternate screen, raw mode, event loop.
-    Tui,
-    /// One-shot text: human-readable, color if TTY.
+    /// Human-readable text, colored when the terminal supports it.
     Text,
     /// Structured JSON: machine-parseable, no color.
     Json,
@@ -24,68 +22,29 @@ pub enum OutputMode {
 }
 
 impl OutputMode {
-    /// Single source of truth for mode detection.
-    ///
-    /// Called once in `main.rs`. The result is passed everywhere.
-    /// Priority: --format flag > pipe detection > TUI command detection.
-    pub fn detect(
-        format_flag: Option<&str>,
-        is_tui_command: bool,
-        no_color_flag: bool,
-        script_flag: bool,
-    ) -> Self {
-        // --format always wins
+    /// Single source of truth for mode detection: `--format` wins, then
+    /// `--script` (JSONL for streaming consumers), else text.
+    pub fn detect(format_flag: Option<&str>, script_flag: bool) -> Self {
         match format_flag {
-            Some("json") => return Self::Json,
-            Some("jsonl") => return Self::Jsonl,
-            Some("text") => return Self::Text,
-            _ => {}
+            Some("json") => Self::Json,
+            Some("jsonl") => Self::Jsonl,
+            Some("text") => Self::Text,
+            _ if script_flag => Self::Jsonl,
+            _ => Self::Text,
         }
-
-        // --script forces JSONL for streaming commands (accessibility, piping)
-        if script_flag {
-            return Self::Jsonl;
-        }
-
-        // Piped stdout — never TUI, never color
-        if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-            return Self::Text;
-        }
-
-        // Explicit no-color still allows TUI (TUI respects theme tokens)
-        let _ = no_color_flag;
-
-        // TUI commands in a TTY
-        if is_tui_command {
-            return Self::Tui;
-        }
-
-        Self::Text
     }
 
-    /// Whether this mode should use ANSI color in output.
-    ///
-    /// Delegates to `ColorSupport::detect` for the full detection chain
-    /// (NO_COLOR env, TERM=dumb, TTY check, --no-color flag).
+    /// Whether this mode should use ANSI color (`ColorSupport::detect`:
+    /// `--no-color`, `NO_COLOR`, `TERM=dumb`, TTY).
     pub fn use_color(self) -> bool {
-        match self {
-            Self::Json | Self::Jsonl => false,
-            Self::Text | Self::Tui => {
-                let support = color::ColorSupport::detect(false);
-                support.is_enabled()
-            }
-        }
+        self.color_support().is_enabled()
     }
 
-    /// Detect the full color capability profile for the current terminal.
-    ///
-    /// Returns a `ColorSupport` with `is_enabled()`, `has_true_color()`,
-    /// and `has_256_colors()` for use by the TUI theme layer and table
-    /// formatting module.
+    /// The color capability profile for this run.
     pub fn color_support(self) -> color::ColorSupport {
         match self {
             Self::Json | Self::Jsonl => color::ColorSupport::detect(true),
-            Self::Text | Self::Tui => color::ColorSupport::detect(false),
+            Self::Text => color::ColorSupport::detect(color::no_color_flag()),
         }
     }
 
@@ -101,51 +60,33 @@ mod tests {
 
     #[test]
     fn detect_json_from_flag() {
-        assert_eq!(
-            OutputMode::detect(Some("json"), false, false, false),
-            OutputMode::Json
-        );
+        assert_eq!(OutputMode::detect(Some("json"), false), OutputMode::Json);
     }
 
     #[test]
     fn detect_jsonl_from_flag() {
-        assert_eq!(
-            OutputMode::detect(Some("jsonl"), false, false, false),
-            OutputMode::Jsonl
-        );
+        assert_eq!(OutputMode::detect(Some("jsonl"), false), OutputMode::Jsonl);
     }
 
     #[test]
     fn detect_text_from_flag() {
-        assert_eq!(
-            OutputMode::detect(Some("text"), true, false, false),
-            OutputMode::Text
-        );
+        assert_eq!(OutputMode::detect(Some("text"), false), OutputMode::Text);
     }
 
     #[test]
     fn detect_text_default() {
-        // In test environment, stdout may or may not be a TTY
-        let mode = OutputMode::detect(None, false, false, false);
-        // Should be Text (non-TTY in test) or Text (TTY but not TUI command)
-        assert!(matches!(mode, OutputMode::Text));
+        assert_eq!(OutputMode::detect(None, false), OutputMode::Text);
     }
 
     #[test]
     fn detect_script_forces_jsonl() {
-        assert_eq!(
-            OutputMode::detect(None, true, false, true),
-            OutputMode::Jsonl
-        );
+        assert_eq!(OutputMode::detect(None, true), OutputMode::Jsonl);
     }
 
     #[test]
     fn format_flag_overrides_script() {
         // --format json wins over --script
-        assert_eq!(
-            OutputMode::detect(Some("json"), false, false, true),
-            OutputMode::Json
-        );
+        assert_eq!(OutputMode::detect(Some("json"), true), OutputMode::Json);
     }
 
     #[test]
@@ -159,6 +100,5 @@ mod tests {
         assert!(OutputMode::Json.is_structured());
         assert!(OutputMode::Jsonl.is_structured());
         assert!(!OutputMode::Text.is_structured());
-        assert!(!OutputMode::Tui.is_structured());
     }
 }

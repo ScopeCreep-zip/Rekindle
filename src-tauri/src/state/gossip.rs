@@ -19,9 +19,6 @@ pub struct GossipOverlay {
     /// All online members: pseudonym_key → member info.
     /// Superset of `peers`. Updated on each presence poll.
     pub online_members: HashMap<String, OnlineMember>,
-    /// Lamport counter for outgoing messages.
-    /// Incremented for each message we originate (not forwards).
-    pub lamport_counter: u64,
     /// True until the first successful sync after coming online.
     /// Used to trigger a `SyncRequest` to online peers for catch-up.
     pub needs_initial_sync: bool,
@@ -41,7 +38,6 @@ impl Default for GossipOverlay {
         Self {
             peers: HashMap::new(),
             online_members: HashMap::new(),
-            lamport_counter: 0,
             needs_initial_sync: true,
             pending_mesh_broadcasts: VecDeque::with_capacity(16),
         }

@@ -50,6 +50,22 @@ pub struct CommunityId(pub String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChannelId(pub [u8; 16]);
 
+impl ChannelId {
+    /// Parse 32 hex characters (the form channel ids take in caches,
+    /// records and IPC); `None` for anything else.
+    #[must_use]
+    pub fn from_hex(hex_str: &str) -> Option<Self> {
+        let bytes = hex::decode(hex_str).ok()?;
+        Some(Self(bytes.try_into().ok()?))
+    }
+
+    /// The 32-character lowercase hex form.
+    #[must_use]
+    pub fn to_hex(self) -> String {
+        hex::encode(self.0)
+    }
+}
+
 /// 16-byte UUID identifying a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageId(pub [u8; 16]);

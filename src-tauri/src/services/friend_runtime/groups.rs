@@ -2,14 +2,14 @@
 //! `commands/friends.rs`. Tiny CRUD orchestrators around the
 //! `friend_groups` table.
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn create_friend_group_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     name: String,
 ) -> Result<i64, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -24,7 +24,7 @@ pub async fn create_friend_group_inner(
 }
 
 pub async fn rename_friend_group_inner(
-    pool: &DbPool,
+    pool: &Db,
     group_id: i64,
     name: String,
 ) -> Result<(), String> {

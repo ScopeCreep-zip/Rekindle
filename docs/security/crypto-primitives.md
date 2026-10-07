@@ -19,6 +19,7 @@ which primitives address which threats.
 | Identity / signing | **Ed25519** | `ed25519-dalek` |
 | Key agreement | **X25519** | `x25519-dalek` (with `static_secrets`) |
 | Channel content AEAD | **AES-256-GCM** | `aes-gcm` |
+| Real-time voice frames | **SFrame** (RFC 9605, suite 0x0005 `AES_256_GCM_SHA512_128`, HKDF-SHA512) | `aes-gcm`, `hkdf`, `sha2` (in `rekindle-secrets::sframe`) |
 | At-rest / transport AEAD (Veilid layer; chunk FEK) | **XChaCha20-Poly1305** | `chacha20poly1305` (via Veilid + Rekindle file FEK) |
 | At-rest vault (entry seal) | **AES-256-GCM** + page-level **AES-256-CBC** via SQLCipher | `aes-gcm`, SQLCipher (via `rekindle-vault`) |
 | Tamper-evident audit MAC | **BLAKE3-keyed** | `blake3` (via `rekindle-audit`) |
@@ -119,6 +120,12 @@ messages, encrypted under the channel's current MEK.
   Replays across channels or out-of-position fail decryption.
 - Mature, audited implementations.
 
+Voice frames also use AES-256-GCM, through SFrame (RFC 9605 suite
+0x0005): deterministic nonces `salt XOR CTR` under per-sender,
+per-session keys, so uniqueness rests on the counter and the random
+56-bit session tag rather than on random nonces (see
+`architecture/voice.md` "Frame encryption").
+
 **Nonces.** 96-bit random nonces from the OS CSPRNG, generated
 per-message. The 96-bit space gives ~2⁴⁸ messages before random
 collision becomes non-negligible — well beyond what any Rekindle
@@ -188,14 +195,15 @@ ongoing per-message forward and backward secrecy.
   messages.
 - Self-healing: a fresh DH on every send recovers from a compromised
   message key on the next round-trip.
-- No central server required. X3DH operates against published prekey
-  bundles, which Rekindle stores in the DHT under the user's profile
-  record.
+- No central server required. PQXDH operates against prekey bundles:
+  the long-lived bundle (signed prekey + PQ last-resort key, no
+  one-time keys) is published in the DHT under the user's profile
+  record; every bundle sent to a single peer carries a fresh one-time
+  X25519 and ML-KEM key that is used once (PQXDH §3.3).
 
 **Implementation.** `crates/rekindle-crypto/src/signal/` contains the
 session manager, with stores backed by the vault
-(`src-tauri/src/keystore/signal.rs` adapter on top of
-`rekindle-vault`). Our types follow the
+(`rekindle_vault::typed::signal` on top of `rekindle-vault`). Our types follow the
 [libsignal-protocol](https://github.com/signalapp/libsignal) data
 shapes.
 
@@ -265,12 +273,12 @@ ecosystem.
   )
   Ed25519::from_seed(pseudonym_seed)
   ```
-- **Slot keypair derivation:**
+- **Slot keypair derivation** (`rekindle-secrets/src/derive.rs`):
   ```
   slot_seed_per_subkey = HKDF-SHA256(
       ikm:  community_slot_seed,
-      salt: "rekindle-slot-keypair-v1",
-      info: subkey_index_le32,
+      salt: none,
+      info: "rekindle-slot-" ‖ decimal(slot_index),
   )
   ```
 - **DM MEK derivation:**
@@ -285,12 +293,23 @@ ecosystem.
   ```
   mek_n+1 = HKDF-SHA256(mek_n, info="rekindle-dm-ratchet-v1")
   ```
-- **Direct call `call_key`** (within `rekindle-calls`).
+- **Direct call secret** (within `rekindle-calls`): the SFrame scope
+  secret for the call.
+- **SFrame** (`rekindle-secrets::sframe`, RFC 9605 §4.4.2): HKDF-SHA512
+  key/salt per KID, and per-sender base keys
+  `HKDF-SHA512(scope_secret, "rekindle-voice-sender-key-v1" ‖ sender_key ‖ tag)`
+  (§5.1). See `architecture/voice.md` "Frame encryption".
 
 **Why.** RFC 5869 standard. Domain-separated by an explicit `info`
 string for every distinct purpose — no two derivations share an
 `info`, so the same input keying material cannot accidentally yield
 the same output across contexts.
+
+Every label (HKDF info/salt, signature prefixes, BLAKE3 contexts, nonce
+prefixes) is declared once in `crates/rekindle-types/src/domains.rs`.
+Its tests reject duplicate labels and any label that is a prefix of
+another; `cargo xtask check-domain-literals` rejects label-shaped
+literals anywhere else ([architecture rule B18](../contributor/architecture-rules.md)).
 
 ## 9. Argon2id — passphrase KDF
 

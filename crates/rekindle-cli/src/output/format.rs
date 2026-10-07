@@ -98,7 +98,7 @@ pub fn print_kv(pairs: &[(&str, String)], mode: OutputMode) -> anyhow::Result<()
                 .collect();
             print_structured(&obj, mode)
         }
-        _ => {
+        OutputMode::Text => {
             let max_key_len = pairs.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
             let mut stdout = std::io::stdout().lock();
             for (key, value) in pairs {
@@ -116,7 +116,7 @@ pub fn print_kv(pairs: &[(&str, String)], mode: OutputMode) -> anyhow::Result<()
 pub fn print_list(items: &[String], mode: OutputMode) -> anyhow::Result<()> {
     match mode {
         OutputMode::Json | OutputMode::Jsonl => print_structured(items, mode),
-        _ => {
+        OutputMode::Text => {
             let mut stdout = std::io::stdout().lock();
             for item in items {
                 writeln!(stdout, "  {item}")?;

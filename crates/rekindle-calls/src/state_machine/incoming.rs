@@ -33,7 +33,8 @@ impl CallStateMachine {
             expires_at_ms,
             my_x25519_secret: None,
             peer_x25519_pub: Some(peer_x25519_pub),
-            call_key: None,
+            media_secret: None,
+            media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
             peer_video_decode_codecs: Vec::new(),
         };
         self.active.insert(call_id.clone(), state);
@@ -115,7 +116,7 @@ impl CallStateMachine {
         // Compute the matching public key for the SendCallAccept effect.
         let my_pub_for_accept = x25519_dalek::PublicKey::from(&my_x25519_secret);
         state.my_x25519_secret = Some(my_x25519_secret);
-        state.call_key = Some(call_key);
+        state.media_secret = Some(zeroize::Zeroizing::new(call_key));
         state.status = CallStatus::Connecting;
         let kind = state.kind;
         let peer = state.peer_pubkey.clone();
@@ -129,7 +130,6 @@ impl CallStateMachine {
                 call_id: call_id.into(),
                 peer: peer.clone(),
                 kind,
-                call_key,
             },
             Effect::SendCallAccept {
                 recipient: peer.clone(),

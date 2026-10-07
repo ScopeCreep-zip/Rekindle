@@ -7,17 +7,17 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Outbound 1:1 DM creation. Returns the new SMPL record key on
 /// success; errors on accept-decline, network failure, identity-not-
 /// loaded, etc.
 pub async fn start_dm(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     bob_public_key_hex: &str,
     alice_pseudonym: &str,
 ) -> Result<String, String> {

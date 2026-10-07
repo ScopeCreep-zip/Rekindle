@@ -1,5 +1,5 @@
 import { invoke } from "../invoke";
-import type {
+import type { ActiveCall,
   AudioDevices, MissedCallRow,
 } from "./types";
 
@@ -125,4 +125,6 @@ export const voiceCommands = {
       reason: reason ?? null,
     }),
   getMissedCalls: () => invoke<MissedCallRow[]>("get_missed_calls"),
+  /// A live 1:1 call, for a call window opening mid-call; null once ended.
+  getActiveCall: (callId: string) => invoke<ActiveCall | null>("get_active_call", { callId }),
 };

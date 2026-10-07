@@ -62,6 +62,17 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
                 h.update(b",");
             }
         }
+        GovernanceEvent::SegmentsChanged { segments, .. } => {
+            h.update(b"segments|");
+            for s in segments {
+                h.update(&s.segment_index.to_le_bytes());
+                h.update(s.registry_key.as_bytes());
+                h.update(s.governance_key.as_bytes());
+                h.update(&s.slot_range_start.to_le_bytes());
+                h.update(&s.slot_range_end.to_le_bytes());
+                h.update(b",");
+            }
+        }
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
         }

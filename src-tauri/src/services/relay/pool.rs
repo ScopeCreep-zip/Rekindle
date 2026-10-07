@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use rekindle_protocol::dht::profile::SUBKEY_RELAY_POOL;
 
-use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Number of slots in the published relay pool. Padded with dummies so
 /// the pool size does not leak the actual relay friend count
@@ -29,7 +29,7 @@ const DUMMY_ENTRY_MIN_SIZE: usize = 1024;
 /// Insert (or replace) a relay offer received from a friend.
 pub async fn add_received_offer(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     relay_pseudonym: &str,
     relay_route_blob: &[u8],
 ) -> Result<(), String> {
@@ -57,7 +57,7 @@ pub async fn add_received_offer(
 /// Drop a relay offer (received `RelayWithdraw` or local revocation).
 pub async fn remove_received_offer(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     relay_pseudonym: &str,
 ) -> Result<(), String> {
     let owner_key = state_helpers::owner_key_or_default(state);
@@ -76,7 +76,7 @@ pub async fn remove_received_offer(
 }
 
 /// List all currently held relay offers.
-pub async fn list_received_offers(state: &Arc<AppState>, pool: &DbPool) -> Vec<(String, Vec<u8>)> {
+pub async fn list_received_offers(state: &Arc<AppState>, pool: &Db) -> Vec<(String, Vec<u8>)> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Vec::new();
@@ -104,7 +104,7 @@ pub async fn list_received_offers(state: &Arc<AppState>, pool: &DbPool) -> Vec<(
 /// Dummies are 32 bytes of zero-prefixed random padding sized to roughly
 /// match real blob lengths so a passive observer cannot count real
 /// entries by ciphertext length.
-pub async fn get_local_relay_pool(state: &Arc<AppState>, pool: &DbPool) -> Vec<u8> {
+pub async fn get_local_relay_pool(state: &Arc<AppState>, pool: &Db) -> Vec<u8> {
     let mut entries: Vec<Vec<u8>> = list_received_offers(state, pool)
         .await
         .into_iter()
@@ -136,7 +136,7 @@ pub async fn get_local_relay_pool(state: &Arc<AppState>, pool: &DbPool) -> Vec<u
 /// Encode the local relay pool and push it to our profile DHT record at
 /// `SUBKEY_RELAY_POOL`. Best-effort; logs and swallows errors so an
 /// in-flight offer accept does not fail because the DHT push is slow.
-pub async fn republish_relay_pool(state: &Arc<AppState>, pool_db: &DbPool) {
+pub async fn republish_relay_pool(state: &Arc<AppState>, pool_db: &Db) {
     let body = get_local_relay_pool(state, pool_db).await;
     if let Err(e) = message_service::push_profile_update(state, SUBKEY_RELAY_POOL, body).await {
         tracing::warn!(error = %e, "failed to republish strand relay pool");

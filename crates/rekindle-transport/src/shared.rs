@@ -47,13 +47,13 @@ pub struct SharedState {
     /// Median p75 latency across reliable peers, in microseconds
     /// (0 = no samples yet).
     median_latency_us: AtomicU64,
-    /// Dead-route heal attempts admitted by the `HealGate` (A8 telemetry —
-    /// baseline for retuning the route-heal timers post-0.5.7).
-    heal_attempts_admitted: AtomicU64,
-    /// Dead-route heal attempts suppressed by the cooldown.
-    heal_attempts_suppressed: AtomicU64,
     /// Timestamp when the node was started.
     started_at: Instant,
+    /// `public_internet_ready` as a watch, for the record pool's retry layer.
+    ready: tokio::sync::watch::Sender<bool>,
+    /// The unlocked session's record pool (plan C7.3), seen by the dispatch
+    /// loop so dead watches reach their one owner.
+    records: RwLock<Option<Arc<rekindle_protocol::dht::pool::RecordPool>>>,
     /// Broadcast subscribers. Each subscriber gets a clone of every notification.
     /// Dead subscribers (receiver dropped) are cleaned up on the next `notify()`.
     subscribers: RwLock<Vec<mpsc::UnboundedSender<TransportNotification>>>,
@@ -70,9 +70,9 @@ impl SharedState {
             live_peer_count: AtomicU64::new(0),
             estimated_network_size: AtomicU64::new(0),
             median_latency_us: AtomicU64::new(0),
-            heal_attempts_admitted: AtomicU64::new(0),
-            heal_attempts_suppressed: AtomicU64::new(0),
             started_at: Instant::now(),
+            ready: tokio::sync::watch::Sender::new(false),
+            records: RwLock::new(None),
             subscribers: RwLock::new(Vec::new()),
         })
     }
@@ -86,6 +86,7 @@ impl SharedState {
         self.attachment.store(state as u8, Ordering::Release);
         self.is_attached.store(attached, Ordering::Release);
         self.public_internet_ready.store(pir, Ordering::Release);
+        self.ready.send_replace(pir);
 
         self.notify(&TransportNotification::AttachmentChanged {
             state,
@@ -115,19 +116,6 @@ impl SharedState {
             .store(median_latency_us, Ordering::Release);
     }
 
-    /// Count one dead-route heal decision (A8 telemetry). `admitted` is
-    /// the `HealGate::try_begin` result: `true` = heal ran, `false` =
-    /// suppressed by the cooldown. The admitted/suppressed ratio is the
-    /// baseline the route-heal timers get retuned against post-0.5.7.
-    pub fn count_heal_attempt(&self, admitted: bool) {
-        if admitted {
-            self.heal_attempts_admitted.fetch_add(1, Ordering::Relaxed);
-        } else {
-            self.heal_attempts_suppressed
-                .fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
     /// Broadcast a notification to all subscribers.
     ///
     /// Subscribers whose receivers have been dropped are automatically removed.
@@ -151,6 +139,21 @@ impl SharedState {
     }
 
     /// Whether the public internet is reachable via the node.
+    /// Follow `public_internet_ready`.
+    pub fn subscribe_ready(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.ready.subscribe()
+    }
+
+    /// The session's record pool, when one is running.
+    pub fn records(&self) -> Option<Arc<rekindle_protocol::dht::pool::RecordPool>> {
+        self.records.read().clone()
+    }
+
+    /// Install or remove the session's record pool.
+    pub fn set_records(&self, pool: Option<Arc<rekindle_protocol::dht::pool::RecordPool>>) {
+        *self.records.write() = pool;
+    }
+
     pub fn public_internet_ready(&self) -> bool {
         self.public_internet_ready.load(Ordering::Acquire)
     }
@@ -174,14 +177,6 @@ impl SharedState {
     /// (0 = no samples yet).
     pub fn median_latency_us(&self) -> u64 {
         self.median_latency_us.load(Ordering::Acquire)
-    }
-
-    /// Heal-gate decisions so far: `(admitted, suppressed)` (A8 telemetry).
-    pub fn heal_attempt_counts(&self) -> (u64, u64) {
-        (
-            self.heal_attempts_admitted.load(Ordering::Relaxed),
-            self.heal_attempts_suppressed.load(Ordering::Relaxed),
-        )
     }
 
     /// Time elapsed since the node was started.

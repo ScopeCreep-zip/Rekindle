@@ -7,8 +7,9 @@
 use async_trait::async_trait;
 use rekindle_presence::{
     FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, PresenceError,
-    SetFriendStatusOutcome, UserStatusKind,
+    SetFriendStatusOutcome, StatusPublisherDeps, UserStatusKind,
 };
+use rekindle_records::lease::LeaseId;
 
 use crate::services::presence_adapter::mapping::{
     from_crate_game_info, from_crate_status, map_event, to_crate_status,
@@ -16,6 +17,42 @@ use crate::services::presence_adapter::mapping::{
 use crate::services::presence_adapter::PresenceAdapter;
 use crate::state::UserStatus;
 use crate::state_helpers;
+
+#[async_trait]
+impl StatusPublisherDeps for PresenceAdapter {
+    fn profile_dht_info(&self) -> Option<String> {
+        self.state.node.read().as_ref()?.profile_dht_key.clone()
+    }
+
+    async fn write_profile_status_subkey(
+        &self,
+        profile_key: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), PresenceError> {
+        // Present-tense: a plain write, never re-pushed late (plan C7.7j).
+        let outcome = rekindle_protocol::dht::profile::set_own_profile_status(
+            &*self.record_pool()?,
+            profile_key,
+            payload,
+        )
+        .await
+        .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        if outcome.missed() {
+            return Err(PresenceError::Dht(format!(
+                "status not stored ({outcome:?})"
+            )));
+        }
+        Ok(())
+    }
+
+    fn current_identity_status(&self) -> Option<UserStatusKind> {
+        state_helpers::identity_status(&self.state).map(to_crate_status)
+    }
+
+    fn now_ms(&self) -> i64 {
+        crate::db::timestamp_now()
+    }
+}
 
 #[async_trait]
 impl FriendPresenceDeps for PresenceAdapter {
@@ -92,13 +129,6 @@ impl FriendPresenceDeps for PresenceAdapter {
         state_helpers::cache_peer_route(&self.state, friend_key, blob);
     }
 
-    fn track_open_record(&self, dht_record_key: &str) {
-        let mut dht_mgr = self.state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.track_open_record(dht_record_key.to_string());
-        }
-    }
-
     fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool) {
         let mut set = self.state.unwatched_friends.write();
         if unwatched {
@@ -108,153 +138,48 @@ impl FriendPresenceDeps for PresenceAdapter {
         }
     }
 
-    async fn open_friend_record(&self, dht_record_key: &str) -> Result<(), PresenceError> {
-        let rc = {
-            let node = self.state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        };
-        let Some(rc) = rc else {
-            // No routing context — non-fatal; the crate caller treats
-            // this the same as "watch will be retried later".
-            return Ok(());
-        };
+    async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError> {
         let record_key: veilid_core::RecordKey =
             dht_record_key
                 .parse()
                 .map_err(|e: veilid_core::VeilidAPIError| {
                     PresenceError::InvalidDhtKey(e.to_string())
                 })?;
-        // The returned `DHTRecordDescriptor` is intentionally
-        // dropped: the side effect (Veilid now tracks this record
-        // for the watch + subsequent reads) is what we want; the
-        // metadata struct is reconstructible at any time via
-        // `inspect_dht_record`.
-        rc.open_dht_record(record_key, None)
+        self.record_pool()?
+            .acquire(&record_key, None)
             .await
-            .map(drop)
             .map_err(|e| {
                 tracing::warn!(error = %e, dht_key = %dht_record_key, "failed to open DHT record");
                 PresenceError::Dht(e.to_string())
             })
     }
 
+    async fn hold_friend_record(&self, friend_key: &str, lease: LeaseId) {
+        let previous = self
+            .state
+            .friend_leases
+            .lock()
+            .insert(friend_key.to_string(), lease);
+        if let (Some(previous), Ok(pool)) = (previous, self.record_pool()) {
+            if previous != lease {
+                pool.release(previous).await;
+            }
+        }
+    }
+
     async fn watch_friend_subkeys(
         &self,
-        dht_record_key: &str,
+        lease: LeaseId,
         subkeys: &[u32],
-    ) -> Result<bool, PresenceError> {
-        let rc = {
-            let node = self.state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        };
-        let Some(rc) = rc else {
-            return Err(PresenceError::NotAttached);
-        };
-        let record_key: veilid_core::RecordKey =
-            dht_record_key
-                .parse()
-                .map_err(|e: veilid_core::VeilidAPIError| {
-                    PresenceError::InvalidDhtKey(e.to_string())
-                })?;
-        let subkey_range: veilid_core::ValueSubkeyRangeSet = subkeys.iter().copied().collect();
-        let active = rc
-            .watch_dht_values(record_key, Some(subkey_range), None, None)
-            .await
-            .map_err(|e| PresenceError::Dht(e.to_string()))?;
-        if active {
-            // A watched record has to be closable, because closing is
-            // what cancels the watch. Registering it here also puts it
-            // in the set `cleanup::close_tracked_records` drains at
-            // logout, so these stop accumulating for the whole session.
-            crate::state_helpers::track_open_records(
-                &self.state,
-                std::slice::from_ref(&dht_record_key.to_string()),
-            );
-        }
-        Ok(active)
-    }
-
-    fn profile_dht_info(&self) -> Option<(String, Option<String>)> {
-        let node = self.state.node.read();
-        let nh = node.as_ref()?;
-        let profile_key = nh.profile_dht_key.clone()?;
-        let owner_keypair_str = nh
-            .profile_owner_keypair
-            .as_ref()
-            .map(std::string::ToString::to_string);
-        Some((profile_key, owner_keypair_str))
-    }
-
-    async fn open_profile_record_for_write(
-        &self,
-        profile_key: &str,
-        owner_keypair_str: Option<&str>,
     ) -> Result<(), PresenceError> {
-        let rc = {
-            let node = self.state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        };
-        let Some(rc) = rc else {
-            return Err(PresenceError::NotAttached);
-        };
-        let record_key: veilid_core::RecordKey =
-            profile_key
-                .parse()
-                .map_err(|e: veilid_core::VeilidAPIError| {
-                    PresenceError::InvalidDhtKey(e.to_string())
-                })?;
-        let owner_kp = match owner_keypair_str {
-            Some(s) => Some(
-                s.parse::<veilid_core::KeyPair>()
-                    .map_err(|e| PresenceError::InvalidDhtKey(format!("owner keypair: {e}")))?,
-            ),
-            None => None,
-        };
-        rc.open_dht_record(record_key, owner_kp)
+        self.record_pool()?
+            .watch(lease, subkeys.iter().copied().collect())
             .await
-            .map(drop)
             .map_err(|e| PresenceError::Dht(e.to_string()))
-    }
-
-    async fn write_profile_status_subkey(
-        &self,
-        profile_key: &str,
-        payload: Vec<u8>,
-    ) -> Result<(), PresenceError> {
-        let rc = {
-            let node = self.state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        };
-        let Some(rc) = rc else {
-            return Err(PresenceError::NotAttached);
-        };
-        let record_key: veilid_core::RecordKey =
-            profile_key
-                .parse()
-                .map_err(|e: veilid_core::VeilidAPIError| {
-                    PresenceError::InvalidDhtKey(e.to_string())
-                })?;
-        rc.set_dht_value(
-            record_key,
-            rekindle_presence::PROFILE_STATUS_SUBKEY,
-            payload,
-            None,
-        )
-        .await
-        .map_err(|e| PresenceError::Dht(e.to_string()))?;
-        Ok(())
     }
 
     fn persist_friend_last_seen(&self, friend_key: &str, ts_ms: i64) {
         crate::friend_repo::fire_update_last_seen_at(&self.state, &self.pool, friend_key, ts_ms);
-    }
-
-    fn current_identity_status(&self) -> Option<UserStatusKind> {
-        state_helpers::identity_status(&self.state).map(to_crate_status)
-    }
-
-    fn now_ms(&self) -> i64 {
-        crate::db::timestamp_now()
     }
 
     fn emit(&self, event: FriendPresenceEvent) {
@@ -273,32 +198,25 @@ impl FriendPresenceDeps for PresenceAdapter {
         self.state.unwatched_friends.read().clone()
     }
 
+    /// A one-shot read; the friend's held watch lease makes the borrow a
+    /// table hit.
     async fn fetch_friend_dht_subkey(
         &self,
         dht_record_key: &str,
         subkey: u32,
         force_refresh: bool,
     ) -> Option<Vec<u8>> {
-        let rc = {
-            let node = self.state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        }?;
-        let record_key: veilid_core::RecordKey = dht_record_key.parse().ok()?;
-        // Ensure the record is open (re-opening is a no-op when already open).
-        if rc.open_dht_record(record_key.clone(), None).await.is_err() {
-            return None;
-        }
-        let value = rc
-            .get_dht_value(record_key, subkey, force_refresh)
-            .await
-            .ok()
-            .flatten()?;
-        let bytes = value.data().to_vec();
-        if bytes.is_empty() {
-            None
-        } else {
-            Some(bytes)
-        }
+        let pool = self.record_pool().ok()?;
+        let bytes = rekindle_protocol::dht::profile::read_profile_subkey(
+            &pool,
+            dht_record_key,
+            subkey,
+            force_refresh,
+        )
+        .await
+        .ok()
+        .flatten()?;
+        (!bytes.is_empty()).then_some(bytes)
     }
 
     fn find_stale_friend_heartbeats(&self, threshold_ms: i64) -> Vec<String> {

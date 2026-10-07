@@ -7,15 +7,15 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Responder-side accept for an inbound DM invite.
 pub async fn accept_dm_invite(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     record_key: &str,
 ) -> Result<(), String> {
     let app_handle =

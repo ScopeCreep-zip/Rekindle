@@ -3,7 +3,6 @@ use tauri::State;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
-use crate::db::DbPool;
 use crate::services::community_game_servers_runtime::{
     add_game_server_inner, get_game_servers_inner,
 };
@@ -41,8 +40,8 @@ pub async fn remove_game_server(
 #[tauri::command]
 pub async fn get_game_servers(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
 ) -> Result<Vec<GameServerInfoDto>, String> {
-    get_game_servers_inner(state.inner(), pool.inner(), community_id).await
+    let pool = state.db.current()?;
+    get_game_servers_inner(state.inner(), &pool, community_id).await
 }

@@ -9,6 +9,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum VideoError {
+    /// The community's Lamport clock could not produce a timestamp.
+    #[error(transparent)]
+    Lamport(#[from] rekindle_types::lamport::LamportError),
+
     #[error("identity not unlocked — cannot derive signing key")]
     IdentityNotLoaded,
 

@@ -6,17 +6,18 @@
 
 use std::sync::Arc;
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::rotate_profile_key;
 
 pub async fn block_user_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     public_key: String,
     display_name: Option<String>,
@@ -28,7 +29,7 @@ pub async fn block_user_inner(
         .or_else(|| display_name.clone())
         .unwrap_or_else(|| {
             if public_key.len() > 12 {
-                format!("{}...", &public_key[..12])
+                format!("{}...", rekindle_utils::text::prefix(&public_key, 12))
             } else {
                 public_key.clone()
             }
@@ -38,11 +39,8 @@ pub async fn block_user_inner(
     let ok = owner_key;
     let dn = resolved_name;
     db_call(&pool, move |conn| {
-        crate::friend_repo::delete_friend(conn, &ok, &pk)?;
-        conn.execute(
-            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
+        rekindle_db::repo::friends::delete(conn, &ok, &pk)?;
+        rekindle_db::repo::pending_requests::delete(conn, &ok, &pk)?;
         conn.execute(
             "INSERT OR REPLACE INTO blocked_users (owner_key, public_key, display_name, blocked_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![ok, pk, dn, timestamp],
@@ -64,17 +62,15 @@ pub async fn block_user_inner(
             if let Some(ref dht_key) = dht_key {
                 mgr.unregister_friend_dht_key(dht_key);
             }
-            mgr.manager.invalidate_route_for_peer(&public_key);
         }
     }
+    state_helpers::invalidate_cached_peer_route(&state, &public_key);
 
-    // Closing the record is what cancels its watch. Blocking someone
-    // while still watching their presence is the worse half of this
-    // defect: the user explicitly cut them off. Outside the guard —
-    // `close_and_untrack` takes `dht_manager.write()` itself.
-    if let Some(ref dht_key) = dht_key {
-        state_helpers::close_and_untrack(&state, dht_key).await;
-    }
+    // Releasing the friend's lease closes the record, which is what
+    // cancels its watch. Blocking someone while still watching their
+    // presence is the worse half of this defect: the user explicitly cut
+    // them off.
+    state_helpers::release_friend_record(&state, &public_key).await;
 
     {
         let signal = state.signal_manager.read();

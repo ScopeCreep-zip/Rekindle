@@ -14,7 +14,6 @@ use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayl
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::services::community_onboarding_mappers::{
     governance_onboarding_to_manifest_shape, governance_welcome_to_protocol,
@@ -26,6 +25,7 @@ use crate::services::community_onboarding_validation::{
 };
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn set_onboarding_config_inner(
     state: &SharedState,
@@ -37,7 +37,8 @@ pub async fn set_onboarding_config_inner(
         serde_json::from_value(config).map_err(|e| format!("invalid config: {e}"))?;
     validate_onboarding_shape(&config)?;
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -79,7 +80,8 @@ pub async fn set_welcome_screen_inner(
             "welcome screen supports at most {MAX_WELCOME_SCREEN_CHANNELS} featured channels"
         ));
     }
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -111,7 +113,8 @@ pub async fn submit_onboarding_answers_inner(
     let role_writes = resolve_self_assignable_roles(state, &community_id, &answers)?;
     let me = my_pseudonym(state, &community_id)?;
     for role_id in role_writes {
-        let lamport = state_helpers::increment_lamport(state, &community_id);
+        let lamport = state_helpers::next_governance_lamport(state, &community_id)
+            .map_err(|e| e.to_string())?;
         crate::services::community::write_entry(
             state,
             &community_id,
@@ -130,7 +133,7 @@ pub async fn submit_onboarding_answers_inner(
 
 pub async fn mark_onboarding_complete_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -154,12 +157,7 @@ pub async fn mark_onboarding_complete_inner(
 
     let cid = community_id.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE community_members SET onboarding_complete = 1 \
-             WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
-            rusqlite::params![owner_key, cid, pseudonym_key],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::set_onboarding_complete(conn, &owner_key, &cid, &pseudonym_key)
     })
     .await?;
     Ok(())

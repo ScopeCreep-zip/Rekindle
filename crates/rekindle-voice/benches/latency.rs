@@ -33,8 +33,8 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rekindle_voice::codec::OpusCodec;
 use rekindle_voice::jitter::JitterBuffer;
+use rekindle_voice::jitter::JitterFrame;
 use rekindle_voice::mixer::AudioMixer;
-use rekindle_voice::transport::VoicePacket;
 
 #[path = "../testsupport/synth.rs"]
 mod synth;
@@ -135,13 +135,10 @@ fn bench_e2e_loopback(c: &mut Criterion) {
     for seq in 0..3 {
         let encoded = encoder.encode(&frame).expect("warmup encode");
         jb.push(
-            VoicePacket {
-                sender_key: vec![1u8; 32],
+            JitterFrame {
                 sequence: seq,
                 timestamp: u64::from(seq) * 20,
-                audio_data: encoded.data,
-                mek_generation: 0,
-                signature: Vec::new(),
+                opus: encoded.data,
             },
             u64::from(seq) * 20,
         );
@@ -155,23 +152,19 @@ fn bench_e2e_loopback(c: &mut Criterion) {
                 let now_ms = u64::from(seq) * 20;
                 let encoded = encoder.encode(&frame).expect("encode");
                 jb.push(
-                    VoicePacket {
-                        sender_key: vec![1u8; 32],
+                    JitterFrame {
                         sequence: seq,
                         timestamp: u64::from(seq) * 20,
-                        audio_data: encoded.data,
-                        mek_generation: 0,
-                        signature: Vec::new(),
+                        opus: encoded.data,
                     },
                     now_ms,
                 );
                 seq = seq.wrapping_add(1);
                 if let Some(packet) = jb.pop(now_ms) {
                     let dec_frame = rekindle_voice::codec::EncodedFrame {
-                        data: packet.audio_data,
+                        data: packet.opus,
                         timestamp: packet.timestamp,
                         sequence: packet.sequence,
-                        mek_generation: packet.mek_generation,
                     };
                     let decoded = decoder.decode(&dec_frame).expect("decode");
                     let _ = mixer.mix(&[("p0", &decoded.samples)]);
@@ -180,15 +173,12 @@ fn bench_e2e_loopback(c: &mut Criterion) {
         });
 }
 
-fn make_packet(seq: u32) -> VoicePacket {
-    VoicePacket {
-        sender_key: vec![1u8; 32],
+fn make_packet(seq: u32) -> JitterFrame {
+    JitterFrame {
         sequence: seq,
         timestamp: u64::from(seq) * 20,
         // 80 bytes is a typical 32 kbps 20 ms Opus frame size.
-        audio_data: vec![0xAB; 80],
-        mek_generation: 0,
-        signature: Vec::new(),
+        opus: vec![0xAB; 80],
     }
 }
 

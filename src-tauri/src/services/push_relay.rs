@@ -12,15 +12,15 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn register_with_push_relay(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     relay_pseudonym: &str,
     device_push_token: &str,
     platform: &str,
@@ -58,12 +58,12 @@ pub async fn register_with_push_relay(
         platform: platform.to_string(),
         record_keys: record_keys.to_vec(),
     };
-    message_service::send_to_peer_raw(state, pool, relay_pseudonym, &payload).await
+    message_service::send_to_peer(state, pool, relay_pseudonym, &payload).await
 }
 
 pub async fn unregister_with_push_relay(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     relay_pseudonym: &str,
 ) -> Result<(), String> {
     let owner_key = state_helpers::owner_key_or_default(state);
@@ -104,15 +104,12 @@ pub async fn unregister_with_push_relay(
         let payload = MessagePayload::UnregisterPushRelay {
             device_push_token: token,
         };
-        let _ = message_service::send_to_peer_raw(state, pool, &pseudonym, &payload).await;
+        let _ = message_service::send_to_peer(state, pool, &pseudonym, &payload).await;
     }
     Ok(())
 }
 
-pub async fn list_registrations(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-) -> Vec<(String, String, String)> {
+pub async fn list_registrations(state: &Arc<AppState>, pool: &Db) -> Vec<(String, String, String)> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Vec::new();
@@ -155,10 +152,13 @@ pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
         *last = now;
     }
     let state = state.clone();
-    tokio::spawn(async move {
-        crate::services::governance_adapter::open_community_dht_records(&state).await;
-        crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
-    });
+    crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
+        "wake sync sweep",
+        async move {
+            crate::services::governance_adapter::open_community_dht_records(&state).await;
+            crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
+        },
+    );
 }
 
 const WAKE_NOTIFY_DEBOUNCE_SECS: u64 = 30;

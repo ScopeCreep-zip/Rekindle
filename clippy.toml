@@ -4,7 +4,7 @@ type-complexity-threshold = 300
 cognitive-complexity-threshold = 30
 future-size-threshold = 32768
 large-error-threshold = 256
-msrv = "1.87"
+msrv = "1.89"
 avoid-breaking-exported-api = false
 
 # ─── Disallowed methods ─────────────────────────────────────────────────

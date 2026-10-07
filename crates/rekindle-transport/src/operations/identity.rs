@@ -2,7 +2,6 @@
 //!
 //! Orchestration logic that composes:
 //! - `broadcast::dht_writes` for raw DHT primitives (create, open, set, close)
-//! - `broadcast::route` for route allocation
 //! - `broadcast::dm` for DM sends (rotation notifications)
 //! - `dht/*` typed modules for business logic reads/writes (profile, mailbox, friend list)
 
@@ -22,8 +21,6 @@ pub struct IdentityCreated {
     pub friend_list_keypair_bytes: Vec<u8>,
     pub friend_inbox_key: String,
     pub friend_inbox_keypair_hex: String,
-    pub route_id: String,
-    pub route_blob: Vec<u8>,
     pub prekey_material: PrekeyMaterial,
 }
 
@@ -48,14 +45,8 @@ pub async fn create_identity(
     let signing_key_bytes = signing_key.to_bytes();
     info!(public_key = %public_key_hex, "keypair generated");
 
-    // Step 2: Allocate private route
-    let (route_id, route_blob) = crate::broadcast::route::allocate_personal(node)
-        .await
-        .map_err(|e| TransportError::IdentityCreationFailed {
-            step: "route allocation".into(),
-            reason: e.to_string(),
-        })?;
-    info!(route_id, "private route allocated");
+    // No route here: the unlock that follows wants one, and resume or the
+    // route publisher writes it to the profile and mailbox (plan C7.9d).
 
     // Step 3: Generate prekey bundle. Signal identity store holds the
     // Ed25519 keypair bytes — PQXDH derives X25519 internally via
@@ -101,105 +92,97 @@ pub async fn create_identity(
             })?;
     info!("prekey bundle generated ({} bytes)", prekey_bytes.len());
 
-    // Step 4: Create profile DHT record (typed business logic)
-    let dht = node
-        .dht()
+    // Steps 4-6 create our own records in the record pool the caller
+    // started for this ceremony (plan C7.4). Ending that pool closes them,
+    // so a failed step leaves nothing open.
+    let pool = node
+        .require_records()
         .map_err(|e| TransportError::IdentityCreationFailed {
-            step: "dht access".into(),
+            step: "record pool".into(),
             reason: e.to_string(),
         })?;
-    let (profile_dht_key, profile_keypair) = dht
-        .profile()
-        .create(display_name, status_message, &prekey_bytes, &route_blob)
+    let failed =
+        |step: &str, e: rekindle_protocol::ProtocolError| TransportError::IdentityCreationFailed {
+            step: step.into(),
+            reason: e.to_string(),
+        };
+
+    // Step 4: Create profile DHT record
+    let (_profile_lease, profile_dht_key, profile_keypair, outcome) =
+        rekindle_protocol::dht::profile::create_profile(
+            &pool,
+            rekindle_protocol::dht::profile::ProfileFields {
+                display_name,
+                status_message,
+                prekey_bundle: &prekey_bytes,
+                route_blob: &[],
+            },
+        )
         .await
-        .map_err(|e| TransportError::IdentityCreationFailed {
-            step: "profile record".into(),
-            reason: e.to_string(),
-        })?;
-    let profile_keypair_bytes = profile_keypair
-        .map(|kp| serialize_keypair(&kp))
-        .unwrap_or_default();
+        .map_err(|e| failed("profile record", e))?;
+    if outcome.missed() {
+        warn!(?outcome, "profile fields not all stored at consensus");
+    }
+    let profile_keypair_bytes = serialize_keypair(&profile_keypair);
     info!(key = %profile_dht_key, "profile record created");
 
-    // Step 5: Create mailbox DHT record (typed business logic)
+    // Step 5: Create mailbox DHT record, owned by the identity key
     let identity_keypair = ed25519_to_keypair(&signing_key);
-    let mailbox_dht_key = match dht.mailbox().create(identity_keypair.clone()).await {
-        Ok(key) => key,
-        Err(e) => {
-            warn!(error = %e, "mailbox creation failed, cleaning up profile");
-            let _ = dht.profile().close(&profile_dht_key).await;
-            return Err(TransportError::IdentityCreationFailed {
-                step: "mailbox record".into(),
-                reason: e.to_string(),
-            });
-        }
-    };
-    if let Err(e) = dht
-        .mailbox()
-        .update_route(&mailbox_dht_key, &route_blob)
-        .await
-    {
-        warn!(error = %e, "mailbox route update failed, cleaning up");
-        let _ = dht.mailbox().close(&mailbox_dht_key).await;
-        let _ = dht.profile().close(&profile_dht_key).await;
-        return Err(TransportError::IdentityCreationFailed {
-            step: "mailbox route".into(),
-            reason: e.to_string(),
-        });
-    }
+    let (_mailbox_lease, mailbox_dht_key) =
+        rekindle_protocol::dht::mailbox::create_mailbox(&pool, identity_keypair)
+            .await
+            .map_err(|e| failed("mailbox record", e))?;
     info!(key = %mailbox_dht_key, "mailbox record created");
 
-    // Step 6: Create friend list DHT record (typed business logic)
-    let (friend_list_dht_key, friend_list_keypair) = match dht.friend_list().create().await {
-        Ok(result) => result,
-        Err(e) => {
-            warn!(error = %e, "friend list creation failed, cleaning up");
-            let _ = dht.mailbox().close(&mailbox_dht_key).await;
-            let _ = dht.profile().close(&profile_dht_key).await;
-            return Err(TransportError::IdentityCreationFailed {
-                step: "friend list record".into(),
-                reason: e.to_string(),
-            });
-        }
-    };
-    let friend_list_keypair_bytes = friend_list_keypair
-        .map(|kp| serialize_keypair(&kp))
-        .unwrap_or_default();
+    // Step 6: Create friend list DHT record
+    let (friend_list_dht_key, friend_list_keypair, outcome) =
+        rekindle_protocol::dht::friends::create_friend_list(&pool)
+            .await
+            .map_err(|e| failed("friend list record", e))?;
+    if outcome.missed() {
+        warn!(?outcome, "empty friend list not stored at consensus");
+    }
+    let friend_list_keypair_bytes = serialize_keypair(&friend_list_keypair);
     info!(key = %friend_list_dht_key, "friend list record created");
 
-    // Step 7: Create friend inbox (raw DHT primitive — DFLT(32), no typed wrapper needed)
-    let (friend_inbox_key, friend_inbox_keypair) =
-        crate::broadcast::dht_writes::create_dflt(node, 32, None)
+    // Step 7: Create the friend inbox (DFLT(32)) in the pool, and seed
+    // subkey 0. Veilid's create is local; the seed is what publishes the
+    // record, and until it lands a peer's friend request gets `Key not
+    // found`, so it must land (plan C7.6d publish-on-first-write).
+    let inbox_failed = |reason: String| TransportError::IdentityCreationFailed {
+        step: "friend inbox".into(),
+        reason,
+    };
+    let inbox_schema = veilid_core::DHTSchema::dflt(32).map_err(|e| inbox_failed(e.to_string()))?;
+    let (inbox_lease, inbox_key, inbox_keypair) = pool
+        .create(inbox_schema, None)
+        .await
+        .map_err(|e| inbox_failed(e.to_string()))?;
+    pool.set(inbox_lease, 0, b"[]".to_vec(), None)
+        .await
+        .and_then(|outcome| outcome.require_stored(0))
+        .map_err(|e| inbox_failed(format!("seed write: {e}")))?;
+    let friend_inbox_key = inbox_key.to_string();
+    let friend_inbox_keypair_hex = hex::encode(serialize_keypair(&inbox_keypair));
+
+    // Publish inbox key + keypair to our profile (the pool's writable lease)
+    for (subkey, value) in [
+        (
+            crate::payload::dht_types::PROFILE_SUBKEY_FRIEND_INBOX_KEY,
+            friend_inbox_key.as_bytes().to_vec(),
+        ),
+        (
+            crate::payload::dht_types::PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
+            friend_inbox_keypair_hex.as_bytes().to_vec(),
+        ),
+    ] {
+        crate::broadcast::dht_writes::set_own_profile_subkey(node, &profile_dht_key, subkey, value)
             .await
             .map_err(|e| TransportError::IdentityCreationFailed {
-                step: "friend inbox".into(),
+                step: "friend inbox publish".into(),
                 reason: e.to_string(),
             })?;
-    let friend_inbox_keypair_hex = friend_inbox_keypair
-        .map(|kp| hex::encode(serialize_keypair(&kp)))
-        .unwrap_or_default();
-
-    // Seed subkey 0 (raw primitive)
-    let _ =
-        crate::broadcast::dht_writes::set(node, &friend_inbox_key, 0, b"[]".to_vec(), None).await;
-
-    // Publish inbox key + keypair to profile (raw primitive — profile subkey writes)
-    let _ = crate::broadcast::dht_writes::set(
-        node,
-        &profile_dht_key,
-        crate::payload::dht_types::PROFILE_SUBKEY_FRIEND_INBOX_KEY,
-        friend_inbox_key.as_bytes().to_vec(),
-        None,
-    )
-    .await;
-    let _ = crate::broadcast::dht_writes::set(
-        node,
-        &profile_dht_key,
-        crate::payload::dht_types::PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
-        friend_inbox_keypair_hex.as_bytes().to_vec(),
-        None,
-    )
-    .await;
+    }
 
     info!(key = %friend_inbox_key, "friend inbox created and published to profile");
     info!("identity creation ceremony complete");
@@ -214,32 +197,8 @@ pub async fn create_identity(
         friend_list_keypair_bytes,
         friend_inbox_key,
         friend_inbox_keypair_hex,
-        route_id,
-        route_blob,
         prekey_material,
     })
-}
-
-pub async fn destroy_identity(
-    node: &TransportNode,
-    session: &crate::session::Session,
-) -> Result<()> {
-    info!("destroying identity — closing all DHT records");
-    let dht = node.dht()?;
-    let _ = dht.profile().close(&session.identity.profile_dht_key).await;
-    let _ = dht.mailbox().close(&session.identity.mailbox_dht_key).await;
-    let _ = dht
-        .friend_list()
-        .close(&session.identity.friend_list_dht_key)
-        .await;
-    for membership in session.communities.values() {
-        let _ =
-            crate::broadcast::dht::record::close(dht.routing_context(), &membership.governance_key)
-                .await;
-        let _ = crate::broadcast::dht_writes::close(node, &membership.registry_key).await;
-    }
-    info!("identity destroyed — all DHT records closed");
-    Ok(())
 }
 
 pub async fn rotate_identity(
@@ -254,11 +213,11 @@ pub async fn rotate_identity(
     info!(new_public_key = %new_public_key_hex, "new keypair generated");
 
     // Notify all friends via broadcast::dm
-    let dht = node.dht()?;
-    let friends = dht
-        .friend_list()
-        .read(&session.identity.friend_list_dht_key)
-        .await?;
+    let friends = rekindle_protocol::dht::friends::read_friend_list(
+        &*node.require_records()?,
+        &session.identity.friend_list_dht_key,
+    )
+    .await?;
     let mut notified = 0u32;
     for friend in &friends.friends {
         match crate::broadcast::dm::profile_key_rotated(

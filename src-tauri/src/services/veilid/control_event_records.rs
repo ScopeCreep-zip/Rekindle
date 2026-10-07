@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub(super) fn handle_event_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
@@ -83,7 +83,7 @@ pub(super) fn handle_event_payload(
 pub(super) fn handle_game_server_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
@@ -147,7 +147,7 @@ pub(super) fn handle_game_server_payload(
 fn handle_event_upsert(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     event: rekindle_types::event::EventInfo,
     created: bool,

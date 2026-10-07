@@ -26,10 +26,11 @@ use crate::frame::TypeId;
 // The old CommunityJoinRequest/CommunityJoinResponse RPC types have been
 // removed — they were synchronous and required both parties online.
 
-/// A single MEK wrapped for a specific member via ECDH.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A single MEK wrapped for a specific member via ECDH, with its scope
+/// already parsed from the control payload's channel field.
+#[derive(Debug, Clone)]
 pub struct MekTransferPayload {
-    pub channel_id: String,
+    pub scope: rekindle_types::channel_keys::KeyScope,
     pub generation: u64,
     pub rotator_pseudonym_hex: String,
     pub wrapped_mek: Vec<u8>,

@@ -14,14 +14,23 @@ use rekindle_types::id::ChannelId;
 
 pub(super) fn write_onboarding_config(
     mut p: schema_pkg::onboarding_config_entry::Builder<'_>,
-    enabled: bool,
-    mode: &str,
-    default_channels: &[ChannelId],
-    questions: &[OnboardingQuestion],
-    welcome_message: Option<&str>,
-    guide_steps: &[GuideStep],
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::OnboardingConfig {
+        enabled,
+        mode,
+        default_channels,
+        questions,
+        welcome_message,
+        guide_steps,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_onboarding_config: variant mismatch")
+    };
+    let enabled = *enabled;
+    let welcome_message = welcome_message.as_deref();
+    let lamport = *lamport;
     p.set_enabled(enabled);
     p.set_mode(mode);
     let mut chans = p

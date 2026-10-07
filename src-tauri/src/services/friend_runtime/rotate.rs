@@ -2,90 +2,83 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
-pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
-    // Create a new profile DHT record with a fresh keypair.
-    // Clone the routing_context out before .await (parking_lot guards are !Send).
-    let routing_context = {
+pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), String> {
+    let (old_key_str, old_lease) = {
         let node = state.node.read();
         let nh = node.as_ref().ok_or("node not initialized")?;
-        nh.routing_context.clone()
+        (
+            nh.profile_dht_key.clone().unwrap_or_default(),
+            nh.profile_lease,
+        )
     };
-    let temp_mgr = rekindle_protocol::dht::DHTManager::new(routing_context.clone());
-    let (new_key, new_keypair) = temp_mgr
-        .create_record(8)
-        .await
-        .map_err(|e| format!("create new profile record: {e}"))?;
-
-    // Copy current profile data to the new record
-    let (old_key_str, display_name, status_bytes, route_blob) = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized")?;
-        let ok = nh.profile_dht_key.clone().unwrap_or_default();
+    let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
+    let (display_name, status_message) = {
         let identity = state.identity.read();
         let id = identity.as_ref().ok_or("identity not set")?;
-        let dn = id.display_name.clone();
-        let status = id.status as u8;
-        let rb = nh.route_blob.clone().unwrap_or_default();
-        (ok, dn, vec![status], rb)
+        (id.display_name.clone(), id.status_message.clone())
     };
 
-    // Read prekey from signal manager
+    // The new record carries the same long-lived bundle as the old one.
     let prekey_bytes = {
         let signal = state.signal_manager.read();
-        if let Some(handle) = signal.as_ref() {
-            match handle.manager.generate_prekey_bundle(1, Some(1), Some(1)) {
-                Ok(bundle) => serde_json::to_vec(&bundle).unwrap_or_default(),
-                Err(_) => Vec::new(),
-            }
-        } else {
-            Vec::new()
-        }
+        let handle = signal.as_ref().ok_or("signal manager not initialized")?;
+        let bundle = handle
+            .manager
+            .current_bundle()
+            .map_err(|e| format!("prekey bundle: {e}"))?;
+        serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))?
     };
 
-    let record_key: veilid_core::RecordKey = new_key
-        .parse()
-        .map_err(|e| format!("invalid new profile key: {e}"))?;
-
-    // Write profile subkeys to new record
-    // Subkey 0: display name, 1: status, 5: prekey, 6: route blob
-    let _ = routing_context
-        .set_dht_value(record_key.clone(), 0, display_name.into_bytes(), None)
-        .await;
-    let _ = routing_context
-        .set_dht_value(record_key.clone(), 1, status_bytes, None)
-        .await;
-    let _ = routing_context
-        .set_dht_value(record_key.clone(), 5, prekey_bytes, None)
-        .await;
-    let _ = routing_context
-        .set_dht_value(record_key.clone(), 6, route_blob, None)
-        .await;
-
-    // Update NodeHandle
-    {
-        let mut node = state.node.write();
-        if let Some(nh) = node.as_mut() {
-            nh.profile_dht_key = Some(new_key.clone());
-            nh.profile_owner_keypair.clone_from(&new_keypair);
-        }
+    // A new profile record with a fresh owner key, written as login writes
+    // one (plan C7.4: one profile creator).
+    let record_pool = state_helpers::record_pool(state)?;
+    let (new_lease, new_key, new_keypair, outcome) =
+        rekindle_protocol::dht::profile::create_profile(
+            &record_pool,
+            rekindle_protocol::dht::profile::ProfileFields {
+                display_name: &display_name,
+                status_message: &status_message,
+                prekey_bundle: &prekey_bytes,
+                route_blob: &route_blob,
+            },
+        )
+        .await
+        .map_err(|e| format!("create new profile record: {e}"))?;
+    if outcome.missed() {
+        tracing::warn!(?outcome, "rotated profile not stored at consensus");
     }
+
+    state_helpers::store_dht_record(
+        state,
+        &new_key,
+        &state_helpers::DhtRecordType::Profile(new_keypair.clone(), new_lease),
+    );
+    // The old profile is no longer ours to write.
+    if let Some(lease) = old_lease {
+        record_pool.release(lease).await;
+    }
+    // The publisher writes the status to the new profile (it reads the
+    // profile key at write time).
+    services::presence_service::request_status_publish(state);
 
     // Update SQLite (both dht_record_key and dht_owner_keypair)
     let nk = new_key.clone();
-    let keypair_str = new_keypair.as_ref().map(std::string::ToString::to_string);
+    let keypair_str = Some(new_keypair.to_string());
     let owner_key = state_helpers::owner_key_or_default(state);
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE identity SET dht_record_key = ?1, dht_owner_keypair = COALESCE(?3, dht_owner_keypair) WHERE public_key = ?2",
-            rusqlite::params![nk, owner_key, keypair_str],
-        )?;
-        Ok(())
+        rekindle_db::repo::identity::set_owned_record(
+            conn,
+            &owner_key,
+            rekindle_db::repo::identity::OwnedRecord::Profile,
+            &nk,
+            keypair_str.as_deref(),
+        )
     })
     .await?;
 
@@ -98,8 +91,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &DbPool) -> Result<
         new_profile_dht_key: new_key.clone(),
     };
     for fk in &friend_keys {
-        if let Err(e) = services::message_service::send_to_peer_raw(state, pool, fk, &payload).await
-        {
+        if let Err(e) = services::message_service::send_to_peer(state, pool, fk, &payload).await {
             tracing::warn!(to = %fk, error = %e, "failed to send ProfileKeyRotated");
         }
     }

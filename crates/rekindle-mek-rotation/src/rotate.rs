@@ -12,7 +12,9 @@
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::id::ChannelId;
 
 use crate::deps::MekDistributeDeps;
 use crate::distribute::distribute_mek;
@@ -30,16 +32,31 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     let departed = pseudonym_from_hex(departed_pseudonym)
         .ok_or_else(|| MekRotationError::InvalidInput("invalid departed pseudonym".to_string()))?;
     let recipients = deps.online_recipients(community_id, Some(departed_pseudonym));
-    let candidate_keys = recipients
+    // The rotator is elected only among members who may rotate (plan
+    // D20) — every peer filters the same merged governance, so all agree
+    // on the candidates. With none online, nobody rotates: the rotation
+    // waits for an eligible member rather than falling to one readers
+    // would refuse.
+    let mut candidate_keys = recipients
         .iter()
         .filter_map(|r| pseudonym_from_hex(&r.pseudonym_hex))
         .collect::<Vec<_>>();
+    if let Some(me) = deps.my_pseudonym(community_id) {
+        if !candidate_keys.contains(&me) {
+            candidate_keys.push(me);
+        }
+    }
+    candidate_keys.retain(|candidate| deps.may_rotate(community_id, candidate));
+    if candidate_keys.is_empty() {
+        tracing::info!(community = %community_id, "departure rotation pending — no member who may rotate is online");
+        return Ok(());
+    }
     let candidates = cascade_candidates(&departed, &candidate_keys, MAX_CASCADES);
 
-    let cache = deps.cache();
-    let initial_generation = cache.current_generation(community_id, "");
+    let scope = KeyScope::Community;
+    let initial_generation = deps.cache().current_generation(community_id, scope);
     let Some(cascade_skipped) =
-        wait_for_rotation_slot(deps, community_id, None, &candidates, initial_generation).await
+        wait_for_rotation_slot(deps, community_id, scope, &candidates, initial_generation).await
     else {
         return Ok(());
     };
@@ -60,7 +77,7 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     distribute_mek(
         deps,
         community_id,
-        None,
+        scope,
         &mek,
         &recipients
             .iter()
@@ -72,10 +89,9 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     )
     .await?;
 
-    deps.apply_received_mek_to_state(community_id, None, &mek);
-    deps.persist_received_mek(community_id, None, &mek);
+    install_minted(deps, community_id, scope, &mek)?;
 
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::MEKGenerationBump {
@@ -87,12 +103,12 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     )
     .await?;
 
-    deps.emit_rotation_received(community_id, None, new_generation);
+    deps.emit_rotation_received(community_id, scope, new_generation);
     let rotator_pseudonym = deps.my_pseudonym(community_id).map(|p| pseudonym_hex(&p));
     deps.send_to_mesh(
         community_id,
         &CommunityEnvelope::Control(ControlPayload::MEKRotated {
-            channel_id: None,
+            channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym,
         }),
@@ -109,10 +125,14 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
 ) -> Result<(), MekRotationError> {
     let trigger = pseudonym_from_hex(trigger_pseudonym)
         .ok_or_else(|| MekRotationError::InvalidInput("invalid trigger pseudonym".to_string()))?;
+    let channel = ChannelId::from_hex(channel_id).ok_or_else(|| {
+        MekRotationError::InvalidInput(format!("invalid channel id {channel_id}"))
+    })?;
+    let scope = KeyScope::Channel(channel);
     let recipients = deps
         .voice_recipients(
             community_id,
-            channel_id,
+            channel,
             trigger_pseudonym,
             include_trigger_in_recipients,
         )
@@ -124,16 +144,9 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
         .collect::<Vec<_>>();
     let candidates = cascade_candidates(&trigger, &candidate_keys, MAX_CASCADES);
 
-    let cache = deps.cache();
-    let initial_generation = cache.current_generation(community_id, channel_id);
-    let Some(_cascade_skipped) = wait_for_rotation_slot(
-        deps,
-        community_id,
-        Some(channel_id),
-        &candidates,
-        initial_generation,
-    )
-    .await
+    let initial_generation = deps.cache().current_generation(community_id, scope);
+    let Some(_cascade_skipped) =
+        wait_for_rotation_slot(deps, community_id, scope, &candidates, initial_generation).await
     else {
         return Ok(());
     };
@@ -151,7 +164,7 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
     distribute_mek(
         deps,
         community_id,
-        Some(channel_id),
+        scope,
         &mek,
         &recipients
             .iter()
@@ -163,15 +176,14 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
     )
     .await?;
 
-    deps.apply_received_mek_to_state(community_id, Some(channel_id), &mek);
-    deps.persist_received_mek(community_id, Some(channel_id), &mek);
-    deps.emit_rotation_received(community_id, Some(channel_id), new_generation);
+    install_minted(deps, community_id, scope, &mek)?;
+    deps.emit_rotation_received(community_id, scope, new_generation);
 
     let rotator_pseudonym = deps.my_pseudonym(community_id).map(|p| pseudonym_hex(&p));
     deps.send_to_mesh(
         community_id,
         &CommunityEnvelope::Control(ControlPayload::MEKRotated {
-            channel_id: Some(channel_id.to_string()),
+            channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym,
         }),
@@ -181,8 +193,7 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
 
 /// Replace a MEK because an operator asked, not because somebody left.
 ///
-/// `channel_id` is `None` for the community-wide key and `Some(id)` for
-/// one channel's.
+/// `scope` is the community key or one channel's.
 ///
 /// [`rotate_text_mek_for_departure`] cannot serve this: it elects a
 /// rotator from `blake3(departed || candidate)` and there is no departed
@@ -198,12 +209,13 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
 /// without one, which is the coordinator in miniature. Delivery here is
 /// per-recipient `app_call`, the same path a departure rotation uses.
 ///
-/// Honest peers accept the resulting `MEKGenerationBump` because the
-/// CRDT treats it as a Max-Register from any non-banned writer.
+/// Only a member who may rotate (KICK, BAN or MANAGE_COMMUNITY) may do
+/// this; honest peers accept the resulting `MEKGenerationBump` only from
+/// such a member and only as `current + 1` (plan D20).
 pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
     deps: &D,
     community_id: &str,
-    channel_id: Option<&str>,
+    scope: KeyScope,
 ) -> Result<(), MekRotationError> {
     // Resolved before any work: the bump entry has to name a real
     // pseudonym, and a placeholder would merge as though an unrelated
@@ -211,10 +223,15 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
     let me = deps
         .my_pseudonym(community_id)
         .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
+    // An operator rotation is the same act as a departure rotation, so it
+    // takes the same permission (plan D20) — readers would refuse the
+    // bump otherwise.
+    if !deps.may_rotate(community_id, &me) {
+        return Err(MekRotationError::NotPermitted);
+    }
     let me_hex = pseudonym_hex(&me);
 
-    let cache_channel = channel_id.unwrap_or("");
-    let new_generation = deps.cache().current_generation(community_id, cache_channel) + 1;
+    let new_generation = deps.cache().current_generation(community_id, scope) + 1;
 
     // Provenance is what makes two admins rotating at the same
     // generation converge: `convergence::incoming_wins_same_generation`
@@ -228,34 +245,91 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
 
     // Excluding nobody: everyone online is still a member.
     let recipients = deps.online_recipients(community_id, None);
-    distribute_mek(deps, community_id, channel_id, &new_mek, &recipients).await?;
+    distribute_mek(deps, community_id, scope, &new_mek, &recipients).await?;
 
-    deps.apply_received_mek_to_state(community_id, channel_id, &new_mek);
-    deps.persist_received_mek(community_id, channel_id, &new_mek);
+    install_minted(deps, community_id, scope, &new_mek)?;
 
-    // Stamp the generation so peers that were offline during the
-    // distribution can tell their cached key is stale.
-    let lamport = deps.increment_lamport(community_id);
-    deps.write_governance_entry(
-        community_id,
-        GovernanceEntry::MEKGenerationBump {
-            generation: new_generation,
-            // No departure triggered this, so the field names the
-            // initiator rather than an uninvolved member who would
-            // otherwise look like they had left.
-            trigger_departed: me,
-            cascade_skipped: Vec::new(),
-            lamport,
-        },
-    )
-    .await?;
+    // Stamp the community generation so peers that were offline during
+    // the distribution can tell their cached key is stale. A channel key's
+    // generation is its own and is not a governance fact.
+    if scope == KeyScope::Community {
+        let lamport = deps.next_governance_lamport(community_id)?;
+        deps.write_governance_entry(
+            community_id,
+            GovernanceEntry::MEKGenerationBump {
+                generation: new_generation,
+                // No departure triggered this, so the field names the
+                // initiator rather than an uninvolved member who would
+                // otherwise look like they had left.
+                trigger_departed: me,
+                cascade_skipped: Vec::new(),
+                lamport,
+            },
+        )
+        .await?;
+    }
 
     deps.send_to_mesh(
         community_id,
         &CommunityEnvelope::Control(ControlPayload::MEKRotated {
-            channel_id: channel_id.map(ToOwned::to_owned),
+            channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym: Some(me_hex),
         }),
     )
+}
+
+/// Install and persist a key this node just minted and distributed. A
+/// refusal means a competing key won the same-generation tiebreak while we
+/// were distributing; announcing ours after that would split the scope.
+fn install_minted<D: MekDistributeDeps>(
+    deps: &D,
+    community_id: &str,
+    scope: KeyScope,
+    mek: &MediaEncryptionKey,
+) -> Result<(), MekRotationError> {
+    if !deps.apply_received_mek_to_state(community_id, scope, mek) {
+        return Err(MekRotationError::InvalidInput(format!(
+            "minted {scope} generation {} lost to a competing key",
+            mek.generation()
+        )));
+    }
+    deps.persist_received_mek(community_id, scope, mek);
+    Ok(())
+}
+
+/// Mint a voice channel's first key when we join it holding none
+/// (plan B5.4). A sender holds its key before it sends — Matrix creates
+/// its outbound session, WhatsApp its sender key, on first send — and a
+/// channel's media is under its own key (architecture §10.5), never the
+/// community key. Returns whether a key was minted.
+///
+/// Distribution is not needed: members already present rotate on our
+/// join and wrap their next key to us, which supersedes this one; two
+/// members minting at once converge on the same-generation tiebreak.
+pub fn mint_first_channel_key<D: MekDistributeDeps>(
+    deps: &D,
+    community_id: &str,
+    channel: ChannelId,
+) -> Result<bool, MekRotationError> {
+    let scope = KeyScope::Channel(channel);
+    if deps.cache().current_generation(community_id, scope) > 0 {
+        return Ok(false);
+    }
+    let me = deps
+        .my_pseudonym(community_id)
+        .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
+    let rank = rekindle_secrets::rotator::election_hash(&channel_context(channel), &me.0);
+    let mek = MediaEncryptionKey::generate(1).with_provenance(me.0, rank);
+    install_minted(deps, community_id, scope, &mek)?;
+    deps.emit_rotation_received(community_id, scope, 1);
+    Ok(true)
+}
+
+/// The election context for a channel's first key: its id, so concurrent
+/// first mints rank against the same value on every peer.
+fn channel_context(channel: ChannelId) -> [u8; 32] {
+    let mut context = [0u8; 32];
+    context[..16].copy_from_slice(&channel.0);
+    context
 }

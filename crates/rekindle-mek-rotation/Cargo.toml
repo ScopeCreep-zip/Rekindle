@@ -9,20 +9,22 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-rekindle-types = { path = "../rekindle-types" }
-rekindle-crypto = { path = "../rekindle-crypto" }
-rekindle-protocol = { path = "../rekindle-protocol" }
-rekindle-secrets = { path = "../rekindle-secrets" }
-rekindle-codec = { path = "../rekindle-codec" }
-rekindle-utils = { path = "../rekindle-utils" }
 async-trait = "0.1"
 blake3 = "1"
 hex = { workspace = true }
 parking_lot = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+zeroize = "1"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

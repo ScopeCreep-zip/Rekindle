@@ -45,7 +45,6 @@ use std::collections::HashMap;
 
 use rekindle_types::notification::TransportNotification;
 use x25519_dalek::StaticSecret;
-use zeroize::Zeroize;
 
 use crate::state::{CallKind, CallState, CallStatus};
 
@@ -215,14 +214,12 @@ pub enum Effect {
     //  not produced as an outbound envelope.)
 
     // ── Voice session ───────────────────────────────────────────────
-    /// Bring up audio + jitter buffer for this call. The `call_key` is
-    /// the X25519-ECDH-derived shared secret, used by the voice
-    /// transport for AEAD on every frame (W13.14).
+    /// Bring up audio + jitter buffer for this call. The voice session
+    /// reads the call's media keys from the call state.
     StartVoiceSession {
         call_id: String,
         peer: String,
         kind: CallKind,
-        call_key: [u8; 32],
     },
 
     /// Tear down the voice session for this call.
@@ -416,18 +413,6 @@ pub fn kind_str(k: CallKind) -> &'static str {
     match k {
         CallKind::Audio => "audio",
         CallKind::Video => "video",
-    }
-}
-
-/// Drop impl shared with [`CallState`]: zero out any in-flight key
-/// material when the state machine is dropped.
-impl Drop for CallStateMachine {
-    fn drop(&mut self) {
-        for state in self.active.values_mut() {
-            if let Some(ref mut k) = state.call_key {
-                k.zeroize();
-            }
-        }
     }
 }
 

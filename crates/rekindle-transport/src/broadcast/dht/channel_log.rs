@@ -1,88 +1,14 @@
-//! Per-channel SMPL message record and append-only log operations.
+//! The append-only `DhtLog` (spine + segments) used for per-peer DM logs.
 //!
-//! Each channel has its own DHT record for storing message history.
-//! Channel records use zero-owner SMPL: each member writes to the
-//! subkey matching their registry slot index.
-//!
-//! Additionally provides a `DhtLog` — an append-only log built on DHT
-//! records for conversation message persistence, using a spine + segments
-//! architecture.
+//! `ChannelLogOps` used to live here: a second implementation of the
+//! per-channel SMPL record's member reads and writes, over this crate's
+//! raw `RoutingContext`. It had no caller, and its wire format diverged:
+//! it wrote a bare JSON `ChannelMessage` into a member subkey, where
+//! `rekindle_protocol::dht::community::channel_record` writes W26-signed
+//! pages, so any write through it would have corrupted that member's page.
+//! Channel records are `channel_smpl` over `channel_record`, through the
+//! record pool (plan C7.4).
 
-use veilid_core::{KeyPair, RoutingContext};
-
-use super::record;
-use crate::error::{Result, TransportError};
-use crate::payload::dht_types::ChannelMessage;
-
-/// Operations on per-channel SMPL message records.
-pub struct ChannelLogOps<'a> {
-    rc: &'a RoutingContext,
-}
-
-impl<'a> ChannelLogOps<'a> {
-    pub fn new(rc: &'a RoutingContext) -> Self {
-        Self { rc }
-    }
-
-    /// Read a channel message from a member's subkey.
-    pub async fn read_message(
-        &self,
-        key: &str,
-        slot_index: u32,
-        force_refresh: bool,
-    ) -> Result<Option<ChannelMessage>> {
-        match record::get(self.rc, key, slot_index, force_refresh).await? {
-            Some(data) if !data.is_empty() => {
-                let msg: ChannelMessage = serde_json::from_slice(&data).map_err(|e| {
-                    TransportError::DeserializationFailed {
-                        type_id: 0,
-                        reason: format!("channel message: {e}"),
-                    }
-                })?;
-                Ok(Some(msg))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    /// Write a channel message to the member's subkey.
-    pub async fn write_message(
-        &self,
-        key: &str,
-        slot_index: u32,
-        message: &ChannelMessage,
-        writer: KeyPair,
-    ) -> Result<()> {
-        let bytes =
-            serde_json::to_vec(message).map_err(|e| TransportError::SerializationFailed {
-                reason: format!("channel message: {e}"),
-            })?;
-        record::set(self.rc, key, slot_index, bytes, Some(writer))
-            .await
-            .map(|_| ())
-    }
-
-    /// Open a channel record for reading.
-    pub async fn open_readonly(&self, key: &str) -> Result<()> {
-        record::open_readonly(self.rc, key).await
-    }
-
-    /// Open a channel record with write access.
-    pub async fn open_writable(&self, key: &str, writer: KeyPair) -> Result<()> {
-        record::open_writable(self.rc, key, writer).await
-    }
-
-    /// Watch all subkeys of a channel record.
-    pub async fn watch(&self, key: &str, subkey_count: u32) -> Result<bool> {
-        let subkeys: Vec<u32> = (0..subkey_count).collect();
-        record::watch(self.rc, key, &subkeys).await
-    }
-
-    /// Close the channel record.
-    pub async fn close(&self, key: &str) -> Result<()> {
-        record::close(self.rc, key).await
-    }
-}
 // ── Append-only log ──────────────────────────────────────────────────
 //
 // `DhtLog` is `rekindle_protocol`'s `DHTLog`, not a second copy of it.

@@ -52,11 +52,8 @@ pub async fn eager_fetch_missing(state: &Arc<AppState>, community_id: &str) {
         tracing::debug!(community = %community_id, "eager expression fetch: no app handle yet");
         return;
     };
-    let pool = {
-        let Some(state_pool) = tauri::Manager::try_state::<crate::db::DbPool>(&app_handle) else {
-            return;
-        };
-        state_pool.inner().clone()
+    let Ok(pool) = state.db.current() else {
+        return;
     };
     let adapter = FilesAdapter::new(state.clone(), app_handle, pool);
     rekindle_files::eager_fetch_missing(adapter.as_ref(), community_id).await;

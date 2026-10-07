@@ -332,8 +332,49 @@ fn round_trip_conversation_header() {
     assert_eq!(g.elapsed_seconds, 600);
     assert_eq!(decoded.message_log_key, "VLD0:msglog123");
     assert_eq!(decoded.route_blob, vec![0xDD; 64]);
-    assert_eq!(decoded.prekey_bundle.identity_key, vec![1u8; 32]);
-    assert_eq!(decoded.prekey_bundle.registration_id, 42);
+    // Full-struct comparison, not spot fields — this is exactly the test
+    // shape that let the embedded `PreKeyBundle` silently drop its 6
+    // PQXDH fields on every encode (two spot-checked fields kept
+    // passing while the other nine, unchecked, round-tripped as zeroed
+    // defaults).
+    assert_eq!(
+        decoded.prekey_bundle.identity_key,
+        header.prekey_bundle.identity_key
+    );
+    assert_eq!(
+        decoded.prekey_bundle.signed_pre_key,
+        header.prekey_bundle.signed_pre_key
+    );
+    assert_eq!(
+        decoded.prekey_bundle.signed_pre_key_sig,
+        header.prekey_bundle.signed_pre_key_sig
+    );
+    assert_eq!(
+        decoded.prekey_bundle.one_time_pre_key,
+        header.prekey_bundle.one_time_pre_key
+    );
+    assert_eq!(
+        decoded.prekey_bundle.one_time_pre_key_id,
+        header.prekey_bundle.one_time_pre_key_id
+    );
+    assert_eq!(
+        decoded.prekey_bundle.registration_id,
+        header.prekey_bundle.registration_id
+    );
+    assert_eq!(decoded.prekey_bundle.pqpk_lr, header.prekey_bundle.pqpk_lr);
+    assert_eq!(
+        decoded.prekey_bundle.pqpk_lr_sig,
+        header.prekey_bundle.pqpk_lr_sig
+    );
+    assert_eq!(decoded.prekey_bundle.pqpk_ot, header.prekey_bundle.pqpk_ot);
+    assert_eq!(
+        decoded.prekey_bundle.pqpk_ot_sig,
+        header.prekey_bundle.pqpk_ot_sig
+    );
+    assert_eq!(
+        decoded.prekey_bundle.pqpk_ot_id,
+        header.prekey_bundle.pqpk_ot_id
+    );
     assert_eq!(decoded.created_at, 5000);
     assert_eq!(decoded.updated_at, 6000);
 }

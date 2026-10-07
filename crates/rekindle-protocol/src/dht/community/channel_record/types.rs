@@ -2,6 +2,7 @@
 //! their field attributes reference.
 
 use super::super::base64_bytes;
+use rekindle_types::domains;
 use serde::{Deserialize, Serialize};
 
 /// A message entry written to a channel record subkey.
@@ -232,8 +233,8 @@ impl ChannelSubkeyPayload {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
         let mut out =
-            Vec::with_capacity(b"rekindle-channel-subkey-v1".len() + 32 + 8 + entries_json.len());
-        out.extend_from_slice(b"rekindle-channel-subkey-v1");
+            Vec::with_capacity(domains::CHANNEL_SUBKEY.len() + 32 + 8 + entries_json.len());
+        out.extend_from_slice(domains::CHANNEL_SUBKEY.as_bytes());
         out.extend_from_slice(&self.author_pseudonym.0);
         out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
         out.extend_from_slice(&entries_json);

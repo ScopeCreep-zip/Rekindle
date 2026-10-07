@@ -27,17 +27,6 @@ impl DaemonGossipAdapter {
             .check_and_insert(community_id, sender, dedup_key);
     }
 
-    pub(super) fn increment_lamport_impl(&self, community_id: &str) {
-        let guard = self.ctx.broadcast_mgr.read();
-        let Some(manager) = guard.as_ref() else {
-            return;
-        };
-        let mut meshes = manager.meshes().write();
-        if let Some(mesh) = meshes.get_mut(community_id) {
-            mesh.clock.increment();
-        }
-    }
-
     /// Hold a broadcast that found no peers.
     ///
     /// The daemon has no pending-mesh queue. Dropping is the correct
@@ -50,7 +39,7 @@ impl DaemonGossipAdapter {
     pub(super) fn enqueue_pending_mesh_impl(community_id: &str, signed: &SignedEnvelope) {
         tracing::debug!(
             community = %community_id,
-            sender = %&signed.sender_pseudonym[..12.min(signed.sender_pseudonym.len())],
+            sender = %signed.sender_pseudonym,
             "gossip: no peers online, dropping broadcast (PATH 1 write is authoritative)"
         );
     }

@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_pins_runtime::{
     get_channel_pins_inner, pin_message_inner, unpin_message_inner,
 };
@@ -14,12 +13,12 @@ use crate::services::community_pins_runtime::PinnedMessageInfoDto;
 #[tauri::command]
 pub async fn add_reaction(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     message_id: String,
     emoji: String,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _ = pool;
     require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::persist_reaction(
@@ -37,12 +36,12 @@ pub async fn add_reaction(
 #[tauri::command]
 pub async fn remove_reaction(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     message_id: String,
     emoji: String,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _ = pool;
     require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::persist_reaction(
@@ -82,9 +81,9 @@ pub async fn unpin_message(
 #[tauri::command]
 pub async fn get_channel_pins(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<PinnedMessageInfoDto>, String> {
-    get_channel_pins_inner(state.inner(), pool.inner(), community_id, channel_id).await
+    let pool = state.db.current()?;
+    get_channel_pins_inner(state.inner(), &pool, community_id, channel_id).await
 }

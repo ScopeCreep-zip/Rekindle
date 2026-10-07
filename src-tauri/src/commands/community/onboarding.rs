@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_onboarding_runtime::{
     get_onboarding_config_inner, get_welcome_screen_inner, mark_onboarding_complete_inner,
     set_onboarding_config_inner, set_welcome_screen_inner, submit_onboarding_answers_inner,
@@ -60,8 +59,8 @@ pub async fn submit_onboarding_answers(
 #[tauri::command]
 pub async fn mark_onboarding_complete(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
 ) -> Result<(), String> {
-    mark_onboarding_complete_inner(state.inner(), pool.inner(), community_id).await
+    let pool = state.db.current()?;
+    mark_onboarding_complete_inner(state.inner(), &pool, community_id).await
 }

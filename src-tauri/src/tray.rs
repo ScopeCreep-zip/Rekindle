@@ -71,13 +71,5 @@ fn set_status_from_tray(app: &tauri::AppHandle, status: UserStatus) {
 
     tracing::info!(status = ?status, "status changed from tray");
 
-    // Clone the Arc<AppState> so we can move it into the async task
-    let state_clone = state.inner().clone();
-
-    // Spawn an async task to publish the status change to DHT
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = services::presence_service::publish_status(&state_clone, status).await {
-            tracing::warn!(error = %e, "failed to publish tray status change to DHT");
-        }
-    });
+    services::presence_service::request_status_publish(state.inner());
 }

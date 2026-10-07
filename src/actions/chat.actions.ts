@@ -89,7 +89,6 @@ export function handleIncomingMessage(
   peerId: string,
   message: Message,
 ): void {
-  console.warn("[DM] handleIncomingMessage:", peerId, message.body?.slice(0, 30));
   const existing = chatState.conversations[peerId];
   if (existing) {
     setChatState("conversations", peerId, {

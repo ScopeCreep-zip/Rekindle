@@ -54,7 +54,7 @@ Three categories with explicit rules:
    Permission check → AppState read → pure logic call →
    persistence → event emit. No protocol decisions in the body.
 2. **Adapter (`*_adapter/`).** `Deps` trait implementation against
-   the live `AppState` + `AppHandle` + `DbPool`. Module-dir pattern
+   the live `AppState` + `AppHandle` + `Db`. Module-dir pattern
    with submodules `deps_impl`, `state_reads`, `state_mutations`,
    `dht`, `persist`, `events`, `misc`.
 3. **Pure-logic surfaces (`services/community/*.rs`, `services/dm/`,

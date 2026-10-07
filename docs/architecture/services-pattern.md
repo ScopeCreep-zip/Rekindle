@@ -52,7 +52,7 @@ calling into it.
 
 An adapter directory implements a `Deps` trait defined in one of the
 Tier-3-through-7 crates against the live `AppState` + `AppHandle` +
-`DbPool`. It is the **Schwarzschild boundary**: the only place in
+`Db`. It is the **Schwarzschild boundary**: the only place in
 `src-tauri/` that both holds an `Arc<AppState>` and constructs
 `veilid_core::*` types on the crate's behalf.
 
@@ -61,7 +61,7 @@ Every adapter follows the same internal split (see
 
 | File | Contents |
 |---|---|
-| `mod.rs` | The adapter struct (`pub struct ChannelAdapter { state: Arc<AppState>, app: AppHandle, pool: DbPool }`) and module declarations |
+| `mod.rs` | The adapter struct (`pub struct ChannelAdapter { state: Arc<AppState>, app: AppHandle, pool: Db }`) and module declarations |
 | `deps_impl.rs` | The single `impl rekindle_channel::ChannelMessagingDeps for ChannelAdapter` block — every method body delegates to one of the submodules below |
 | `state_reads.rs` | Read paths: channel / thread / member lookups, permission computation |
 | `state_mutations.rs` | Write paths into AppState (acquire lock, mutate, drop guard before await) |
@@ -172,7 +172,9 @@ It receives `VeilidUpdate` variants and delegates by classifying:
   `services/community/watch` (community records), or
   `services/cross_device_sync/watch` (personal sync records)
 - `Attachment` → update `NodeHandle` state, emit `NetworkStatusEvent`
-- `RouteChange` → re-allocate private routes via `routing_manager`
+- `RouteChange` → our dead routes to `OwnRoutes::on_dead` (forgotten, never
+  released, reallocated off the loop; plan C7.9), dead peer routes to the
+  importer, dead relay routes re-volunteered
 
 This is the one piece of `services/` that cannot move into the
 runtime / adapter / pure-logic categorisation because it is the

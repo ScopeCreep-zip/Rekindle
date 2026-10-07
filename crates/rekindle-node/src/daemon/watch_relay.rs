@@ -67,7 +67,7 @@ impl DaemonHandler {
             return;
         }
 
-        let Ok(Some(value)) = rekindle_transport::broadcast::dht_writes::get(
+        let Ok(Some(value)) = rekindle_transport::broadcast::dht_writes::read_once_str(
             transport.as_ref(),
             record_key,
             subkey,
@@ -83,7 +83,7 @@ impl DaemonHandler {
             debug!(
                 record_key,
                 subkey,
-                observer = &observer_pseudonym[..12.min(observer_pseudonym.len())],
+                observer = %observer_pseudonym,
                 "watch relay: content hash mismatch, dropping"
             );
             return;

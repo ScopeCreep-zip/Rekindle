@@ -19,14 +19,17 @@
 
 use std::path::Path;
 
-/// Parse `app.security.csp` out of the shipped Tauri config.
-fn csp() -> String {
+/// The shipped Tauri config.
+fn config() -> serde_json::Value {
     let raw =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json"))
             .expect("tauri.conf.json must be readable");
-    let cfg: serde_json::Value =
-        serde_json::from_str(&raw).expect("tauri.conf.json must be valid JSON");
-    cfg["app"]["security"]["csp"]
+    serde_json::from_str(&raw).expect("tauri.conf.json must be valid JSON")
+}
+
+/// Parse `app.security.csp` out of the shipped Tauri config.
+fn csp() -> String {
+    config()["app"]["security"]["csp"]
         .as_str()
         .expect("app.security.csp must be a string — an absent CSP is a security regression")
         .to_string()
@@ -105,7 +108,7 @@ fn connect_src_has_no_remote_plaintext_origin() {
         .or_else(|| directive(&policy, "default-src"))
         .expect("connect-src (or a default-src fallback) must be declared");
 
-    const LOCAL_IPC_ALLOWED: &[&str] = &["http://ipc.localhost", "http://asset.localhost"];
+    const LOCAL_IPC_ALLOWED: &[&str] = &["http://ipc.localhost"];
 
     for token in connect_src.split_whitespace() {
         assert!(
@@ -113,4 +116,39 @@ fn connect_src_has_no_remote_plaintext_origin() {
             "connect-src allows a remote plaintext origin `{token}`: {connect_src}"
         );
     }
+}
+
+/// Images come from the bundle or from backend-built `data:` URLs
+/// (avatars, expressions). No `asset:` protocol (it is not enabled) and no
+/// remote origin: rendering a peer-chosen image URL would leak every
+/// reader's IP to its host.
+#[test]
+fn img_src_has_no_asset_or_remote() {
+    let policy = csp();
+    let img_src = directive(&policy, "img-src").expect("img-src must be declared");
+    assert_eq!(img_src, "'self' data:", "img-src widened: {policy}");
+}
+
+/// Audio plays from the bundle, from voice-message `blob:` URLs and from
+/// backend-built expression `data:` URLs; nothing remote.
+#[test]
+fn media_src_is_local_only() {
+    let policy = csp();
+    let media_src = directive(&policy, "media-src").expect("media-src must be declared");
+    assert_eq!(
+        media_src, "'self' blob: data:",
+        "media-src widened: {policy}"
+    );
+}
+
+/// `Object.prototype` is frozen before any app script runs, so a
+/// prototype-pollution gadget cannot plant properties every object
+/// inherits.
+#[test]
+fn freeze_prototype_enabled() {
+    assert_eq!(
+        config()["app"]["security"]["freezePrototype"].as_bool(),
+        Some(true),
+        "app.security.freezePrototype must be true"
+    );
 }

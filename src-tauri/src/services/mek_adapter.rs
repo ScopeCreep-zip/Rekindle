@@ -1,17 +1,15 @@
 //! Phase 17 — MEK rotation adapter.
 //!
 //! Implements `rekindle_mek_rotation::MekDistributeDeps` against the
-//! live AppState + AppHandle + DbPool. The crate's
+//! live AppState + AppHandle + Db. The crate's
 //! `distribute_mek` / `wait_for_rotation_slot` flows parameterise
 //! over this trait so the protocol logic stays free of Tauri/Veilid
 //! concerns (Invariant 2).
 //!
 //! Phase 17.f.1 scaffolding — adapter struct + trait impl. Sub-step
 //! 17.f.2 will thin `services/community/mek_rotation.rs` +
-//! `mek_rotation_support.rs` to delegate via this adapter. AppState's
-//! `mek_cache` + `channel_mek_cache` fields stay (48 non-rotation
-//! callsites read them directly); the adapter's ChannelMekCache impl
-//! wraps `state.channel_mek_cache` so both paths see the same data.
+//! `mek_rotation_support.rs` to delegate via this adapter. Its cache is
+//! `state_helpers::LiveMekCache` over `AppState.meks`.
 
 use std::sync::Arc;
 
@@ -21,53 +19,19 @@ use rekindle_mek_rotation::{
     ChannelMekCache, MekDistributeDeps, MekPersist, MekRotationError, MekRotationEvent,
     RotationRecipient,
 };
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
-/// Wraps the existing `state.channel_mek_cache: Mutex<HashMap<(String,
-/// String), MediaEncryptionKey>>` so the crate-side rotation flows
-/// can read/write through the trait without us having to migrate the
-/// 48 non-rotation callsites that touch the field directly.
-pub struct AppStateMekCache {
-    state: Arc<AppState>,
-}
-
-impl ChannelMekCache for AppStateMekCache {
-    fn get(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Option<MediaEncryptionKey> {
-        let cache = self.state.channel_mek_cache.lock();
-        cache
-            .get(&(community_id.to_string(), channel_id.to_string()))
-            .filter(|mek| mek.generation() == generation)
-            .cloned()
-    }
-
-    fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey) {
-        state_helpers::install_channel_mek(&self.state, community_id, channel_id, mek);
-    }
-
-    fn current_generation(&self, community_id: &str, channel_id: &str) -> u64 {
-        self.state
-            .channel_mek_cache
-            .lock()
-            .get(&(community_id.to_string(), channel_id.to_string()))
-            .map_or(0, MediaEncryptionKey::generation)
-    }
-}
-
-/// Persists MEKs into Stronghold via the existing
-/// `keystore::store_mek` / `load_channel_mek_generation` helpers.
-/// `MekPersist` takes/returns `Vec<u8>` (the raw 32-byte key
-/// material); we reconstruct `MediaEncryptionKey` on either side.
+/// Persists MEKs into the vault, per scope and generation
+/// (`keystore::persist_mek` / `load_mek_generation`). `MekPersist`
+/// takes/returns the raw 32-byte key material; we reconstruct
+/// `MediaEncryptionKey` on either side.
 pub struct KeystoreMekPersist {
-    app_handle: tauri::AppHandle,
+    state: Arc<AppState>,
 }
 
 #[async_trait]
@@ -75,42 +39,36 @@ impl MekPersist for KeystoreMekPersist {
     async fn store_mek_for_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
-        wrapped_bytes: Vec<u8>,
+        key_bytes: Vec<u8>,
     ) -> Result<(), MekRotationError> {
-        let key_bytes: [u8; 32] = wrapped_bytes
+        let key_bytes: [u8; 32] = key_bytes
             .try_into()
             .map_err(|_| MekRotationError::Persist("MEK bytes must be 32 long".into()))?;
         let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
-        let keystore_handle =
-            tauri::Manager::try_state::<crate::keystore::KeystoreHandle>(&self.app_handle)
-                .ok_or_else(|| {
-                    MekRotationError::Persist("keystore handle missing on app".into())
-                })?;
-        let guard = keystore_handle.inner().lock();
-        if let Some(ks) = guard.as_ref() {
-            crate::keystore::store_mek(ks, community_id, Some(channel_id), &mek);
-        }
-        Ok(())
+        let guard = self.state.keystore.lock();
+        let ks = guard
+            .as_ref()
+            .ok_or_else(|| MekRotationError::Persist("keystore locked".into()))?;
+        crate::keystore::persist_mek(ks, community_id, scope, &mek)
+            .map_err(MekRotationError::Persist)
     }
 
     async fn load_mek_for_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
     ) -> Result<Option<Vec<u8>>, MekRotationError> {
-        let keystore_handle =
-            tauri::Manager::try_state::<crate::keystore::KeystoreHandle>(&self.app_handle)
-                .ok_or_else(|| {
-                    MekRotationError::Persist("keystore handle missing on app".into())
-                })?;
-        let guard = keystore_handle.inner().lock();
-        let mek = guard.as_ref().and_then(|ks| {
-            crate::keystore::load_channel_mek_generation(ks, community_id, channel_id, generation)
-        });
-        Ok(mek.map(|m| m.as_bytes().to_vec()))
+        let guard = self.state.keystore.lock();
+        let ks = guard
+            .as_ref()
+            .ok_or_else(|| MekRotationError::Persist("keystore locked".into()))?;
+        Ok(
+            crate::keystore::load_mek_generation(ks, community_id, scope, generation)
+                .map(|m| m.as_bytes().to_vec()),
+        )
     }
 }
 
@@ -118,19 +76,18 @@ impl MekPersist for KeystoreMekPersist {
 pub struct MekAdapter {
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
-    _pool: DbPool,
+    _pool: Db,
     cache: Arc<dyn ChannelMekCache>,
     persist: Arc<dyn MekPersist>,
 }
 
 impl MekAdapter {
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: DbPool) -> Arc<Self> {
-        let cache: Arc<dyn ChannelMekCache> = Arc::new(AppStateMekCache {
-            state: Arc::clone(&state),
-        });
+    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
+        let cache: Arc<dyn ChannelMekCache> =
+            Arc::new(state_helpers::LiveMekCache::new(Arc::clone(&state)));
         let persist: Arc<dyn MekPersist> = Arc::new(KeystoreMekPersist {
-            app_handle: app_handle.clone(),
+            state: Arc::clone(&state),
         });
         Arc::new(Self {
             state,
@@ -144,6 +101,10 @@ impl MekAdapter {
 
 #[async_trait]
 impl MekDistributeDeps for MekAdapter {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        crate::state_helpers::login_scope_or_closed(&self.state)
+    }
+
     fn cache(&self) -> Arc<dyn ChannelMekCache> {
         Arc::clone(&self.cache)
     }
@@ -156,6 +117,11 @@ impl MekDistributeDeps for MekAdapter {
         state_helpers::pseudonym_credentials(&self.state, community_id)
             .ok()
             .map(|(pseudo, _)| pseudo)
+    }
+
+    fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool {
+        state_helpers::governance_state(&self.state, community_id)
+            .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }
 
     fn online_recipients(
@@ -190,10 +156,11 @@ impl MekDistributeDeps for MekAdapter {
     async fn voice_recipients(
         &self,
         community_id: &str,
-        channel_id: &str,
+        channel: ChannelId,
         trigger_pseudonym: &str,
         include_trigger_in_recipients: bool,
     ) -> Vec<RotationRecipient> {
+        let channel_id = channel.to_hex();
         use std::collections::HashSet;
         // voice rotation only targets peers currently in the voice
         // channel transport — plus the local member (if any) since
@@ -204,7 +171,7 @@ impl MekDistributeDeps for MekAdapter {
         let (peer_keys, transport_routes): (Vec<String>, std::collections::HashMap<_, _>) =
             match self
                 .state
-                .voice_engine_transport_for_channel(community_id, channel_id)
+                .voice_engine_transport_for_channel(community_id, &channel_id)
             {
                 Some(transport) => {
                     let guard = transport.lock().await;
@@ -247,32 +214,21 @@ impl MekDistributeDeps for MekAdapter {
         route_blob: &[u8],
         envelope_bytes: Vec<u8>,
     ) -> Result<Vec<u8>, MekRotationError> {
-        let api = state_helpers::veilid_api(&self.state)
-            .ok_or_else(|| MekRotationError::Transport("Veilid API unavailable".into()))?;
-        let route_id = api
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| MekRotationError::Transport(format!("import route: {e}")))?;
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or_else(|| MekRotationError::Transport("not attached".into()))?;
-        let reply = rc
-            .app_call(veilid_core::Target::RouteId(route_id), envelope_bytes)
+        state_helpers::call_route_blob(&self.state, route_blob, envelope_bytes)
             .await
-            .map_err(|e| {
-                MekRotationError::Transport(format!("app_call to {peer_pseudonym_hex}: {e}"))
-            })?;
-        Ok(reply)
+            .map_err(|e| MekRotationError::Transport(format!("{peer_pseudonym_hex}: {e}")))
     }
 
     fn emit_event(&self, event: MekRotationEvent) {
         let mapped = match event {
             MekRotationEvent::RotationStarted {
                 community_id,
-                channel_id,
+                scope,
                 new_generation,
                 ..
             } => rekindle_types::subscription_events::CryptoEvent::MekRotated {
                 community: community_id,
-                channel: Some(channel_id),
+                channel: scope.wire_channel(),
                 generation: new_generation,
                 // The rotation-started signal names no rotator; the
                 // peer-to-peer transfer that follows carries it.
@@ -280,11 +236,11 @@ impl MekDistributeDeps for MekAdapter {
             },
             MekRotationEvent::RotationComplete {
                 community_id,
-                channel_id,
+                scope,
                 generation,
             } => rekindle_types::subscription_events::CryptoEvent::MekRotated {
                 community: community_id,
-                channel: Some(channel_id),
+                channel: scope.wire_channel(),
                 generation,
                 rotator_pseudonym: None,
             },
@@ -294,12 +250,12 @@ impl MekDistributeDeps for MekAdapter {
             // explicit failure UX.)
             MekRotationEvent::RotationFailed {
                 community_id,
-                channel_id,
+                scope,
                 reason,
             } => {
                 tracing::warn!(
                     community = %community_id,
-                    channel = %channel_id,
+                    %scope,
                     %reason,
                     "MEK rotation failed"
                 );
@@ -311,12 +267,12 @@ impl MekDistributeDeps for MekAdapter {
             // a CLI can show which peer supplied a key.
             MekRotationEvent::MekDelivered {
                 community_id,
-                channel_id,
+                scope,
                 generation,
                 sender_pseudonym_hex,
             } => rekindle_types::subscription_events::CryptoEvent::MekTransferred {
                 community: community_id,
-                channel: Some(channel_id),
+                channel: scope.wire_channel(),
                 generation,
                 sender_pseudonym: sender_pseudonym_hex,
             },
@@ -327,16 +283,11 @@ impl MekDistributeDeps for MekAdapter {
         );
     }
 
-    fn current_lamport(&self, community_id: &str) -> u64 {
-        self.state
-            .communities
-            .read()
-            .get(community_id)
-            .map_or(0, |c| c.lamport_counter)
-    }
-
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        state_helpers::increment_lamport(&self.state, community_id)
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_governance_lamport(&self.state, community_id)
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
@@ -346,78 +297,48 @@ impl MekDistributeDeps for MekAdapter {
     fn apply_received_mek_to_state(
         &self,
         community_id: &str,
-        channel_id: Option<&str>,
+        scope: KeyScope,
         mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
-    ) {
-        let generation = mek.generation();
-        match channel_id {
-            Some(channel_id) if !channel_id.is_empty() => {
-                if !state_helpers::install_channel_mek(
-                    &self.state,
-                    community_id,
-                    channel_id,
-                    mek.clone(),
-                ) {
-                    return;
-                }
-                crate::services::community::media_ready_runtime::on_mek_updated(
-                    &self.state,
-                    community_id,
-                    Some(channel_id),
-                );
-                crate::services::community::mek_rotation_support::update_generation_state(
-                    &self.state,
-                    community_id,
-                    Some(channel_id),
-                    generation,
-                );
-            }
-            _ => {
-                // Centralized downgrade-refuse + same-generation split-brain
-                // resolution (lowest election rank wins). Refused → don't touch
-                // generation state / media-ready either.
-                if !state_helpers::install_community_mek(&self.state, community_id, mek.clone()) {
-                    return;
-                }
-                crate::services::community::media_ready_runtime::on_mek_updated(
-                    &self.state,
-                    community_id,
-                    None,
-                );
-                crate::services::community::mek_rotation_support::update_generation_state(
-                    &self.state,
-                    community_id,
-                    None,
-                    generation,
-                );
-            }
+    ) -> bool {
+        // Centralized downgrade-refuse + same-generation split-brain
+        // resolution (lowest election rank wins). Refused → don't touch
+        // generation state / media-ready either.
+        if !state_helpers::install_mek(&self.state, community_id, scope, mek.clone()) {
+            return false;
         }
+        crate::services::community::media_ready_runtime::on_mek_updated(
+            &self.state,
+            community_id,
+            scope.wire_channel().as_deref(),
+        );
+        crate::services::community::mek_rotation_support::update_generation_state(
+            &self.state,
+            community_id,
+            scope,
+            mek.generation(),
+        );
+        true
     }
 
     fn persist_received_mek(
         &self,
         community_id: &str,
-        channel_id: Option<&str>,
+        scope: KeyScope,
         mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
     ) {
         crate::services::community::mek_rotation_support::persist_mek(
-            &self.app_handle,
+            &self.state,
             community_id,
-            channel_id,
+            scope,
             mek,
         );
     }
 
-    fn emit_rotation_received(
-        &self,
-        community_id: &str,
-        channel_id: Option<&str>,
-        generation: u64,
-    ) {
+    fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64) {
         crate::services::community::mek_rotation_support::emit_rotation_event(
             &self.app_handle,
             community_id,
-            channel_id,
+            scope,
             generation,
         );
     }

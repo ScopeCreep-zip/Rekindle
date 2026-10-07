@@ -32,4 +32,7 @@ for attempt in $(seq 1 15); do
     sleep 1
 done
 
-exec /usr/local/bin/rekindle init --display-name "${DISPLAY_NAME}" --non-interactive
+# The node's test passphrase (bind-mounted per node, like the display name).
+exec /usr/local/bin/rekindle init --no-input \
+    --display-name "${DISPLAY_NAME}" \
+    --passphrase-file /etc/rekindle/passphrase

@@ -3,58 +3,42 @@
 use super::codec::{decode_channel_entries, message_from_entry};
 use super::types::{ChannelMessage, ChannelRecordItem};
 use super::CHANNEL_OWNER_SUBKEY_COUNT;
-use crate::dht::DHTManager;
+use crate::dht::parse_record_key;
+use crate::dht::pool::RecordPool;
 use crate::error::ProtocolError;
 
-/// Watch a channel record for new messages.
-pub async fn watch_channel(
-    dht: &DHTManager,
-    key: &str,
-    subkey_count: u32,
-) -> Result<bool, ProtocolError> {
-    let subkeys: Vec<u32> = (0..subkey_count).collect();
-    dht.watch_record(key, &subkeys).await
-}
+// A channel watch is the record pool's (`RecordPool::watch` on a lease,
+// plan C7.4); nothing here watches.
 
 // ── SMPL multi-writer channel persistence ──
 
-/// Decode all durable entries from all member subkeys in the channel SMPL record.
+/// Decode the durable entries of the members in `member_slots` (slot
+/// indices, the writer index the caller's membership state vouches for).
+/// One inspect over those slots, then a read of each slot that holds a
+/// value, from the network only when it changed (`RecordPool::read_changed`,
+/// plan C7.12); a slot outside the index is never read.
 pub async fn read_all_channel_entries(
-    rc: &veilid_core::RoutingContext,
+    pool: &RecordPool,
     channel_key: &str,
-    member_count: u32,
+    member_slots: &[u32],
 ) -> Result<Vec<ChannelRecordItem>, ProtocolError> {
-    use futures::stream::{FuturesUnordered, StreamExt};
-
-    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
-    let mut futs = FuturesUnordered::new();
-
-    for i in 0..member_count {
-        let sem = sem.clone();
-        let rc = rc.clone();
-        let key = channel_key.to_string();
-        let subkey = u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + i;
-        futs.push(async move {
-            let permit = sem.acquire().await.unwrap();
-            let mgr = DHTManager::new(rc);
-            let result = mgr.get_value(&key, subkey).await;
-            drop(permit);
-            (subkey, result)
-        });
-    }
+    let subkeys: Vec<u32> = member_slots
+        .iter()
+        .map(|slot| u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + slot)
+        .collect();
+    let lease = pool.acquire(&parse_record_key(channel_key)?, None).await?;
+    let read = pool.read_changed(lease, &subkeys).await;
+    pool.release(lease).await;
 
     let mut items = Vec::new();
-    while let Some((subkey_index, result)) = futs.next().await {
-        if let Ok(Some(data)) = result {
-            if let Ok(entries) = decode_channel_entries(&data) {
-                items.extend(entries.into_iter().map(|entry| ChannelRecordItem {
-                    subkey_index,
-                    entry,
-                }));
-            }
+    for (subkey_index, data) in read? {
+        if let Ok(entries) = decode_channel_entries(data.data()) {
+            items.extend(entries.into_iter().map(|entry| ChannelRecordItem {
+                subkey_index,
+                entry,
+            }));
         }
     }
-
     items.sort_by(|a, b| {
         a.entry
             .lamport()
@@ -67,14 +51,14 @@ pub async fn read_all_channel_entries(
 /// Read all messages from all member subkeys in the channel SMPL record.
 ///
 /// Returns messages sorted by (lamport_ts, sender_pseudonym) for deterministic
-/// ordering. Uses parallel reads bounded by a semaphore.
+/// ordering. Reads as [`read_all_channel_entries`].
 pub async fn read_all_channel_messages(
-    rc: &veilid_core::RoutingContext,
+    pool: &RecordPool,
     channel_key: &str,
-    member_count: u32,
+    member_slots: &[u32],
 ) -> Result<Vec<ChannelMessage>, ProtocolError> {
     let mut all_messages: Vec<ChannelMessage> =
-        read_all_channel_entries(rc, channel_key, member_count)
+        read_all_channel_entries(pool, channel_key, member_slots)
             .await?
             .into_iter()
             .filter_map(|item| message_from_entry(&item.entry).cloned())

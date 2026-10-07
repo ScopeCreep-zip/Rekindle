@@ -145,7 +145,9 @@ pub async fn handle_incoming_dm_decline<D: DmDeps + ?Sized>(
     record_key: &str,
 ) -> Result<(), DmError> {
     let owner_key = deps.owner_key()?;
-    deps.store().decline_invite(&owner_key, record_key).await
+    deps.store().decline_invite(&owner_key, record_key).await?;
+    deps.dht_release_session(record_key).await;
+    Ok(())
 }
 
 /// Handle a `GroupDmLeave` from a peer in a group DM. Treats it as a
@@ -158,5 +160,7 @@ pub async fn handle_incoming_dm_leave<D: DmDeps + ?Sized>(
     record_key: &str,
 ) -> Result<(), DmError> {
     let owner_key = deps.owner_key()?;
-    deps.store().decline_invite(&owner_key, record_key).await
+    deps.store().decline_invite(&owner_key, record_key).await?;
+    deps.dht_release_session(record_key).await;
+    Ok(())
 }

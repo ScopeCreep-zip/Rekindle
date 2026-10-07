@@ -6,12 +6,21 @@
 //!
 //! Tier 2 in the module hierarchy — depends only on `rekindle-types`.
 
+// The sole-security-boundary claim above is only as good as the crate
+// root locking it: `#![forbid(unsafe_code)]` makes "no unsafe in the
+// crate that holds raw key material" a compile error, not a convention
+// one submodule happens to declare locally (`session_cache.rs` did,
+// before this).
+#![forbid(unsafe_code)]
+
+pub mod channel_body;
 pub mod derive;
 pub mod invite;
 pub mod keys;
 pub mod mek;
 pub mod pq_keys;
 pub mod rotator;
+pub mod sframe;
 pub mod sign;
 pub mod sync_key;
 

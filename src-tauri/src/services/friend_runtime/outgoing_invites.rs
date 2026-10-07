@@ -4,13 +4,13 @@
 //! module covers the two read/delete operations on the tracked
 //! `outgoing_invites` SQLite table.
 
-use crate::db::DbPool;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn cancel_invite_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     invite_id: String,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -21,7 +21,7 @@ pub async fn cancel_invite_inner(
 
 pub async fn get_outgoing_invites_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<Vec<crate::invite_helpers::OutgoingInvite>, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
     crate::invite_helpers::get_pending_invites(pool, &owner_key).await

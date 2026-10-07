@@ -18,12 +18,12 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
-pub fn hydrate_events_from_governance(state: &Arc<AppState>, pool: &DbPool, community_id: &str) {
+pub fn hydrate_events_from_governance(state: &Arc<AppState>, pool: &Db, community_id: &str) {
     let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
     if owner_key.is_empty() {
         return;

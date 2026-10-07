@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::broadcast::dht::DhtStore;
 use crate::broadcast::peer_registry::PeerRegistry;
 use crate::crypto::mek::{MekCache, MekCacheEntrySnapshot};
 use crate::shared::SharedState;
@@ -37,7 +36,8 @@ pub use rekindle_types::display::{
 /// Composes low-level DHT reads + MEK decryption + profile resolution
 /// into display-ready types.
 pub struct QueryEngine {
-    dht: DhtStore,
+    /// The unlocked session's record pool: every query's DHT reads.
+    records: Arc<rekindle_protocol::dht::pool::RecordPool>,
     mek_cache: Arc<RwLock<MekCache>>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
 }
@@ -45,12 +45,12 @@ pub struct QueryEngine {
 impl QueryEngine {
     /// Create a new query engine.
     pub fn new(
-        dht: DhtStore,
+        records: Arc<rekindle_protocol::dht::pool::RecordPool>,
         mek_cache: Arc<RwLock<MekCache>>,
         peer_registry: Arc<RwLock<PeerRegistry>>,
     ) -> Self {
         Self {
-            dht,
+            records,
             mek_cache,
             peer_registry,
         }

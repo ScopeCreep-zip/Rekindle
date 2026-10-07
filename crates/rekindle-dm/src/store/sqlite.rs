@@ -1,13 +1,11 @@
 //! Phase 13 — SQLite-backed `DmStore` impl.
 //!
 //! Concrete impl of the `DmStore` trait (defined in `super`) against
-//! the Rekindle SQLite schema (`dms` + `dm_messages` tables, defined in
-//! `src-tauri/migrations/001_init.sql`). Wraps a shared
-//! `tokio_rusqlite::Connection` (the same pool type src-tauri holds in
-//! `DbPool`).
+//! the Rekindle SQLite schema (`dms` + `dm_messages` tables, in
+//! `rekindle-db`'s schema). Wraps the shared [`rekindle_db::Db`].
 
 use async_trait::async_trait;
-use tokio_rusqlite::Connection;
+use rekindle_db::Db;
 
 use crate::error::DmError;
 use crate::invite::GroupDmParticipant;
@@ -17,17 +15,15 @@ use super::{
     DmStore,
 };
 
-/// SQLite-backed `DmStore`. Wraps a shared `tokio_rusqlite::Connection`
-/// (the same pool type src-tauri holds in `DbPool`). The schema is
-/// defined in `src-tauri/migrations/001_init.sql` (`dms` and
-/// `dm_messages` tables) — this impl assumes those tables exist.
+/// SQLite-backed `DmStore` over the shared [`Db`]. Assumes the schema's
+/// `dms` and `dm_messages` tables exist.
 pub struct SqliteDmStore {
-    conn: Connection,
+    conn: Db,
 }
 
 impl SqliteDmStore {
     #[must_use]
-    pub fn new(conn: Connection) -> Self {
+    pub fn new(conn: Db) -> Self {
         Self { conn }
     }
 }

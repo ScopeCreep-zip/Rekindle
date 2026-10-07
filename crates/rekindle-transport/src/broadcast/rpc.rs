@@ -8,8 +8,6 @@
 //! All persistent lifecycle operations (join, friend request, DMs) use
 //! DHT writes instead — see `dm.rs` and `dht_writes.rs`.
 
-use std::time::Duration;
-
 use tracing::{debug, info};
 
 use super::node::TransportNode;
@@ -18,18 +16,17 @@ use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
 use crate::payload::rpc::{CallResponse, CommunityLeaveNotification, SyncRequest, SyncResponse};
 
-/// Extended timeout for sync operations that may transfer large payloads.
-const SYNC_TIMEOUT: Duration = Duration::from_secs(30);
-
 // ── Community leave ────────────────────────────────────────────────────
 
 /// Send a community leave notification via RPC to the community route.
 ///
 /// Best-effort — if the owner is offline, cleanup happens when they
 /// come back and poll the join inbox (which has a Leave entry from DHT).
+/// `recipient` is the owner's identity key; the request is signed to it.
 pub async fn community_leave(
     node: &TransportNode,
     target: &PeerTarget,
+    recipient: &[u8; 32],
     governance_key: &str,
     leaving_pseudonym: &str,
     signing_key: &[u8; 32],
@@ -53,6 +50,7 @@ pub async fn community_leave(
         .caller()
         .call(
             target,
+            recipient,
             TypeId::CommunityLeave,
             signing_key,
             sender_public_hex,
@@ -70,10 +68,12 @@ pub async fn community_leave(
 
 // ── Sync ───────────────────────────────────────────────────────────────
 
-/// Send a sync request to an archiver node.
+/// Send a sync request to an archiver node, signed to its identity key
+/// `recipient`.
 pub async fn sync_request(
     node: &TransportNode,
     target: &PeerTarget,
+    recipient: &[u8; 32],
     channel_id: &str,
     since_timestamp: u64,
     signing_key: &[u8; 32],
@@ -95,13 +95,13 @@ pub async fn sync_request(
 
     let response_bytes = node
         .caller()
-        .call_with_timeout(
+        .call(
             target,
+            recipient,
             TypeId::SyncRequest,
             signing_key,
             sender_hex,
             &payload,
-            SYNC_TIMEOUT,
         )
         .await?;
 

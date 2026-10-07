@@ -62,6 +62,8 @@ pub fn segment_descriptors<D: GovernanceRuntimeDeps>(
             segment_index: 0,
             registry_key: reg_key,
             governance_key: gov_key,
+            slot_range_start: 0,
+            slot_range_end: SLOTS_PER_SEGMENT,
         });
     }
     if let Some(gov_state) = deps.governance_state(community_id) {
@@ -73,6 +75,8 @@ pub fn segment_descriptors<D: GovernanceRuntimeDeps>(
                 segment_index: seg.segment_index,
                 registry_key: seg.registry_key.clone(),
                 governance_key: seg.governance_key.clone(),
+                slot_range_start: seg.slot_range_start,
+                slot_range_end: seg.slot_range_end,
             });
         }
     }
@@ -90,9 +94,7 @@ pub async fn highest_segment_full<D: GovernanceRuntimeDeps>(
     let Some(highest) = descriptors.last() else {
         return Ok(false);
     };
-    let seqs = deps
-        .inspect_dht_record_local_seqs(&highest.registry_key)
-        .await?;
+    let seqs = crate::records::inspect_local_seqs(deps, &highest.registry_key).await?;
     // `is_some()`, not `!= 0`: veilid's first write to a subkey lands at
     // seq 0, so a member who has written exactly once occupies the slot
     // while reporting `Some(0)`. Counting that as free left a genuinely
@@ -147,11 +149,30 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
         member_pubkeys.push(sk.verifying_key().to_bytes());
     }
 
+    // Taken before the creates, so nothing fails between them and the
+    // announcement that hands their leases to the host.
+    let lamport = deps.next_governance_lamport(community_id)?;
     let new_gov_record = deps.create_smpl_record(&member_pubkeys).await?;
-    let new_reg_record = deps.create_smpl_record(&member_pubkeys).await?;
-
-    let lamport = deps.increment_lamport(community_id);
-    apply::write_entry(
+    let new_reg_record = match deps.create_smpl_record(&member_pubkeys).await {
+        Ok(record) => record,
+        Err(e) => {
+            deps.release_record(new_gov_record.lease).await;
+            return Err(e);
+        }
+    };
+    let leases = rekindle_records::lease::CommunityLeases {
+        segments: vec![new_gov_record.lease, new_reg_record.lease],
+        ..Default::default()
+    };
+    for lease in [new_gov_record.lease, new_reg_record.lease] {
+        if let Err(e) =
+            crate::records::publish_created(deps, lease, &slot_seed.0, slot_range_start).await
+        {
+            crate::records::release_all(deps, &leases).await;
+            return Err(e);
+        }
+    }
+    if let Err(e) = apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::SegmentAdded {
@@ -163,7 +184,12 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
             lamport,
         },
     )
-    .await?;
+    .await
+    {
+        crate::records::release_all(deps, &leases).await;
+        return Err(e);
+    }
+    deps.community_records_ready(community_id, leases).await;
 
     deps.emit_event(GovernanceRuntimeEvent::SegmentAdded {
         community_id: community_id.to_string(),
@@ -173,66 +199,48 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
     Ok(next_segment_index)
 }
 
-/// Open every segment's SMPL records (registry + governance + per-channel
-/// segment records) that the merged `GovernanceState` now contains but
-/// our local `open_community_records` hasn't recorded yet. Called from
-/// the adapter after every successful merge so `get_dht_value` /
-/// `watch_dht_values` + the inspect loop pick up new segments + lazy
-/// channel-segment records immediately. Idempotent — DHT `open_record`
-/// is safe to call repeatedly.
+/// Borrow every segment's SMPL records (registry + governance + per-channel
+/// segment records) that the merged `GovernanceState` contains and hand the
+/// leases to the host. Called from the adapter after every successful merge
+/// so reads, watches and the inspect loop pick up new segments and lazy
+/// channel-segment records immediately. Idempotent: the host releases a
+/// lease on a record the community already holds.
 pub async fn open_new_segments<D: GovernanceRuntimeDeps>(deps: &D, community_id: &str) {
-    let descriptors = segment_descriptors(deps, community_id);
-    let already_open: std::collections::HashSet<String> =
-        deps.open_record_keys(community_id).into_iter().collect();
-
-    // Expansion segments: registry + governance records.
-    for descriptor in &descriptors {
-        if descriptor.segment_index == 0 {
-            continue; // primary segment was opened during join/genesis
-        }
-        for key in [&descriptor.registry_key, &descriptor.governance_key] {
-            if already_open.contains(key) {
-                continue;
-            }
-            if let Err(e) = deps.open_dht_record(key, None).await {
-                tracing::debug!(
-                    community = %community_id,
-                    segment = descriptor.segment_index,
-                    record_key = %key,
-                    error = %e,
-                    "open_new_segments: failed to open expansion record"
-                );
-            }
+    let mut keys: Vec<String> = Vec::new();
+    // Expansion segments: registry + governance records. The primary
+    // segment was taken at join or genesis.
+    for descriptor in segment_descriptors(deps, community_id) {
+        if descriptor.segment_index != 0 {
+            keys.push(descriptor.registry_key);
+            keys.push(descriptor.governance_key);
         }
     }
-
     // Plate Gate (architecture §15.4): channel-segment records announced
-    // via `ChannelSegmentLinked`. Each opens just like a normal channel
-    // record; also tracked in `open_community_records.channel_keys` so the
-    // inspect loop picks them up automatically.
-    let channel_segment_keys: Vec<String> = deps
-        .governance_state(community_id)
-        .map(|gov| {
+    // via `ChannelSegmentLinked`.
+    if let Some(gov) = deps.governance_state(community_id) {
+        keys.extend(
             gov.channel_segment_records
                 .values()
-                .map(|rec| rec.record_key.clone())
-                .collect()
-        })
-        .unwrap_or_default();
-    for key in channel_segment_keys {
-        if already_open.contains(&key) {
-            continue;
+                .map(|rec| rec.record_key.clone()),
+        );
+    }
+    let mut leases = rekindle_records::lease::CommunityLeases::default();
+    for key in keys {
+        if crate::join_gate::should_stop(deps) {
+            break;
         }
-        if let Err(e) = deps.open_dht_record(&key, None).await {
-            tracing::debug!(
+        match deps.acquire_record(&key, None).await {
+            Ok(lease) => leases.segments.push(lease),
+            Err(e) => tracing::debug!(
                 community = %community_id,
                 record_key = %key,
                 error = %e,
-                "open_new_segments: failed to open lazy channel-segment record"
-            );
-            continue;
+                "open_new_segments: failed to borrow a segment record"
+            ),
         }
-        deps.mark_open_channel_record(community_id, key);
+    }
+    if !leases.segments.is_empty() {
+        deps.community_records_ready(community_id, leases).await;
     }
 }
 
@@ -291,14 +299,25 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
     let slot_seed = slot_seed_from_membership(&membership, community_id)?;
     let member_pubkeys = segment_slot_pubkeys(&slot_seed.0, segment_index)?;
 
-    let new_record = deps.create_smpl_record(&member_pubkeys).await?;
-    let new_record_key = new_record.record_key.clone();
-
     // Announce via governance — first-writer-wins LWW. If we lose the
     // race, messages go to our orphan record; readers pick up the
-    // canonical record once the merge applies.
-    let lamport = deps.increment_lamport(community_id);
-    apply::write_entry(
+    // canonical record once the merge applies. The lamport is taken before
+    // the create so nothing fails between it and the hand-over.
+    let lamport = deps.next_governance_lamport(community_id)?;
+    let new_record = deps.create_smpl_record(&member_pubkeys).await?;
+    let new_record_key = new_record.record_key.clone();
+    if let Err(e) = crate::records::publish_created(
+        deps,
+        new_record.lease,
+        &slot_seed.0,
+        segment_index * SLOTS_PER_SEGMENT,
+    )
+    .await
+    {
+        deps.release_record(new_record.lease).await;
+        return Err(e);
+    }
+    if let Err(e) = apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::ChannelSegmentLinked {
@@ -308,7 +327,19 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
             lamport,
         },
     )
-    .await?;
+    .await
+    {
+        deps.release_record(new_record.lease).await;
+        return Err(e);
+    }
+    deps.community_records_ready(
+        community_id,
+        rekindle_records::lease::CommunityLeases {
+            segments: vec![new_record.lease],
+            ..Default::default()
+        },
+    )
+    .await;
 
     Ok(new_record_key)
 }
@@ -428,7 +459,7 @@ mod tests {
             slot_keypair: None,
             slot_seed_hex: Some(hex::encode([5u8; 32])),
             dht_owner_keypair: None,
-            lamport_counter: 0,
+            governance_clock: 0,
             channel_log_keys: std::collections::HashMap::new(),
             channel_ids: Vec::new(),
             mek_generation: 0,
@@ -448,7 +479,7 @@ mod tests {
             slot_keypair: None,
             slot_seed_hex: None,
             dht_owner_keypair: None,
-            lamport_counter: 0,
+            governance_clock: 0,
             channel_log_keys: std::collections::HashMap::new(),
             channel_ids: Vec::new(),
             mek_generation: 0,

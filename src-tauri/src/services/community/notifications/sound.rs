@@ -4,10 +4,10 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Architecture §32 Phase 7 Week 25 — set the notification sound for
 /// `(community_id, channel_id)`. Pass `channel_id = ""` to set the
@@ -15,7 +15,7 @@ use crate::state_helpers;
 /// re-inherits from the next level up.
 pub async fn set_notification_sound(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     sound_ref: Option<String>,
@@ -61,7 +61,7 @@ pub async fn set_notification_sound(
 /// channel override → community default → `None` (caller falls back to
 /// the app-global `notification_sound: bool` toggle in `app_settings`).
 pub async fn resolve_notification_sound(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     community_id: &str,
     channel_id: &str,

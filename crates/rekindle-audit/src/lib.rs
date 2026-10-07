@@ -14,5 +14,7 @@
 //! Plan reference: `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 4.
 
 pub mod chain;
+pub mod tail;
 
 pub use chain::{AuditChain, AuditEntry, AuditKind, AuditRecord, VerifyError, MAC_LEN};
+pub use tail::{Tail, TailCheck};

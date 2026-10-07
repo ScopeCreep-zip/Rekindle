@@ -11,8 +11,7 @@
 
 import type { CommunityEvent } from "./community_events";
 import type { TypingContext } from "./chat_events";
-import type { EventInfo } from "../commands/types";
-import type { GameServer, Thread } from "../../stores/community.store";
+import type { EventInfo, GameServer, Thread } from "../commands/types";
 
 /** Membership events from the daemon vocabulary. */
 export type MembershipEvent =
@@ -150,6 +149,15 @@ export interface CategoryDisplay {
   sortOrder: number;
 }
 
+/** Plate Gate (architecture §15) expansion segment, as Tier 1's `SegmentDescriptor`. */
+export interface SegmentDescriptor {
+  segmentIndex: number;
+  registryKey: string;
+  governanceKey: string;
+  slotRangeStart: number;
+  slotRangeEnd: number;
+}
+
 /**
  * Governance events from the daemon vocabulary.
  *
@@ -176,6 +184,7 @@ export type GovernanceEvent =
       };
     }
   | { rolesChanged: { community: string; roles: RoleDisplay[] } }
+  | { segmentsChanged: { community: string; segments: SegmentDescriptor[] } }
   | { bansChanged: { community: string } }
   | {
       inviteCreated: {

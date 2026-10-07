@@ -6,10 +6,11 @@ use rekindle_transport::operations::identity;
 use rekindle_transport::session::{Session, SessionIdentity};
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::validation;
+use rekindle_ipc::protocol::IpcResponse;
 
-use super::{state_error, DaemonContext};
+use crate::daemon::shutdown::ExitReason;
+
+use super::{state_error, teardown_unlocked, transition, DaemonContext};
 
 /// Handle IdentityCreate — full ceremony, daemon-side.
 pub(crate) async fn handle_create(
@@ -24,16 +25,10 @@ pub(crate) async fn handle_create(
 
     // Check not already initialized
     if ctx.session.read().is_some() {
-        return IpcResponse::error(
-            409,
-            "identity already exists — destroy first: rekindle identity destroy",
-        );
+        return IpcResponse::error(409, "identity already exists — destroy it first");
     }
 
-    let display_name = match validation::validate_display_name(display_name) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
+    let display_name = display_name.trim().to_owned();
 
     let transport = match ctx.require_transport() {
         Ok(t) => t,
@@ -45,15 +40,21 @@ pub(crate) async fn handle_create(
     let session_store =
         Box::new(rekindle_transport::crypto::signal_store::MemorySessionStore::new());
 
-    let mut created = match identity::create_identity(
+    // The ceremony creates our records in a record pool of its own, ended
+    // with it: they are re-opened by the unlock that follows (plan C7.4).
+    if let Err(e) = transport.start_records() {
+        return IpcResponse::error(503, format!("record pool: {e}"));
+    }
+    let created = identity::create_identity(
         &transport,
         &display_name,
         "Hello from Rekindle!",
         prekey_store,
         session_store,
     )
-    .await
-    {
+    .await;
+    transport.end_records();
+    let mut created = match created {
         Ok(c) => c,
         Err(e) => return IpcResponse::error(500, format!("identity creation failed: {e}")),
     };
@@ -212,82 +213,79 @@ pub(crate) async fn handle_rotate(ctx: &DaemonContext, state: DaemonState) -> Ip
     }))
 }
 
-/// Handle IdentityDestroy — close DHT records, delete keyring, delete session.
-pub(crate) async fn handle_destroy(
-    ctx: &DaemonContext,
-    state: DaemonState,
-    confirmation: &str,
-) -> IpcResponse {
-    if confirmation != "DESTROY MY IDENTITY" {
-        return IpcResponse::error(400, "confirmation must be exactly 'DESTROY MY IDENTITY'");
+/// Handle IdentityDestroy — release the unlock (which ends its DHT records),
+/// delete its keys and session, then exit so the daemon restarts with no
+/// identity.
+pub(crate) async fn handle_destroy(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_write() && state != DaemonState::Locked {
+        return state_error(state, "destroy");
     }
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let session = match ctx.require_session(Clone::clone) {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-
-    // Close all DHT records via transport
-    if let Err(e) = identity::destroy_identity(&transport, &session).await {
-        tracing::warn!(error = %e, "DHT record cleanup failed (continuing with local destroy)");
+    // There must be an identity to destroy.
+    if let Err(e) = ctx.require_session(|_| ()) {
+        return e;
     }
 
-    // Zeroize signing key
-    *ctx.signing_key.write() = None;
-
-    // Delete keyring entries
-    if let Err(e) = crate::state::keystore::delete_all_keys().await {
-        tracing::warn!(error = %e, "keyring cleanup failed");
+    if state.can_write() {
+        // Ending the unlock ends the session's records: the pool hands them
+        // to the node's closer (plan C7.6i, C7.7e).
+        if let Err(refused) = release_unlock(ctx).await {
+            return refused;
+        }
     }
 
-    // Clear session from memory and delete file
-    *ctx.session.write() = None;
-    if ctx.session_path.exists() {
-        let _ = std::fs::remove_file(&ctx.session_path);
+    if let Err(failed) = delete_identity_files(ctx).await {
+        return failed;
     }
-
-    let _ = ctx.lifecycle.transition(DaemonState::Locked);
-    IpcResponse::ok(&serde_json::json!({ "destroyed": true }))
+    if let Err(refused) = transition(ctx, DaemonState::ShuttingDown) {
+        return refused;
+    }
+    ctx.shutdown.request(ExitReason::IdentityDestroyed);
+    IpcResponse::ok(&serde_json::json!({ "destroyed": true, "restarting": true }))
 }
 
-/// Handle IdentityWipe — factory reset everything.
-pub(crate) async fn handle_wipe(
-    ctx: &DaemonContext,
-    _state: DaemonState,
-    confirmation: &str,
-) -> IpcResponse {
-    if confirmation != "WIPE ALL DATA" {
-        return IpcResponse::error(400, "confirmation must be exactly 'WIPE ALL DATA'");
+/// Handle IdentityWipe — factory reset: release the unlock, delete keys and
+/// session, then exit; the host deletes the Veilid storage once the
+/// transport has stopped, and the daemon restarts empty.
+pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_write() && state != DaemonState::Locked {
+        return state_error(state, "wipe");
     }
+    if state.can_write() {
+        if let Err(refused) = release_unlock(ctx).await {
+            return refused;
+        }
+    }
+    if let Err(failed) = delete_identity_files(ctx).await {
+        return failed;
+    }
+    if let Err(refused) = transition(ctx, DaemonState::ShuttingDown) {
+        return refused;
+    }
+    ctx.shutdown.request(ExitReason::DataWiped);
+    IpcResponse::ok(&serde_json::json!({ "wiped": true, "restarting": true }))
+}
 
-    // Zeroize signing key
-    *ctx.signing_key.write() = None;
+/// Operational → Locking → Locked, releasing everything the unlock created.
+async fn release_unlock(ctx: &DaemonContext) -> Result<(), IpcResponse> {
+    transition(ctx, DaemonState::Locking)?;
+    teardown_unlocked(ctx).await;
+    transition(ctx, DaemonState::Locked)
+}
 
-    // Delete keyring
-    let _ = crate::state::keystore::delete_all_keys().await;
-
-    // Clear session
+/// Delete the identity's keyring entries, then its session. A failure
+/// answers 500 and leaves the session in place, so the request can be
+/// retried rather than half-done.
+async fn delete_identity_files(ctx: &DaemonContext) -> Result<(), IpcResponse> {
+    crate::state::keystore::delete_all_keys()
+        .await
+        .map_err(|e| IpcResponse::error(500, format!("keyring cleanup failed: {e}")))?;
     *ctx.session.write() = None;
-    if ctx.session_path.exists() {
-        let _ = std::fs::remove_file(&ctx.session_path);
+    match std::fs::remove_file(&ctx.session_path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(IpcResponse::error(
+            500,
+            format!("cannot delete {}: {e}", ctx.session_path.display()),
+        )),
     }
-
-    // Delete Veilid storage
-    let state_paths = match crate::state::StatePaths::resolve() {
-        Ok(p) => p,
-        Err(e) => return IpcResponse::error(500, format!("cannot resolve paths: {e}")),
-    };
-    if state_paths.veilid_dir.exists() {
-        let _ = std::fs::remove_dir_all(&state_paths.veilid_dir);
-    }
-
-    let _ = ctx.lifecycle.transition(DaemonState::Locked);
-    IpcResponse::ok(&serde_json::json!({ "wiped": true }))
 }

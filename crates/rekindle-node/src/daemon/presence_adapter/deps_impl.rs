@@ -28,6 +28,10 @@ use super::DaemonPresenceAdapter;
 
 #[async_trait]
 impl CommunityPresenceDeps for DaemonPresenceAdapter {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        self.ctx.unlock_scope_or_closed()
+    }
+
     // ---------- Identity and membership ----------
 
     fn my_pseudonym_for_community(&self, community_id: &str) -> String {
@@ -39,9 +43,8 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     }
 
     fn our_media_route_blob(&self) -> Option<Vec<u8>> {
-        // The daemon allocates no separate media-class route; peers fall
-        // back to the general route (`our_route_blob`) for its media.
-        None
+        // Our media-class route (plan C7.9d); never the personal route.
+        self.transport()?.media_route_blob()
     }
 
     fn current_presence_status_str(&self, _community_id: &str) -> String {
@@ -60,8 +63,8 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.channel_log_keys_impl(community_id)
     }
 
-    fn member_count_for_community(&self, community_id: &str) -> u32 {
-        self.member_count_impl(community_id)
+    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
+        self.member_slots_impl(community_id)
     }
 
     fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials> {
@@ -132,13 +135,31 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         else {
             return Ok(None);
         };
-        rekindle_transport::broadcast::dht_writes::open_str(
+        // The community's registry lease is the answer (plan C7.5): when
+        // held, the record is open with its sticky writer. Otherwise borrow
+        // it and hand the lease to the community. A raw re-open here would
+        // replace the held record's writer and safety selection (V5).
+        if self.ctx.community_runtime.holds_registry(community_id) {
+            return Ok(Some(descriptor.registry_key));
+        }
+        let lease = rekindle_transport::broadcast::dht_writes::acquire_str(
             node.as_ref(),
             &descriptor.registry_key,
             creds.slot_keypair_str.as_deref(),
         )
         .await
         .map_err(|e| format!("open registry: {e}"))?;
+        let merged = self.ctx.community_runtime.hold_leases(
+            community_id,
+            rekindle_records::lease::CommunityLeases {
+                registry: Some(lease),
+                ..Default::default()
+            },
+            |l| rekindle_transport::broadcast::dht_writes::key_of(node.as_ref(), l),
+        );
+        for surplus in merged.surplus {
+            rekindle_transport::broadcast::dht_writes::release(node.as_ref(), surplus).await;
+        }
         Ok(Some(descriptor.registry_key))
     }
 
@@ -188,13 +209,17 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // Nothing calls this on this track today; logging keeps it
         // visible if something starts to.
         tracing::debug!(
-            community = %&community_id[..16.min(community_id.len())],
+            community = %community_id,
             "send_to_mesh_raw: no pre-signed broadcast path on the daemon track"
         );
     }
 
-    fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
-        self.gossip_snapshot_impl(community_id)
+    fn read_gossip_snapshot(&self, _community_id: &str) -> GossipOverlaySnapshot {
+        // Always empty on this track: the daemon syncs on unlock via
+        // `SubscriptionManager` rather than gating on
+        // `needs_initial_sync`, and `BroadcastManager` sends through the
+        // mesh directly, so no envelopes are held back for later.
+        GossipOverlaySnapshot::default()
     }
 
     fn apply_gossip_rebuild_plan(&self, community_id: &str, plan: GossipOverlayPlan) {
@@ -308,12 +333,12 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         0
     }
 
-    async fn read_all_channel_messages(
+    async fn read_channel_message_items(
         &self,
         record_key: &str,
-        member_count: u32,
-    ) -> Result<Vec<ChannelMessage>, PresenceError> {
-        self.read_channel_record_impl(record_key, member_count)
+        member_slots: &[u32],
+    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
+        self.read_channel_record_impl(record_key, member_slots)
             .await
     }
 
@@ -321,7 +346,8 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         &self,
         _community_id: &str,
         _channel_id: &str,
-        _messages: Vec<ChannelMessage>,
+        _record_key: &str,
+        _messages: Vec<(u32, ChannelMessage)>,
     ) {
     }
 
@@ -411,21 +437,13 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.run_poll_tick_impl(community_id).await
     }
 
-    fn install_presence_poll_shutdown(
-        &self,
-        community_id: &str,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-    ) {
-        self.install_poll_shutdown_impl(community_id, shutdown_tx);
-    }
-
     fn maybe_auto_expand_segment(&self, community_id: &str) {
         // Expansion is a governance write, and the joiner already
         // triggers it from `claim_registry_slot` when every segment is
         // full. Doing it from the poll as well would race two
         // `SegmentAdded` entries for the same index.
         tracing::trace!(
-            community = %&community_id[..16.min(community_id.len())],
+            community = %community_id,
             "segment expansion is driven by the join path, not the poll"
         );
     }

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use aes_gcm::{aead::Aead, AeadCore, Aes256Gcm, KeyInit};
 use parking_lot::Mutex;
 use rand::RngCore;
+use rekindle_types::domains;
 use rusqlite::{params, Connection, OptionalExtension};
 use zeroize::Zeroizing;
 
@@ -163,8 +164,8 @@ fn derive_two_keys(
     argon2::Argon2::default()
         .hash_password_into(passphrase.as_bytes(), salt, &mut *master)
         .map_err(|e| VaultError::Kdf(e.to_string()))?;
-    let sqlcipher = Zeroizing::new(blake3::derive_key("rekindle v1 vault-sqlcipher", &*master));
-    let entry = Zeroizing::new(blake3::derive_key("rekindle v1 vault-entry-gcm", &*master));
+    let sqlcipher = Zeroizing::new(blake3::derive_key(domains::VAULT_SQLCIPHER_KEY, &*master));
+    let entry = Zeroizing::new(blake3::derive_key(domains::VAULT_ENTRY_KEY, &*master));
     Ok((sqlcipher, entry))
 }
 

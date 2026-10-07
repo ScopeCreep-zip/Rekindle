@@ -7,8 +7,7 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::display::ChannelOverviewDisplay;
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::validation;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
 
@@ -95,22 +94,11 @@ pub(crate) async fn handle_create(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let name = match validation::validate_name(name, "Channel") {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    if let Err(e) = validation::validate_channel_kind(kind) {
-        return e;
-    }
+    let name = name.trim().to_owned();
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-
-    // `topic` and `slowmode_seconds` are not `ChannelCreated` fields —
-    // they are separate `ChannelUpdated` concerns, so they are applied
-    // as a follow-up entry rather than smuggled into creation.
-    let _ = (topic, slowmode_seconds);
 
     let position = ctx
         .community_runtime
@@ -128,7 +116,7 @@ pub(crate) async fn handle_create(
         .map(rekindle_types::id::CategoryId);
 
     let adapter = super::adapter(ctx);
-    match rekindle_governance_runtime::channels::create_channel(
+    let created = match rekindle_governance_runtime::channels::create_channel(
         &adapter,
         &membership.governance_key,
         rekindle_governance_runtime::channels::NewChannel {
@@ -141,14 +129,60 @@ pub(crate) async fn handle_create(
     )
     .await
     {
-        Ok(created) => IpcResponse::ok(&serde_json::json!({
-            "id": created.channel_id_hex,
-            "name": name,
-            "kind": kind,
-            "record_key": created.record_key,
-        })),
-        Err(e) => IpcResponse::error(500, format!("channel create failed: {e}")),
+        Ok(created) => created,
+        Err(e) => return IpcResponse::error(500, format!("channel create failed: {e}")),
+    };
+
+    // `topic` and `slowmode_seconds` are not `ChannelCreated` fields —
+    // they are separate `ChannelUpdated` concerns, applied as a
+    // follow-up entry rather than smuggled into creation. Best-effort:
+    // the channel itself already exists even if this second write
+    // fails, so a failure here is a warning, not a 500 — the caller has
+    // the channel id back and can retry with `channel update` directly.
+    if topic.is_some() || slowmode_seconds != 0 {
+        if let Some(channel_id) = hex::decode(&created.channel_id_hex)
+            .ok()
+            .and_then(|b| <[u8; 16]>::try_from(b).ok())
+            .map(rekindle_types::id::ChannelId)
+        {
+            let lamport = match adapter.next_governance_lamport(&membership.governance_key) {
+                Ok(l) => l,
+                Err(e) => {
+                    return IpcResponse::error(500, format!("governance clock: {e}"));
+                }
+            };
+            if let Err(e) = rekindle_governance_runtime::apply::write_entry(
+                &adapter,
+                &membership.governance_key,
+                rekindle_types::governance::GovernanceEntry::ChannelUpdated {
+                    channel_id,
+                    name: None,
+                    topic: topic.map(ToOwned::to_owned),
+                    forum_tags: None,
+                    position: None,
+                    slowmode_seconds: (slowmode_seconds != 0).then_some(slowmode_seconds),
+                    nsfw: None,
+                    category_id: None,
+                    lamport,
+                },
+            )
+            .await
+            {
+                tracing::warn!(
+                    channel = %created.channel_id_hex,
+                    error = %e,
+                    "channel created, but topic/slowmode follow-up write failed"
+                );
+            }
+        }
     }
+
+    IpcResponse::ok(&serde_json::json!({
+        "id": created.channel_id_hex,
+        "name": name,
+        "kind": kind,
+        "record_key": created.record_key,
+    }))
 }
 
 pub(crate) async fn handle_delete(
@@ -173,7 +207,10 @@ pub(crate) async fn handle_delete(
     // "delete" is a governance statement about visibility rather than a
     // claim to have removed anything from the network.
     let adapter = super::adapter(ctx);
-    let lamport = adapter.increment_lamport(&membership.governance_key);
+    let lamport = match adapter.next_governance_lamport(&membership.governance_key) {
+        Ok(l) => l,
+        Err(e) => return IpcResponse::error(500, format!("governance clock: {e}")),
+    };
     match rekindle_governance_runtime::apply::write_entry(
         &adapter,
         &membership.governance_key,
@@ -209,11 +246,6 @@ pub(crate) async fn handle_update(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Some(n) = update.name {
-        if let Err(e) = validation::validate_name(n, "Channel") {
-            return e;
-        }
-    }
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
@@ -223,7 +255,10 @@ pub(crate) async fn handle_update(
     };
 
     let adapter = super::adapter(ctx);
-    let lamport = adapter.increment_lamport(&membership.governance_key);
+    let lamport = match adapter.next_governance_lamport(&membership.governance_key) {
+        Ok(l) => l,
+        Err(e) => return IpcResponse::error(500, format!("governance clock: {e}")),
+    };
     match rekindle_governance_runtime::apply::write_entry(
         &adapter,
         &membership.governance_key,
@@ -264,9 +299,6 @@ pub(crate) async fn handle_send(
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
-    }
-    if let Err(e) = validation::validate_message_body(body) {
-        return e;
     }
     let transport = match ctx.require_transport() {
         Ok(t) => t,
@@ -336,13 +368,28 @@ pub(crate) async fn handle_send(
         slot_keypair_str,
     };
 
+    // The message clock is the mesh clock inbound gossip merges into, so
+    // this message orders after everything we have received.
+    let lamport_ts = {
+        let subscriptions = ctx.subscriptions.read();
+        match subscriptions
+            .as_ref()
+            .map(|s| s.next_message_lamport(&membership.governance_key))
+        {
+            Some(Ok(lamport)) => lamport,
+            Some(Err(e)) => return IpcResponse::error(500, format!("message clock: {e}")),
+            None => return IpcResponse::error(503, "subscriptions not running"),
+        }
+    };
+
     match rekindle_transport::operations::channel::send_message(
         &transport,
         &membership,
         &channel_id,
         body,
         reply_to,
-        &ctx.mek_cache,
+        lamport_ts,
+        &*crate::daemon::mek_rotation::key_provider(ctx),
         &target,
         &pseudonym_signing_key,
     )
@@ -369,7 +416,7 @@ pub(crate) async fn handle_send(
                     message_id: sent.message_id.clone(),
                     author_pseudonym: membership.pseudonym_key.clone(),
                     subkey_index: membership.slot_index,
-                    lamport_ts: sent.timestamp,
+                    lamport_ts: sent.lamport_ts,
                     sequence: sent.sequence,
                     content_hash: sent.content_hash.clone(),
                     timestamp: sent.timestamp,
@@ -380,6 +427,8 @@ pub(crate) async fn handle_send(
                 "message_id": sent.message_id,
                 "timestamp": sent.timestamp,
                 "channel_record_key": sent.channel_record_key,
+                // false: held by the record pool until it lands (C7.13).
+                "stored": sent.stored,
             }))
         }
         Err(e) => IpcResponse::error(500, format!("send failed: {e}")),
@@ -431,17 +480,41 @@ pub(crate) async fn handle_history(
         // empty author.
         .filter_map(|(pseudonym, record)| record.display_name.map(|name| (pseudonym, name)))
         .collect();
+    // The writer index: every member the roster placed, and ourselves
+    // (plan C7.12).
+    let writers = writer_slots(ctx, &membership);
     match query
         .channel_history(
             &membership.governance_key,
             channel_id,
             &record_keys,
+            &writers,
             &display_names,
             limit as usize,
+            &*crate::daemon::mek_rotation::key_provider(ctx),
         )
         .await
     {
         Ok(messages) => IpcResponse::ok(&messages),
         Err(e) => IpcResponse::error(500, format!("channel history: {e}")),
     }
+}
+
+/// `(segment_index, slot)` for every member the presence roster placed in
+/// `membership`'s community, and our own: the slots a channel read covers
+/// (plan C7.12).
+pub(crate) fn writer_slots(
+    ctx: &DaemonContext,
+    membership: &rekindle_transport::session::CommunityMembership,
+) -> Vec<(u32, u32)> {
+    let mut writers: Vec<(u32, u32)> = ctx
+        .community_runtime
+        .members(&membership.governance_key)
+        .into_values()
+        .map(|member| (member.segment_index, member.subkey_index))
+        .collect();
+    writers.push((membership.segment_index.unwrap_or(0), membership.slot_index));
+    writers.sort_unstable();
+    writers.dedup();
+    writers
 }

@@ -192,15 +192,31 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // reuse a record key already in our chain, else create it once.
     let mut next_key: Option<String> = None;
     let mut written_overflow_keys: Vec<String> = Vec::new();
+    // The community keeps every page it writes for the session (§14.1).
+    let mut page_leases = rekindle_records::lease::CommunityLeases::default();
     for i in (1..pages.len()).rev() {
         let page_index = u32::try_from(i).expect("overflow page index fits u32");
         let owner_writer =
             overflow::overflow_owner_writer(deps, &identity_secret, community_id, page_index);
-        let rec_key = match chain.overflow_keys.get(i - 1) {
-            Some(existing) => existing.clone(),
-            None => deps.create_overflow_record(owner_writer.clone()).await?,
+        let page = match chain.overflow_keys.get(i - 1) {
+            Some(existing) => deps
+                .acquire_record(existing, Some(owner_writer.clone()))
+                .await
+                .map(|lease| (existing.clone(), lease)),
+            None => deps
+                .create_overflow_record(owner_writer.clone())
+                .await
+                .map(|created| (created.record_key, created.lease)),
         };
-        overflow::write_overflow_page(
+        let (rec_key, lease) = match page {
+            Ok(page) => page,
+            Err(e) => {
+                crate::records::release_all(deps, &page_leases).await;
+                return Err(e);
+            }
+        };
+        page_leases.overflow.push(lease);
+        if let Err(e) = overflow::write_overflow_page(
             deps,
             &rec_key,
             &pages[i],
@@ -209,7 +225,11 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
             &pseudo,
             owner_writer,
         )
-        .await?;
+        .await
+        {
+            crate::records::release_all(deps, &page_leases).await;
+            return Err(e);
+        }
         written_overflow_keys.push(rec_key.clone());
         next_key = Some(rec_key);
     }
@@ -220,6 +240,8 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // keep its overflow records alive or new channels vanish from joiners.
     if !written_overflow_keys.is_empty() {
         deps.register_governance_overflow_keys(community_id, &written_overflow_keys);
+        deps.community_records_ready(community_id, page_leases)
+            .await;
     }
 
     // Build + sign the primary subkey (page 0), pointing at the first overflow
@@ -265,20 +287,10 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // M9.5 — set_dht_value returns Some(stale) when our write was NOT
     // accepted by the network. Surface as WriteConflict so the caller
     // doesn't emit GovernanceUpdated for a write that didn't land.
-    let write_outcome = deps
-        .set_dht_value(&gov_key_str, my_slot, payload.clone(), Some(slot_kp_str))
-        .await?;
-    if let Some(stale) = write_outcome {
-        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
-    }
-
-    // M9.5 — read-back verification. Even on local-set success, network
-    // propagation can fail. Force a fresh read and confirm the payload
-    // is what the network now serves.
-    let verify = deps
-        .get_dht_value(&gov_key_str, my_slot, true)
-        .await?
-        .ok_or(GovernanceRuntimeError::VerifyEmpty)?;
+    let gov_lease = deps.acquire_record(&gov_key_str, None).await?;
+    let written = write_primary(deps, gov_lease, my_slot, &payload, slot_kp_str).await;
+    deps.release_record(gov_lease).await;
+    let verify = written?;
     if verify != payload {
         return Err(GovernanceRuntimeError::VerifyMismatch {
             read: verify.len(),
@@ -317,6 +329,28 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     }
 
     Ok(())
+}
+
+/// M9.5: set the primary subkey, surfacing a newer network value as
+/// `WriteConflict` so the caller does not emit `GovernanceUpdated` for a
+/// write that did not land; then force a fresh read, since even a local
+/// set can fail to propagate, and return what the network now serves.
+async fn write_primary<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    gov_lease: rekindle_records::lease::LeaseId,
+    my_slot: u32,
+    payload: &[u8],
+    slot_writer: String,
+) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    if let Some(stale) = deps
+        .set_dht_value(gov_lease, my_slot, payload.to_vec(), Some(slot_writer))
+        .await?
+    {
+        return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
+    }
+    deps.get_dht_value(gov_lease, my_slot, true)
+        .await?
+        .ok_or(GovernanceRuntimeError::VerifyEmpty)
 }
 
 #[cfg(test)]

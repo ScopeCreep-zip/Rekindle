@@ -21,6 +21,10 @@ use crate::state_helpers;
 
 #[async_trait]
 impl CommunityPresenceDeps for PresenceAdapter {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        state_helpers::login_scope_or_closed(&self.state)
+    }
+
     fn my_pseudonym_for_community(&self, community_id: &str) -> String {
         super::state_reads::my_pseudonym_for_community(&self.state, community_id)
     }
@@ -51,8 +55,20 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::state_reads::channel_log_keys_for_community(&self.state, community_id)
     }
 
-    fn member_count_for_community(&self, community_id: &str) -> u32 {
-        super::state_reads::member_count_for_community(&self.state, community_id)
+    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
+        match crate::services::community::writers::writer_slot_list(
+            &self.state,
+            &self.pool,
+            community_id,
+        )
+        .await
+        {
+            Ok(slots) => slots,
+            Err(error) => {
+                tracing::debug!(community = %community_id, %error, "writer index unavailable");
+                Vec::new()
+            }
+        }
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
@@ -86,28 +102,40 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::state_reads::mark_pending_sync(&self.state, community_id, channel_id, attempt);
     }
 
-    async fn read_all_channel_messages(
+    async fn read_channel_message_items(
         &self,
         record_key: &str,
-        member_count: u32,
-    ) -> Result<Vec<ChannelMessage>, PresenceError> {
-        let rc =
-            state_helpers::safe_routing_context(&self.state).ok_or(PresenceError::NotAttached)?;
-        channel_record::read_all_channel_messages(&rc, record_key, member_count)
+        member_slots: &[u32],
+    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
+        let pool =
+            state_helpers::record_pool(&self.state).map_err(|_| PresenceError::NotAttached)?;
+        let items = channel_record::read_all_channel_entries(&pool, record_key, member_slots)
             .await
-            .map_err(|e| PresenceError::Dht(e.to_string()))
+            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        Ok(items
+            .into_iter()
+            .filter_map(|item| match item.entry {
+                channel_record::ChannelRecordEntry::Message(message) => {
+                    Some((item.subkey_index, message))
+                }
+                _ => None,
+            })
+            .collect())
     }
 
     fn persist_channel_catchup(
         &self,
-        _community_id: &str,
+        community_id: &str,
         channel_id: &str,
-        messages: Vec<ChannelMessage>,
+        record_key: &str,
+        messages: Vec<(u32, ChannelMessage)>,
     ) {
         super::persist::insert_channel_catchup_messages(
             &self.state,
             &self.pool,
+            community_id,
             channel_id,
+            record_key,
             messages,
         );
     }
@@ -151,10 +179,11 @@ impl CommunityPresenceDeps for PresenceAdapter {
         community_id: &str,
         ranges: &[rekindle_types::presence::HistoryRange],
     ) -> Option<rekindle_types::presence::EncryptedHistoryRanges> {
-        let mek = {
-            let cache = self.state.mek_cache.lock();
-            cache.get(community_id).cloned()?
-        };
+        let mek = state_helpers::current_mek(
+            &self.state,
+            community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )?;
         let plaintext = serde_json::to_vec(ranges).ok()?;
         let ciphertext = mek.encrypt(&plaintext).ok()?;
         Some(rekindle_types::presence::EncryptedHistoryRanges {
@@ -209,10 +238,11 @@ impl CommunityPresenceDeps for PresenceAdapter {
         community_id: &str,
         extras: &rekindle_types::presence::SessionExtras,
     ) -> Option<rekindle_types::presence::EncryptedSessionExtras> {
-        let mek = {
-            let cache = self.state.mek_cache.lock();
-            cache.get(community_id).cloned()?
-        };
+        let mek = state_helpers::current_mek(
+            &self.state,
+            community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )?;
         let plaintext = serde_json::to_vec(extras).ok()?;
         let ciphertext = mek.encrypt(&plaintext).ok()?;
         Some(rekindle_types::presence::EncryptedSessionExtras {
@@ -226,15 +256,14 @@ impl CommunityPresenceDeps for PresenceAdapter {
         community_id: &str,
         encrypted: &rekindle_types::presence::EncryptedSessionExtras,
     ) -> Option<rekindle_types::presence::SessionExtras> {
-        let mek = {
-            let cache = self.state.mek_cache.lock();
-            cache.get(community_id).cloned()?
-        };
         // Generation must match — a rotated-out ex-member's extras are
         // unreadable, which is the intended MEK-bounded readership.
-        if mek.generation() != encrypted.mek_generation {
-            return None;
-        }
+        let mek = state_helpers::current_mek(
+            &self.state,
+            community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )
+        .filter(|mek| mek.generation() == encrypted.mek_generation)?;
         let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
         serde_json::from_slice(&plaintext).ok()
     }
@@ -260,21 +289,24 @@ impl CommunityPresenceDeps for PresenceAdapter {
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
     ) -> Result<(), PresenceError> {
-        let rc =
-            state_helpers::safe_routing_context(&self.state).ok_or(PresenceError::NotAttached)?;
         let writer_kp = writer_keypair_str
             .parse::<veilid_core::KeyPair>()
             .map_err(|e| PresenceError::InvalidDhtKey(format!("writer keypair: {e}")))?;
         let reg_key = registry_key
             .parse::<veilid_core::RecordKey>()
             .map_err(|e| PresenceError::InvalidDhtKey(format!("registry key: {e}")))?;
-        let write_opts = veilid_core::SetDHTValueOptions {
-            writer: Some(writer_kp),
-            ..Default::default()
-        };
-        rc.set_dht_value(reg_key, subkey_index, presence_json, Some(write_opts))
+        let outcome = self
+            .record_pool()?
+            .write_once(&reg_key, subkey_index, presence_json, Some(writer_kp))
             .await
             .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        // A presence row asserts the present: a miss is an error, never a
+        // write queued to land later.
+        if outcome.missed() {
+            return Err(PresenceError::Dht(format!(
+                "presence not stored ({outcome:?})"
+            )));
+        }
         Ok(())
     }
 
@@ -325,25 +357,9 @@ impl CommunityPresenceDeps for PresenceAdapter {
     }
 
     async fn run_presence_poll_tick(&self, community_id: &str) -> Result<(), String> {
-        // Delegates to the crate's `presence_poll_tick` orchestrator
-        // (21.i-REDO landed). The cadence loop in `spawn.rs` invokes
-        // this from each timer tick; the adapter wraps `self` in
-        // an Arc so the trait's `<D: ?Sized>` bound is satisfied.
-        let adapter = std::sync::Arc::new(
-            super::build_adapter(&self.state).ok_or_else(|| "adapter unavailable".to_string())?,
-        );
-        rekindle_presence::presence_poll_tick(adapter, community_id).await
-    }
-
-    fn install_presence_poll_shutdown(
-        &self,
-        community_id: &str,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-    ) {
-        let mut communities = self.state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            cs.presence_poll_shutdown_tx = Some(shutdown_tx);
-        }
+        // The cadence loop in `spawn.rs` invokes this from each timer
+        // tick; the tick is left at stop (record-pool work only).
+        crate::services::community::presence_poll_tick_public(&self.state, community_id).await
     }
 
     // -- presence_poll_tick surface (21.i-REDO) --
@@ -522,27 +538,22 @@ impl CommunityPresenceDeps for PresenceAdapter {
             .map(|r| rekindle_voice::signaling::PresencePeerView {
                 pseudonym_hex: r.pseudonym_hex,
                 display_name: r.display_name,
-                // Media routing: the voice roster must send realtime media
-                // over the peer's MEDIA route (LowLatency + PreferUnordered),
-                // not the general ordered-TCP route that head-of-line blocks
-                // it. Fall back to the general route only when the peer
-                // published no media route (old build / media route not
-                // allocated). This is also what stops the reconcile's
-                // route-supersession from downgrading a good media route to
-                // the general route every poll.
-                route_blob: if r.media_route_blob.is_empty() {
-                    r.route_blob
-                } else {
-                    r.media_route_blob
-                },
+                // The peer's MEDIA route (LowLatency + PreferUnordered)
+                // only. A peer that published none is unreachable for
+                // media: its empty blob is skipped by the reconcile, never
+                // replaced by the general route (plan C7.9c).
+                route_blob: r.media_route_blob,
                 voice_channel_id: r.voice_channel_id,
                 fresh: r.fresh,
             })
             .collect();
         let cid = community_id.to_string();
-        tauri::async_runtime::spawn(async move {
-            rekindle_voice::signaling::reconcile_from_presence(&deps, &cid, views).await;
-        });
+        crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
+            "voice roster reconcile",
+            async move {
+                rekindle_voice::signaling::reconcile_from_presence(&deps, &cid, views).await;
+            },
+        );
     }
 
     fn stale_pending_syncs(

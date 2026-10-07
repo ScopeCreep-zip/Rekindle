@@ -3,6 +3,7 @@
 use crate::id::{ChannelId, PseudonymKey, RoleId};
 
 use super::*;
+use crate::domains;
 
 #[test]
 fn governance_entry_serde_roundtrip() {
@@ -96,7 +97,7 @@ fn signing_bytes_uniform_v1_tag_and_none_pointer_appends_nothing() {
 
     let entries_json = serde_json::to_vec(&entries).unwrap();
     let mut expected = Vec::new();
-    expected.extend_from_slice(b"rekindle-gov-subkey-v1");
+    expected.extend_from_slice(domains::GOV_SUBKEY.as_bytes());
     expected.extend_from_slice(&author.0);
     expected.extend_from_slice(&(entries.len() as u64).to_le_bytes());
     expected.extend_from_slice(&entries_json);

@@ -25,14 +25,10 @@ use aes_gcm::{
 };
 use hkdf::Hkdf;
 use rand::RngCore;
+use rekindle_types::domains;
 use sha2::Sha256;
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
-
-/// Domain-separated info string. Kept distinct from the 1:1
-/// `derive_call_key` path so the same X25519 keypair across both
-/// contexts can never produce the same wrap_key.
-const HKDF_INFO: &[u8] = b"rekindle-group-call-wrap-v1";
 
 #[derive(Debug, Error)]
 pub enum GroupKeyError {
@@ -79,7 +75,7 @@ fn derive_wrap_key(
     let shared = initiator_secret.diffie_hellman(&peer_pub);
     let hk = Hkdf::<Sha256>::new(None, shared.as_bytes());
     let mut wrap_key = [0u8; 32];
-    hk.expand(HKDF_INFO, &mut wrap_key)
+    hk.expand(domains::GROUP_CALL_WRAP.as_bytes(), &mut wrap_key)
         .map_err(|e| GroupKeyError::Hkdf(e.to_string()))?;
     Ok(wrap_key)
 }

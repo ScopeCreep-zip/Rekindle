@@ -95,7 +95,7 @@ impl DaemonGossipAdapter {
             (registry_key, record.subkey_index)
         };
 
-        let raw = rekindle_transport::broadcast::dht_writes::get(
+        let raw = rekindle_transport::broadcast::dht_writes::read_once_str(
             node.as_ref(),
             &registry_key,
             subkey,

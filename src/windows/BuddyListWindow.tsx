@@ -12,6 +12,8 @@ import BottomActionBar from "../components/buddy-list/BottomActionBar";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
 import DmInviteModal from "../components/buddy-list/DmInviteModal";
+import DeepLinkConsentDialog from "../components/buddy-list/DeepLinkConsentDialog";
+import SessionResetDialog from "../components/buddy-list/SessionResetDialog";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
@@ -26,7 +28,11 @@ import { handleGetGameStatus } from "../actions/settings.actions";
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
-import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
+import { loadPendingDeepLink, subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
+import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
+import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
+import CallController from "../components/voice/CallController";
+import { startEventStream } from "../ipc/channels";
 import { subscribeDmInbox } from "../handlers/dm.handlers";
 import { handleListDms } from "../actions/dm.actions";
 import { handleHydrateRelayState } from "../actions/relay.actions";
@@ -67,9 +73,10 @@ const BuddyListWindow: Component = () => {
 
   onMount(async () => {
     // Register event listeners FIRST so no events are missed during hydration.
-    // Note: subscribeCallEvents() and subscribeNotificationHandler() are
-    // mounted globally by <CallController /> in main.tsx (Wave 12 W12.1) so
-    // incoming-call ring/modal works in every webview, not just this one.
+    // The buddy list owns the device-wide UI: the call shell (ring, modal,
+    // outgoing/group panels), OS notifications and the notification inbox.
+    unlisteners.push(subscribeCallEvents({ owner: true }));
+    unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListChatEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
     unlisteners.push(subscribeBuddyListVoiceEvents());
@@ -79,9 +86,13 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     unlisteners.push(subscribeDeepLinkHandler());
     unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
+    void startEventStream();
+    void refreshMissedCalls();
 
     // Await hydration so store is populated before subsequent commands
     await hydrateState();
+    // A deep link that arrived before login waits in the backend for consent.
+    void loadPendingDeepLink();
     handleListDms();
     handleHydrateRelayState();
 
@@ -163,7 +174,10 @@ const BuddyListWindow: Component = () => {
         isOpen={buddyListUI.showJoinCommunity}
         onClose={() => setBuddyListUI("showJoinCommunity", false)}
       />
+      <CallController />
       <DmInviteModal />
+      <DeepLinkConsentDialog />
+      <SessionResetDialog />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}

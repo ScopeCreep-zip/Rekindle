@@ -4,10 +4,10 @@
 //! and a `NativeCaptureSession` with `start`/`stop`/`set_bitrate_kbps`/
 //! `force_keyframe` producing `EncodedFrame` (peer egress) and
 //! `PreviewFrame` (self-view) — so this facade no longer platform-branches
-//! itself. The crate resolves the backend per target: Linux runs a
-//! GStreamer `v4l2src` pipeline; macOS/Windows (with the `native-capture`
-//! feature the `src-tauri` build enables off-Linux) run nokhwa + libvpx;
-//! a feature-off non-Linux build reports the stack unavailable. Callers
+//! itself. Capture is GStreamer on every platform (`v4l2src`/`pipewiresrc`
+//! on Linux, `avfvideosrc` on macOS, `ksvideosrc`/`mfvideosrc` on Windows,
+//! chosen by the OS's GStreamer device monitor), so there is no per-OS Rust
+//! capture code; the nokhwa backend was retired. Callers
 //! (commands, adapters, teardown) ask `capture_available` instead of
 //! sniffing the OS.
 //!
@@ -233,149 +233,158 @@ pub async fn start(
     let pump_community = community_id.to_string();
     let pump_channel = channel_id.to_string();
     let pump_stream_hex = stream_id_hex.clone();
-    tokio::spawn(async move {
-        let mut frame_seq: u32 = 0;
-        let mut preview_count: u64 = 0;
-        let mut last_forced = Instant::now();
-        let mut rate_rx = pump_state
-            .video_pacer_rate_tx
-            .read()
-            .as_ref()
-            .map(tokio::sync::watch::Sender::subscribe);
-        let mut share_rx = pump_state.video_payload_share_rx.read().clone();
-        loop {
-            tokio::select! {
-                biased;
-                control = control_rx.recv() => {
-                    match control {
-                        Some(Control::ForceKeyframe) => {
-                            if last_forced.elapsed() >= FORCE_KEYFRAME_FLOOR {
-                                last_forced = Instant::now();
-                                session.force_keyframe();
+    crate::state_helpers::spawn_in_login_with_token(
+        state,
+        "native video pump",
+        |stop| async move {
+            let mut frame_seq: u32 = 0;
+            let mut preview_count: u64 = 0;
+            let mut last_forced = Instant::now();
+            let mut rate_rx = pump_state
+                .video_pacer_rate_tx
+                .read()
+                .as_ref()
+                .map(tokio::sync::watch::Sender::subscribe);
+            let mut share_rx = pump_state.video_payload_share_rx.read().clone();
+            loop {
+                tokio::select! {
+                    biased;
+                    // The session ended: release the camera like a Stop.
+                    () = stop.cancelled() => {
+                        pump_state.native_video.active.lock().take();
+                        session.stop();
+                        break;
+                    }
+                    control = control_rx.recv() => {
+                        match control {
+                            Some(Control::ForceKeyframe) => {
+                                if last_forced.elapsed() >= FORCE_KEYFRAME_FLOOR {
+                                    last_forced = Instant::now();
+                                    session.force_keyframe();
+                                }
+                                continue;
                             }
-                            continue;
+                            Some(Control::Stop) | None => {
+                                session.stop();
+                                break;
+                            }
                         }
-                        Some(Control::Stop) | None => {
-                            session.stop();
-                            break;
-                        }
                     }
-                }
-                error = error_rx.recv() => {
-                    let message = error.unwrap_or_else(|| "camera pipeline ended".into());
-                    tracing::warn!(
-                        target: "rekindle_video_capture",
-                        community_id = %pump_community,
-                        %message,
-                        "native capture failed — stopping session"
-                    );
-                    pump_state.native_video.active.lock().take();
-                    session.stop();
-                    crate::event_dispatch::emit_live(
-                        &pump_app,
-                        "community-event",
-                        &crate::channels::CommunityEvent::NativeVideoError(
-                            crate::channels::NativeVideoErrorEvent {
-                                community_id: pump_community.clone(),
-                                channel_id: pump_channel.clone(),
-                                message,
-                            },
-                        ),
-                    );
-                    break;
-                }
-                changed = async {
-                    match rate_rx.as_mut() {
-                        Some(rx) => rx.changed().await.is_ok(),
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    if changed {
-                        let wire = rate_rx.as_ref().map_or(0, |rx| *rx.borrow());
-                        let share = share_rx.as_ref().map_or(
-                            rekindle_video::START_PAYLOAD_SHARE_Q10,
-                            |rx| *rx.borrow(),
-                        );
-                        session.set_bitrate_kbps(rekindle_video::encoder_target_kbps(wire, share));
-                    }
-                    continue;
-                }
-                preview = preview_rx.recv() => {
-                    let Some(preview) = preview else {
-                        // Preview branch ended — the encode branch's
-                        // own teardown (frame_rx None / error_rx)
-                        // owns session lifecycle; just stop forwarding.
-                        continue;
-                    };
-                    // Local self-view: JPEG straight to the webview's
-                    // preview channel (canvas paint), never the peer
-                    // egress. Best-effort — a dropped still is fine.
-                    use base64::Engine;
-                    let jpeg_b64 = base64::engine::general_purpose::STANDARD
-                        .encode(&preview.jpeg);
-                    preview_count += 1;
-                    if preview_count == 1 {
-                        tracing::info!(
+                    error = error_rx.recv() => {
+                        let message = error.unwrap_or_else(|| "camera pipeline ended".into());
+                        tracing::warn!(
                             target: "rekindle_video_capture",
                             community_id = %pump_community,
-                            jpeg_bytes = preview.jpeg.len(),
-                            "self-view preview branch producing frames"
+                            %message,
+                            "native capture failed — stopping session"
+                        );
+                        pump_state.native_video.active.lock().take();
+                        session.stop();
+                        crate::event_dispatch::emit_community(
+                            &pump_app,
+                            crate::channels::CommunityEvent::NativeVideoError(
+                                crate::channels::NativeVideoErrorEvent {
+                                    community_id: pump_community.clone(),
+                                    channel_id: pump_channel.clone(),
+                                    message,
+                                },
+                            ),
+                        );
+                        break;
+                    }
+                    changed = async {
+                        match rate_rx.as_mut() {
+                            Some(rx) => rx.changed().await.is_ok(),
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        if changed {
+                            let wire = rate_rx.as_ref().map_or(0, |rx| *rx.borrow());
+                            let share = share_rx.as_ref().map_or(
+                                rekindle_video::START_PAYLOAD_SHARE_Q10,
+                                |rx| *rx.borrow(),
+                            );
+                            session.set_bitrate_kbps(rekindle_video::encoder_target_kbps(wire, share));
+                        }
+                        continue;
+                    }
+                    preview = preview_rx.recv() => {
+                        let Some(preview) = preview else {
+                            // Preview branch ended — the encode branch's
+                            // own teardown (frame_rx None / error_rx)
+                            // owns session lifecycle; just stop forwarding.
+                            continue;
+                        };
+                        // Local self-view: JPEG straight to the webview's
+                        // preview channel (canvas paint), never the peer
+                        // egress. Best-effort — a dropped still is fine.
+                        use base64::Engine;
+                        let jpeg_b64 = base64::engine::general_purpose::STANDARD
+                            .encode(&preview.jpeg);
+                        preview_count += 1;
+                        if preview_count == 1 {
+                            tracing::info!(
+                                target: "rekindle_video_capture",
+                                community_id = %pump_community,
+                                jpeg_bytes = preview.jpeg.len(),
+                                "self-view preview branch producing frames"
+                            );
+                        }
+                        pump_state.video_channels.send_native_preview(
+                            crate::video_channels::NativePreviewFrameMsg {
+                                stream_id_hex: pump_stream_hex.clone(),
+                                jpeg_b64,
+                            },
+                        );
+                        continue;
+                    }
+                    frame = frame_rx.recv() => {
+                        let Some(frame) = frame else {
+                            // Pipeline torn down — sender side dropped.
+                            pump_state.native_video.active.lock().take();
+                            break;
+                        };
+                        frame_seq = frame_seq.wrapping_add(1);
+                        // Wire timestamp = unix ms (u32-wrapped, same
+                        // modulus as the receive path's now_ms) — only
+                        // DIFFERENCES matter to receivers' jitter math.
+                        let wire_ts = u32::try_from(
+                            rekindle_utils::timestamp_ms() % u64::from(u32::MAX),
+                        )
+                        .unwrap_or(0);
+                        // Egress to PEERS only — gate + MEK + fragment +
+                        // pacer. No loopback: the local self-view is a
+                        // direct getUserMedia preview in the webview
+                        // (PipeWire shares the camera), never a decode
+                        // round-trip.
+                        let _ = crate::services::community_video_runtime::send_encoded_video_frame(
+                            &pump_state,
+                            &pump_community,
+                            &pump_channel,
+                            &crate::services::community::video::VideoFrameSend {
+                                stream_id,
+                                frame_seq,
+                                keyframe: frame.keyframe,
+                                codec: rekindle_types::video::Codec::Vp9,
+                                timestamp: wire_ts,
+                                encoded_payload: frame.payload,
+                            },
                         );
                     }
-                    pump_state.video_channels.send_native_preview(
-                        crate::video_channels::NativePreviewFrameMsg {
-                            stream_id_hex: pump_stream_hex.clone(),
-                            jpeg_b64,
-                        },
-                    );
-                    continue;
                 }
-                frame = frame_rx.recv() => {
-                    let Some(frame) = frame else {
-                        // Pipeline torn down — sender side dropped.
-                        pump_state.native_video.active.lock().take();
-                        break;
-                    };
-                    frame_seq = frame_seq.wrapping_add(1);
-                    // Wire timestamp = unix ms (u32-wrapped, same
-                    // modulus as the receive path's now_ms) — only
-                    // DIFFERENCES matter to receivers' jitter math.
-                    let wire_ts = u32::try_from(
-                        rekindle_utils::timestamp_ms() % u64::from(u32::MAX),
-                    )
-                    .unwrap_or(0);
-                    // Egress to PEERS only — gate + MEK + fragment +
-                    // pacer. No loopback: the local self-view is a
-                    // direct getUserMedia preview in the webview
-                    // (PipeWire shares the camera), never a decode
-                    // round-trip.
-                    let _ = crate::services::community_video_runtime::send_encoded_video_frame(
-                        &pump_state,
-                        &pump_community,
-                        &pump_channel,
-                        &crate::services::community::video::VideoFrameSend {
-                            stream_id,
-                            frame_seq,
-                            keyframe: frame.keyframe,
-                            codec: rekindle_types::video::Codec::Vp9,
-                            timestamp: wire_ts,
-                            encoded_payload: frame.payload,
-                        },
-                    );
+                // Share moves rarely; fold it into the rate poll by
+                // re-reading on every loop instead of a fifth arm.
+                if share_rx.is_none() {
+                    share_rx.clone_from(&pump_state.video_payload_share_rx.read());
                 }
             }
-            // Share moves rarely; fold it into the rate poll by
-            // re-reading on every loop instead of a fifth arm.
-            if share_rx.is_none() {
-                share_rx.clone_from(&pump_state.video_payload_share_rx.read());
-            }
-        }
-        tracing::info!(
-            target: "rekindle_video_capture",
-            community_id = %pump_community,
-            "native capture pump ended"
-        );
-    });
+            tracing::info!(
+                target: "rekindle_video_capture",
+                community_id = %pump_community,
+                "native capture pump ended"
+            );
+        },
+    );
 
     Ok(stream_id_hex)
 }

@@ -1,0 +1,35 @@
+[package]
+name = "rekindle-tui"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal UI for Rekindle, a client of the rekindled daemon"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rekindle-tui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+arboard = { version = "3", default-features = false, features = [ "wayland-data-control" ] }
+clap = { version = "4", features = [ "derive", "std", "help", "usage", "error-context" ] }
+color-eyre = "0.6"
+crossterm = { version = "0.29", features = [ "event-stream" ] }
+futures-util = { version = "0.3", default-features = false, features = [ "std" ] }
+opaline = { version = "0.2", features = [ "ratatui", "builtin-themes", "gradients" ] }
+ratatui = { version = "0.30", default-features = false, features = [ "crossterm" ] }
+ratatui-textarea = { version = "0.9", default-features = false, features = [ "crossterm", "search" ] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+tracing = { workspace = true }
+
+# A frontend links the bus client and the shared types — never the node.
+rekindle-client = { path = "../rekindle-client" }
+rekindle-ipc = { path = "../rekindle-ipc" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }

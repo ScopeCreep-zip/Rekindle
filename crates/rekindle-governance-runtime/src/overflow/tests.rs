@@ -96,49 +96,79 @@ fn roundtrip_partition_then_concat_preserves_entries() {
     assert_eq!(flattened, input);
 }
 
-/// In-memory DHT keyed by `(record_key, subkey)`. Implements only the
-/// four-method [`OverflowIo`] surface (the blanket impl covers production;
-/// tests need just this), so the write/read/follow cycle runs with no Veilid.
+/// In-memory DHT keyed by `(record_key, subkey)`, with a lease table.
+/// Implements only the [`OverflowIo`] surface (the blanket impl covers
+/// production; tests need just this), so the write/read/follow cycle runs
+/// with no Veilid. `outstanding` counts borrows not yet released.
 #[derive(Default)]
 struct MockDht {
     store: parking_lot::Mutex<std::collections::HashMap<(String, u32), Vec<u8>>>,
+    leases: parking_lot::Mutex<std::collections::HashMap<u64, String>>,
+    next_lease: std::sync::atomic::AtomicU64,
+}
+
+impl MockDht {
+    /// Write a value directly, as another node would.
+    fn put(&self, record_key: &str, subkey: u32, value: Vec<u8>) {
+        self.store
+            .lock()
+            .insert((record_key.to_string(), subkey), value);
+    }
+
+    fn outstanding(&self) -> usize {
+        self.leases.lock().len()
+    }
+
+    fn key_of(&self, lease: LeaseId) -> Result<String, GovernanceRuntimeError> {
+        self.leases
+            .lock()
+            .get(&lease.0)
+            .cloned()
+            .ok_or_else(|| GovernanceRuntimeError::Adapter(format!("lease {} not held", lease.0)))
+    }
 }
 
 #[async_trait::async_trait]
 impl OverflowIo for MockDht {
-    async fn get_dht_value(
+    async fn acquire_record(
         &self,
         record_key: &str,
+        _writer: Option<String>,
+    ) -> Result<LeaseId, GovernanceRuntimeError> {
+        let id = self
+            .next_lease
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.leases.lock().insert(id, record_key.to_string());
+        Ok(LeaseId(id))
+    }
+    async fn release_record(&self, lease: LeaseId) {
+        self.leases.lock().remove(&lease.0);
+    }
+    async fn get_dht_value(
+        &self,
+        lease: LeaseId,
         subkey: u32,
         _force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        Ok(self
-            .store
-            .lock()
-            .get(&(record_key.to_string(), subkey))
-            .cloned())
+        let key = self.key_of(lease)?;
+        Ok(self.store.lock().get(&(key, subkey)).cloned())
     }
     async fn set_dht_value(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
         _writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.store
-            .lock()
-            .insert((record_key.to_string(), subkey), value);
+        let key = self.key_of(lease)?;
+        self.store.lock().insert((key, subkey), value);
         Ok(None)
-    }
-    async fn open_dht_record(
-        &self,
-        _record_key: &str,
-        _writer: Option<String>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        Ok(())
     }
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         format!("{}:{}", hex::encode(ed_public), hex::encode(ed_secret))
+    }
+    fn stop_requested(&self) -> bool {
+        false
     }
 }
 
@@ -185,9 +215,7 @@ async fn write_then_read_reassembles_across_overflow_pages() {
         primary.overflow_next.is_some(),
         "primary subkey must point at the first overflow record"
     );
-    mock.set_dht_value(gov_key, my_slot, bytes, Some("slot".into()))
-        .await
-        .unwrap();
+    mock.put(gov_key, my_slot, bytes);
 
     // read_my_chain (write path) reassembles the full log + every chain key.
     let chain = read_my_chain(&mock, gov_key, my_slot, &author)
@@ -210,6 +238,7 @@ async fn write_then_read_reassembles_across_overflow_pages() {
         pages.len() - 1,
         "read path must report every followed overflow key",
     );
+    assert_eq!(mock.outstanding(), 0, "every borrow must be released");
 }
 
 /// An overflow page signed by a *different* author than the primary that
@@ -242,7 +271,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
         &author,
     )
     .unwrap();
-    mock.set_dht_value("govkey", 0, bytes, None).await.unwrap();
+    mock.put("govkey", 0, bytes);
 
     let readout = read_governance_with_overflow(&mock, "govkey", &[0]).await;
     let flattened: Vec<GovernanceEntry> =
@@ -252,6 +281,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
         1,
         "mis-authored overflow page must be dropped"
     );
+    assert_eq!(mock.outstanding(), 0, "every borrow must be released");
 }
 
 /// A genuinely empty primary slot is safe to write fresh → empty chain.
@@ -262,6 +292,7 @@ async fn read_my_chain_empty_slot_returns_empty_chain() {
     let chain = read_my_chain(&mock, "govkey", 5, &author).await.unwrap();
     assert!(chain.entries.is_empty());
     assert!(chain.overflow_keys.is_empty());
+    assert_eq!(mock.outstanding(), 0, "every borrow must be released");
 }
 
 /// An occupied-but-unverifiable primary slot must NOT return an empty chain
@@ -271,9 +302,7 @@ async fn read_my_chain_occupied_unverifiable_errors() {
     let mock = MockDht::default();
     let author = PseudonymKey([4u8; 32]);
     // Garbage that won't deserialize into a verifiable payload.
-    mock.set_dht_value("govkey", 5, b"not-a-payload".to_vec(), None)
-        .await
-        .unwrap();
+    mock.put("govkey", 5, b"not-a-payload".to_vec());
     let err = read_my_chain(&mock, "govkey", 5, &author).await;
     assert!(
         matches!(
@@ -282,4 +311,5 @@ async fn read_my_chain_occupied_unverifiable_errors() {
         ),
         "occupied garbage must refuse to overwrite, got {err:?}"
     );
+    assert_eq!(mock.outstanding(), 0, "every borrow must be released");
 }

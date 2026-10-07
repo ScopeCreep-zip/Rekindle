@@ -4,6 +4,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
+use rekindle_types::domains;
 
 const NONCE_LEN: usize = 24;
 const TAG_LEN: usize = 16;
@@ -27,7 +28,7 @@ impl DhtRecordKey {
     pub fn derive_account_key(ed25519_secret: &[u8; 32]) -> Self {
         let hk = Hkdf::<Sha256>::new(None, ed25519_secret);
         let mut key = [0u8; 32];
-        hk.expand(b"rekindle-account-v1", &mut key)
+        hk.expand(domains::ACCOUNT_KEY.as_bytes(), &mut key)
             .expect("32-byte output is valid for HKDF-SHA256");
         Self { key }
     }
@@ -43,7 +44,7 @@ impl DhtRecordKey {
         // Sort public keys so both parties produce the same info string
         let my_bytes = my_public.as_bytes();
         let their_bytes = their_public.as_bytes();
-        let mut info = Vec::with_capacity(64 + b"rekindle-conversation-v1".len());
+        let mut info = Vec::with_capacity(64 + domains::CONVERSATION_KEY.len());
         if my_bytes < their_bytes {
             info.extend_from_slice(my_bytes);
             info.extend_from_slice(their_bytes);
@@ -51,7 +52,7 @@ impl DhtRecordKey {
             info.extend_from_slice(their_bytes);
             info.extend_from_slice(my_bytes);
         }
-        info.extend_from_slice(b"rekindle-conversation-v1");
+        info.extend_from_slice(domains::CONVERSATION_KEY.as_bytes());
 
         let hk = Hkdf::<Sha256>::new(None, shared.as_bytes());
         let mut key = [0u8; 32];

@@ -6,6 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Longest member timeout: Discord's `communication_disabled_until` cap
+/// (up to 28 days in the future).
+pub const MAX_TIMEOUT_SECONDS: u64 = 28 * 24 * 60 * 60;
+
 /// Member identity + presence snapshot, as broadcast by gossip.
 ///
 /// String IDs match the existing on-the-wire envelope contract used by

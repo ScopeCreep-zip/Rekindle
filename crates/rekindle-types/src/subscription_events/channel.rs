@@ -82,6 +82,10 @@ pub enum ChannelMessageEvent {
         /// this is a `u64` rather than the `String` that
         /// `server_message_id` uses for channel messages.
         message_id: u64,
+        /// The conversation the acknowledged message belongs to — the
+        /// peer's identity key for a 1:1 DM — so a frontend can route the
+        /// ack to that conversation's view.
+        conversation_id: String,
     },
 
     /// We were invited into a direct conversation — a per-peer DM log,

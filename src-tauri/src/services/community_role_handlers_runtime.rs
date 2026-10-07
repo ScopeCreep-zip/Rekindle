@@ -6,9 +6,9 @@
 //! lives here — just runtime glue per Invariant 7.
 
 use crate::commands::community::helpers::require_permission;
-use crate::db::DbPool;
 use crate::services::community_role_runtime::{create_role_inner, edit_role_inner};
 use crate::state::SharedState;
+use rekindle_db::Db;
 use rekindle_types::permissions;
 
 /// Architecture §19.4 — explicit edit verb so callers can either set
@@ -47,7 +47,7 @@ pub fn normalize_exclusion_group(raw: Option<String>) -> Result<Option<String>, 
 
 pub async fn create_role_handler_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     name: String,
     color: u32,
@@ -79,7 +79,7 @@ pub async fn create_role_handler_inner(
 
 pub async fn edit_role_handler_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     role_id: u32,
     name: Option<String>,

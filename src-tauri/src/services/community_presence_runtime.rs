@@ -5,11 +5,11 @@
 
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
-use crate::db::{self, DbPool};
 use crate::db_helpers::db_call;
 use crate::services::community_profile_validation::validate_profile;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,7 +131,7 @@ pub async fn set_active_channel_inner(
 /// gates what `write_our_presence` publishes and what the roster reads.
 pub async fn set_presence_policy_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     policy: rekindle_types::presence::PresenceSharingPolicy,
 ) -> Result<(), String> {
@@ -147,11 +147,13 @@ pub async fn set_presence_policy_inner(
     let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
     let cid_for_db = community_id.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE communities SET presence_policy = ? WHERE owner_key = ? AND id = ?",
-            rusqlite::params![policy_json, owner_key, cid_for_db],
-        )?;
-        Ok(())
+        rekindle_db::repo::communities::set(
+            conn,
+            &owner_key,
+            &cid_for_db,
+            rekindle_db::repo::communities::Column::PresencePolicy,
+            policy_json,
+        )
     })
     .await?;
 
@@ -177,7 +179,7 @@ pub fn get_presence_policy_inner(
 
 pub async fn get_community_members_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
 ) -> Result<Vec<MemberDto>, String> {
     let my_pseudonym = state_helpers::my_pseudonym_key(state, &community_id);
@@ -252,14 +254,14 @@ pub async fn get_community_members_inner(
 
     let owner_key = state_helpers::current_owner_key(state)?;
     let community_id_clone = community_id.clone();
-    let members = db_call(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT pseudonym_key, display_name, role_ids, timeout_until FROM community_members \
-                 WHERE owner_key = ? AND community_id = ? ORDER BY display_name",
-        )?;
-
-        let rows = stmt.query_map(rusqlite::params![owner_key, community_id_clone], |row| {
-            let pseudonym_key = db::get_str(row, "pseudonym_key");
+    let rows = db_call(pool, move |conn| {
+        rekindle_db::repo::members::roster(conn, &owner_key, &community_id_clone)
+    })
+    .await?;
+    let members = rows
+        .into_iter()
+        .map(|row| {
+            let pseudonym_key = row.pseudonym_key;
             let is_me = my_pseudonym.as_deref() == Some(&pseudonym_key);
             let status_str = if is_me {
                 match my_status {
@@ -292,15 +294,9 @@ pub async fn get_community_members_inner(
                     .map_or(0, |(_, _, la)| *la)
             };
 
-            let role_ids_json = db::get_str(row, "role_ids");
-            let role_ids: Vec<u32> =
-                serde_json::from_str(&role_ids_json).unwrap_or_else(|_| vec![0, 1]);
+            let role_ids = row.role_ids;
             let display_role = crate::state::display_role_name(&role_ids, &role_defs);
-            let timeout_until: Option<u64> = row
-                .get::<_, Option<i64>>("timeout_until")
-                .ok()
-                .flatten()
-                .map(i64::cast_unsigned);
+            let timeout_until: Option<u64> = row.timeout_until.map(i64::cast_unsigned);
 
             let profile = if is_me {
                 my_profile.clone()
@@ -309,9 +305,9 @@ pub async fn get_community_members_inner(
             };
             let snap = profile.unwrap_or_default();
 
-            Ok(MemberDto {
+            MemberDto {
                 pseudonym_key,
-                display_name: db::get_str(row, "display_name"),
+                display_name: row.display_name.unwrap_or_default(),
                 role_ids,
                 display_role,
                 status: status_str.to_string(),
@@ -324,16 +320,9 @@ pub async fn get_community_members_inner(
                 banner_ref: snap.banner_ref,
                 location,
                 last_active,
-            })
-        })?;
-
-        let mut members = Vec::new();
-        for row in rows {
-            members.push(row?);
-        }
-        Ok(members)
-    })
-    .await?;
+            }
+        })
+        .collect();
 
     Ok(members)
 }

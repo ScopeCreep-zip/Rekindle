@@ -61,7 +61,8 @@ Cross-cutting (consumed by whichever frontend needs them):
 
 Daemon / CLI track:
    rekindle-transport (sole Veilid boundary on this track),
-   rekindle-node, rekindle-cli
+   rekindle-node; frontends rekindle-client, rekindle-cli (bin `rekindle`),
+   rekindle-tui
 ```
 
 ### Backend rules
@@ -80,11 +81,16 @@ Daemon / CLI track:
 | B10 | `rekindle-utils::time::now_*` over `std::time::SystemTime::now` | `clippy.toml` `disallowed-methods` | Active |
 | B11 | Cap'n Proto generated modules go at the consuming crate's root (`pub mod foo_capnp { include!(…); }`) | Project convention | Review |
 | B12 | New dependency must be verified on its registry page (slopsquatting defence) | `cargo audit` + `cargo deny [sources]` + Semgrep `rekindle-no-suspicious-extern-crate` | Active |
-| B13 | DB schema is a single file (`src-tauri/migrations/001_init.sql`); bump `SCHEMA_VERSION` in `db.rs` on change | Project convention | Review |
+| B13 | DB schema is a single file (`crates/rekindle-db/schema/001_init.sql`); bump `SCHEMA_VERSION` in `crates/rekindle-db/src/open.rs` on change. Queries on shared tables live in `rekindle_db::repo`; SQL and SQLite driver dependencies outside `rekindle-db`, `rekindle-vault`, `rekindle-asql` (plus a shrinking list the E phase empties) fail the gate | Project convention + `cargo xtask check-sqlite` (syn walk + manifest scan) | Active |
 | B14 | No legacy compatibility shims (project is pre-release) | Project convention | Review |
 | B15 | Pure CRDT logic lives in `rekindle-governance`; async lifecycle (origin / bootstrap / join / segments / apply) lives in `rekindle-governance-runtime`. No I/O in the pure crate. | Code review + per-crate `Cargo.toml` excludes | Active |
-| B16 | All on-disk secret material goes through `rekindle-vault` via the `src-tauri/src/keystore/` adapters. No direct file I/O on secret bytes from any other crate. | Code review + `cargo xtask check-boundaries` | Active |
-| B17 | The literal text `app.emit(` appears in `src-tauri/` **only** inside `event_dispatch.rs`. Every Rust → Frontend emit goes through `event_dispatch::emit_live` or `emit_journaled`. | CI grep gauntlet | Active |
+| B16 | All on-disk secret material goes through `rekindle-vault` and its typed helpers (`rekindle_vault::typed`). No direct file I/O on secret bytes from any other crate. | Code review + `cargo xtask check-boundaries` | Active |
+| B18 | Every domain-separation label (KDF `info`/salt, signature prefix, hash/MAC context, nonce prefix) is a constant in `rekindle-types::domains`, named `rekindle-<purpose>-v<N>`; registry tests reject duplicate labels and labels that prefix one another | `cargo xtask check-domain-literals` + `cargo test -p rekindle-types domains` | Active |
+| B19 | Every tracing subscriber writes through `rekindle_utils::log_scrub::ScrubbingMakeWriter`, and every binary installs `log_scrub::install_panic_hook` (or `install_panic_hook_with` around its own formatter); identifiers are never hand-redacted at call sites | Code review (sinks: `src-tauri/src/lib.rs`, `rekindle-client/src/log.rs`, `rekindle-node/src/host/mod.rs`) | Active |
+| B17 | `src-tauri` never uses Tauri's `Emitter` (no `use … Emitter`, no `.emit`/`.emit_to`/`.emit_filter`/`.emit_str*` method call). Every Rust → frontend event is a typed `event_dispatch::WebviewEvent` delivered per window by `event_router` (ADR 0013); every new event gets an `audience()` row. | `cargo xtask check-no-emitter` (syn walk) | Active |
+| B20 | Session work spawns through a `rekindle_lifecycle::SessionScope` (desktop `login_scope`, daemon `unlock_scope`, per-community and per-call children), never bare `tokio::spawn` / `tokio::task::spawn` / `tauri::async_runtime::spawn`, so logout, lock and exit stop it. App-lifetime spawns are listed per function, with the reason, in `xtask/src/bare_spawn.rs`; a stale entry fails the gate. | `cargo xtask check-bare-spawn` (syn walk) | Active |
+| B21 | The database is reached through `AppState.db` (`rekindle_db::DbHandle::current()`, which returns `NotLoggedIn` when no identity database is open), never as Tauri managed state (`State<'_, Db>`, `state::<Db>()`, `try_state::<Db>()`, `.manage(pool)`). | `cargo xtask check-no-managed-db` (syn walk) | Active |
+| B22 | Every Veilid DHT and private-route call has one owner. DHT record calls (`create`/`open`/`close`/`delete_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`, `transact_dht_records`) run only in the record pool (`rekindle-protocol/src/dht/pool/`). `import_remote_private_route` runs only in `RouteImports`. `new_private_route`, `new_custom_private_route` and `release_private_route` run only in `OwnRoutes` and the relay offer. A remote route is never released (Veilid releases a dead one). Only crates that depend on `veilid-core` are scanned. | `cargo xtask check-veilid-dht-calls` (syn walk over veilid-linked crates) | Active |
 
 ### Backend file-size ceiling
 
@@ -158,15 +164,18 @@ type/constant modules) rather than growing a file past the ceiling.
 
 ## 3. Tauri capabilities (ACL)
 
-The `src-tauri/capabilities/default.json` file controls which Rust
-commands the WebView can call. See
+The `src-tauri/capabilities/*.json` files control which commands each
+WebView can call: `default.json` holds window chrome only, and one
+`app-*.json` per window family grants app commands and the specific
+plugin permissions that window uses. See
 [`../security/threat-model.md` §5b W4](../security/threat-model.md)
 for the threat-model framing.
 
 | # | Rule | Gate | Status |
 |---|------|------|--------|
-| T1 | Per-window allow-list (e.g., `chat-*` cannot inherit a `community-*` permission) | `windows: [...]` array in `capabilities/default.json` | Active |
-| T2 | Plugin `*:default` bundles will be replaced with explicit allow-lists | Pending IPC-call audit | Warn-only — see threat-model §5b W4 |
+| T1 | Per-window allow-list (e.g., `chat-*` cannot inherit a `community-*` permission) | `windows: [...]` in each `capabilities/app-*.json`; `tests/capability_policy.rs` | Active |
+| T2 | No `core:default`, `core:webview:*` or plugin `*:default` bundles — explicit permissions only | `tests/capability_policy.rs` | Active |
+| T2a | A new `#[tauri::command]` goes in `src/invoke.rs` (the ACL manifest is derived from it) plus one grant in the right `app-*.json`; debug-only commands are `#[cfg(debug_assertions)]` and granted from `capabilities-dev/` | `tests/capability_policy.rs` | Active |
 | T3 | New permission grants require a `description` update in the same file | Code review (the JSON `description` field is the rationale) | Active |
 | T4 | Capabilities file changes require security review on the PR | `CODEOWNERS` (when expanded) | Pending — see [§4](#4-codeowners-and-required-review) below |
 

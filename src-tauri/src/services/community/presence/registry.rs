@@ -15,8 +15,6 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::DHTManager;
-
 use crate::services::presence_adapter::build_adapter;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -27,59 +25,51 @@ use rekindle_presence::CommunityPresenceDeps;
 /// `poll.rs::presence_poll_tick` keep compiling.
 pub(crate) use rekindle_presence::DiscoveredRow;
 
-/// Ensure the community's member-registry record is open in Veilid's routing
-/// context, (re)opening it **writable** when we hold a writer keypair.
+/// Ensure the community holds its member-registry record, **writable** when we
+/// hold a writer keypair.
 ///
-/// §10 "open once, keep open" is implemented here as *ensure-open before every
-/// use*, NOT as a one-way `records_open` latch. The old short-circuit
-/// (`if records_open { return Ok(()) }`) trusted an in-memory flag that
-/// `mark_community_records_open` sets even when the registry open warn-failed —
-/// so a single failed/dropped open wedged presence into a permanent
-/// `record not open` flood with zero member visibility, and nothing ever
-/// cleared the flag. Veilid's `open_dht_record` is idempotent (re-opening an
-/// already-open record is a cheap no-op that preserves the writer when the
-/// keypair is supplied), so calling it once per ~60 s poll tick is free and
-/// self-heals transient drops, restarts, and failed initial opens.
+/// The community's registry lease (plan C7.5) is the answer: when held, the
+/// record is open with its sticky writer and the pool re-arms its watch, so
+/// there is nothing to do. When not (a failed open at hydration, or a
+/// community joined this session before its hand-over), this borrows it and
+/// hands the lease to the community, healing on the next poll tick.
 pub(crate) async fn ensure_registry_open(
     state: &Arc<AppState>,
     community_id: &str,
-    mgr: &DHTManager,
     registry_key: &str,
 ) -> Result<(), String> {
-    let (registry_kp, slot_kp) = {
+    let (held, writer) = {
         let communities = state.communities.read();
-        let c = communities.get(community_id);
+        let c = communities.get(community_id).ok_or("community not found")?;
         (
-            c.and_then(|c| c.registry_owner_keypair.clone()),
-            c.and_then(|c| c.slot_keypair.clone()),
+            c.leases.registry.is_some(),
+            c.registry_owner_keypair.clone().or(c.slot_keypair.clone()),
         )
     };
-    let writer_kp = registry_kp.or(slot_kp);
-    let opened = if let Some(ref kp_str) = writer_kp {
-        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
-            mgr.open_record_writable(registry_key, kp).await.is_ok()
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-    if !opened {
-        mgr.open_record(registry_key)
-            .await
-            .map_err(|e| format!("presence_poll: failed to open registry: {e}"))?;
+    if held {
+        return Ok(());
     }
-    let registry_key_owned = registry_key.to_string();
-    state_helpers::track_open_records(state, std::slice::from_ref(&registry_key_owned));
-    {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            cs.open_community_records.registry_key = Some(registry_key.to_string());
-            cs.open_community_records.registry_writer = writer_kp;
-            cs.open_community_records.records_open = true;
-        }
+    let key = registry_key
+        .parse::<veilid_core::RecordKey>()
+        .map_err(|e| format!("presence_poll: bad registry key: {e}"))?;
+    let writer = writer.and_then(|w| w.parse::<veilid_core::KeyPair>().ok());
+    let lease = state_helpers::record_pool(state)?
+        .acquire(&key, writer)
+        .await
+        .map_err(|e| format!("presence_poll: failed to open registry: {e}"))?;
+    if let Some(cs) = state.communities.write().get_mut(community_id) {
+        cs.open_community_records.registry_key = Some(registry_key.to_string());
     }
-    tracing::trace!(community = %community_id, "presence_poll: registry open ensured");
+    crate::services::community::leases::hold(
+        state,
+        community_id,
+        rekindle_records::lease::CommunityLeases {
+            registry: Some(lease),
+            ..Default::default()
+        },
+    )
+    .await;
+    tracing::trace!(community = %community_id, "presence_poll: registry lease ensured");
     Ok(())
 }
 
@@ -167,13 +157,14 @@ pub(in crate::services::community) fn decrypt_history_ranges(
     community_id: &str,
     encrypted: &rekindle_types::presence::EncryptedHistoryRanges,
 ) -> Option<Vec<rekindle_types::presence::HistoryRange>> {
-    let mek = {
-        let cache = state.mek_cache.lock();
-        cache.get(community_id).cloned()?
-    };
-    if mek.generation() != encrypted.mek_generation {
-        return None;
-    }
+    // Current generation only: a member the last rotation removed holds
+    // only the replaced key, and its presence must not read.
+    let mek = state_helpers::current_mek(
+        state,
+        community_id,
+        rekindle_types::channel_keys::KeyScope::Community,
+    )
+    .filter(|mek| mek.generation() == encrypted.mek_generation)?;
     let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
     serde_json::from_slice(&plaintext).ok()
 }

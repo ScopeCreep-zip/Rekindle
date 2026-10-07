@@ -4,9 +4,7 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::member::MemberInfo;
 use rekindle_types::message::BootstrapChannelMessages;
-use tauri::Manager as _;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -43,13 +41,11 @@ pub(super) async fn fetch_bootstrap_bundle(
     });
     let request_bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&request)
         .map_err(|e| format!("encode bootstrap request: {e}"))?;
-    let response = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        rc.app_call(veilid_core::Target::RouteId(route_id), request_bytes),
-    )
-    .await
-    .map_err(|_| "bootstrap app_call timed out".to_string())?
-    .map_err(|e| format!("bootstrap app_call failed: {e}"))?;
+    // Bounded by Veilid's own reply timeout for the route (plan C4.L1b).
+    let response = rc
+        .app_call(veilid_core::Target::RouteId(route_id), request_bytes)
+        .await
+        .map_err(|e| format!("bootstrap app_call failed: {e}"))?;
 
     match rekindle_protocol::capnp_envelope::decode_community_envelope(&response)
         .map_err(|e| format!("invalid bootstrap response envelope: {e}"))?
@@ -72,7 +68,7 @@ pub(super) async fn fetch_bootstrap_bundle(
 }
 
 /// Decrypt every message in the bundle's `recent_messages` block under
-/// the channel MEK we just received, then upsert into the local
+/// its channel's text key at the generation it names, then upsert into the local
 /// messages table. Called once at the end of the join flow so the
 /// joiner has scrollback without waiting for the history-ad path.
 pub(super) async fn persist_bootstrap_recent_messages(
@@ -83,29 +79,31 @@ pub(super) async fn persist_bootstrap_recent_messages(
     if bundle.recent_messages.is_empty() {
         return;
     }
-    let Some(app_handle) = state_helpers::app_handle(state) else {
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("bootstrap persist: no identity database — dropped");
         return;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {
         return;
     };
     let mut decrypted: Vec<(String, String, String, String, i64)> = Vec::new();
+    // Each bundled message is sealed under exactly the generation of its
+    // channel's text key it names (the responder's `build_channel_envelope`).
+    let keys = state_helpers::key_provider(state);
     for channel in &bundle.recent_messages {
-        let mek_pair = {
-            let cache = state.channel_mek_cache.lock();
-            cache
-                .get(&(community_id.to_string(), channel.channel_id.clone()))
-                .map(|mek| (*mek.as_bytes(), mek.generation()))
-        };
-        let Some((mek_bytes, mek_generation)) = mek_pair else {
+        let Some(channel_id) = rekindle_types::id::ChannelId::from_hex(&channel.channel_id) else {
             continue;
         };
-        let mek = MediaEncryptionKey::from_bytes(mek_bytes, mek_generation);
+        let scope = keys.scope_for_text(community_id, channel_id);
         for entry in &channel.messages {
-            if entry.mek_generation != mek_generation {
+            let Some(key) = keys.key(
+                community_id,
+                scope,
+                rekindle_types::channel_keys::KeyEpoch(entry.mek_generation),
+            ) else {
                 continue;
-            }
+            };
+            let mek = MediaEncryptionKey::from_bytes(*key, entry.mek_generation);
             let Ok(plaintext) = mek.decrypt(&entry.ciphertext) else {
                 continue;
             };
@@ -126,7 +124,7 @@ pub(super) async fn persist_bootstrap_recent_messages(
     }
     let owner = owner_key;
     let community = community_id.to_string();
-    let _ = db_call(pool.inner(), move |conn| {
+    let _ = db_call(&pool, move |conn| {
         let tx = conn.transaction()?;
         for (channel_id, message_id, sender, body, ts) in &decrypted {
             tx.execute(
@@ -156,42 +154,27 @@ pub(super) async fn persist_bootstrap_members(
     if bundle.member_list.is_empty() {
         return;
     }
-    let Some(app_handle) = state_helpers::app_handle(state) else {
+    let Ok(pool) = state.db.current() else {
+        tracing::debug!("bootstrap persist: no identity database — dropped");
         return;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {
         return;
     };
     let now = rekindle_utils::timestamp_secs().cast_signed();
     let community = community_id.to_string();
     let members = bundle.member_list.clone();
-    let _ = db_call(pool.inner(), move |conn| {
+    if let Err(e) = db_call(&pool, move |conn| {
         let tx = conn.transaction()?;
         for m in &members {
-            let role_ids = serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[]".to_string());
-            let badges = serde_json::to_string(&m.badges).unwrap_or_else(|_| "[]".to_string());
-            tx.execute(
-                "INSERT OR IGNORE INTO community_members
-                    (owner_key, community_id, pseudonym_key, display_name, role_ids,
-                     timeout_until, joined_at, bio, pronouns, theme_color, badges)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                rusqlite::params![
-                    owner_key,
-                    community,
-                    m.pseudonym_key,
-                    m.display_name,
-                    role_ids,
-                    m.timeout_until.map(u64::cast_signed),
-                    now,
-                    m.bio,
-                    m.pronouns,
-                    m.theme_color.map(i64::from),
-                    badges,
-                ],
+            rekindle_db::repo::members::insert_bootstrap_if_absent(
+                &tx, &owner_key, &community, m, now,
             )?;
         }
         tx.commit()
     })
-    .await;
+    .await
+    {
+        tracing::warn!(community = %community_id, error = %e, "bootstrap member list not persisted");
+    }
 }

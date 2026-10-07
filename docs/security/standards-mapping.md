@@ -52,6 +52,7 @@ DASVS (below) covers the desktop-specific concerns ASVS does not.
 | V6 | Post-quantum readiness | **Open** | Hybrid X25519+ML-KEM-768 migration plan. [`pqc-roadmap.md`](pqc-roadmap.md). |
 | V6 | Side-channel resistance | **Met** | `subtle` crate via `ed25519-dalek`, `x25519-dalek`. Zeroize-on-drop on every secret type. |
 | V7 — Errors & Logging | No secret leakage in logs | **Met** | `Debug` impls on `IpcRequest::Unlock` and `IdentityCreate` redact secrets. [`../architecture/daemon-cli.md`](../architecture/daemon-cli.md). |
+| V7 | No identifiers / IP addresses in logs | **Met** | Sink-level scrubber `rekindle_utils::log_scrub` on every subscriber and the panic hook; keyed-hash tags keep logs correlatable within one run only. [`threat-model.md`](threat-model.md) W8. |
 | V7 | Structured logging | **Met** | `tracing` + `tracing-subscriber` in every crate. |
 | V7 | No `dbg!` / `todo!` / `unimplemented!` in shipped code | **Met** | Lints `dbg_macro = "deny"`, `todo = "deny"`, `unimplemented = "deny"` in workspace `Cargo.toml`. |
 | V9 — Communications | Transport encryption | **Met** | Veilid hop-by-hop + Signal/MEK end-to-end. [`overview.md`](overview.md). |

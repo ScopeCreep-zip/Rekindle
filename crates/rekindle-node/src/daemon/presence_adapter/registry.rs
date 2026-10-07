@@ -37,45 +37,23 @@ impl DaemonPresenceAdapter {
         let Some(node) = self.transport() else {
             return Vec::new();
         };
-
-        let occupied = match rekindle_transport::broadcast::dht_writes::inspect_present_subkeys(
+        // One borrow per segment for the whole scan: a table hit while the
+        // community holds the record (plan C7.7g).
+        let lease = match rekindle_transport::broadcast::dht_writes::acquire_str(
             node.as_ref(),
             registry_key,
+            None,
         )
         .await
         {
-            Ok(subkeys) => subkeys,
+            Ok(lease) => lease,
             Err(error) => {
-                // Not an empty segment — an unreadable one. Falling
-                // back to a blind sweep would turn one failed round
-                // trip into 255.
-                tracing::debug!(
-                    registry = %registry_key,
-                    %error,
-                    "presence scan: inspect failed; skipping this segment for now"
-                );
+                tracing::debug!(registry = %registry_key, %error, "presence scan: segment not open");
                 return Vec::new();
             }
         };
-
-        let mut rows = Vec::new();
-        for subkey in occupied {
-            if subkey > max_subkey || Some(subkey) == skip_subkey {
-                continue;
-            }
-            if let Ok(Some(raw)) = rekindle_transport::broadcast::dht_writes::get(
-                node.as_ref(),
-                registry_key,
-                subkey,
-                false,
-            )
-            .await
-            {
-                if !raw.is_empty() {
-                    rows.push((subkey, raw));
-                }
-            }
-        }
+        let rows = scan_leased(node.as_ref(), lease, registry_key, max_subkey, skip_subkey).await;
+        rekindle_transport::broadcast::dht_writes::release(node.as_ref(), lease).await;
         rows
     }
 
@@ -89,7 +67,9 @@ impl DaemonPresenceAdapter {
     ) -> Result<(), PresenceError> {
         let node = self.transport().ok_or(PresenceError::NotAttached)?;
 
-        rekindle_transport::broadcast::dht_writes::open_str(
+        // A table hit while the community holds its registry with our slot
+        // writer; never a re-open that would replace it (V5, plan C7.7g).
+        let lease = rekindle_transport::broadcast::dht_writes::acquire_str(
             node.as_ref(),
             registry_key,
             Some(writer_keypair_str),
@@ -97,21 +77,22 @@ impl DaemonPresenceAdapter {
         .await
         .map_err(|e| PresenceError::Dht(format!("open registry: {e}")))?;
 
-        // Online-only: veilid queues an offline write and reports
-        // `Ok(None)`, which is indistinguishable from success. A
-        // heartbeat that flushes minutes later advertises liveness we
-        // did not have, and every reader's staleness check believes it.
-        // Failing now is the honest answer — the next tick retries.
-        rekindle_transport::broadcast::dht_writes::set_online_str(
+        // A plain (online-only) write, never held for re-push: a heartbeat
+        // that flushes minutes later advertises liveness we did not have,
+        // and every reader's staleness check believes it. A miss fails now
+        // and the next tick writes again.
+        let written = rekindle_transport::broadcast::dht_writes::set_leased_str(
             node.as_ref(),
-            registry_key,
+            lease,
             subkey_index,
             presence_json,
             Some(writer_keypair_str),
         )
-        .await
-        .map(|_| ())
-        .map_err(|e| PresenceError::Dht(format!("write presence: {e}")))
+        .await;
+        rekindle_transport::broadcast::dht_writes::release(node.as_ref(), lease).await;
+        written
+            .map(|_| ())
+            .map_err(|e| PresenceError::Dht(format!("write presence: {e}")))
     }
 
     /// Land the poll's validated roster in the runtime map.
@@ -149,7 +130,7 @@ impl DaemonPresenceAdapter {
             .collect();
 
         tracing::debug!(
-            community = %&community_id[..16.min(community_id.len())],
+            community = %community_id,
             members = members.len(),
             "presence poll: roster refreshed"
         );
@@ -174,4 +155,47 @@ impl DaemonPresenceAdapter {
             .filter(|pseudonym| !known.contains_key(pseudonym))
             .collect()
     }
+}
+
+/// [`DaemonPresenceAdapter::scan_segment_impl`] on the segment's lease.
+async fn scan_leased(
+    node: &rekindle_transport::broadcast::node::TransportNode,
+    lease: rekindle_transport::broadcast::dht_writes::LeaseId,
+    registry_key: &str,
+    max_subkey: u32,
+    skip_subkey: Option<u32>,
+) -> Vec<(u32, Vec<u8>)> {
+    let occupied = match rekindle_transport::broadcast::dht_writes::inspect_leased_present_subkeys(
+        node, lease,
+    )
+    .await
+    {
+        Ok(subkeys) => subkeys,
+        Err(error) => {
+            // Not an empty segment — an unreadable one. Falling
+            // back to a blind sweep would turn one failed round
+            // trip into 255.
+            tracing::debug!(
+                registry = %registry_key,
+                %error,
+                "presence scan: inspect failed; skipping this segment for now"
+            );
+            return Vec::new();
+        }
+    };
+
+    let mut rows = Vec::new();
+    for subkey in occupied {
+        if subkey > max_subkey || Some(subkey) == skip_subkey {
+            continue;
+        }
+        if let Ok(Some(raw)) =
+            rekindle_transport::broadcast::dht_writes::get_leased(node, lease, subkey, false).await
+        {
+            if !raw.is_empty() {
+                rows.push((subkey, raw));
+            }
+        }
+    }
+    rows
 }

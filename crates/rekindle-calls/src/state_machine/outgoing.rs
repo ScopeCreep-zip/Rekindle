@@ -32,7 +32,8 @@ impl CallStateMachine {
             expires_at_ms,
             my_x25519_secret: Some(my_x25519_secret),
             peer_x25519_pub: None,
-            call_key: None,
+            media_secret: None,
+            media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
             peer_video_decode_codecs: Vec::new(),
         };
         let secret_bytes = state.my_x25519_secret.as_ref().map(StaticSecret::to_bytes);
@@ -234,7 +235,7 @@ impl CallStateMachine {
         };
 
         state.peer_x25519_pub = Some(peer_x25519_pub);
-        state.call_key = Some(call_key);
+        state.media_secret = Some(zeroize::Zeroizing::new(call_key));
         state.status = CallStatus::Connecting;
         let kind = state.kind;
         let peer = state.peer_pubkey.clone();
@@ -248,7 +249,6 @@ impl CallStateMachine {
                 call_id: call_id.into(),
                 peer: peer.clone(),
                 kind,
-                call_key,
             },
             Effect::Notify(TransportNotification::CallStatusChanged {
                 call_id: call_id.into(),

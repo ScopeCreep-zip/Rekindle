@@ -45,22 +45,26 @@ prep, Windows registry helpers.
 
 ### `db.rs`
 
-SQLite pool (`tokio_rusqlite::Connection`), `SCHEMA_VERSION = 71`,
-schema bootstrap from `migrations/001_init.sql`. On mismatch, drops
-all tables and triggers the synchronised reset of the vault and
-Veilid storage described in [`data-layer.md`](data-layer.md).
+The lenient row getters. The open database is `AppState.db`
+(`rekindle_db::DbHandle`): `current()` returns it or `NotLoggedIn`, boot
+`set`s it, exit checkpoints the WAL and `clear`s it. Opening, the
+schema (`crates/rekindle-db/schema/001_init.sql`), `SCHEMA_VERSION` and
+the reset on mismatch are `rekindle_db::open`; `setup.rs` then wipes the
+vault files and Veilid storage that must stay in step, as described in
+[`data-layer.md`](data-layer.md).
 
 ### `db_helpers.rs`
 
-`db_call`, `db_call_or_default`, `db_fire` — the three wrappers every
-command and service uses to access the pool. They standardise the
-"clone-out, drop-guard, await" pattern required by the
-`tokio_rusqlite` background thread.
+`db_call`, `db_call_or_default`, `db_fire`: the three wrappers every
+command and service uses to reach the database thread. The SQL for the
+tables both hosts share is in `rekindle_db::repo` (identity, friends,
+pending requests, communities, members, governance cache, audit); the
+closures passed here call those functions.
 
 ### `friend_repo.rs`
 
-Friend list CRUD against `friends` / `friend_groups` /
-`blocked_users` / `pending_friend_requests` / `outgoing_invites`.
+Fire-and-forget writes to one `friends` column, taking the owner key
+from state; the SQL is `rekindle_db::repo::friends`.
 
 ### `channel_repo.rs`
 
@@ -90,22 +94,17 @@ SQLite-backed implementation of
 `rekindle_transport::EnvelopeStore`. Provides the durable retry queue
 for `pending_envelopes` and the seen-set for `seen_envelopes`.
 
-### `friend_store_sqlite.rs`
-
-SQLite-backed implementation of `rekindle_transport::FriendStore`.
-Receive-path authority — the transport asks "is this peer a friend?"
-without going through `AppState.friends`.
-
 ### `signal_stores.rs`
 
-DB-level Signal Protocol session / pre-key persistence. Layers above
-this go through `rekindle_crypto::signal::SignalSessionManager`; the
-secret material itself lives in the vault under `keystore/signal.rs`.
+The `rekindle_crypto` Signal store traits over the vault: an in-memory
+cache written through to `rekindle_vault::typed::signal`. Layers above
+go through `rekindle_crypto::signal::SignalSessionManager`.
 
 ### `audit_repo/`
 
-Audit chain persistence. Submodules: `chain` (chain-walking helpers),
-`store` (`audit_entries` table reads / writes), `tests`. The MAC key
+Audit chain append, verify and restore over `rekindle_db::repo::audit`
+(the `audit_entries` SQL) and `rekindle_audit::TailCheck` (the vault
+tail-anchor rule). The MAC key
 lives in the vault. See [`audit-chain.md`](audit-chain.md).
 
 ### `audit_view.rs`
@@ -142,17 +141,10 @@ Arc<EventDispatch>`.
 
 ### `keystore/`
 
-VaultStore wrapper, organised by domain:
-
-- `keystore/signal.rs` — Signal identity / sessions / pre-keys, PQ
-  secrets.
-- `keystore/community_keys.rs` — community MEK, slot / registry
-  keypairs, slot seed.
-- `keystore/channel_mek.rs` — per-channel + per-generation MEK.
-- `keystore/audit.rs` — audit MAC key + tail anchor.
-
-All four are backed by `rekindle-vault` (SQLCipher double-encryption);
-no direct `iota_stronghold` dependency remains. See
+The per-identity `VaultStore` handle (`StrongholdKeystore`, which derefs
+to the store) and its open / delete-file helpers. The typed helpers it
+re-exports are `rekindle_vault::typed::{signal, community_keys, mek,
+audit}` (plan C5.4), backed by SQLCipher double-encryption. See
 [`data-layer.md`](data-layer.md) for the vault layout and
 [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md)
 for the migration rationale.

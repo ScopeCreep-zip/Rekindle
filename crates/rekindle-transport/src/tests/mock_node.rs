@@ -34,17 +34,14 @@ use crate::shared::{AttachmentState, SharedState, TransportNotification, Transpo
 /// `SharedState`, `PeerRegistry`, `MekCache` — but backed by in-memory
 /// state that tests can control directly.
 ///
-/// `RouteManager` is intentionally not held: `RouteManager::set_route`
-/// requires a `veilid_core::RouteId` that cannot be constructed without a
-/// Veilid runtime, so route state is modeled via `route_allocated_override`.
+/// No route owner is held: `OwnRoutes` allocates through a running
+/// Veilid, so route state is modeled via `route_allocated_override`.
 pub struct MockNode {
     shared: Arc<SharedState>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
     mek_cache: Arc<RwLock<MekCache>>,
-    /// Override for route_allocated in status_snapshot.
-    /// `RouteManager::set_route` requires a `veilid_core::RouteId` which
-    /// cannot be constructed without a Veilid runtime. This flag lets
-    /// tests control the route_allocated field in status_snapshot().
+    /// Override for route_allocated in status_snapshot: lets tests control
+    /// the field without a Veilid runtime to allocate a route.
     route_allocated_override: std::sync::atomic::AtomicBool,
 }
 
@@ -109,16 +106,20 @@ impl MockNode {
     }
 
     /// Add a synthetic MEK to the cache.
-    pub fn add_mek(&self, community_id: &str, channel_id: &str, generation: u64) {
+    pub fn add_mek(
+        &self,
+        community_id: &str,
+        scope: rekindle_types::channel_keys::KeyScope,
+        generation: u64,
+    ) {
         let mek = Mek::generate(generation);
-        self.mek_cache.write().insert(community_id, channel_id, mek);
+        self.mek_cache.write().insert(community_id, scope, mek);
     }
 
     /// Mark the node as having an allocated route.
     ///
-    /// `RouteManager::set_route` requires a `veilid_core::RouteId` which
-    /// cannot be constructed without a Veilid runtime. This method sets
-    /// an override flag that `status_snapshot()` reads instead.
+    /// Allocating a real route needs a Veilid runtime; this sets the
+    /// override flag `status_snapshot()` reads instead.
     pub fn set_route_allocated(&self, allocated: bool) {
         self.route_allocated_override
             .store(allocated, std::sync::atomic::Ordering::Release);
@@ -155,8 +156,7 @@ impl MockNode {
 
     /// Point-in-time status snapshot (matches `TransportNode::status_snapshot`).
     ///
-    /// Uses `route_allocated_override` instead of `RouteManager::has_route()`
-    /// because `RouteManager::set_route` requires a Veilid `RouteId`.
+    /// Uses `route_allocated_override` in place of the route owner's state.
     pub fn status_snapshot(&self) -> TransportSnapshot {
         let peer_reg = self.peer_registry.read();
         let route_allocated = self
@@ -246,17 +246,21 @@ mod tests {
 
     #[test]
     fn mock_node_mek_cache() {
+        use rekindle_types::channel_keys::KeyScope;
+        use rekindle_types::id::ChannelId;
+        let chan1 = KeyScope::Channel(ChannelId([1; 16]));
+        let chan2 = KeyScope::Channel(ChannelId([2; 16]));
         let mock = MockNode::new();
-        mock.add_mek("comm1", "chan1", 1);
-        mock.add_mek("comm1", "chan1", 2);
-        mock.add_mek("comm1", "chan2", 1);
+        mock.add_mek("comm1", chan1, 1);
+        mock.add_mek("comm1", chan1, 2);
+        mock.add_mek("comm1", chan2, 1);
 
         let snapshot = mock.mek_snapshot("comm1");
         assert_eq!(snapshot.len(), 3);
 
         let cache = mock.mek_cache().read();
-        assert_eq!(cache.current("comm1", "chan1").unwrap().generation(), 2);
-        assert_eq!(cache.current("comm1", "chan2").unwrap().generation(), 1);
+        assert_eq!(cache.current("comm1", chan1).unwrap().generation(), 2);
+        assert_eq!(cache.current("comm1", chan2).unwrap().generation(), 1);
     }
 
     #[tokio::test]

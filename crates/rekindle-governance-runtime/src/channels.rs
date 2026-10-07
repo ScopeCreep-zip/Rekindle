@@ -70,7 +70,14 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
     // is why this goes through the same helper rather than hardcoding
     // `0..255`.
     let member_pubkeys = segment_slot_pubkeys(&slot_seed, 0)?;
+    // Taken before the create, so nothing can fail between the create and
+    // the announcement that hands the record's lease to the host.
+    let lamport = deps.next_governance_lamport(community_id)?;
     let record = deps.create_smpl_record(&member_pubkeys).await?;
+    if let Err(e) = crate::records::publish_created(deps, record.lease, &slot_seed, 0).await {
+        deps.release_record(record.lease).await;
+        return Err(e);
+    }
 
     // Random, not derived from the name: two members creating a
     // same-named channel concurrently must get two channels, not one
@@ -78,9 +85,8 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
     // strand one record.
     let channel_id = ChannelId(rekindle_utils::random::id_bytes_16());
     let channel_id_hex = hex::encode(channel_id.0);
-    let lamport = deps.increment_lamport(community_id);
 
-    apply::write_entry(
+    let announced = apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::ChannelCreated {
@@ -94,7 +100,20 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
             lamport,
         },
     )
-    .await?;
+    .await;
+    if let Err(e) = announced {
+        deps.release_record(record.lease).await;
+        return Err(e);
+    }
+    // The community keeps the new channel's record for its session.
+    deps.community_records_ready(
+        community_id,
+        rekindle_records::lease::CommunityLeases {
+            channels: std::collections::HashMap::from([(channel_id, record.lease)]),
+            ..Default::default()
+        },
+    )
+    .await;
 
     Ok(CreatedChannel {
         channel_id,

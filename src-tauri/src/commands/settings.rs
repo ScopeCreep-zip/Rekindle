@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_store::StoreExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,8 +109,19 @@ impl Default for Preferences {
     }
 }
 
+/// The OS login-item registration is the source of truth for
+/// `auto_start` — the user can also toggle it in System Settings /
+/// their desktop session — so it is read back from the autostart plugin
+/// rather than trusted from the store.
 #[tauri::command]
 pub async fn get_preferences(app: tauri::AppHandle) -> Result<Preferences, String> {
+    let mut prefs = read_stored_preferences(&app)?;
+    prefs.auto_start = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;
+    Ok(prefs)
+}
+
+/// The stored preferences, defaults when none are saved yet.
+fn read_stored_preferences(app: &tauri::AppHandle) -> Result<Preferences, String> {
     let store = app.store("preferences.json").map_err(|e| e.to_string())?;
     match store.get("preferences") {
         Some(val) => serde_json::from_value(val).map_err(|e| e.to_string()),
@@ -117,13 +129,39 @@ pub async fn get_preferences(app: tauri::AppHandle) -> Result<Preferences, Strin
     }
 }
 
+/// The stored preferences for backend decisions (OS notifications). An
+/// unreadable store is logged and read as the defaults.
+pub fn load_preferences(app: &tauri::AppHandle) -> Preferences {
+    read_stored_preferences(app).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "preferences unreadable — using defaults");
+        Preferences::default()
+    })
+}
+
+/// Persist preferences, applying `auto_start` to the OS login items
+/// first so a failed registration is reported instead of being stored
+/// as if it had taken effect.
 #[tauri::command]
 pub async fn set_preferences(prefs: Preferences, app: tauri::AppHandle) -> Result<(), String> {
+    apply_auto_start(&app, prefs.auto_start)?;
     let store = app.store("preferences.json").map_err(|e| e.to_string())?;
     let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
     store.set("preferences", val);
     store.save().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    if launcher.is_enabled().map_err(|e| e.to_string())? == enabled {
+        return Ok(());
+    }
+    let result = if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    result.map_err(|e| format!("could not update launch-at-login: {e}"))
 }
 
 /// Check for application updates.

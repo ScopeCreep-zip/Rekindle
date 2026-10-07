@@ -129,7 +129,8 @@ pub struct ExpressionInfoDto {
     pub name: String,
     pub kind: String,
     pub content_hash: String,
-    pub inline_data_base64: Option<String>,
+    /// Built in the backend from an allowlisted, byte-sniffed media type.
+    pub inline_data_url: Option<String>,
     pub media_type: Option<String>,
     pub animated: bool,
     pub tags: Vec<String>,
@@ -158,7 +159,7 @@ pub fn list_expressions_inner(
             name: expression.name,
             kind: expression.kind,
             content_hash: expression.content_hash,
-            inline_data_base64: expression.inline_data_base64,
+            inline_data_url: expression.inline_data_url,
             media_type: expression.media_type,
             animated: expression.animated,
             tags: expression.tags,

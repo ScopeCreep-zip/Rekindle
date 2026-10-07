@@ -3,9 +3,10 @@
 //! Implements the chunked Merkle-verified P2P file delivery described in
 //! `.claude/docs/rekindle-communities-architecture.md` §28.9.
 //!
-//! Tier 7 — pure logic, zero async, zero Tauri. The Tauri shell wires this
-//! crate to the protocol layer (channel records, control payloads) and to
-//! the Veilid `app_call` dispatcher.
+//! Tier 7, zero Tauri. The transfer state machines are pure; the download
+//! and upload drivers are async over the `FilesDeps` trait, which the Tauri
+//! shell implements over the protocol layer (channel records, control
+//! payloads) and the Veilid `app_call` dispatcher.
 //!
 //! # Design departures from a literal reading of §28.9
 //!
@@ -39,8 +40,10 @@ pub mod error;
 pub mod expression_fetch;
 pub mod expressions;
 pub mod fek;
+mod keys;
 pub mod manifest;
 pub mod pinned;
+pub mod sanitize;
 pub mod serve;
 pub mod upload;
 pub mod verify;
@@ -52,7 +55,9 @@ pub use cache::{community_cache_root, CacheConfig, ChunkCache};
 pub use chunker::{merkle_root_of, ChunkedFile, Chunker, CHUNK_SIZE_BYTES, MAX_FILE_SIZE_BYTES};
 pub use deps::{read_bitmap_for, FilesDeps, FilesEvent, InsertChannelMessage, SharedFilesDeps};
 pub use dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};
-pub use download::download_attachment;
+pub use download::{
+    assemble_attachment, download_attachment, fetch_attachment_to_cache, FetchedAttachment,
+};
 pub use error::FilesError;
 pub use expression_fetch::eager_fetch_missing;
 pub use expressions::{read_expression_bytes, upload_expression_to_cache};
@@ -60,6 +65,7 @@ pub use fek::unwrap_fek_for_offer;
 pub use manifest::validate_offer;
 pub use pinned::{set_attachment_pinned, sync_pinned_from_governance, PinnedSet};
 pub use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
+pub use sanitize::sanitize_filename;
 pub use serve::serve_attachment_request;
 pub use upload::{
     guess_mime_type, send_voice_message_bytes, upload_bytes_as_attachment, upload_file,

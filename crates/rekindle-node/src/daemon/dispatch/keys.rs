@@ -1,7 +1,7 @@
 //! Key management dispatch handlers: MekList, MekRotate, MekRequest, PrekeyReplenish.
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
 
@@ -44,7 +44,14 @@ pub(crate) fn handle_mek_rotate(
         return e;
     }
 
-    let request = crate::daemon::mek_rotation::MekRotationRequest::manual(community, channel);
+    // `channel` is a channel's 32-hex id, or empty for the community key.
+    let Some(scope) = rekindle_types::channel_keys::KeyScope::from_wire(Some(channel)) else {
+        return IpcResponse::error(
+            400,
+            "channel must be a 32-hex channel id, or empty for the community key",
+        );
+    };
+    let request = crate::daemon::mek_rotation::MekRotationRequest::manual(community, scope);
     if ctx.mek_rotation_tx.send(request).is_err() {
         return IpcResponse::error(500, "MEK rotation worker is not running");
     }

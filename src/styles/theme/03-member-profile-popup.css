@@ -198,6 +198,13 @@
     padding: 6px 10px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     background: var(--color-xfire-bg-panel);
+    align-items: center;
+  }
+
+  .dm-call-bar-label {
+    flex: 1;
+    color: var(--color-xfire-text-secondary);
+    font-size: 12px;
   }
 
   /* Plan §Failure 5 — incoming-call modal */

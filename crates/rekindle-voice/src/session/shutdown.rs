@@ -1,8 +1,8 @@
 //! Phase 14.l — voice session teardown.
 //!
-//! `shutdown_voice` is the consolidated teardown — signals each loop's
-//! shutdown channel, awaits the join handle, and (optionally) stops
-//! cpal devices + clears the voice packet channels.
+//! `shutdown_voice` is the consolidated teardown — shuts down each loop's
+//! session scope (cancel, then wait under a deadline) and optionally
+//! stops cpal devices + clears the voice packet channels.
 //!
 //! Three named scopes via `VoiceShutdownOpts`:
 //! - `FULL`: stop everything + clear engine + clear packet channels.
@@ -21,35 +21,20 @@ use std::sync::Arc;
 
 use crate::session_deps::{VoiceSessionDeps, VoiceShutdownOpts};
 
+/// How long each loop scope gets to stop: the session deadline, since a
+/// loop may be inside one Veilid call when the stop arrives.
+pub const LOOP_STOP_DEADLINE: std::time::Duration =
+    rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
+
 pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, opts: &VoiceShutdownOpts) {
-    let handles = deps.take_shutdown_handles(*opts);
-
-    // Signal every taken shutdown channel.
-    if let Some(tx) = handles.send_loop_shutdown {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = handles.recv_loop_shutdown {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = handles.monitor_shutdown {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = handles.mcu_shutdown {
-        let _ = tx.send(()).await;
-    }
-
-    // Await each loop's exit.
-    if let Some(h) = handles.send_loop_handle {
-        let _ = h.await;
-    }
-    if let Some(h) = handles.recv_loop_handle {
-        let _ = h.await;
-    }
-    if let Some(h) = handles.monitor_handle {
-        let _ = h.await;
-    }
-    if let Some(h) = handles.mcu_handle {
-        let _ = h.await;
+    let scopes = deps.take_loop_scopes(*opts);
+    for scope in [scopes.loops, scopes.mcu, scopes.monitor]
+        .into_iter()
+        .flatten()
+    {
+        if let Err(stuck) = scope.shutdown(LOOP_STOP_DEADLINE).await {
+            tracing::warn!(%stuck, "voice loops did not stop in time");
+        }
     }
 
     if opts.stop_devices {

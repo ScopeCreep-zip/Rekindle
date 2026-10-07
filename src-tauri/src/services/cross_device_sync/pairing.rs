@@ -23,10 +23,10 @@ use std::sync::Arc;
 use rekindle_secrets::sync_key::{generate_pairing_code, random_pairing_salt, PairingKey};
 use rekindle_types::cross_device_sync::{DeviceListEntry, PairingAccept, PairingPayload};
 
-use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 const PAIRING_TTL_SECS: i64 = 300; // 5 minutes
 
@@ -51,7 +51,7 @@ pub struct PairingSession {
 
 pub async fn generate_pairing_session(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<PairingSession, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
     let handle = super::record::open_personal_sync_record(state, pool)
@@ -101,7 +101,7 @@ pub async fn generate_pairing_session(
 /// personal record key the new device should start watching.
 pub async fn handle_pairing_app_call(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     payload: PairingPayload,
 ) -> Result<PairingAccept, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -188,7 +188,7 @@ pub fn build_pairing_payload(
 }
 
 async fn persist_paired_device(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     entry: &DeviceListEntry,
 ) -> Result<(), String> {

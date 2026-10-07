@@ -4,10 +4,10 @@
 //! `generate_pairing_qr_svg_inner` (mint session + render the deep-link
 //! URI as SVG QR code).
 
-use crate::db::DbPool;
 use crate::services::cross_device_sync;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn accept_pairing_code_inner(
     state: &SharedState,
@@ -24,15 +24,9 @@ pub async fn accept_pairing_code_inner(
         cross_device_sync::build_pairing_payload(state, &pairing_code, &salt, &display_name)?;
     let envelope = rekindle_types::cross_device_sync::SyncEnvelope::PairingRequest(payload);
     let bytes = serde_json::to_vec(&envelope).map_err(|e| format!("encode: {e}"))?;
-    let api = state_helpers::veilid_api(state).ok_or("veilid not attached")?;
-    let route_id = api
-        .import_remote_private_route(route_blob)
-        .map_err(|e| format!("import existing device route: {e}"))?;
-    let rc = state_helpers::safe_routing_context(state).ok_or("no routing context")?;
-    let reply = rc
-        .app_call(veilid_core::Target::RouteId(route_id), bytes)
+    let reply = state_helpers::call_route_blob(state, &route_blob, bytes)
         .await
-        .map_err(|e| format!("pairing app_call failed: {e}"))?;
+        .map_err(|e| format!("pairing call failed: {e}"))?;
     let accept: rekindle_types::cross_device_sync::PairingAccept =
         serde_json::from_slice(&reply).map_err(|e| format!("pairing reply decode: {e}"))?;
     Ok(accept)
@@ -40,7 +34,7 @@ pub async fn accept_pairing_code_inner(
 
 pub async fn generate_pairing_qr_svg_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<crate::commands::sync::PairingQrPayload, String> {
     let session = cross_device_sync::generate_pairing_session(state, pool).await?;
     let uri = format!(

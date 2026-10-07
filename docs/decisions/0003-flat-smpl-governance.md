@@ -1,6 +1,8 @@
 # 0003 — Flat SMPL governance replaces the v1.0 coordinator model
 
 - **Status:** Accepted (supersedes the v1.0 rotating-coordinator design)
+- **Superseded in part by [0011](0011-member-sovereign-records.md):** the shared-`slot_seed` SMPL
+  write model. Flat governance, CRDT merge, reader-validates and self-sovereign join stand.
 - **Date:** 2026-03 (research); 2026-04 (decision); active migration
   in 2026-05 onward
 

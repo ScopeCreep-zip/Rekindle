@@ -1,14 +1,14 @@
 use rusqlite::OptionalExtension;
 
 use crate::channels::community_channel::ThreadInfoDto;
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn persist_thread_row(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     thread: &ThreadInfoDto,
 ) -> Result<(), String> {
@@ -41,7 +41,7 @@ pub async fn persist_thread_row(
 }
 
 pub async fn load_thread_metadata(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     community_id: &str,
     thread_id: &str,

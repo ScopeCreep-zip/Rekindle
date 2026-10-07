@@ -4,9 +4,10 @@
 //! value-change dispatch, `watch_friend`, `publish_status`,
 //! `start_heartbeat_loop`) need from their host. Implemented in
 //! src-tauri by `PresenceAdapter` against the live `AppState` +
-//! `AppHandle` + `DbPool`.
+//! `AppHandle` + `Db`.
 
 use async_trait::async_trait;
+use rekindle_records::lease::LeaseId;
 
 use crate::deps::PresenceError;
 use crate::status::UserStatusKind;
@@ -56,8 +57,30 @@ pub enum FriendPresenceEvent {
 /// All veilid-typed concerns (RecordKey parsing, RoutingContext
 /// acquisition, watch subscriptions, set_dht_value) are hidden behind
 /// adapter-side methods that exchange only strings + byte vectors.
+/// What publishing our own STATUS needs (plan C7.8c): the one publisher
+/// per session runs over this, so a host that has no friend-presence
+/// surface (the daemon) implements only it.
 #[async_trait]
-pub trait FriendPresenceDeps: Send + Sync + 'static {
+pub trait StatusPublisherDeps: Send + Sync + 'static {
+    /// Our profile record key, or `None` before the profile is published.
+    fn profile_dht_info(&self) -> Option<String>;
+    /// Write the 9-byte `[status_byte, timestamp_be]` payload to
+    /// profile subkey 2, through the session's writable profile lease.
+    async fn write_profile_status_subkey(
+        &self,
+        profile_key: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), PresenceError>;
+    /// Current authenticated user's status (if logged in).
+    fn current_identity_status(&self) -> Option<UserStatusKind>;
+    /// Wall-clock now in milliseconds since the unix epoch. Hoisted
+    /// onto the trait so tests can pin time without monkeying with
+    /// `std::time`.
+    fn now_ms(&self) -> i64;
+}
+
+#[async_trait]
+pub trait FriendPresenceDeps: StatusPublisherDeps {
     // === Friend lookup ===
     fn friend_for_dht_key(&self, dht_key: &str) -> Option<String>;
     fn is_friend_accepted(&self, friend_key: &str) -> bool;
@@ -75,53 +98,32 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     // === DHT manager mutations ===
     fn register_friend_dht_key(&self, dht_key: &str, friend_key: &str);
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>);
-    fn track_open_record(&self, dht_record_key: &str);
     fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool);
 
     // === DHT IO (async) ===
-    /// Open a friend's DHT record for read. Returns `Ok` even if the
-    /// open fails — non-fatal (the friend will sync on the next
-    /// interval). On hard failures (invalid key) returns `Err`.
-    async fn open_friend_record(&self, dht_record_key: &str) -> Result<(), PresenceError>;
-    /// Subscribe to subkey changes. Returns `Ok(true)` if a live watch
-    /// is established, `Ok(false)` if Veilid couldn't set up the watch
-    /// (caller falls back to polling), `Err` on hard errors.
+    //
+    // Records are borrowed from the host's record pool (plan C7.5). Each
+    // watched friend's profile is held for the session under one lease,
+    // which carries the watch.
+
+    /// Borrow a friend's profile record (read-only).
+    async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError>;
+    /// Hand a friend's lease to the host, which keeps it for the session
+    /// and releases the one it held for that friend before (the new lease
+    /// carries the watch).
+    async fn hold_friend_record(&self, friend_key: &str, lease: LeaseId);
+    /// Watch subkeys of the leased record. `Ok` means the desired watch
+    /// was accepted locally, never that a node granted it (V20): a watch
+    /// no node accepts shows up as a dead-watch update, which the pool
+    /// re-arms.
     async fn watch_friend_subkeys(
         &self,
-        dht_record_key: &str,
+        lease: LeaseId,
         subkeys: &[u32],
-    ) -> Result<bool, PresenceError>;
-
-    /// Returns `(profile_dht_key, owner_keypair_str)` from the live
-    /// node handle, or `None` when the node isn't ready.
-    fn profile_dht_info(&self) -> Option<(String, Option<String>)>;
-    /// Open the profile record for write using the supplied owner
-    /// keypair (string form). Idempotent — Veilid treats reopens of an
-    /// already-open record as a no-op.
-    async fn open_profile_record_for_write(
-        &self,
-        profile_key: &str,
-        owner_keypair_str: Option<&str>,
-    ) -> Result<(), PresenceError>;
-    /// Write the 9-byte `[status_byte, timestamp_be]` payload to
-    /// profile subkey 2.
-    async fn write_profile_status_subkey(
-        &self,
-        profile_key: &str,
-        payload: Vec<u8>,
     ) -> Result<(), PresenceError>;
 
     // === Persistence ===
     fn persist_friend_last_seen(&self, friend_key: &str, ts_ms: i64);
-
-    // === Identity ===
-    /// Current authenticated user's status (if logged in).
-    fn current_identity_status(&self) -> Option<UserStatusKind>;
-
-    /// Wall-clock now in milliseconds since the unix epoch. Hoisted
-    /// onto the trait so tests can pin time without monkeying with
-    /// `std::time`.
-    fn now_ms(&self) -> i64;
 
     // === Event emit ===
     fn emit(&self, event: FriendPresenceEvent);

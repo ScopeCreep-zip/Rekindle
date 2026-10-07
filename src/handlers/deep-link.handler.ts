@@ -1,20 +1,16 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeDeepLinkEvents } from "../ipc/channels";
-import { handleJoinCommunity } from "../actions/community.actions";
-import { addToast } from "../stores/toast.store";
+import { commands } from "../ipc/commands";
+import { setPendingDeepLink } from "../stores/deep-link.store";
 
+/// Pull the deep link held for consent (one received before login, or
+/// while this window was not listening).
+export async function loadPendingDeepLink(): Promise<void> {
+  setPendingDeepLink(await commands.getPendingDeepLink());
+}
+
+/// Show each new deep link in the consent dialog. Nothing is joined or
+/// added until the user confirms it there.
 export function subscribeDeepLinkHandler(): Promise<UnlistenFn> {
-  return subscribeDeepLinkEvents(async (event) => {
-    if (event.action === "joinCommunity") {
-      addToast("Joining community via invite...", "info");
-      // handleJoinCommunity shows success/error toasts internally and re-throws
-      // on failure (for the modal path); there is no modal here, so swallow it.
-      await handleJoinCommunity(
-        event.communityId,
-        "Invited community",
-        event.inviteCode,
-        event.secretsRecordKey,
-      ).catch(() => {});
-    }
-  });
+  return subscribeDeepLinkEvents((request) => setPendingDeepLink(request));
 }

@@ -173,8 +173,8 @@ async fn cross_track_session_interop() {
     let alice_addr = hex::encode(&alice_pub);
     let bob_addr = hex::encode(&bob_pub);
 
-    // Bob (desktop) publishes a bundle; Alice (daemon) initiates.
-    let bob_bundle = bob.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
+    // Bob (desktop) hands out a bundle; Alice (daemon) initiates.
+    let bob_bundle = bob.handout_bundle().unwrap();
     let init = alice.establish_session(&bob_addr, &bob_bundle).unwrap();
     bob.respond_to_session(
         &alice_addr,
@@ -250,7 +250,7 @@ async fn cross_track_responder_sends_first() {
     let alice_addr = hex::encode(&alice_pub);
     let bob_addr = hex::encode(&bob_pub);
 
-    let bob_bundle = bob.generate_prekey_bundle(1, None, None).unwrap();
+    let bob_bundle = bob.current_bundle().unwrap();
     let init = alice.establish_session(&bob_addr, &bob_bundle).unwrap();
     bob.respond_to_session(
         &alice_addr,

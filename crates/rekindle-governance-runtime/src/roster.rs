@@ -61,7 +61,7 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
     registry_key: &str,
     gov_state: &GovernanceState,
 ) -> Vec<RosterMember> {
-    let occupied = match deps.inspect_dht_record_present_subkeys(registry_key).await {
+    let occupied = match crate::records::inspect_present_subkeys(deps, registry_key).await {
         Ok(subkeys) => subkeys,
         Err(error) => {
             tracing::debug!(

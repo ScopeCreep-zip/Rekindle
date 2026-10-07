@@ -4,10 +4,10 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::NotificationLevel;
 
@@ -65,7 +65,8 @@ pub async fn set_community_default_notification_level(
     community_id: &str,
     level: NotificationLevel,
 ) -> Result<(), String> {
-    let lamport = state_helpers::increment_lamport(state, community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, community_id).map_err(|e| e.to_string())?;
     super::super::governance::write_entry(
         state,
         community_id,
@@ -91,7 +92,7 @@ pub fn get_community_default_notification_level(
 
 pub async fn set_channel_notification_level(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     level: NotificationLevel,

@@ -178,17 +178,10 @@ async fn fetch_and_cache_chunks<D: FilesDeps>(
         return Err(FilesError::Transport("unexpected reply variant".into()));
     };
 
-    // Unwrap FEK under the current community MEK. Note: this differs
-    // from the channel-attachment path which uses
-    // `historical_channel_mek(generation)` — for expressions, the
-    // governance state holds the current-generation offer and we
-    // assume the community MEK matches.
+    // Unwrap FEK under exactly the community key generation the offer
+    // names.
     let community_mek =
-        deps.community_mek(community_id)
-            .ok_or_else(|| FilesError::MekUnavailable {
-                community: community_id.to_string(),
-                generation: 0,
-            })?;
+        crate::keys::community_key_at(deps, community_id, offer.fek_mek_generation)?;
     let raw_fek = community_mek
         .decrypt(&offer.wrapped_fek)
         .map_err(|e| FilesError::Decrypt(format!("unwrap expression FEK: {e}")))?;
@@ -286,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_expressions_is_no_op() {
-        let deps = MockDeps::new("c1", "ch1");
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111");
         eager_fetch_missing(&deps, "c1").await;
         assert!(
             deps.calls.lock().events.is_empty(),
@@ -300,7 +293,8 @@ mod tests {
 
     #[tokio::test]
     async fn no_online_peers_skips_fetch() {
-        let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
+        let mut deps =
+            MockDeps::new("c1", "11111111111111111111111111111111").with_mek(1, [0u8; 32]);
         // One incomplete expression but no online peers.
         deps.expressions = vec![([4u8; 16], offer_with_id([4u8; 16], 2))];
         eager_fetch_missing(&deps, "c1").await;
@@ -315,7 +309,7 @@ mod tests {
         // simulate "fully cached" we insert all chunks for the
         // expression id first.
         let eid = [5u8; 16];
-        let deps = MockDeps::new("c1", "ch1")
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111")
             .with_mek(1, [0u8; 32])
             .with_peer("peer-1", vec![1, 2, 3]);
         // Pre-load full bitmap into the cache.

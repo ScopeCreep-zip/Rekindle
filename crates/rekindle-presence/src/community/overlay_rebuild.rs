@@ -20,26 +20,23 @@ use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
 use crate::deps::OnlineMember;
 
-/// Snapshot of the prior gossip overlay state — `lamport_counter`
-/// is preserved across the rebuild + `pending_mesh_broadcasts` is
-/// drained when peers become available. `needs_initial_sync`
+/// Snapshot of the prior gossip overlay state — `pending_mesh_broadcasts`
+/// is drained when peers become available. `needs_initial_sync`
 /// drives the initial-sync handshake trigger.
 #[derive(Debug, Clone, Default)]
 pub struct GossipOverlaySnapshot {
-    pub lamport_counter: u64,
     pub needs_initial_sync: bool,
     pub pending_mesh_broadcasts: VecDeque<SignedEnvelope>,
 }
 
 /// Atomic-write payload for the rebuilt overlay. The adapter
 /// applies this under one `community.communities` write lock so
-/// the peers / online_members / lamport counter / needs_initial_sync
-/// flags update together.
+/// the peers / online_members / needs_initial_sync flags update
+/// together.
 #[derive(Debug)]
 pub struct GossipOverlayPlan {
     pub peers: HashMap<String, OnlineMember>,
     pub online_members: HashMap<String, OnlineMember>,
-    pub lamport_counter: u64,
     pub needs_initial_sync: bool,
     pub remaining_pending: VecDeque<SignedEnvelope>,
 }
@@ -55,7 +52,7 @@ pub struct GossipRebuildOutcome {
 
 /// Compute the rebuild outcome for one tick.
 ///
-/// `prior` carries the lamport counter + needs_initial_sync flag +
+/// `prior` carries the needs_initial_sync flag +
 /// pending-mesh queue from the prior overlay. `selected` is the
 /// fan-out subset (size = `gossip_degree`); `online_members` is the
 /// full freshly-online set.
@@ -80,7 +77,6 @@ where
 {
     let online_count = online_members.len();
     let will_have_peers = !selected.is_empty();
-    let lamport_counter = prior.lamport_counter;
     let needs_initial_sync = prior.needs_initial_sync;
     let GossipOverlaySnapshot {
         pending_mesh_broadcasts,
@@ -104,7 +100,6 @@ where
     let plan = GossipOverlayPlan {
         peers,
         online_members,
-        lamport_counter,
         needs_initial_sync,
         remaining_pending: remaining,
     };
@@ -144,7 +139,6 @@ mod tests {
         let mut queue = VecDeque::new();
         queue.push_back(pending(b"queued"));
         let prior = GossipOverlaySnapshot {
-            lamport_counter: 7,
             needs_initial_sync: true,
             pending_mesh_broadcasts: queue,
         };
@@ -153,7 +147,6 @@ mod tests {
         assert!(outcome.drained_pending.is_empty());
         let plan = outcome.plan.expect("plan");
         assert_eq!(plan.remaining_pending.len(), 1);
-        assert_eq!(plan.lamport_counter, 7);
         assert!(plan.peers.is_empty());
     }
 
@@ -163,7 +156,6 @@ mod tests {
         queue.push_back(pending(b"a"));
         queue.push_back(pending(b"b"));
         let prior = GossipOverlaySnapshot {
-            lamport_counter: 1,
             needs_initial_sync: true,
             pending_mesh_broadcasts: queue,
         };
@@ -183,7 +175,6 @@ mod tests {
     #[test]
     fn peers_already_present_does_not_re_sync() {
         let prior = GossipOverlaySnapshot {
-            lamport_counter: 42,
             needs_initial_sync: false,
             pending_mesh_broadcasts: VecDeque::new(),
         };
@@ -192,17 +183,5 @@ mod tests {
         let outcome = compute_rebuild_plan(prior, selected, HashMap::new());
         assert!(!outcome.needs_sync);
         assert!(outcome.drained_pending.is_empty());
-        assert_eq!(outcome.plan.as_ref().unwrap().lamport_counter, 42);
-    }
-
-    #[test]
-    fn lamport_counter_is_preserved_across_rebuild() {
-        let prior = GossipOverlaySnapshot {
-            lamport_counter: 12345,
-            needs_initial_sync: false,
-            pending_mesh_broadcasts: VecDeque::new(),
-        };
-        let outcome = compute_rebuild_plan(prior, HashMap::new(), HashMap::new());
-        assert_eq!(outcome.plan.unwrap().lamport_counter, 12345);
     }
 }

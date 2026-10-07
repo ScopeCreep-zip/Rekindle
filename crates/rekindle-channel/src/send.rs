@@ -8,15 +8,20 @@
 //!
 //! - `slowmode_check` — pure decision: is the next send allowed?
 //! - `build_channel_message` — pure constructor for the wire shape
-//! - `encrypt_channel_body` — symmetric encrypt with AAD binding
+//!
+//! The body codec (AES-256-GCM with the record/subkey/Lamport AAD) is
+//! `rekindle_secrets::channel_body`, shared by every host and re-exported
+//! here.
 
-use rekindle_crypto::group::media_key::{ChannelAad, MediaEncryptionKey as CryptoMek};
 use rekindle_protocol::dht::community::channel_record::{
     ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT,
 };
 
-use crate::deps::ChannelMek;
 use crate::error::ChannelError;
+
+pub use rekindle_secrets::channel_body::{
+    decrypt_channel_body, encrypt_channel_body, BodyPosition,
+};
 
 /// Architecture §28.4 — channel SMPL subkey index for a member writing
 /// their slot's stream of messages. Pure offset from `CHANNEL_OWNER_SUBKEY_COUNT`.
@@ -45,28 +50,6 @@ pub fn slowmode_check(
         });
     }
     Ok(())
-}
-
-/// Architecture §8 line 1626 — symmetric encrypt the plaintext body
-/// under the per-channel MEK with AAD binding `(channel_record_key,
-/// subkey_index, lamport_ts)` so the ciphertext cannot be replayed to
-/// a different channel/slot/sequence.
-pub fn encrypt_channel_body(
-    mek: &ChannelMek,
-    channel_record_key: &str,
-    subkey_index: u32,
-    lamport_ts: u64,
-    body: &[u8],
-) -> Result<Vec<u8>, ChannelError> {
-    let crypto_mek = CryptoMek::from_bytes(mek.key_bytes, mek.generation);
-    let aad = ChannelAad {
-        channel_record_key: channel_record_key.as_bytes(),
-        subkey_index,
-        lamport_ts,
-    };
-    crypto_mek
-        .encrypt_with_aad(body, aad)
-        .map_err(|e| ChannelError::Encrypt(format!("MEK encryption failed: {e}")))
 }
 
 /// Already-computed inputs for the wire `ChannelMessage` constructor.
@@ -177,39 +160,5 @@ mod tests {
         assert_eq!(msg.flags, 0b11);
         assert!(msg.reply_to.is_none());
         assert!(msg.attachment.is_none());
-    }
-
-    #[test]
-    fn encrypt_channel_body_roundtrip_through_decrypt() {
-        let mek = ChannelMek {
-            generation: 1,
-            key_bytes: [42u8; 32],
-        };
-        let ct = encrypt_channel_body(&mek, "rkey", 7, 99, b"hello").expect("encrypt");
-        // Decrypt with matching CryptoMek + AAD must round-trip.
-        let crypto = CryptoMek::from_bytes(mek.key_bytes, mek.generation);
-        let aad = ChannelAad {
-            channel_record_key: b"rkey",
-            subkey_index: 7,
-            lamport_ts: 99,
-        };
-        let pt = crypto.decrypt_with_aad(&ct, aad).expect("decrypt");
-        assert_eq!(pt, b"hello");
-    }
-
-    #[test]
-    fn encrypt_channel_body_aad_binding_rejects_wrong_subkey() {
-        let mek = ChannelMek {
-            generation: 1,
-            key_bytes: [42u8; 32],
-        };
-        let ct = encrypt_channel_body(&mek, "rkey", 7, 99, b"hello").expect("encrypt");
-        let crypto = CryptoMek::from_bytes(mek.key_bytes, mek.generation);
-        let wrong_aad = ChannelAad {
-            channel_record_key: b"rkey",
-            subkey_index: 8, // wrong subkey
-            lamport_ts: 99,
-        };
-        assert!(crypto.decrypt_with_aad(&ct, wrong_aad).is_err());
     }
 }

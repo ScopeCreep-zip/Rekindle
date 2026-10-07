@@ -14,6 +14,25 @@ pub struct RouteContextSpec {
 }
 
 impl RouteContextSpec {
+    /// This spec as a [`SafetyProfile`](rekindle_types::config::SafetyProfile),
+    /// for the one profile-to-Veilid mapping
+    /// (`rekindle_protocol::dht::pool::safety_selection`).
+    #[must_use]
+    pub fn safety_profile(&self) -> rekindle_types::config::SafetyProfile {
+        use rekindle_types::config::{
+            SafetyProfile, SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR,
+        };
+        SafetyProfile {
+            hop_count: u8::try_from(self.hop_count).unwrap_or(ANONYMITY_HOP_FLOOR),
+            stability: StabilityPreference::Reliable,
+            sequencing: if self.ordered {
+                SequencingPreference::PreferOrdered
+            } else {
+                SequencingPreference::NoPreference
+            },
+        }
+    }
+
     /// The single anonymous routing spec used for every application path.
     pub fn rc_safe() -> Self {
         Self {
@@ -35,5 +54,18 @@ mod tests {
             rekindle_types::config::ANONYMITY_HOP_FLOOR as usize
         );
         assert!(!safe.ordered);
+    }
+
+    /// The desktop's send context: what it hand-built before the one
+    /// mapping took over (floor hops, Reliable, unordered).
+    #[test]
+    fn safe_spec_profile_is_floor_reliable_unordered() {
+        use rekindle_types::config::{
+            SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR,
+        };
+        let profile = RouteContextSpec::rc_safe().safety_profile();
+        assert_eq!(profile.hop_count, ANONYMITY_HOP_FLOOR);
+        assert_eq!(profile.stability, StabilityPreference::Reliable);
+        assert_eq!(profile.sequencing, SequencingPreference::NoPreference);
     }
 }

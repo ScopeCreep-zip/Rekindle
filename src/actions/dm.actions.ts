@@ -25,7 +25,7 @@ export async function handleStartDm(
   const recordKey = await commands.startDm(bobPublicKey, alicePseudonym);
   await handleListDms();
   setDmState("activeRecordKey", recordKey);
-  await commands.openDmWindow(recordKey, alicePseudonym);
+  await commands.openDmWindow(recordKey);
   return recordKey;
 }
 
@@ -34,9 +34,7 @@ export async function handleAcceptDm(recordKey: string): Promise<void> {
   setDmState("pendingInvites", recordKey, undefined!);
   await handleListDms();
   setDmState("activeRecordKey", recordKey);
-  const conv = dmState.conversations[recordKey];
-  const title = conv?.initiatorPseudonym ?? recordKey.slice(0, 12);
-  await commands.openDmWindow(recordKey, title);
+  await commands.openDmWindow(recordKey);
 }
 
 export async function handleDeclineDm(recordKey: string): Promise<void> {

@@ -60,9 +60,8 @@ export interface MessageAttachment {
   mimeType: string;
   totalSize: number;
   chunkCount: number;
-  /** Set after a download completes locally; absent until then.
-   *  UI flips "Download" → "Open" when this is non-null. */
-  localPath?: string | null;
+  /** The file was saved to disk on this device ("Show in folder"). */
+  downloaded: boolean;
 }
 
 export interface Conversation {

@@ -21,11 +21,13 @@ services:
       RUST_LOG: "info,rekindle=debug,veilid_core=warn"
       container: docker
     volumes:
+      - ../../target/release/rekindled:/usr/local/bin/rekindled:ro
       - ../../target/release/rekindle:/usr/local/bin/rekindle:ro
       - ./nodes/carol/display-name:/etc/rekindle/display-name:ro
-      - carol-veilid:/home/rekindle/.local/share/rekindle/veilid
-      - carol-config:/home/rekindle/.config/rekindle
-      - carol-logs:/home/rekindle/.local/state/rekindle/logs
+      - ./nodes/carol/passphrase:/etc/rekindle/passphrase:ro
+      - carol-data:/home/rekindle/.local/share/com.rekindle.app
+      - carol-config:/home/rekindle/.config/com.rekindle.app
+      - carol-logs:/home/rekindle/.local/share/com.rekindle.app/logs
       - carol-nix:/nix
     tmpfs:
       - /run:exec,mode=755
@@ -33,7 +35,7 @@ services:
       - /tmp:exec,mode=1777
 
 volumes:
-  carol-veilid:
+  carol-data:
     driver: local
   carol-config:
     driver: local

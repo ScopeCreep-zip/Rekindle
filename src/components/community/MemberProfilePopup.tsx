@@ -161,7 +161,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
       .sort((a, b) => b.position - a.position);
 
   function handleMessage(): void {
-    commands.openChatWindow(props.member.pseudonymKey, props.member.displayName);
+    commands.openChatWindow(props.member.pseudonymKey);
     props.onClose();
   }
 

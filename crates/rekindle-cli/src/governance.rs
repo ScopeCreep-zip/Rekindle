@@ -1,11 +1,12 @@
 //! Governance commands: roles, moderation, invites.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::{InviteCmd, ModerateCmd, RoleCmd};
+use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
-use crate::transport::DaemonClient;
+use rekindle_client::DaemonClient;
 
 fn parse_u32(s: &str) -> anyhow::Result<u32> {
     s.parse()
@@ -107,8 +108,16 @@ pub async fn dispatch_role(
             format::print_structured(&value, mode)
         }
         RoleCmd::Delete {
-            community, role_id, ..
+            community,
+            role_id,
+            force,
         } => {
+            if !helpers::confirm_unless_forced(
+                *force,
+                &format!("Delete role {role_id} in '{community}'?"),
+            )? {
+                return format::print_text("Cancelled.");
+            }
             let rid = parse_u32(role_id)?;
             let value = client
                 .request_ok(IpcRequest::RoleDelete {

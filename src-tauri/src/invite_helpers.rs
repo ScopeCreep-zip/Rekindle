@@ -1,14 +1,15 @@
 use rusqlite::OptionalExtension;
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::{db_call, db_call_or_default, db_fire};
+use rekindle_db::Db;
 
 /// 48 hours in milliseconds.
 const INVITE_EXPIRY_MS: i64 = 48 * 60 * 60 * 1000;
 
 /// Create a tracked outgoing invite in the database.
 pub async fn create_outgoing_invite(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     invite_id: &str,
     url: &str,
@@ -31,7 +32,7 @@ pub async fn create_outgoing_invite(
 
 /// Cancel a pending outgoing invite. Returns Ok even if no row matched.
 pub async fn cancel_outgoing_invite(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     invite_id: &str,
 ) -> Result<(), String> {
@@ -49,7 +50,7 @@ pub async fn cancel_outgoing_invite(
 }
 
 /// Check if an `invite_id` is cancelled (for auto-rejecting incoming requests).
-pub async fn is_invite_cancelled(pool: &DbPool, owner_key: &str, invite_id: &str) -> bool {
+pub async fn is_invite_cancelled(pool: &Db, owner_key: &str, invite_id: &str) -> bool {
     let ok = owner_key.to_string();
     let iid = invite_id.to_string();
     db_call_or_default(pool, move |conn| {
@@ -66,7 +67,7 @@ pub async fn is_invite_cancelled(pool: &DbPool, owner_key: &str, invite_id: &str
 }
 
 /// Mark an invite as 'responded' when someone sends a `FriendRequest` with it.
-pub fn mark_invite_responded(pool: &DbPool, owner_key: &str, invite_id: &str, responder_key: &str) {
+pub fn mark_invite_responded(pool: &Db, owner_key: &str, invite_id: &str, responder_key: &str) {
     let ok = owner_key.to_string();
     let iid = invite_id.to_string();
     let rk = responder_key.to_string();
@@ -81,7 +82,7 @@ pub fn mark_invite_responded(pool: &DbPool, owner_key: &str, invite_id: &str, re
 }
 
 /// Mark invite as 'accepted' after manual acceptance.
-pub fn mark_invite_accepted(pool: &DbPool, owner_key: &str, invite_id: &str) {
+pub fn mark_invite_accepted(pool: &Db, owner_key: &str, invite_id: &str) {
     let ok = owner_key.to_string();
     let iid = invite_id.to_string();
     db_fire(pool, "mark invite accepted", move |conn| {
@@ -95,7 +96,7 @@ pub fn mark_invite_accepted(pool: &DbPool, owner_key: &str, invite_id: &str) {
 }
 
 /// Mark invite as 'rejected' after manual rejection.
-pub fn mark_invite_rejected(pool: &DbPool, owner_key: &str, invite_id: &str) {
+pub fn mark_invite_rejected(pool: &Db, owner_key: &str, invite_id: &str) {
     let ok = owner_key.to_string();
     let iid = invite_id.to_string();
     db_fire(pool, "mark invite rejected", move |conn| {
@@ -109,7 +110,7 @@ pub fn mark_invite_rejected(pool: &DbPool, owner_key: &str, invite_id: &str) {
 }
 
 /// Expire all stale pending invites past their `expires_at` time.
-pub fn expire_stale_invites(pool: &DbPool, owner_key: &str) {
+pub fn expire_stale_invites(pool: &Db, owner_key: &str) {
     let ok = owner_key.to_string();
     let now = db::timestamp_now();
     db_fire(pool, "expire old invites", move |conn| {
@@ -124,7 +125,7 @@ pub fn expire_stale_invites(pool: &DbPool, owner_key: &str) {
 
 /// Fetch all pending outgoing invites for display.
 pub async fn get_pending_invites(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
 ) -> Result<Vec<OutgoingInvite>, String> {
     let ok = owner_key.to_string();

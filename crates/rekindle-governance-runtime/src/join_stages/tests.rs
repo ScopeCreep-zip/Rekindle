@@ -40,7 +40,13 @@ async fn slot_claim_steps_over_contended_subkeys() {
     let mine_bytes = serde_json::to_vec(&mine).unwrap();
 
     let mut deps = MockGovernanceRuntimeDeps::new();
-    deps.expect_open_dht_record().returning(|_, _| Ok(()));
+    // An open session: the claim loop's checkpoints let it run.
+    let scope = rekindle_lifecycle::SessionScope::new("test", std::sync::Arc::new(|_| {}));
+    deps.expect_scope()
+        .returning(move || std::sync::Arc::clone(&scope));
+    deps.expect_acquire_record()
+        .returning(|_, _| Ok(rekindle_records::lease::LeaseId(1)));
+    deps.expect_release_record().returning(|_| ());
     // Every subkey free at inspect time — the contention only shows
     // up at write time, which is the race this exercises.
     deps.expect_inspect_dht_record_present_subkeys()
@@ -97,7 +103,13 @@ async fn slot_claim_gives_up_after_the_attempt_cap() {
     let signing = SigningKey::from_bytes(&[3u8; 32]);
 
     let mut deps = MockGovernanceRuntimeDeps::new();
-    deps.expect_open_dht_record().returning(|_, _| Ok(()));
+    // An open session: the claim loop's checkpoints let it run.
+    let scope = rekindle_lifecycle::SessionScope::new("test", std::sync::Arc::new(|_| {}));
+    deps.expect_scope()
+        .returning(move || std::sync::Arc::clone(&scope));
+    deps.expect_acquire_record()
+        .returning(|_, _| Ok(rekindle_records::lease::LeaseId(1)));
+    deps.expect_release_record().returning(|_| ());
     deps.expect_inspect_dht_record_present_subkeys()
         .returning(|_| Ok(vec![]));
     deps.expect_format_writer_keypair()

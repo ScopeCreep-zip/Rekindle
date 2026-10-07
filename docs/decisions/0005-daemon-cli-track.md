@@ -1,6 +1,8 @@
 # 0005 — Add a daemon + CLI track alongside the Tauri desktop app
 
 - **Status:** Accepted
+- **Superseded in part by [0010](0010-single-daemon-thin-frontends.md):** the "Future direction"
+  section (the desktop app migrates to the daemon model).
 - **Date:** 2026-05
 
 ## Context and problem statement

@@ -18,12 +18,10 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use hkdf::Hkdf;
 use rand::RngCore;
+use rekindle_types::domains;
 use sha2::Sha256;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-const SYNC_SALT: &[u8] = b"rekindle-sync-v1";
-const SYNC_INFO: &[u8] = b"personal-sync-record";
-const PAIRING_INFO: &[u8] = b"rekindle-pairing-v1";
 const NONCE_LEN: usize = 12;
 pub const SYNC_KEY_LEN: usize = 32;
 
@@ -42,9 +40,9 @@ impl SyncKey {
     /// )
     /// ```
     pub fn from_master_secret(master_secret: &[u8]) -> Self {
-        let hkdf = Hkdf::<Sha256>::new(Some(SYNC_SALT), master_secret);
+        let hkdf = Hkdf::<Sha256>::new(Some(domains::SYNC_SALT.as_bytes()), master_secret);
         let mut out = [0u8; SYNC_KEY_LEN];
-        hkdf.expand(SYNC_INFO, &mut out)
+        hkdf.expand(domains::PERSONAL_SYNC_RECORD_INFO.as_bytes(), &mut out)
             .expect("32-byte output is a valid HKDF-SHA256 length");
         Self(out)
     }
@@ -124,7 +122,7 @@ impl PairingKey {
     pub fn derive(pairing_code: &str, salt: &[u8]) -> Self {
         let hkdf = Hkdf::<Sha256>::new(Some(salt), pairing_code.as_bytes());
         let mut out = [0u8; SYNC_KEY_LEN];
-        hkdf.expand(PAIRING_INFO, &mut out)
+        hkdf.expand(domains::PAIRING.as_bytes(), &mut out)
             .expect("32-byte output is a valid HKDF-SHA256 length");
         Self(out)
     }

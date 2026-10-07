@@ -102,7 +102,7 @@ async fn populated_subkeys_or_full_scan<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Vec<u32> {
-    match deps.inspect_dht_record_present_subkeys(record_key).await {
+    match crate::records::inspect_present_subkeys(deps, record_key).await {
         Ok(subkeys) => subkeys,
         Err(e) => {
             tracing::warn!(
@@ -124,7 +124,6 @@ async fn fetch_governance_record_entries<D: GovernanceRuntimeDeps>(
     deps: &D,
     governance_key_str: &str,
 ) -> Result<crate::overflow::GovernanceReadout, GovernanceRuntimeError> {
-    deps.open_dht_record(governance_key_str, None).await?;
     let occupied = populated_subkeys_or_full_scan(deps, governance_key_str).await;
     Ok(crate::overflow::read_governance_with_overflow(deps, governance_key_str, &occupied).await)
 }

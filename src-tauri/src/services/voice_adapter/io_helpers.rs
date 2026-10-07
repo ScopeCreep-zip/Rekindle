@@ -7,9 +7,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub(super) fn restart_audio_devices_impl(state: &AppState) -> Result<(), String> {
     let mut ve = state.voice_engine.lock();
@@ -74,7 +74,7 @@ pub(super) fn local_media_capabilities(state: &Arc<AppState>) -> rekindle_video:
 
 pub(super) fn log_voice_membership_impl(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     joined: bool,
@@ -107,24 +107,18 @@ pub(super) async fn load_community_member_names_impl(
     let Some(cid) = community_id else {
         return HashMap::new();
     };
-    let app_handle = state.app_handle.read().clone();
-    let Some(ref ah) = app_handle else {
+    let Ok(pool) = state.db.current() else {
         return HashMap::new();
     };
-    let Some(pool) = tauri::Manager::try_state::<DbPool>(ah) else {
+    let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
         return HashMap::new();
     };
     let cid_owned = cid.to_string();
     crate::db_helpers::db_call(&pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT pseudonym_key, display_name FROM community_members WHERE community_id = ?1",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![cid_owned], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        Ok(rows.filter_map(Result::ok).collect())
+        rekindle_db::repo::members::display_names(conn, &owner_key, &cid_owned)
     })
     .await
+    .map(|names| names.into_iter().collect())
     .unwrap_or_default()
 }
 
@@ -136,6 +130,7 @@ pub(super) async fn load_community_member_names_impl(
 /// the round trip it reports is the round trip the audio actually
 /// takes.
 pub(super) fn send_receiver_report_impl(
+    state: &AppState,
     transport: Option<Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>>,
     peer_pubkey_hex: &str,
     wire: Vec<u8>,
@@ -144,13 +139,16 @@ pub(super) fn send_receiver_report_impl(
         return;
     };
     let peer = peer_pubkey_hex.to_string();
-    tauri::async_runtime::spawn(async move {
-        let guard = transport.lock().await;
-        if let Err(e) = guard.send_bytes_to_peer(&peer, wire).await {
-            // Debug, not warn: a peer whose route is not yet resolved
-            // is ordinary early in a call, and a lost report costs the
-            // sender one 5 s window of blindness, not the call.
-            tracing::debug!(peer = %peer, error = %e, "receiver report not delivered");
-        }
-    });
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "voice receiver report",
+        async move {
+            let guard = transport.lock().await;
+            if let Err(e) = guard.send_bytes_to_peer(&peer, wire).await {
+                // Debug, not warn: a peer whose route is not yet resolved
+                // is ordinary early in a call, and a lost report costs the
+                // sender one 5 s window of blindness, not the call.
+                tracing::debug!(peer = %peer, error = %e, "receiver report not delivered");
+            }
+        },
+    );
 }

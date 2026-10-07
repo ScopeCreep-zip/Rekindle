@@ -11,6 +11,7 @@ use std::time::Instant;
 use parking_lot::RwLock;
 use tracing::{debug, error, info, warn};
 
+use rekindle_transport::broadcast::dht_writes::LeaseId;
 use rekindle_transport::broadcast::node::TransportNode;
 use rekindle_transport::payload::dht_types::{
     FriendRequestEntry, FriendRequestStatus, FRIEND_INBOX_SUBKEY_COUNT,
@@ -36,7 +37,7 @@ pub async fn scan_friend_inbox(
 ) {
     let start = Instant::now();
     info!(
-        inbox_key = &inbox_key[..20.min(inbox_key.len())],
+        inbox_key = %inbox_key,
         "friend inbox scan: starting"
     );
 
@@ -45,29 +46,49 @@ pub async fn scan_friend_inbox(
         return;
     };
 
-    // Ensure record is open (idempotent for already-open records)
-    if let Err(e) =
-        rekindle_transport::broadcast::dht_writes::open_readonly(&transport_node, inbox_key).await
-    {
-        warn!(error = %e, "friend inbox scan: open_readonly failed");
-    }
-
-    // Step 1: Inspect — one network call to get all subkey sequence numbers.
-    let all_subkeys: Vec<u32> = (0..FRIEND_INBOX_SUBKEY_COUNT).collect();
-    let inspect_start = Instant::now();
-    let report = match rekindle_transport::broadcast::dht_writes::inspect(
+    // One borrow for the whole scan: a table hit while the subscription
+    // manager holds the inbox for its watch (plan C7.7d).
+    let lease = match rekindle_transport::broadcast::dht_writes::acquire_str(
         &transport_node,
         inbox_key,
-        Some(&all_subkeys),
+        None,
     )
     .await
     {
-        Ok(r) => {
+        Ok(lease) => lease,
+        Err(e) => {
+            warn!(error = %e, "friend inbox scan: inbox not open");
+            return;
+        }
+    };
+    scan_leased(&transport_node, lease, session, session_path, start).await;
+    rekindle_transport::broadcast::dht_writes::release(&transport_node, lease).await;
+}
+
+/// [`scan_friend_inbox`] on the inbox's lease.
+async fn scan_leased(
+    transport_node: &TransportNode,
+    lease: LeaseId,
+    session: &RwLock<Option<Session>>,
+    session_path: &std::path::Path,
+    start: Instant,
+) {
+    // Step 1: Inspect — one network call to get all subkey sequence numbers.
+    let all_subkeys: Vec<u32> = (0..FRIEND_INBOX_SUBKEY_COUNT).collect();
+    let inspect_start = Instant::now();
+    let populated = match rekindle_transport::broadcast::dht_writes::inspect_leased_local_present(
+        transport_node,
+        lease,
+        &all_subkeys,
+    )
+    .await
+    {
+        Ok(populated) => {
             debug!(
                 elapsed_ms = inspect_start.elapsed().as_millis(),
                 "friend inbox scan: inspect complete"
             );
-            r
+            populated
         }
         Err(e) => {
             warn!(
@@ -76,10 +97,10 @@ pub async fn scan_friend_inbox(
                 "friend inbox scan: inspect failed, falling back to full scan (SLOW)"
             );
             scan_subkeys_direct(
-                &transport_node,
+                transport_node,
                 session,
                 session_path,
-                inbox_key,
+                lease,
                 &all_subkeys,
                 start,
             )
@@ -87,15 +108,6 @@ pub async fn scan_friend_inbox(
             return;
         }
     };
-
-    // Step 2: Filter to populated subkeys only
-    let populated: Vec<u32> = report
-        .subkeys()
-        .iter()
-        .zip(report.local_seqs().iter())
-        .filter(|(_, seq)| seq.is_some())
-        .map(|(subkey, _)| subkey)
-        .collect();
 
     if populated.is_empty() {
         info!(
@@ -116,10 +128,10 @@ pub async fn scan_friend_inbox(
 
     // Step 3: Read only populated subkeys
     scan_subkeys_direct(
-        &transport_node,
+        transport_node,
         session,
         session_path,
-        inbox_key,
+        lease,
         &populated,
         start,
     )
@@ -131,7 +143,7 @@ async fn scan_subkeys_direct(
     transport_node: &TransportNode,
     session: &RwLock<Option<Session>>,
     session_path: &std::path::Path,
-    inbox_key: &str,
+    lease: LeaseId,
     subkeys: &[u32],
     scan_start: Instant,
 ) {
@@ -142,9 +154,9 @@ async fn scan_subkeys_direct(
     let mut parse_errors = 0u32;
 
     for &subkey in subkeys {
-        let data = match rekindle_transport::broadcast::dht_writes::get(
+        let data = match rekindle_transport::broadcast::dht_writes::get_leased(
             transport_node,
-            inbox_key,
+            lease,
             subkey,
             true,
         )
@@ -215,7 +227,7 @@ async fn scan_subkeys_direct(
             found_new += 1;
             info!(
                 from = %entry.display_name,
-                sender_key = &entry.sender_public_key[..16.min(entry.sender_public_key.len())],
+                sender_key = %entry.sender_public_key,
                 subkey,
                 "friend inbox scan: NEW request discovered"
             );

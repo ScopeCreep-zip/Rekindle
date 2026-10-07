@@ -25,13 +25,16 @@ pub async fn publish_invite_secrets<D: GovernanceRuntimeDeps>(
     })?;
     let stale = deps
         .set_dht_value(
-            &record.record_key,
+            record.lease,
             0,
             encrypted_b64.as_bytes().to_vec(),
             Some(owner),
         )
-        .await?;
-    if stale.is_some() {
+        .await;
+    // Kept alive afterwards by the hydration republish's re-open
+    // (`list_my_active_invite_secret_keys`), not by this borrow.
+    deps.release_record(record.lease).await;
+    if stale?.is_some() {
         return Err(GovernanceRuntimeError::Adapter(
             "invite-secrets write was not accepted by the network".into(),
         ));
@@ -39,15 +42,13 @@ pub async fn publish_invite_secrets<D: GovernanceRuntimeDeps>(
     Ok(record.record_key)
 }
 
-/// Open (read-only) and read the encrypted `InviteSecrets` blob from the
+/// Read the encrypted `InviteSecrets` blob from the
 /// invite-secrets record pointed to by a governance `InviteCreated` entry.
 pub async fn fetch_invite_secrets<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Result<String, GovernanceRuntimeError> {
-    deps.open_dht_record(record_key, None).await?;
-    let bytes = deps
-        .get_dht_value(record_key, 0, true)
+    let bytes = crate::overflow::read_subkey(deps, record_key, 0, true)
         .await?
         .filter(|b| !b.is_empty())
         .ok_or_else(|| GovernanceRuntimeError::Adapter("invite-secrets record is empty".into()))?;

@@ -3,7 +3,7 @@
 //! This is the daemon's *own* state, deliberately not shared with the
 //! Tauri host. `docs/architecture/services-pattern.md` §2 defines an
 //! adapter as implementing a `Deps` trait "against the live `AppState` +
-//! `AppHandle` + `DbPool`" — the **Schwarzschild boundary**. The shared
+//! `AppHandle` + `Db`" — the **Schwarzschild boundary**. The shared
 //! contract between the two tracks is the *trait*, not the state behind
 //! it, which is why `GovernanceRuntimeDeps` passes snapshots
 //! (`MekSnapshot`, `OnlineMemberSnapshot`, an all-`Option`
@@ -36,17 +36,15 @@ pub struct CommunityRuntime {
     /// Cached CRDT-merged governance state, or `None` before the first
     /// merge completes. Rebuilt from the DHT on start.
     pub governance: Option<GovernanceState>,
-    /// DHT records this process holds open for the community —
-    /// governance, registry, and each channel record.
-    ///
-    /// A `BTreeSet` rather than a `Vec`: `mark_open_channel_record` is
-    /// called on every channel discovery pass, and the trait's
-    /// `open_record_keys` is read on paths that then open each key.
-    /// Duplicates there mean redundant `open_dht_record` calls.
-    pub open_record_keys: BTreeSet<String>,
+    /// The records this process holds for the community's session, in
+    /// the record pool (plan C7.5): handed over by the governance
+    /// runtime, released on leave, closed by the lock's pool shutdown.
+    pub leases: rekindle_records::lease::CommunityLeases,
     /// Governance overflow record keys (the `overflow_next` chain), in
     /// chain order — so this one stays a `Vec`.
     pub overflow_keys: Vec<String>,
+    /// Whether the record keepalive runs for this community (plan C7.8b).
+    pub keepalive_started: bool,
     /// The community's members, as the presence poll last observed
     /// them, keyed by hex pseudonym.
     ///
@@ -99,6 +97,20 @@ impl CommunityRuntimeMap {
     }
 
     /// Cached governance state for a community, if it has been merged.
+    /// Whether `channel` is a stage channel in the merged governance.
+    pub fn is_stage_channel(
+        &self,
+        community_id: &str,
+        channel: rekindle_types::id::ChannelId,
+    ) -> bool {
+        self.inner
+            .read()
+            .get(community_id)
+            .and_then(|runtime| runtime.governance.as_ref())
+            .and_then(|governance| governance.channels.get(&channel))
+            .is_some_and(|c| c.channel_type == "stage")
+    }
+
     pub fn governance_state(&self, community_id: &str) -> Option<GovernanceState> {
         self.inner.read().get(community_id)?.governance.clone()
     }
@@ -113,32 +125,55 @@ impl CommunityRuntimeMap {
             .governance = Some(state);
     }
 
-    /// Records currently open for the community.
-    pub fn open_record_keys(&self, community_id: &str) -> Vec<String> {
-        self.inner
-            .read()
-            .get(community_id)
-            .map(|c| c.open_record_keys.iter().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    /// Note a record as open. Idempotent.
-    pub fn mark_open_record(&self, community_id: &str, record_key: String) {
+    /// Fold `incoming` into the community's leases
+    /// ([`CommunityLeases::merge`](rekindle_records::lease::CommunityLeases::merge));
+    /// the caller releases the returned surplus.
+    pub fn hold_leases(
+        &self,
+        community_id: &str,
+        incoming: rekindle_records::lease::CommunityLeases,
+        key_of: impl Fn(rekindle_records::lease::LeaseId) -> Option<String>,
+    ) -> rekindle_records::lease::Merged {
         self.inner
             .write()
             .entry(community_id.to_string())
             .or_default()
-            .open_record_keys
-            .insert(record_key);
+            .leases
+            .merge(incoming, key_of)
     }
 
-    /// Note several records as open in one lock acquisition.
-    pub fn mark_open_records(&self, community_id: &str, record_keys: &[String]) {
-        let mut guard = self.inner.write();
-        let entry = guard.entry(community_id.to_string()).or_default();
-        for key in record_keys {
-            entry.open_record_keys.insert(key.clone());
-        }
+    /// Whether the community holds its registry lease.
+    pub fn holds_registry(&self, community_id: &str) -> bool {
+        self.inner
+            .read()
+            .get(community_id)
+            .is_some_and(|c| c.leases.registry.is_some())
+    }
+
+    /// Mark the community's keepalive started; `true` the first time.
+    pub fn start_keepalive_once(&self, community_id: &str) -> bool {
+        let mut inner = self.inner.write();
+        let entry = inner.entry(community_id.to_string()).or_default();
+        !std::mem::replace(&mut entry.keepalive_started, true)
+    }
+
+    /// Every lease the community holds (governance, registry, channels,
+    /// segments, overflow), for watching them.
+    pub fn held_leases(&self, community_id: &str) -> Vec<rekindle_records::lease::LeaseId> {
+        self.inner
+            .read()
+            .get(community_id)
+            .map(|c| c.leases.all().collect())
+            .unwrap_or_default()
+    }
+
+    /// Take the community's leases, for release (leave).
+    pub fn take_leases(&self, community_id: &str) -> rekindle_records::lease::CommunityLeases {
+        self.inner
+            .write()
+            .get_mut(community_id)
+            .map(|c| std::mem::take(&mut c.leases))
+            .unwrap_or_default()
     }
 
     /// Governance overflow chain for the community, in order.
@@ -237,6 +272,20 @@ impl CommunityRuntimeMap {
 mod tests {
     use super::*;
 
+    /// The keepalive starts once per community per unlock; lock (`clear`)
+    /// and leave (`remove`) let the next session start it again (C7.8b).
+    #[test]
+    fn the_keepalive_starts_once_until_cleared_or_removed() {
+        let map = CommunityRuntimeMap::new();
+        assert!(map.start_keepalive_once("c1"));
+        assert!(!map.start_keepalive_once("c1"));
+        assert!(map.start_keepalive_once("c2"), "per community");
+        map.remove("c1");
+        assert!(map.start_keepalive_once("c1"), "leave resets it");
+        map.clear();
+        assert!(map.start_keepalive_once("c2"), "lock resets it");
+    }
+
     #[test]
     fn governance_state_round_trips_and_is_absent_until_set() {
         let map = CommunityRuntimeMap::new();
@@ -245,15 +294,6 @@ mod tests {
         assert!(map.governance_state("c1").is_some());
         // Unrelated community stays empty.
         assert!(map.governance_state("c2").is_none());
-    }
-
-    #[test]
-    fn open_records_deduplicate() {
-        let map = CommunityRuntimeMap::new();
-        map.mark_open_record("c1", "rec-a".into());
-        map.mark_open_record("c1", "rec-a".into());
-        map.mark_open_records("c1", &["rec-b".into(), "rec-a".into()]);
-        assert_eq!(map.open_record_keys("c1"), vec!["rec-a", "rec-b"]);
     }
 
     #[test]

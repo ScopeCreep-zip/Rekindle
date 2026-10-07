@@ -10,17 +10,15 @@ use aes_gcm::{
 };
 use hkdf::Hkdf;
 use rand::RngCore;
+use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
 use sha2::{Digest, Sha256};
-
-/// HKDF info label for invite secret encryption key derivation.
-const INVITE_HKDF_INFO: &[u8] = b"rekindle-invite-secrets-v1";
 
 /// Derive an AES-256-GCM key from an invite code using HKDF-SHA256.
 fn derive_invite_key(invite_code: &[u8]) -> [u8; 32] {
     let hkdf = Hkdf::<Sha256>::new(None, invite_code);
     let mut key = [0u8; 32];
-    hkdf.expand(INVITE_HKDF_INFO, &mut key)
+    hkdf.expand(domains::INVITE_SECRETS.as_bytes(), &mut key)
         .expect("32-byte output is valid for HKDF-SHA256");
     key
 }

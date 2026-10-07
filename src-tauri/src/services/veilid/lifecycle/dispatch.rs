@@ -19,6 +19,16 @@ fn needs_app_state(update: &VeilidUpdate) -> bool {
     )
 }
 
+/// A short name for an update, for logs.
+fn update_kind(update: &VeilidUpdate) -> &'static str {
+    match update {
+        VeilidUpdate::AppMessage(_) => "app_message",
+        VeilidUpdate::AppCall(_) => "app_call",
+        VeilidUpdate::ValueChange(_) => "value_change",
+        _ => "other",
+    }
+}
+
 /// Phase 9 — drain the cold-start buffer through `handle_veilid_update`.
 /// Called once on the first lifecycle Operational transition. After the
 /// drain, subsequent identity-dependent events bypass the buffer
@@ -103,6 +113,12 @@ pub async fn start_dispatch_loop(
                         }
                     }
                     item = state.control_ingress.pop() => {
+                        // Queued before a logout, popped after: the update
+                        // belongs to a session that has ended (plan C4.L3).
+                        if crate::state_helpers::login_scope(&state).is_none() {
+                            tracing::debug!("identity-dependent update dropped: no session");
+                            continue;
+                        }
                         crate::services::veilid::handle_veilid_update(
                             &app_handle,
                             &state,
@@ -178,6 +194,17 @@ pub async fn start_dispatch_loop(
                 match state.cold_start.try_record(update) {
                     Ok(()) => {
                         // Buffered for later drain. Nothing to do now.
+                    }
+                    Err(update) if crate::state_helpers::login_scope(&state).is_none() => {
+                        // Past the cold-start buffer with no session: the
+                        // update belongs to an identity that logged out
+                        // (its records closing, its peers' calls). Dropped
+                        // rather than handled against no session (plan
+                        // C4.L3).
+                        tracing::debug!(
+                            kind = update_kind(&update),
+                            "identity-dependent update dropped: no session"
+                        );
                     }
                     Err(update) => {
                         // Piece 6 — post-cold-start, offload the SLOW

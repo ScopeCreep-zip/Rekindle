@@ -25,7 +25,8 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_mek_rotation::{ChannelMekCache, MekPersist, MekRotationError};
-use rekindle_transport::crypto::mek::{Mek, MekCache};
+use rekindle_transport::crypto::mek::MekCache;
+use rekindle_types::channel_keys::KeyScope;
 
 /// Presents the daemon's `MekCache` through the rotation crate's trait.
 pub struct MekCacheAdapter {
@@ -43,7 +44,7 @@ impl ChannelMekCache for MekCacheAdapter {
     fn get(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
     ) -> Option<MediaEncryptionKey> {
         // `get_generation` rather than `current` + filter: the cache
@@ -56,8 +57,19 @@ impl ChannelMekCache for MekCacheAdapter {
         // reconstructed or re-attached on the way out.
         self.inner
             .read()
-            .get_generation(community_id, channel_id, generation)
+            .get_generation(community_id, scope, generation)
             .cloned()
+    }
+
+    fn current(&self, community_id: &str, scope: KeyScope) -> Option<MediaEncryptionKey> {
+        self.inner.read().current(community_id, scope).cloned()
+    }
+
+    fn current_age(&self, community_id: &str, scope: KeyScope) -> Option<std::time::Duration> {
+        self.inner
+            .read()
+            .current_since(community_id, scope)
+            .map(|since| since.elapsed())
     }
 
     /// Accept a key only if it is genuinely newer, or wins the
@@ -67,25 +79,25 @@ impl ChannelMekCache for MekCacheAdapter {
     /// generation is a downgrade and is refused; a higher one replaces;
     /// an equal one is resolved by election rank so every peer converges
     /// on the same bytes regardless of arrival order.
-    fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey) {
+    fn insert(&self, community_id: &str, scope: KeyScope, mek: MediaEncryptionKey) -> bool {
         let incoming_generation = mek.generation();
 
         let cached = self
             .inner
             .read()
-            .current(community_id, channel_id)
+            .current(community_id, scope)
             .map(|c| (c.generation(), c.election_rank()));
 
         if let Some((cached_generation, cached_rank)) = cached {
             if incoming_generation < cached_generation {
                 tracing::debug!(
                     community = %community_id,
-                    channel = %channel_id,
+                    %scope,
                     cached = cached_generation,
                     incoming = incoming_generation,
                     "refusing MEK downgrade"
                 );
-                return;
+                return false;
             }
             if incoming_generation == cached_generation
                 && !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
@@ -93,7 +105,7 @@ impl ChannelMekCache for MekCacheAdapter {
                     mek.election_rank().as_ref(),
                 )
             {
-                return;
+                return false;
             }
         }
 
@@ -102,14 +114,23 @@ impl ChannelMekCache for MekCacheAdapter {
         // has just *won* the tiebreak above.
         self.inner
             .write()
-            .replace_generation(community_id, channel_id, mek);
+            .replace_generation(community_id, scope, mek);
+        true
     }
+}
 
-    fn current_generation(&self, community_id: &str, channel_id: &str) -> u64 {
-        self.inner
-            .read()
-            .current(community_id, channel_id)
-            .map_or(0, Mek::generation)
+/// The daemon's key history is its `MekCache`, which retains every
+/// generation it has held for the process lifetime. Persisted history
+/// (surviving a restart) arrives with the shared per-identity store
+/// (plan D-phase, step-19 item N1).
+impl rekindle_mek_rotation::MekHistory for MekCacheAdapter {
+    fn load(
+        &self,
+        community_id: &str,
+        scope: KeyScope,
+        generation: u64,
+    ) -> Option<MediaEncryptionKey> {
+        ChannelMekCache::get(self, community_id, scope, generation)
     }
 }
 
@@ -129,12 +150,10 @@ impl ChannelMekCache for MekCacheAdapter {
 /// than a stub so that wiring it up is the only remaining step.
 pub struct DaemonMekPersist;
 
-fn label_for(community_id: &str, channel_id: &str, generation: u64) -> String {
-    let composite = format!("{community_id}\u{1f}{channel_id}\u{1f}{generation}");
-    format!(
-        "mek-{}",
-        &rekindle_utils::blake3_hex(composite.as_bytes())[..32]
-    )
+fn label_for(community_id: &str, scope: KeyScope, generation: u64) -> String {
+    let composite = format!("{community_id}\u{1f}{scope}\u{1f}{generation}");
+    let digest = rekindle_utils::blake3_hex(composite.as_bytes());
+    format!("mek-{}", rekindle_utils::text::prefix(&digest, 32))
 }
 
 #[async_trait]
@@ -142,13 +161,13 @@ impl MekPersist for DaemonMekPersist {
     async fn store_mek_for_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
-        wrapped_bytes: Vec<u8>,
+        key_bytes: Vec<u8>,
     ) -> Result<(), MekRotationError> {
         crate::state::keystore::store_keypair_bytes(
-            &label_for(community_id, channel_id, generation),
-            &wrapped_bytes,
+            &label_for(community_id, scope, generation),
+            &key_bytes,
         )
         .await
         .map_err(|e| MekRotationError::Persist(format!("store MEK: {e}")))
@@ -157,13 +176,38 @@ impl MekPersist for DaemonMekPersist {
     async fn load_mek_for_generation(
         &self,
         community_id: &str,
-        channel_id: &str,
+        scope: KeyScope,
         generation: u64,
     ) -> Result<Option<Vec<u8>>, MekRotationError> {
-        crate::state::keystore::load_keypair_bytes(&label_for(community_id, channel_id, generation))
+        crate::state::keystore::load_keypair_bytes(&label_for(community_id, scope, generation))
             .await
             .map_err(|e| MekRotationError::Persist(format!("load MEK: {e}")))
     }
+}
+
+/// Stage channels from the merged governance.
+struct DaemonChannelKinds {
+    runtime: Arc<crate::daemon::community_runtime::CommunityRuntimeMap>,
+}
+
+impl rekindle_mek_rotation::ChannelKinds for DaemonChannelKinds {
+    fn is_stage(&self, community_id: &str, channel: rekindle_types::id::ChannelId) -> bool {
+        self.runtime.is_stage_channel(community_id, channel)
+    }
+}
+
+/// The key provider every daemon key consumer reads through (plan D6).
+pub fn key_provider(
+    ctx: &crate::daemon::dispatch::DaemonContext,
+) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+    let cache = Arc::new(MekCacheAdapter::new(Arc::clone(&ctx.mek_cache)));
+    Arc::new(rekindle_mek_rotation::MekKeyProvider::new(
+        cache.clone(),
+        cache,
+        Arc::new(DaemonChannelKinds {
+            runtime: Arc::clone(&ctx.community_runtime),
+        }),
+    ))
 }
 
 #[cfg(test)]
@@ -173,7 +217,12 @@ mod tests {
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
     use rekindle_mek_rotation::ChannelMekCache;
     use rekindle_transport::crypto::mek::MekCache;
+    use rekindle_types::channel_keys::KeyScope;
+    use rekindle_types::id::ChannelId;
     use std::sync::Arc;
+
+    const CH: KeyScope = KeyScope::Channel(ChannelId([0x33; 16]));
+    const OTHER: KeyScope = KeyScope::Channel(ChannelId([0x44; 16]));
 
     const LOW_RANK: [u8; 32] = [0x10; 32];
     const HIGH_RANK: [u8; 32] = [0x20; 32];
@@ -191,15 +240,15 @@ mod tests {
     }
 
     fn cached_bytes(a: &MekCacheAdapter, generation: u64) -> Option<[u8; 32]> {
-        a.get("c", "ch", generation).map(|m| *m.as_bytes())
+        a.get("c", CH, generation).map(|m| *m.as_bytes())
     }
 
     #[test]
     fn newer_generation_replaces() {
         let a = adapter();
-        a.insert("c", "ch", key(1, 1));
-        a.insert("c", "ch", key(2, 2));
-        assert_eq!(a.current_generation("c", "ch"), 2);
+        a.insert("c", CH, key(1, 1));
+        a.insert("c", CH, key(2, 2));
+        assert_eq!(a.current_generation("c", CH), 2);
         assert_eq!(cached_bytes(&a, 2), Some([2u8; 32]));
     }
 
@@ -208,9 +257,9 @@ mod tests {
     #[test]
     fn older_generation_is_refused() {
         let a = adapter();
-        a.insert("c", "ch", key(2, 5));
-        a.insert("c", "ch", key(9, 4));
-        assert_eq!(a.current_generation("c", "ch"), 5);
+        a.insert("c", CH, key(2, 5));
+        a.insert("c", CH, key(9, 4));
+        assert_eq!(a.current_generation("c", CH), 5);
         assert_eq!(cached_bytes(&a, 5), Some([2u8; 32]));
     }
 
@@ -221,12 +270,12 @@ mod tests {
     #[test]
     fn same_generation_converges_on_lowest_rank_either_order() {
         let high_first = adapter();
-        high_first.insert("c", "ch", ranked(0xEE, 7, HIGH_RANK));
-        high_first.insert("c", "ch", ranked(0x11, 7, LOW_RANK));
+        high_first.insert("c", CH, ranked(0xEE, 7, HIGH_RANK));
+        high_first.insert("c", CH, ranked(0x11, 7, LOW_RANK));
 
         let low_first = adapter();
-        low_first.insert("c", "ch", ranked(0x11, 7, LOW_RANK));
-        low_first.insert("c", "ch", ranked(0xEE, 7, HIGH_RANK));
+        low_first.insert("c", CH, ranked(0x11, 7, LOW_RANK));
+        low_first.insert("c", CH, ranked(0xEE, 7, HIGH_RANK));
 
         assert_eq!(cached_bytes(&high_first, 7), cached_bytes(&low_first, 7));
         assert_eq!(cached_bytes(&low_first, 7), Some([0x11; 32]));
@@ -236,8 +285,8 @@ mod tests {
     #[test]
     fn same_generation_same_rank_keeps_cached() {
         let a = adapter();
-        a.insert("c", "ch", ranked(1, 3, LOW_RANK));
-        a.insert("c", "ch", ranked(2, 3, LOW_RANK));
+        a.insert("c", CH, ranked(1, 3, LOW_RANK));
+        a.insert("c", CH, ranked(2, 3, LOW_RANK));
         assert_eq!(cached_bytes(&a, 3), Some([1u8; 32]));
     }
 
@@ -247,27 +296,31 @@ mod tests {
     #[test]
     fn tagged_beats_untagged_at_equal_generation() {
         let a = adapter();
-        a.insert("c", "ch", key(1, 4));
-        a.insert("c", "ch", ranked(2, 4, HIGH_RANK));
+        a.insert("c", CH, key(1, 4));
+        a.insert("c", CH, ranked(2, 4, HIGH_RANK));
         assert_eq!(cached_bytes(&a, 4), Some([2u8; 32]));
     }
 
     #[test]
     fn label_is_bounded_and_distinct_per_triple() {
-        let a = label_for("gov", "chan", 1);
-        let b = label_for("gov", "chan", 2);
-        let c = label_for("gov", "other", 1);
+        let a = label_for("gov", CH, 1);
+        let b = label_for("gov", CH, 2);
+        let c = label_for("gov", OTHER, 1);
+        let d = label_for("gov", KeyScope::Community, 1);
+        assert_ne!(a, d, "the community key must not share a channel's label");
         assert_ne!(a, b, "generation must change the label");
         assert_ne!(a, c, "channel must change the label");
         assert_eq!(a.len(), 36, "mek- prefix plus 32 hex chars");
     }
 
-    /// The separator matters: without it `("ab", "c")` and `("a", "bc")`
-    /// would hash identically and two different channels would share one
-    /// keyring entry, silently overwriting each other's key.
+    /// The separator matters: without it two communities whose ids share
+    /// a prefix could hash identically and share one keyring entry.
     #[test]
     fn field_boundaries_are_unambiguous() {
-        assert_ne!(label_for("ab", "c", 1), label_for("a", "bc", 1));
+        assert_ne!(
+            label_for("ab", KeyScope::Community, 11),
+            label_for("abc", KeyScope::Community, 1)
+        );
     }
 
     /// The label must not leak the governance key it belongs to — a
@@ -275,8 +328,8 @@ mod tests {
     #[test]
     fn label_does_not_embed_the_community_id() {
         let community = "0123456789abcdef0123456789abcdef";
-        let label = label_for(community, "general", 3);
+        let label = label_for(community, CH, 3);
         assert!(!label.contains(community));
-        assert!(!label.contains(&community[..8]));
+        assert!(!label.contains(rekindle_utils::text::prefix(community, 8)));
     }
 }

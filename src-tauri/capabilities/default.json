@@ -1,7 +1,7 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicemicro/tauri-apps/tauri-v2/crates/tauri-utils/schema/capability.json",
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Rekindle windows. Permissions enforce minimum-privilege: each window pattern can only invoke the listed Tauri commands. The `core:window:*` block uses explicit per-action grants instead of `core:window:default` so removing or adding a window operation is auditable in this file. Plugin-level `*:default` bundles are still used pending a per-IPC-call audit; see docs/security/threat-model.md §5b W4 for the open work.",
+  "description": "Window-chrome grants shared by every Rekindle window. Only the exact core commands the frontend uses are granted: titlebar minimize/hide/close/toggle-maximize (`src/actions/titlebar.actions.ts`, `MenuBar.tsx`) and the two commands Tauri's `data-tauri-drag-region` handler invokes (start_dragging, internal_toggle_maximize). No `core:default`, no webview creation (windows are created only by Rust in `src/windows/`), no `core:event` (events arrive on each window's own channel from `subscribe_events`), and no plugin `*:default` bundles; plugin grants live in the per-window `app-*.json` files next to the commands that window may call. Enforced by `tests/capability_policy.rs`.",
   "windows": [
     "login",
     "buddy-list",
@@ -9,27 +9,15 @@
     "dm-*",
     "community-*",
     "settings",
-    "profile-*"
+    "profile-*",
+    "call-*"
   ],
   "permissions": [
-    "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
     "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-set-focus",
-    "core:window:allow-toggle-maximize",
-    "core:webview:allow-create-webview-window",
-    "notification:default",
-    "store:default",
-    "global-shortcut:default",
-    "deep-link:default",
-    "process:default",
-    "autostart:default",
-    "opener:default",
-    "dialog:default"
+    "core:window:allow-toggle-maximize"
   ]
 }

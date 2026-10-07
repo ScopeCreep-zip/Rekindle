@@ -2,58 +2,47 @@
 //! maintenance (typing expiry + dedup eviction), and shutdown.
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use rekindle_lifecycle::ScopeClosed;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::events::{self, SubscriptionEvent};
-use super::{poll, watches, SubscriptionManager};
+use super::{poll, SubscriptionManager};
 
 /// How often the maintenance loop sweeps. Matches the typing expiry
 /// deadline in `rekindle_events::state`, the shorter of the two it
 /// services.
 const TYPING_SWEEP_SECS: u64 = 5;
 
-impl SubscriptionManager {
-    /// Start the background watch renewal loop.
-    ///
-    /// Renews DHT watches every 60 seconds. Must be called after construction.
-    pub fn start_renewal_loop(&mut self) {
-        let (tx, rx) = mpsc::channel(1);
-        let handle = tokio::spawn(watches::run_renewal_loop(
-            Arc::clone(&self.node),
-            Arc::clone(&self.watches),
-            self.event_tx.clone(),
-            rx,
-        ));
-        self.renewal_handle = Some(handle);
-        self.renewal_shutdown_tx = Some(tx);
-        info!("subscription watch renewal loop started");
-    }
+/// How long the background loops get to stop at shutdown.
+const STOP_DEADLINE: Duration = rekindle_protocol::veilid_config::SESSION_STOP_DEADLINE;
 
+impl SubscriptionManager {
     /// Start the background poll loop (tier 3 fallback).
     ///
     /// Sweeps all watched DHT records every `interval_secs` with force_refresh.
     /// When changes are found, emits `ValueChanged` events through the broadcast
     /// channel. The daemon-internal consumer acts on these to trigger `process_inbox`
     /// and friend inbox scans — completing the tier 3 guarantee for daemon actions.
-    pub fn start_poll_loop(&mut self, interval_secs: u64) {
-        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+    ///
+    /// # Errors
+    /// [`ScopeClosed`] when the manager's scope was already shut down.
+    pub fn start_poll_loop(&self, interval_secs: u64) -> Result<(), ScopeClosed> {
         let (change_tx, mut change_rx) = mpsc::channel::<(String, Vec<u32>)>(64);
 
         // Spawn the poll loop (reads DHT with force_refresh, signals changes)
-        let handle = tokio::spawn(poll::run_poll_loop(
-            Arc::clone(&self.node),
-            Arc::clone(&self.watches),
-            interval_secs,
-            change_tx,
-            shutdown_rx,
-        ));
+        let node = Arc::clone(&self.node);
+        let watches = Arc::clone(&self.watches);
+        self.scope.spawn_with_token("subscription poll", |stop| {
+            poll::run_poll_loop(node, watches, interval_secs, change_tx, stop)
+        })?;
 
         // Spawn the change consumer (routes poll signals into the event pipeline)
         let event_tx = self.event_tx.clone();
         let dedup = Arc::clone(&self.dedup);
-        tokio::spawn(async move {
+        self.scope.spawn("subscription poll consumer", async move {
             while let Some((record_key, changed_subkeys)) = change_rx.recv().await {
                 let event = SubscriptionEvent::Network(events::NetworkEvent::ValueChanged {
                     record_key,
@@ -64,11 +53,10 @@ impl SubscriptionManager {
                     let _ = event_tx.send(event);
                 }
             }
-        });
+        })?;
 
-        self.poll_handle = Some(handle);
-        self.poll_shutdown_tx = Some(shutdown_tx);
         info!(interval_secs, "poll loop started (tier 3 fallback)");
+        Ok(())
     }
 
     /// Sweep expired typing indicators and dedup entries.
@@ -84,13 +72,15 @@ impl SubscriptionManager {
     /// of the two deadlines; the dedup TTL is far longer and sweeping it
     /// more often than necessary costs one pass over an ordered deque
     /// that stops at the first live entry.
-    pub fn start_maintenance_loop(&mut self) {
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+    ///
+    /// # Errors
+    /// [`ScopeClosed`] when the manager's scope was already shut down.
+    pub fn start_maintenance_loop(&self) -> Result<(), ScopeClosed> {
         let state = Arc::clone(&self.state);
         let dedup = Arc::clone(&self.dedup);
         let event_tx = self.event_tx.clone();
 
-        let handle = tokio::spawn(async move {
+        self.scope.spawn_with_token("subscription maintenance", |stop| async move {
             let mut interval =
                 tokio::time::interval(std::time::Duration::from_secs(TYPING_SWEEP_SECS));
             interval.tick().await; // skip the immediate first tick
@@ -127,39 +117,25 @@ impl SubscriptionManager {
                             ));
                         }
                     }
-                    _ = shutdown_rx.recv() => {
+                    () = stop.cancelled() => {
                         info!("maintenance loop shutting down");
                         break;
                     }
                 }
             }
-        });
+        })?;
 
-        self.maintenance_handle = Some(handle);
-        self.maintenance_shutdown_tx = Some(shutdown_tx);
         info!("maintenance loop started (typing expiry + dedup eviction)");
+        Ok(())
     }
 
     /// Shut down: stop all background loops, clear all state.
-    pub async fn shutdown(&mut self) {
-        if let Some(tx) = self.renewal_shutdown_tx.take() {
-            let _ = tx.send(()).await;
+    pub async fn shutdown(&self) {
+        if let Err(stuck) = self.scope.shutdown(STOP_DEADLINE).await {
+            warn!(%stuck, "subscription loops did not stop in time");
         }
-        if let Some(h) = self.renewal_handle.take() {
-            let _ = h.await;
-        }
-        if let Some(tx) = self.poll_shutdown_tx.take() {
-            let _ = tx.send(()).await;
-        }
-        if let Some(h) = self.poll_handle.take() {
-            let _ = h.await;
-        }
-        if let Some(tx) = self.maintenance_shutdown_tx.take() {
-            let _ = tx.send(()).await;
-        }
-        if let Some(h) = self.maintenance_handle.take() {
-            let _ = h.await;
-        }
+        // The watches' leases end with the session's record pool, which
+        // lock ends right after this (`end_records`).
         self.watches.write().entries.clear();
         info!("subscription manager shut down");
     }

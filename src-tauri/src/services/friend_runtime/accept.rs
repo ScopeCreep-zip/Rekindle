@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::{AppState, FriendState, FriendshipState, UserStatus};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::{auto_volunteer_relay_enabled, read_pending_request_data};
 
@@ -20,7 +21,7 @@ use super::{auto_volunteer_relay_enabled, read_pending_request_data};
 /// audit-chain entry.
 pub async fn accept_request_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     app: tauri::AppHandle,
     public_key: String,
     display_name: String,
@@ -28,39 +29,26 @@ pub async fn accept_request_inner(
     let owner_key = state_helpers::current_owner_key(&state)?;
     let timestamp = db::timestamp_now();
 
-    let (
-        pending_profile_key,
-        pending_mailbox_key,
-        pending_route_blob,
-        pending_prekey_bundle,
-        pending_invite_id,
-    ) = read_pending_request_data(&pool, &owner_key, &public_key).await?;
+    let rekindle_db::repo::pending_requests::Answer {
+        profile_dht_key: pending_profile_key,
+        mailbox_dht_key: pending_mailbox_key,
+        route_blob: pending_route_blob,
+        prekey_bundle: pending_prekey_bundle,
+        invite_id: pending_invite_id,
+    } = read_pending_request_data(&pool, &owner_key, &public_key).await?;
 
     let pk = public_key.clone();
     let dn = display_name.clone();
     let ok = owner_key.clone();
     db_call(&pool, move |conn| {
-        conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![ok, pk, dn, timestamp],
-        )?;
-        conn.execute(
-            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::friends::insert_accepted(conn, &ok, &pk, &dn, timestamp)?;
+        rekindle_db::repo::pending_requests::delete(conn, &ok, &pk)
     })
     .await?;
 
     if let Some(ref blob) = pending_route_blob {
         if !blob.is_empty() {
-            let api = state_helpers::veilid_api(&state);
-            if let Some(api) = api {
-                let mut dht_mgr = state.dht_manager.write();
-                if let Some(mgr) = dht_mgr.as_mut() {
-                    mgr.manager.cache_route(&api, &public_key, blob.clone());
-                }
-            }
+            state_helpers::cache_peer_route(&state, &public_key, blob.clone());
         }
     }
 
@@ -89,7 +77,7 @@ pub async fn accept_request_inner(
         let pdk = pending_profile_key.clone();
         let mdk = pending_mailbox_key;
         db_call(&pool, move |conn| {
-            crate::friend_repo::update_dht_and_mailbox_keys(
+            rekindle_db::repo::friends::set_record_keys(
                 conn,
                 &ok3,
                 &pk3,
@@ -111,7 +99,9 @@ pub async fn accept_request_inner(
                     tracing::error!(peer = %public_key, error = %e,
                             "failed to deserialize stored prekey bundle — cannot establish Signal session");
                     let peer_label = state_helpers::friend_display_name(&state, &public_key)
-                        .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
+                        .unwrap_or_else(|| {
+                            format!("{}…", rekindle_utils::text::prefix(&public_key, 16))
+                        });
                     crate::event_dispatch::emit_notification(
                         &app,
                         rekindle_types::subscription_events::NotificationEvent::SystemAlert {
@@ -130,33 +120,30 @@ pub async fn accept_request_inner(
             match bundle {
                 None => None,
                 Some(bundle) => {
-                    let already_established =
-                        handle.manager.has_session(&public_key).unwrap_or(false)
-                            && handle
-                                .manager
-                                .is_trusted_identity(&public_key, &bundle.identity_key)
-                                .unwrap_or(false);
-                    if already_established {
-                        tracing::info!(peer = %public_key,
-                            "session already established for peer — skipping establish_session \
-                             (W16.10e idempotency)");
-                        None
-                    } else {
-                        match handle.manager.establish_session(&public_key, &bundle) {
-                            Ok(info) => {
-                                tracing::info!(peer = %public_key,
+                    // Accepting a request makes us the initiator; any session
+                    // left from a previous friendship is replaced.
+                    let established = handle
+                        .manager
+                        .delete_session(&public_key)
+                        .and_then(|()| handle.manager.establish_session(&public_key, &bundle));
+                    match established {
+                        Ok(info) => {
+                            tracing::info!(peer = %public_key,
                                     "established initiator Signal session on accept");
-                                Some(info)
-                            }
-                            Err(e) => {
-                                tracing::error!(peer = %public_key, error = %e,
+                            Some(info)
+                        }
+                        Err(e) => {
+                            tracing::error!(peer = %public_key, error = %e,
                                     "failed to establish Signal session on accept — recipient won't receive ephemeral_key, encrypted DMs to them will fail AEAD on their side");
-                                let peer_label =
-                                    state_helpers::friend_display_name(&state, &public_key)
-                                        .unwrap_or_else(|| {
-                                            format!("{}…", &public_key[..16.min(public_key.len())])
-                                        });
-                                crate::event_dispatch::emit_notification(
+                            let peer_label =
+                                state_helpers::friend_display_name(&state, &public_key)
+                                    .unwrap_or_else(|| {
+                                        format!(
+                                            "{}…",
+                                            rekindle_utils::text::prefix(&public_key, 16)
+                                        )
+                                    });
+                            crate::event_dispatch::emit_notification(
                                     &app,
                                     rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                                         title: "Couldn't establish secure session".into(),
@@ -169,8 +156,7 @@ pub async fn accept_request_inner(
                                         ),
                                     },
                                 );
-                                None
-                            }
+                            None
                         }
                     }
                 }

@@ -6,7 +6,6 @@
 
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::relay;
 use crate::state::SharedState;
 
@@ -14,26 +13,26 @@ use crate::state::SharedState;
 pub async fn volunteer_relay(
     friend_public_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    relay::volunteer_relay(state.inner(), pool.inner(), &friend_public_key).await
+    let pool = state.db.current()?;
+    relay::volunteer_relay(state.inner(), &pool, &friend_public_key).await
 }
 
 #[tauri::command]
 pub async fn revoke_relay(
     friend_public_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    relay::revoke_relay(state.inner(), pool.inner(), &friend_public_key).await
+    let pool = state.db.current()?;
+    relay::revoke_relay(state.inner(), &pool, &friend_public_key).await
 }
 
 #[tauri::command]
 pub async fn list_received_relay_offers(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<String>, String> {
-    Ok(relay::list_received_offers(state.inner(), pool.inner())
+    let pool = state.db.current()?;
+    Ok(relay::list_received_offers(state.inner(), &pool)
         .await
         .into_iter()
         .map(|(pseudonym, _blob)| pseudonym)
@@ -43,7 +42,7 @@ pub async fn list_received_relay_offers(
 #[tauri::command]
 pub async fn list_volunteered_relay_friends(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<String>, String> {
-    Ok(relay::list_volunteered_for(state.inner(), pool.inner()).await)
+    let pool = state.db.current()?;
+    Ok(relay::list_volunteered_for(state.inner(), &pool).await)
 }

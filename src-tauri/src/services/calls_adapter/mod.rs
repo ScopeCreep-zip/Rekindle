@@ -1,7 +1,7 @@
 //! Phase 14 — call signaling adapter.
 //!
 //! Implements `rekindle_calls::signaling::CallSignalingDeps` against
-//! the live `AppState` + `tauri::AppHandle` + `DbPool`. The crate's
+//! the live `AppState` + `tauri::AppHandle` + `Db`. The crate's
 //! 1:1 and group signaling handlers (handle_incoming_invite,
 //! handle_group_call_payload, ring timers, etc.) parameterise over
 //! this trait so the protocol logic stays free of Tauri/Veilid
@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use rekindle_calls::signaling::{CallRegistry, GroupCallRegistry};
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 pub mod deps_impl;
 pub mod registry;
@@ -29,7 +29,7 @@ pub use registry::{ActiveCallRegistry, ActiveGroupCallRegistry};
 pub struct CallsAdapter {
     pub(super) state: Arc<AppState>,
     pub(super) app_handle: tauri::AppHandle,
-    pub(super) pool: DbPool,
+    pub(super) pool: Db,
     pub(super) registry: Arc<dyn CallRegistry>,
     pub(super) group_registry: Arc<dyn GroupCallRegistry>,
 }
@@ -52,7 +52,7 @@ impl CallsAdapter {
             .unwrap_or_default();
         if raw.is_empty() {
             if peer_pubkey_hex.len() > 16 {
-                format!("{}…", &peer_pubkey_hex[..16])
+                format!("{}…", rekindle_utils::text::prefix(peer_pubkey_hex, 16))
             } else {
                 peer_pubkey_hex.to_string()
             }
@@ -62,7 +62,7 @@ impl CallsAdapter {
     }
 
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: DbPool) -> Arc<Self> {
+    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         // Phase 14.q — active_calls is already an `Arc<dyn CallRegistry>`
         // on AppState; just clone the Arc rather than wrapping the
         // underlying HashMap a second time.
@@ -85,7 +85,7 @@ impl CallsAdapter {
 pub async fn handle_group_call_payload(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     payload: rekindle_protocol::messaging::envelope::MessagePayload,
 ) {

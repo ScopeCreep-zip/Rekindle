@@ -72,10 +72,7 @@ fn not_yet_rostered_peer_is_an_add_not_a_reannounce() {
 
 #[test]
 fn reannounce_skips_other_channels_and_self() {
-    let roster = vec![
-        ("dave".to_string(), 100u64),
-        ("me".to_string(), 100u64),
-    ];
+    let roster = vec![("dave".to_string(), 100u64), ("me".to_string(), 100u64)];
     let out = compute_route_reannounce(
         "ch1",
         "me",

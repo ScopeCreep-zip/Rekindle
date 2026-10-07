@@ -47,17 +47,13 @@ use crate::error::VoiceError;
 use crate::transport::VoicePacket;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rekindle_media_stats::ReceptionMetrics;
+use rekindle_types::domains;
 use serde::{Deserialize, Serialize};
 
 /// Wire tag for a receiver report, sibling to [`VoicePacket`]'s `b'V'`.
 /// Reports ride the same media route as the audio they describe, so
 /// they measure the path actually in use.
 pub const RECEIVER_REPORT_TAG: u8 = b'R';
-
-/// Domain tag for the report signature. Distinct from
-/// `rekindle-voice-packet-v1` so a captured packet signature cannot be
-/// presented as a report signature.
-const SIGNING_DOMAIN: &[u8] = b"rekindle-voice-receiver-report-v1";
 
 /// One receiver's view of one inbound stream, sent back to that
 /// stream's sender.
@@ -118,8 +114,9 @@ impl VoiceReceiverReport {
     #[must_use]
     pub fn signing_bytes(&self) -> Vec<u8> {
         let m = &self.metrics;
-        let mut out = Vec::with_capacity(SIGNING_DOMAIN.len() + self.reporter_key.len() + 48);
-        out.extend_from_slice(SIGNING_DOMAIN);
+        let mut out =
+            Vec::with_capacity(domains::VOICE_RECEIVER_REPORT.len() + self.reporter_key.len() + 48);
+        out.extend_from_slice(domains::VOICE_RECEIVER_REPORT.as_bytes());
         out.extend_from_slice(&self.reporter_key);
         out.extend_from_slice(&self.highest_seq.to_le_bytes());
         out.extend_from_slice(&self.lsr_ms.to_le_bytes());
@@ -318,9 +315,9 @@ mod tests {
             sender_key: vec![0; 32],
             sequence: seq,
             timestamp: ts,
-            audio_data: vec![0; 8],
-            mek_generation: 0,
-            signature: Vec::new(),
+            transport_seq: 0,
+            sframe: vec![0; 8],
+            sig: Vec::new(),
         }
     }
 

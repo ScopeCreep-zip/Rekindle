@@ -5,14 +5,13 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
-use rekindle_protocol::dht::DHTManager;
+use rekindle_db::Db;
 
 pub async fn resolve_member_route(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     peer_pseudonym: &str,
 ) -> Option<Vec<u8>> {
@@ -21,18 +20,14 @@ pub async fn resolve_member_route(
     // `DHTSchema::smpl(0, members)`, so there is NO owner-subkey
     // offset — and `segment_index` selects the Plate Gate segment
     // record the slot lives in.
+    let owner_key = state_helpers::current_owner_key(state).ok()?;
     let cid = community_id.to_string();
     let pk = peer_pseudonym.to_string();
     let (subkey_index, segment_index) = crate::db_helpers::db_call(pool, move |conn| {
-        conn.query_row(
-            "SELECT subkey_index, segment_index FROM community_members \
-             WHERE community_id = ?1 AND pseudonym_key = ?2",
-            rusqlite::params![cid, pk],
-            |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
-        )
+        rekindle_db::repo::members::slot(conn, &owner_key, &cid, &pk)
     })
     .await
-    .ok()?;
+    .ok()??;
 
     let registry_key =
         crate::services::community::segments::segment_descriptors(state, community_id)
@@ -40,12 +35,13 @@ pub async fn resolve_member_route(
             .find(|d| d.segment_index == segment_index)
             .map(|d| d.registry_key)?;
 
-    let rc = state_helpers::safe_routing_context(state)?;
-    let mgr = DHTManager::new(rc);
-    let raw = mgr
-        .get_value_fresh(&registry_key, subkey_index)
+    let raw = state_helpers::record_pool(state)
+        .ok()?
+        .read_once(&registry_key.parse().ok()?, subkey_index, true)
         .await
-        .ok()??;
+        .ok()??
+        .data()
+        .to_vec();
 
     // Same trust gate as the presence scan (W26 signature + ban +
     // liveness) plus a pseudonym match — the slot index comes from

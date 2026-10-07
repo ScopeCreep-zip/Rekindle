@@ -10,7 +10,7 @@
 //! **This is a second adapter behind one trait, not a duplicate.**
 //! `docs/architecture/services-pattern.md` §2 defines an adapter as
 //! implementing a `Deps` trait "against the live `AppState` +
-//! `AppHandle` + `DbPool`" — the **Schwarzschild boundary**. The shared
+//! `AppHandle` + `Db`" — the **Schwarzschild boundary**. The shared
 //! contract between the two tracks is the *trait*; each host keeps its
 //! own state behind it, which is why the trait exchanges snapshots
 //! (`MekSnapshot`, `OnlineMemberSnapshot`, an all-`Option`
@@ -46,18 +46,9 @@ mod events;
 mod lifecycle;
 mod mek;
 
-pub(crate) use mek::COMMUNITY_MEK_SLOT;
 mod roles;
 mod state_mutations;
 mod state_reads;
-
-/// Subkeys watched per community record.
-///
-/// Covers a full SMPL segment: under `o_cnt: 0` every subkey `0..254` is
-/// a member slot and which member writes next is not knowable in
-/// advance, so the watch spans the whole width rather than a guessed
-/// subset.
-pub(super) const SLOT_WATCH_WIDTH: u32 = 255;
 
 /// Adapter holding everything the trait methods need. One field, because
 /// `DaemonContext` already aggregates the transport, session, MEK cache,

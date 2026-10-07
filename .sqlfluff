@@ -1,9 +1,9 @@
 [sqlfluff]
 # SQLFluff — SQL linter + formatter. Dialect locked to SQLite because
-# that's what `src-tauri/migrations/001_init.sql` targets via rusqlite.
+# that's what `crates/rekindle-db/schema/001_init.sql` targets via rusqlite.
 #
-# Run with:    sqlfluff lint src-tauri/migrations/
-#              sqlfluff fix  src-tauri/migrations/
+# Run with:    sqlfluff lint crates/rekindle-db/schema/
+#              sqlfluff fix  crates/rekindle-db/schema/
 #
 # CI gate: .github/workflows/lint.yml `sqlfluff` job.
 #
@@ -11,7 +11,7 @@
 dialect = sqlite
 templater = raw
 exclude_rules =
-    # Disabled — tableless SELECTs are common in Rekindle migrations
+    # Disabled — tableless SELECTs are common in Rekindle's schema
     # for one-shot upserts.
     AM04,
     # Allow trailing-comma trade-offs in long INSERT lists.

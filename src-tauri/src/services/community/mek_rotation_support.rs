@@ -4,7 +4,7 @@
 //! `MekDistributeDeps` (impl in `crate::services::mek_adapter`).
 //!
 //! What stays:
-//! * `lookup_mek` — channel/community MEK cache lookup + keystore fallback
+//! * `lookup_mek` — exact-scope, exact-generation key lookup (cache, then keystore history)
 //! * `current_generation` — read the current MEK generation from cache/state
 //! * `update_generation_state` — mirror the cache write into AppState.communities
 //! * `persist_mek` — Stronghold persistence wrapper
@@ -23,53 +23,49 @@
 use std::sync::Arc;
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
+use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
-use tauri::Manager;
 
 use crate::state::AppState;
 
+/// The scope's full key (with provenance) at exactly `generation`: the
+/// live keys, then the vault's history for that same scope. Never another
+/// scope's key. Used to re-serve a key to a requester, where provenance
+/// must travel with it.
 pub(crate) fn lookup_mek(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    channel_id: &str,
+    scope: KeyScope,
     generation: u64,
 ) -> Option<MediaEncryptionKey> {
-    {
-        let cache = state.channel_mek_cache.lock();
-        if let Some(mek) = cache.get(&(community_id.to_string(), channel_id.to_string())) {
-            if mek.generation() == generation {
-                return Some(mek.clone());
-            }
-        }
+    use rekindle_mek_rotation::ChannelMekCache as _;
+    if let Some(mek) = crate::state_helpers::LiveMekCache::new(Arc::clone(state)).get(
+        community_id,
+        scope,
+        generation,
+    ) {
+        return Some(mek);
     }
-    {
-        let cache = state.mek_cache.lock();
-        if let Some(mek) = cache.get(community_id) {
-            if mek.generation() == generation {
-                return Some(mek.clone());
-            }
-        }
-    }
-
-    let keystore: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
-    let guard = keystore.lock();
-    let ks = guard.as_ref()?;
-    crate::keystore::load_channel_mek_generation(ks, community_id, channel_id, generation).or_else(
-        || crate::keystore::load_mek(ks, community_id).filter(|mek| mek.generation() == generation),
-    )
+    let guard = state.keystore.lock();
+    crate::keystore::load_mek_generation(guard.as_ref()?, community_id, scope, generation)
 }
 
+/// Mirror a key install into the scope's generation field: the
+/// community's for the community key, the channel's for a channel key.
 pub(crate) fn update_generation_state(
     state: &Arc<AppState>,
     community_id: &str,
-    channel_id: Option<&str>,
+    scope: KeyScope,
     generation: u64,
 ) {
     let mut communities = state.communities.write();
-    if let Some(community) = communities.get_mut(community_id) {
-        community.mek_generation = generation;
-        if let Some(channel_id) = channel_id {
+    let Some(community) = communities.get_mut(community_id) else {
+        return;
+    };
+    match scope {
+        KeyScope::Community => community.mek_generation = generation,
+        KeyScope::Channel(channel) => {
+            let channel_id = channel.to_hex();
             if let Some(channel) = community
                 .channels
                 .iter_mut()
@@ -84,7 +80,7 @@ pub(crate) fn update_generation_state(
 pub(crate) fn emit_rotation_event(
     app_handle: &tauri::AppHandle,
     community_id: &str,
-    channel_id: Option<&str>,
+    scope: KeyScope,
     generation: u64,
 ) {
     crate::event_dispatch::emit_subscription(
@@ -92,7 +88,7 @@ pub(crate) fn emit_rotation_event(
         &rekindle_types::subscription_events::SubscriptionEvent::Crypto(
             rekindle_types::subscription_events::CryptoEvent::MekRotated {
                 community: community_id.to_string(),
-                channel: channel_id.map(ToOwned::to_owned),
+                channel: scope.wire_channel(),
                 generation,
                 rotator_pseudonym: None,
             },
@@ -101,15 +97,18 @@ pub(crate) fn emit_rotation_event(
 }
 
 pub(crate) fn persist_mek(
-    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
     community_id: &str,
-    channel_id: Option<&str>,
+    scope: KeyScope,
     mek: &MediaEncryptionKey,
 ) {
-    let keystore: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
-    let guard = keystore.lock();
-    if let Some(ks) = guard.as_ref() {
-        crate::keystore::store_mek(ks, community_id, channel_id, mek);
+    let guard = state.keystore.lock();
+    let Some(ks) = guard.as_ref() else {
+        tracing::warn!(community = %community_id, %scope, "keystore locked — MEK not persisted");
+        return;
+    };
+    if let Err(e) = crate::keystore::persist_mek(ks, community_id, scope, mek) {
+        tracing::warn!(community = %community_id, %scope, error = %e, "MEK not persisted");
     }
 }
 

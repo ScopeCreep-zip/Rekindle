@@ -9,21 +9,12 @@ use crate::test_support::open_seeded_db;
 #[test]
 fn identity_table_has_personal_sync_columns() {
     let conn = open_seeded_db();
-    conn.execute(
-        "UPDATE identity SET personal_sync_record_key = 'rk', \
-             personal_sync_owner_keypair = 'kp', device_id = 'd1' \
-          WHERE public_key = 'owner_pk'",
-        [],
-    )
-    .expect("update");
-    let value: String = conn
-        .query_row(
-            "SELECT personal_sync_record_key FROM identity WHERE public_key = 'owner_pk'",
-            [],
-            |r| r.get(0),
-        )
+    rekindle_db::repo::identity::set_personal_sync(&conn, "owner_pk", "rk", "kp", "d1")
+        .expect("update");
+    let (record_key, _, _) = rekindle_db::repo::identity::personal_sync(&conn, "owner_pk")
+        .unwrap()
         .unwrap();
-    assert_eq!(value, "rk");
+    assert_eq!(record_key, "rk");
 }
 
 #[test]

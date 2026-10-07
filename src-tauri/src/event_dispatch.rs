@@ -1,252 +1,197 @@
-//! Phase 23.A — single-source event-emission loop.
+//! Every event the backend sends to a webview, and who receives it.
 //!
-//! Replaces the ~150 ad-hoc `app.emit(channel, payload)` sites scattered
-//! across services + commands + adapters. Every emit now pushes an
-//! envelope onto a single mpsc queue; one dispatch task drains the
-//! queue and calls `app.emit()` exactly once per envelope.
+//! An event is a typed [`WebviewEvent`]. Emitters push it onto one queue;
+//! one dispatch task drains the queue, works out the event's
+//! [`Audience`] and hands it to [`crate::event_router::WebviewRouter`],
+//! which sends it on each audience window's channel. Nothing in
+//! `src-tauri` uses Tauri's `Emitter` (ADR 0007, enforced by
+//! `cargo xtask check-no-emitter`).
 //!
-//! ## Why one queue not per-channel typed queues
+//! The audience is an exhaustive match: a new event variant does not
+//! compile until it says which windows it is for. For a
+//! [`SubscriptionEvent`] the audience follows its Tier 1
+//! [`EventScope`], so the desktop routes the same way the daemon and the
+//! TUI do.
 //!
-//! The original Phase 23 sketch listed per-channel typed senders
-//! (`chat_tx: mpsc<ChatEvent>`, `presence_tx: mpsc<PresenceEvent>`,
-//! ...). That would force the 150+ call sites to change signatures and
-//! force `event_resume` to dispatch typed enums by tag — multi-week
-//! mechanical churn for the same on-the-wire result.
-//!
-//! Routing through a single `mpsc<EmitEnvelope { channel, payload }>`
-//! gives us the architectural win (one `app.emit()` callsite at the
-//! tail of the loop) with zero call-site signature changes: the
-//! existing `emit_live(app, channel, payload)` + `emit_journaled(app,
-//! state, channel, payload)` helpers keep their shape and just route
-//! payloads through the queue.
-//!
-//! ## What centralization buys us
-//!
-//! - Future cross-cutting concerns (rate limiting, telemetry, tracing,
-//!   batching, channel-scoped backpressure) attach at one place.
-//! - The `event_resume` replay path no longer needs its own raw
-//!   `app.emit()` — it pushes through the same queue, so future
-//!   listeners (logging, dev-tools) see replayed events identically
-//!   to live ones.
-//! - Architecture invariant: `app.emit()` literal text appears ONLY
-//!   inside this module (the dispatch loop's forward call).
-//!
-//! ## Migrating from Phase 10 `event_emit.rs`
-//!
-//! `event_emit.rs` is deleted; its `TauriEmitRecord` + `CursorTick` +
-//! `emit_live` + `emit_journaled` move here. All previous
-//! `crate::event_emit::*` imports become `crate::event_dispatch::*`.
+//! Journaled events ([`emit_journaled`]) also go into the event journal
+//! with a sequence number. A window that reloads asks for the journaled
+//! events it missed (`subscribe_events` with its last sequence number);
+//! nothing else is ever replayed.
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, EventScope, SubscriptionEvent, TypingContext, TypingEvent,
+};
+use serde::Serialize;
+use tauri::{AppHandle, Manager};
 use tokio::sync::mpsc;
 
-use crate::state::AppState;
-use rekindle_types::subscription_events::{
-    ChannelMessageEvent, SubscriptionEvent, TypingContext, TypingEvent,
-};
+use crate::channels::{ChatEvent, CommunityEvent};
+use crate::deep_links::DeepLinkRequest;
+use crate::event_router::{Audience, OutboundEnvelope};
+use crate::state::{AppState, SharedState};
+use crate::window_labels::{self as labels, WindowKind};
+use crate::windows::SettingsTab;
 
-/// Wire shape persisted in the journal. The `channel` lets the frontend
-/// route the payload to the same listener that would have received it
-/// live; `payload` is the original `ChatEvent`/`NotificationEvent`/etc.
-/// already serialized to JSON.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TauriEmitRecord {
-    pub channel: String,
-    pub payload: serde_json::Value,
+/// Everything the backend sends to a webview.
+#[derive(Debug, Clone)]
+pub enum WebviewEvent {
+    /// The shared vocabulary every frontend observes.
+    Subscription(SubscriptionEvent),
+    /// The app lifecycle state machine moved.
+    Lifecycle {
+        state: rekindle_lifecycle::LifecycleState,
+        at_ms: i64,
+    },
+    /// An OS deep link is waiting for the user's consent.
+    DeepLink(DeepLinkRequest),
+    /// Our own profile (name, avatar) changed.
+    ProfileUpdated,
+    /// Switch the open settings window to a tab.
+    SettingsSwitchTab(SettingsTab),
+    /// A community channel message in the desktop's legacy shape, with the
+    /// community it belongs to when the emitter knows it. Plan step E
+    /// moves these emitters onto `ChannelMessageEvent::New`.
+    ChannelChat {
+        community_id: Option<String>,
+        event: ChatEvent,
+    },
+    /// A community-window event in the desktop's legacy shape.
+    Community(CommunityEvent),
 }
 
-/// Tick fired alongside every journaled emit. Frontend listens for this
-/// on a dedicated `cursor-tick` channel and writes the latest cursor to
-/// `localStorage`. Decoupled from the payload schemas so adding new
-/// event types doesn't change the cursor protocol.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CursorTick {
-    pub cursor: u64,
+/// Lifecycle payload, as the login window reads it.
+#[derive(Serialize)]
+struct LifecyclePayload {
+    state: rekindle_lifecycle::LifecycleState,
+    at_ms: i64,
 }
 
-/// Envelope queued for the single dispatch task. Always carries the
-/// payload pre-serialized to `serde_json::Value` — the queue is typed
-/// over one shape rather than 7 channel-specific enums.
-struct EmitEnvelope {
-    channel: String,
-    payload: serde_json::Value,
-}
-
-/// Single-mpsc event router. The `tx` half is cloned freely (via
-/// `Arc<EventDispatch>` on `AppState`); the `rx` half is consumed
-/// exactly once by `spawn_dispatch_loop()` at app setup.
-pub struct EventDispatch {
-    tx: mpsc::UnboundedSender<EmitEnvelope>,
-    rx_holder: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<EmitEnvelope>>>,
-}
-
-impl EventDispatch {
-    /// Construct a fresh dispatch with paired tx/rx. The receiver is
-    /// stashed inside for `spawn_dispatch_loop` to consume; until
-    /// `take_receiver()` is called the queue is buffered.
+impl WebviewEvent {
+    /// The frontend channel whose handlers consume this event.
     #[must_use]
-    pub fn new() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
-        Self {
-            tx,
-            rx_holder: parking_lot::Mutex::new(Some(rx)),
+    pub fn channel(&self) -> &'static str {
+        match self {
+            Self::Subscription(e) => subscription_channel(e),
+            Self::Lifecycle { .. } => "lifecycle-event",
+            Self::DeepLink(_) => "deep-link-action",
+            Self::ProfileUpdated => "profile-updated",
+            Self::SettingsSwitchTab(_) => "settings-switch-tab",
+            Self::ChannelChat { .. } => "chat-event",
+            Self::Community(_) => "community-event",
         }
     }
 
-    fn take_receiver(&self) -> Option<mpsc::UnboundedReceiver<EmitEnvelope>> {
-        self.rx_holder.lock().take()
-    }
-
-    fn enqueue(&self, channel: String, payload: serde_json::Value) {
-        let _ = self.tx.send(EmitEnvelope { channel, payload });
-    }
-}
-
-impl Default for EventDispatch {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Spawn the single dispatch loop. Drains the queue forever, forwarding
-/// each envelope to Tauri's emit. Returns immediately; the loop runs
-/// on the Tauri async runtime for the lifetime of the app.
-///
-/// Idempotent guard: if the receiver was already taken (test harness
-/// or repeated setup), this is a no-op rather than a panic.
-pub fn spawn_dispatch_loop(app: AppHandle, dispatch: &Arc<EventDispatch>) {
-    let Some(mut rx) = dispatch.take_receiver() else {
-        tracing::warn!("spawn_dispatch_loop: receiver already taken — duplicate setup?");
-        return;
-    };
-    tauri::async_runtime::spawn(async move {
-        while let Some(envelope) = rx.recv().await {
-            let _ = app.emit(&envelope.channel, &envelope.payload);
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        match self {
+            Self::Subscription(e) => serde_json::to_value(e),
+            Self::Lifecycle { state, at_ms } => serde_json::to_value(LifecyclePayload {
+                state: *state,
+                at_ms: *at_ms,
+            }),
+            Self::DeepLink(r) => serde_json::to_value(r),
+            Self::ProfileUpdated => Ok(serde_json::Value::Null),
+            Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
+            Self::ChannelChat { event, .. } => serde_json::to_value(event),
+            Self::Community(e) => serde_json::to_value(e),
         }
-        tracing::debug!("event-dispatch loop exited (channel closed)");
-    });
-}
+    }
 
-/// Phase 23 Tier 3 — emit `payload` on `channel` WITHOUT journaling.
-///
-/// Pushes through the single dispatch queue. Use for ephemeral signals
-/// where missing one mid-stream is acceptable and replaying on cold
-/// start would be confusing or wrong:
-///
-/// - Local echoes (you-sent ACKs, optimistic-UI confirms)
-/// - Typing indicators
-/// - Presence ticks (status flips, online/offline transitions)
-/// - Lifecycle / network-status transitions
-/// - OS-level notifications (microphone disconnected, network lost)
-/// - Internal state-change broadcasts the frontend re-derives anyway
-///
-/// Signature preserved verbatim from the pre-Phase-23 `event_emit::emit_live`
-/// so the ~141 existing call sites compile unchanged. Internals route
-/// through `AppState::event_dispatch` via `app.try_state::<SharedState>()`
-/// — works because `setup()` calls `.manage(shared_state)` before any
-/// emit can fire.
-pub fn emit_live<P: Serialize + ?Sized>(app: &AppHandle, channel: &str, payload: &P) {
-    let value = match serde_json::to_value(payload) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(channel, error = %e, "emit_live: serialize failed, dropping event");
-            return;
+    /// The windows this event is for.
+    #[must_use]
+    pub fn audience(&self) -> Audience {
+        match self {
+            Self::Subscription(e) => subscription_audience(e),
+            Self::Lifecycle { .. } => Audience::kinds(&WindowKind::ALL),
+            Self::DeepLink(_) => Audience::labels([labels::BUDDY_LIST.to_owned()]),
+            Self::ProfileUpdated => Audience::post_auth(),
+            Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
+            // Community windows switch between communities in place, so a
+            // community's events go to every one of them (each filters by
+            // its selection) and to the buddy list's community list. A
+            // channel message whose community the emitter does not know
+            // can only go there too.
+            Self::ChannelChat { .. } | Self::Community(_) => communities(),
         }
-    };
-    if let Some(state) = app.try_state::<crate::state::SharedState>() {
-        state.event_dispatch.enqueue(channel.to_string(), value);
-    } else {
-        tracing::warn!(
-            channel,
-            "emit_live: SharedState not registered yet — event dropped"
-        );
+    }
+
+    /// The envelope a window receives, or `None` if the payload does not
+    /// serialize (logged; such an event reaches no one).
+    #[must_use]
+    pub fn envelope(&self, seq: Option<u64>) -> Option<OutboundEnvelope> {
+        match self.payload() {
+            Ok(payload) => Some(OutboundEnvelope {
+                seq,
+                channel: self.channel(),
+                payload,
+            }),
+            Err(e) => {
+                tracing::warn!(channel = self.channel(), error = %e, "event payload did not serialize");
+                None
+            }
+        }
     }
 }
 
-/// Emit a daemon-vocabulary event to the webview.
-///
-/// The CLI receives `SubscriptionEvent` over IPC; this puts the *same*
-/// value on the Tauri channel, so both frontends observe one event for
-/// one action. Today they do not: src-tauri never references
-/// `SubscriptionEvent` at all, and the webview gets a parallel
-/// `channels::*Event` vocabulary — which is why the desktop is a second
-/// implementation rather than a frontend over the daemon.
-///
-/// This is an addition, not a migration. `emit_live` and
-/// `emit_journaled` keep working untouched and emitters move onto this
-/// one family at a time; the channel names are unchanged, so the
-/// frontend's `listen()` calls do not move — only the payload shape
-/// converges.
-/// Emit a voice event.
-pub fn emit_voice(app: &AppHandle, event: rekindle_types::subscription_events::VoiceEvent) {
-    emit_subscription(app, &SubscriptionEvent::Voice(event));
+/// The buddy list and every community window.
+fn communities() -> Audience {
+    Audience::labels([labels::BUDDY_LIST.to_owned()]).with_kinds(&[WindowKind::Community])
 }
 
-/// Emit a community membership event.
-///
-/// Thin wrapper over [`emit_subscription`], as for calls and
-/// notifications: the family implies the channel, so call sites do not
-/// spell out the `SubscriptionEvent::Membership` wrapper.
-pub fn emit_membership(
-    app: &AppHandle,
-    event: rekindle_types::subscription_events::MembershipEvent,
-) {
-    emit_subscription(app, &SubscriptionEvent::Membership(event));
+/// The buddy list only: device-wide UI with a single owner.
+fn buddy_list() -> Audience {
+    Audience::labels([labels::BUDDY_LIST.to_owned()])
 }
 
-/// Emit a call-signalling event.
-///
-/// Rides the `chat-event` channel, which is where the desktop's call UI
-/// already listens — the family is separate in Tier 1, the transport is
-/// shared. See [`channel_for`].
-pub fn emit_call(app: &AppHandle, event: rekindle_types::subscription_events::CallEvent) {
-    emit_subscription(app, &SubscriptionEvent::Call(event));
+fn subscription_audience(event: &SubscriptionEvent) -> Audience {
+    match event {
+        // One OS notification, one inbox, one ring: the buddy list owns them.
+        SubscriptionEvent::Notification(_)
+        | SubscriptionEvent::ChannelMessage(ChannelMessageEvent::ConversationFocusRequested {
+            ..
+        }) => buddy_list(),
+        // The call's own window, the buddy list, and the chat and DM
+        // windows (each shows the call with its peer).
+        SubscriptionEvent::Call(e) => buddy_list()
+            .with_labels(labels::call_label_for(e.call_id()))
+            .with_kinds(&[WindowKind::Chat, WindowKind::Dm]),
+        _ => match event.scope() {
+            EventScope::Device => Audience::post_auth(),
+            EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
+            EventScope::Peer(peer) => {
+                let audience = buddy_list().with_labels(labels::peer_labels(&peer));
+                // A DM call's media and voice state also drive its call window.
+                if matches!(event, SubscriptionEvent::Voice(_)) {
+                    audience.with_kinds(&[WindowKind::Call])
+                } else {
+                    audience
+                }
+            }
+            EventScope::Conversation(record) => {
+                buddy_list().with_labels(labels::conversation_label(&record))
+            }
+            EventScope::Call(id) => buddy_list().with_labels(labels::call_label_for(&id)),
+        },
+    }
 }
 
-/// Emit a device-level notification.
+/// Which frontend channel a [`SubscriptionEvent`] is consumed on.
 ///
-/// Thin wrapper over [`emit_subscription`] so the ~20 notification call
-/// sites do not each spell out the `SubscriptionEvent::Notification`
-/// wrapper — the channel is implied by the family.
-pub fn emit_notification(
-    app: &AppHandle,
-    event: rekindle_types::subscription_events::NotificationEvent,
-) {
-    emit_subscription(app, &SubscriptionEvent::Notification(event));
-}
-
-pub fn emit_subscription(app: &AppHandle, event: &SubscriptionEvent) {
-    emit_live(app, channel_for(event), event);
-}
-
-/// Which Tauri channel a daemon event belongs on.
-///
-/// The mapping is many-to-one on purpose: the daemon's vocabulary is
-/// finer-grained than the webview's four content channels, and
-/// collapsing here means the frontend keeps the listeners it already
-/// has.
-fn channel_for(event: &SubscriptionEvent) -> &'static str {
+/// Many families share a channel because the frontend's handlers are
+/// organized by window, not by family.
+fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
     match event {
         SubscriptionEvent::Presence(_) => "presence-event",
         SubscriptionEvent::Voice(_) => "voice-event",
-        // `ChannelMessage` is the one family that splits by variant, so
-        // its community half is matched here — **before** the
-        // catch-all chat arm below, which would otherwise swallow it
-        // and deliver a channel-message edit to a listener that does
-        // not handle it.
+        // `ChannelMessage` and `Typing` split by context: the community
+        // half goes to the community dispatcher, the direct half to the
+        // chat handlers.
         SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::New { .. }
             | ChannelMessageEvent::Edited { .. }
             | ChannelMessageEvent::Deleted { .. },
         )
-        // Typing splits the same way, and `TypingContext` already
-        // carries the distinction: channel typing belongs to the
-        // community window, DM typing to the chat windows.
         | SubscriptionEvent::Typing(
             TypingEvent::Started {
                 context: TypingContext::Channel { .. },
@@ -260,223 +205,276 @@ fn channel_for(event: &SubscriptionEvent) -> &'static str {
         | SubscriptionEvent::Membership(_)
         | SubscriptionEvent::Governance(_)
         | SubscriptionEvent::Crypto(_)
-        // Social events are community-scoped — reactions, pins,
-        // threads, scheduled events all belong to a channel or a
-        // community, so the community window is where they land.
         | SubscriptionEvent::Social(_)
+        // System events (announcements, raids, automod, lockdowns, sync,
+        // audit) are handled by the community dispatcher.
+        | SubscriptionEvent::System(_)
         | SubscriptionEvent::UnreadChanged { .. } => "community-event",
-        // Everything left in `ChannelMessage` is a direct conversation.
         SubscriptionEvent::ChannelMessage(_)
         | SubscriptionEvent::Typing(_)
-        // Calls ride the chat channel because that is where the
-        // desktop's call UI already listens, and friend roster changes
-        // because that is where the friend store listens. The channel
-        // is transport, not taxonomy — the families stay distinct.
         | SubscriptionEvent::Call(_)
         | SubscriptionEvent::Friend(_) => "chat-event",
-
-        SubscriptionEvent::Notification(_) | SubscriptionEvent::System(_) => "notification-event",
+        SubscriptionEvent::Notification(_) => "notification-event",
         SubscriptionEvent::Network(_) => "network-status",
     }
 }
 
-/// Journal `payload` for resume + emit it on `channel`. Always succeeds
-/// in journaling; the emit side is fire-and-forget through the same
-/// dispatch queue. Phase 10's contract preserved: each journaled emit
-/// also fires a `cursor-tick` envelope so the frontend's
-/// `localStorage["rekindle.lastEventCursor"]` stays current.
-pub fn emit_journaled<P: Serialize + ?Sized>(
-    app: &AppHandle,
-    state: &AppState,
-    channel: &str,
-    payload: &P,
-) {
-    let value = match serde_json::to_value(payload) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(
-                channel,
-                error = %e,
-                "emit_journaled: serialize failed; emitting without journaling",
-            );
-            emit_live(app, channel, payload);
-            return;
+/// An event waiting for the dispatch task.
+struct Queued {
+    seq: Option<u64>,
+    event: WebviewEvent,
+}
+
+/// The single dispatch queue. Emitters push; one task drains.
+pub struct EventDispatch {
+    tx: mpsc::UnboundedSender<Queued>,
+    rx_holder: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<Queued>>>,
+}
+
+impl EventDispatch {
+    /// A queue that buffers until [`spawn_dispatch_loop`] takes it.
+    #[must_use]
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Self {
+            tx,
+            rx_holder: parking_lot::Mutex::new(Some(rx)),
         }
-    };
-    let cursor = state.event_journal.append(TauriEmitRecord {
-        channel: channel.to_string(),
-        payload: value.clone(),
-    });
-    state.event_dispatch.enqueue(channel.to_string(), value);
-    let Ok(tick) = serde_json::to_value(CursorTick { cursor }) else {
+    }
+
+    fn take_receiver(&self) -> Option<mpsc::UnboundedReceiver<Queued>> {
+        self.rx_holder.lock().take()
+    }
+
+    fn enqueue(&self, seq: Option<u64>, event: WebviewEvent) {
+        let _ = self.tx.send(Queued { seq, event });
+    }
+}
+
+impl Default for EventDispatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Start the dispatch task: each event goes to the windows in its
+/// audience, and an event the notification policy picks also becomes an
+/// OS notification (`os_notify`).
+pub fn spawn_dispatch_loop(app: AppHandle, state: &Arc<AppState>) {
+    let Some(mut rx) = state.event_dispatch.take_receiver() else {
+        tracing::warn!("spawn_dispatch_loop: receiver already taken — duplicate setup?");
         return;
     };
-    state
-        .event_dispatch
-        .enqueue("cursor-tick".to_string(), tick);
-}
-
-/// Phase 23 — by-value wrapper around `emit_live` for adapters that
-/// pre-Phase-23 called `app.emit(channel, payload)` directly. Keeps
-/// the migration mechanical: `let _ = self.app_handle.emit(...)`
-/// becomes `crate::event_dispatch::dispatch(&self.app_handle, ...)`
-/// with no payload-reference rewrite. Equivalent to `emit_live`
-/// except for accepting payload by value.
-pub fn dispatch<P: Serialize>(app: &AppHandle, channel: &str, payload: P) {
-    emit_live(app, channel, &payload);
-}
-
-/// Phase 23 — direct push for callers that already have an
-/// `Arc<AppState>` (or `&AppState`) and a pre-serialized payload.
-/// Used by `event_resume` to replay journaled entries through the
-/// same dispatch queue live emits use, so listeners cannot tell
-/// replay from live.
-pub fn emit_value(state: &AppState, channel: &str, payload: &serde_json::Value) {
-    state
-        .event_dispatch
-        .enqueue(channel.to_string(), payload.clone());
-}
-
-/// Phase 23 — direct typed push for callers that already have an
-/// `&AppState`. Equivalent to `emit_live` but skips the `try_state`
-/// lookup since the state handle is already in scope. Used by
-/// `setup()` for the lifecycle-event forwarder + startup notification.
-pub fn emit_now<P: Serialize + ?Sized>(state: &AppState, channel: &str, payload: &P) {
-    let value = match serde_json::to_value(payload) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(channel, error = %e, "emit_now: serialize failed");
-            return;
+    let state = Arc::clone(state);
+    tauri::async_runtime::spawn(async move {
+        while let Some(Queued { seq, event }) = rx.recv().await {
+            if let WebviewEvent::Subscription(e) = &event {
+                crate::os_notify::notify(&app, &state, e);
+            }
+            if let Some(envelope) = event.envelope(seq) {
+                state.event_router.deliver(&envelope, &event.audience());
+            }
         }
-    };
-    state.event_dispatch.enqueue(channel.to_string(), value);
+        tracing::debug!("event-dispatch loop exited (channel closed)");
+    });
+}
+
+/// Send `event` to its audience, live only.
+pub fn emit(app: &AppHandle, event: WebviewEvent) {
+    if let Some(state) = app.try_state::<SharedState>() {
+        emit_from_state(&state, event);
+    } else {
+        tracing::warn!(
+            channel = event.channel(),
+            "emit before state is managed — dropped"
+        );
+    }
+}
+
+/// Send `event` to its audience, for callers that hold the state.
+pub fn emit_from_state(state: &AppState, event: WebviewEvent) {
+    state.event_dispatch.enqueue(None, event);
+}
+
+/// Journal `event` (so a reloading window can recover it), then send it.
+pub fn emit_journaled(state: &AppState, event: WebviewEvent) {
+    let seq = state.event_journal.append(event.clone());
+    state.event_dispatch.enqueue(Some(seq), event);
+}
+
+/// Send a shared-vocabulary event, live.
+pub fn emit_subscription(app: &AppHandle, event: &SubscriptionEvent) {
+    emit(app, WebviewEvent::Subscription(event.clone()));
+}
+
+/// Send a voice event.
+pub fn emit_voice(app: &AppHandle, event: rekindle_types::subscription_events::VoiceEvent) {
+    emit(
+        app,
+        WebviewEvent::Subscription(SubscriptionEvent::Voice(event)),
+    );
+}
+
+/// Send a community membership event.
+pub fn emit_membership(
+    app: &AppHandle,
+    event: rekindle_types::subscription_events::MembershipEvent,
+) {
+    emit(
+        app,
+        WebviewEvent::Subscription(SubscriptionEvent::Membership(event)),
+    );
+}
+
+/// Send a call-signalling event.
+pub fn emit_call(app: &AppHandle, event: rekindle_types::subscription_events::CallEvent) {
+    emit(
+        app,
+        WebviewEvent::Subscription(SubscriptionEvent::Call(event)),
+    );
+}
+
+/// Send a device-level notification.
+pub fn emit_notification(
+    app: &AppHandle,
+    event: rekindle_types::subscription_events::NotificationEvent,
+) {
+    emit(
+        app,
+        WebviewEvent::Subscription(SubscriptionEvent::Notification(event)),
+    );
+}
+
+/// Send a legacy community-window event.
+pub fn emit_community(app: &AppHandle, event: CommunityEvent) {
+    emit(app, WebviewEvent::Community(event));
+}
+
+/// The journaled events after `since` that a window labelled `label` would
+/// have received, as envelopes.
+#[must_use]
+pub fn replay_for(state: &AppState, label: &str, since: u64) -> Vec<OutboundEnvelope> {
+    state
+        .event_journal
+        .replay_since(since)
+        .into_iter()
+        .filter(|entry| entry.event.audience().includes(label))
+        .filter_map(|entry| entry.event.envelope(Some(entry.cursor)))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    //! These tests exercise the journal/record shape end-to-end without
-    //! a Tauri `AppHandle` (constructing one in tests is impractical).
-    //! The dispatch loop's emit side is fire-and-forget; the
-    //! correctness-critical side — journaling + cursor monotonicity —
-    //! is the same path `event_resume` reads back, and is fully covered
-    //! here through direct journal operations on a `TauriEmitRecord`.
+    use super::*;
+    use rekindle_types::subscription_events::{
+        CallEvent, MembershipEvent, NotificationEvent, PresenceEvent, PresenceSnapshot, VoiceEvent,
+        VoiceScope,
+    };
 
-    use super::TauriEmitRecord;
-    use rekindle_events::EventJournal;
+    const PK: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
+    const CALL: &str = "0123456789abcdef0123456789abcdef";
+    const REC: &str = "VLD0:um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
 
-    #[test]
-    fn tauri_emit_record_round_trips_through_journal() {
-        let journal: EventJournal<TauriEmitRecord> = EventJournal::new(10);
-        let payload = serde_json::json!({"from": "alice", "body": "hello"});
-        let cursor = journal.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: payload.clone(),
-        });
-        assert_eq!(cursor, 1, "first append starts the cursor at 1");
-        let backlog = journal.replay_since(0);
-        assert_eq!(backlog.len(), 1);
-        assert_eq!(backlog[0].cursor, 1);
-        assert_eq!(backlog[0].event.channel, "chat-event");
-        assert_eq!(backlog[0].event.payload, payload);
+    fn sub(e: SubscriptionEvent) -> Audience {
+        WebviewEvent::Subscription(e).audience()
     }
 
     #[test]
-    fn replay_since_returns_only_strictly_newer_entries() {
-        let journal: EventJournal<TauriEmitRecord> = EventJournal::new(10);
-        let c1 = journal.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::json!(1),
-        });
-        let c2 = journal.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::json!(2),
-        });
-        let backlog = journal.replay_since(c1);
-        assert_eq!(backlog.len(), 1);
-        assert_eq!(backlog[0].cursor, c2);
-        assert_eq!(backlog[0].event.payload, serde_json::json!(2));
+    fn notifications_belong_to_the_buddy_list_only() {
+        let a = sub(SubscriptionEvent::Notification(
+            NotificationEvent::SystemAlert {
+                title: "t".into(),
+                body: "b".into(),
+            },
+        ));
+        assert!(a.includes("buddy-list"));
+        assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
+        assert!(!a.includes("settings"));
     }
 
     #[test]
-    fn watermark_dedupes_concurrent_resume_calls() {
-        use parking_lot::Mutex;
-        let journal: EventJournal<TauriEmitRecord> = EventJournal::new(16);
-        let watermark: Mutex<u64> = Mutex::new(0);
-        journal.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::json!(1),
-        });
-        journal.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::json!(2),
-        });
-
-        let resume_once = |last_cursor: u64| {
-            let mut w = watermark.lock();
-            let effective = (*w).max(last_cursor);
-            let snap = journal.replay_since(effective);
-            if let Some(last) = snap.last() {
-                *w = last.cursor;
-            }
-            snap
-        };
-
-        let snapshot_one = resume_once(0);
-        assert_eq!(snapshot_one.len(), 2);
-
-        let snapshot_two = resume_once(0);
-        assert!(
-            snapshot_two.is_empty(),
-            "second concurrent caller must NOT redeliver the backlog",
-        );
+    fn a_direct_message_reaches_its_chat_window_only() {
+        let a = sub(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::DirectMessageAcknowledged {
+                message_id: 1,
+                conversation_id: PK.into(),
+            },
+        ));
+        assert!(a.includes("buddy-list"));
+        assert!(a.includes("chat-3f1a9c0b7e2d4f6a"));
+        assert!(!a.includes("chat-0000000000000000"));
+        assert!(!a.includes("community-browser"));
     }
 
     #[test]
-    fn cursor_resets_after_journal_drop() {
-        let j1: EventJournal<TauriEmitRecord> = EventJournal::new(4);
-        let c = j1.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::Value::Null,
-        });
-        assert_eq!(c, 1);
-        let _ = j1.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::Value::Null,
-        });
-        drop(j1);
-
-        let j2: EventJournal<TauriEmitRecord> = EventJournal::new(4);
-        let c_fresh = j2.append(TauriEmitRecord {
-            channel: "chat-event".into(),
-            payload: serde_json::Value::Null,
-        });
-        assert_eq!(
-            c_fresh, 1,
-            "new journal restarts cursor at 1 — old localStorage cursor would be useless"
-        );
+    fn group_dms_reach_their_dm_window() {
+        let a = sub(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::DirectMessageReceived {
+                peer_key: PK.into(),
+                timestamp: 1,
+                sender_name: None,
+                body: None,
+                decryption_failed: false,
+                automod_blurred: false,
+                conversation_id: REC.into(),
+                server_message_id: None,
+                reply_to_id: None,
+            },
+        ));
+        assert!(a.includes(&labels::conversation_label(REC).unwrap()));
+        assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
     }
 
     #[test]
-    fn event_dispatch_take_receiver_is_one_shot() {
-        let d = super::EventDispatch::new();
-        assert!(d.take_receiver().is_some(), "first take yields receiver");
-        assert!(
-            d.take_receiver().is_none(),
-            "second take returns None — guards against double spawn",
-        );
+    fn joins_reach_every_community_window() {
+        let a = sub(SubscriptionEvent::Membership(
+            MembershipEvent::JoinProgress {
+                community: REC.into(),
+                stage: String::new(),
+                status: String::new(),
+            },
+        ));
+        assert!(a.includes("community-browser"));
+        assert!(a.includes("buddy-list"));
+        assert!(!a.includes("settings"));
     }
 
     #[test]
-    fn event_dispatch_enqueue_buffers_before_take() {
-        let d = super::EventDispatch::new();
-        d.enqueue("chat-event".into(), serde_json::json!("first"));
-        d.enqueue("chat-event".into(), serde_json::json!("second"));
-        let mut rx = d.take_receiver().expect("receiver");
-        let a = rx.try_recv().expect("first envelope buffered");
-        let b = rx.try_recv().expect("second envelope buffered");
-        assert_eq!(a.channel, "chat-event");
-        assert_eq!(a.payload, serde_json::json!("first"));
-        assert_eq!(b.channel, "chat-event");
-        assert_eq!(b.payload, serde_json::json!("second"));
+    fn calls_reach_their_window_and_conversation_windows() {
+        let a = sub(SubscriptionEvent::Call(CallEvent::Ringing {
+            call_id: CALL.into(),
+        }));
+        assert!(a.includes("buddy-list"));
+        assert!(a.includes("call-0123456789ab"));
+        assert!(!a.includes("call-ffffffffffff"));
+        assert!(a.includes("chat-3f1a9c0b7e2d4f6a"));
+        assert!(!a.includes("community-browser"));
+        let voice = sub(SubscriptionEvent::Voice(VoiceEvent::LocalJoined {
+            scope: VoiceScope::Dm {
+                peer_key: PK.into(),
+            },
+        }));
+        assert!(voice.includes("call-0123456789ab"));
+    }
+
+    #[test]
+    fn device_events_reach_every_post_login_window() {
+        let a = sub(SubscriptionEvent::Presence(PresenceEvent::SelfChanged {
+            public_key: PK.into(),
+            snapshot: PresenceSnapshot::default(),
+        }));
+        assert!(a.includes("settings"));
+        assert!(!a.includes("login"));
+    }
+
+    #[test]
+    fn system_events_ride_the_community_channel() {
+        let e = WebviewEvent::Subscription(SubscriptionEvent::System(
+            rekindle_types::subscription_events::SystemEvent::RaidAlert {
+                community: REC.into(),
+                active: true,
+            },
+        ));
+        assert_eq!(e.channel(), "community-event");
     }
 }

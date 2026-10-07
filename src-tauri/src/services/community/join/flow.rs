@@ -13,7 +13,6 @@ use std::sync::Arc;
 use rekindle_governance_runtime as gov_rt;
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_types::id::PseudonymKey;
-use tauri::Manager;
 
 use crate::state::{AppState, CommunityState, GossipOverlay, OnlineMember};
 
@@ -29,25 +28,38 @@ struct InviteContext {
     inviter_pseudonym: Option<PseudonymKey>,
 }
 
+/// Map the crate's `JoinOnlineMember` rows into src-tauri's `OnlineMember`
+/// shape. Shared by the `peers` and `online` maps collected during join.
+fn to_online_members(
+    src: &HashMap<String, gov_rt::JoinOnlineMember>,
+) -> HashMap<String, OnlineMember> {
+    src.iter()
+        .map(|(pseudo_hex, m)| {
+            (
+                pseudo_hex.clone(),
+                OnlineMember {
+                    route_blob: m.route_blob.clone(),
+                    status: m.status.clone(),
+                    last_seen: m.last_seen,
+                    ..Default::default()
+                },
+            )
+        })
+        .collect()
+}
+
 pub async fn join_community(
     state: &Arc<AppState>,
-    governance_key_str: &str,
-    invite_code: Option<&str>,
-    secrets_record_key: Option<&str>,
+    link: &rekindle_types::invite::InviteLink,
 ) -> Result<(), String> {
-    let invite_code =
-        invite_code.ok_or("invite code required — community join requires a valid invite link")?;
+    let governance_key_str = link.governance_key.as_str();
 
     let app_handle = state
         .app_handle
         .read()
         .clone()
         .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()
-        .ok_or_else(|| "DbPool state missing".to_string())?
-        .inner()
-        .clone();
+    let pool = state.db.current()?;
     let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
         Arc::clone(state),
         app_handle,
@@ -90,8 +102,8 @@ pub async fn join_community(
             state,
             &adapter,
             governance_key_str,
-            invite_code,
-            secrets_record_key,
+            link.invite_code.as_str(),
+            link.secrets_record_key.as_str(),
             &snapshot.all_entries,
             &identity.pseudo_hex,
         ),
@@ -173,36 +185,8 @@ pub async fn join_community(
         &snapshot.gov_state,
     );
 
-    let initial_peers: HashMap<String, OnlineMember> = initial_presence
-        .peers
-        .iter()
-        .map(|(pseudo_hex, m)| {
-            (
-                pseudo_hex.clone(),
-                OnlineMember {
-                    route_blob: m.route_blob.clone(),
-                    status: m.status.clone(),
-                    last_seen: m.last_seen,
-                    ..Default::default()
-                },
-            )
-        })
-        .collect();
-    let initial_online: HashMap<String, OnlineMember> = initial_presence
-        .online
-        .iter()
-        .map(|(pseudo_hex, m)| {
-            (
-                pseudo_hex.clone(),
-                OnlineMember {
-                    route_blob: m.route_blob.clone(),
-                    status: m.status.clone(),
-                    last_seen: m.last_seen,
-                    ..Default::default()
-                },
-            )
-        })
-        .collect();
+    let initial_peers = to_online_members(&initial_presence.peers);
+    let initial_online = to_online_members(&initial_presence.online);
     let known_members: HashSet<String> = initial_presence.known_members.iter().cloned().collect();
 
     let community = CommunityState {
@@ -238,13 +222,14 @@ pub async fn join_community(
         member_registry_key: Some(invite.registry_key.clone()),
         my_subkey_index: Some(claimed.local_subkey),
         my_segment_index: Some(claimed.segment_index),
+        segments: Vec::new(),
         governance_key: Some(governance_key_str.to_string()),
         governance_state: Some(snapshot.gov_state),
-        lamport_counter: 0,
+        message_clock: 0,
+        governance_clock: 0,
         gossip: Some(GossipOverlay {
             peers: initial_peers,
             online_members: initial_online,
-            lamport_counter: 0,
             needs_initial_sync: true,
             pending_mesh_broadcasts: std::collections::VecDeque::with_capacity(16),
         }),
@@ -261,8 +246,7 @@ pub async fn join_community(
         slot_seed: Some(invite.slot_seed_hex.clone()),
         member_roles: HashMap::new(),
         known_members,
-        presence_poll_shutdown_tx: None,
-        dht_keepalive_shutdown_tx: None,
+        tasks: None,
         // Seed the GovernanceOverflow records discovered during the snapshot so
         // OpenRecords (§10) opens+tracks them and keepalive (§14.1) warms them —
         // the joiner can't register via community_id before this insert.
@@ -270,6 +254,8 @@ pub async fn join_community(
             governance_overflow_keys: snapshot.overflow_keys,
             ..crate::state::CommunityRecords::default()
         },
+        leases: rekindle_records::lease::CommunityLeases::default(),
+        loops_started: false,
         my_event_rsvps: HashMap::new(),
         event_rsvps_by_event: HashMap::new(),
         onboarding_complete: false,
@@ -334,21 +320,6 @@ pub async fn join_community(
             tracing::warn!(community = %governance_key_str, error = %e, "Lost Cargo cache unavailable on join");
         }
         super::super::files::sync_pinned_from_governance(state, governance_key_str);
-
-        if let Err(e) = gov_rt::gate(
-            &adapter,
-            governance_key_str,
-            gov_rt::JoinPhase::WatchRecords,
-            super::super::watch::watch_community_records(state, governance_key_str),
-        )
-        .await
-        {
-            tracing::warn!(
-                community = %governance_key_str,
-                error = %e,
-                "watch setup deferred to inspect-loop recovery"
-            );
-        }
     } else {
         tracing::warn!(
             community = %governance_key_str,
@@ -356,17 +327,8 @@ pub async fn join_community(
         );
     }
 
-    super::super::inspect::start_inspect_loop(state.clone(), governance_key_str.to_string());
-
-    {
-        let poll_state = state.clone();
-        let poll_cid = governance_key_str.to_string();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            super::super::presence::start_presence_poll(&poll_state, poll_cid);
-        });
-    }
-    super::super::keepalive::start_dht_keepalive(state.clone(), governance_key_str.to_string());
+    // The community's inspect, presence and keepalive loops started when
+    // OpenRecords handed its leases to the host (`leases::records_ready`).
     super::history::schedule_history_catchup(state.clone(), governance_key_str.to_string());
 
     if let Some(ref bundle) = invite.bootstrap_bundle {
@@ -404,7 +366,7 @@ async fn decode_invite_context(
     adapter: &crate::services::governance_adapter::GovernanceAdapter,
     governance_key_str: &str,
     invite_code: &str,
-    link_secrets_record_key: Option<&str>,
+    secrets_record_key: &str,
     all_entries: &[(
         PseudonymKey,
         Vec<rekindle_types::governance::GovernanceEntry>,
@@ -423,22 +385,13 @@ async fn decode_invite_context(
     if matches!(status, gov_rt::InviteGovStatus::Expired) {
         return Err("invite has expired".into());
     }
-    let secrets_record_key = link_secrets_record_key
-        .map(str::to_string)
-        .or_else(|| match &status {
-            gov_rt::InviteGovStatus::Active {
-                secrets_record_key, ..
-            } => Some(secrets_record_key.clone()),
-            _ => None,
-        })
-        .ok_or("invite has no secrets pointer (no link pointer and no governance entry)")?;
     let inviter_pseudonym = match status {
         gov_rt::InviteGovStatus::Active { inviter, .. } => Some(inviter),
         _ => None,
     };
     // Governance carries only a pointer; fetch the encrypted blob from the
     // invite-secrets DFLT record before decrypting.
-    let encrypted_b64 = gov_rt::fetch_invite_secrets(adapter, &secrets_record_key)
+    let encrypted_b64 = gov_rt::fetch_invite_secrets(adapter, secrets_record_key)
         .await
         .map_err(|e| e.to_string())?;
     let encrypted = {
@@ -486,7 +439,12 @@ async fn decode_invite_context(
         // Centralized resolver — the invite-delivered MEK carries provenance
         // (from_wire_bytes); routing it through the resolver keeps a join that
         // races a live rotation convergent instead of clobbering.
-        crate::state_helpers::install_community_mek(state, governance_key_str, mek);
+        crate::state_helpers::install_mek(
+            state,
+            governance_key_str,
+            rekindle_types::channel_keys::KeyScope::Community,
+            mek,
+        );
         generation
     };
 

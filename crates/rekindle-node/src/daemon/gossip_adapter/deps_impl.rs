@@ -21,14 +21,14 @@ impl GossipDeps for DaemonGossipAdapter {
         self.identity_secret_impl()
     }
 
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        self.ctx.unlock_scope_or_closed()
+    }
+
     // ---------- Mesh bookkeeping ----------
 
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {
         self.check_and_insert_dedup_impl(community_id, sender, dedup_key);
-    }
-
-    fn increment_lamport(&self, community_id: &str) {
-        self.increment_lamport_impl(community_id);
     }
 
     // ---------- Overlay reads ----------

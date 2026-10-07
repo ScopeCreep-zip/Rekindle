@@ -39,7 +39,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
     (
         sender_hex,
         ControlPayload::VideoFragment(VideoFragmentPayload {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: frag.stream_id,
             frame_seq: frag.frame_seq,
             frag_index: frag.frag_index,
@@ -135,7 +135,7 @@ fn mek_mismatch_fires_debounced_refresh_request() {
         )
         .to_vec();
         ControlPayload::VideoFragment(VideoFragmentPayload {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: frag.stream_id,
             frame_seq: frag.frame_seq,
             frag_index: frag.frag_index,
@@ -164,7 +164,10 @@ fn mek_mismatch_fires_debounced_refresh_request() {
     let calls = deps.calls.lock();
     assert_eq!(
         calls.mek_refresh_requests,
-        vec![("c1".to_string(), "ch1".to_string())],
+        vec![(
+            "c1".to_string(),
+            "11111111111111111111111111111111".to_string()
+        )],
         "exactly one debounced MEK refresh request"
     );
     assert!(
@@ -188,7 +191,7 @@ fn payload_for_other_channel_is_dropped() {
         "c1",
         "peer1",
         ControlPayload::FrameAck {
-            channel_id: "ch2".into(),
+            channel_id: "22222222222222222222222222222222".into(),
             stream_id: [5u8; 16],
             last_frame_seq: 7,
             kbps: 1000,
@@ -214,7 +217,7 @@ fn payload_with_no_active_session_is_dropped() {
         "c1",
         "peer1",
         ControlPayload::MediaCapabilities {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             max_pixel_count: 480 * 854,
             max_fps: 30,
             encode_codecs: vec![rekindle_types::video::Codec::Vp9],
@@ -240,7 +243,7 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
         "c1",
         "peer1",
         ControlPayload::VideoFragment(VideoFragmentPayload {
-            channel_id: "ch2".into(),
+            channel_id: "22222222222222222222222222222222".into(),
             stream_id: [9u8; 16],
             frame_seq: 1,
             frag_index: 0,
@@ -271,7 +274,7 @@ fn frame_ack_maps_to_event() {
         "c1",
         "peer1",
         ControlPayload::FrameAck {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: [5u8; 16],
             last_frame_seq: 7,
             kbps: 1000,
@@ -303,7 +306,7 @@ fn keyframe_request_resets_stream_and_emits_event() {
         "c1",
         "peer1",
         ControlPayload::KeyframeRequest {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: [3u8; 16],
         },
         0,
@@ -325,7 +328,7 @@ fn bandwidth_estimate_maps_to_event() {
         "c1",
         "peer1",
         ControlPayload::BandwidthEstimate {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             kbps: 2500,
             window_secs: 5,
             loss_q8: 0,
@@ -353,7 +356,7 @@ fn media_capabilities_maps_to_event() {
         "c1",
         "peer1",
         ControlPayload::MediaCapabilities {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             max_pixel_count: 480 * 854,
             max_fps: 30,
             encode_codecs: vec![rekindle_types::video::Codec::H264],
@@ -396,7 +399,7 @@ fn topology_change_higher_lamport_accepted() {
         "c1",
         "peer1",
         ControlPayload::TopologyChange {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: [1u8; 16],
             relay_host_pseudonym: None,
             reason: "switch".into(),
@@ -420,7 +423,7 @@ fn topology_change_lower_lamport_rejected() {
         "c1",
         "peer1",
         ControlPayload::TopologyChange {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: [2u8; 16],
             relay_host_pseudonym: None,
             reason: "switch".into(),
@@ -436,7 +439,7 @@ fn topology_change_lower_lamport_rejected() {
         "c1",
         "peer1",
         ControlPayload::TopologyChange {
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             stream_id: [2u8; 16],
             relay_host_pseudonym: None,
             reason: "stale".into(),

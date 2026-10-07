@@ -8,6 +8,8 @@
 //! at a `TempDir` so chunk insert/get/bitmap behave exactly like
 //! production.
 
+use rekindle_types::channel_keys::{ChannelKeyProvider, KeyEpoch, KeyScope, Zeroizing};
+use rekindle_types::id::ChannelId;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -52,14 +54,13 @@ pub struct MockDeps {
     pub channel_log_key: String,
     pub slot_keypair: String,
     pub my_subkey_index: u32,
-    pub mek_generation: u64,
     pub forum_channel: bool,
     pub permission_pass: bool,
     pub slowmode_pass: bool,
 
-    /// Current channel MEK (also serves as community MEK for tests).
+    /// Current key (every scope, for tests).
     pub channel_mek: Option<MediaEncryptionKey>,
-    /// (community_id, channel_id, generation) -> MEK for the historical cascade.
+    /// generation -> key, the persisted history every scope answers from.
     pub historical_meks: HashMap<u64, MediaEncryptionKey>,
 
     /// Online member route blobs (pseudonym -> blob).
@@ -103,7 +104,6 @@ impl MockDeps {
             channel_log_key: "channel-log-key-hex".to_string(),
             slot_keypair: "stub-slot-keypair".to_string(),
             my_subkey_index: 5,
-            mek_generation: 1,
             forum_channel: false,
             permission_pass: true,
             slowmode_pass: true,
@@ -124,7 +124,6 @@ impl MockDeps {
     /// Install a channel MEK at the current generation + cascade lookup.
     pub fn with_mek(mut self, generation: u64, key_bytes: [u8; 32]) -> Self {
         let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
-        self.mek_generation = generation;
         self.channel_mek = Some(mek.clone());
         self.historical_meks.insert(generation, mek);
         self
@@ -167,28 +166,11 @@ impl FilesDeps for MockDeps {
         self.forum_channel
     }
 
-    fn mek_generation(&self, _c: &str) -> Result<u64, FilesError> {
-        Ok(self.mek_generation)
-    }
-
-    fn channel_mek(&self, c: &str, _ch: &str) -> Result<MediaEncryptionKey, FilesError> {
-        self.channel_mek.clone().ok_or(FilesError::MekUnavailable {
-            community: c.to_string(),
-            generation: self.mek_generation,
+    fn keys(&self) -> std::sync::Arc<dyn ChannelKeyProvider> {
+        std::sync::Arc::new(MockKeys {
+            current: self.channel_mek.clone(),
+            history: self.historical_meks.clone(),
         })
-    }
-
-    fn historical_channel_mek(
-        &self,
-        _c: &str,
-        _ch: &str,
-        generation: u64,
-    ) -> Option<MediaEncryptionKey> {
-        self.historical_meks.get(&generation).cloned()
-    }
-
-    fn community_mek(&self, _c: &str) -> Option<MediaEncryptionKey> {
-        self.channel_mek.clone()
     }
 
     fn require_permission(&self, _c: &str, _p: u64) -> Result<(), FilesError> {
@@ -216,8 +198,15 @@ impl FilesDeps for MockDeps {
         (Vec::new(), Vec::new(), 0)
     }
 
-    fn increment_lamport(&self, _c: &str) -> u64 {
-        1
+    fn increment_lamport(&self, _c: &str) -> Result<u64, rekindle_types::lamport::LamportError> {
+        Ok(1)
+    }
+
+    fn next_governance_lamport(
+        &self,
+        _c: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        Ok(1)
     }
 
     fn next_channel_sequence(&self, _c: &str, _ch: &str) -> u64 {
@@ -379,5 +368,39 @@ impl FilesDeps for MockDeps {
 
     fn emit_event(&self, event: FilesEvent) {
         self.calls.lock().events.push(event);
+    }
+}
+
+/// The mock's keys: one current key and its history, answering every scope.
+struct MockKeys {
+    current: Option<MediaEncryptionKey>,
+    history: HashMap<u64, MediaEncryptionKey>,
+}
+
+impl ChannelKeyProvider for MockKeys {
+    fn current_epoch(&self, _: &str, _: KeyScope) -> Option<KeyEpoch> {
+        self.current.as_ref().map(|m| KeyEpoch(m.generation()))
+    }
+
+    fn key(&self, _: &str, _: KeyScope, epoch: KeyEpoch) -> Option<Zeroizing<[u8; 32]>> {
+        self.current
+            .iter()
+            .chain(self.history.values())
+            .find(|m| m.generation() == epoch.0)
+            .map(|m| Zeroizing::new(*m.as_bytes()))
+    }
+
+    fn current_epoch_age(&self, _: &str, _: KeyScope) -> Option<std::time::Duration> {
+        self.current
+            .as_ref()
+            .map(|_| std::time::Duration::from_secs(60))
+    }
+
+    fn scope_for_text(&self, _: &str, _: ChannelId) -> KeyScope {
+        KeyScope::Community
+    }
+
+    fn scope_for_media(&self, _: &str, channel: ChannelId) -> KeyScope {
+        KeyScope::Channel(channel)
     }
 }

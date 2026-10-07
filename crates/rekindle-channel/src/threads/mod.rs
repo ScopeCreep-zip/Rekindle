@@ -15,6 +15,6 @@ pub use lifecycle::{archive_thread, create_thread};
 pub use listing::{list_active_threads, list_threads};
 pub use messages::{load_thread_messages, send_thread_message};
 pub use policy::{
-    default_auto_archive_seconds, is_thread_archived, thread_member_count,
-    validate_auto_archive_seconds, ThreadMessageView,
+    default_auto_archive_seconds, is_thread_archived, validate_auto_archive_seconds,
+    ThreadMessageView,
 };

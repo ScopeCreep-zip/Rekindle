@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::state::SharedState;
 use rekindle_types::permissions;
 
@@ -9,7 +8,6 @@ use super::helpers::require_permission;
 #[tauri::command]
 pub async fn create_poll(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     message_id: String,
@@ -18,6 +16,7 @@ pub async fn create_poll(
     multi_select: bool,
     duration_seconds: Option<u64>,
 ) -> Result<String, String> {
+    let pool = state.db.current()?;
     let _ = pool;
     require_permission(state.inner(), &community_id, permissions::SEND_POLLS)?;
     crate::services::community::persist_poll_create(
@@ -36,12 +35,12 @@ pub async fn create_poll(
 #[tauri::command]
 pub async fn vote_poll(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     poll_id: String,
     selected_answers: Vec<u8>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _ = pool;
     require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::persist_poll_vote(
@@ -57,11 +56,11 @@ pub async fn vote_poll(
 #[tauri::command]
 pub async fn close_poll(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     poll_id: String,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _ = pool;
     let moderator_override =
         require_permission(state.inner(), &community_id, permissions::MANAGE_MESSAGES).is_ok();
@@ -78,11 +77,11 @@ pub async fn close_poll(
 #[tauri::command]
 pub async fn get_poll_results(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     channel_id: String,
     poll_id: String,
 ) -> Result<Vec<u32>, String> {
+    let pool = state.db.current()?;
     let _ = pool;
     require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
     crate::services::community::channel_polls::get_poll_results(

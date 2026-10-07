@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::state::SharedState;
 use rekindle_types::permissions;
 
@@ -18,8 +17,8 @@ pub async fn rotate_mek(
     idempotency_key: uuid::Uuid,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     // Phase 5 — gate writes on lifecycle.
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;

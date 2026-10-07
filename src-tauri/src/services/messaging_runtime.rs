@@ -8,11 +8,12 @@ use std::sync::Arc;
 use crate::channel_materialize::load_channel_messages_from_smpl;
 use crate::commands::chat::Message;
 use crate::commands::community::helpers::require_permission;
-use crate::db::{self, DbPool};
+use crate::db;
 use crate::db_helpers::db_call;
 use crate::message_view::merge_message_lists;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::permissions;
 
@@ -25,7 +26,7 @@ pub struct SendChannelMessageResponse {
 
 pub async fn get_channel_messages_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     channel_id: String,
     limit: u32,
 ) -> Result<Vec<Message>, String> {
@@ -64,7 +65,7 @@ pub async fn get_channel_messages_inner(
             let sender = db::get_str(row, "sender_key");
             let is_own = sender == ok || sender == mpk;
             let attachment = db::get_str_opt(row, "attachment_json")
-                .and_then(|json| serde_json::from_str::<crate::commands::chat::MessageAttachmentDto>(&json).ok());
+                .and_then(|json| crate::commands::chat::MessageAttachmentDto::from_record_json(&json));
             let flags = u32::try_from(row.get::<_, i64>("flags").unwrap_or(0).max(0)).unwrap_or(0);
             Ok(Message {
                 id: db::get_i64(row, "id"),
@@ -116,21 +117,30 @@ pub fn edit_channel_message_inner(
     message_id: String,
     new_body: &str,
 ) -> Result<(), String> {
-    let (community_id, mek_generation) = {
+    let community_id = {
         let communities = state.communities.read();
-        let community = communities
+        communities
             .values()
             .find(|c| c.channels.iter().any(|ch| ch.id == channel_id))
-            .ok_or("channel not found in any community")?;
-        (community.id.clone(), community.mek_generation)
+            .map(|c| c.id.clone())
+            .ok_or("channel not found in any community")?
     };
 
-    let new_ciphertext = {
-        let mek_cache = state.mek_cache.lock();
-        let mek = mek_cache.get(&community_id).ok_or("MEK not available")?;
-        mek.encrypt(new_body.as_bytes())
-            .map_err(|e| format!("MEK encryption failed: {e}"))?
-    };
+    // Sealed under the channel's current text key and stamped with that
+    // key's generation, which the receiver opens under exactly.
+    let scope =
+        state_helpers::text_scope(state, &community_id, &channel_id).ok_or("not a channel id")?;
+    let (epoch, key) = rekindle_types::channel_keys::current_key(
+        &*state_helpers::key_provider(state),
+        &community_id,
+        scope,
+    )
+    .ok_or("MEK not available")?;
+    let mek_generation = epoch.0;
+    let new_ciphertext =
+        rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*key, mek_generation)
+            .encrypt(new_body.as_bytes())
+            .map_err(|e| format!("MEK encryption failed: {e}"))?;
 
     crate::services::community::send_to_mesh(
         state,
@@ -171,8 +181,7 @@ pub fn delete_channel_message_inner(
 
 pub async fn forward_channel_message_inner(
     state: &Arc<AppState>,
-    pool: &DbPool,
-    app: &tauri::AppHandle,
+    pool: &Db,
     source_community_id: String,
     source_channel_id: String,
     source_message_id: String,
@@ -189,32 +198,29 @@ pub async fn forward_channel_message_inner(
         &dest_channel_id,
     )
     .await?;
-    crate::services::community::emit_local_chat_event(app, &sent, &dest_channel_id);
     Ok(SendChannelMessageResponse {
-        status: sent.result.status,
-        message_id: sent.result.message_id,
+        status: sent.status,
+        message_id: sent.message_id,
     })
 }
 
 pub async fn send_channel_message_inner(
     state: &Arc<AppState>,
-    pool: &DbPool,
-    app: &tauri::AppHandle,
+    pool: &Db,
     channel_id: String,
     body: String,
 ) -> Result<SendChannelMessageResponse, String> {
     let sent = crate::services::community::send_message(state, pool, &channel_id, &body).await?;
-    crate::services::community::emit_local_chat_event(app, &sent, &channel_id);
-    tracing::info!(status = %sent.result.status, message_id = %sent.result.message_id, "channel message sent");
+    tracing::info!(status = %sent.status, message_id = %sent.message_id, "channel message sent");
     Ok(SendChannelMessageResponse {
-        status: sent.result.status,
-        message_id: sent.result.message_id,
+        status: sent.status,
+        message_id: sent.message_id,
     })
 }
 
 pub async fn get_older_channel_messages_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     community_id: String,
     channel_id: String,
     before_timestamp: u64,
@@ -243,7 +249,7 @@ pub async fn get_older_channel_messages_inner(
                 let sender = db::get_str(row, "sender_key");
                 let is_own = sender == ok || sender == mpk;
                 let attachment = db::get_str_opt(row, "attachment_json")
-                    .and_then(|json| serde_json::from_str::<crate::commands::chat::MessageAttachmentDto>(&json).ok());
+                    .and_then(|json| crate::commands::chat::MessageAttachmentDto::from_record_json(&json));
                 let flags = u32::try_from(row.get::<_, i64>("flags").unwrap_or(0).max(0)).unwrap_or(0);
                 Ok(Message {
                     id: db::get_i64(row, "id"),

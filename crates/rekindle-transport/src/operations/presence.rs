@@ -1,57 +1,32 @@
-//! Presence operations — set status, publish to DHT.
+//! Presence operations — status message and game presence. The status
+//! itself is the session's STATUS publisher's (plan C7.8c).
 //!
-//! Raw profile subkey writes via `broadcast::dht_writes::set`.
+//! Profile subkey writes via `broadcast::dht_writes::set_own_profile_subkey`
+//! (the session's record pool).
 
 use tracing::info;
 
 use crate::broadcast::node::TransportNode;
 use crate::error::Result;
-use crate::payload::dht_types::{
-    PROFILE_SUBKEY_GAME_INFO, PROFILE_SUBKEY_STATUS, PROFILE_SUBKEY_STATUS_MESSAGE, STATUS_AWAY,
-    STATUS_BUSY, STATUS_INVISIBLE, STATUS_OFFLINE, STATUS_ONLINE,
-};
+use crate::payload::dht_types::{PROFILE_SUBKEY_GAME_INFO, PROFILE_SUBKEY_STATUS_MESSAGE};
 use crate::session::Session;
 
-pub async fn set_status(
+/// Write our status message (durable own state: held and re-pushed until
+/// it lands). The status itself is written by the session's one STATUS
+/// publisher (plan C7.8c).
+pub async fn set_status_message(
     node: &TransportNode,
     session: &Session,
-    status: &str,
-    status_message: Option<&str>,
+    message: &str,
 ) -> Result<()> {
-    info!(status, "setting presence");
-    let status_byte = match status {
-        "online" => STATUS_ONLINE,
-        "away" => STATUS_AWAY,
-        "busy" => STATUS_BUSY,
-        "offline" => STATUS_OFFLINE,
-        "invisible" => STATUS_INVISIBLE,
-        _ => {
-            tracing::warn!(status, "unknown status, defaulting to online");
-            STATUS_ONLINE
-        }
-    };
-    let mut payload = Vec::with_capacity(9);
-    payload.push(status_byte);
-    payload.extend_from_slice(&rekindle_utils::timestamp_ms_i64().to_be_bytes());
-    crate::broadcast::dht_writes::set(
+    crate::broadcast::dht_writes::set_own_profile_subkey(
         node,
         &session.identity.profile_dht_key,
-        PROFILE_SUBKEY_STATUS,
-        payload,
-        None,
+        PROFILE_SUBKEY_STATUS_MESSAGE,
+        message.as_bytes().to_vec(),
     )
     .await?;
-    if let Some(msg) = status_message {
-        crate::broadcast::dht_writes::set(
-            node,
-            &session.identity.profile_dht_key,
-            PROFILE_SUBKEY_STATUS_MESSAGE,
-            msg.as_bytes().to_vec(),
-            None,
-        )
-        .await?;
-    }
-    info!(status, "presence updated");
+    info!("status message updated");
     Ok(())
 }
 
@@ -73,12 +48,11 @@ pub async fn set_game_presence(
             reason: format!("game presence: {e}"),
         }
     })?;
-    crate::broadcast::dht_writes::set(
+    crate::broadcast::dht_writes::set_own_profile_subkey(
         node,
         &session.identity.profile_dht_key,
         PROFILE_SUBKEY_GAME_INFO,
         bytes,
-        None,
     )
     .await?;
     info!(game = game_name, "game presence updated");
@@ -86,12 +60,11 @@ pub async fn set_game_presence(
 }
 
 pub async fn clear_game_presence(node: &TransportNode, session: &Session) -> Result<()> {
-    crate::broadcast::dht_writes::set(
+    crate::broadcast::dht_writes::set_own_profile_subkey(
         node,
         &session.identity.profile_dht_key,
         PROFILE_SUBKEY_GAME_INFO,
         Vec::new(),
-        None,
     )
     .await?;
     info!("game presence cleared");

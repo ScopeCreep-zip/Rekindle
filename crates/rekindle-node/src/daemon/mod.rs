@@ -15,14 +15,17 @@
 pub mod community_rpc;
 pub mod community_runtime;
 pub mod dispatch;
-pub mod event_router;
 pub mod friend_inbox;
 pub mod gossip;
 pub mod gossip_adapter;
 pub mod governance_adapter;
 pub mod handler;
+pub mod heartbeat;
+mod keepalive;
 pub mod mek_rotation;
 pub mod presence_adapter;
+pub mod shutdown;
+mod status;
 mod watch_relay;
 
 pub use rekindle_lifecycle::{

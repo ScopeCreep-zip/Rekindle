@@ -60,6 +60,15 @@ pub enum GovernanceEvent {
         roles: Vec<RoleDisplay>,
     },
 
+    /// Plate Gate (architecture §15): the expansion-segment list changed —
+    /// the full new list (segment 0 is implicit, never included), not a
+    /// delta. Reuses `SegmentDescriptor` rather than an event-only DTO,
+    /// same reasoning as `RolesChanged`/`RoleDisplay`.
+    SegmentsChanged {
+        community: String,
+        segments: Vec<crate::presence::SegmentDescriptor>,
+    },
+
     /// The ban list changed.
     BansChanged { community: String },
 
@@ -113,6 +122,7 @@ impl GovernanceEvent {
             Self::MetadataChanged { community, .. }
             | Self::ChannelsChanged { community, .. }
             | Self::RolesChanged { community, .. }
+            | Self::SegmentsChanged { community, .. }
             | Self::BansChanged { community }
             | Self::InviteCreated { community, .. }
             | Self::InviteUsed { community, .. }
@@ -155,6 +165,14 @@ mod tests {
         assert_eq!(
             GovernanceEvent::GovernanceRebuilt {
                 community: "c".into()
+            }
+            .community(),
+            "c"
+        );
+        assert_eq!(
+            GovernanceEvent::SegmentsChanged {
+                community: "c".into(),
+                segments: Vec::new(),
             }
             .community(),
             "c"
@@ -206,6 +224,16 @@ mod tests {
                 uses: 0,
                 expires_at: None,
                 created_at: 1,
+            },
+            GovernanceEvent::SegmentsChanged {
+                community: "c".into(),
+                segments: vec![crate::presence::SegmentDescriptor {
+                    segment_index: 1,
+                    registry_key: "reg1".into(),
+                    governance_key: "gov1".into(),
+                    slot_range_start: 255,
+                    slot_range_end: 510,
+                }],
             },
         ];
         for event in events {

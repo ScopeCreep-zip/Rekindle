@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use rekindle_crypto::group::media_key::MediaEncryptionKey as CryptoMek;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::{
-    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
-    DiscoveredMember, GovernanceRuntimeDeps, GovernanceRuntimeError, GovernanceRuntimeEvent,
-    MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
+    CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
+    GovernanceRuntimeDeps, GovernanceRuntimeError, GovernanceRuntimeEvent, MekSnapshot,
+    OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_types::governance::GovernanceEntry;
@@ -25,6 +25,10 @@ use super::{dht, events, roles, state_mutations, state_reads, GovernanceAdapter}
 
 #[async_trait]
 impl GovernanceRuntimeDeps for GovernanceAdapter {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        crate::state_helpers::login_scope_or_closed(&self.state)
+    }
+
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
@@ -63,31 +67,21 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         state_reads::online_members_impl(self, community_id)
     }
 
-    fn open_record_keys(&self, community_id: &str) -> Vec<String> {
-        state_reads::open_record_keys_impl(self, community_id)
-    }
-
     // ---------- Community state (mutation) ----------
 
     fn set_governance_state(&self, community_id: &str, state: GovernanceState) {
         state_helpers::set_governance_state(&self.state, community_id, state);
     }
 
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        state_helpers::increment_lamport(&self.state, community_id)
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        state_helpers::next_governance_lamport(&self.state, community_id)
     }
 
     fn insert_community(&self, community: CommunityInsert) {
         insert_community_into_state(&self.state, community);
-    }
-
-    fn mark_open_channel_record(&self, community_id: &str, record_key: String) {
-        let mut communities = self.state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            if !cs.open_community_records.channel_keys.contains(&record_key) {
-                cs.open_community_records.channel_keys.push(record_key);
-            }
-        }
     }
 
     // ---------- DHT ----------
@@ -106,7 +100,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     async fn create_overflow_record(
         &self,
         owner_keypair: String,
-    ) -> Result<String, GovernanceRuntimeError> {
+    ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
         dht::create_overflow_record_impl(self, owner_keypair).await
     }
 
@@ -116,80 +110,70 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         slot_signing_to_veilid(&sk).to_string()
     }
 
-    async fn get_dht_value(
+    async fn acquire_record(
         &self,
         record_key: &str,
+        writer: Option<String>,
+    ) -> Result<rekindle_records::lease::LeaseId, GovernanceRuntimeError> {
+        dht::acquire_record_impl(self, record_key, writer).await
+    }
+
+    async fn release_record(&self, lease: rekindle_records::lease::LeaseId) {
+        dht::release_record_impl(self, lease).await;
+    }
+
+    async fn community_records_ready(
+        &self,
+        community_id: &str,
+        leases: rekindle_records::lease::CommunityLeases,
+    ) {
+        crate::services::community::leases::records_ready(&self.state, community_id, leases).await;
+    }
+
+    async fn get_dht_value(
+        &self,
+        lease: rekindle_records::lease::LeaseId,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        dht::get_dht_value_impl(self, record_key, subkey, force_refresh).await
+        dht::get_dht_value_impl(self, lease, subkey, force_refresh).await
     }
 
     async fn set_dht_value(
         &self,
-        record_key: &str,
+        lease: rekindle_records::lease::LeaseId,
         subkey: u32,
         value: Vec<u8>,
         writer: Option<String>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        dht::set_dht_value_impl(self, record_key, subkey, value, writer).await
+        dht::set_dht_value_impl(self, lease, subkey, value, writer).await
     }
 
     async fn inspect_dht_record_local_seqs(
         &self,
-        record_key: &str,
+        lease: rekindle_records::lease::LeaseId,
     ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-        dht::inspect_dht_record_local_seqs_impl(self, record_key).await
+        dht::inspect_dht_record_local_seqs_impl(self, lease).await
     }
 
     async fn inspect_dht_record_update_get_seqs(
         &self,
-        record_key: &str,
+        lease: rekindle_records::lease::LeaseId,
     ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-        dht::inspect_dht_record_update_get_seqs_impl(self, record_key).await
+        dht::inspect_dht_record_update_get_seqs_impl(self, lease).await
     }
 
     async fn inspect_dht_record_present_subkeys(
         &self,
-        record_key: &str,
+        lease: rekindle_records::lease::LeaseId,
     ) -> Result<Vec<u32>, GovernanceRuntimeError> {
-        dht::inspect_dht_record_present_subkeys_impl(self, record_key).await
-    }
-
-    async fn open_dht_record(
-        &self,
-        record_key: &str,
-        writer: Option<String>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        dht::open_dht_record_impl(self, record_key, writer).await
+        dht::inspect_dht_record_present_subkeys_impl(self, lease).await
     }
 
     // ---------- MEK cache ----------
 
-    fn community_mek(&self, community_id: &str) -> Option<MekSnapshot> {
-        self.state
-            .mek_cache
-            .lock()
-            .get(community_id)
-            .map(|mek| MekSnapshot {
-                generation: mek.generation(),
-                key_bytes: *mek.as_bytes(),
-            })
-    }
-
-    fn channel_mek(&self, community_id: &str, channel_id: &str) -> Option<MekSnapshot> {
-        self.state
-            .channel_mek_cache
-            .lock()
-            .get(&(community_id.to_string(), channel_id.to_string()))
-            .map(|mek| MekSnapshot {
-                generation: mek.generation(),
-                key_bytes: *mek.as_bytes(),
-            })
-    }
-
-    fn channel_meks_all(&self, community_id: &str) -> Vec<ChannelMekSnapshot> {
-        state_reads::channel_meks_all_impl(self, community_id)
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        crate::state_helpers::key_provider(&self.state)
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {
@@ -198,9 +182,10 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         // (MekSnapshot carries no provenance → untagged; it loses to any
         // tagged key and is keep-cached vs another untagged one, which is the
         // correct behaviour for hydration.)
-        if crate::state_helpers::install_community_mek(
+        if crate::state_helpers::install_mek(
             &self.state,
             community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
             CryptoMek::from_bytes(mek.key_bytes, mek.generation),
         ) {
             crate::services::community::media_ready_runtime::on_mek_updated(
@@ -212,26 +197,22 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot) {
-        crate::state_helpers::install_channel_mek(
+        let Some(channel) = rekindle_types::id::ChannelId::from_hex(channel_id) else {
+            tracing::warn!(community = %community_id, channel_id, "not a channel id — key not installed");
+            return;
+        };
+        if crate::state_helpers::install_mek(
             &self.state,
             community_id,
-            channel_id,
+            rekindle_types::channel_keys::KeyScope::Channel(channel),
             CryptoMek::from_bytes(mek.key_bytes, mek.generation),
-        );
-        crate::services::community::media_ready_runtime::on_mek_updated(
-            &self.state,
-            community_id,
-            Some(channel_id),
-        );
-    }
-
-    fn load_historical_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Option<MekSnapshot> {
-        state_reads::load_historical_channel_mek_impl(self, community_id, channel_id, generation)
+        ) {
+            crate::services::community::media_ready_runtime::on_mek_updated(
+                &self.state,
+                community_id,
+                Some(channel_id),
+            );
+        }
     }
 
     // ---------- Bootstrap (SQL) ----------
@@ -275,41 +256,11 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
 
     // ---------- Background lifecycle ----------
 
-    fn spawn_inspect_loop(&self, community_id: &str) {
-        crate::services::community::inspect::start_inspect_loop(
-            self.state.clone(),
-            community_id.to_string(),
-        );
-    }
-
-    fn spawn_presence_poll(&self, community_id: &str) {
-        crate::services::community::presence::start_presence_poll(
-            &self.state,
-            community_id.to_string(),
-        );
-    }
-
-    fn spawn_dht_keepalive(&self, community_id: &str) {
-        crate::services::community::keepalive::start_dht_keepalive(
-            self.state.clone(),
-            community_id.to_string(),
-        );
-    }
-
     fn spawn_history_catchup(&self, community_id: &str) {
         crate::services::community::join::schedule_history_catchup(
             self.state.clone(),
             community_id.to_string(),
         );
-    }
-
-    async fn watch_community_records(
-        &self,
-        community_id: &str,
-    ) -> Result<(), GovernanceRuntimeError> {
-        crate::services::community::watch::watch_community_records(&self.state, community_id)
-            .await
-            .map_err(GovernanceRuntimeError::Adapter)
     }
 
     fn ensure_files_cache_open(&self, community_id: &str) {
@@ -430,24 +381,26 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
                         .registry_owner_keypair
                         .clone()
                         .or_else(|| c.slot_keypair.clone()),
+                    slot_writer: c.slot_keypair.clone(),
                 })
             })
             .collect()
     }
 
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<String> {
+    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
         let cs = self.state.communities.read();
         cs.get(community_id)
-            .map(|c| c.channel_log_keys.values().cloned().collect())
+            .map(|c| {
+                c.channel_log_keys
+                    .iter()
+                    .map(|(id, key)| (id.clone(), key.clone()))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
         state_reads::list_my_active_invite_secret_keys_impl(self)
-    }
-
-    fn track_open_dht_records(&self, keys: &[String]) {
-        state_helpers::track_open_records(&self.state, keys);
     }
 
     fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]) {
@@ -459,36 +412,6 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         cs.get(community_id)
             .map(|c| c.open_community_records.governance_overflow_keys.clone())
             .unwrap_or_default()
-    }
-
-    fn mark_community_records_open(
-        &self,
-        community_id: &str,
-        governance_key: &str,
-        registry_key: Option<&str>,
-        registry_writer: Option<&str>,
-        channel_keys: Vec<String>,
-    ) {
-        state_mutations::mark_community_records_open_impl(
-            self,
-            community_id,
-            governance_key,
-            registry_key,
-            registry_writer,
-            channel_keys,
-        );
-    }
-
-    async fn watch_community_records_post_open(&self, community_id: &str) {
-        if let Err(error) =
-            crate::services::community::watch_community_records(&self.state, community_id).await
-        {
-            tracing::debug!(
-                community = %community_id,
-                %error,
-                "failed to watch community records after login open",
-            );
-        }
     }
 
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str) {

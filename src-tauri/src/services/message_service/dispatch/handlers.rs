@@ -1,21 +1,20 @@
 //! Persist + emit handlers for `DirectMessage` and `ChannelMessage`
 //! payload variants. Each persists a row via `message_repo`, bumps the
-//! unread counter when appropriate, and fires a journaled `ChatEvent`
-//! so a hard-quit client can replay through `event_resume`.
+//! unread counter when appropriate, and fires a journaled event so a
+//! window that reloads mid-stream can recover it (`subscribe_events`).
 
 use std::sync::Arc;
 
 use crate::channels::ChatEvent;
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Store a direct message in `SQLite` and emit `ChatEvent` to frontend.
 pub(super) fn handle_direct_message(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     body: &str,
     timestamp: i64,
@@ -58,16 +57,17 @@ pub(super) fn handle_direct_message(
             sender_name: None, // DMs use friend list for name resolution
         },
     );
-    // Phase 10 — journal + emit so a hard-quit mid-stream client can
-    // resume from the last cursor it saw and have this DM replayed.
-    crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
+    // Journaled so a chat window that reloads mid-stream gets it.
+    crate::event_dispatch::emit_journaled(
+        state,
+        crate::event_dispatch::WebviewEvent::Subscription(event),
+    );
 }
 
 /// Store a channel message in `SQLite` and emit `ChatEvent` to frontend.
 pub(super) fn handle_channel_message(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     channel_id: &str,
     body: &str,
@@ -101,5 +101,13 @@ pub(super) fn handle_channel_message(
         reply_to_id: None,
         sender_display_name: None, // 1:1 channels use friend list for name resolution
     };
-    crate::event_dispatch::emit_journaled(app_handle, state, "chat-event", &event);
+    // A channel message over a 1:1 envelope names no community, so it can
+    // only go to every community window (plan N7 decides this arm's fate).
+    crate::event_dispatch::emit_journaled(
+        state,
+        crate::event_dispatch::WebviewEvent::ChannelChat {
+            community_id: None,
+            event,
+        },
+    );
 }

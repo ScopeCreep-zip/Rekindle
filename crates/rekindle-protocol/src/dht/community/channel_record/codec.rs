@@ -19,6 +19,27 @@ use crate::error::ProtocolError;
 /// payload on any mismatch — a single forged entry taints the rest
 /// because they all flowed through the same writer who tried to lie.
 pub fn decode_channel_entries(data: &[u8]) -> Result<Vec<ChannelRecordEntry>, ProtocolError> {
+    decode_payload(data).map(|(_, entries)| entries)
+}
+
+/// The entries of a page `author` wrote, verified as
+/// [`decode_channel_entries`]; `None` for anyone else's page or a page that
+/// fails verification. This is what an append inherits and what its
+/// compare-and-swap merges (§26 W26): a page another key wrote into our
+/// slot is neither re-signed as ours nor kept (plan C7.13).
+pub(super) fn decode_own_page(
+    data: &[u8],
+    author: &rekindle_types::id::PseudonymKey,
+) -> Option<Vec<ChannelRecordEntry>> {
+    match decode_payload(data) {
+        Ok((page_author, entries)) if page_author == *author => Some(entries),
+        _ => None,
+    }
+}
+
+fn decode_payload(
+    data: &[u8],
+) -> Result<(rekindle_types::id::PseudonymKey, Vec<ChannelRecordEntry>), ProtocolError> {
     let payload: ChannelSubkeyPayload = serde_json::from_slice(data)
         .map_err(|e| ProtocolError::Deserialization(format!("channel subkey: {e}")))?;
     let sig_arr: [u8; 64] = payload
@@ -67,7 +88,7 @@ pub fn decode_channel_entries(data: &[u8]) -> Result<Vec<ChannelRecordEntry>, Pr
             }
         }
     }
-    Ok(payload.entries)
+    Ok((payload.author_pseudonym, payload.entries))
 }
 
 pub(super) fn encode_page_entries(

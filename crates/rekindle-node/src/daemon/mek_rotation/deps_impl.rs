@@ -19,19 +19,12 @@ use rekindle_mek_rotation::{
     RotationRecipient,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
 use super::DaemonMekAdapter;
-use crate::daemon::governance_adapter::{DaemonGovernanceAdapter, COMMUNITY_MEK_SLOT};
-
-/// How long a single wrapped-MEK delivery may take.
-///
-/// Longer than the default RPC timeout because these calls route through
-/// private routes and often relays. The rotation is already
-/// asynchronous, so patience costs nothing here while a premature
-/// timeout costs a member their key.
-const MEK_DELIVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+use crate::daemon::governance_adapter::DaemonGovernanceAdapter;
 
 impl DaemonMekAdapter {
     /// A short-lived governance adapter borrowed from our own `Arc`.
@@ -47,21 +40,14 @@ impl DaemonMekAdapter {
     fn publish(&self, event: SubscriptionEvent) {
         self.ctx.publish_event(event);
     }
-
-    /// Map the rotation crate's channel convention onto the cache's.
-    ///
-    /// `None`/empty means the community-wide key, which lives under the
-    /// reserved slot the governance adapter reads from. Writing it under
-    /// an empty channel id would put it where nothing looks for it.
-    fn cache_channel_id(channel_id: Option<&str>) -> String {
-        channel_id
-            .filter(|id| !id.is_empty())
-            .map_or_else(|| COMMUNITY_MEK_SLOT.to_string(), ToString::to_string)
-    }
 }
 
 #[async_trait]
 impl MekDistributeDeps for DaemonMekAdapter {
+    fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
+        self.ctx.unlock_scope_or_closed()
+    }
+
     fn cache(&self) -> Arc<dyn ChannelMekCache> {
         Arc::clone(&self.cache)
     }
@@ -75,6 +61,13 @@ impl MekDistributeDeps for DaemonMekAdapter {
             .community_membership(community_id)
             .and_then(|m| m.my_pseudonym_hex)
             .map(|hex| PseudonymKey::from_hex_lossy(&hex))
+    }
+
+    fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool {
+        self.ctx
+            .community_runtime
+            .governance_state(community_id)
+            .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }
 
     fn online_recipients(
@@ -100,7 +93,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
     async fn voice_recipients(
         &self,
         _community_id: &str,
-        _channel_id: &str,
+        _channel: ChannelId,
         _trigger_pseudonym: &str,
         _include_trigger_in_recipients: bool,
     ) -> Vec<RotationRecipient> {
@@ -133,7 +126,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
         // so the sender is authenticated by whether it decrypts at all.
         // See `Caller::call_community_envelope`.
         node.caller()
-            .call_community_envelope(&target, envelope_bytes, MEK_DELIVERY_TIMEOUT)
+            .call_community_envelope(&target, envelope_bytes)
             .await
             .map_err(|e| {
                 MekRotationError::Transport(format!("MEK app_call to {peer_pseudonym_hex}: {e}"))
@@ -144,33 +137,33 @@ impl MekDistributeDeps for DaemonMekAdapter {
         let mapped = match event {
             MekRotationEvent::RotationStarted {
                 community_id,
-                channel_id,
+                scope,
                 new_generation,
                 initiator_pseudonym_hex,
             } => CryptoEvent::MekRotated {
                 community: community_id,
-                channel: Some(channel_id),
+                channel: scope.wire_channel(),
                 generation: new_generation,
                 rotator_pseudonym: Some(initiator_pseudonym_hex),
             },
             MekRotationEvent::RotationComplete {
                 community_id,
-                channel_id,
+                scope,
                 generation,
             } => CryptoEvent::MekRotated {
                 community: community_id,
-                channel: Some(channel_id),
+                channel: scope.wire_channel(),
                 generation,
                 rotator_pseudonym: None,
             },
             MekRotationEvent::MekDelivered {
                 community_id,
-                channel_id,
+                scope,
                 generation,
                 sender_pseudonym_hex,
             } => CryptoEvent::MekTransferred {
                 community: community_id,
-                channel: Some(channel_id),
+                channel: scope.wire_channel(),
                 generation,
                 sender_pseudonym: sender_pseudonym_hex,
             },
@@ -179,12 +172,12 @@ impl MekDistributeDeps for DaemonMekAdapter {
             // up in the daemon log instead of only in its symptoms.
             MekRotationEvent::RotationFailed {
                 community_id,
-                channel_id,
+                scope,
                 reason,
             } => {
                 tracing::warn!(
                     community = %community_id,
-                    channel = %channel_id,
+                    %scope,
                     %reason,
                     "MEK rotation failed"
                 );
@@ -194,14 +187,11 @@ impl MekDistributeDeps for DaemonMekAdapter {
         self.publish(SubscriptionEvent::Crypto(mapped));
     }
 
-    fn current_lamport(&self, community_id: &str) -> u64 {
-        self.governance()
-            .community_membership(community_id)
-            .map_or(0, |m| m.lamport_counter)
-    }
-
-    fn increment_lamport(&self, community_id: &str) -> u64 {
-        self.governance().increment_lamport(community_id)
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        self.governance().next_governance_lamport(community_id)
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
@@ -211,49 +201,37 @@ impl MekDistributeDeps for DaemonMekAdapter {
     fn apply_received_mek_to_state(
         &self,
         community_id: &str,
-        channel_id: Option<&str>,
+        scope: KeyScope,
         mek: &MediaEncryptionKey,
-    ) {
-        self.cache.insert(
-            community_id,
-            &Self::cache_channel_id(channel_id),
-            mek.clone(),
-        );
+    ) -> bool {
+        self.cache.insert(community_id, scope, mek.clone())
     }
 
-    fn persist_received_mek(
-        &self,
-        community_id: &str,
-        channel_id: Option<&str>,
-        mek: &MediaEncryptionKey,
-    ) {
-        // `MekPersist` is async and this method is not, so the write is
-        // detached. Losing it costs a keyring entry, not the key — the
-        // cache above already holds it for this process.
+    fn persist_received_mek(&self, community_id: &str, scope: KeyScope, mek: &MediaEncryptionKey) {
+        // `MekPersist` is async and this method is not, so the write runs
+        // on the unlock scope, finishing before a lock completes. Losing it
+        // costs a keyring entry, not the key — the cache above already
+        // holds it for this process.
         let persist = Arc::clone(&self.persist);
         let community_id = community_id.to_string();
-        let channel_id = Self::cache_channel_id(channel_id);
         let generation = mek.generation();
         let bytes = mek.as_bytes().to_vec();
-        tokio::spawn(async move {
-            if let Err(e) = persist
-                .store_mek_for_generation(&community_id, &channel_id, generation, bytes)
-                .await
-            {
-                tracing::debug!(error = %e, "persisting received MEK failed");
-            }
-        });
+        self.ctx
+            .unlock_scope_or_closed()
+            .spawn_or_drop("persist MEK", async move {
+                if let Err(e) = persist
+                    .store_mek_for_generation(&community_id, scope, generation, bytes)
+                    .await
+                {
+                    tracing::debug!(error = %e, "persisting received MEK failed");
+                }
+            });
     }
 
-    fn emit_rotation_received(
-        &self,
-        community_id: &str,
-        channel_id: Option<&str>,
-        generation: u64,
-    ) {
+    fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64) {
         self.publish(SubscriptionEvent::Crypto(CryptoEvent::MekRotated {
             community: community_id.to_string(),
-            channel: channel_id.map(ToString::to_string),
+            channel: scope.wire_channel(),
             generation,
             rotator_pseudonym: None,
         }));

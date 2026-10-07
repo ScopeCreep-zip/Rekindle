@@ -11,6 +11,7 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
             is_attached,
             public_internet_ready,
             has_route,
+            media_route,
         } => {
             h.update(b"attach|");
             // The raw state string is included because it distinguishes
@@ -23,6 +24,7 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
                 u8::from(*is_attached),
                 u8::from(*public_internet_ready),
                 u8::from(*has_route),
+                *media_route as u8,
             ]);
         }
         NetworkEvent::LocalRoutesDied { count } => {
@@ -35,20 +37,6 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
                 h.update(k.as_bytes());
                 h.update(b",");
             }
-        }
-        NetworkEvent::WatchRenewed { record_key } => {
-            h.update(b"watch_ok|");
-            h.update(record_key.as_bytes());
-        }
-        NetworkEvent::WatchReestablished { record_key } => {
-            h.update(b"watch_re|");
-            h.update(record_key.as_bytes());
-        }
-        NetworkEvent::WatchFailed { record_key, error } => {
-            h.update(b"watch_fail|");
-            h.update(record_key.as_bytes());
-            h.update(b"|");
-            h.update(error.as_bytes());
         }
         NetworkEvent::ValueChanged {
             record_key,

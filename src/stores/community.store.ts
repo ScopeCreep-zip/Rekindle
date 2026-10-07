@@ -97,7 +97,6 @@ export interface Expression {
   name: string;
   kind: "emoji" | "sticker" | "soundboard";
   contentHash: string;
-  inlineDataBase64?: string | null;
   inlineDataUrl?: string | null;
   mediaType?: string | null;
   animated: boolean;
@@ -127,29 +126,27 @@ export interface EventRsvp {
   status: "going" | "maybe" | "declined";
 }
 
-export interface Thread {
-  id: string;
-  channelId: string;
-  name: string;
-  starterMessageId: string;
-  creatorPseudonym: string;
-  forumTag?: string | null;
-  createdAt: number;
-  archived: boolean;
-  autoArchiveSeconds: number;
-  lastMessageAt: number;
-  messageCount: number;
-}
-
 // Scheduled-event types (architecture §21) — declared once in the IPC
-// layer; these were byte-identical copies.
+// layer; these were byte-identical copies. Thread and GameServer moved
+// the same way once `ipc/channels/community_subscription_events.ts`
+// needed them too and src/ipc/ (the dependency-cruiser leaf) couldn't
+// import them back out of this store.
 import type {
   DayOfWeek,
   EventLocation,
+  GameServer,
   RecurrenceFrequency,
   RecurrenceRule,
+  Thread,
 } from "../ipc/commands/types";
-export type { DayOfWeek, EventLocation, RecurrenceFrequency, RecurrenceRule };
+export type {
+  DayOfWeek,
+  EventLocation,
+  GameServer,
+  RecurrenceFrequency,
+  RecurrenceRule,
+  Thread,
+};
 
 /**
  * A scheduled community event (architecture §21) — the calendar entry
@@ -175,15 +172,6 @@ export interface ScheduledEvent {
   coverImageRef?: string;
   recurrence?: RecurrenceRule;
   location?: EventLocation;
-}
-
-export interface GameServer {
-  id: string;
-  gameId: string;
-  label: string;
-  address: string;
-  addedBy: string;
-  createdAt: number;
 }
 
 export interface Community {

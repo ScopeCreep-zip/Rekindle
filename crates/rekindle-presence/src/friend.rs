@@ -7,7 +7,9 @@
 
 use std::sync::Arc;
 
-use crate::deps::{FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, PresenceError};
+use crate::deps::{
+    FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, PresenceError, StatusPublisherDeps,
+};
 use crate::status::UserStatusKind;
 
 /// 2.5× the 60 s heartbeat — allows one missed heartbeat + jitter
@@ -206,36 +208,29 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     deps.register_friend_dht_key(dht_record_key, friend_key);
     deps.set_friend_dht_record_key(friend_key, dht_record_key);
 
-    if let Err(error) = deps.open_friend_record(dht_record_key).await {
-        tracing::warn!(
-            %error,
-            dht_key = %dht_record_key,
-            "failed to open DHT record for watching"
-        );
-        deps.set_unwatched_friend(friend_key, true);
-        return Ok(());
-    }
-    deps.track_open_record(dht_record_key);
-
-    match deps
-        .watch_friend_subkeys(dht_record_key, FRIEND_WATCH_SUBKEYS)
-        .await
-    {
-        Ok(true) => {
+    let lease = match deps.acquire_friend_record(dht_record_key).await {
+        Ok(lease) => lease,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                dht_key = %dht_record_key,
+                "failed to open DHT record for watching"
+            );
+            deps.set_unwatched_friend(friend_key, true);
+            return Ok(());
+        }
+    };
+    // Watch on the new lease before handing it over: the host releases
+    // the friend's previous lease, and the watch must already sit on the
+    // one it keeps.
+    match deps.watch_friend_subkeys(lease, FRIEND_WATCH_SUBKEYS).await {
+        Ok(()) => {
             tracing::info!(
                 friend = %friend_key,
                 dht_key = %dht_record_key,
                 "watching friend presence",
             );
             deps.set_unwatched_friend(friend_key, false);
-        }
-        Ok(false) => {
-            tracing::warn!(
-                friend = %friend_key,
-                dht_key = %dht_record_key,
-                "watch_dht_values returned false — adding to poll fallback set",
-            );
-            deps.set_unwatched_friend(friend_key, true);
         }
         Err(error) => {
             tracing::warn!(
@@ -246,28 +241,26 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
             deps.set_unwatched_friend(friend_key, true);
         }
     }
+    // Held either way: the poll fallback reads through it.
+    deps.hold_friend_record(friend_key, lease).await;
     Ok(())
 }
 
 /// Publish our own status to profile subkey 2. Encodes the 9-byte
 /// `[status_byte, timestamp_be]` payload + writes via the adapter.
-pub async fn publish_status<D: FriendPresenceDeps>(
+pub async fn publish_status<D: StatusPublisherDeps + ?Sized>(
     deps: Arc<D>,
     status: UserStatusKind,
 ) -> Result<(), PresenceError> {
-    let (profile_key, owner_keypair) = deps
+    let profile_key = deps
         .profile_dht_info()
         .ok_or(PresenceError::MissingProfileKey)?;
 
     tracing::info!(
         ?status,
-        has_owner_keypair = owner_keypair.is_some(),
         profile_key = %profile_key,
         "publish_status: writing to DHT",
     );
-
-    deps.open_profile_record_for_write(&profile_key, owner_keypair.as_deref())
-        .await?;
 
     let timestamp = deps.now_ms();
     let mut payload = Vec::with_capacity(9);

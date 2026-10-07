@@ -9,24 +9,26 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-rekindle-types = { path = "../rekindle-types" }
-rekindle-crypto = { path = "../rekindle-crypto" }
-rekindle-protocol = { path = "../rekindle-protocol" }
-rekindle-utils = { path = "../rekindle-utils" }
-sha2 = "0.10"
-blake3 = "1"
-uuid = { version = "1", features = ["v4", "serde"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
 async-trait = "0.1"
 base64 = "0.22"
-lru = "0.12"
+blake3 = "1"
 hex = { workspace = true }
+lru = "0.12"
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [ "fs" ] }
+tracing = { workspace = true }
+uuid = { version = "1", features = [ "v4", "serde" ] }
 
 [dev-dependencies]
+parking_lot = { workspace = true }
 proptest = "1"
 tempfile = "3"
-parking_lot = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

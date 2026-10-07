@@ -6,6 +6,7 @@
 mod dto;
 mod invite;
 mod payload;
+mod sealing;
 
 pub use dto::{
     AuditLogEntryDto, BannedMemberDto, CategoryDto, ChannelMessageDto, EventDto, EventRsvpDto,
@@ -17,6 +18,7 @@ pub use invite::{
     verify_invite_blob, InviteBlob,
 };
 pub use payload::{GameInfo, MessagePayload};
+pub use sealing::Sealing;
 
 use serde::{Deserialize, Serialize};
 
@@ -27,10 +29,14 @@ pub struct MessageEnvelope {
     pub sender_key: Vec<u8>,
     /// Unix timestamp in milliseconds.
     pub timestamp: u64,
-    /// Unique message nonce (for deduplication and ordering).
+    /// Message identity: kept across retries, so the receiver drops a
+    /// second copy of a message it already accepted.
     pub nonce: Vec<u8>,
-    /// Encrypted payload (ciphertext).
+    /// The serialized `MessagePayload`: Signal ciphertext when its
+    /// [`Sealing`] is `Session`, the plain JSON otherwise.
     pub payload: Vec<u8>,
-    /// Ed25519 signature over (timestamp || nonce || payload).
+    /// Ed25519 signature over
+    /// [`crate::messaging::signing::envelope_signing_bytes`], which binds
+    /// the recipient's identity key.
     pub signature: Vec<u8>,
 }

@@ -140,6 +140,32 @@ verify the check actually ran.
 | `Locking → Locked` | `commands/auth.rs::logout` once vault zeroised |
 | `* → ShuttingDown` | `shutdown::handle_exit` on `RunEvent::Exit` |
 
+## Session scope: who owns a session's tasks
+
+`rekindle_lifecycle::SessionScope` (plan C4) owns every task that needs
+an unlocked identity. It pairs tokio-util's `CancellationToken` (tell
+tasks to stop) with a `TaskTracker` (wait for them), refuses spawns once
+it is shut down (the tracker alone would not), names each task, and
+reports a panicking task to its owner once.
+
+| Scope | Created | Shut down | On a task panic |
+|---|---|---|---|
+| Desktop `AppState.login_scope` | `services::session::begin`, before the identity loads (`auth_runtime::{login_inner, create_identity_inner}`) | first step of `services::session::end_session` (logout, delete identity, app exit); `stop_scope` after a failed login | `SystemAlert` + `logout_inner`; the app stays up |
+| Desktop per-community child (`CommunityState.tasks`) | first spawn for the community (`state_helpers::community_scope`) | leaving the community; with the login scope | as the login scope |
+| Desktop voice children (`VoiceEngineHandle.{loops, monitor, mcu}`) | voice session setup | `shutdown_voice`; with the login scope | as the login scope |
+| Daemon `DaemonContext.unlock_scope` | `handle_unlock` after resume | first step of `teardown_unlocked` (lock, failed unlock, destroy, wipe, exit) | `ExitReason::HandlerPanic` (exit 70) |
+| Daemon per-community child (`community_scopes`) | the presence supervisor | `handle_leave`; with the unlock scope | as the unlock scope |
+| `SubscriptionManager` child | `handle_unlock` | `SubscriptionManager::shutdown`; with the unlock scope | as the unlock scope |
+
+`spawn` drops a task's future at its next await when the scope stops;
+`spawn_with_token` hands the task the token so it can finish its own
+shutdown (stop a stream, finish a keyring write) within the deadline.
+A successful shutdown logs `scope shut down remaining=0` with the scope's
+label; a deadline overrun logs the stuck task names. App-lifetime spawns
+(boot, the event queue, the tray, the Veilid dispatch loop's workers,
+the bus subscriber, the transport node) are the only bare spawns left,
+each listed with its reason in `xtask/src/bare_spawn.rs` (rule B20).
+
 ## Why share with the daemon
 
 The daemon's CLI/TUI track needs the same capability gating: a

@@ -9,14 +9,14 @@ use std::sync::Arc;
 
 use rekindle_types::permissions;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::{AppState, ChannelType, SharedState};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn create_channel_inner(
     state: Arc<AppState>,
-    pool: DbPool,
+    pool: Db,
     community_id: String,
     name: String,
     channel_type: String,
@@ -77,7 +77,6 @@ pub async fn create_channel_inner(
     .map_err(|e| e.to_string())?;
     let channel_id = created.channel_id_hex.clone();
     let record_key = created.record_key.clone();
-    state_helpers::track_open_records(&state, std::slice::from_ref(&record_key));
 
     let channel_type: ChannelType = channel_type.parse().unwrap_or(ChannelType::Text);
     let channel = crate::state::ChannelInfo {
@@ -150,7 +149,8 @@ pub async fn create_category_inner(
     };
     let category_id_bytes = random_16_bytes();
     let category_id = hex::encode(category_id_bytes);
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -174,7 +174,8 @@ pub async fn delete_category_inner(
     use rekindle_types::permissions;
 
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -209,7 +210,8 @@ pub async fn rename_category_inner(
     use rekindle_types::permissions;
 
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -245,7 +247,8 @@ pub async fn move_channel_inner(
     use rekindle_types::permissions;
 
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     let parsed_category_id = category_id
         .as_deref()
         .map(|category| rekindle_types::id::CategoryId(hex_to_id_16(category)));
@@ -289,7 +292,8 @@ pub async fn reorder_categories_inner(
 
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     for (index, category_id) in category_ids.iter().enumerate() {
-        let lamport = state_helpers::increment_lamport(state, &community_id);
+        let lamport = state_helpers::next_governance_lamport(state, &community_id)
+            .map_err(|e| e.to_string())?;
         crate::services::community::write_entry(
             state,
             &community_id,
@@ -331,7 +335,8 @@ pub async fn set_channel_topic_inner(
     use rekindle_types::permissions;
 
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -374,7 +379,8 @@ pub async fn set_channel_forum_tags_inner(
         .filter(|tag| !tag.is_empty())
         .take(32)
         .collect();
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -411,7 +417,8 @@ pub async fn reorder_channels_inner(
 
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     for (i, ch_id) in channel_ids.iter().enumerate() {
-        let lamport = state_helpers::increment_lamport(state, &community_id);
+        let lamport = state_helpers::next_governance_lamport(state, &community_id)
+            .map_err(|e| e.to_string())?;
         crate::services::community::write_entry(
             state,
             &community_id,

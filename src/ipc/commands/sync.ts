@@ -22,8 +22,7 @@ export const syncCommands = {
     }),
   getDmMessages: (recordKey: string, limit: number) =>
     invoke<DmMessageRecord[]>("get_dm_messages", { recordKey, limit }),
-  openDmWindow: (recordKey: string, titleHint: string) =>
-    invoke<void>("open_dm_window", { recordKey, titleHint }),
+  openDmWindow: (recordKey: string) => invoke<void>("open_dm_window", { recordKey }),
 
   // Strand Relay Network (architecture §13)
   volunteerRelay: (friendPublicKey: string) =>
@@ -337,15 +336,4 @@ export const syncCommands = {
   /** Drop the native self-view channel when the native camera stops. */
   unregisterNativePreviewChannel: () =>
     invoke<void>("unregister_native_preview_channel"),
-
-  // Phase 10 — replay events newer than `lastCursor` (the last cursor
-  // this window persisted to localStorage). The backend re-emits each
-  // entry **scoped to the calling webview** on its original channel
-  // (and a `cursor-tick` per entry to advance localStorage), so
-  // multiple windows mounting concurrently never duplicate-process the
-  // same backlog. Returns the count of entries replayed — useful for
-  // dev-mode diagnostics; the actual events arrive through the live
-  // `safeListen` handlers.
-  eventResume: (lastCursor: number): Promise<number> =>
-    invoke<number>("event_resume", { lastCursor }),
 };

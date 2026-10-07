@@ -10,14 +10,15 @@
 #   mise run rekindle:reset         # Destroy volumes + restart fresh
 
 ["rekindle:build"]
-description = "Build rekindle binary (release, FHS-patched for containers)"
+description = "Build rekindled + rekindle (release, FHS-patched for containers)"
 alias = ["rkb"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Building rekindle binary (release)..."
-cargo build -p rekindle-transport -p rekindle-cli --release
+echo "Building rekindled + rekindle (release)..."
+cargo build -p rekindle-node --bin rekindled --release
+cargo build -p rekindle-cli --bin rekindle --release
 
 # Strip nix store paths from binaries so they run on stock Debian/Ubuntu.
 # Same pattern as open-sesame build:deb (patchelf --set-interpreter + --remove-rpath).
@@ -28,13 +29,14 @@ case "$ARCH" in
   *)       echo "ERROR: unsupported architecture '$ARCH' for patchelf" >&2; exit 1 ;;
 esac
 
-for bin in rekindle; do
+for bin in rekindled rekindle; do
   BINARY="target/release/${bin}"
   if [[ -f "${BINARY}" ]]; then
     patchelf --set-interpreter "$INTERP" --remove-rpath "$BINARY"
     echo "  ${BINARY} (FHS-patched)"
   else
-    echo "  WARNING: ${BINARY} not found"
+    echo "ERROR: ${BINARY} was not built" >&2
+    exit 1
   fi
 done
 
@@ -56,7 +58,7 @@ echo "================================================="
 echo ""
 
 # Ensure binaries exist and are FHS-patched
-if [[ ! -f target/release/rekindle ]]; then
+if [[ ! -f target/release/rekindled || ! -f target/release/rekindle ]]; then
   echo "Release binaries not found — building..."
   mise run rekindle:build
   echo ""
@@ -214,7 +216,7 @@ for node in alice bob carol; do
   fi
 
   # Check daemon status
-  daemon_status=$(docker exec "${container}" systemctl is-active rekindle-node.service 2>/dev/null || echo "unknown")
+  daemon_status=$(docker exec "${container}" systemctl is-active rekindled.service 2>/dev/null || echo "unknown")
   echo "   daemon: ${daemon_status}"
 
   # Check if init service completed
@@ -222,7 +224,7 @@ for node in alice bob carol; do
   case "${init_status}" in
     active|inactive)
       # Check if session file exists (init completed successfully)
-      if docker exec "${container}" test -f /home/rekindle/.local/state/rekindle/session.json 2>/dev/null; then
+      if docker exec "${container}" test -f /home/rekindle/.local/share/com.rekindle.app/state/session.json 2>/dev/null; then
         echo "   ✅ Identity initialized"
         # Show public key
         pubkey=$(docker exec --user rekindle "${container}" rekindle identity show --json 2>/dev/null | jq -r '.public_key // empty' 2>/dev/null || echo "")
@@ -300,7 +302,7 @@ echo ""
 
 # Follow the latest log file
 docker exec "${CONTAINER}" bash -c \
-  'tail -f /home/rekindle/.local/state/rekindle/logs/rekindle.log.* 2>/dev/null || echo "No log files yet"'
+  'tail -f /home/rekindle/.local/share/com.rekindle.app/logs/rekindle.log.* 2>/dev/null || echo "No log files yet"'
 '''
 
 ["rekindle:health"]
@@ -344,8 +346,8 @@ for node in "${NODES[@]}"; do
   echo ""
 
   # Journal: rekindle-node (last 20 lines)
-  echo "── rekindle-node.service journal (last 20) ──"
-  docker exec "${container}" journalctl -u rekindle-node.service --no-pager -n 20 2>&1 | sed 's/^/  /'
+  echo "── rekindled.service journal (last 20) ──"
+  docker exec "${container}" journalctl -u rekindled.service --no-pager -n 20 2>&1 | sed 's/^/  /'
   echo ""
 
   # Journal: rekindle-init
@@ -372,8 +374,8 @@ fi
 
 echo "Full systemd journal for ${NODE}..."
 echo ""
-echo "── rekindle-node.service ──"
-docker exec "${CONTAINER}" journalctl -u rekindle-node.service --no-pager
+echo "── rekindled.service ──"
+docker exec "${CONTAINER}" journalctl -u rekindled.service --no-pager
 echo ""
 echo "── rekindle-init.service ──"
 docker exec "${CONTAINER}" journalctl -u rekindle-init.service --no-pager

@@ -89,7 +89,7 @@ We **do not** defend against:
 | S1 | Active attacker impersonates a friend in a 1:1 chat | Signal Protocol X3DH binds session to identity-key signatures; trust-on-first-use (TOFU) is the default with optional out-of-band verification. Identity-key changes surface a re-verification prompt, never auto-accept. |
 | S2 | Banned member writes to their SMPL subkey claiming to be admin | Reader-validates: every reader recomputes `effective_permissions(writer, channel)` from the merged CRDT state. A writer without `MANAGE_*` permission has their entry silently dropped. (See [`../architecture/communities.md` §9](../architecture/communities.md#9-permissions).) |
 | S3 | Attacker sends gossip envelopes claiming to be from another sender | Every envelope is Ed25519-signed by the sender's pseudonym. Recipients verify before processing. Forged signatures fail verification and are dropped. |
-| S4 | Attacker spoofs the daemon over the IPC bus | Noise IK handshake binds the connection to the daemon's pre-known static key. UCred (`SO_PEERCRED`/`LOCAL_PEERCRED`) is mixed into the Noise prologue, so a different process MITM-ing the socket fails the handshake. |
+| S4 | Attacker spoofs the daemon over the IPC bus | Noise IK handshake binds the connection to the daemon's pre-known static key. The socket is owner-only (`0700` directory, `0600` socket; owner-only DACL on Windows), a peer whose UID differs from the daemon's is refused (`SO_PEERCRED`; `getpeereid` on macOS), and both UIDs plus the socket path are in the Noise prologue, so a handshake relayed to another user's or another path's bus fails. The boundary is the OS user: a process running as the same user is trusted to connect, and its clearance comes from the registry (plan D1). |
 | S5 | Attacker spoofs an MEK-rotation `MEKGenerationBump` | Reader-validates the rotator: `MEKGenerationBump` carries `trigger_departed` and `cascade_skipped`; every reader recomputes the deterministic rotator and checks the writer matches. Forged bumps are silently dropped. |
 
 ### T — Tampering
@@ -256,17 +256,22 @@ emoji names, embed fields, governance entry metadata.
 | Semgrep `rekindle-no-inner-html` rule | **Met** — `.semgrep.yml` |
 | Playwright XSS injection suite | **Met** — `e2e/security/xss.spec.ts` |
 
-### W2 — DOM-XSS via attacker-controlled URL fragments
+### W2 — Hostile OS deep links
 
-Deep links (`rekindle://invite/{blob}#{key}`) can carry hostile
-payloads. The decode path must never render the raw blob or fragment
-into the DOM.
+Any web page or app can open a `rekindle://` URL: a community invite
+(`rekindle://invite/{governance key}/{secrets key}/{32-hex code}`), a
+friend invite (`rekindle://<base64url signed blob>`) or a pairing URI.
+A link must never act without the user's consent, never reach the DOM
+raw, and never reveal its secrets to the webview.
 
 | Mitigation | Status |
 |------------|--------|
-| Cap'n Proto decode rejects malformed payloads | **Met** |
+| Strict Rust parsing: `rekindle_types::invite::{InviteLink, DeepLink}` (exact shape, ≤ 256 B invites, ≤ 16 KiB friend invites); hostile corpus unit-tested there | **Met** |
+| Friend invites decoded, signature- and recency-checked locally before anything is shown | **Met** — `src-tauri/src/deep_links.rs` |
+| Consent before any network access: the backend holds the link; the buddy list shows a 64-bit key fingerprint and acts only on Confirm | **Met** — `DeepLinkConsentDialog.tsx`; `e2e/security/deep-link.spec.ts` |
+| Pairing URIs refused from OS deep links (pasted or scanned in Settings → Devices only) | **Met** |
+| Pending link cleared on logout, so it is never offered to the next user | **Met** |
 | Semgrep `rekindle-deep-link-no-direct-render` rule | **Met** |
-| Playwright deep-link hostile-payload corpus | **Met** — `e2e/security/deep-link.spec.ts` |
 
 ### W3 — CSP bypass via inline scripts / eval
 
@@ -279,7 +284,8 @@ load-bearing defence.
 | `default-src` | `'self'` | Whitelist baseline. |
 | `script-src` | `'self'` | No `'unsafe-inline'`, no `'unsafe-eval'`. |
 | `style-src` | `'self' 'unsafe-inline'` | Tailwind 4 + SolidJS need it. Trade-off documented. |
-| `img-src` | `'self' asset: http://asset.localhost data:` | `data:` enables SVG-via-innerHTML for the QR code; controlled by W1. |
+| `img-src` | `'self' data:` | `data:` serves avatars, backend-built expression images and the QR SVG (W1). No remote origin: a peer-chosen image URL would leak every reader's IP. Enforced by `tests/csp_policy.rs`. |
+| `media-src` | `'self' blob: data:` | Voice messages play from `blob:` URLs of backend-fetched bytes; soundboard clips from backend-built `data:` URLs (media type sniffed against an allowlist). |
 | `connect-src` | `ipc: http://ipc.localhost` | Locks outbound `fetch` to the Tauri IPC bridge. |
 | `font-src` | `'self' data:` | Standard. |
 | `object-src` | `'none'` | Forbids `<object>`/`<embed>`/`<applet>`. |
@@ -297,17 +303,22 @@ load-bearing defence.
 
 ### W4 — Capability privilege escalation via Tauri ACL
 
-The Tauri capabilities file (`src-tauri/capabilities/default.json`)
-controls which Rust commands the WebView can call. A loose ACL
-(broad `*:default` permission bundles) lets a renderer-side XSS
-escalate into invoking sensitive Rust commands.
+The Tauri capability files (`src-tauri/capabilities/*.json`) control
+which commands each WebView can call. A loose ACL (broad `*:default`
+permission bundles, webview creation) lets a renderer-side XSS escalate
+into invoking sensitive Rust commands or spawning a window under a
+privileged label.
 
 | Mitigation | Status |
 |------------|--------|
-| Per-window allow-list rather than global grants | **Met** — windows: `["login", "buddy-list", "chat-*", …]` |
-| Explicit `core:window:*` action grants | **Met** — see `capabilities/default.json` |
-| Plugin-level `*:default` bundles | **Partial** — still used for `notification`, `store`, `global-shortcut`, `deep-link`, `process`, `autostart`, `opener`, `dialog`. Replacing with explicit allow-lists requires an IPC-call audit (which Tauri commands does the frontend actually invoke per plugin) — tracked as open work. |
-| Description field documents rationale | **Met** — `capabilities/default.json` `description` field |
+| App-command ACL manifest exists | **Met** — `build.rs` derives the command list from `src/invoke.rs`, so `tauri-build` emits one `allow-*`/`deny-*` per command and Tauri enforces the per-window grants |
+| Per-window allow-list rather than global grants | **Met** — one `app-*.json` per window family; `app-login.json` is pinned to the 7 pre-auth commands |
+| `default.json` limited to window chrome | **Met** — only the `core:window:*` actions the titlebar/drag region use, plus `core:event:allow-listen`/`unlisten` until the per-window Channel router lands |
+| No webview creation from the frontend (S8) | **Met** — `core:webview:*` not granted; windows are created only by `src/windows.rs` |
+| No `core:default` / plugin `*:default` bundles | **Met** — specific plugin permissions only, in the window that uses them (notification probe: post-auth windows; opener URL: buddy list; dialogs: community) |
+| Debug commands absent from release | **Met** — `#[cfg(debug_assertions)]` on the commands; their grants live in `capabilities-dev/`, loaded only in debug builds |
+| Policy enforced in CI | **Met** — `src-tauri/tests/capability_policy.rs` (no blanket grants, login allowlist, every command granted, window patterns match `windows.rs`, debug grants only in `capabilities-dev/`) |
+| Description field documents rationale | **Met** — each capability file's `description` field |
 | New permissions require security review | **Process** — PR template flags any change touching `capabilities/` |
 
 ### W5 — Prototype pollution
@@ -321,6 +332,7 @@ external embed) is a vector.
 | Mitigation | Status |
 |------------|--------|
 | Cap'n Proto decode for all peer-content envelopes | **Met** |
+| `app.security.freezePrototype: true` — `Object.prototype` frozen before any app script | **Met** — `tests/csp_policy.rs` |
 | Semgrep `rekindle-no-prototype-pollution-merge` rule | **Met** |
 | `Object.create(null)` for any merge target with peer-controlled keys | **Convention** — enforced by review |
 
@@ -331,7 +343,8 @@ attackers redirect users to phishing pages.
 
 | Mitigation | Status |
 |------------|--------|
-| External URLs opened via `@tauri-apps/plugin-opener` (which respects the system handler) | **Met** |
+| Every window's navigation is limited to the app origin (`on_navigation`), and `window.open` / `target=_blank` are denied (`on_new_window`) | **Met** — `src-tauri/src/windows/navigation.rs` |
+| External links open only through the backend `open_external_url`: https-only, ≤ 2048 B, after a native confirm naming the host (punycode for IDNs); the opener plugin's JS link interception is off and no window holds an opener grant | **Met** |
 | Semgrep `rekindle-no-unchecked-href-assignment` rule | **Met** |
 
 ### W7 — WebView CVEs
@@ -355,6 +368,7 @@ it.
 | Mitigation | Status |
 |------------|--------|
 | Rust-side `Debug` impls redact sensitive fields | **Met** |
+| Log files carry no identifiers (S16): every line from every target, including `veilid_core`/`veilid_api`, passes through `rekindle_utils::log_scrub` at the sink — Veilid keys, record keys, hex identity/pseudonym/channel/call ids, UUIDs and IP addresses become per-process keyed-hash tags (Signal-Android `Scrubber` design); panic output is scrubbed the same way | **Met** — tested against real veilid-core `Display`/`Debug` output (`rekindle-protocol/tests/log_scrub_veilid.rs`) |
 | Frontend convention: never `console.log` secret-bearing fields | **Convention** |
 | Semgrep `rekindle-no-secret-in-log` rule | **Met** |
 | Biome `noConsole` rule (warns on `console.log`, allows `warn` / `error`) | **Met** |

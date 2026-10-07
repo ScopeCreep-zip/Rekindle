@@ -133,38 +133,29 @@ when the corresponding feature ships.**
 Links provided by peers (link previews, profile homepages, embed
 URLs) get three checks:
 
-1. **Scheme allowlist.** Only `https://`, `http://` (with a warning),
-   and `rekindle://` are allowed. Reject `javascript:`, `data:`,
-   `file:`, `vbscript:`, custom schemes.
-2. **External nav uses the opener plugin.** Never assign to
-   `window.location` directly. Use
-   `import { open } from "@tauri-apps/plugin-opener";` and let the
-   OS default handler take over. The Semgrep rule
-   `rekindle-no-unchecked-href-assignment` catches the unsafe form.
-3. **Anchor `rel` attribute.** When a link is rendered, always set
-   `rel="noopener noreferrer ugc"` and `target="_blank"`.
+1. **The backend decides.** The webview never opens a URL itself and
+   holds no opener grant. A link is a `<button>` that calls
+   `commands.openExternalUrl(url)`; the backend command
+   `open_external_url` accepts only `https` URLs of at most 2048 bytes
+   (`rekindle_link_preview::https_url`), shows a native confirmation
+   naming the host (punycode for international names), and only then
+   hands the URL to the OS.
+2. **Never navigate the webview.** Never assign to `window.location`
+   or render `<a href>` to an external URL. Every window's navigation
+   guard rejects any origin but the app's own, and new windows are
+   denied. The Semgrep rule `rekindle-no-unchecked-href-assignment`
+   catches the unsafe form.
+3. **Peer-supplied link text is cleaned in Rust.** Link previews pass
+   `rekindle_link_preview::accept_inbound` (https URL, control and bidi
+   characters stripped, lengths capped) and must belong to a message
+   their sender wrote; they carry no image.
 
 ```tsx
-import { open } from "@tauri-apps/plugin-opener";
+import { commands } from "../../ipc/commands";
 
-function safeOpen(url: string): void {
-  if (!/^(?:https?|rekindle):/i.test(url)) {
-    return; // refused
-  }
-  void open(url);
-}
-
-<a
-  href={url}
-  target="_blank"
-  rel="noopener noreferrer ugc"
-  onClick={(e) => {
-    e.preventDefault();
-    safeOpen(url);
-  }}
->
-  {url}
-</a>
+<button type="button" class="message-link-preview" onClick={() => void commands.openExternalUrl(url)}>
+  {title}
+</button>
 ```
 
 ## DevDependencies to add

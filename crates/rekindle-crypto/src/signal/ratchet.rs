@@ -41,18 +41,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::bytes::to_32;
 use crate::error::CryptoError;
+use rekindle_types::domains;
 
 /// Header bytes preceding the AEAD ciphertext: ratchet_public(32) +
 /// counter(8) + nonce(12).
 pub const HEADER_LEN: usize = 52;
-
-/// HKDF info labels — shared by every track; changing any of these is a
-/// wire break.
-const LABEL_PQXDH_EXPAND: &[u8] = b"ReKindlePQXDH";
-const LABEL_ROOT: &[u8] = b"ReKindleRootKey";
-const LABEL_CHAIN_RATCHET: &[u8] = b"ReKindleChainRatchet";
-const LABEL_MSG_KEY: &[u8] = b"ReKindleMsgKey";
-const LABEL_CHAIN_KEY: &[u8] = b"ReKindleChainKey";
 
 /// Double Ratchet session state.
 ///
@@ -86,7 +79,7 @@ pub struct RatchetState {
 pub fn expand_pqxdh_root(root_key: &[u8; 32]) -> Result<[u8; 96], CryptoError> {
     let hk = Hkdf::<Sha256>::new(None, root_key);
     let mut okm = [0u8; 96];
-    hk.expand(LABEL_PQXDH_EXPAND, &mut okm)
+    hk.expand(domains::RATCHET_PQXDH_EXPAND.as_bytes(), &mut okm)
         .map_err(|e| CryptoError::SessionError(format!("HKDF expand failed: {e}")))?;
     Ok(okm)
 }
@@ -323,9 +316,9 @@ fn ratchet_root(root_key: &[u8; 32], dh: &[u8]) -> Result<([u8; 32], [u8; 32]), 
     let hk = Hkdf::<Sha256>::new(None, &ikm);
     let mut new_root = [0u8; 32];
     let mut new_chain = [0u8; 32];
-    hk.expand(LABEL_ROOT, &mut new_root)
+    hk.expand(domains::RATCHET_ROOT.as_bytes(), &mut new_root)
         .map_err(|e| CryptoError::SessionError(format!("HKDF: {e}")))?;
-    hk.expand(LABEL_CHAIN_RATCHET, &mut new_chain)
+    hk.expand(domains::RATCHET_CHAIN_RATCHET.as_bytes(), &mut new_chain)
         .map_err(|e| CryptoError::SessionError(format!("HKDF: {e}")))?;
     ikm.zeroize();
     Ok((new_root, new_chain))
@@ -336,9 +329,9 @@ fn chain_step(chain_key: &[u8; 32]) -> Result<([u8; 32], [u8; 32]), CryptoError>
     let hk = Hkdf::<Sha256>::new(None, chain_key);
     let mut message_key = [0u8; 32];
     let mut next_chain_key = [0u8; 32];
-    hk.expand(LABEL_MSG_KEY, &mut message_key)
+    hk.expand(domains::RATCHET_MSG_KEY.as_bytes(), &mut message_key)
         .map_err(|e| CryptoError::SessionError(format!("HKDF: {e}")))?;
-    hk.expand(LABEL_CHAIN_KEY, &mut next_chain_key)
+    hk.expand(domains::RATCHET_CHAIN_KEY.as_bytes(), &mut next_chain_key)
         .map_err(|e| CryptoError::SessionError(format!("HKDF: {e}")))?;
     Ok((message_key, next_chain_key))
 }

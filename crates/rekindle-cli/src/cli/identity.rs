@@ -15,9 +15,10 @@ pub struct InitArgs {
     #[arg(long)]
     pub storage: Option<PathBuf>,
 
-    /// Fail if any prompts would be needed (CI/scripting mode).
+    /// Read the passphrase from this file (`-` for stdin) instead of a
+    /// prompt. Never pass a passphrase as a flag value.
     #[arg(long)]
-    pub non_interactive: bool,
+    pub passphrase_file: Option<PathBuf>,
 
     /// Also export identity bundle on creation.
     #[arg(long)]
@@ -27,6 +28,19 @@ pub struct InitArgs {
     /// Named to be unmistakable in shell history.
     #[arg(long)]
     pub wipe_all_data: bool,
+
+    /// With `--wipe-all-data`: the confirmation phrase, for scripts.
+    #[arg(long, requires = "wipe_all_data")]
+    pub confirm: Option<String>,
+}
+
+/// Arguments for `rekindle unlock`.
+#[derive(Args)]
+pub struct UnlockArgs {
+    /// Read the passphrase from this file (`-` for stdin) instead of a
+    /// prompt. Never pass a passphrase as a flag value.
+    #[arg(long)]
+    pub passphrase_file: Option<PathBuf>,
 }
 
 /// Arguments for `rekindle status`.
@@ -89,5 +103,9 @@ pub enum IdentityCmd {
     },
 
     /// Destroy local identity (requires typed confirmation).
-    Destroy,
+    Destroy {
+        /// The confirmation phrase, for scripts.
+        #[arg(long)]
+        confirm: Option<String>,
+    },
 }

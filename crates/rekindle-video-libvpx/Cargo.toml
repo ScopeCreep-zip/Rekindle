@@ -9,8 +9,8 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-rekindle-video = { path = "../rekindle-video" }
 rekindle-types = { path = "../rekindle-types" }
+rekindle-video = { path = "../rekindle-video" }
 tracing = { workspace = true }
 
 # The libvpx C dependency is FEATURE-GATED, DEFAULT OFF. With the feature
@@ -34,16 +34,16 @@ tracing = { workspace = true }
 # feature runs bindgen against the *installed* libvpx headers (needs
 # libclang), so the bindings track the system libvpx (brew ships 1.15.2).
 [dependencies.env-libvpx-sys]
-version = "5.1"
+features = [ "generate" ]
 optional = true
-features = ["generate"]
+version = "5.1"
 
 [features]
-default = []
+default = [  ]
 # Enable the real libvpx-backed encoder. REQUIRES: a system libvpx
 # (pkg-config `vpx`), libclang (for the `generate` bindgen path), and — to
 # static-link — `VPX_STATIC=1` in the build environment:
 #
 #   VPX_STATIC=1 cargo build -p rekindle-video-libvpx --features libvpx
 #
-libvpx = ["dep:env-libvpx-sys"]
+libvpx = [ "dep:env-libvpx-sys" ]

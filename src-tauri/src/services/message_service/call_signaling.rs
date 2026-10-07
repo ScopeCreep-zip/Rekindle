@@ -16,13 +16,13 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 pub(super) async fn handle_call_signaling_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     sender_hex: &str,
     payload: MessagePayload,
 ) {

@@ -7,8 +7,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_gossip::dedup::DedupCache;
+use rekindle_types::channel_keys::KeyScope;
 use tokio::sync::mpsc;
 
 use super::circuit::CircuitBreakerState;
@@ -51,8 +51,8 @@ pub struct AppState {
     /// W16.9b — transport's `Session` mirroring src-tauri's identity +
     /// friend-inbox metadata. `None` before login. In outbound-only
     /// adoption the transport spawns no route loop (the HOST owns the
-    /// route lifecycle — `network::handle_route_change` +
-    /// `allocate_fresh_private_route`), so this exists only for
+    /// route lifecycle — `OwnRoutes` and `route_publish`), so this
+    /// exists only for
     /// transport operations that read identity metadata.
     pub transport_session: Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
     /// W16.9b — durable retry queue store. Used by `EnvelopeQueue` for
@@ -63,7 +63,10 @@ pub struct AppState {
     /// (`SqliteFriendStore`) wired at app setup so the Veilid dispatch
     /// loop can authorize inbound envelopes against the source-of-truth
     /// friends table — no in-memory cache, no hydration race.
-    pub friend_store: Arc<RwLock<Option<Arc<dyn rekindle_transport::FriendStore>>>>,
+    pub friend_store: Arc<RwLock<Option<Arc<dyn rekindle_types::friend_store::FriendStore>>>>,
+    /// The logged-in identity's database (plan C6). Every command and
+    /// service reaches SQLite through `db.current()`.
+    pub db: rekindle_db::DbHandle,
     /// Signal session manager (set after identity unlock). `RwLock` so
     /// encrypt/decrypt readers don't serialize on the wrapper; the
     /// inner `Arc<SignalManagerHandle>` is cloned out under the
@@ -77,8 +80,6 @@ pub struct AppState {
     pub(crate) voice_engine: Arc<Mutex<Option<VoiceEngineHandle>>>,
     /// Channel for sending shutdown signals to background services.
     pub shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
-    /// Channel for sending shutdown signal to the sync service.
-    pub sync_shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
     /// Sender half of the watch channel that tracks Veilid public internet readiness.
     pub network_ready_tx: Arc<tokio::sync::watch::Sender<bool>>,
     /// Receiver half — clone and `.changed().await` to wait for readiness.
@@ -109,49 +110,76 @@ pub struct AppState {
     pub cold_start: std::sync::Arc<
         rekindle_transport::subscriptions::ColdStartBuffer<veilid_core::VeilidUpdate>,
     >,
-    /// Phase 10 — in-memory journal of Tauri-emitted events. Capacity
-    /// 10_000, FIFO eviction. Wired by `event_dispatch::emit_journaled`.
+    /// Journaled webview events, replayed to a window that reloads.
+    /// Capacity 10_000, FIFO eviction. Written by
+    /// `event_dispatch::emit_journaled`.
     pub event_journal:
-        std::sync::Arc<rekindle_events::EventJournal<crate::event_dispatch::TauriEmitRecord>>,
-    /// Phase 23.A — single-source event-emission router. Every emit
-    /// (live or journaled) pushes through this mpsc queue.
+        std::sync::Arc<rekindle_events::EventJournal<crate::event_dispatch::WebviewEvent>>,
+    /// The single queue every webview event goes through.
     pub event_dispatch: std::sync::Arc<crate::event_dispatch::EventDispatch>,
-    /// Phase 10 — high-watermark of journal entries already replayed
-    /// by `event_resume`.
-    pub event_replay_watermark: parking_lot::Mutex<u64>,
-    /// Handles for spawned background tasks. Aborted on logout.
-    pub background_handles: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
-    /// Legacy community-level MEK cache: `community_id` → `MediaEncryptionKey`.
-    pub mek_cache: Mutex<HashMap<String, MediaEncryptionKey>>,
-    /// Per-channel MEK cache: `(community_id, channel_id)` → `MediaEncryptionKey`.
-    pub channel_mek_cache: Mutex<HashMap<(String, String), MediaEncryptionKey>>,
-    /// The generation each channel key REPLACED, kept for a short
-    /// retention window so in-flight media encrypted under the old
-    /// key still decrypts during a rotation (SFrame RFC 9605 §key
-    /// rotation; Discord DAVE retains previous-epoch ratchets ~10s).
-    pub channel_mek_prev:
-        Mutex<HashMap<(String, String), (MediaEncryptionKey, std::time::Instant)>>,
+    /// Per-window event channels (`subscribe_events`).
+    pub event_router: crate::event_router::WebviewRouter,
+    /// The login session's scope; every post-login task runs in it
+    /// (`services::session`, plan C4). `None` while logged out.
+    pub login_scope: RwLock<Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>>,
+    /// The session's DHT record pool (plan C7.3): the only opener of
+    /// records. Created when login services start, shut down at logout.
+    pub record_pool: RwLock<Option<Arc<rekindle_protocol::dht::pool::RecordPool>>>,
+    /// The node's own routes (plan C7.9a): allocated at readiness, renewed
+    /// at logout, released at exit.
+    pub own_routes: RwLock<
+        Option<
+            Arc<
+                rekindle_protocol::own_routes::OwnRoutes<
+                    rekindle_protocol::own_routes::VeilidRouteAllocator,
+                >,
+            >,
+        >,
+    >,
+    /// Wakes the session's one STATUS publisher (plan C7.8c).
+    pub status_wake: Arc<tokio::sync::Notify>,
+    /// Each DM's watch lease in the record pool, by record key, kept for
+    /// the session (`DmDeps::dht_hold_session`). The pool's shutdown at
+    /// logout closes them; `record_pool::end` clears the map.
+    pub dm_leases: Mutex<HashMap<String, rekindle_records::lease::LeaseId>>,
+    /// Each watched friend's profile lease in the record pool, by friend
+    /// key (`FriendPresenceDeps::hold_friend_record`); released when the
+    /// friend is removed or blocked, closed by the pool at logout.
+    pub friend_leases: Mutex<HashMap<String, rekindle_records::lease::LeaseId>>,
+    /// The personal sync record's watch lease, kept for the session
+    /// (`cross_device_sync::watch`); closed by the pool at logout.
+    pub personal_sync_lease: Mutex<Option<rekindle_records::lease::LeaseId>>,
+    /// The process's importer of peers' private routes (boot-scoped:
+    /// routes are imported before login too).
+    pub route_imports: RwLock<Option<Arc<rekindle_protocol::dht::route_imports::RouteImports>>>,
+    /// `public_internet_ready`, as the attachment handler last saw it; the
+    /// pool's retry layer waits on it.
+    pub network_ready: tokio::sync::watch::Sender<bool>,
+    /// Live community and channel keys by `(community_id, KeyScope)`.
+    /// Read and written only through `state_helpers::meks`; consumers read
+    /// keys through the `ChannelKeyProvider` (`state_helpers::key_provider`).
+    pub meks: Mutex<HashMap<(String, KeyScope), crate::state_helpers::LiveMek>>,
     /// Friends whose DHT `watch_dht_values` returned false. The sync
     /// service uses `force_refresh=true` for these friends.
     pub unwatched_friends: RwLock<HashSet<String>>,
     /// `JoinHandle` for the Veilid dispatch loop.
     pub dispatch_loop_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
-    /// Shutdown sender for the route refresh loop.
-    pub route_watchdog_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
-    /// Shutdown sender for the idle/auto-away service.
-    pub idle_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
-    /// Shutdown sender for the presence heartbeat loop.
-    pub heartbeat_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
     /// The status the user had before auto-away kicked in.
     pub pre_away_status: RwLock<Option<UserStatus>>,
-    /// Deep link action received before authentication; replayed after login.
-    pub pending_deep_link: Mutex<Option<crate::deep_links::DeepLinkAction>>,
+    /// OS deep link awaiting the user's consent (`deep_links`).
+    pub pending_deep_link: Mutex<Option<crate::deep_links::PendingDeepLink>>,
     /// Per-community circuit breaker for remote Veilid RPCs.
     pub community_circuit_breakers: RwLock<HashMap<String, CircuitBreakerState>>,
     /// Tauri app handle — set during `.setup()`.
     pub app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Global dedup cache for gossip mesh message deduplication.
     pub dedup_cache: Mutex<DedupCache>,
+    /// Our SFrame sender state per community voice channel (survives
+    /// voice-session and transport rebuilds; cleared on logout).
+    pub voice_media_senders: rekindle_voice::media_crypto::ChannelSframeSenders,
+    /// 1:1 envelopes already accepted, until they leave the freshness
+    /// window.
+    pub envelope_replay: Mutex<rekindle_protocol::messaging::replay::ReplayGuard>,
     /// M10.4 — receiver-side per-(community, sender) gossip rate floor.
     pub gossip_rate_limits:
         Mutex<HashMap<(String, String), rekindle_gossip::rate_limit::TokenBucket>>,
@@ -161,8 +189,10 @@ pub struct AppState {
     /// Wave 7 P7.3 — per-relay circuit-breaker state.
     pub relay_health:
         Mutex<HashMap<rekindle_route::relay::RelayKey, rekindle_route::relay::RelayHealth>>,
-    /// Sender for queued SMPL channel-message writes.
-    pub channel_write_retry_tx: Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>,
+    /// Sent channel messages whose write the record pool holds, by
+    /// (record key, subkey), until that slot settles (plan C7.13).
+    pub channel_pending_deliveries:
+        Mutex<HashMap<(String, u32), Vec<rekindle_channel::deps::PendingDelivery>>>,
     /// Per-community compiled AutoMod cache.
     pub automod_cache: Arc<RwLock<HashMap<String, Arc<AutoModCompiledCache>>>>,
     /// Wake-up signal for the event reminder scheduler.
@@ -247,8 +277,6 @@ pub struct AppState {
     pub video_payload_share_rx: RwLock<Option<tokio::sync::watch::Receiver<u32>>>,
     /// Linux-native camera session slot (unit type off-Linux).
     pub native_video: crate::services::native_video::NativeVideoSlot,
-    /// Shutdown for the pacer task (fired on voice teardown).
-    pub video_pacer_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
     /// Bitrate-policy state per (community, channel):
     /// `(policy_target, last_emitted)`. The policy target advances on
     /// EVERY feedback step — a +10% AIMD ramp must compound, so it can
@@ -303,11 +331,11 @@ impl Default for AppState {
             transport_session: Arc::new(parking_lot::RwLock::new(None)),
             envelope_store: Arc::new(RwLock::new(None)),
             friend_store: Arc::new(RwLock::new(None)),
+            db: rekindle_db::DbHandle::default(),
             signal_manager: Arc::new(RwLock::new(None)),
             game_detector: Arc::new(Mutex::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),
             shutdown_tx: Arc::new(RwLock::new(None)),
-            sync_shutdown_tx: Arc::new(RwLock::new(None)),
             network_ready_tx: Arc::new(network_ready_tx),
             network_ready_rx,
             identity_secret: Mutex::new(None),
@@ -326,25 +354,30 @@ impl Default for AppState {
             ),
             event_journal: std::sync::Arc::new(rekindle_events::EventJournal::new(10_000)),
             event_dispatch: std::sync::Arc::new(crate::event_dispatch::EventDispatch::new()),
-            event_replay_watermark: parking_lot::Mutex::new(0),
-            background_handles: Mutex::new(Vec::new()),
-            mek_cache: Mutex::new(HashMap::new()),
-            channel_mek_cache: Mutex::new(HashMap::new()),
-            channel_mek_prev: Mutex::new(HashMap::new()),
+            event_router: crate::event_router::WebviewRouter::default(),
+            login_scope: RwLock::new(None),
+            record_pool: RwLock::new(None),
+            own_routes: RwLock::new(None),
+            status_wake: Arc::new(tokio::sync::Notify::new()),
+            dm_leases: Mutex::new(HashMap::new()),
+            friend_leases: Mutex::new(HashMap::new()),
+            personal_sync_lease: Mutex::new(None),
+            route_imports: RwLock::new(None),
+            network_ready: tokio::sync::watch::Sender::new(false),
+            meks: Mutex::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
-            route_watchdog_shutdown_tx: RwLock::new(None),
-            idle_shutdown_tx: RwLock::new(None),
-            heartbeat_shutdown_tx: RwLock::new(None),
             pre_away_status: RwLock::new(None),
             pending_deep_link: Mutex::new(None),
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
+            voice_media_senders: rekindle_voice::media_crypto::ChannelSframeSenders::default(),
+            envelope_replay: Mutex::new(rekindle_protocol::messaging::replay::ReplayGuard::new()),
             gossip_rate_limits: Mutex::new(HashMap::new()),
             channel_last_received: Mutex::new(HashMap::new()),
             relay_health: Mutex::new(HashMap::new()),
-            channel_write_retry_tx: Arc::new(RwLock::new(None)),
+            channel_pending_deliveries: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             event_reminder_wake_tx: Arc::new(RwLock::new(None)),
             file_caches: RwLock::new(HashMap::new()),
@@ -379,7 +412,6 @@ impl Default for AppState {
             video_pacer_rate_tx: RwLock::new(None),
             video_payload_share_rx: RwLock::new(None),
             native_video: crate::services::native_video::NativeVideoSlot::default(),
-            video_pacer_shutdown_tx: RwLock::new(None),
             video_bitrate_targets: Mutex::new(HashMap::new()),
             video_pacer_send_drops: std::sync::atomic::AtomicU64::new(0),
             voice_quality_cache: Mutex::new(

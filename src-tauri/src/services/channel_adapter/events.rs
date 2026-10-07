@@ -5,7 +5,7 @@ use rekindle_channel::deps::SentChannelMessageEcho;
 use rekindle_channel::event::ChannelEvent;
 
 use crate::channels::{ChatEvent, CommunityEvent};
-use crate::event_dispatch::emit_live;
+use crate::event_dispatch::{emit, WebviewEvent};
 
 use super::ChannelAdapter;
 
@@ -82,7 +82,13 @@ pub(super) fn emit_chat_event_local_impl(adapter: &ChannelAdapter, echo: &SentCh
         reply_to_id: None,
         sender_display_name: None,
     };
-    emit_live(&adapter.app_handle, "chat-event", &event);
+    emit(
+        &adapter.app_handle,
+        WebviewEvent::ChannelChat {
+            community_id: Some(echo.community_id.clone()),
+            event,
+        },
+    );
 }
 
 pub(super) fn emit_delivery_succeeded_impl(
@@ -96,7 +102,7 @@ pub(super) fn emit_delivery_succeeded_impl(
         channel_id: channel_id.to_string(),
         message_id: message_id.to_string(),
     };
-    emit_live(&adapter.app_handle, "community-event", &event);
+    emit(&adapter.app_handle, WebviewEvent::Community(event));
 }
 
 pub(super) fn emit_delivery_failed_impl(
@@ -110,5 +116,5 @@ pub(super) fn emit_delivery_failed_impl(
         channel_id: channel_id.to_string(),
         message_id: message_id.to_string(),
     };
-    emit_live(&adapter.app_handle, "community-event", &event);
+    emit(&adapter.app_handle, WebviewEvent::Community(event));
 }

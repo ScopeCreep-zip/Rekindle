@@ -24,7 +24,7 @@ use parking_lot::RwLock;
 use rekindle_protocol::dht::community::envelope::MekTransferPayload;
 use rekindle_transport::payload::rpc::CallResponse;
 
-use crate::daemon::governance_adapter::COMMUNITY_MEK_SLOT;
+use rekindle_types::channel_keys::KeyScope;
 
 /// Accept a wrapped MEK and cache it.
 ///
@@ -48,7 +48,7 @@ pub(crate) fn handle_mek_transfer(
         .is_some_and(|s| s.community(governance_key).is_some());
     if !is_member {
         tracing::debug!(
-            community = %&governance_key[..16.min(governance_key.len())],
+            community = %governance_key,
             "MEK transfer for a community we are not in — refusing"
         );
         return CallResponse::Rejected {
@@ -63,38 +63,44 @@ pub(crate) fn handle_mek_transfer(
         };
     };
 
-    // `channel_id: None` is the community-wide key. It maps to the same
-    // reserved slot the governance adapter reads from, so a rotated
-    // community MEK lands where `community_mek` looks for it rather
-    // than under an empty channel id nothing queries.
-    let channel_id = transfer
-        .channel_id
-        .clone()
-        .filter(|id| !id.is_empty())
-        .unwrap_or_else(|| COMMUNITY_MEK_SLOT.to_string());
+    // The payload names the community key by an absent channel and a
+    // channel's key by its id; anything else is not a key we hold.
+    let Some(scope) = KeyScope::from_wire(transfer.channel_id.as_deref()) else {
+        return CallResponse::Rejected {
+            reason: "invalid key scope".into(),
+        };
+    };
 
     let projected = rekindle_transport::payload::rpc::MekTransferPayload {
-        channel_id,
+        scope,
         generation: transfer.generation,
         rotator_pseudonym_hex: transfer.sender_pseudonym.clone(),
         wrapped_mek: transfer.wrapped_mek.clone(),
     };
 
-    match rekindle_transport::operations::mek::receive_mek_transfer_payload(
+    match rekindle_transport::operations::mek::unwrap_mek_transfer_payload(
         &projected,
         &signing_key_bytes,
         governance_key,
-        mek_cache,
     ) {
-        Ok(generation) => {
+        Ok(mek) => {
+            let generation = mek.generation();
+            // Installed under the shared convergence rule (no downgrade,
+            // lowest rank at an equal generation), not a plain insert.
+            rekindle_mek_rotation::ChannelMekCache::insert(
+                &crate::daemon::mek_rotation::MekCacheAdapter::new(Arc::clone(mek_cache)),
+                governance_key,
+                scope,
+                mek,
+            );
             let our_pseudonym = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(
                 &signing_key_bytes,
                 governance_key,
             );
             let our_pseudonym_hex = hex::encode(our_pseudonym.verifying_key().to_bytes());
             tracing::info!(
-                community = %&governance_key[..16.min(governance_key.len())],
-                channel = ?transfer.channel_id,
+                community = %governance_key,
+                %scope,
                 generation,
                 "MEK accepted from rotator"
             );
@@ -106,7 +112,7 @@ pub(crate) fn handle_mek_transfer(
             // at warn because a *legitimate* rotator hitting this means
             // a real key-distribution failure.
             tracing::warn!(
-                community = %&governance_key[..16.min(governance_key.len())],
+                community = %governance_key,
                 error = %e,
                 "MEK transfer unwrap failed"
             );

@@ -81,6 +81,22 @@ impl PeerRegistry {
         self.routes.remove(peer_key);
     }
 
+    /// Forget the peers whose cached blob is one of `dead` (routes Veilid
+    /// reported dead), so their next send fetches a fresh route. Returns
+    /// those peers' keys.
+    pub fn invalidate_blobs(&mut self, dead: &[Vec<u8>]) -> Vec<String> {
+        let gone: Vec<String> = self
+            .routes
+            .iter()
+            .filter(|(_, cached)| dead.contains(&cached.blob))
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in &gone {
+            self.routes.remove(key);
+        }
+        gone
+    }
+
     /// Evict all stale routes and return the keys of evicted peers.
     pub fn evict_stale_routes(&mut self) -> Vec<String> {
         let now = Instant::now();
@@ -203,11 +219,7 @@ impl PeerRegistry {
                 let circuit_open = self.is_circuit_open(key);
                 let failure_count = circuit.map_or(0, |c| c.failure_count);
 
-                let key_short = if key.len() > 12 {
-                    format!("{}…{}", &key[..8], &key[key.len() - 4..])
-                } else {
-                    key.clone()
-                };
+                let key_short = rekindle_utils::text::abbreviate(key, 8, 4);
 
                 PeerSnapshot {
                     key: key.clone(),

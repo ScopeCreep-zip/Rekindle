@@ -1,8 +1,9 @@
 //! Friend resolution, DM inbox, and profile reads.
 
+use rekindle_protocol::dht::profile::read_profile_subkey;
+
 use crate::error::Result;
 
-use super::display_map::abbreviate_key;
 use super::{DmMessageDisplay, DmThreadDisplay, FriendDisplay, QueryEngine};
 
 impl QueryEngine {
@@ -14,7 +15,9 @@ impl QueryEngine {
     /// subkeys. Profile reads that fail (peer offline, record unavailable)
     /// fall back to the stored nickname or public key abbreviation.
     pub async fn resolved_friends(&self, friend_list_key: &str) -> Result<Vec<FriendDisplay>> {
-        let list = self.dht.friend_list().read(friend_list_key).await?;
+        let list =
+            rekindle_protocol::dht::friends::read_friend_list(&self.records, friend_list_key)
+                .await?;
 
         // Snapshot peer route state before the async loop to avoid holding
         // the RwLock across await points (clippy::await_holding_lock).
@@ -40,10 +43,9 @@ impl QueryEngine {
                         .await
                         .unwrap_or_else(|_| {
                             (
-                                friend
-                                    .nickname
-                                    .clone()
-                                    .unwrap_or_else(|| abbreviate_key(&friend.public_key)),
+                                friend.nickname.clone().unwrap_or_else(|| {
+                                    rekindle_utils::text::abbreviate(&friend.public_key, 8, 4)
+                                }),
                                 "unknown".to_string(),
                                 String::new(),
                                 None,
@@ -51,10 +53,9 @@ impl QueryEngine {
                         })
                 } else {
                     (
-                        friend
-                            .nickname
-                            .clone()
-                            .unwrap_or_else(|| abbreviate_key(&friend.public_key)),
+                        friend.nickname.clone().unwrap_or_else(|| {
+                            rekindle_utils::text::abbreviate(&friend.public_key, 8, 4)
+                        }),
                         "unknown".to_string(),
                         String::new(),
                         None,
@@ -95,20 +96,25 @@ impl QueryEngine {
         our_public_key: &str,
     ) -> Result<Vec<DmThreadDisplay>> {
         // Read the DM log
-        let dht_log = crate::broadcast::dht::channel_log::DhtLog::open_read(
-            self.dht.routing_context(),
-            dm_log_key,
-        )
-        .await?;
+        let dht_log =
+            crate::broadcast::dht::channel_log::DhtLog::open_read(&self.records, dm_log_key)
+                .await?;
 
         // Read recent entries — cap at a reasonable total
         let total_limit = limit_per_thread.saturating_mul(50).min(500);
         let raw_entries = dht_log
-            .tail(u32::try_from(total_limit).unwrap_or(u32::MAX))
-            .await?;
+            .tail(
+                &self.records,
+                u32::try_from(total_limit).unwrap_or(u32::MAX),
+            )
+            .await;
+        dht_log.release(&self.records).await;
+        let raw_entries = raw_entries?;
 
         // Read friend list for name resolution
-        let friends = self.dht.friend_list().read(friend_list_key).await?;
+        let friends =
+            rekindle_protocol::dht::friends::read_friend_list(&self.records, friend_list_key)
+                .await?;
         // Build name lookup: public_key → display name (nickname if set, else abbreviated key)
         let friend_display_names: std::collections::HashMap<String, String> = friends
             .friends
@@ -117,7 +123,7 @@ impl QueryEngine {
                 let name = f
                     .nickname
                     .clone()
-                    .unwrap_or_else(|| abbreviate_key(&f.public_key));
+                    .unwrap_or_else(|| rekindle_utils::text::abbreviate(&f.public_key, 8, 4));
                 (f.public_key.clone(), name)
             })
             .collect();
@@ -168,7 +174,7 @@ impl QueryEngine {
             let sender_name = friend_display_names
                 .get(&sender_key)
                 .cloned()
-                .unwrap_or_else(|| abbreviate_key(&sender_key));
+                .unwrap_or_else(|| rekindle_utils::text::abbreviate(&sender_key, 8, 4));
 
             threads.entry(peer_key).or_default().push(DmMessageDisplay {
                 sender_key,
@@ -193,7 +199,7 @@ impl QueryEngine {
                 let peer_name = friend_display_names
                     .get(&peer_key)
                     .cloned()
-                    .unwrap_or_else(|| abbreviate_key(&peer_key));
+                    .unwrap_or_else(|| rekindle_utils::text::abbreviate(&peer_key, 8, 4));
 
                 DmThreadDisplay {
                     peer_key,
@@ -220,45 +226,51 @@ impl QueryEngine {
             STATUS_AWAY, STATUS_BUSY, STATUS_INVISIBLE, STATUS_OFFLINE, STATUS_ONLINE,
         };
 
-        let profile = self.dht.profile();
-
-        let display_name = match profile
-            .get_subkey(profile_key, PROFILE_SUBKEY_DISPLAY_NAME)
-            .await?
+        let display_name = match read_profile_subkey(
+            &self.records,
+            profile_key,
+            PROFILE_SUBKEY_DISPLAY_NAME,
+            false,
+        )
+        .await?
         {
             Some(data) if !data.is_empty() => String::from_utf8_lossy(&data).to_string(),
-            _ => abbreviate_key(profile_key),
+            _ => rekindle_utils::text::abbreviate(profile_key, 8, 4),
         };
 
-        let (status, last_seen) = match profile
-            .get_subkey(profile_key, PROFILE_SUBKEY_STATUS)
-            .await?
-        {
-            Some(data) if !data.is_empty() => {
-                let status_byte = data[0];
-                let status_str = match status_byte {
-                    STATUS_ONLINE => "online",
-                    STATUS_AWAY => "away",
-                    STATUS_BUSY => "busy",
-                    STATUS_OFFLINE => "offline",
-                    STATUS_INVISIBLE => "invisible",
-                    _ => "unknown",
-                };
-                let last_seen_ms = if data.len() >= 9 {
-                    let raw = i64::from_be_bytes(data[1..9].try_into().unwrap_or([0; 8]));
-                    // Timestamps are always positive; clamp negative to 0
-                    Some(u64::try_from(raw).unwrap_or(0))
-                } else {
-                    None
-                };
-                (status_str.to_string(), last_seen_ms)
-            }
-            _ => ("unknown".to_string(), None),
-        };
+        let (status, last_seen) =
+            match read_profile_subkey(&self.records, profile_key, PROFILE_SUBKEY_STATUS, false)
+                .await?
+            {
+                Some(data) if !data.is_empty() => {
+                    let status_byte = data[0];
+                    let status_str = match status_byte {
+                        STATUS_ONLINE => "online",
+                        STATUS_AWAY => "away",
+                        STATUS_BUSY => "busy",
+                        STATUS_OFFLINE => "offline",
+                        STATUS_INVISIBLE => "invisible",
+                        _ => "unknown",
+                    };
+                    let last_seen_ms = if data.len() >= 9 {
+                        let raw = i64::from_be_bytes(data[1..9].try_into().unwrap_or([0; 8]));
+                        // Timestamps are always positive; clamp negative to 0
+                        Some(u64::try_from(raw).unwrap_or(0))
+                    } else {
+                        None
+                    };
+                    (status_str.to_string(), last_seen_ms)
+                }
+                _ => ("unknown".to_string(), None),
+            };
 
-        let status_message = match profile
-            .get_subkey(profile_key, PROFILE_SUBKEY_STATUS_MESSAGE)
-            .await?
+        let status_message = match read_profile_subkey(
+            &self.records,
+            profile_key,
+            PROFILE_SUBKEY_STATUS_MESSAGE,
+            false,
+        )
+        .await?
         {
             Some(data) if !data.is_empty() => String::from_utf8_lossy(&data).to_string(),
             _ => String::new(),

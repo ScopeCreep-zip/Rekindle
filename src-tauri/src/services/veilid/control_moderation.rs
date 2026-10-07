@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_fire;
+use rekindle_db::Db;
 // Voice signaling dispatch now goes through
 // `crate::services::voice_signaling_adapter::handle_voice_signaling`.
 use crate::state::AppState;
-use tauri::Manager;
 
 use super::control_sync::{
     check_gossip_moderation_permission, handle_sync_request, handle_sync_response,
@@ -55,7 +54,6 @@ pub(crate) fn handle_gossip_control_payloads(
             since_timestamp,
         } => {
             handle_sync_request(
-                app_handle,
                 state,
                 community_id,
                 sender_pseudonym,
@@ -80,17 +78,23 @@ pub(crate) fn handle_gossip_control_payloads(
             subkey_index: _,
             lamport_ts: _,
         } => {
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
-            let db_pool = pool.inner().clone();
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("gossip moderation: no identity database — dropped");
+                return;
+            };
+            let db_pool = pool.clone();
             let state = Arc::clone(state);
-            tokio::spawn(async move {
-                let _ = crate::services::sync_communities::handle_community_record_change(
-                    &state,
-                    &db_pool,
-                    &governance_key,
-                )
-                .await;
-            });
+            crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
+                "community record change",
+                async move {
+                    let _ = crate::services::sync_communities::handle_community_record_change(
+                        &state,
+                        &db_pool,
+                        &governance_key,
+                    )
+                    .await;
+                },
+            );
         }
         ControlPayload::VoiceJoin { .. }
         | ControlPayload::VoiceLeave { .. }
@@ -133,7 +137,6 @@ pub(crate) fn handle_gossip_control_payloads(
             url,
             title,
             description,
-            image_url,
             site_name,
             fetched_at,
         } => {
@@ -143,17 +146,21 @@ pub(crate) fn handle_gossip_control_payloads(
                 community_id,
                 sender_pseudonym,
                 channel_id,
-                message_id,
-                url,
-                title,
-                description,
-                image_url,
-                site_name,
-                fetched_at,
+                rekindle_types::link_preview::LinkPreview {
+                    message_id,
+                    url,
+                    title,
+                    description,
+                    site_name,
+                    fetched_at,
+                },
             );
         }
         other => {
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("gossip moderation: no identity database — dropped");
+                return;
+            };
             handle_gossip_moderation(
                 app_handle,
                 state,
@@ -169,7 +176,7 @@ pub(crate) fn handle_gossip_control_payloads(
 fn handle_gossip_moderation(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
@@ -185,15 +192,24 @@ fn handle_gossip_moderation(
     }
 
     match payload {
-        ControlPayload::Kick { target_pseudonym } => remove_member_from_local_state(
-            app_handle,
-            state,
-            pool,
-            community_id,
-            owner_key,
-            target_pseudonym,
-            "kick_member_remove",
-        ),
+        ControlPayload::Kick { target_pseudonym } => {
+            remove_member_from_local_state(
+                app_handle,
+                state,
+                pool,
+                community_id,
+                owner_key,
+                target_pseudonym.clone(),
+                "kick_member_remove",
+            );
+            // A kicked member still holds the current keys (plan D20).
+            crate::services::community::spawn_departure_rotations(
+                app_handle,
+                state,
+                community_id,
+                &target_pseudonym,
+            );
+        }
         ControlPayload::Ban {
             target_pseudonym, ..
         } => {
@@ -206,21 +222,12 @@ fn handle_gossip_moderation(
                 target_pseudonym.clone(),
                 "ban_member_remove",
             );
-            let state = state.clone();
-            let app_handle = app_handle.clone();
-            let community_id = community_id.to_string();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = crate::services::community::rotate_text_mek_for_departure(
-                    &app_handle,
-                    &state,
-                    &community_id,
-                    &target_pseudonym,
-                )
-                .await
-                {
-                    tracing::debug!(community = %community_id, member = %target_pseudonym, error = %error, "text MEK rotation skipped after ban");
-                }
-            });
+            crate::services::community::spawn_departure_rotations(
+                app_handle,
+                state,
+                community_id,
+                &target_pseudonym,
+            );
         }
         ControlPayload::Unban { .. } => {}
         ControlPayload::TimeoutMember {
@@ -233,12 +240,7 @@ fn handle_gossip_moderation(
             let cid = community_id.to_string();
             let tp = target_pseudonym.clone();
             db_fire(pool, "timeout_member", move |conn| {
-                conn.execute(
-                    "UPDATE community_members SET timeout_until = ?1 \
-                     WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
-                    rusqlite::params![timeout_until, ok, cid, tp],
-                )?;
-                Ok(())
+                rekindle_db::repo::members::set_timeout(conn, &ok, &cid, &tp, Some(timeout_until))
             });
             crate::event_dispatch::emit_membership(
                 app_handle,
@@ -254,12 +256,7 @@ fn handle_gossip_moderation(
             let cid = community_id.to_string();
             let tp = target_pseudonym.clone();
             db_fire(pool, "remove_timeout", move |conn| {
-                conn.execute(
-                    "UPDATE community_members SET timeout_until = NULL \
-                     WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
-                    rusqlite::params![ok, cid, tp],
-                )?;
-                Ok(())
+                rekindle_db::repo::members::set_timeout(conn, &ok, &cid, &tp, None)
             });
             crate::event_dispatch::emit_membership(
                 app_handle,
@@ -283,7 +280,7 @@ fn handle_gossip_moderation(
 fn remove_member_from_local_state(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     owner_key: String,
     target_pseudonym: String,
@@ -327,11 +324,7 @@ fn remove_member_from_local_state(
     let cid = community_id.to_string();
     let tp = target_pseudonym.clone();
     db_fire(pool, label, move |conn| {
-        conn.execute(
-            "DELETE FROM community_members WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
-            rusqlite::params![owner_key, cid, tp],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::delete(conn, &owner_key, &cid, &tp)
     });
     crate::event_dispatch::emit_membership(
         app_handle,

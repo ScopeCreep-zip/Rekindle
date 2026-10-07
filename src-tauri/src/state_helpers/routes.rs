@@ -1,11 +1,16 @@
-//! DHT manager + peer route cache accessors.
+//! Peer route cache and route-import accessors.
+//!
+//! A peer's latest route blob lives in one place, the timestamped
+//! `routing_manager.peer_route_cache`. Turning a blob into a `RouteId` is
+//! the process's one importer, `AppState.route_imports` (plan C7.6): it has
+//! no TTL and releases a route only after a send to it failed.
 
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::state::AppState;
 
-use super::node::{safe_api_and_routing_context, veilid_api};
+use super::node::safe_api_and_routing_context;
 
 /// Map a DHT record key to its owning friend.
 pub fn friend_for_dht_key(state: &Arc<AppState>, dht_key: &str) -> Option<String> {
@@ -19,18 +24,13 @@ pub fn friend_for_dht_key(state: &Arc<AppState>, dht_key: &str) -> Option<String
 /// Cache a route blob for a peer.
 pub fn cache_peer_route(state: &Arc<AppState>, peer_key: &str, route_blob: Vec<u8>) {
     {
-        let api = veilid_api(state);
-        let mut dht_mgr = state.dht_manager.write();
-        if let (Some(api), Some(mgr)) = (api, dht_mgr.as_mut()) {
-            mgr.manager.cache_route(&api, peer_key, route_blob.clone());
-            let mut routing_mgr = state.routing_manager.write();
-            if let Some(handle) = routing_mgr.as_mut() {
-                handle.peer_route_cache.insert_at(
-                    peer_key.to_string(),
-                    route_blob.clone(),
-                    Instant::now(),
-                );
-            }
+        let mut routing_mgr = state.routing_manager.write();
+        if let Some(handle) = routing_mgr.as_mut() {
+            handle.peer_route_cache.insert_at(
+                peer_key.to_string(),
+                route_blob.clone(),
+                Instant::now(),
+            );
         }
     }
 
@@ -54,12 +54,15 @@ pub fn cache_peer_route(state: &Arc<AppState>, peer_key: &str, route_blob: Vec<u
         };
         if let Some(transport) = transport {
             let peer = peer_key.to_string();
-            tauri::async_runtime::spawn(async move {
-                transport
-                    .lock()
-                    .await
-                    .refresh_peer_route(&peer, &route_blob);
-            });
+            crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+                "voice route refresh",
+                async move {
+                    transport
+                        .lock()
+                        .await
+                        .refresh_peer_route(&peer, &route_blob);
+                },
+            );
         }
     }
 }
@@ -91,84 +94,145 @@ pub fn try_import_peer_route(
     state: &Arc<AppState>,
     peer_key: &str,
 ) -> Option<(veilid_core::RouteId, veilid_core::RoutingContext)> {
-    let (api, rc) = safe_api_and_routing_context(state)?;
-    let mut dht_mgr = state.dht_manager.write();
-    let mgr = dht_mgr.as_mut()?;
-    let blob = mgr.manager.get_cached_route(peer_key)?.clone();
-    match mgr.manager.get_or_import_route(&api, &blob) {
+    let (_, rc) = safe_api_and_routing_context(state)?;
+    let blob = cached_route_blob(state, peer_key)?;
+    match import_route_blob(state, &blob) {
         Ok(route_id) => Some((route_id, rc)),
         Err(e) => {
             tracing::debug!(
                 to = %peer_key, error = %e, blob_len = blob.len(),
                 "route import failed — invalidating cached route"
             );
-            mgr.manager.invalidate_route_for_peer(peer_key);
-            let mut routing_mgr = state.routing_manager.write();
-            if let Some(handle) = routing_mgr.as_mut() {
-                handle.peer_route_cache.remove(peer_key);
-            }
+            invalidate_cached_peer_route(state, peer_key);
             None
         }
     }
 }
 
-/// Invalidate all cached route state for a peer across both route caches.
+/// Forget a peer's cached route blob. The imported `RouteId` stays with the
+/// importer, which Veilid expires on its own; a failed send forgets it
+/// ([`route_send_failed`]).
 pub fn invalidate_cached_peer_route(state: &Arc<AppState>, peer_key: &str) {
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.manager.invalidate_route_for_peer(peer_key);
-        }
-    }
-    {
-        let mut routing_mgr = state.routing_manager.write();
-        if let Some(handle) = routing_mgr.as_mut() {
-            handle.peer_route_cache.remove(peer_key);
-        }
+    let mut routing_mgr = state.routing_manager.write();
+    if let Some(handle) = routing_mgr.as_mut() {
+        handle.peer_route_cache.remove(peer_key);
     }
 }
 
-/// Evict stale peer routes from both the timestamped route cache and the imported-route cache.
+/// Evict stale peer route blobs; returns how many.
 pub fn evict_stale_peer_routes(state: &Arc<AppState>) -> usize {
-    let stale_peers = {
-        let mut routing_mgr = state.routing_manager.write();
-        routing_mgr
-            .as_mut()
-            .map(|handle| handle.peer_route_cache.evict_stale_at(Instant::now()))
-            .unwrap_or_default()
-    };
-
-    if stale_peers.is_empty() {
-        return 0;
-    }
-
-    let mut dht_mgr = state.dht_manager.write();
-    if let Some(mgr) = dht_mgr.as_mut() {
-        for peer_key in &stale_peers {
-            mgr.manager.invalidate_route_for_peer(peer_key);
-        }
-    }
-
-    stale_peers.len()
+    let mut routing_mgr = state.routing_manager.write();
+    routing_mgr
+        .as_mut()
+        .map(|handle| handle.peer_route_cache.evict_stale_at(Instant::now()).len())
+        .unwrap_or_default()
 }
 
-/// Import a route blob via `DHTManager` cache (preferred) or raw `VeilidAPI` fallback.
-///
-/// Consolidates the repeated lock → match Some/None → `get_or_import_route` pattern.
-/// Acquires and drops the `dht_manager` write lock synchronously.
+/// The `RouteId` for a route blob, through the process's one importer.
 pub fn import_route_blob(
     state: &Arc<AppState>,
     route_blob: &[u8],
 ) -> Result<veilid_core::RouteId, String> {
-    let api = veilid_api(state).ok_or("Veilid not connected")?;
-    let mut dht_mgr = state.dht_manager.write();
-    match dht_mgr.as_mut() {
-        Some(mgr) => mgr
-            .manager
-            .get_or_import_route(&api, route_blob)
-            .map_err(|e| e.to_string()),
-        None => api
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| e.to_string()),
+    route_imports(state)?
+        .get_or_import(route_blob)
+        .map_err(|e| e.to_string())
+}
+
+/// A send to `route_id` failed with `NoConnection` or `InvalidTarget`: the
+/// route is unusable, so the importer forgets it (never releases: Veilid
+/// releases a dead remote route itself, plan C7.9e).
+pub fn route_send_failed(state: &Arc<AppState>, route_id: &veilid_core::RouteId) {
+    if let Ok(imports) = route_imports(state) {
+        imports.invalidate_after_send_failure(route_id);
     }
+}
+
+/// Forget `route_id` when a protocol send to it failed because the route is
+/// unusable ([`ProtocolError::RouteUnusable`]); any other failure keeps it.
+///
+/// [`ProtocolError::RouteUnusable`]: rekindle_protocol::ProtocolError::RouteUnusable
+pub fn note_send_result<T>(
+    state: &Arc<AppState>,
+    route_id: &veilid_core::RouteId,
+    result: Result<T, rekindle_protocol::ProtocolError>,
+) -> Result<T, rekindle_protocol::ProtocolError> {
+    if let Err(rekindle_protocol::ProtocolError::RouteUnusable(_)) = &result {
+        route_send_failed(state, route_id);
+    }
+    result
+}
+
+/// Veilid declared these imported routes dead (`RouteChange`): the importer
+/// forgets them, and every peer whose cached blob was one of them loses it,
+/// so the next send re-fetches a fresh route. Returns those peers.
+pub fn on_dead_remote_routes(state: &Arc<AppState>, dead: &[veilid_core::RouteId]) -> Vec<String> {
+    let Ok(imports) = route_imports(state) else {
+        return Vec::new();
+    };
+    let blobs = imports.on_dead_remote(dead);
+    if blobs.is_empty() {
+        return Vec::new();
+    }
+    let mut routing_mgr = state.routing_manager.write();
+    routing_mgr
+        .as_mut()
+        .map(|handle| handle.peer_route_cache.remove_by_blob(&blobs))
+        .unwrap_or_default()
+}
+
+/// `app_call` a peer through its route blob: import (through the one
+/// importer), call on the safe routing context, and release the route if
+/// the call shows it unusable ([`route_send_failed`]).
+pub async fn call_route_blob(
+    state: &Arc<AppState>,
+    route_blob: &[u8],
+    payload: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    let route_id = import_route_blob(state, route_blob)?;
+    let (_, rc) = safe_api_and_routing_context(state).ok_or("not attached")?;
+    let result = rc
+        .app_call(veilid_core::Target::RouteId(route_id.clone()), payload)
+        .await;
+    settle_route(state, &route_id, result).map_err(|e| format!("app_call: {e}"))
+}
+
+/// `app_message` a peer through its route blob; as [`call_route_blob`].
+pub async fn message_route_blob(
+    state: &Arc<AppState>,
+    route_blob: &[u8],
+    payload: Vec<u8>,
+) -> Result<(), String> {
+    let route_id = import_route_blob(state, route_blob)?;
+    let (_, rc) = safe_api_and_routing_context(state).ok_or("not attached")?;
+    let result = rc
+        .app_message(veilid_core::Target::RouteId(route_id.clone()), payload)
+        .await;
+    settle_route(state, &route_id, result).map_err(|e| format!("app_message: {e}"))
+}
+
+/// Release `route_id` when a send to it shows it unusable.
+fn settle_route<T>(
+    state: &Arc<AppState>,
+    route_id: &veilid_core::RouteId,
+    result: Result<T, veilid_core::VeilidAPIError>,
+) -> Result<T, veilid_core::VeilidAPIError> {
+    if let Err(
+        veilid_core::VeilidAPIError::NoConnection { .. }
+        | veilid_core::VeilidAPIError::InvalidTarget { .. },
+    ) = &result
+    {
+        route_send_failed(state, route_id);
+    }
+    result
+}
+
+/// The process's route importer (boot-scoped).
+pub fn route_imports(
+    state: &Arc<AppState>,
+) -> Result<Arc<rekindle_protocol::dht::route_imports::RouteImports>, String> {
+    state
+        .route_imports
+        .read()
+        .clone()
+        .ok_or_else(|| "Veilid not connected".to_string())
 }

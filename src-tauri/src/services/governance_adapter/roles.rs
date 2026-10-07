@@ -74,23 +74,7 @@ pub(super) async fn apply_role_assignment_impl(
     let cid = community_id.to_string();
     let pk = pseudonym_key.to_string();
     db_call(&adapter.pool, move |conn| {
-        let current: String = conn
-            .query_row(
-                "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                rusqlite::params![owner_key, cid, pk],
-                |row| row.get(0),
-            )
-            .unwrap_or_else(|_| "[0,1]".to_string());
-        let mut ids: Vec<u32> = serde_json::from_str(&current).unwrap_or_default();
-        if !ids.contains(&role_id) {
-            ids.push(role_id);
-        }
-        let new_json = serde_json::to_string(&ids).unwrap_or_default();
-        conn.execute(
-            "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![new_json, owner_key, cid, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::add_role(conn, &owner_key, &cid, &pk, role_id)
     })
     .await
     .map_err(GovernanceRuntimeError::Adapter)
@@ -114,21 +98,7 @@ pub(super) async fn apply_role_unassignment_impl(
     let cid = community_id.to_string();
     let pk = pseudonym_key.to_string();
     db_call(&adapter.pool, move |conn| {
-        let current: String = conn
-            .query_row(
-                "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                rusqlite::params![owner_key, cid, pk],
-                |row| row.get(0),
-            )
-            .unwrap_or_else(|_| "[0,1]".to_string());
-        let mut ids: Vec<u32> = serde_json::from_str(&current).unwrap_or_default();
-        ids.retain(|&id| id != role_id);
-        let new_json = serde_json::to_string(&ids).unwrap_or_default();
-        conn.execute(
-            "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![new_json, owner_key, cid, pk],
-        )?;
-        Ok(())
+        rekindle_db::repo::members::remove_role(conn, &owner_key, &cid, &pk, role_id)
     })
     .await
     .map_err(GovernanceRuntimeError::Adapter)
@@ -310,44 +280,7 @@ pub(super) async fn apply_role_delete_impl(
             "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ? AND role_id = ?",
             rusqlite::params![owner_key, cid, role_id],
         )?;
-        let mut stmt = conn.prepare(
-            "SELECT pseudonym_key, role_ids FROM community_members WHERE owner_key = ? AND community_id = ?",
-        )?;
-        let members: Vec<(String, String)> = stmt
-            .query_map(rusqlite::params![owner_key, cid], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .filter_map(std::result::Result::ok)
-            .collect();
-        drop(stmt);
-        for (pk, json) in &members {
-            let mut ids: Vec<u32> = serde_json::from_str(json).unwrap_or_default();
-            if ids.contains(&role_id) {
-                ids.retain(|&id| id != role_id);
-                let new_json = serde_json::to_string(&ids).unwrap_or_default();
-                conn.execute(
-                    "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![new_json, owner_key, cid, pk],
-                )?;
-            }
-        }
-        let my_ids_json: String = conn
-            .query_row(
-                "SELECT my_role_ids FROM communities WHERE owner_key = ? AND id = ?",
-                rusqlite::params![owner_key, cid],
-                |row| row.get(0),
-            )
-            .unwrap_or_else(|_| "[0,1]".to_string());
-        let mut my_ids: Vec<u32> = serde_json::from_str(&my_ids_json).unwrap_or_default();
-        if my_ids.contains(&role_id) {
-            my_ids.retain(|&id| id != role_id);
-            let new_json = serde_json::to_string(&my_ids).unwrap_or_default();
-            conn.execute(
-                "UPDATE communities SET my_role_ids = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_json, owner_key, cid],
-            )?;
-        }
-        Ok(())
+        rekindle_db::repo::members::remove_role_everywhere(conn, &owner_key, &cid, role_id)
     })
     .await
     .map_err(GovernanceRuntimeError::Adapter)

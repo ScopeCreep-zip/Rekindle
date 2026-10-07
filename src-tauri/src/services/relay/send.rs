@@ -47,11 +47,6 @@ pub async fn send_via_relay(
     }
     let candidates = relay::rank_candidates(target_pubkey, raw_candidates);
 
-    let api =
-        state_helpers::veilid_api(state).ok_or_else(|| "veilid api unavailable".to_string())?;
-    let routing_context = state_helpers::safe_routing_context(state)
-        .ok_or_else(|| "no routing context".to_string())?;
-
     let payload = MessagePayload::RelayEnvelope {
         target_pubkey: target_pubkey.to_string(),
         inner_payload: inner_envelope_bytes.to_vec(),
@@ -77,20 +72,10 @@ pub async fn send_via_relay(
             }
         }
 
-        let Ok(route_id) = api.import_remote_private_route(relay_blob) else {
-            last_error = Some("invalid relay route blob".into());
-            // Treat invalid blobs as failures so chronically broken
-            // routes go into the breaker.
-            relay::record_failure(&mut state.relay_health.lock(), key);
-            continue;
-        };
-        match routing_context
-            .app_message(
-                veilid_core::Target::RouteId(route_id),
-                payload_bytes.clone(),
-            )
-            .await
-        {
+        // Import, send, and release a route the send shows unusable, all
+        // through the one importer. An invalid blob is a failure too, so
+        // chronically broken routes go into the breaker.
+        match state_helpers::message_route_blob(state, &relay_blob, payload_bytes.clone()).await {
             Ok(()) => {
                 relay::record_success(&mut state.relay_health.lock(), key);
                 return Ok(());

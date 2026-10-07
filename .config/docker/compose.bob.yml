@@ -21,11 +21,13 @@ services:
       RUST_LOG: "info,rekindle=debug,veilid_core=warn"
       container: docker
     volumes:
+      - ../../target/release/rekindled:/usr/local/bin/rekindled:ro
       - ../../target/release/rekindle:/usr/local/bin/rekindle:ro
       - ./nodes/bob/display-name:/etc/rekindle/display-name:ro
-      - bob-veilid:/home/rekindle/.local/share/rekindle/veilid
-      - bob-config:/home/rekindle/.config/rekindle
-      - bob-logs:/home/rekindle/.local/state/rekindle/logs
+      - ./nodes/bob/passphrase:/etc/rekindle/passphrase:ro
+      - bob-data:/home/rekindle/.local/share/com.rekindle.app
+      - bob-config:/home/rekindle/.config/com.rekindle.app
+      - bob-logs:/home/rekindle/.local/share/com.rekindle.app/logs
       - bob-nix:/nix
     tmpfs:
       - /run:exec,mode=755
@@ -33,7 +35,7 @@ services:
       - /tmp:exec,mode=1777
 
 volumes:
-  bob-veilid:
+  bob-data:
     driver: local
   bob-config:
     driver: local

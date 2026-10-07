@@ -1,6 +1,8 @@
-use veilid_core::{DHTSchema, RoutingContext, CRYPTO_KIND_VLD0};
+use rekindle_records::lease::LeaseId;
+use veilid_core::{DHTSchema, KeyPair};
 
 use super::parse_record_key;
+use super::pool::{RecordPool, SetOutcome};
 use crate::error::ProtocolError;
 
 // Layout aliased from `rekindle_types::dht_layout::mailbox` — the
@@ -9,92 +11,78 @@ pub use rekindle_types::dht_layout::mailbox::{
     ROUTE_BLOB as MAILBOX_SUBKEY_ROUTE_BLOB, SUBKEY_COUNT as MAILBOX_SUBKEY_COUNT,
 };
 
-/// Create the mailbox DHT record using the identity keypair as owner.
+/// Create our mailbox record, owned by the identity keypair, and hold it
+/// for the session. Returns the lease and the record key.
 ///
-/// The mailbox record key is deterministic for a given identity keypair because
-/// Veilid uses the owner keypair to derive the record key. This means the
-/// mailbox key is permanent and can be shared in invite links.
+/// The key is random per create (V4: every create adds a random encryption
+/// key), so the mailbox is created once, when the identity has none, and
+/// re-opened on every later login.
 ///
-/// Returns the record key string.
+/// # Errors
+/// The record could not be created.
 pub async fn create_mailbox(
-    rc: &RoutingContext,
-    identity_keypair: veilid_core::KeyPair,
-) -> Result<String, ProtocolError> {
+    pool: &RecordPool,
+    identity_keypair: KeyPair,
+) -> Result<(LeaseId, String), ProtocolError> {
     let schema = DHTSchema::dflt(MAILBOX_SUBKEY_COUNT)
         .map_err(|e| ProtocolError::DhtError(format!("invalid mailbox schema: {e}")))?;
-
-    let descriptor = rc
-        .create_dht_record(CRYPTO_KIND_VLD0, schema, Some(identity_keypair))
-        .await
-        .map_err(|e| ProtocolError::DhtError(format!("create_mailbox: {e}")))?;
-
-    let key_string = descriptor.key().to_string();
+    let (lease, key, _) = pool.create(schema, Some(identity_keypair)).await?;
+    let key_string = key.to_string();
     tracing::info!(key = %key_string, "created mailbox DHT record");
-    Ok(key_string)
+    Ok((lease, key_string))
 }
 
-/// Open an existing mailbox for writing (our own).
+/// Hold our existing mailbox writable for the session.
 ///
-/// Must be called on each login to regain write access to the mailbox record.
+/// # Errors
+/// The record could not be opened within the pool's retry budget. That is
+/// an error for login to report: re-creating would change the key peers
+/// know.
 pub async fn open_mailbox_writable(
-    rc: &RoutingContext,
+    pool: &RecordPool,
     key: &str,
-    identity_keypair: veilid_core::KeyPair,
-) -> Result<(), ProtocolError> {
-    let record_key = parse_record_key(key)?;
-
-    let _ = rc
-        .open_dht_record(record_key, Some(identity_keypair))
-        .await
-        .map_err(|e| super::classify_dht_open_error("open_mailbox_writable", &e))?;
-
+    identity_keypair: KeyPair,
+) -> Result<LeaseId, ProtocolError> {
+    let lease = pool
+        .acquire(&parse_record_key(key)?, Some(identity_keypair))
+        .await?;
     tracing::debug!(key, "opened mailbox DHT record (writable)");
-    Ok(())
+    Ok(lease)
 }
 
-/// Open a peer's mailbox for reading their route blob.
+/// A peer's current route blob from their mailbox, or `None` if they have
+/// not published one.
 ///
-/// Returns the route blob bytes if subkey 0 has been set, or `None` if empty.
+/// # Errors
+/// The mailbox could not be opened or read.
 pub async fn read_peer_mailbox_route(
-    rc: &RoutingContext,
+    pool: &RecordPool,
     mailbox_key: &str,
 ) -> Result<Option<Vec<u8>>, ProtocolError> {
-    let record_key = parse_record_key(mailbox_key)?;
-
-    // Open read-only (no writer keypair)
-    let _ = rc
-        .open_dht_record(record_key.clone(), None)
-        .await
-        .map_err(|e| ProtocolError::DhtError(format!("open peer mailbox: {e}")))?;
-
-    let value = rc
-        .get_dht_value(record_key, MAILBOX_SUBKEY_ROUTE_BLOB, true)
-        .await
-        .map_err(|e| ProtocolError::DhtError(format!("read peer mailbox route: {e}")))?;
-
-    Ok(value.map(|v| v.data().to_vec()))
+    let lease = pool.acquire(&parse_record_key(mailbox_key)?, None).await?;
+    let value = pool.get(lease, MAILBOX_SUBKEY_ROUTE_BLOB, true).await;
+    pool.release(lease).await;
+    Ok(value?.map(|v| v.data().to_vec()))
 }
 
-/// Update our route blob in the mailbox.
+/// Publish our current route blob in our mailbox, after each route
+/// allocation, so peers can find us after we were offline. Needs the
+/// session's writable lease (taken at login by [`open_mailbox_writable`]
+/// or [`create_mailbox`]).
 ///
-/// Called after each route allocation/refresh so peers can discover our
-/// current route even after we've gone offline and come back.
+/// # Errors
+/// The record could not be reached, or the write failed outright.
 pub async fn update_mailbox_route(
-    rc: &RoutingContext,
+    pool: &RecordPool,
     mailbox_key: &str,
     route_blob: &[u8],
-) -> Result<(), ProtocolError> {
-    let record_key = parse_record_key(mailbox_key)?;
-
-    rc.set_dht_value(
-        record_key,
-        MAILBOX_SUBKEY_ROUTE_BLOB,
-        route_blob.to_vec(),
-        None,
-    )
-    .await
-    .map_err(|e| ProtocolError::DhtError(format!("update_mailbox_route: {e}")))?;
-
-    tracing::debug!(key = %mailbox_key, "updated mailbox route blob");
-    Ok(())
+) -> Result<SetOutcome, ProtocolError> {
+    let lease = pool.acquire(&parse_record_key(mailbox_key)?, None).await?;
+    let outcome = pool
+        .set_durable(lease, MAILBOX_SUBKEY_ROUTE_BLOB, route_blob.to_vec())
+        .await;
+    pool.release(lease).await;
+    let outcome = outcome?;
+    tracing::debug!(key = %mailbox_key, ?outcome, "updated mailbox route blob");
+    Ok(outcome)
 }

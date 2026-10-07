@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-chat",
+  "description": "App-command grants for `chat-*` windows (1:1 friend chat, with start and hang-up of a call to this peer). No plugin grants.",
+  "windows": [
+    "chat-*"
+  ],
+  "permissions": [
+    "allow-emit-friends-presence",
+    "allow-get-message-history",
+    "allow-mark-read",
+    "allow-prepare-chat-session",
+    "allow-send-message",
+    "allow-send-typing",
+    "allow-start-dm-call",
+    "allow-end-dm-call"
+  ]
+}

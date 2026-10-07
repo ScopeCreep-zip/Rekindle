@@ -165,15 +165,27 @@ function applyFriendEvent(friend: FriendEvent): void {
     const next = { ...friendsState.friends };
     delete next[friend.removed.peerKey];
     setFriendsState("friends", reconcile(next));
+    return;
+  }
+
+  if ("nicknameChanged" in friend) {
+    const { peerKey, nickname } = friend.nicknameChanged;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "nickname", nickname);
+    }
+    return;
   }
   // requestAcknowledged / removeAcknowledged / profileKeyRotated need no
   // store change: delivery receipts and key rotation are handled by the
   // backend, and the list already reflects the outcome.
 }
 
+/// DM events for one chat window. `onIncoming` runs after an incoming
+/// message has been added to the store.
 export function subscribeDmChatEvents(
   peerId: string,
   getOwnKey: () => string,
+  onIncoming: () => void,
 ): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     // DMs arrive on the daemon vocabulary; the legacy envelope is
@@ -196,6 +208,7 @@ export function subscribeDmChatEvents(
         });
         handleResetUnread(peerId);
       });
+      onIncoming();
       return;
     }
 

@@ -2,13 +2,13 @@
 //! `commands/dm.rs`. Hosts `send_dm_video_frame_inner` — hex + base64
 //! decoding wrapped around the crate-side video send.
 
-use crate::db::DbPool;
 use crate::services::dm;
 use crate::state::SharedState;
+use rekindle_db::Db;
 
 pub async fn send_dm_video_frame_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     peer_pubkey: String,
     request: crate::commands::dm::SendDmVideoFrameRequest,
 ) -> Result<u32, String> {

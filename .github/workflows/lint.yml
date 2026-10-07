@@ -8,7 +8,7 @@
 # Configs referenced (each lint job reads its own dotfile):
 #   biome.json, .stylelintrc.json, knip.config.ts (frontend)
 #   taplo.toml, .markdownlint-cli2.yaml (structured data + docs)
-#   .sqlfluff (SQLite migrations)
+#   .sqlfluff (the SQLite schema)
 #   typos.toml (typos)
 #   lychee.toml (link checker)
 #   .gitleaks.toml (secret scan)
@@ -187,7 +187,7 @@ jobs:
           fail: true
 
   # ──────────────────────────────────────────────────────────────────
-  # SQL — sqlfluff against SQLite migrations.
+  # SQL — sqlfluff against the SQLite schema (crates/rekindle-db/schema).
   # ──────────────────────────────────────────────────────────────────
   sql:
     name: SQL (sqlfluff)
@@ -203,7 +203,7 @@ jobs:
         run: pip install sqlfluff
 
       - name: sqlfluff lint
-        run: sqlfluff lint src-tauri/migrations/
+        run: sqlfluff lint crates/rekindle-db/schema/
 
   # ──────────────────────────────────────────────────────────────────
   # Workflows — actionlint + zizmor (security audit).
@@ -220,7 +220,7 @@ jobs:
           args: -color -config-file .actionlint.yaml
 
       - name: zizmor
-        uses: zizmorcore/zizmor-action@v1
+        uses: zizmorcore/zizmor-action@v0.6.4
         with:
           advanced-security: false
           # Read ignore rules from .zizmor.yml.
@@ -241,7 +241,12 @@ jobs:
 
       - name: shfmt
         run: |
-          curl -sSfL https://github.com/mvdan/sh/releases/latest/download/shfmt_linux_amd64 -o /usr/local/bin/shfmt
+          # mvdan/sh's release assets are versioned in the filename
+          # (shfmt_vX.Y.Z_linux_amd64), so the literal
+          # "latest/download/shfmt_linux_amd64" alias 404s. Resolve the
+          # tag first and build the real asset name from it.
+          SHFMT_VERSION=$(curl -sSfL https://api.github.com/repos/mvdan/sh/releases/latest | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          curl -sSfL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" -o /usr/local/bin/shfmt
           chmod +x /usr/local/bin/shfmt
           shfmt -d -i 4 -ci -bn scripts/
 
@@ -293,10 +298,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+      # gitleaks-action@v2 now gates organization accounts behind a paid
+      # GITLEAKS_LICENSE secret — a vendor billing change, not a scan
+      # requirement. The underlying `gitleaks` CLI stays fully open
+      # source with no license check, so run it directly instead of
+      # going through the Action wrapper.
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+
+      - name: gitleaks detect
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --no-banner -v
 
   # ──────────────────────────────────────────────────────────────────
   # Semgrep — SAST that covers the DAST patterns Tauri webview exposes:
@@ -312,17 +326,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: semgrep ci
-        env:
-          # Workflow runs in container so semgrep is preinstalled.
-          SEMGREP_RULES: >-
-            p/javascript
-            p/typescript
-            p/owasp-top-ten
-            p/security-audit
-            p/react
+        # Each registry ruleset needs its own `--config` flag — folding
+        # them into one quoted, space-separated value made semgrep treat
+        # the whole string as a single (nonexistent) registry path,
+        # which 404s against semgrep.dev instead of resolving each pack.
         run: |
           semgrep \
-            --config "$SEMGREP_RULES" \
+            --config p/javascript \
+            --config p/typescript \
+            --config p/owasp-top-ten \
+            --config p/security-audit \
+            --config p/react \
             --config .semgrep.yml \
             --error \
             --metrics=off \

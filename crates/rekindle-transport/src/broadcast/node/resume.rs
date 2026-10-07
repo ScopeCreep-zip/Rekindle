@@ -2,11 +2,14 @@
 //! login, restoring the operational state that `start()` alone doesn't
 //! establish.
 
+use std::collections::HashMap;
+
+use rekindle_records::lease::CommunityLeases;
 use tracing::{info, warn};
 
 use super::deserialize_keypair;
 use super::TransportNode;
-use crate::error::Result;
+use crate::error::{Result, TransportError};
 
 impl TransportNode {
     /// Resume operational state from a persisted session.
@@ -16,185 +19,123 @@ impl TransportNode {
     /// TUI launch, daemon restart), this method must be called with the
     /// session loaded from disk. It:
     ///
-    /// 1. Allocates a private route so peers can reach us
-    /// 2. Reopens our profile DHT record and publishes the new route blob
-    /// 3. Reopens our mailbox DHT record and publishes the new route blob
-    /// 4. Reopens our friend list DHT record (readonly)
-    /// 5. Reopens all community governance and registry records (readonly)
+    /// 1. Wants our routes (nothing is allocated while locked; plan C7.9d)
+    /// 2. Holds our profile, mailbox and friend list writable in the
+    ///    session's record pool, and publishes the personal route blob to
+    ///    the profile and mailbox if one is live; one that lands later is
+    ///    published by the route publisher
+    /// 3. Borrows every community's governance record (read-only) and
+    ///    registry (writable with our slot keypair) from the pool, and
+    ///    returns those leases by governance key for the host to hold
+    ///    (plan C7.7c)
     ///
     /// Without this, the node is a blank Veilid peer with no Rekindle
     /// identity. DHT reads fail with "record not open", friend requests
     /// fail with "no route allocated", and the TUI shows empty data.
     ///
-    /// Errors in individual steps are logged but don't fail the resume —
-    /// a partially resumed node is better than no node. The caller can
-    /// check `status_snapshot()` to see what succeeded.
+    /// # Errors
+    /// One of our own records could not be opened writable (step 2): the
+    /// unlock stays locked rather than run unreachable. Community steps
+    /// are logged and do not fail the resume.
     pub async fn resume(
         &self,
         session: &crate::session::Session,
         signing_key_bytes: &[u8; 32],
-    ) -> Result<()> {
+    ) -> Result<HashMap<String, CommunityLeases>> {
         info!("resuming session for {}", &session.identity.display_name);
 
-        // Step 1: Allocate private route via broadcast primitive
-        let route_blob = match crate::broadcast::route::allocate_personal(self).await {
-            Ok((route_id, blob)) => {
-                info!(route = route_id, "private route allocated");
-                blob
-            }
-            Err(e) => {
-                warn!(error = %e, "route allocation failed — incoming messages will fail");
-                Vec::new()
-            }
+        // Step 1: want our routes; their owner allocates once the network
+        // is ready, off this path.
+        self.want_routes();
+
+        // Steps 2-4: hold our own records writable in the session's record
+        // pool and publish the route blob. Each opens writable or fails the
+        // resume: there is no readonly fallback, since a session that cannot
+        // write its profile or mailbox is unreachable (plan C7.4).
+        let pool = self.require_records()?;
+        let owner_keypair = |bytes: Option<&Vec<u8>>, record: &str| {
+            bytes
+                .ok_or_else(|| TransportError::Internal(format!("no {record} owner keypair")))
+                .and_then(|b| deserialize_keypair(b))
         };
+        let identity_keypair = {
+            let sk = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
+            super::ed25519_to_keypair(&sk)
+        };
+        let id = &session.identity;
 
-        // Step 2: Reopen profile and publish route blob
-        if route_blob.is_empty() {
-            let _ = crate::broadcast::dht_writes::open_readonly(
-                self,
-                &session.identity.profile_dht_key,
+        rekindle_protocol::dht::profile::open_profile(
+            &pool,
+            &id.profile_dht_key,
+            owner_keypair(id.profile_keypair_bytes.as_ref(), "profile")?,
+        )
+        .await?;
+        rekindle_protocol::dht::mailbox::open_mailbox_writable(
+            &pool,
+            &id.mailbox_dht_key,
+            identity_keypair,
+        )
+        .await?;
+        rekindle_protocol::dht::friends::open_friend_list(
+            &pool,
+            &id.friend_list_dht_key,
+            owner_keypair(id.friend_list_keypair_bytes.as_ref(), "friend list")?,
+        )
+        .await?;
+        info!("profile, mailbox and friend list reopened writable");
+
+        // Read after the records are held: a blob that landed before this
+        // found nothing writable to publish to, so it is published here; one
+        // landing after is the route publisher's.
+        if let Some(route_blob) = self.personal_route_blob() {
+            let profile = rekindle_protocol::dht::profile::set_own_profile_subkey(
+                &pool,
+                &id.profile_dht_key,
+                crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
+                route_blob.clone(),
             )
-            .await;
-            let _ = crate::broadcast::dht_writes::open_readonly(
-                self,
-                &session.identity.mailbox_dht_key,
+            .await?;
+            let mailbox = rekindle_protocol::dht::mailbox::update_mailbox_route(
+                &pool,
+                &id.mailbox_dht_key,
+                &route_blob,
             )
-            .await;
-        } else {
-            if let Some(ref keypair_bytes) = session.identity.profile_keypair_bytes {
-                if let Ok(kp) = deserialize_keypair(keypair_bytes) {
-                    match crate::broadcast::dht_writes::open_writable(
-                        self,
-                        &session.identity.profile_dht_key,
-                        kp,
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            let _ = crate::broadcast::dht_writes::set(
-                                self,
-                                &session.identity.profile_dht_key,
-                                crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
-                                route_blob.clone(),
-                                None,
-                            )
-                            .await;
-                            info!(
-                                key = session.identity.profile_dht_key.as_str(),
-                                "profile reopened + route published"
-                            );
-                        }
-                        Err(e) => {
-                            warn!(error = %e, "profile reopen failed — falling back to readonly");
-                            let _ = crate::broadcast::dht_writes::open_readonly(
-                                self,
-                                &session.identity.profile_dht_key,
-                            )
-                            .await;
-                        }
-                    }
+            .await?;
+            info!(?profile, ?mailbox, "route blob published");
+        }
+
+        // Step 3: borrow each community's governance and registry from the
+        // pool. The registry carries our slot keypair as its sticky writer,
+        // so the presence heartbeat and a leave write through this lease
+        // instead of re-opening the record (V5).
+        let mut communities = HashMap::new();
+        for membership in session.communities.values() {
+            let mut leases = CommunityLeases::default();
+            match crate::broadcast::dht_writes::acquire_str(self, &membership.governance_key, None)
+                .await
+            {
+                Ok(lease) => leases.governance = Some(lease),
+                Err(e) => {
+                    warn!(error = %e, community = membership.community_name.as_str(), "governance reopen failed");
                 }
-            } else {
-                let _ = crate::broadcast::dht_writes::open_readonly(
-                    self,
-                    &session.identity.profile_dht_key,
-                )
-                .await;
             }
-
-            // Step 3: Reopen mailbox and publish route blob
-            let identity_keypair = {
-                let sk = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
-                let pk = sk.verifying_key();
-                let bare_pub = veilid_core::BarePublicKey::new(&pk.to_bytes());
-                let bare_secret = veilid_core::BareSecretKey::new(signing_key_bytes);
-                let veilid_pub =
-                    veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
-                veilid_core::KeyPair::new_from_parts(veilid_pub, bare_secret)
-            };
-            match crate::broadcast::dht_writes::open_writable(
+            let slot_writer = membership.slot_seed.and_then(|seed| {
+                crate::broadcast::dht_writes::derive_slot_keypair_str(&seed, membership.slot_index)
+                    .ok()
+            });
+            match crate::broadcast::dht_writes::acquire_str(
                 self,
-                &session.identity.mailbox_dht_key,
-                identity_keypair,
+                &membership.registry_key,
+                slot_writer.as_deref(),
             )
             .await
             {
-                Ok(()) => {
-                    let dht = self.dht()?;
-                    let _ = dht
-                        .mailbox()
-                        .update_route(&session.identity.mailbox_dht_key, &route_blob)
-                        .await;
-                    info!(
-                        key = session.identity.mailbox_dht_key.as_str(),
-                        "mailbox reopened + route published"
-                    );
-                }
+                Ok(lease) => leases.registry = Some(lease),
                 Err(e) => {
-                    warn!(error = %e, "mailbox reopen failed");
-                    let _ = crate::broadcast::dht_writes::open_readonly(
-                        self,
-                        &session.identity.mailbox_dht_key,
-                    )
-                    .await;
+                    warn!(error = %e, community = membership.community_name.as_str(), "registry reopen failed");
                 }
             }
-        }
-
-        // Step 4: Reopen friend list
-        if let Some(ref kp_bytes) = session.identity.friend_list_keypair_bytes {
-            if let Ok(kp) = deserialize_keypair(kp_bytes) {
-                match crate::broadcast::dht_writes::open_writable(
-                    self,
-                    &session.identity.friend_list_dht_key,
-                    kp,
-                )
-                .await
-                {
-                    Ok(()) => info!(
-                        key = session.identity.friend_list_dht_key.as_str(),
-                        "friend list reopened writable"
-                    ),
-                    Err(e) => {
-                        warn!(error = %e, "friend list writable reopen failed, falling back to readonly");
-                        let _ = crate::broadcast::dht_writes::open_readonly(
-                            self,
-                            &session.identity.friend_list_dht_key,
-                        )
-                        .await;
-                    }
-                }
-            } else {
-                let _ = crate::broadcast::dht_writes::open_readonly(
-                    self,
-                    &session.identity.friend_list_dht_key,
-                )
-                .await;
-            }
-        } else if let Err(e) =
-            crate::broadcast::dht_writes::open_readonly(self, &session.identity.friend_list_dht_key)
-                .await
-        {
-            warn!(error = %e, "friend list reopen failed");
-        } else {
-            info!(
-                key = session.identity.friend_list_dht_key.as_str(),
-                "friend list reopened readonly (no keypair)"
-            );
-        }
-
-        // Step 5: Reopen community governance + registry records (readonly)
-        for membership in session.communities.values() {
-            if let Err(e) =
-                crate::broadcast::dht_writes::open_readonly(self, &membership.governance_key).await
-            {
-                warn!(error = %e, community = membership.community_name.as_str(), "governance reopen failed");
-            }
-            if let Err(e) =
-                crate::broadcast::dht_writes::open_readonly(self, &membership.registry_key).await
-            {
-                warn!(error = %e, community = membership.community_name.as_str(), "registry reopen failed");
-            }
+            communities.insert(membership.governance_key.clone(), leases);
         }
 
         // Under flat governance there is no per-community route to
@@ -205,6 +146,6 @@ impl TransportNode {
 
         let community_count = session.communities.len();
         info!(communities = community_count, "session resumed");
-        Ok(())
+        Ok(communities)
     }
 }

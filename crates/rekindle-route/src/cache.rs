@@ -64,6 +64,21 @@ impl RouteCache {
         stale
     }
 
+    /// Drop every peer whose cached route is one of `blobs` (routes
+    /// Veilid declared dead); returns those peers.
+    pub fn remove_by_blob(&mut self, blobs: &[Vec<u8>]) -> Vec<String> {
+        let dead: Vec<String> = self
+            .routes
+            .iter()
+            .filter(|(_, route)| blobs.contains(&route.route_blob))
+            .map(|(peer_id, _)| peer_id.clone())
+            .collect();
+        for peer_id in &dead {
+            self.routes.remove(peer_id);
+        }
+        dead
+    }
+
     pub fn len(&self) -> usize {
         self.routes.len()
     }
@@ -88,6 +103,18 @@ mod tests {
 
         let evicted = cache.evict_stale_at(start + Duration::from_secs(121));
         assert_eq!(evicted, vec!["alice".to_string()]);
+        assert!(cache.get("alice").is_none());
+        assert!(cache.get("bob").is_some());
+    }
+
+    #[test]
+    fn remove_by_blob_drops_only_peers_on_dead_routes() {
+        let now = Instant::now();
+        let mut cache = RouteCache::new(Duration::from_secs(60));
+        cache.insert_at("alice", vec![1], now);
+        cache.insert_at("bob", vec![2], now);
+        let dead = cache.remove_by_blob(&[vec![1], vec![9]]);
+        assert_eq!(dead, vec!["alice".to_string()]);
         assert!(cache.get("alice").is_none());
         assert!(cache.get("bob").is_some());
     }

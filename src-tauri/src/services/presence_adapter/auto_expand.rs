@@ -22,34 +22,39 @@ pub(super) fn maybe_auto_expand_segment(state: &Arc<AppState>, community_id: &st
     }
     let state_clone = Arc::clone(state);
     let cid = community_id.to_string();
-    tokio::spawn(async move {
-        match crate::services::community::segments::highest_segment_full(&state_clone, &cid).await {
-            Ok(true) => {
-                tracing::info!(
-                    community = %cid,
-                    "highest segment is full — auto-expanding (admin trigger)",
-                );
-                if let Err(e) = crate::services::community::segments::expand_community_segment(
-                    &state_clone,
-                    &cid,
-                )
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "segment auto-expand",
+        async move {
+            match crate::services::community::segments::highest_segment_full(&state_clone, &cid)
                 .await
-                {
-                    tracing::warn!(
+            {
+                Ok(true) => {
+                    tracing::info!(
+                        community = %cid,
+                        "highest segment is full — auto-expanding (admin trigger)",
+                    );
+                    if let Err(e) = crate::services::community::segments::expand_community_segment(
+                        &state_clone,
+                        &cid,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            community = %cid,
+                            error = %e,
+                            "auto segment expansion failed — next admin's poll will retry",
+                        );
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::debug!(
                         community = %cid,
                         error = %e,
-                        "auto segment expansion failed — next admin's poll will retry",
+                        "highest_segment_full check failed — skipping expansion",
                     );
                 }
             }
-            Ok(false) => {}
-            Err(e) => {
-                tracing::debug!(
-                    community = %cid,
-                    error = %e,
-                    "highest_segment_full check failed — skipping expansion",
-                );
-            }
-        }
-    });
+        },
+    );
 }

@@ -11,30 +11,36 @@ use rekindle_types::id::{PseudonymKey, RoleId};
 
 pub(super) fn write_role_definition(
     mut p: schema_pkg::role_definition_entry::Builder<'_>,
-    role_id: RoleId,
-    name: &str,
-    permissions: u64,
-    position: u32,
-    color: u32,
-    hoist: bool,
-    mentionable: bool,
-    self_assignable: bool,
-    exclusion_group: Option<&str>,
-    lamport: u64,
+    e: &GovernanceEntry,
 ) {
+    let GovernanceEntry::RoleDefinition {
+        role_id,
+        name,
+        permissions,
+        position,
+        color,
+        hoist,
+        mentionable,
+        self_assignable,
+        exclusion_group,
+        lamport,
+    } = e
+    else {
+        unreachable!("write_role_definition: variant mismatch")
+    };
     uuid16_to_capnp(p.reborrow().init_role_id(), &role_id.0);
     p.set_name(name);
-    p.set_permissions(permissions);
-    p.set_position(position);
-    p.set_color(color);
-    p.set_hoist(hoist);
-    p.set_mentionable(mentionable);
-    p.set_self_assignable(self_assignable);
+    p.set_permissions(*permissions);
+    p.set_position(*position);
+    p.set_color(*color);
+    p.set_hoist(*hoist);
+    p.set_mentionable(*mentionable);
+    p.set_self_assignable(*self_assignable);
     p.set_has_exclusion_group(exclusion_group.is_some());
     if let Some(g) = exclusion_group {
         p.set_exclusion_group(g);
     }
-    p.set_lamport(lamport);
+    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_role_assignment(

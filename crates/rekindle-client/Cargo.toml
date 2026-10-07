@@ -1,0 +1,25 @@
+[package]
+name = "rekindle-client"
+version = "0.1.0"
+edition = "2021"
+description = "Shared client for Rekindle frontends: the daemon connection, on-demand start, config and display helpers"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { version = "0.4", features = [ "clock" ], default-features = false }
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = "0.2"
+tracing-subscriber = { workspace = true }
+uuid = { version = "1", features = [ "v7" ] }
+
+# A frontend links the bus and the shared types — never the node.
+rekindle-ipc = { path = "../rekindle-ipc" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "config", "log-scrub", "paths" ] }

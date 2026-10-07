@@ -27,6 +27,7 @@ pub mod reactions;
 pub mod receive;
 pub mod send;
 pub mod stage;
+mod text_keys;
 pub mod threads;
 
 pub use automod::{
@@ -34,7 +35,7 @@ pub use automod::{
     list_rules as list_automod_rules, AutoModAction, AutoModCompiledCache, AutoModRuleInfo,
     CompiledAutoModRule,
 };
-pub use deps::{ChannelInfoSnapshot, ChannelMek, ChannelMessagingDeps, ChannelSendOutcome};
+pub use deps::{ChannelInfoSnapshot, ChannelMessagingDeps, ChannelSendOutcome};
 pub use error::ChannelError;
 pub use event::ChannelEvent;
 pub use expressions::{
@@ -55,23 +56,21 @@ pub use notifications::{
     NotificationDecision, NotificationLevel, NotificationThrottle,
 };
 pub use pipeline::{
-    enforce_slowmode_with_bypass, forward_channel_message, process_retry_write,
-    send_channel_message, ChannelSendResult, ForwardChannelMessageParams,
+    enforce_slowmode_with_bypass, forward_channel_message, on_write_settled, send_channel_message,
+    ChannelSendResult, ForwardChannelMessageParams,
 };
 pub use polls::{
     get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote, PollSnapshot,
 };
 pub use reactions::{build_reaction, build_reaction_envelope, persist_reaction};
-pub use receive::{
-    decrypt_channel_body, decrypt_channel_body_with_legacy_fallback, extract_mention_signals,
-    MentionSignals,
-};
+pub use receive::{extract_mention_signals, MentionSignals};
 pub use send::{
-    build_channel_message, encrypt_channel_body, slowmode_check, BuildChannelMessageParams,
+    build_channel_message, decrypt_channel_body, encrypt_channel_body, slowmode_check,
+    BodyPosition, BuildChannelMessageParams,
 };
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use threads::{
     archive_thread, create_thread, default_auto_archive_seconds, is_thread_archived,
     list_active_threads, list_threads, load_thread_messages, send_thread_message,
-    thread_member_count, validate_auto_archive_seconds, ThreadMessageView,
+    validate_auto_archive_seconds, ThreadMessageView,
 };

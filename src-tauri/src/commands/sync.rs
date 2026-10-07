@@ -6,36 +6,33 @@ use rekindle_types::cross_device_sync::{DeviceList, ReadState, SyncManifest, Syn
 use std::sync::Arc;
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::cross_device_sync;
 use crate::services::cross_device_sync::PersonalSyncRecordHandle;
 use crate::state::{AppState, SharedState};
+use rekindle_db::Db;
 
 #[tauri::command]
-pub async fn ensure_personal_sync_record(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<String, String> {
-    let handle =
-        cross_device_sync::ensure_personal_sync_record(state.inner(), pool.inner()).await?;
-    cross_device_sync::start_personal_sync_watch(state.inner(), pool.inner()).await?;
+pub async fn ensure_personal_sync_record(state: State<'_, SharedState>) -> Result<String, String> {
+    let pool = state.db.current()?;
+    let handle = cross_device_sync::ensure_personal_sync_record(state.inner(), &pool).await?;
+    cross_device_sync::start_personal_sync_watch(state.inner(), &pool).await?;
     Ok(handle.record_key)
 }
 
 #[tauri::command]
 pub async fn start_pairing_session(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<cross_device_sync::PairingSession, String> {
-    cross_device_sync::generate_pairing_session(state.inner(), pool.inner()).await
+    let pool = state.db.current()?;
+    cross_device_sync::generate_pairing_session(state.inner(), &pool).await
 }
 
 #[tauri::command]
 pub async fn read_sync_manifest(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Option<SyncManifest>, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::read_sync_manifest(state.inner(), &handle, &sync_key).await
 }
 
@@ -43,18 +40,16 @@ pub async fn read_sync_manifest(
 pub async fn write_sync_manifest(
     manifest: SyncManifest,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::write_sync_manifest(state.inner(), &handle, &sync_key, &manifest).await
 }
 
 #[tauri::command]
-pub async fn read_sync_read_state(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<ReadState, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+pub async fn read_sync_read_state(state: State<'_, SharedState>) -> Result<ReadState, String> {
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::read_read_state(state.inner(), &handle, &sync_key).await
 }
 
@@ -62,18 +57,18 @@ pub async fn read_sync_read_state(
 pub async fn write_sync_read_state(
     read_state: ReadState,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<ReadState, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::write_read_state(state.inner(), &handle, &sync_key, read_state).await
 }
 
 #[tauri::command]
 pub async fn read_sync_preferences(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<SyncPreferences, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::read_preferences(state.inner(), &handle, &sync_key).await
 }
 
@@ -81,18 +76,16 @@ pub async fn read_sync_preferences(
 pub async fn write_sync_preferences(
     preferences: SyncPreferences,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<SyncPreferences, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::write_preferences(state.inner(), &handle, &sync_key, preferences).await
 }
 
 #[tauri::command]
-pub async fn read_paired_devices(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<DeviceList, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+pub async fn read_paired_devices(state: State<'_, SharedState>) -> Result<DeviceList, String> {
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::read_device_list(state.inner(), &handle, &sync_key).await
 }
 
@@ -100,15 +93,15 @@ pub async fn read_paired_devices(
 pub async fn write_paired_devices(
     devices: DeviceList,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<DeviceList, String> {
-    let (handle, sync_key) = setup(state.inner(), pool.inner()).await?;
+    let pool = state.db.current()?;
+    let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::write_device_list(state.inner(), &handle, &sync_key, devices).await
 }
 
 async fn setup(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<(PersonalSyncRecordHandle, SyncKey), String> {
     let handle = cross_device_sync::open_personal_sync_record(state, pool)
         .await
@@ -153,9 +146,9 @@ pub async fn accept_pairing_code(
 #[tauri::command]
 pub async fn generate_pairing_qr_svg(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<PairingQrPayload, String> {
-    crate::services::sync_runtime::generate_pairing_qr_svg_inner(state.inner(), pool.inner()).await
+    let pool = state.db.current()?;
+    crate::services::sync_runtime::generate_pairing_qr_svg_inner(state.inner(), &pool).await
 }
 
 /// What the frontend needs in one round trip: the SVG string for

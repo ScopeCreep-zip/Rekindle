@@ -18,20 +18,17 @@ pub(super) async fn apply_governance_rebuild_result_impl(
     adapter: &GovernanceAdapter,
     community_id: &str,
     gov_state: GovernanceState,
-    max_lamport: u64,
+    accepted_clock: u64,
 ) {
-    {
-        let mut communities = adapter.state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            cs.lamport_counter = cs.lamport_counter.max(max_lamport);
-        }
-    }
+    state_helpers::observe_governance_lamport(&adapter.state, community_id, accepted_clock);
     state_helpers::set_governance_state(&adapter.state, community_id, gov_state);
+    let clock =
+        state_helpers::governance_clock(&adapter.state, community_id).unwrap_or(accepted_clock);
     if let Err(error) = state_helpers::persist_governance_snapshot_to_sqlite(
         &adapter.state,
         &adapter.pool,
         community_id,
-        max_lamport,
+        clock,
     )
     .await
     {
@@ -54,29 +51,14 @@ pub(super) fn persist_governance_entries_cache_impl(
     if owner_key.is_empty() {
         return;
     }
-    let Ok(entries_json) = serde_json::to_string(entries) else {
-        tracing::warn!(
-            community = %community_id,
-            "failed to serialize governance entries for local cache",
-        );
-        return;
-    };
     let cid = community_id.to_string();
+    let entries = entries.to_vec();
     let now = rekindle_utils::timestamp_secs().cast_signed();
     crate::db_helpers::db_fire(
         &adapter.pool,
         "persist governance entries cache",
         move |conn| {
-            conn.execute(
-                "INSERT INTO governance_entries_cache
-                    (owner_key, community_id, entries_json, updated_at)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(owner_key, community_id)
-                 DO UPDATE SET entries_json = excluded.entries_json,
-                               updated_at = excluded.updated_at",
-                rusqlite::params![owner_key, cid, entries_json, now],
-            )?;
-            Ok(())
+            rekindle_db::repo::governance_cache::save(conn, &owner_key, &cid, &entries, now)
         },
     );
 }
@@ -110,25 +92,15 @@ pub(super) fn apply_recovered_member_state_impl(
 
     let owner_key = state_helpers::current_owner_key(&adapter.state).unwrap_or_default();
     let cid = community_id.to_string();
-    let roles_json = serde_json::to_string(&role_ids_to_persist).ok();
-    let idx = subkey_index;
     crate::db_helpers::db_fire(
         &adapter.pool,
         "persist hydrated subkey_index + role_ids",
         move |conn| {
+            use rekindle_db::repo::communities::{set, set_my_role_ids, Column};
             if recovered_subkey {
-                conn.execute(
-                    "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![idx, &owner_key, &cid],
-                )?;
+                set(conn, &owner_key, &cid, Column::MySubkeyIndex, subkey_index)?;
             }
-            if let Some(rj) = roles_json {
-                conn.execute(
-                    "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
-                    rusqlite::params![rj, &owner_key, &cid],
-                )?;
-            }
-            Ok(())
+            set_my_role_ids(conn, &owner_key, &cid, &role_ids_to_persist)
         },
     );
 }
@@ -199,50 +171,17 @@ pub(super) fn recover_registry_keypair_from_keystore_impl(
     }
 }
 
-pub(super) fn mark_community_records_open_impl(
-    adapter: &GovernanceAdapter,
-    community_id: &str,
-    governance_key: &str,
-    registry_key: Option<&str>,
-    registry_writer: Option<&str>,
-    channel_keys: Vec<String>,
-) {
-    let mut cs = adapter.state.communities.write();
-    if let Some(c) = cs.get_mut(community_id) {
-        c.open_community_records.governance_key = Some(governance_key.to_string());
-        c.open_community_records.registry_key = registry_key.map(str::to_string);
-        c.open_community_records.registry_writer = registry_writer.map(str::to_string);
-        c.open_community_records.channel_keys = channel_keys;
-        c.open_community_records.records_open = true;
-    }
-}
-
 pub(super) fn spawn_text_mek_rotation_for_ban_impl(
     adapter: &GovernanceAdapter,
     community_id: &str,
     banned_pseudonym_hex: &str,
 ) {
-    let state = adapter.state.clone();
-    let app_handle = adapter.app_handle.clone();
-    let community_id = community_id.to_string();
-    let banned_pseudonym = banned_pseudonym_hex.to_string();
-    tauri::async_runtime::spawn(async move {
-        if let Err(error) = crate::services::community::rotate_text_mek_for_departure(
-            &app_handle,
-            &state,
-            &community_id,
-            &banned_pseudonym,
-        )
-        .await
-        {
-            tracing::debug!(
-                community = %community_id,
-                member = %banned_pseudonym,
-                %error,
-                "text MEK rotation skipped after governance ban sync",
-            );
-        }
-    });
+    crate::services::community::spawn_departure_rotations(
+        &adapter.app_handle,
+        &adapter.state,
+        community_id,
+        banned_pseudonym_hex,
+    );
 }
 
 pub(super) fn register_governance_overflow_keys_impl(
@@ -264,5 +203,4 @@ pub(super) fn register_governance_overflow_keys_impl(
             }
         }
     }
-    state_helpers::track_open_records(&adapter.state, keys);
 }

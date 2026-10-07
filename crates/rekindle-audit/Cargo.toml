@@ -9,12 +9,12 @@ workspace = true
 
 [dependencies]
 blake3 = "1"
+hex = "0.4"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-zeroize = { version = "1", features = ["derive"] }
-hex = "0.4"
+zeroize = { version = "1", features = [ "derive" ] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

@@ -171,28 +171,30 @@ mod tests {
     }
 }
 
-/// Enable in-webview camera/microphone capture on Linux (WebKitGTK).
+/// Enable in-webview camera/microphone capture on Linux (WebKitGTK), for a
+/// window whose `WindowKind::captures_media()` is true.
 ///
-/// WebKitGTK ships the MediaStream API (`navigator.mediaDevices.getUserMedia`
-/// / `enumerateDevices`) gated off and silently *denies* every media
-/// permission request unless the embedder opts in — so a Tauri webview shows a
-/// blank camera and an empty device list with no OS prompt. We flip on
-/// `enable-media-stream` and approve the two media-device permission request
-/// types (capture + device enumeration), denying every other type
-/// (geolocation, notifications, …) so we don't broaden the webview's authority.
+/// WebKitGTK ships the MediaStream API (`navigator.mediaDevices`) switched
+/// off, so a non-capture window never gets it: this function is the only
+/// place it is switched on.
+///
+/// Camera, microphone and screen requests are answered by the window's
+/// `on_permission_request` handler (`windows::navigation::permission_for`),
+/// which wry connects to `permission-request` first. Device enumeration
+/// (`DeviceInfoPermissionRequest`, behind `enumerateDevices`) reaches that
+/// handler as `PermissionKind::Other`, which it leaves to this hook; this
+/// hook allows device enumeration and denies anything else that falls
+/// through.
 ///
 /// Frames are captured via WebCodecs and shipped over Veilid, so no
 /// WebRTC/gstreamer stack is required — only the capture API.
 ///
 /// macOS has its own arm below (host-app TCC authorization); Windows'
-/// WebView2 surfaces the capture prompt itself.
+/// WebView2 needs no setup beyond the permission handler.
 #[cfg(target_os = "linux")]
 pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
     use webkit2gtk::glib::prelude::Cast;
-    use webkit2gtk::{
-        DeviceInfoPermissionRequest, PermissionRequestExt, SettingsExt, UserMediaPermissionRequest,
-        WebViewExt,
-    };
+    use webkit2gtk::{DeviceInfoPermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt};
 
     let label = window.label().to_string();
     let result = window.with_webview(move |platform_webview| {
@@ -201,13 +203,10 @@ pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
             settings.set_enable_media_stream(true);
         }
         webview.connect_permission_request(|_webview, request| {
-            let is_media_request = request
-                .downcast_ref::<UserMediaPermissionRequest>()
+            if request
+                .downcast_ref::<DeviceInfoPermissionRequest>()
                 .is_some()
-                || request
-                    .downcast_ref::<DeviceInfoPermissionRequest>()
-                    .is_some();
-            if is_media_request {
+            {
                 request.allow();
             } else {
                 request.deny();
@@ -248,7 +247,7 @@ pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
 /// - The pre-auth stays: in the bundled app it front-loads the TCC
 ///   prompt deterministically and surfaces denial state in the logs.
 /// - The status precheck + `Once` guards keep this idempotent across
-///   every window builder that calls it.
+///   every capture window that calls it.
 #[cfg(target_os = "macos")]
 pub fn enable_webview_media_capture(_window: &tauri::WebviewWindow) {
     use objc2_av_foundation::{AVMediaTypeAudio, AVMediaTypeVideo};
@@ -282,7 +281,7 @@ pub fn request_camera_authorization() {
 
 /// Check-then-request one AVFoundation media authorization, logging the
 /// outcome under `rekindle_video::permissions`. Denied/Restricted warns
-/// once per process (eight windows call this; one actionable line
+/// once per process (every capture window calls this; one actionable line
 /// beats eight copies).
 #[cfg(target_os = "macos")]
 fn request_av_authorization(

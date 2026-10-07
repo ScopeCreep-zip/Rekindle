@@ -9,22 +9,6 @@ use rekindle_protocol::dht::community::envelope::SignedEnvelope;
 
 use crate::state::{AppState, OnlineMember};
 
-/// Advance the community's **gossip-mesh** Lamport clock.
-///
-/// NOT a duplicate of `state_helpers::increment_lamport` despite the
-/// name: that helper advances the community CRDT clock
-/// (`CommunityState::lamport_counter`); this one advances
-/// `community.gossip.lamport_counter`. Different clocks — do not
-/// "deduplicate" them onto one helper.
-pub(super) fn increment_lamport(state: &Arc<AppState>, community_id: &str) {
-    let mut communities = state.communities.write();
-    if let Some(community) = communities.get_mut(community_id) {
-        if let Some(ref mut gossip) = community.gossip {
-            gossip.lamport_counter += 1;
-        }
-    }
-}
-
 /// Queue an envelope for a mesh broadcast that could not go out yet,
 /// evicting the oldest once the queue is full.
 pub(super) fn enqueue_pending_mesh(

@@ -41,12 +41,14 @@ const PREKEY_BUNDLE_SUBKEY: u32 = rekindle_types::dht_layout::profile::PREKEY_BU
 ///
 /// `first_tick` + `force_all` drive when to force the DHT
 /// `force_refresh=true` flag — the first tick or every 10th tick
-/// per pre-port `sync_service::start_sync_loop` cadence.
+/// per pre-port `sync_service::start_sync_loop` cadence. Stops before
+/// the next friend's calls once `stop` is cancelled (plan C4.L1).
 pub async fn sync_friends<D, S>(
     deps: Arc<D>,
     watched_keys: &mut HashSet<String, S>,
     first_tick: bool,
     force_all: bool,
+    stop: &tokio_util::sync::CancellationToken,
 ) where
     D: FriendPresenceDeps,
     S: std::hash::BuildHasher,
@@ -65,6 +67,9 @@ pub async fn sync_friends<D, S>(
     }
 
     for (friend_key, dht_key) in &friends_with_dht {
+        if stop.is_cancelled() {
+            return;
+        }
         if watched_keys.contains(dht_key) {
             // Already watched — still re-register the mapping in case
             // the DHT manager was rebuilt (e.g., after a Veilid attach
@@ -162,13 +167,13 @@ mod tests {
         calls_unwatched: u32,
         calls_register_dht: Vec<(String, String)>,
         calls_open_friend: Vec<String>,
-        calls_watch_subkeys: Vec<(String, Vec<u32>)>,
+        calls_watch_subkeys: Vec<(u64, Vec<u32>)>,
         calls_fetch_subkey: Vec<(String, u32, bool)>,
         calls_set_offline: Vec<(String, i64)>,
         calls_is_accepted: Vec<String>,
         calls_emit: Vec<FriendPresenceEvent>,
         calls_set_unwatched: Vec<(String, bool)>,
-        calls_track_open: Vec<String>,
+        calls_hold: Vec<(String, u64)>,
         calls_find_stale: Vec<i64>,
     }
 
@@ -183,6 +188,26 @@ mod tests {
                 state: Mutex::new(MockState::default()),
                 accepted: HashSet::new(),
             }
+        }
+    }
+
+    #[async_trait]
+    impl crate::deps::StatusPublisherDeps for MockDeps {
+        fn profile_dht_info(&self) -> Option<String> {
+            None
+        }
+        async fn write_profile_status_subkey(
+            &self,
+            _: &str,
+            _: Vec<u8>,
+        ) -> Result<(), PresenceError> {
+            Ok(())
+        }
+        fn current_identity_status(&self) -> Option<UserStatusKind> {
+            None
+        }
+        fn now_ms(&self) -> i64 {
+            1_000_000
         }
     }
 
@@ -225,60 +250,44 @@ mod tests {
                 .push((dht_key.to_string(), friend_key.to_string()));
         }
         fn cache_route_blob(&self, _: &str, _: Vec<u8>) {}
-        fn track_open_record(&self, dht_record_key: &str) {
-            self.state
-                .lock()
-                .calls_track_open
-                .push(dht_record_key.to_string());
-        }
         fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool) {
             self.state
                 .lock()
                 .calls_set_unwatched
                 .push((friend_key.to_string(), unwatched));
         }
-        async fn open_friend_record(&self, dht_record_key: &str) -> Result<(), PresenceError> {
+        async fn acquire_friend_record(
+            &self,
+            dht_record_key: &str,
+        ) -> Result<rekindle_records::lease::LeaseId, PresenceError> {
+            let mut st = self.state.lock();
+            st.calls_open_friend.push(dht_record_key.to_string());
+            Ok(rekindle_records::lease::LeaseId(
+                u64::try_from(st.calls_open_friend.len()).unwrap_or(u64::MAX),
+            ))
+        }
+        async fn hold_friend_record(
+            &self,
+            friend_key: &str,
+            lease: rekindle_records::lease::LeaseId,
+        ) {
             self.state
                 .lock()
-                .calls_open_friend
-                .push(dht_record_key.to_string());
-            Ok(())
+                .calls_hold
+                .push((friend_key.to_string(), lease.0));
         }
         async fn watch_friend_subkeys(
             &self,
-            dht_record_key: &str,
+            lease: rekindle_records::lease::LeaseId,
             subkeys: &[u32],
-        ) -> Result<bool, PresenceError> {
+        ) -> Result<(), PresenceError> {
             self.state
                 .lock()
                 .calls_watch_subkeys
-                .push((dht_record_key.to_string(), subkeys.to_vec()));
-            Ok(true)
-        }
-        fn profile_dht_info(&self) -> Option<(String, Option<String>)> {
-            None
-        }
-        async fn open_profile_record_for_write(
-            &self,
-            _: &str,
-            _: Option<&str>,
-        ) -> Result<(), PresenceError> {
-            Ok(())
-        }
-        async fn write_profile_status_subkey(
-            &self,
-            _: &str,
-            _: Vec<u8>,
-        ) -> Result<(), PresenceError> {
+                .push((lease.0, subkeys.to_vec()));
             Ok(())
         }
         fn persist_friend_last_seen(&self, _: &str, _: i64) {}
-        fn current_identity_status(&self) -> Option<UserStatusKind> {
-            None
-        }
-        fn now_ms(&self) -> i64 {
-            1_000_000
-        }
         fn emit(&self, event: FriendPresenceEvent) {
             self.state.lock().calls_emit.push(event);
         }
@@ -316,7 +325,14 @@ mod tests {
     async fn empty_friend_list_is_a_no_op() {
         let deps = Arc::new(MockDeps::default());
         let mut watched = HashSet::new();
-        sync_friends(Arc::clone(&deps), &mut watched, false, false).await;
+        sync_friends(
+            Arc::clone(&deps),
+            &mut watched,
+            false,
+            false,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
         let st = deps.state.lock();
         assert!(st.calls_register_dht.is_empty());
         assert!(st.calls_fetch_subkey.is_empty());
@@ -332,10 +348,20 @@ mod tests {
             accepted: HashSet::new(),
         });
         let mut watched = HashSet::new();
-        sync_friends(Arc::clone(&deps), &mut watched, true, false).await;
+        sync_friends(
+            Arc::clone(&deps),
+            &mut watched,
+            true,
+            false,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
         let st = deps.state.lock();
         assert_eq!(st.calls_register_dht, vec![("dht1".into(), "alice".into())]);
         assert_eq!(st.calls_open_friend, vec!["dht1".to_string()]);
+        // The watch sits on the lease the host then keeps for the friend.
+        assert_eq!(st.calls_watch_subkeys.first().map(|(l, _)| *l), Some(1));
+        assert_eq!(st.calls_hold, vec![("alice".to_string(), 1)]);
         // 4 subkeys polled: 2, 4, 6, 5 (prekey bundle last).
         let subkeys: Vec<u32> = st.calls_fetch_subkey.iter().map(|(_, sk, _)| *sk).collect();
         assert_eq!(subkeys, vec![2, 4, 6, 5]);
@@ -357,7 +383,14 @@ mod tests {
             accepted: HashSet::new(),
         });
         let mut watched: HashSet<String> = ["dht1".to_string()].into_iter().collect();
-        sync_friends(Arc::clone(&deps), &mut watched, false, false).await;
+        sync_friends(
+            Arc::clone(&deps),
+            &mut watched,
+            false,
+            false,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
         // unwatched cleared "dht1" → re-watched this tick → restored.
         assert!(watched.contains("dht1"));
         let st = deps.state.lock();
@@ -374,7 +407,14 @@ mod tests {
             accepted: HashSet::new(),
         });
         let mut watched: HashSet<String> = ["dht1".to_string()].into_iter().collect();
-        sync_friends(Arc::clone(&deps), &mut watched, false, true).await;
+        sync_friends(
+            Arc::clone(&deps),
+            &mut watched,
+            false,
+            true,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
         let st = deps.state.lock();
         for (_, _, force) in &st.calls_fetch_subkey {
             assert!(*force, "force_all should propagate to every subkey fetch");

@@ -69,8 +69,9 @@ struct UploadContext {
     slot_keypair: String,
     slot_index: u32,
     sender_pseudonym: String,
-    mek_generation: u64,
-    channel_mek: MediaEncryptionKey,
+    /// The channel's current text key; its generation is stamped on the
+    /// FEK wrap and the carrying message.
+    text_key: MediaEncryptionKey,
 }
 
 fn build_upload_context<D: FilesDeps>(
@@ -88,15 +89,13 @@ fn build_upload_context<D: FilesDeps>(
     let slot_keypair = deps.slot_keypair(community_id)?;
     let slot_index = deps.my_subkey_index(community_id)?;
     let sender_pseudonym = deps.my_pseudonym(community_id)?;
-    let mek_generation = deps.mek_generation(community_id)?;
-    let channel_mek = deps.channel_mek(community_id, channel_id)?;
+    let text_key = crate::keys::current_text_key(deps, community_id, channel_id)?;
     Ok(UploadContext {
         channel_key,
         slot_keypair,
         slot_index,
         sender_pseudonym,
-        mek_generation,
-        channel_mek,
+        text_key,
     })
 }
 
@@ -136,10 +135,12 @@ pub async fn upload_file<D: FilesDeps>(
     channel_id: &str,
     file_path: &Path,
 ) -> Result<String, FilesError> {
-    let bytes = std::fs::read(file_path).map_err(|e| FilesError::Io {
-        path: file_path.display().to_string(),
-        source: e,
-    })?;
+    let bytes = tokio::fs::read(file_path)
+        .await
+        .map_err(|e| FilesError::Io {
+            path: file_path.display().to_string(),
+            source: e,
+        })?;
     let filename = file_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -225,9 +226,10 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
         Ok(())
     })?;
 
-    // Wrap FEK under the channel MEK at upload time (plan §1.J1).
+    // Wrap FEK under the channel's text key at upload time (plan §1.J1).
+    let mek_generation = ctx.text_key.generation();
     let wrapped_fek = ctx
-        .channel_mek
+        .text_key
         .encrypt(fek.as_bytes())
         .map_err(|e| FilesError::Encrypt(format!("wrap FEK: {e}")))?;
 
@@ -241,7 +243,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
         merkle_root: chunked.merkle_root,
         chunk_hashes: chunked.chunk_hashes,
         wrapped_fek,
-        fek_mek_generation: ctx.mek_generation,
+        fek_mek_generation: mek_generation,
     };
     validate_offer(&offer).map_err(|e| FilesError::OfferInvalid(format!("self-check: {e}")))?;
 
@@ -249,12 +251,20 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     // (empty for plain uploads; JSON metadata for voice messages).
     let timestamp_ms = timestamp_now();
     let message_id = format!("msg_{}", Uuid::new_v4().simple());
-    let lamport_ts = deps.increment_lamport(community_id);
+    let lamport_ts = deps.increment_lamport(community_id)?;
     let sequence = deps.next_channel_sequence(community_id, channel_id);
-    let body_ciphertext = ctx
-        .channel_mek
-        .encrypt(body_plaintext)
-        .map_err(|e| FilesError::Encrypt(format!("MEK encrypt body: {e}")))?;
+    // The carrying message's body uses the channel-body codec every
+    // reader opens with: bound to the record, our subkey and the Lamport.
+    let body_ciphertext = rekindle_secrets::channel_body::encrypt_channel_body(
+        ctx.text_key.as_bytes(),
+        rekindle_secrets::channel_body::BodyPosition {
+            channel_record_key: &ctx.channel_key,
+            subkey_index: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + ctx.slot_index,
+            lamport_ts,
+        },
+        body_plaintext,
+    )
+    .map_err(|e| FilesError::Encrypt(format!("channel body: {e}")))?;
 
     // Architecture §28.5 — caption mentions go into the cleartext
     // envelope. Voice messages and file uploads can still ping people
@@ -269,7 +279,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
         sequence,
         sender_pseudonym: ctx.sender_pseudonym.clone(),
         ciphertext: body_ciphertext,
-        mek_generation: ctx.mek_generation,
+        mek_generation,
         timestamp: u64::try_from(timestamp_ms).unwrap_or_default(),
         reply_to: None,
         lamport_ts,
@@ -304,7 +314,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
         sender_key: &ctx.sender_pseudonym,
         message_id: &message_id,
         timestamp_ms,
-        mek_generation: ctx.mek_generation,
+        mek_generation,
         lamport_ts,
         attachment_json: &attachment_json,
         flags,
@@ -328,7 +338,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     deps.persist_slowmode_state(community_id, channel_id, timestamp_now());
 
     // Announce full possession via AttachmentCached entry on our subkey.
-    let cached_lamport = deps.increment_lamport(community_id);
+    let cached_lamport = deps.increment_lamport(community_id)?;
     let cached = ChannelAttachmentCached {
         attachment_id,
         chunk_bitmap: AttachmentBitmap::full(chunk_count).as_bytes().to_vec(),
@@ -441,7 +451,7 @@ mod tests {
     fn sample_request() -> UploadRequest {
         UploadRequest {
             community_id: "c1".into(),
-            channel_id: "ch1".into(),
+            channel_id: "11111111111111111111111111111111".into(),
             bytes: b"x".to_vec(),
             filename: "f.txt".into(),
             mime_type: "text/plain".into(),
@@ -453,13 +463,13 @@ mod tests {
 
     #[tokio::test]
     async fn happy_path_writes_message_attachment_cached_and_persists_row() {
-        let deps = MockDeps::new("c1", "ch1").with_mek(7, [42u8; 32]);
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [42u8; 32]);
         let bytes = b"hello world payload".to_vec();
         let result = upload_bytes_as_attachment(
             &deps,
             UploadRequest {
                 community_id: "c1".into(),
-                channel_id: "ch1".into(),
+                channel_id: "11111111111111111111111111111111".into(),
                 bytes,
                 filename: "hello.txt".into(),
                 mime_type: "text/plain".into(),
@@ -490,14 +500,14 @@ mod tests {
 
     #[tokio::test]
     async fn oversize_file_rejected() {
-        let deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(1, [0u8; 32]);
         // MAX_FILE_SIZE_BYTES = 28*1024*1000 ≈ 28 MB. Build a 1-byte-larger one.
         let bytes = vec![0u8; (MAX_FILE_SIZE_BYTES + 1) as usize];
         let err = upload_bytes_as_attachment(
             &deps,
             UploadRequest {
                 community_id: "c1".into(),
-                channel_id: "ch1".into(),
+                channel_id: "11111111111111111111111111111111".into(),
                 bytes,
                 filename: "big.bin".into(),
                 mime_type: "application/octet-stream".into(),
@@ -513,7 +523,8 @@ mod tests {
 
     #[tokio::test]
     async fn forum_channel_rejected() {
-        let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
+        let mut deps =
+            MockDeps::new("c1", "11111111111111111111111111111111").with_mek(1, [0u8; 32]);
         deps.forum_channel = true;
         let err = upload_bytes_as_attachment(&deps, sample_request())
             .await
@@ -523,7 +534,8 @@ mod tests {
 
     #[tokio::test]
     async fn permission_denied_returns_error() {
-        let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
+        let mut deps =
+            MockDeps::new("c1", "11111111111111111111111111111111").with_mek(1, [0u8; 32]);
         deps.permission_pass = false;
         let err = upload_bytes_as_attachment(&deps, sample_request())
             .await
@@ -533,7 +545,8 @@ mod tests {
 
     #[tokio::test]
     async fn slowmode_blocks_upload() {
-        let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
+        let mut deps =
+            MockDeps::new("c1", "11111111111111111111111111111111").with_mek(1, [0u8; 32]);
         deps.slowmode_pass = false;
         let err = upload_bytes_as_attachment(&deps, sample_request())
             .await

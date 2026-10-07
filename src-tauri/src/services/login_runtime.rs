@@ -21,11 +21,10 @@
 use std::sync::Arc;
 
 use tauri::Manager as _;
-use tokio::sync::mpsc;
 
-use crate::db::DbPool;
 use crate::services;
 use crate::state::{SharedState, SignalManagerHandle};
+use rekindle_db::Db;
 
 /// Stored DHT keys and owner keypairs loaded from `SQLite` during login.
 ///
@@ -47,108 +46,48 @@ pub struct DhtKeysConfig {
 /// Veilid node (started at app launch) for DHT publishing, sync, and messaging.
 /// Game detection and sync services are spawned as background tasks so login
 /// returns near-instantly to the frontend.
-pub fn start_background_services(
+pub async fn start_background_services(
     app: &tauri::AppHandle,
     state: &SharedState,
-    pool: &DbPool,
+    scope: &Arc<rekindle_lifecycle::SessionScope>,
+    pool: &Db,
     secret_key: &[u8; 32],
     dht_keys: DhtKeysConfig,
-) {
+) -> Result<(), String> {
     // Initialize Signal Protocol session manager (returns serialized PreKeyBundle)
-    let prekey_bundle_bytes = initialize_signal_manager(app, state, secret_key);
+    let prekey_bundle_bytes = initialize_signal_manager(app, state, secret_key)?;
 
-    // Clear any stale background handles from a previous session
-    state.background_handles.lock().clear();
+    // The session's record pool, before anything opens a record (C7.3), with
+    // the writes the last logout left unsent (C7.6h) held before anything
+    // writes.
+    match services::record_pool::start(state) {
+        Ok(records) => services::record_pool::restore_unsent(state, &records).await,
+        Err(e) => tracing::error!(error = %e, "record pool not started"),
+    }
 
     // Start game detection (only after login — avoids burning CPU before auth)
-    let (game_shutdown_tx, game_shutdown_rx) = mpsc::channel::<()>(1);
-    services::game_service::initialize(state, game_shutdown_tx);
+    services::game_service::initialize(state);
     let game_app = app.clone();
     let game_state = Arc::clone(state);
-    let game_pool = pool.clone();
-    let game_handle = tauri::async_runtime::spawn(async move {
-        services::game_service::start_game_detection(
-            game_app,
-            game_state,
-            game_pool,
-            game_shutdown_rx,
-        )
-        .await;
-    });
-
-    // Store the game handle so logout can abort it
-    state.background_handles.lock().push(game_handle);
+    scope
+        .spawn_with_token("game detection", |stop| {
+            services::game_service::start_game_detection(game_app, game_state, stop)
+        })
+        .map_err(|e| e.to_string())?;
 
     // The Veilid node is already running (started at app startup).
     // Just spawn sync + DHT publish as background tasks.
     super::login_spawn::spawn_login_services(
         app,
         state,
+        scope,
         pool.clone(),
         prekey_bundle_bytes,
         dht_keys,
-    );
+    )
+    .map_err(|e| e.to_string())
 }
 
-/// Allocate a Veilid private route with retry, then store it on state and
-/// notify the frontend.
-///
-/// Route allocation can fail transiently after the network becomes ready
-/// because peerinfo may not have been published yet. The retry itself is
-/// `services::veilid::network::new_private_route_with_retry` — the one
-/// route-allocation retry for the Tauri host; this wrapper adds the
-/// login-path bookkeeping (routing manager + node handle + status emit).
-async fn allocate_route_with_retry(
-    app_handle: &tauri::AppHandle,
-    state: &SharedState,
-    max_attempts: u32,
-) -> Option<Vec<u8>> {
-    let route_blob = services::veilid::new_private_route_with_retry(state, max_attempts).await?;
-
-    // Store on routing manager
-    {
-        let mut rm = state.routing_manager.write();
-        if let Some(ref mut handle) = *rm {
-            handle
-                .manager
-                .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
-        }
-    }
-    // Store on node handle
-    if let Some(ref mut nh) = *state.node.write() {
-        nh.route_blob = Some(route_blob.blob.clone());
-    }
-    // Media-class route, allocated alongside. Failure is not fatal:
-    // `media_route_blob()` returns `None` and the voice path falls back
-    // to the general route, which still works — it is just built from
-    // relays chosen for uptime rather than latency.
-    if let Some(media) = services::veilid::new_media_route_with_retry(state, max_attempts).await {
-        let mut rm = state.routing_manager.write();
-        if let Some(ref mut handle) = *rm {
-            handle
-                .manager
-                .set_allocated_media_route(media.route_id.clone(), media.blob.clone());
-        }
-        tracing::info!(
-            blob_len = media.blob.len(),
-            "media-class private route allocated (LowLatency + PreferUnordered)"
-        );
-    } else {
-        tracing::warn!("media route allocation failed — voice falls back to the general route");
-    }
-
-    // Notify the frontend immediately about the new route
-    services::veilid::emit_network_status(app_handle, state);
-    tracing::info!(
-        blob_len = route_blob.blob.len(),
-        route_count = route_blob.blob.first().copied().unwrap_or(0),
-        "private route allocated"
-    );
-    Some(route_blob.blob)
-}
-
-/// Wait for public internet readiness, allocate a private route, then publish
-/// profile and friend list to DHT.
 /// Wait (bounded) for network readiness via the network-ready watch
 /// channel. Returns `true` once ready, `false` on timeout or channel
 /// close. Readiness is `public_internet_ready` AND at least one live peer
@@ -176,16 +115,27 @@ pub(super) async fn wait_for_network_ready(
     .unwrap_or(false)
 }
 
+/// Publish this identity's records once the network is ready: mailbox,
+/// profile, friend list, account (our routes are `OwnRoutes`', plan C7.9b). Each step stops before the next
+/// once `stop` is cancelled (plan C4.L1). The record publishes are
+/// record-pool writes: at logout the pool's drain releases a step waiting
+/// on one (plan C7.6g).
 pub(super) async fn spawn_dht_publish(
     app_handle: tauri::AppHandle,
     state: SharedState,
-    pool: DbPool,
-    prekey_bundle_bytes: Option<Vec<u8>>,
+    pool: Db,
+    prekey_bundle_bytes: Vec<u8>,
     dht_keys: DhtKeysConfig,
+    stop: tokio_util::sync::CancellationToken,
 ) {
     // Wait for public internet ready before publishing (route/record opens are
     // unreliable on a sparse cold-start routing table).
-    let ready = wait_for_network_ready(state.network_ready_rx.clone(), 60).await;
+    let Some(ready) = stop
+        .run_until_cancelled(wait_for_network_ready(state.network_ready_rx.clone(), 60))
+        .await
+    else {
+        return;
+    };
 
     if !ready {
         tracing::warn!(
@@ -195,97 +145,18 @@ pub(super) async fn spawn_dht_publish(
         return;
     }
 
-    // Brief delay to let Veilid publish peerinfo — route assembly requires
-    // peerinfo to be published, which happens shortly after public_internet_ready.
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-    // Allocate private route now that the network is ready (with retry).
-    // 15 attempts × 3s delay = up to 45s window for peerinfo publication.
-    let route_blob = allocate_route_with_retry(&app_handle, &state, 15).await;
-    if route_blob.is_none() {
-        tracing::warn!(
-            "failed to allocate private route after retries — peers won't be able to message us"
-        );
-    }
-
-    // Route is now available — trigger immediate presence re-writes for all
-    // communities so peers can discover our route_blob in the SMPL registry.
+    // Our general route was allocated when the node turned ready, before
+    // login (plan C7.9b), so it is usually here already; when it is not, the
+    // route republisher publishes it when it lands.
+    let route_blob = crate::state_helpers::our_route_blob(&state);
     if route_blob.is_some() {
-        let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
-
-        // Reset needs_initial_sync so PresenceUpdate re-broadcasts with real route
-        {
-            let mut communities = state.communities.write();
-            for cid in &community_ids {
-                if let Some(cs) = communities.get_mut(cid) {
-                    if let Some(ref mut g) = cs.gossip {
-                        g.needs_initial_sync = true;
-                    }
-                }
-            }
-        }
-
-        // Trigger immediate presence poll for each community
-        for cid in community_ids {
-            let poll_state = state.clone();
-            tokio::spawn(async move {
-                if let Err(e) =
-                    services::community::presence_poll_tick_public(&poll_state, &cid).await
-                {
-                    tracing::debug!(
-                        community = %cid,
-                        error = %e,
-                        "route-ready presence poll failed"
-                    );
-                }
-            });
-        }
-        tracing::info!(
-            "route allocated — triggered immediate presence re-write for all communities"
-        );
-
-        // Architecture §7.3 login catch-up: re-acquire any community MEK that is
-        // ABSENT or BEHIND the governance generation, rather than waiting for
-        // incidental incoming traffic to trigger acquisition. Fires only when
-        // behind/absent, so a normal login is a no-op. `c.mek_generation` is
-        // the authoritative target (restored from SQLite before this runs and
-        // never clobbered).
-        //
-        // Every member takes the same path. This used to fork on
-        // `registry_owner_keypair.is_some()` — creators recovered, joiners
-        // only requested — which under `o_cnt: 0` means a community whose
-        // creator never returns can never recover its key. `spawn_community_mek_recovery`
-        // requests first regardless and mints only if the deterministic
-        // election picks this node, so the fork bought nothing the election
-        // does not already decide.
-        let behind: Vec<(String, String)> = {
-            let communities = state.communities.read();
-            let cache = state.mek_cache.lock();
-            communities
-                .values()
-                .filter_map(|c| {
-                    let cached_gen = cache
-                        .get(&c.id)
-                        .map(rekindle_crypto::group::media_key::MediaEncryptionKey::generation);
-                    let is_behind = cached_gen.is_none_or(|g| g < c.mek_generation);
-                    if !is_behind {
-                        return None;
-                    }
-                    c.my_pseudonym_key.clone().map(|p| (c.id.clone(), p))
-                })
-                .collect()
-        };
-        for (cid, pseudonym) in behind {
-            services::community::mek_rotation::spawn_community_mek_recovery(
-                app_handle.clone(),
-                state.clone(),
-                cid,
-                pseudonym,
-            );
-        }
+        recover_behind_meks(&app_handle, &state);
     }
 
     // Create or open mailbox DHT record
+    if stop.is_cancelled() {
+        return;
+    }
     if let Err(e) = services::dht_publish_service::publish_mailbox(
         &state,
         &pool,
@@ -294,9 +165,12 @@ pub(super) async fn spawn_dht_publish(
     )
     .await
     {
-        tracing::warn!(error = %e, "mailbox publish failed");
+        publish_step_failed(&stop, "mailbox", &e);
     }
 
+    if stop.is_cancelled() {
+        return;
+    }
     tracing::info!("public internet ready — publishing profile to DHT");
 
     if let Err(e) = services::dht_publish_service::publish_profile(
@@ -308,9 +182,12 @@ pub(super) async fn spawn_dht_publish(
     )
     .await
     {
-        tracing::warn!(error = %e, "DHT profile publish failed — will retry on next sync");
+        publish_step_failed(&stop, "profile", &e);
     }
 
+    if stop.is_cancelled() {
+        return;
+    }
     if let Err(e) = services::dht_publish_service::publish_friend_list(
         &state,
         &pool,
@@ -319,14 +196,20 @@ pub(super) async fn spawn_dht_publish(
     )
     .await
     {
-        tracing::warn!(error = %e, "DHT friend list publish failed — will retry on next sync");
+        publish_step_failed(&stop, "friend list", &e);
     }
 
+    if stop.is_cancelled() {
+        return;
+    }
     // Immediate friend sync now that network is up
     if let Err(e) = services::sync_service::sync_friends_now(&state, &app_handle).await {
-        tracing::warn!(error = %e, "immediate friend sync failed");
+        publish_step_failed(&stop, "friend sync", &e);
     }
 
+    if stop.is_cancelled() {
+        return;
+    }
     // Publish account record (Phase 3)
     if let Err(e) = services::dht_publish_service::publish_account(
         &state,
@@ -336,22 +219,80 @@ pub(super) async fn spawn_dht_publish(
     )
     .await
     {
-        tracing::warn!(error = %e, "DHT account publish failed — will retry on next sync");
+        publish_step_failed(&stop, "account", &e);
+    }
+}
+
+/// Architecture §7.3 login catch-up: re-acquire any community MEK that is
+/// ABSENT or BEHIND the governance generation, rather than waiting for
+/// incidental incoming traffic to trigger acquisition. A no-op when every
+/// key is current, so it runs whenever our general route is (re)published:
+/// the request's replies need a route to reach us. `c.mek_generation` is the
+/// authoritative target (restored from SQLite at login, never clobbered).
+///
+/// Every member takes the same path: `spawn_community_mek_recovery`
+/// requests first regardless and mints only if the deterministic election
+/// picks this node (under `o_cnt: 0` a creator-only recovery could never
+/// recover a community whose creator never returns).
+pub(crate) fn recover_behind_meks(app_handle: &tauri::AppHandle, state: &SharedState) {
+    let behind: Vec<(String, String)> = {
+        let communities = state.communities.read();
+        communities
+            .values()
+            .filter_map(|c| {
+                let cached_gen = crate::state_helpers::current_mek(
+                    state,
+                    &c.id,
+                    rekindle_types::channel_keys::KeyScope::Community,
+                )
+                .map(|mek| mek.generation());
+                let is_behind = cached_gen.is_none_or(|g| g < c.mek_generation);
+                if !is_behind {
+                    return None;
+                }
+                c.my_pseudonym_key.clone().map(|p| (c.id.clone(), p))
+            })
+            .collect()
+    };
+    for (cid, pseudonym) in behind {
+        services::community::mek_rotation::spawn_community_mek_recovery(
+            app_handle.clone(),
+            state.clone(),
+            cid,
+            pseudonym,
+        );
+    }
+}
+
+/// Report a failed publish step. A step the session's end cut short (the
+/// record pool's drain refused or released its call) is not a failure.
+fn publish_step_failed(
+    stop: &tokio_util::sync::CancellationToken,
+    step: &'static str,
+    error: &str,
+) {
+    if stop.is_cancelled() {
+        tracing::debug!(step, error, "DHT publish step ended with the session");
+    } else {
+        tracing::warn!(
+            step,
+            error,
+            "DHT publish step failed — will retry on next sync"
+        );
     }
 }
 
 /// Initialize the Signal Protocol session manager with the identity key.
 ///
-/// Creates in-memory stores for identity, prekeys, and sessions, then
-/// generates an initial `PreKeyBundle` for DHT publication.
-///
-/// Returns the serialized `PreKeyBundle` bytes if generation succeeded,
-/// so the caller can publish them to DHT profile subkey 5.
+/// Builds the vault-backed identity, prekey and session stores, then
+/// returns the serialized current `PreKeyBundle` for DHT profile subkey 5.
+/// Any failure aborts login: without its prekeys the account cannot
+/// establish or answer a session.
 fn initialize_signal_manager(
     app: &tauri::AppHandle,
     state: &SharedState,
     secret_key: &[u8; 32],
-) -> Option<Vec<u8>> {
+) -> Result<Vec<u8>, String> {
     use rekindle_crypto::signal::SignalSessionManager;
 
     // Phase 3b — Signal identity store holds the Ed25519 keypair bytes.
@@ -386,9 +327,11 @@ fn initialize_signal_manager(
         registration_id,
     );
     let prekey_store =
-        crate::signal_stores::StrongholdPreKeyStore::new(keystore_handle.inner().clone());
+        crate::signal_stores::StrongholdPreKeyStore::new(keystore_handle.inner().clone())
+            .map_err(|e| format!("load Signal prekeys: {e}"))?;
     let session_store =
-        crate::signal_stores::StrongholdSessionStore::new(keystore_handle.inner().clone());
+        crate::signal_stores::StrongholdSessionStore::new(keystore_handle.inner().clone())
+            .map_err(|e| format!("load Signal sessions: {e}"))?;
 
     let manager = SignalSessionManager::new(
         Box::new(identity_store),
@@ -396,43 +339,13 @@ fn initialize_signal_manager(
         Box::new(session_store),
     );
 
-    // P1.2 — prefer the existing prekey bundle if Stronghold already
-    // has prekey #1 + signed_prekey #1 from a prior login. Calling
-    // `generate_prekey_bundle` unconditionally would overwrite both
-    // keys in Stronghold AND publish a fresh bundle to DHT subkey 5,
-    // breaking peers' cached PreKeyBundles + any in-flight messages
-    // encrypted under the previous bundle. Mint fresh ONLY when no
-    // existing bundle is loadable.
-    let bundle_result = match manager.load_existing_prekey_bundle(1, Some(1), Some(1)) {
-        Ok(Some(bundle)) => {
-            tracing::info!(
-                registration_id = bundle.registration_id,
-                "Signal session manager initialized — reusing existing PreKeyBundle from Stronghold"
-            );
-            Ok(bundle)
-        }
-        Ok(None) => {
-            tracing::info!("No existing PreKeyBundle in Stronghold — generating fresh bundle");
-            manager.generate_prekey_bundle(1, Some(1), Some(1))
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load existing PreKeyBundle — falling through to generate");
-            manager.generate_prekey_bundle(1, Some(1), Some(1))
-        }
-    };
-    let bundle_bytes = match bundle_result {
-        Ok(bundle) => match serde_json::to_vec(&bundle) {
-            Ok(bytes) => Some(bytes),
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to serialize PreKeyBundle for DHT publication");
-                None
-            }
-        },
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to obtain PreKeyBundle — sessions will still work via respond_to_session");
-            None
-        }
-    };
+    // Mints the signed prekey and PQ last-resort key on first login only;
+    // afterwards the same keys come back, so peers' cached bundles stay valid.
+    let bundle = manager
+        .current_bundle()
+        .map_err(|e| format!("Signal prekey bundle: {e}"))?;
+    let bundle_bytes =
+        serde_json::to_vec(&bundle).map_err(|e| format!("serialize PreKeyBundle: {e}"))?;
 
     *state.signal_manager.write() = Some(std::sync::Arc::new(SignalManagerHandle {
         manager: manager.with_session_cache(256),
@@ -441,5 +354,5 @@ fn initialize_signal_manager(
     // Store the Ed25519 secret key bytes so message_service can sign envelopes
     *state.identity_secret.lock() = Some(*secret_key);
 
-    bundle_bytes
+    Ok(bundle_bytes)
 }

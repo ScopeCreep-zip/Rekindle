@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::control_event_records::{handle_event_payload, handle_game_server_payload};
 use super::control_moderation::handle_gossip_control_payloads;
@@ -11,7 +11,7 @@ use crate::services::governance_adapter;
 pub(crate) async fn handle_control_events_and_threads(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
@@ -120,9 +120,8 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::SystemMessage { body, timestamp } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
                 &rekindle_types::subscription_events::SubscriptionEvent::System(
                     rekindle_types::subscription_events::SystemEvent::Announcement {
                         // Tier 1's announcement is optionally global;
@@ -135,9 +134,8 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::RaidAlert { active } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
                 &rekindle_types::subscription_events::SubscriptionEvent::System(
                     rekindle_types::subscription_events::SystemEvent::RaidAlert {
                         community: community_id.to_string(),
@@ -147,9 +145,8 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::ChannelLockdown { locked } => {
-            crate::event_dispatch::emit_live(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                "community-event",
                 &rekindle_types::subscription_events::SubscriptionEvent::System(
                     rekindle_types::subscription_events::SystemEvent::ChannelLockdown {
                         community: community_id.to_string(),
@@ -173,7 +170,7 @@ pub(crate) async fn handle_control_events_and_threads(
 fn handle_pin_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
@@ -245,7 +242,7 @@ fn handle_pin_payload(
 fn handle_thread_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
@@ -321,62 +318,91 @@ fn handle_thread_payload(
             thread_id,
             message_id,
             sender_pseudonym,
-            ciphertext,
-            mek_generation,
+            ciphertext: _,
+            mek_generation: _,
             timestamp,
             reply_to_id,
         } => {
-            let body = match governance_adapter::decrypt_channel_message(
-                state,
-                community_id,
-                &ciphertext,
-                mek_generation,
-            ) {
-                rekindle_governance_runtime::membership_events::MekDecryptResult::Decrypted(
-                    text,
-                ) => text,
-                _ => String::new(),
-            };
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let tid = thread_id.clone();
-            let mid = message_id.clone();
-            let sp = sender_pseudonym.clone();
-            let persisted_body = body.clone();
-            let ts = timestamp;
-            let rid = reply_to_id.clone();
-            crate::db_helpers::db_fire(pool, "persist thread message", move |conn| {
-                conn.execute(
-                    "INSERT OR IGNORE INTO thread_messages \
-                     (owner_key, community_id, thread_id, message_id, sender_pseudonym, body, timestamp, reply_to_id) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                    rusqlite::params![owner_key, cid, tid, mid, sp, persisted_body, ts, rid],
-                )?;
-                conn.execute(
-                    "UPDATE community_threads SET message_count = message_count + 1, last_message_at = ?1 \
-                     WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
-                    rusqlite::params![ts, owner_key, cid, tid],
-                )?;
-                Ok(())
+            // The notification carries the sealed body but not the subkey
+            // and Lamport position its AAD binds, so the body is opened
+            // from the thread record — exactly as the thread view reads it
+            // — once the write is readable there.
+            let app_handle = app_handle.clone();
+            let state = Arc::clone(state);
+            let pool = pool.clone();
+            let community_id = community_id.to_string();
+            crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop("thread payload fetch", async move {
+                let body =
+                    fetch_thread_reply_body(&state, &community_id, &thread_id, &message_id).await;
+                let owner_key = state_helpers::current_owner_key(&state).unwrap_or_default();
+                let cid = community_id.clone();
+                let tid = thread_id.clone();
+                let mid = message_id.clone();
+                let sp = sender_pseudonym.clone();
+                let persisted_body = body.clone().unwrap_or_default();
+                let rid = reply_to_id.clone();
+                crate::db_helpers::db_fire(&pool, "persist thread message", move |conn| {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO thread_messages \
+                         (owner_key, community_id, thread_id, message_id, sender_pseudonym, body, timestamp, reply_to_id) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                        rusqlite::params![owner_key, cid, tid, mid, sp, persisted_body, timestamp, rid],
+                    )?;
+                    conn.execute(
+                        "UPDATE community_threads SET message_count = message_count + 1, last_message_at = ?1 \
+                         WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+                        rusqlite::params![timestamp, owner_key, cid, tid],
+                    )?;
+                    Ok(())
+                });
+                crate::event_dispatch::emit_subscription(
+                    &app_handle,
+                    &rekindle_types::subscription_events::SubscriptionEvent::Social(
+                        rekindle_types::subscription_events::SocialEvent::ThreadMessagePosted {
+                            community: community_id,
+                            thread_id,
+                            message_id,
+                            sender_pseudonym,
+                            body,
+                            timestamp,
+                            reply_to_id,
+                        },
+                    ),
+                );
             });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Social(
-                    rekindle_types::subscription_events::SocialEvent::ThreadMessagePosted {
-                        community: community_id.to_string(),
-                        thread_id,
-                        message_id,
-                        sender_pseudonym,
-                        // Decrypted just above, so the plaintext is real
-                        // here — unlike the gossip decoder, which sees only
-                        // ciphertext and passes `None`.
-                        body: Some(body),
-                        timestamp,
-                        reply_to_id,
-                    },
-                ),
-            );
         }
         _ => {}
     }
+}
+
+/// A thread reply's body, read from the thread record under its exact
+/// key generation and AAD position. The gossip can outrun the DHT write,
+/// so the read is retried on the shared backoff; `None` when the reply
+/// never becomes readable or does not open.
+async fn fetch_thread_reply_body(
+    state: &Arc<AppState>,
+    community_id: &str,
+    thread_id: &str,
+    message_id: &str,
+) -> Option<String> {
+    for attempt in 0..rekindle_records::retry::MAX_RETRIES {
+        if let Ok(messages) = crate::services::community::threads::load_thread_messages(
+            state,
+            community_id,
+            thread_id,
+            200,
+            None,
+        )
+        .await
+        {
+            if let Some(message) = messages
+                .into_iter()
+                .find(|m| m.server_message_id.as_deref() == Some(message_id))
+            {
+                return (!message.decryption_failed).then_some(message.body);
+            }
+        }
+        tokio::time::sleep(rekindle_records::retry::backoff_duration(attempt)).await;
+    }
+    None
 }

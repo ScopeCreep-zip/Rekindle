@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::keystore::KeystoreHandle;
 use crate::services::community_views_runtime::{
     list_communities_inner, list_community_details_inner,
@@ -35,14 +34,14 @@ pub async fn create_community(
     name: String,
     approval_required: Option<bool>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
+    let pool = state.db.current()?;
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::create_community_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         keystore_handle.inner(),
         name,
         if approval_required.unwrap_or(false) {
@@ -54,41 +53,40 @@ pub async fn create_community(
     .await
 }
 
+/// Join a community from its invite link. Returns the community id.
 #[tauri::command]
 pub async fn join_community(
-    community_id: String,
-    invite_code: Option<String>,
-    secrets_record_key: Option<String>,
+    invite_url: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
-) -> Result<(), String> {
+) -> Result<String, String> {
+    let pool = state.db.current()?;
+    let link = rekindle_types::invite::InviteLink::parse(&invite_url).map_err(|e| e.to_string())?;
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::join_community_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         keystore_handle.inner(),
-        community_id,
-        invite_code,
-        secrets_record_key,
+        &link,
     )
-    .await
+    .await?;
+    Ok(link.governance_key.into_string())
 }
 
 #[tauri::command]
 pub async fn leave_community(
     community_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     // Phase 5 — gate writes on lifecycle.
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::leave_community_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         keystore_handle.inner(),
         &community_id,
     )
@@ -103,13 +101,13 @@ pub async fn update_community_info(
     icon_hash: Option<String>,
     banner_hash: Option<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::update_community_info_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         name,
         description,

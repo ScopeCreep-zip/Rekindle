@@ -101,25 +101,30 @@ impl GameDetector {
         None
     }
 
-    /// Start a background scanning loop. Returns a watch receiver for game state changes.
+    /// Scan in a task of `scope` until it shuts down, publishing every
+    /// scan on the returned watch channel.
     pub fn start_scanning(
         mut self,
-    ) -> (
-        tokio::task::JoinHandle<()>,
-        watch::Receiver<Option<DetectedGame>>,
-    ) {
+        scope: &std::sync::Arc<rekindle_lifecycle::SessionScope>,
+    ) -> watch::Receiver<Option<DetectedGame>> {
         let (tx, rx) = watch::channel(None);
         let interval = self.scan_interval;
-
-        let handle = tokio::spawn(async move {
+        scope.spawn_with_token_or_drop("game scan", move |stop| async move {
             loop {
                 let detected = self.scan_once();
-                let _ = tx.send(detected);
-                tokio::time::sleep(interval).await;
+                // No receivers left means nobody is watching; keep the
+                // scan cadence regardless, the scope decides when to stop.
+                tx.send_replace(detected);
+                if stop
+                    .run_until_cancelled(tokio::time::sleep(interval))
+                    .await
+                    .is_none()
+                {
+                    return;
+                }
             }
         });
-
-        (handle, rx)
+        rx
     }
 
     pub fn current_game(&self) -> Option<&DetectedGame> {

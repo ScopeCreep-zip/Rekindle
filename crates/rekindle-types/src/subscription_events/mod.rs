@@ -16,6 +16,7 @@ mod membership;
 mod network;
 mod notification;
 mod presence;
+mod scope;
 mod social;
 mod system;
 mod typing;
@@ -27,9 +28,10 @@ pub use crypto::{CryptoEvent, PqBundleKind};
 pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
-pub use network::NetworkEvent;
+pub use network::{NetworkEvent, RouteAvailability};
 pub use notification::NotificationEvent;
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
+pub use scope::EventScope;
 pub use social::SocialEvent;
 pub use system::SystemEvent;
 pub use typing::{TypingContext, TypingEvent};
@@ -110,6 +112,26 @@ pub enum EventCategory {
     Network,
     System,
     UnreadChanged,
+}
+
+impl EventCategory {
+    /// Every category, for subscribers that want all of them.
+    pub const ALL: [Self; 14] = [
+        Self::ChannelMessage,
+        Self::Typing,
+        Self::Presence,
+        Self::Membership,
+        Self::Friend,
+        Self::Crypto,
+        Self::Voice,
+        Self::Governance,
+        Self::Social,
+        Self::Call,
+        Self::Notification,
+        Self::Network,
+        Self::System,
+        Self::UnreadChanged,
+    ];
 }
 
 impl SubscriptionEvent {

@@ -17,6 +17,7 @@
 
 pub mod dedup;
 pub mod journal;
+pub mod notify_policy;
 pub mod state;
 pub mod state_effects;
 

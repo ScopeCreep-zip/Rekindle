@@ -25,26 +25,6 @@
     padding: 14px 16px;
   }
 
-  /* W13-fix.2 — globally-mounted active call panel. Fixed-position
-   * overlay so it surfaces in every webview. Top-right with shadow,
-   * sized for the audio-call common case; for video, the panel
-   * internally renders <VideoCallPanel> which is larger but still fits
-   * because the panel grows to its content. */
-  .global-active-call-overlay {
-    position: fixed;
-    top: 8px;
-    right: 8px;
-    z-index: 70;
-    max-width: min(420px, calc(100% - 16px));
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .global-active-call-overlay > .active-call-panel {
-    background: color-mix(in srgb, var(--color-xfire-bg-secondary) 96%, transparent);
-    backdrop-filter: blur(6px);
-  }
-
   /* Wave 12 W12.11 — reactions tray + floater. */
   .active-call-panel { position: relative; }
   .call-reactions-tray {

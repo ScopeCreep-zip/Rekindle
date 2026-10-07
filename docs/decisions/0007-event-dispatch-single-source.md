@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06
+- **Superseded in part by:** [0013](0013-per-window-event-router.md) — delivery is per window
+  over typed events, replay is per reloaded webview, and no `Emitter` remains. The single
+  dispatch queue stands.
 
 ## Context and problem statement
 
@@ -76,7 +79,12 @@ Chosen: **Option B**.
 
 `src-tauri/src/event_dispatch.rs` owns the dispatcher. The literal
 text `app.emit(` appears in `src-tauri/` exactly once — inside the
-dispatch loop. Architecture rule **B17** enforces this.
+dispatch loop. Architecture rule **B17** enforces this by grepping for
+that exact substring, which means it does not (and structurally
+cannot) catch the same `AppHandle`/`WebviewWindow` `.emit()` method
+reached through a different receiver expression — see the two
+existing, independently-documented exceptions noted under Boundaries
+below.
 
 The journal lives in the dedicated `rekindle-events` crate (hoisted
 out of `rekindle-transport::subscriptions`), bounded to 10 000
@@ -110,8 +118,19 @@ cursor returns the full ring and the frontend treats that as
 
 - `app.emit(` literal grep returns zero matches outside
   `event_dispatch.rs`. CI gauntlet enforces.
-- Video and voice are the only declared exceptions; new bypass
-  paths require an explicit ADR.
+- Video and voice are the only declared *data-plane* exceptions (the
+  broadcast channel / mpsc bypass described above); new bypass paths
+  there require an explicit ADR.
+- Two further, narrower exceptions reach the frontend via `.emit()`
+  on a different receiver than `app` — `app.handle().emit(...)` in
+  `setup.rs` (bootstrap notification sent before
+  `spawn_dispatch_loop` exists to receive it) and `window.emit(...)`
+  in `windows.rs` (a direct window-targeted UI signal, not a
+  cross-cutting backend event). Neither trips the literal-grep check
+  above, which only matches the exact substring `app.emit(` — a
+  verified gap in the enforcement, not a claim that no such gap
+  exists. Re-auditing this grep's coverage is tracked as deferred
+  CI/tooling work (`docs/research/2026-10-harvest-security-infra-audit.md`).
 
 ## More information
 

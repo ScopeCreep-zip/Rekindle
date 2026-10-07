@@ -23,18 +23,23 @@
 //!    lamport restore via the adapter.
 //! 8. For each new ban: `spawn_text_mek_rotation_for_ban` (fire-and-forget).
 
+use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::{PseudonymKey, RoleId};
+use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
-/// Open governance + registry + channel-log DHT records for every
-/// joined community. Best-effort — per-key failures log inside the
-/// adapter; the orchestrator never short-circuits.
+/// Take the session leases on governance + registry + channel-log DHT
+/// records for every joined community and hand them to the host.
+/// Best-effort — per-key failures are logged; the orchestrator never
+/// short-circuits.
 pub async fn open_community_dht_records<D: GovernanceRuntimeDeps>(deps: &D) {
     let records = deps.list_communities_for_dht_open();
     for rec in &records {
-        open_one_community_dht_records(deps, rec).await;
+        if crate::join_gate::should_stop(deps) {
+            return;
+        }
+        open_and_track_one_community(deps, rec).await;
     }
     tracing::info!(
         count = records.len(),
@@ -42,145 +47,134 @@ pub async fn open_community_dht_records<D: GovernanceRuntimeDeps>(deps: &D) {
     );
 }
 
-/// Open + track + mark-open + watch a SINGLE community's governance,
-/// registry, and channel-log records.
-///
-/// Login hydration uses this combined wrapper; the self-sovereign join
-/// flow instead calls [`open_and_track_one_community`] and
-/// [`GovernanceRuntimeDeps::watch_community_records_post_open`] as two
-/// separately-gated "dial-in" phases (each with its own timeout).
-pub async fn open_one_community_dht_records<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    rec: &CommunityDhtOpenSetup,
-) {
-    open_and_track_one_community(deps, rec).await;
-    deps.watch_community_records_post_open(&rec.id).await;
-}
-
-/// Open a community's channel-log SMPL records concurrently (bounded).
-/// Channel opens are best-effort — per-key failures are logged. Run in
-/// parallel so a cold join's 2-3 channel opens overlap instead of summing:
-/// sequential cold opens, each exhausting the adapter's "not found" backoff
-/// ladder, blew the 20 s OpenRecords gate budget.
-/// Returns the keys that actually opened, so the caller's bookkeeping
-/// records what happened rather than what was attempted.
-async fn open_channel_records_concurrent<D: GovernanceRuntimeDeps>(
+/// Borrow a community's channel-log and GovernanceOverflow records
+/// concurrently (bounded). Best-effort — per-key failures are logged. Run
+/// in parallel so a cold join's 2-3 opens overlap instead of summing. No
+/// borrow starts after `until`, a deadline for starting work, never for
+/// dropping it: a borrow already running finishes within the pool's own
+/// budget (plan C4.L1b). Returns the leases that were taken, each with
+/// its key.
+async fn acquire_records_concurrent<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    channel_keys: &[String],
-) -> Vec<String> {
+    keys: &[(String, Option<String>)],
+    until: tokio::time::Instant,
+) -> Vec<(String, LeaseId)> {
     use futures::stream::{FuturesUnordered, StreamExt};
 
     const OPEN_PARALLELISM: usize = 8;
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(OPEN_PARALLELISM));
     let mut opens = FuturesUnordered::new();
-    for key in channel_keys {
+    for (key, writer) in keys {
         let sem = std::sync::Arc::clone(&sem);
         opens.push(async move {
             let _permit = sem.acquire().await.expect("open semaphore not closed");
-            (key, deps.open_dht_record(key, None).await)
+            if tokio::time::Instant::now() >= until || crate::join_gate::should_stop(deps) {
+                return (
+                    key,
+                    Err(crate::error::GovernanceRuntimeError::Adapter(
+                        "open budget spent before this record's turn".into(),
+                    )),
+                );
+            }
+            (key, deps.acquire_record(key, writer.clone()).await)
         });
     }
-    let mut opened = Vec::new();
+    let mut taken = Vec::new();
     while let Some((key, result)) = opens.next().await {
         match result {
-            Ok(()) => opened.push(key.clone()),
+            Ok(lease) => taken.push((key.clone(), lease)),
             Err(error) => tracing::debug!(
                 community = %community_id,
                 %key,
                 %error,
-                "failed to open channel SMPL record",
+                "failed to open community record",
             ),
         }
     }
-    opened
+    taken
 }
 
-/// Open + track + mark-open (NO watch) a SINGLE community's governance,
-/// registry, and channel-log records.
+/// Take a SINGLE community's session leases (governance, registry,
+/// channel-log and GovernanceOverflow records) and hand them to the host,
+/// which watches them and starts the community's loops
+/// ([`GovernanceRuntimeDeps::community_records_ready`]).
 ///
-/// Shared by login hydration (`open_one_community_dht_records`) and the
-/// self-sovereign join path (`services::community::join::flow`) so both
-/// follow the identical Veilid open → track → mark-open sequence. The
-/// registry is opened **with** its writer keypair when one is known: a
-/// read-only (`None`) open clobbers the record's stored writer (Veilid
-/// `open_existing_record_locked`), so opening read-only here would
-/// silently strip write permission and break subsequent presence / slot
-/// writes. Best-effort — per-key failures are logged; never
-/// short-circuits the caller.
+/// Shared by login hydration and the self-sovereign join path
+/// (`services::community::join::flow`). The registry is borrowed **with**
+/// its writer keypair when one is known; the pool's writer is sticky, so a
+/// later read-only borrow never strips it. Best-effort — per-key failures
+/// are logged; never short-circuits the caller. A record that failed to
+/// open is simply absent from the hand-over.
 pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     deps: &D,
     rec: &CommunityDhtOpenSetup,
 ) {
-    // Governance record (read-only — writes use the shared slot keypair
-    // inline at set time).
-    if let Err(error) = deps.open_dht_record(&rec.governance_key, None).await {
-        tracing::debug!(
-            community = %rec.id,
-            %error,
-            "failed to open governance record",
-        );
+    if crate::join_gate::should_stop(deps) {
         return;
     }
-
-    // Registry record — open WITH the writer keypair when we have one so
-    // subsequent presence/slot writes go through.
+    let mut leases = CommunityLeases::default();
+    match deps.acquire_record(&rec.governance_key, None).await {
+        Ok(lease) => leases.governance = Some(lease),
+        Err(error) => {
+            tracing::debug!(
+                community = %rec.id,
+                %error,
+                "failed to open governance record",
+            );
+            return;
+        }
+    }
     if let Some(reg_key) = &rec.registry_key {
-        let writer = rec.registry_writer.clone();
-        if let Err(error) = deps.open_dht_record(reg_key, writer).await {
-            tracing::warn!(
+        match deps
+            .acquire_record(reg_key, rec.registry_writer.clone())
+            .await
+        {
+            Ok(lease) => leases.registry = Some(lease),
+            Err(error) => tracing::warn!(
                 community = %rec.id,
                 %error,
                 "failed to open registry record",
-            );
+            ),
         }
     }
 
-    // Channel-log + GovernanceOverflow records open in ONE bounded concurrent
-    // batch (best-effort) so an unreachable overflow page overlaps the channel
-    // opens instead of adding a second serial "not found" retry ladder. The 12s
-    // cap guarantees the best-effort opens can never starve the caller (the
-    // join's OpenRecords gate, or login hydration) — without it an unreachable
-    // overflow page's full retry ladder could blow the gate budget and skip the
-    // track + mark-open bookkeeping below, leaving channel keys un-tracked for
-    // watch/keepalive/leave. A missing overflow page never aborts the open pass
-    // (the read path warns and tolerates truncation, D6).
-    let channel_keys = deps.channel_log_keys_for_community(&rec.id);
+    // Channel-log + GovernanceOverflow records in ONE bounded concurrent
+    // batch, so an unreachable overflow page overlaps the channel opens. The
+    // 12 s deadline (for starting borrows only) keeps the best-effort opens
+    // from starving the caller (the join's OpenRecords gate, or login
+    // hydration). A missing overflow page never aborts the pass (the read
+    // path warns and tolerates truncation, D6).
+    let channels = deps.channel_log_keys_for_community(&rec.id);
     let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
-    let mut best_effort_keys = channel_keys.clone();
-    best_effort_keys.extend(overflow_keys.iter().cloned());
-    // Only the keys that actually opened get marked open. Marking the
-    // attempted set (as this once did) meant a cold-network open
-    // failure — or this timeout firing — recorded channel records as
-    // open that were not, and every later watch on them failed with
-    // Veilid 'record not open'. Keys left unmarked stay watch targets
-    // via `tracked_watch_keys`, and the watch retry heals their open.
-    let opened_keys = tokio::time::timeout(
-        std::time::Duration::from_secs(12),
-        open_channel_records_concurrent(deps, &rec.id, &best_effort_keys),
-    )
-    .await
-    .unwrap_or_default();
-
-    // Track all opened keys + persist the post-open snapshot.
-    let mut all_keys = vec![rec.governance_key.clone()];
-    if let Some(rk) = &rec.registry_key {
-        all_keys.push(rk.clone());
-    }
-    all_keys.extend(opened_keys.iter().cloned());
-    deps.track_open_dht_records(&all_keys);
-
-    let opened_channel_keys: Vec<String> = opened_keys
-        .into_iter()
-        .filter(|k| channel_keys.contains(k))
+    // Channel records are borrowed writable with our slot writer (they share
+    // the registry's slot seed), so a channel write restored after a re-login
+    // re-pushes as us (plan C7.13); overflow pages are read-only.
+    let mut keys: Vec<(String, Option<String>)> = channels
+        .iter()
+        .map(|(_, key)| (key.clone(), rec.slot_writer.clone()))
         .collect();
-    deps.mark_community_records_open(
-        &rec.id,
-        &rec.governance_key,
-        rec.registry_key.as_deref(),
-        rec.registry_writer.as_deref(),
-        opened_channel_keys,
-    );
+    keys.extend(overflow_keys.iter().map(|key| (key.clone(), None)));
+    let until = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
+    for (key, lease) in acquire_records_concurrent(deps, &rec.id, &keys, until).await {
+        let channel = channels
+            .iter()
+            .find(|(_, k)| *k == key)
+            .and_then(|(id_hex, _)| channel_id_from_hex(id_hex));
+        match channel {
+            Some(channel_id) => {
+                leases.channels.insert(channel_id, lease);
+            }
+            None => leases.overflow.push(lease),
+        }
+    }
+    deps.community_records_ready(&rec.id, leases).await;
+}
+
+/// A channel id from its hex form (16 bytes).
+fn channel_id_from_hex(id_hex: &str) -> Option<ChannelId> {
+    let bytes: [u8; 16] = hex::decode(id_hex).ok()?.try_into().ok()?;
+    Some(ChannelId(bytes))
 }
 
 /// Recover per-community registry-linked state from the DHT:
@@ -200,6 +194,9 @@ pub async fn hydrate_community_state_from_dht<D: GovernanceRuntimeDeps>(deps: &D
     let registry_info = deps.list_registries_with_my_pseudonym();
 
     for (community_id, registry_key, my_pk) in &registry_info {
+        if crate::join_gate::should_stop(deps) {
+            return;
+        }
         let Some(pk) = my_pk else { continue };
         // Recover our slot by finding the registry row that carries OUR
         // signature, rather than by reading a member-index row that
@@ -259,22 +256,15 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
     let communities = deps.list_community_governance_targets();
 
     for (community_id, gov_key_str) in &communities {
-        // Open the governance record before reading subkeys. May already
-        // be open from a previous session; failure here means we'll skip
-        // this community on this hydration pass.
-        if let Err(error) = deps.open_dht_record(gov_key_str, None).await {
-            tracing::debug!(
-                community = %community_id,
-                %error,
-                "failed to open governance record for hydration",
-            );
-            continue;
+        if crate::join_gate::should_stop(deps) {
+            return;
         }
-
         // Identify occupied subkeys via UpdateGet (network-authoritative
-        // — local seqs may be empty after a restart).
+        // — local seqs may be empty after a restart). A failed inspect skips
+        // the community on this pass: there is no blind 0..255 scan (plan
+        // C7.5, step 12e).
         let occupied_subkeys: Vec<u32> =
-            match deps.inspect_dht_record_update_get_seqs(gov_key_str).await {
+            match crate::records::inspect_update_get_seqs(deps, gov_key_str).await {
                 // `is_some()`, not `!= 0`. A subkey written exactly
                 // once sits at seq 0, so the old test skipped every
                 // author with a single governance entry — their write
@@ -289,9 +279,9 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
                     tracing::warn!(
                         community = %community_id,
                         %error,
-                        "governance inspect failed — falling back to full scan",
+                        "governance inspect failed — skipping this community until the next pass",
                     );
-                    (0..255_u32).collect()
+                    continue;
                 }
             };
 
@@ -329,7 +319,8 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
             .map(|gov| gov.bans)
             .unwrap_or_default();
 
-        let gov_state = rekindle_governance::merge::merge(&all_entries);
+        let (gov_state, accepted_clock) =
+            rekindle_governance::merge::merge_with_accepted(&all_entries);
         let new_bans: Vec<String> = gov_state
             .bans
             .iter()
@@ -337,24 +328,18 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
             .map(|pseudo| hex::encode(pseudo.0))
             .collect();
 
-        let max_lamport = all_entries
-            .iter()
-            .flat_map(|(_, entries)| entries.iter().map(GovernanceEntry::lamport))
-            .max()
-            .unwrap_or(0);
-
         // Persist the raw per-author entry set as a warm local cache so the
         // next login can re-merge an identical GovernanceState immediately,
         // instead of waiting on this (slow, best-effort) DHT pass. Done
         // before apply so a crash mid-apply still leaves a usable cache.
         deps.persist_governance_entries_cache(community_id, &all_entries);
 
-        deps.apply_governance_rebuild_result(community_id, gov_state, max_lamport)
+        deps.apply_governance_rebuild_result(community_id, gov_state, accepted_clock)
             .await;
 
         tracing::info!(
             community = %community_id,
-            max_lamport,
+            accepted_clock,
             "rebuilt governance state from DHT",
         );
 
@@ -398,8 +383,18 @@ pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
 
     let mut rehydrated = 0usize;
     for key in invite_keys.iter().chain(overflow_keys.iter()) {
-        match deps.open_dht_record(key, None).await {
-            Ok(()) => rehydrated += 1,
+        if crate::join_gate::should_stop(deps) {
+            return;
+        }
+        // Opening a local record queues its rehydration
+        // (`storage_manager/open_record.rs:27-44`), which runs from the
+        // local store even after the record closes (`rehydrate.rs:118-131`),
+        // so the borrow ends at once.
+        match deps.acquire_record(key, None).await {
+            Ok(lease) => {
+                deps.release_record(lease).await;
+                rehydrated += 1;
+            }
             Err(error) => tracing::debug!(%key, %error, "record re-open for rehydration failed"),
         }
     }

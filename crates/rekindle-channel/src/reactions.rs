@@ -81,7 +81,7 @@ pub async fn persist_reaction<D: ChannelMessagingDeps>(
     let reactor_pseudonym = deps
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.to_string()))?;
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.increment_lamport(community_id)?;
     let reaction = build_reaction(
         message_id.to_string(),
         expression.to_string(),

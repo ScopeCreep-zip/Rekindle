@@ -6,7 +6,9 @@
 
 use rekindle_governance_runtime::{GovernanceRuntimeEvent, JoinStageStatus};
 
-use super::{snapshot_channels_and_categories, snapshot_roles, GovernanceAdapter};
+use super::{
+    snapshot_channels_and_categories, snapshot_roles, snapshot_segments, GovernanceAdapter,
+};
 
 pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRuntimeEvent) {
     match event {
@@ -74,6 +76,16 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
             segment_index,
         } => {
             tracing::info!(community = %community_id, segment = segment_index, "segment added");
+            let segments = snapshot_segments(&adapter.state, &community_id);
+            crate::event_dispatch::emit_subscription(
+                &adapter.app_handle,
+                &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                    rekindle_types::subscription_events::GovernanceEvent::SegmentsChanged {
+                        community: community_id,
+                        segments,
+                    },
+                ),
+            );
         }
         GovernanceRuntimeEvent::JoinPendingAlert {
             have_manage_community,

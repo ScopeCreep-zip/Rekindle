@@ -65,7 +65,7 @@ fi
 # 2. Dev binary — plain debug build, WITHOUT tauri/custom-protocol, so
 #    the webview loads devUrl exactly like `pnpm tauri dev`.
 echo "→ building dev binary"
-(cd "$ROOT" && cargo build -p rekindle --bins)
+(cd "$ROOT" && cargo build -p rekindle-desktop --bins)
 
 # 3. Assemble the .app shell. The binary already embeds the usage
 #    strings (tauri-build embed-plist of src-tauri/Info.plist); the
@@ -82,13 +82,13 @@ echo "→ building dev binary"
 #    configured on this machine.)
 echo "→ assembling $APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
-if [ -f "$APP_DIR/Contents/MacOS/rekindle" ] \
-    && ! cmp -s "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"; then
+if [ -f "$APP_DIR/Contents/MacOS/rekindle-desktop" ] \
+    && ! cmp -s "$ROOT/target/debug/rekindle-desktop" "$APP_DIR/Contents/MacOS/rekindle-desktop"; then
     echo "→ binary changed — resetting stale TCC camera/mic grants (one new prompt)"
     tccutil reset Camera com.rekindle.app.dev >/dev/null 2>&1 || true
     tccutil reset Microphone com.rekindle.app.dev >/dev/null 2>&1 || true
 fi
-cp "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"
+cp "$ROOT/target/debug/rekindle-desktop" "$APP_DIR/Contents/MacOS/rekindle-desktop"
 cat >"$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -99,7 +99,7 @@ cat >"$APP_DIR/Contents/Info.plist" <<'PLIST'
 	<key>CFBundleName</key>
 	<string>Rekindle Dev</string>
 	<key>CFBundleExecutable</key>
-	<string>rekindle</string>
+	<string>rekindle-desktop</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -124,9 +124,9 @@ PLIST
 #    instance must exit first or `open` just activates it without the
 #    new redirection.
 APP_LOG="$ROOT/target/debug/dev-bundle/rekindle-dev.log"
-if pgrep -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle" >/dev/null; then
+if pgrep -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle-desktop" >/dev/null; then
     echo "→ stopping the running Rekindle Dev instance"
-    pkill -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle" || true
+    pkill -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle-desktop" || true
     sleep 1
 fi
 echo "→ launching Rekindle Dev.app (log: $APP_LOG)"

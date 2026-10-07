@@ -36,7 +36,7 @@ pub(super) fn handle_friend_accept(
     used_ot_pqpk_id: Option<u32>,
 ) {
     let peer_label = state_helpers::friend_display_name(state, sender_hex)
-        .unwrap_or_else(|| format!("{}…", &sender_hex[..16.min(sender_hex.len())]));
+        .unwrap_or_else(|| format!("{}…", rekindle_utils::text::prefix(sender_hex, 16)));
 
     if ephemeral_key.is_empty() {
         // W16.10d — was silent warn. Per Signal/SimpleX consensus on
@@ -89,36 +89,45 @@ pub(super) fn handle_friend_accept(
         }
     };
 
+    let friendship_state =
+        state_helpers::friend_field(state, sender_hex, |f| Some(f.friendship_state));
     let signal = state.signal_manager.read();
     if let Some(handle) = signal.as_ref() {
-        // W16.10e (fix C) — guard against re-running responder X3DH on a
-        // session that's already up. Our `rekindle-crypto` Signal port
-        // overwrites session storage on every `respond_to_session` call
-        // AND consumes a fresh one-time prekey
-        // (`session.rs:242: self.prekeys.remove_prekey(otpk_id)?`). If
-        // the peer's FriendAccept retries (their FriendRequestReceived
-        // ACK was lost; sync_service re-fires), running this twice
-        // wipes the working session AND the second call fails with
-        // "one-time prekey not found" because the otpk was consumed.
-        //
-        // Pattern matches libsignal's `SessionBuilder.java:116`
-        // short-circuit (`hasSessionState(version, baseKey)` →
-        // `return Optional.absent()`), adapted to our simpler primitive:
-        // skip if we already have a session AND the peer's identity_key
-        // matches the trusted record. The `delete_session` call (was
-        // unconditional) is dropped — it's the symptom, not the cure;
-        // with the guard in place there's nothing stale to delete.
-        let already_established = handle.manager.has_session(sender_hex).unwrap_or(false)
-            && handle
-                .manager
-                .is_trusted_identity(sender_hex, &their_identity_key)
-                .unwrap_or(false);
-
-        if already_established {
-            tracing::info!(from = %sender_hex,
-                "session already established for peer — skipping respond_to_session \
-                 (W16.10e idempotency; preserves working session + one-time prekey)");
-            return;
+        // We answer the init only while it is ours to answer: we sent the
+        // request (`PendingOut`), or we are the higher side of a crossing
+        // request (`Accepted`, no session yet). `Accepted` with a session
+        // is a retried `FriendAccept`; answering it again would replace the
+        // working session and fail on the one-time keys it already used.
+        let respond = match friendship_state {
+            Some(crate::state::FriendshipState::PendingOut) => Ok(true),
+            Some(crate::state::FriendshipState::Accepted) => {
+                handle.manager.has_session(sender_hex).map(|has| !has)
+            }
+            _ => Ok(false),
+        };
+        match respond {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::info!(from = %sender_hex, state = ?friendship_state,
+                    "FriendAccept not ours to answer (retry or unknown peer) — ignoring");
+                return;
+            }
+            Err(e) => {
+                tracing::error!(from = %sender_hex, error = %e,
+                    "FriendAccept: session lookup failed");
+                crate::event_dispatch::emit_notification(
+                    app_handle,
+                    rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                        title: "Couldn't establish secure session".into(),
+                        body: format!(
+                            "Couldn't read the secure session with {peer_label}: {e}. \
+                             Click 'Reset Secure Session' from their friend menu after \
+                             verifying their safety number out-of-band."
+                        ),
+                    },
+                );
+                return;
+            }
         }
 
         match handle.manager.respond_to_session(

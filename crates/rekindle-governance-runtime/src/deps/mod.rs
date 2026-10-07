@@ -14,6 +14,7 @@
 use async_trait::async_trait;
 use rekindle_governance::state::GovernanceState;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
 
 use crate::error::GovernanceRuntimeError;
@@ -60,6 +61,13 @@ pub use types::*;
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait GovernanceRuntimeDeps: Send + Sync {
+    // ---------- Session ----------
+
+    /// The scope of the session this work belongs to. Multi-call
+    /// orchestrators check it before each Veilid call and stop once it is
+    /// closed (plan C4.L1).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]>;
@@ -72,16 +80,46 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     fn community_membership(&self, community_id: &str) -> Option<CommunityMembership>;
     fn governance_state(&self, community_id: &str) -> Option<GovernanceState>;
     fn online_members(&self, community_id: &str) -> Vec<OnlineMemberSnapshot>;
-    fn open_record_keys(&self, community_id: &str) -> Vec<String>;
 
     // ---------- Community state (mutation) ----------
 
     fn set_governance_state(&self, community_id: &str, state: GovernanceState);
-    fn increment_lamport(&self, community_id: &str) -> u64;
+    /// Next governance-clock value for a `GovernanceEntry` we write.
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
     fn insert_community(&self, community: CommunityInsert);
-    fn mark_open_channel_record(&self, community_id: &str, record_key: String);
 
     // ---------- DHT (Schwarzschild — bytes only) ----------
+    //
+    // Records are borrowed from the host's record pool (plan C7): every
+    // read, write and inspect names a lease, never a bare key. A record the
+    // community keeps for the session is acquired once and handed to the
+    // host by `community_records_ready`; anything else is acquired, used
+    // and released. While a session lease is held, an acquire is a table
+    // hit with no Veilid call.
+
+    /// Borrow `record_key`, writable with `writer` (the string form of
+    /// [`Self::format_writer_keypair`]) when given. The writer is sticky:
+    /// a later read-only borrow never downgrades it.
+    async fn acquire_record(
+        &self,
+        record_key: &str,
+        writer: Option<String>,
+    ) -> Result<LeaseId, GovernanceRuntimeError>;
+
+    /// End a borrow; the record closes when it was the last.
+    async fn release_record(&self, lease: LeaseId);
+
+    /// Hand the community's session leases to the host. The host merges
+    /// them into the community's held set (a lease on a record the set
+    /// already holds is released, so repeat hand-overs do not accumulate),
+    /// watches the records that were added, and starts its per-community
+    /// loops (inspect, keepalive, presence poll) the first time, in its own
+    /// scope. Called by origin, hydration, a new channel, a segment
+    /// expansion and overflow pages.
+    async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
 
     async fn create_smpl_record(
         &self,
@@ -106,7 +144,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     async fn create_overflow_record(
         &self,
         owner_keypair: String,
-    ) -> Result<String, GovernanceRuntimeError>;
+    ) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
 
     /// Convert an Ed25519 `(public, secret)` byte pair into the string
     /// form that the adapter understands as `writer` for `set_dht_value`
@@ -117,7 +155,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     async fn get_dht_value(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
@@ -127,7 +165,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// `governance.rs`).
     async fn set_dht_value(
         &self,
-        record_key: &str,
+        lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
         writer: Option<String>,
@@ -145,7 +183,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// distinction unspellable-away.
     async fn inspect_dht_record_local_seqs(
         &self,
-        record_key: &str,
+        lease: LeaseId,
     ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError>;
 
     /// Network-authoritative inspect (Veilid `DHTReportScope::UpdateGet`)
@@ -155,7 +193,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// [`Self::inspect_dht_record_local_seqs`].
     async fn inspect_dht_record_update_get_seqs(
         &self,
-        record_key: &str,
+        lease: LeaseId,
     ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError>;
 
     /// Network-authoritative inspect (`DHTReportScope::UpdateGet`) returning
@@ -167,32 +205,16 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// `get_dht_value` round-trips, which blows past the UI's join timeout.
     async fn inspect_dht_record_present_subkeys(
         &self,
-        record_key: &str,
+        lease: LeaseId,
     ) -> Result<Vec<u32>, GovernanceRuntimeError>;
-
-    async fn open_dht_record(
-        &self,
-        record_key: &str,
-        writer: Option<String>,
-    ) -> Result<(), GovernanceRuntimeError>;
 
     // ---------- MEK cache ----------
 
-    fn community_mek(&self, community_id: &str) -> Option<MekSnapshot>;
-    fn channel_mek(&self, community_id: &str, channel_id: &str) -> Option<MekSnapshot>;
-    fn channel_meks_all(&self, community_id: &str) -> Vec<ChannelMekSnapshot>;
+    /// Community and channel keys (plan D6): current and historical
+    /// generations, by exact scope.
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot);
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot);
-
-    /// Load a historical channel MEK from Stronghold. Bootstrap rebuilds
-    /// recent messages under their original generation (architecture §5.2
-    /// line 1100).
-    fn load_historical_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Option<MekSnapshot>;
 
     // ---------- Bootstrap (SQL) ----------
 
@@ -234,17 +256,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     // ---------- Background lifecycle (origin/join) ----------
 
-    fn spawn_inspect_loop(&self, community_id: &str);
-    fn spawn_presence_poll(&self, community_id: &str);
-    fn spawn_dht_keepalive(&self, community_id: &str);
     fn spawn_history_catchup(&self, community_id: &str);
-
-    /// Subscribe to the community's DHT records (governance + registry +
-    /// every channel). Async because Veilid's `watch_dht_values` is async.
-    async fn watch_community_records(
-        &self,
-        community_id: &str,
-    ) -> Result<(), GovernanceRuntimeError>;
 
     /// Open + warm the Lost Cargo file cache for a community.
     fn ensure_files_cache_open(&self, community_id: &str);
@@ -321,9 +333,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// `state.communities` read-guard across `.await`.
     fn list_communities_for_dht_open(&self) -> Vec<CommunityDhtOpenSetup>;
 
-    /// Snapshot the channel DHTLog record keys for one community.
-    /// Returned in unspecified order; the orchestrator opens each in turn.
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<String>;
+    /// Snapshot one community's channel records as `(channel id hex,
+    /// record key)`, in unspecified order. The id keys the channel's lease
+    /// in [`CommunityLeases::channels`].
+    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
 
     /// Active invite-secrets DFLT record keys this identity created, across
     /// every joined community — non-expired, non-empty. Driven by
@@ -333,14 +346,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// invites we authored because only those are local-store hits.
     fn list_my_active_invite_secret_keys(&self) -> Vec<String>;
 
-    /// Track every opened DHT record key on the live DHT manager so
-    /// `shutdown_node` can close them in bulk (`state.dht_manager`
-    /// `open_records` set).
-    fn track_open_dht_records(&self, keys: &[String]);
-
     /// Merge `keys` into the community's
-    /// `CommunityRecords.governance_overflow_keys` inventory AND mark them
-    /// tracked-open on the DHT manager. Idempotent (de-duped). The single
+    /// `CommunityRecords.governance_overflow_keys` inventory. Idempotent
+    /// (de-duped). Their leases reach the host separately, through
+    /// [`Self::community_records_ready`]. The single
     /// entry point that registers a GovernanceOverflow record into the
     /// authoritative per-community inventory, from any producer: the write
     /// path (author's own spill pages) and every read path (Mutual Aid §14.1
@@ -354,29 +363,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// path as channels.
     fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String>;
 
-    /// Persist the per-community `open_community_records` snapshot
-    /// after a successful open pass — `governance_key` + `registry_key`
-    /// + `registry_writer` + `channel_keys` + `records_open = true`.
-    /// The explicit `'a` is for `mockall`: a nested reference inside
-    /// `Option<&str>` has no lifetime it can elide when generating the
-    /// mock. Naming it once here is cheaper than excluding the method
-    /// from mocking, which would make the whole trait unmockable.
-    fn mark_community_records_open<'a>(
-        &self,
-        community_id: &'a str,
-        governance_key: &'a str,
-        registry_key: Option<&'a str>,
-        registry_writer: Option<&'a str>,
-        channel_keys: Vec<String>,
-    );
-
-    /// Subscribe to Veilid watch updates for the community's
-    /// governance + registry + channel records. Best-effort; errors
-    /// are logged inside the adapter.
-    async fn watch_community_records_post_open(&self, community_id: &str);
-
     /// Apply the post-merge result for one community:
-    /// 1. raise `lamport_counter` to `max(current, max_lamport)`,
+    /// 1. raise the governance clock to `max(current, accepted_clock)`
+    ///    (`accepted_clock` from `merge_with_accepted`: what the accepted
+    ///    entries justify, never a forged or rejected value),
     /// 2. install the new `GovernanceState` via `set_governance_state`,
     /// 3. persist the merged snapshot to SQLite so it survives restarts.
     ///
@@ -386,7 +376,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         &self,
         community_id: &str,
         gov_state: GovernanceState,
-        max_lamport: u64,
+        accepted_clock: u64,
     );
 
     /// Persist the raw per-author governance entry set for a community to

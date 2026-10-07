@@ -1,7 +1,7 @@
 //! Phase 19.h-REDO — channel messaging adapter.
 //!
 //! Implements `rekindle_channel::ChannelMessagingDeps` against the
-//! live AppState + AppHandle + DbPool. The crate's
+//! live AppState + AppHandle + Db. The crate's
 //! `send_channel_message`, `forward_channel_message`,
 //! `process_retry_write`, plus reactions/mentions/threads/expressions
 //! orchestrators parameterise over this trait — Phase 14.r module-dir
@@ -25,8 +25,8 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 pub mod deps_impl;
 mod dht;
@@ -38,15 +38,15 @@ mod state_reads;
 
 /// Adapter struct — holds the three things every trait method needs:
 /// the shared `AppState`, the Tauri `AppHandle` (for event emit +
-/// DbPool lookup), and the `DbPool` clone (for SQLite reads/writes).
+/// Db lookup), and the `Db` clone (for SQLite reads/writes).
 pub struct ChannelAdapter {
     pub(super) state: Arc<AppState>,
     pub(super) app_handle: AppHandle,
-    pub(super) pool: DbPool,
+    pub(super) pool: Db,
 }
 
 impl ChannelAdapter {
-    pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: DbPool) -> Self {
+    pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: Db) -> Self {
         Self {
             state,
             app_handle,

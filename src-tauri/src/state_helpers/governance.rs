@@ -1,12 +1,11 @@
 //! v2.0 CRDT governance state read/write helpers.
 
+use rekindle_types::lamport::{LamportClock, LamportError};
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::state::AppState;
 
 use super::hex_to_id_16;
-use super::node::app_handle;
 
 /// Get a clone of the cached CRDT governance state for a community.
 ///
@@ -278,6 +277,25 @@ pub fn set_governance_state(
                 .values()
                 .any(|csr| !prior_watch_targets.contains(&csr.record_key));
 
+        // Plate Gate (architecture §15): mirror every merged expansion
+        // segment into the frontend-facing list (segment 0 stays implicit,
+        // matching `rekindle_governance_runtime::segments::segment_descriptors`'s
+        // convention). Rebuilt on every merge so a remote admin's
+        // `SegmentAdded` is reflected the same way a remote `RoleDefinition`
+        // or `ChannelCreated` already is.
+        cs.segments = gov_state
+            .segments
+            .iter()
+            .filter(|s| s.segment_index != 0)
+            .map(|s| rekindle_types::presence::SegmentDescriptor {
+                segment_index: s.segment_index,
+                registry_key: s.registry_key.clone(),
+                governance_key: s.governance_key.clone(),
+                slot_range_start: s.slot_range_start,
+                slot_range_end: s.slot_range_end,
+            })
+            .collect();
+
         cs.governance_state = Some(gov_state);
     }
     drop(communities);
@@ -299,13 +317,16 @@ pub fn set_governance_state(
     // block the rest of the merge pipeline.
     let state_for_open = state.clone();
     let community_id_owned = community_id.to_string();
-    tokio::spawn(async move {
-        crate::services::community::segments::open_new_segments(
-            &state_for_open,
-            &community_id_owned,
-        )
-        .await;
-    });
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "open new plate segments",
+        async move {
+            crate::services::community::segments::open_new_segments(
+                &state_for_open,
+                &community_id_owned,
+            )
+            .await;
+        },
+    );
 
     // A4/P0.4 — refresh watches whenever the merge added new watch targets
     // (a remote admin creates a channel, or a Plate Gate segment-N record
@@ -316,20 +337,23 @@ pub fn set_governance_state(
     if needs_watch_refresh {
         let state_for_watch = state.clone();
         let community_id_for_watch = community_id.to_string();
-        tokio::spawn(async move {
-            if let Err(e) = crate::services::community::watch::watch_community_records(
-                &state_for_watch,
-                &community_id_for_watch,
-            )
-            .await
-            {
-                tracing::warn!(
-                    community = %community_id_for_watch,
-                    error = %e,
-                    "failed to refresh watches after governance update"
-                );
-            }
-        });
+        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+            "governance watch refresh",
+            async move {
+                if let Err(e) = crate::services::community::watch::watch_community_records(
+                    &state_for_watch,
+                    &community_id_for_watch,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        community = %community_id_for_watch,
+                        error = %e,
+                        "failed to refresh watches after governance update"
+                    );
+                }
+            },
+        );
     }
 
     // Architecture §18.4 + §28.9 line 3286: eager-cache expression assets
@@ -337,24 +361,25 @@ pub fn set_governance_state(
     // same reason as open_new_segments — uses Veilid app_call I/O.
     let state_for_eager = state.clone();
     let community_id_eager = community_id.to_string();
-    tokio::spawn(async move {
-        crate::services::community::expression_assets::eager_fetch_missing(
-            &state_for_eager,
-            &community_id_eager,
-        )
-        .await;
-    });
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "eager expression cache",
+        async move {
+            crate::services::community::expression_assets::eager_fetch_missing(
+                &state_for_eager,
+                &community_id_eager,
+            )
+            .await;
+        },
+    );
 
     // Architecture §32 W16 — materialise EventCreated governance entries
     // into the SQLite community_events table so late joiners (who saw the
     // entries via DHT merge but missed the live ControlPayload gossip)
     // can still see events in get_events / event reminders / calendar UI.
-    if let Some(app_handle) = app_handle(state) {
-        use tauri::Manager;
-        let pool: tauri::State<'_, DbPool> = app_handle.state();
+    if let Ok(pool) = state.db.current() {
         crate::services::community::events_hydration::hydrate_events_from_governance(
             state,
-            pool.inner(),
+            &pool,
             community_id,
         );
         crate::services::community::wake_event_reminders(state);
@@ -370,50 +395,113 @@ pub fn governance_key(state: &Arc<AppState>, community_id: &str) -> Option<Strin
         .and_then(|cs| cs.governance_key.clone())
 }
 
-/// Get the community's current Lamport counter value.
-pub fn lamport_counter(state: &Arc<AppState>, community_id: &str) -> u64 {
+/// Tick the community's message clock and return the new value.
+pub fn next_message_lamport(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Result<u64, LamportError> {
+    tick(state, community_id, |cs| &mut cs.message_clock)
+}
+
+/// Observe a received message's Lamport timestamp: the message clock
+/// advances past it, by at most `MAX_LAMPORT_DRIFT + 1` (clamped, never
+/// rejected — the message orders by its own timestamp).
+pub fn merge_message_lamport(state: &Arc<AppState>, community_id: &str, received: u64) {
+    if let Some(cs) = state.communities.write().get_mut(community_id) {
+        let mut clock = LamportClock::new(cs.message_clock);
+        cs.message_clock = clock.merge(received);
+    }
+}
+
+/// Tick the community's governance clock and return the new value. The
+/// new value is persisted (`communities.lamport_clock`) before any entry
+/// using it can reach the network, so a restart never reissues it.
+pub fn next_governance_lamport(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Result<u64, LamportError> {
+    let next = tick(state, community_id, |cs| &mut cs.governance_clock)?;
+    super::governance_persist::persist_governance_clock(state, community_id, next);
+    Ok(next)
+}
+
+/// Raise the governance clock to `accepted_clock` (from
+/// `rekindle_governance::merge::merge_with_accepted`) if it is ahead.
+pub fn observe_governance_lamport(state: &Arc<AppState>, community_id: &str, accepted_clock: u64) {
+    if let Some(cs) = state.communities.write().get_mut(community_id) {
+        cs.governance_clock = cs.governance_clock.max(accepted_clock);
+    }
+}
+
+/// The community's current governance clock.
+pub fn governance_clock(state: &Arc<AppState>, community_id: &str) -> Option<u64> {
     state
         .communities
         .read()
         .get(community_id)
-        .map_or(0, |cs| cs.lamport_counter)
+        .map(|cs| cs.governance_clock)
 }
 
-/// Increment the Lamport counter for a community and return the new value.
-/// Used on every message send.
-pub fn increment_lamport(state: &Arc<AppState>, community_id: &str) -> u64 {
+fn tick(
+    state: &Arc<AppState>,
+    community_id: &str,
+    clock_of: impl FnOnce(&mut crate::state::CommunityState) -> &mut u64,
+) -> Result<u64, LamportError> {
     let mut communities = state.communities.write();
-    if let Some(cs) = communities.get_mut(community_id) {
-        let mut clock = rekindle_gossip::lamport::LamportClock::new(cs.lamport_counter);
-        cs.lamport_counter = clock.increment();
-        cs.lamport_counter
-    } else {
-        0
-    }
+    let cs = communities
+        .get_mut(community_id)
+        .ok_or(LamportError::UnknownCommunity)?;
+    let value = clock_of(cs);
+    let next = LamportClock::new(*value).increment()?;
+    *value = next;
+    Ok(next)
 }
 
-/// Merge a received Lamport timestamp into the community's counter.
-/// `counter = max(counter, received) + 1` — standard Lamport merge rule
-/// gated by `MAX_LAMPORT_DRIFT` (M9.2). Returns `true` on accept,
-/// `false` on drift-reject. Caller should drop the corresponding
-/// envelope when this returns `false` so a forged-future Lamport from
-/// a malicious peer cannot fast-forward our clock.
-pub fn merge_lamport(state: &Arc<AppState>, community_id: &str, received: u64) -> bool {
-    let mut communities = state.communities.write();
-    if let Some(cs) = communities.get_mut(community_id) {
-        let mut clock = rekindle_gossip::lamport::LamportClock::new(cs.lamport_counter);
-        match clock.merge(received) {
-            Some(advanced) => {
-                cs.lamport_counter = advanced;
-                true
-            }
-            None => false,
-        }
-    } else {
-        // Unknown community — let downstream decide; we make no claim
-        // about clock state.
-        true
-    }
+/// Compute effective permissions for an arbitrary pseudonym in a
+/// community channel, given the community's state directly (for callers
+/// that already hold a `&CommunityState`, e.g. from inside a
+/// `state.communities.read()` guard, and shouldn't re-lock to get one).
+///
+/// Returns `None` when governance state isn't loaded yet or
+/// `pseudonym_hex` doesn't decode to a 32-byte key. Centralizes what was
+/// previously reimplemented, by hand, at five separate call sites —
+/// `community/message_notifications.rs`, `community/link_previews.rs`,
+/// `community/receiver_limits.rs`, `veilid/control.rs`, and
+/// `veilid/control_sync.rs` — each independently doing its own
+/// hex-decode → `PseudonymKey` → `compute_permissions`. Callers that want
+/// a zero-permission default on failure (the common case, matching the
+/// old reimplementations) call `.unwrap_or(0)`; callers that need to
+/// distinguish "no governance loaded" from "zero permissions" (several
+/// gossip/control handlers bail out of the whole handler on the former)
+/// keep the `Option`.
+#[must_use]
+pub fn permissions_for_pseudonym(
+    cs: &crate::state::CommunityState,
+    pseudonym_hex: &str,
+    channel_id: Option<&rekindle_types::id::ChannelId>,
+) -> Option<u64> {
+    let gov = cs.governance_state.as_ref()?;
+    let bytes = hex::decode(pseudonym_hex).ok()?;
+    let pseudo_bytes: [u8; 32] = bytes.try_into().ok()?;
+    let pseudo = rekindle_types::id::PseudonymKey(pseudo_bytes);
+    let now = rekindle_utils::timestamp_secs();
+    Some(rekindle_governance::permissions::compute_permissions(
+        &pseudo, channel_id, gov, now,
+    ))
+}
+
+/// Like [`permissions_for_pseudonym`], looking the community up by id
+/// first. `None` when the community itself isn't known yet either.
+#[must_use]
+pub fn permissions_for(
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym_hex: &str,
+    channel_id: Option<&rekindle_types::id::ChannelId>,
+) -> Option<u64> {
+    let communities = state.communities.read();
+    let cs = communities.get(community_id)?;
+    permissions_for_pseudonym(cs, pseudonym_hex, channel_id)
 }
 
 /// Compute effective permissions for the local user in a community channel.
@@ -427,18 +515,8 @@ pub fn my_permissions(
     let Some(cs) = communities.get(community_id) else {
         return 0;
     };
-    let Some(gov) = &cs.governance_state else {
+    let Some(pseudo_hex) = cs.my_pseudonym_key.as_deref() else {
         return 0;
     };
-    let Some(pseudo_hex) = &cs.my_pseudonym_key else {
-        return 0;
-    };
-    // Decode hex pseudonym to PseudonymKey
-    let pseudo_bytes: [u8; 32] = match hex::decode(pseudo_hex) {
-        Ok(b) if b.len() == 32 => b.try_into().unwrap_or([0u8; 32]),
-        _ => return 0,
-    };
-    let pseudo = rekindle_types::id::PseudonymKey(pseudo_bytes);
-    let now = rekindle_utils::timestamp_secs();
-    rekindle_governance::permissions::compute_permissions(&pseudo, channel_id, gov, now)
+    permissions_for_pseudonym(cs, pseudo_hex, channel_id).unwrap_or(0)
 }

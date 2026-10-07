@@ -75,14 +75,13 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
 
     // --- Voice integration ---
 
-    /// Start the voice session for an accepted call. The adapter calls
-    /// `services::voice::session::start_session` with the derived
-    /// `call_key` so audio frames can be AEAD-encrypted.
+    /// Start the voice session for an accepted call. The call's media
+    /// keys are already in the registry, where the voice session reads
+    /// them.
     async fn start_voice_session(
         &self,
         call_id: &str,
         peer_pubkey_hex: &str,
-        call_key: [u8; 32],
         kind: CallKind,
     ) -> Result<(), CallError>;
 
@@ -112,7 +111,7 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// timer task needs to call `emit_event` + `persist_missed_call`
     /// across the tokio::spawn boundary, and `&dyn CallSignalingDeps`
     /// is not movable into a `'static` task. The adapter clones its
-    /// internal `Arc<AppState>` + `AppHandle` + `DbPool` into the
+    /// internal `Arc<AppState>` + `AppHandle` + `Db` into the
     /// spawned task and routes through the same emit/persist paths
     /// as the rest of the deps trait.
     fn spawn_incoming_call_timeout(
@@ -164,16 +163,14 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// transition.
     fn surface_window_for_call(&self, call_id: &str);
 
+    /// Show the controls of a 1:1 call that just connected, on either
+    /// side. The desktop opens the call's own window; a TUI would raise
+    /// its call pane. Best-effort, like `surface_window_for_call`.
+    fn present_active_call(&self, call_id: &str);
+
     /// Emit a domain event. The adapter maps each `CallSignalEvent`
     /// variant to its concrete `ChatEvent` / `NotificationEvent`
     /// Tauri payload and calls `event_emit::emit_live` or
     /// `emit_journaled` as appropriate.
     fn emit_event(&self, event: CallSignalEvent);
-
-    // --- Background tasks ---
-
-    /// Register a spawned background task (ring-timer) so it can be
-    /// aborted on app shutdown. The adapter pushes onto
-    /// `state.background_handles`.
-    fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>);
 }

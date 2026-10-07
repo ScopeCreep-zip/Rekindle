@@ -1,7 +1,7 @@
 //! Phase 14 — voice session adapter.
 //!
 //! Implements `rekindle_voice::VoiceSessionDeps` against the live
-//! `AppState` + `tauri::AppHandle` + `DbPool`. Every method maps a
+//! `AppState` + `tauri::AppHandle` + `Db`. Every method maps a
 //! trait-abstract operation to its concrete src-tauri/AppState
 //! equivalent. The crate's loops (send_loop, receive_loop, mcu_loop)
 //! and any future session/shutdown ports use this adapter to reach
@@ -18,31 +18,35 @@
 //!   used by `emit_voice_event`.
 //! * [`io_helpers`] — audio device restart, peer-route lookup,
 //!   media-capabilities broadcast, member-name DB query.
+//! * [`media_keys`] — the `MediaKeySource` half: SFrame key sources
+//!   for calls and community channels.
 
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use rekindle_lifecycle::{ScopeClosed, SessionScope};
 use rekindle_voice::{VoiceSessionDeps, VoiceShutdownOpts};
 
-use crate::db::DbPool;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 pub mod deps_impl;
 pub mod event_mapping;
 pub mod frame_sender;
 pub mod io_helpers;
+pub mod media_keys;
 pub mod session_setup;
 
 pub struct VoiceAdapter {
     pub(super) state: Arc<AppState>,
     pub(super) app_handle: tauri::AppHandle,
-    pub(super) pool: DbPool,
+    pub(super) pool: Db,
 }
 
 impl VoiceAdapter {
     #[must_use]
-    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: DbPool) -> Arc<Self> {
+    pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         Arc::new(Self {
             state,
             app_handle,
@@ -69,10 +73,7 @@ pub async fn start_session(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
 ) -> Result<(), String> {
-    let Some(pool) = tauri::Manager::try_state::<DbPool>(app) else {
-        return Err("DbPool state missing".into());
-    };
-    let pool = pool.inner().clone();
+    let pool = state.db.current()?;
     let adapter = VoiceAdapter::new(state.clone(), app.clone(), pool);
     let deps: Arc<dyn VoiceSessionDeps> = adapter;
     rekindle_voice::session::start_session(&deps, channel_id, community_id)
@@ -100,10 +101,9 @@ pub fn reannounce_voice_route(state: &Arc<AppState>) {
     let Some(app_handle) = state.app_handle.read().clone() else {
         return;
     };
-    let Some(pool) = tauri::Manager::try_state::<DbPool>(&app_handle) else {
+    let Ok(pool) = state.db.current() else {
         return;
     };
-    let pool = pool.inner().clone();
     let adapter = VoiceAdapter::new(Arc::clone(state), app_handle, pool);
     let deps: Arc<dyn VoiceSessionDeps> = adapter;
     rekindle_voice::session::reannounce_voice_route(&deps);
@@ -117,10 +117,9 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
         tracing::warn!("shutdown_voice: no app handle on state — falling back to direct teardown");
         return;
     };
-    let Some(pool) = tauri::Manager::try_state::<DbPool>(&app_handle) else {
+    let Ok(pool) = state.db.current() else {
         return;
     };
-    let pool = pool.inner().clone();
     let Some(state_arc) =
         tauri::Manager::try_state::<Arc<AppState>>(&app_handle).map(|s| Arc::clone(s.inner()))
     else {
@@ -147,12 +146,8 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     // Native camera session dies with the voice session — its frames
     // have nowhere to go without the pacer/roster below.
     crate::services::native_video::stop(state);
-    // Phase 4 — stop the video pacer with the session. Dropping the
-    // frame sender also ends the task if the shutdown send raced.
-    let pacer_shutdown = state.video_pacer_shutdown_tx.write().take();
-    if let Some(tx) = pacer_shutdown {
-        let _ = tx.try_send(());
-    }
+    // Phase 4 — the video pacer stopped with the voice loops' scope;
+    // clear its channels so the next session starts a fresh one.
     *state.video_pacer_tx.write() = None;
     *state.video_pacer_rate_tx.write() = None;
     *state.video_payload_share_rx.write() = None;
@@ -166,13 +161,23 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
 
 /// W14.4 — spawn the 1-second packet-drop telemetry poller. Emits
 /// `VoiceEvent::PacketsDropped` when the counter is non-zero, then
-/// resets. Called once at login from `commands::auth`.
-pub fn spawn_drop_telemetry(state: &Arc<AppState>, app: &tauri::AppHandle) {
+/// resets. Runs on the login scope, started from `spawn_login_services`.
+///
+/// # Errors
+/// [`ScopeClosed`] when the session already ended.
+pub fn spawn_drop_telemetry(
+    state: &Arc<AppState>,
+    app: &tauri::AppHandle,
+    scope: &Arc<SessionScope>,
+) -> Result<(), ScopeClosed> {
     let task_state = state.clone();
     let task_app = app.clone();
-    let handle = tauri::async_runtime::spawn(async move {
+    scope.spawn_with_token("voice drop telemetry", |stop| async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let tick = tokio::time::sleep(std::time::Duration::from_secs(1));
+            if stop.run_until_cancelled(tick).await.is_none() {
+                return;
+            }
             let count = task_state.voice_pkt_drops.swap(0, Ordering::Relaxed);
             task_state
                 .voice_ingress_drops_total
@@ -193,6 +198,5 @@ pub fn spawn_drop_telemetry(state: &Arc<AppState>, app: &tauri::AppHandle) {
                 }
             }
         }
-    });
-    state.background_handles.lock().push(handle);
+    })
 }

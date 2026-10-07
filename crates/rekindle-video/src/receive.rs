@@ -361,7 +361,13 @@ pub fn handle_video_payload<D: VideoDeps>(
 /// `playout_buffer` — now Rust-owned, and measured over `transport_seq`
 /// (real wire loss) instead of `frame_seq` (which counted sender-side
 /// pacer expiry as phantom loss and collapsed the rate).
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each param is distinct per-fragment metadata forwarded \
+              verbatim into reassembly.note_received(); bundling them \
+              into a struct used by no other caller just relocates the \
+              field count"
+)]
 fn emit_frame_ack_if_due<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
@@ -431,55 +437,53 @@ fn emit_frame_ready<D: VideoDeps>(
     frame: &ReassembledFrame,
     now_ms: u32,
 ) {
-    let mut resolved = deps.channel_media_mek(community_id, channel_id);
-    // A sender BEHIND our generation: during the rotation retention
-    // window the REPLACED key still decrypts their in-flight frames
-    // (SFrame RFC 9605 / DAVE previous-epoch retention) — no freeze on
-    // every membership rotation. Past the window, drop without a
-    // request (an older key can't help; apply refuses downgrades; the
-    // sender converges from its own side).
-    if let Some((_, our_gen)) = resolved {
-        if frame.mek_generation < our_gen {
-            match deps.previous_channel_mek(community_id, channel_id) {
-                Some((prev_bytes, prev_gen)) if prev_gen == frame.mek_generation => {
-                    resolved = Some((prev_bytes, prev_gen));
-                }
-                _ => {
-                    tracing::debug!(
-                        target: "rekindle_video::receive",
-                        community_id = %community_id,
-                        sender_pseudonym = %sender_pseudonym,
-                        frame_generation = frame.mek_generation,
-                        our_generation = our_gen,
-                        "video frame from a sender behind our MEK generation — dropped"
-                    );
-                    return;
-                }
-            }
-        }
-    }
-    let mismatch_reason = match resolved {
-        None => Some("no channel-media MEK cached"),
-        Some((_, our_gen)) if our_gen != frame.mek_generation => Some("MEK generation mismatch"),
-        Some(_) => None,
-    };
-    if let Some(reason) = mismatch_reason {
-        tracing::warn!(
-            target: "rekindle_video::receive",
-            community_id = %community_id,
-            sender_pseudonym = %sender_pseudonym,
-            frame_generation = frame.mek_generation,
-            our_generation = resolved.map_or(-1i64, |(_, g)| i64::try_from(g).unwrap_or(i64::MAX)),
-            reason,
-            "video frame undecryptable — requesting the frame's exact MEK generation"
-        );
-        if reassembly.should_request_mek(community_id, now_ms) {
-            deps.request_mek_refresh(community_id, channel_id, frame.mek_generation);
-        }
+    use rekindle_types::channel_keys::{media_key, KeyEpoch, MediaKey};
+
+    let provider = deps.keys();
+    let Some(scope) = rekindle_types::id::ChannelId::from_hex(channel_id)
+        .map(|channel| provider.scope_for_media(community_id, channel))
+    else {
+        tracing::debug!(target: "rekindle_video::receive", channel_id, "video frame for a non-channel id — dropped");
         return;
-    }
-    let (mek_bytes, mek_gen) = resolved.expect("checked above");
-    let mek = MediaEncryptionKey::from_bytes(mek_bytes, mek_gen);
+    };
+    // The frame names its generation; it opens only under that
+    // generation's key — the current one, or the one it replaced within
+    // the post-rotation grace (RFC 9605 §4.4.1; DAVE previous-epoch
+    // retention). Past the grace, a sender behind us is dropped without a
+    // request: an older key can't help, and the replaced key is one a
+    // removed member still holds.
+    let secret = match media_key(
+        &*provider,
+        community_id,
+        scope,
+        KeyEpoch(frame.mek_generation),
+    ) {
+        MediaKey::Key(secret) => secret,
+        MediaKey::Stale => {
+            tracing::debug!(
+                target: "rekindle_video::receive",
+                community_id = %community_id,
+                sender_pseudonym = %sender_pseudonym,
+                frame_generation = frame.mek_generation,
+                "video frame under a retired MEK generation — dropped"
+            );
+            return;
+        }
+        MediaKey::Missing { needed } => {
+            tracing::warn!(
+                target: "rekindle_video::receive",
+                community_id = %community_id,
+                sender_pseudonym = %sender_pseudonym,
+                frame_generation = frame.mek_generation,
+                "video frame under a MEK generation we do not hold — requesting it"
+            );
+            if reassembly.should_request_mek(community_id, now_ms) {
+                deps.request_mek_refresh(community_id, channel_id, needed.0);
+            }
+            return;
+        }
+    };
+    let mek = MediaEncryptionKey::from_bytes(*secret, frame.mek_generation);
     let plaintext = match mek.decrypt(&frame.payload) {
         Ok(p) => p,
         Err(e) => {

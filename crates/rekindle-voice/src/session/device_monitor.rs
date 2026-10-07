@@ -19,7 +19,8 @@ use crate::session_deps::{VoiceSessionDeps, VoiceShutdownOpts};
 
 pub struct DeviceMonitorParams<D: VoiceSessionDeps + ?Sized> {
     pub device_error_rx: mpsc::Receiver<String>,
-    pub shutdown_rx: mpsc::Receiver<()>,
+    /// Cancelled when the loop's session scope shuts down.
+    pub stop: tokio_util::sync::CancellationToken,
     pub deps: Arc<D>,
 }
 
@@ -33,7 +34,7 @@ pub async fn run<D: VoiceSessionDeps + ?Sized>(mut params: DeviceMonitorParams<D
         tokio::select! {
             biased;
 
-            _ = params.shutdown_rx.recv() => {
+            () = params.stop.cancelled() => {
                 tracing::info!("device monitor loop: shutdown signal received");
                 break;
             }

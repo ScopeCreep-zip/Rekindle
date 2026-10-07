@@ -49,60 +49,46 @@ export async function handleCreateCommunity(name: string): Promise<void> {
   }
 }
 
-export async function handleJoinCommunity(
-  communityId: string,
-  name: string,
-  inviteCode?: string,
-  secretsRecordKey?: string,
-): Promise<void> {
+/// Join a community from its invite link. The backend parses and
+/// validates the link; this only refreshes the stores afterwards.
+export async function handleJoinCommunity(inviteUrl: string): Promise<void> {
   try {
-    await commands.joinCommunity(communityId, inviteCode, secretsRecordKey);
-    // Re-fetch community details to get channels, pseudonym key, MEK generation, roles
-    const details = await commands.getCommunityDetails();
-    const joined = details.find((c) => c.id === communityId);
-    if (joined) {
-      setCommunityState("communities", communityId, transformCommunityDetail(joined));
-    } else {
-      setCommunityState("communities", communityId, {
-        id: communityId,
-        name,
-        description: null,
-        channels: [],
-        categories: [],
-        members: [],
-        roles: [],
-        myRoleIds: [0, 1],
-        myPseudonymKey: null,
-        mekGeneration: 0,
-        events: [],
-        expressions: [],
-        automodRules: [],
-      });
-    }
-    // Fetch members for the newly joined community
-    try {
-      const members = await commands.getCommunityMembers(communityId);
-      setCommunityState("communities", communityId, "members", members.map(transformMember));
-    } catch (e) {
-      console.error("Failed to load community members after join:", e);
-    }
-    await handleLoadExpressions(communityId);
-    await handleLoadAutoModRules(communityId);
-
-    // Auto-select the newly joined community so it appears immediately
-    handleSelectCommunity(communityId);
-    addToast("Joined community!", "success");
+    const communityId = await commands.joinCommunity(inviteUrl);
+    await loadJoinedCommunity(communityId);
   } catch (e) {
     // Surface the backend's specific error string (banned / full / invalid invite / Stronghold locked /
     // a timed-out join phase / etc.) rather than swallowing it as a generic "Failed to join community" —
     // the user can't act on a message that hides the cause. Re-throw so the join modal stays open and
-    // shows the failure inline next to the dial-in stepper's failed phase (programmatic callers such as
-    // the deep-link handler catch this themselves).
+    // shows the failure inline next to the dial-in stepper's failed phase.
     console.error("Failed to join community:", e);
     const msg = typeof e === "string" ? e : "Failed to join community";
     addToast(msg, "error");
     throw e instanceof Error ? e : new Error(msg);
   }
+}
+
+/// Load a community the backend has just joined into the stores and
+/// select it. Shared by the join modal and the deep-link consent dialog.
+export async function loadJoinedCommunity(communityId: string): Promise<void> {
+  // Re-fetch community details to get name, channels, pseudonym key, MEK generation, roles
+  const details = await commands.getCommunityDetails();
+  const joined = details.find((c) => c.id === communityId);
+  if (joined) {
+    setCommunityState("communities", communityId, transformCommunityDetail(joined));
+  }
+  // Fetch members for the newly joined community
+  try {
+    const members = await commands.getCommunityMembers(communityId);
+    setCommunityState("communities", communityId, "members", members.map(transformMember));
+  } catch (e) {
+    console.error("Failed to load community members after join:", e);
+  }
+  await handleLoadExpressions(communityId);
+  await handleLoadAutoModRules(communityId);
+
+  // Auto-select the newly joined community so it appears immediately
+  handleSelectCommunity(communityId);
+  addToast("Joined community!", "success");
 }
 
 export function handleSelectCommunity(communityId: string): void {

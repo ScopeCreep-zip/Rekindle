@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::id::PseudonymKey;
 
 use super::entry::GovernanceEntry;
+use crate::domains;
 
 /// Wire format for a governance SMPL subkey value.
 ///
@@ -62,9 +63,9 @@ impl GovernanceSubkeyPayload {
         let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
         let next = self.overflow_next.as_deref().unwrap_or("");
         let mut out = Vec::with_capacity(
-            b"rekindle-gov-subkey-v1".len() + 32 + 8 + entries_json.len() + next.len(),
+            domains::GOV_SUBKEY.len() + 32 + 8 + entries_json.len() + next.len(),
         );
-        out.extend_from_slice(b"rekindle-gov-subkey-v1");
+        out.extend_from_slice(domains::GOV_SUBKEY.as_bytes());
         out.extend_from_slice(&self.author_pseudonym.0);
         out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
         out.extend_from_slice(&entries_json);

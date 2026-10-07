@@ -121,7 +121,6 @@ pub(super) fn write_link_preview(
         url,
         title,
         description,
-        image_url,
         site_name,
         fetched_at,
     } = payload
@@ -138,10 +137,6 @@ pub(super) fn write_link_preview(
     p.set_has_description(description.is_some());
     if let Some(d) = description {
         p.set_description(d);
-    }
-    p.set_has_image_url(image_url.is_some());
-    if let Some(u) = image_url {
-        p.set_image_url(u);
     }
     p.set_has_site_name(site_name.is_some());
     if let Some(s) = site_name {
@@ -227,13 +222,6 @@ pub(super) fn read_link_preview(
         description: if p.get_has_description() {
             Some(text_to_string(
                 p.get_description().map_err(|e| capnp_err(&e))?,
-            )?)
-        } else {
-            None
-        },
-        image_url: if p.get_has_image_url() {
-            Some(text_to_string(
-                p.get_image_url().map_err(|e| capnp_err(&e))?,
             )?)
         } else {
             None

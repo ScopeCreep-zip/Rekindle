@@ -15,13 +15,14 @@
 //! * `cascade` — fallback chain (currently colocated with election)
 //! * `distribute` — per-member MEK-wrap + gossip broadcast
 //! * `cache` — `ChannelMekCache` trait (in-memory MEK lookup)
+//! * `provider` — `MekKeyProvider`, the D6 `ChannelKeyProvider` over cache + history
 //! * `persist` — `MekPersist` trait + SqliteMekPersist impl
 //! * `deps` — `MekDistributeDeps` trait composing the above + I/O
 //! * `error` — `MekRotationError`
 //! * `event` — `MekRotationEvent` emitted to the UI
 //!
 //! Parameterised over `MekDistributeDeps` so the src-tauri shell can
-//! supply concrete AppState / DbPool / AppHandle / Veilid wiring.
+//! supply concrete AppState / Db / AppHandle / Veilid wiring.
 
 pub mod cache;
 pub mod convergence;
@@ -30,6 +31,7 @@ pub mod distribute;
 pub mod election;
 pub mod error;
 pub mod event;
+pub mod provider;
 pub(crate) mod pseudonym_hex;
 pub mod receive;
 pub mod rotate;
@@ -42,7 +44,9 @@ pub use election::{
 };
 pub use error::MekRotationError;
 pub use event::MekRotationEvent;
+pub use provider::{ChannelKinds, MekHistory, MekKeyProvider};
 pub use receive::{handle_incoming_mek_transfer, mek_cache_has_generation, unwrap_received_mek};
 pub use rotate::{
-    rotate_mek_on_request, rotate_text_mek_for_departure, rotate_voice_mek_for_membership,
+    mint_first_channel_key, rotate_mek_on_request, rotate_text_mek_for_departure,
+    rotate_voice_mek_for_membership,
 };

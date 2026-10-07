@@ -53,37 +53,47 @@ pub(super) fn spawn_join_announcements(
     subkey_index: u32,
 ) {
     let display_name = crate::state_helpers::identity_display_name(&state);
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    crate::state_helpers::spawn_in_login_with_token(
+        &state.clone(),
+        "join announcements",
+        |stop| async move {
+            let settle = tokio::time::sleep(std::time::Duration::from_secs(5));
+            if stop.run_until_cancelled(settle).await.is_none() {
+                return;
+            }
 
-        let our_route = crate::state_helpers::our_route_blob(&state);
-        let status = match crate::state_helpers::identity_status(&state)
-            .unwrap_or(crate::state::UserStatus::Online)
-        {
-            crate::state::UserStatus::Online => "online",
-            crate::state::UserStatus::Away => "away",
-            crate::state::UserStatus::Busy => "busy",
-            crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => "offline",
-        };
+            let our_route = crate::state_helpers::our_route_blob(&state);
+            let status = match crate::state_helpers::identity_status(&state)
+                .unwrap_or(crate::state::UserStatus::Online)
+            {
+                crate::state::UserStatus::Online => "online",
+                crate::state::UserStatus::Away => "away",
+                crate::state::UserStatus::Busy => "busy",
+                crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => {
+                    "offline"
+                }
+            };
 
-        let joined_envelope =
-            rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoined {
-                    pseudonym_key: pseudonym_key.clone(),
-                    display_name,
-                    role_ids: vec![0],
-                    status: status.to_string(),
-                    route_blob: our_route,
-                },
+            let joined_envelope =
+                rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                    rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoined {
+                        pseudonym_key: pseudonym_key.clone(),
+                        display_name,
+                        role_ids: vec![0],
+                        status: status.to_string(),
+                        route_blob: our_route,
+                    },
+                );
+            let _ =
+                crate::services::community::send_to_mesh(&state, &community_id, &joined_envelope);
+
+            tracing::info!(
+                community = %community_id,
+                slot = subkey_index,
+                "broadcasted MemberJoined via gossip"
             );
-        let _ = crate::services::community::send_to_mesh(&state, &community_id, &joined_envelope);
-
-        tracing::info!(
-            community = %community_id,
-            slot = subkey_index,
-            "broadcasted MemberJoined via gossip"
-        );
-    });
+        },
+    );
 }
 
 pub(crate) fn try_derive_slot_keypair(

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services;
 use crate::state::SharedState;
 
@@ -72,6 +71,9 @@ pub struct Message {
     pub flags: u32,
 }
 
+/// An attachment as the webview sees it. The on-disk path of a downloaded
+/// file stays in the backend (it carries the OS user name); the webview
+/// only learns that the file was saved.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageAttachmentDto {
@@ -80,8 +82,22 @@ pub struct MessageAttachmentDto {
     pub mime_type: String,
     pub total_size: u64,
     pub chunk_count: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_path: Option<String>,
+    pub downloaded: bool,
+}
+
+impl MessageAttachmentDto {
+    /// Build from a `messages.attachment_json` value.
+    pub fn from_record_json(json: &str) -> Option<Self> {
+        let record = serde_json::from_str::<rekindle_files::AttachmentRecordJson>(json).ok()?;
+        Some(Self {
+            downloaded: record.local_path.is_some(),
+            attachment_id: record.attachment_id,
+            filename: record.filename,
+            mime_type: record.mime_type,
+            total_size: record.total_size,
+            chunk_count: record.chunk_count,
+        })
+    }
 }
 
 /// Send a message to a friend (1:1 DM).
@@ -96,12 +112,12 @@ pub async fn send_message(
     idempotency_key: uuid::Uuid,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let s = state.inner().clone();
-    let p = pool.inner().clone();
+    let p = pool.clone();
     state
         .idempotency
         .wrap(idempotency_key, || async move {
@@ -119,12 +135,12 @@ pub async fn send_typing(
     peer_id: String,
     typing: bool,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     // Verify identity is loaded
     state.identity.read().as_ref().ok_or("not logged in")?;
 
-    services::message_service::send_typing(state.inner(), pool.inner(), &peer_id, typing).await
+    services::message_service::send_typing(state.inner(), &pool, &peer_id, typing).await
 }
 
 /// Get chat history from `SQLite`.
@@ -133,11 +149,11 @@ pub async fn get_message_history(
     peer_id: String,
     limit: u32,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<Message>, String> {
+    let pool = state.db.current()?;
     services::chat_runtime::get_message_history_inner(
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         peer_id,
         limit,
     )
@@ -158,11 +174,7 @@ pub async fn prepare_chat_session(
 
 /// Mark messages as read.
 #[tauri::command]
-pub async fn mark_read(
-    peer_id: String,
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<(), String> {
-    services::chat_runtime::mark_read_inner(state.inner().clone(), pool.inner().clone(), peer_id)
-        .await
+pub async fn mark_read(peer_id: String, state: State<'_, SharedState>) -> Result<(), String> {
+    let pool = state.db.current()?;
+    services::chat_runtime::mark_read_inner(state.inner().clone(), pool.clone(), peer_id).await
 }

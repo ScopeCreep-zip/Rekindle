@@ -324,6 +324,23 @@ impl Connection {
         receiver.await.map_err(|_| Error::ConnectionClosed)
     }
 
+    /// Queue a function on the background thread without waiting for it.
+    /// Calls run in the order they were queued, so a later [`Connection::call`]
+    /// sees this one's effects. No task is spawned: the caller needs no
+    /// runtime and nothing outlives the connection.
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the database connection has been closed.
+    pub fn call_detached<F>(&self, function: F) -> Result<()>
+    where
+        F: FnOnce(&mut rusqlite::Connection) + Send + 'static,
+    {
+        self.sender
+            .send(Message::Execute(Box::new(function)))
+            .map_err(|_| Error::ConnectionClosed)
+    }
+
     /// Call a function in background thread and get the result
     /// asynchronously.
     ///

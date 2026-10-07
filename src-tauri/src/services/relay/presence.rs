@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call_or_default;
 use crate::services::message_service;
 use crate::state::{AppState, UserStatus};
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Cooldown window between consecutive probes for the same target.
 /// BEP-11 PEX uses ~60s as a sane bound; we adopt the same. Forward
@@ -30,7 +30,7 @@ const MAX_PROBE_FANOUT: usize = 8;
 /// snapshot for `target_pubkey`). Suppressed if a probe for the same
 /// target fired within `PROBE_COOLDOWN_SECS` (architecture §13.5 is
 /// silent on rate limiting, so we adopt BEP-11's 60s bound).
-pub async fn probe_friends_for_status(state: &Arc<AppState>, pool: &DbPool, target_pubkey: &str) {
+pub async fn probe_friends_for_status(state: &Arc<AppState>, pool: &Db, target_pubkey: &str) {
     if !try_acquire_probe_slot(state, target_pubkey) {
         tracing::trace!(target = %target_pubkey, "dropping status probe — within cooldown");
         return;
@@ -43,7 +43,7 @@ pub async fn probe_friends_for_status(state: &Arc<AppState>, pool: &DbPool, targ
         target_pubkey: target_pubkey.to_string(),
     };
     for friend in friends_to_ask {
-        let _ = message_service::send_to_peer_raw(state, pool, &friend, &payload).await;
+        let _ = message_service::send_to_peer(state, pool, &friend, &payload).await;
     }
 }
 
@@ -102,7 +102,7 @@ fn try_acquire_probe_slot(state: &Arc<AppState>, target_pubkey: &str) -> bool {
 ///   - we have an active `strand_relay_volunteered` row for `target`.
 pub async fn respond_to_status_request(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     requester_pubkey: &str,
     target_pubkey: &str,
 ) -> Result<(), String> {
@@ -137,7 +137,7 @@ pub async fn respond_to_status_request(
             last_seen: 0,
             route_blob: Vec::new(),
         };
-        return message_service::send_to_peer_raw(state, pool, requester_pubkey, &payload).await;
+        return message_service::send_to_peer(state, pool, requester_pubkey, &payload).await;
     }
 
     // Pull our cached friend snapshot.
@@ -166,7 +166,7 @@ pub async fn respond_to_status_request(
         last_seen,
         route_blob,
     };
-    message_service::send_to_peer_raw(state, pool, requester_pubkey, &payload).await
+    message_service::send_to_peer(state, pool, requester_pubkey, &payload).await
 }
 
 /// Alice's side: a friend just told us about a peer. Promote the

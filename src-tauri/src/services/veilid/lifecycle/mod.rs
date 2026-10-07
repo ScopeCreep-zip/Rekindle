@@ -8,4 +8,4 @@ pub use cleanup::{logout_cleanup, shutdown_app};
 pub use dispatch::start_dispatch_loop;
 pub use node::initialize_node;
 pub(crate) use route_refresh::route_watchdog_loop;
-pub use status::emit_network_status;
+pub use status::{emit_network_status, route_status};

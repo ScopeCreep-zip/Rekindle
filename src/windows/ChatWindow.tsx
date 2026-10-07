@@ -1,7 +1,6 @@
 import { Component, onMount, onCleanup, createMemo, createSignal, createEffect, Show } from "solid-js";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ChatEvent } from "../ipc/channels";
-import { isLegacy } from "../ipc/channels/chat_events";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { startEventStream } from "../ipc/channels";
 import Titlebar from "../components/titlebar/Titlebar";
 import MessageList from "../components/chat/MessageList";
 import MessageInput from "../components/chat/MessageInput";
@@ -15,6 +14,7 @@ import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "..
 import { handleStartDmCall, handleEndDmCall } from "../actions/calls.actions";
 import { subscribeDmChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
+import { subscribeCallEvents } from "../handlers/calls.handlers";
 import { hydrateState } from "../stores/hydrate";
 import { commands } from "../ipc/commands";
 import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP } from "../icons";
@@ -94,29 +94,19 @@ const ChatWindow: Component = () => {
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
-    // Direct event listener — bypasses store reactivity for incoming DMs.
-    // queueMicrotask ensures handleIncomingMessage has already updated the store.
-    const directUnsub = await listen<ChatEvent>("chat-event", (event) => {
-      const p = event.payload;
-      // DMs now arrive on the daemon vocabulary; the legacy envelope
-      // carries community channel messages, which this window ignores.
-      if (
-        !isLegacy(p) &&
-        "channelMessage" in p &&
-        "directMessageReceived" in p.channelMessage &&
-        p.channelMessage.directMessageReceived.conversationId === peerId
-      ) {
-        queueMicrotask(syncMessages);
-      }
-    });
-    unlisteners.push(Promise.resolve(directUnsub));
-
     // Register event listeners FIRST so no events are missed during hydration.
     // subscribeBuddyListPresenceEvents updates the global friendsState store
     // (each Tauri webview has isolated JS context, so we need our own listener).
     // The peerStatus memo reactively reads from that store.
-    unlisteners.push(subscribeDmChatEvents(peerId, () => authState.publicKey ?? ""));
+    unlisteners.push(
+      subscribeDmChatEvents(peerId, () => authState.publicKey ?? "", () =>
+        queueMicrotask(syncMessages),
+      ),
+    );
     unlisteners.push(subscribeBuddyListPresenceEvents());
+    // Keeps the call buttons in step with a call to this peer.
+    unlisteners.push(subscribeCallEvents({ owner: false }));
+    void startEventStream();
 
     // Await hydration so stores are populated before loading history
     await hydrateState();
@@ -203,11 +193,8 @@ const ChatWindow: Component = () => {
         peerName={peerName()}
         onRetry={handleRetry}
       />
-      {/* W13-fix.1+W13-fix.2 — the active-call surface (timer, mute,
-       *  hangup, video, etc.) lives in <ActiveCallPanel /> mounted
-       *  globally by CallController so it's visible regardless of
-       *  which window the user is looking at. The community VoicePanel
-       *  that was here was bound to the wrong store anyway. */}
+      {/* A connected call's controls (timer, mute, hangup, video) live in
+       *  its own call window, which the backend opens on connect. */}
       <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
       <MessageInput peerId={peerId} />
       </div>

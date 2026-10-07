@@ -1,6 +1,6 @@
 import { invoke } from "../invoke";
 import type {
-  GameStatus, NetworkStatus, Preferences,
+  DeepLinkOutcome, DeepLinkRequest, GameStatus, NetworkStatus, Preferences, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type { LifecycleState } from "./dto";
@@ -31,22 +31,28 @@ export const systemCommands = {
 
   // Notifications — backend command instead of the plugin's `sendNotification`,
   // whose Linux `show` path panics (blocks on zbus inside the async runtime).
-  showOsNotification: (title: string, body: string) =>
-    invoke<void>("show_os_notification", { title, body }),
 
   // Windows
   showBuddyList: () => invoke<void>("show_buddy_list"),
-  openChatWindow: (publicKey: string, displayName: string) =>
-    invoke<void>("open_chat_window", { publicKey, displayName }),
-  openSettingsWindow: (tab?: string) => invoke<void>("open_settings_window", { tab: tab ?? null }),
-  openCommunityWindow: (communityId: string, communityName: string) =>
-    invoke<void>("open_community_window", { communityId, communityName }),
-  openProfileWindow: (publicKey: string, displayName: string) =>
-    invoke<void>("open_profile_window", { publicKey, displayName }),
+  // Window titles are resolved by the backend from its own state.
+  openChatWindow: (publicKey: string) => invoke<void>("open_chat_window", { publicKey }),
+  openSettingsWindow: (tab?: SettingsTab) =>
+    invoke<void>("open_settings_window", { tab: tab ?? null }),
+  /// `communityId` absent opens the community browser.
+  openCommunityWindow: (communityId?: string) =>
+    invoke<void>("open_community_window", { communityId: communityId ?? null }),
+  openProfileWindow: (publicKey: string) => invoke<void>("open_profile_window", { publicKey }),
   /// Wave 12 W12.7 — pop the active call into its own webview window.
   openCallWindow: (callId: string) =>
     invoke<void>("open_call_window", { callId }),
   getNetworkStatus: () => invoke<NetworkStatus>("get_network_status"),
+  /// Open an https link after a native confirmation; false if declined.
+  openExternalUrl: (url: string) => invoke<boolean>("open_external_url", { url }),
+  // OS deep links — consent flow (src-tauri/src/deep_links.rs)
+  getPendingDeepLink: () => invoke<DeepLinkRequest | null>("get_pending_deep_link"),
+  confirmDeepLink: (requestId: string) =>
+    invoke<DeepLinkOutcome>("confirm_deep_link", { requestId }),
+  dismissDeepLink: (requestId: string) => invoke<void>("dismiss_deep_link", { requestId }),
   // Lifecycle — current FSM state, used to seed the derived lifecycle store.
   lifecycleCurrent: () => invoke<LifecycleState>("lifecycle_current"),
 

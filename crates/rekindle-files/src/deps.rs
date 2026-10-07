@@ -17,7 +17,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
@@ -32,12 +31,11 @@ use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
 /// Events emitted to the UI as Lost Cargo flows complete.
 #[derive(Debug, Clone)]
 pub enum FilesEvent {
-    /// Architecture §28.9 — download finished, local_path written.
+    /// Architecture §28.9 — a download was saved to disk.
     AttachmentDownloaded {
         community_id: String,
         channel_id: String,
         attachment_id_hex: String,
-        local_path: String,
     },
     /// Architecture §32 W15 — expression-asset chunks fully cached;
     /// picker can render.
@@ -65,7 +63,7 @@ pub struct InsertChannelMessage<'a> {
 }
 
 /// Single deps trait for all Lost Cargo flows. Implementations
-/// supply concrete AppState / DbPool / AppHandle / Veilid wiring.
+/// supply concrete AppState / Db / AppHandle / Veilid wiring.
 #[async_trait]
 pub trait FilesDeps: Send + Sync + 'static {
     // ── Identity ───────────────────────────────────────────────────
@@ -84,27 +82,8 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool;
 
-    fn mek_generation(&self, community_id: &str) -> Result<u64, FilesError>;
-
-    fn channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<MediaEncryptionKey, FilesError>;
-
-    /// MEK lookup for FEK unwrap: try keystore at the requested
-    /// generation, then channel_mek_cache, then community mek_cache.
-    /// Returns None if no matching-generation MEK is available.
-    fn historical_channel_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Option<MediaEncryptionKey>;
-
-    /// Snapshot of the per-community MEK cache (current generation).
-    /// Used by expression_fetch which keys on community-level MEK.
-    fn community_mek(&self, community_id: &str) -> Option<MediaEncryptionKey>;
+    /// Community and channel keys (plan D6).
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
 
     // ── Permissions + slowmode + mentions ──────────────────────────
 
@@ -127,7 +106,16 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     // ── Lamport + sequence ─────────────────────────────────────────
 
-    fn increment_lamport(&self, community_id: &str) -> u64;
+    /// Next message-clock value (attachment messages).
+    fn increment_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
+    /// Next governance-clock value (`AttachmentPinned`).
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
 

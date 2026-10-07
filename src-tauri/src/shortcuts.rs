@@ -49,7 +49,7 @@ pub fn register(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std
 
 /// Toggle the buddy list window visibility (Ctrl+Shift+X / Cmd+Shift+X).
 fn toggle_buddy_list(app_handle: &tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("buddy-list") {
+    if let Some(window) = app_handle.get_webview_window(crate::window_labels::BUDDY_LIST) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
             tracing::debug!("buddy list hidden via global shortcut");

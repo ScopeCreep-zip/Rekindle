@@ -2,12 +2,14 @@ import { Component, createSignal, onMount, onCleanup } from "solid-js";
 import { handleGetNetworkStatus } from "../../actions/settings.actions";
 import { subscribeNetworkStatus } from "../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import type { RouteAvailability } from "../../ipc/channels/notification_events";
 
 const NetworkIndicator: Component = () => {
   const [attachmentState, setAttachmentState] = createSignal("detached");
   const [isAttached, setIsAttached] = createSignal(false);
   const [publicInternetReady, setPublicInternetReady] = createSignal(false);
   const [hasRoute, setHasRoute] = createSignal(false);
+  const [mediaRoute, setMediaRoute] = createSignal<RouteAvailability>("idle");
 
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let unlistenNetwork: UnlistenFn | undefined;
@@ -19,6 +21,7 @@ const NetworkIndicator: Component = () => {
       setIsAttached(status.isAttached);
       setPublicInternetReady(status.publicInternetReady);
       setHasRoute(status.hasRoute);
+      setMediaRoute(status.mediaRoute);
     }
   }
 
@@ -33,6 +36,7 @@ const NetworkIndicator: Component = () => {
       setIsAttached(event.isAttached);
       setPublicInternetReady(event.publicInternetReady);
       setHasRoute(event.hasRoute);
+      setMediaRoute(event.mediaRoute);
     }).then((fn) => {
       unlistenNetwork = fn;
     });
@@ -66,10 +70,33 @@ const NetworkIndicator: Component = () => {
     return "Disconnected";
   }
 
+  /**
+   * Voice and video need the media route, which the general route never
+   * stands in for (plan C7.9c), so while connected without it the
+   * indicator says so. `null` once it is available.
+   */
+  function voiceNote(): string | null {
+    if (!(publicInternetReady() && hasRoute())) return null;
+    switch (mediaRoute()) {
+      case "available":
+        return null;
+      case "failed":
+        return "Voice unavailable";
+      default:
+        return "Voice connecting...";
+    }
+  }
+
+  function title(): string {
+    const note = voiceNote();
+    return note ? `Veilid: ${label()} — ${note}` : `Veilid: ${label()}`;
+  }
+
   return (
-    <div class="network-indicator" title={`Veilid: ${label()}`}>
+    <div class="network-indicator" title={title()}>
       <div class={dotClass()} />
       <span>{label()}</span>
+      {voiceNote() && <span class="network-voice-note">{voiceNote()}</span>}
     </div>
   );
 };

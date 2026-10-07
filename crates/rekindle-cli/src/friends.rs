@@ -1,12 +1,12 @@
 //! Friend commands: add, accept, reject, remove, list, requests.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::FriendCmd;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
-use crate::transport::DaemonClient;
+use rekindle_client::DaemonClient;
 
 pub async fn dispatch(
     cmd: &FriendCmd,
@@ -39,13 +39,15 @@ pub async fn dispatch(
                 .await?;
             format::print_structured(&value, mode)
         }
-        FriendCmd::Remove { friend, .. } => {
+        FriendCmd::Remove { friend, force } => {
+            if !helpers::confirm_unless_forced(*force, &format!("Remove friend '{friend}'?"))? {
+                return format::print_text("Cancelled.");
+            }
             let value = client
                 .request_ok(IpcRequest::FriendRemove {
                     public_key: friend.clone(),
                 })
                 .await?;
-            helpers::audit_log("remove_friend", friend, "ok");
             format::print_structured(&value, mode)
         }
         FriendCmd::List { .. } => {
@@ -67,7 +69,7 @@ pub async fn dispatch(
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("offline")
                                     .to_string(),
-                                helpers::abbreviate_key(
+                                rekindle_client::fmt::abbreviate_key(
                                     f.get("public_key").and_then(|v| v.as_str()).unwrap_or("?"),
                                 ),
                                 f.get("has_route")
@@ -91,7 +93,7 @@ pub async fn dispatch(
             format::print_structured(&value, mode)
         }
         FriendCmd::Block { .. } | FriendCmd::Unblock { .. } => {
-            format::print_text("Block/unblock not yet implemented in daemon")
+            Err(crate::identity::unimplemented("friend block/unblock"))
         }
     }
 }

@@ -68,9 +68,9 @@ const BuddyList: Component = () => {
 
   const existingGroups = createMemo(() => Object.keys(groupedFriends()));
 
-  function handleDblClick(publicKey: string, displayName: string): void {
+  function handleDblClick(publicKey: string): void {
     setSelectedKey(publicKey);
-    handleDoubleClickFriend(publicKey, displayName);
+    handleDoubleClickFriend(publicKey);
   }
 
   function handleSelectFriend(publicKey: string): void {
@@ -133,7 +133,7 @@ const BuddyList: Component = () => {
         <ContextMenu.Content class="context-menu">
           <ContextMenu.Item
             class="context-menu-item"
-            onSelect={() => commands.openChatWindow(key, name)}
+            onSelect={() => commands.openChatWindow(key)}
           >
             Chat
           </ContextMenu.Item>
@@ -164,7 +164,7 @@ const BuddyList: Component = () => {
           </ContextMenu.Item>
           <ContextMenu.Item
             class="context-menu-item"
-            onSelect={() => commands.openProfileWindow(key, name)}
+            onSelect={() => commands.openProfileWindow(key)}
           >
             View Profile
           </ContextMenu.Item>

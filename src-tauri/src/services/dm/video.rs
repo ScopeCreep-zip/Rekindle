@@ -7,15 +7,15 @@
 //! existing call sites in `state.rs` + `message_service.rs` compile
 //! unchanged, and keeps `send_dm_video_frame` — the outbound
 //! orchestration that fragments a frame and dispatches each chunk via
-//! the Signal-encrypted DM transport (`message_service::send_to_peer_encrypted`).
+//! the Signal-encrypted DM transport (`message_service::send_to_peer`).
 
 use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::MessagePayload;
 
-use crate::db::DbPool;
 use crate::services::message_service;
 use crate::state::AppState;
+use rekindle_db::Db;
 
 // Re-export the moved primitives so existing import paths still work.
 pub use rekindle_dm::{DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
@@ -39,7 +39,7 @@ pub struct DmVideoFrameSend {
 
 pub async fn send_dm_video_frame(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     peer_pubkey: &str,
     frame: DmVideoFrameSend,
 ) -> Result<u32, String> {
@@ -79,7 +79,7 @@ pub async fn send_dm_video_frame(
         // Encrypted fail-closed: vulnerable users are protected from a
         // plaintext fallback that an attacker could trigger by
         // corrupting the Signal session.
-        message_service::send_to_peer_encrypted(state, pool, peer_pubkey, &payload).await?;
+        message_service::send_to_peer(state, pool, peer_pubkey, &payload).await?;
     }
     Ok(u32::from(fragment_count))
 }

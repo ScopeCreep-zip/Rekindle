@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::validation;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
 
@@ -16,9 +15,6 @@ pub(crate) async fn handle_friend_add(
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
-    }
-    if let Err(e) = validation::validate_key(target, "target mailbox key") {
-        return e;
     }
     let transport = match ctx.require_transport() {
         Ok(t) => t,
@@ -44,11 +40,7 @@ pub(crate) async fn handle_friend_add(
     {
         Ok(sent) => {
             // Persist prekey private material for X3DH completion across restarts
-            let target_short = if target.len() > 12 {
-                &target[..12]
-            } else {
-                target
-            };
+            let target_short = rekindle_utils::text::prefix(target, 12);
             if !sent.signed_prekey_private.is_empty() {
                 let _ = crate::state::keystore::store_keypair_bytes(
                     &format!("friend-spk-{target_short}"),
@@ -113,7 +105,7 @@ pub(crate) async fn handle_friend_accept(
 
             if let Some(ref key) = inbox_key {
                 tracing::info!(
-                    public_key = &public_key[..16.min(public_key.len())],
+                    public_key = %public_key,
                     "friend accept: request not in session, scanning inbox directly"
                 );
 
@@ -134,7 +126,7 @@ pub(crate) async fn handle_friend_accept(
                         .is_some();
                     if found {
                         tracing::info!(
-                            public_key = &public_key[..16.min(public_key.len())],
+                            public_key = %public_key,
                             elapsed_secs = scan_start.elapsed().as_secs(),
                             attempt,
                             "friend accept: request discovered via direct scan"
@@ -157,7 +149,7 @@ pub(crate) async fn handle_friend_accept(
             let Some(req) = session.pending_request_by_key(public_key) else {
                 return IpcResponse::error(404, format!(
                     "no pending request from {} — they may not have sent one, or DHT propagation is still in progress",
-                    &public_key[..16.min(public_key.len())],
+                    rekindle_utils::text::prefix(public_key, 16),
                 ));
             };
             (session.clone(), req.clone())
@@ -176,11 +168,7 @@ pub(crate) async fn handle_friend_accept(
     {
         Ok(accepted) => {
             // Store DM log keypair in OS keyring so it survives restart
-            let log_short = if accepted.dm_log_key.len() > 12 {
-                &accepted.dm_log_key[..12]
-            } else {
-                &accepted.dm_log_key
-            };
+            let log_short = rekindle_utils::text::prefix(&accepted.dm_log_key, 12);
             let label = format!("dm-log-{log_short}");
             let _ =
                 crate::state::keystore::store_keypair_bytes(&label, &accepted.dm_log_keypair_bytes)
@@ -266,7 +254,19 @@ pub(crate) async fn handle_friend_remove(
     match rekindle_transport::operations::friend::remove_friend(&transport, &session, public_key)
         .await
     {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "removed": public_key })),
+        Ok(()) => {
+            // The DM log watch with this peer goes with the friendship.
+            let watch_leases = ctx
+                .subscriptions
+                .read()
+                .as_ref()
+                .map(|subs| subs.teardown_dm_peer(public_key))
+                .unwrap_or_default();
+            for lease in watch_leases {
+                rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
+            }
+            IpcResponse::ok(&serde_json::json!({ "removed": public_key }))
+        }
         Err(e) => IpcResponse::error(500, format!("friend remove failed: {e}")),
     }
 }
@@ -323,12 +323,6 @@ pub(crate) async fn handle_dm_send(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Err(e) = validation::validate_message_body(body) {
-        return e;
-    }
-    if let Err(e) = validation::validate_key(peer_key, "peer key") {
-        return e;
-    }
     let transport = match ctx.require_transport() {
         Ok(t) => t,
         Err(e) => return e,
@@ -351,19 +345,18 @@ pub(crate) async fn handle_dm_send(
         // Has DhtLog — mailbox not needed for the DhtLog path
         String::new()
     } else {
-        return IpcResponse::error(404, format!(
-            "cannot DM '{}'  — not a friend. Accept their request or add them first: rekindle friend add",
-            &peer_key[..16.min(peer_key.len())],
-        ));
+        return IpcResponse::error(
+            404,
+            format!(
+                "cannot DM '{}'  — not a friend. accept their request or send them one first",
+                rekindle_utils::text::prefix(peer_key, 16),
+            ),
+        );
     };
 
     // Load DM log keypair bytes from keyring if we have a shared DhtLog with this peer
     let dm_log_keypair_bytes = if let Some(log_key) = session.dm_log_keys.get(peer_key) {
-        let short = if log_key.len() > 12 {
-            &log_key[..12]
-        } else {
-            log_key
-        };
+        let short = rekindle_utils::text::prefix(log_key, 12);
         let label = format!("dm-log-{short}");
         match crate::state::keystore::load_keypair_bytes(&label).await {
             Ok(Some(bytes)) => Some(bytes),
@@ -466,7 +459,7 @@ pub(crate) async fn handle_dm_inbox(
         {
             Ok(mut threads) => all_threads.append(&mut threads),
             Err(e) => {
-                tracing::debug!(peer = %&peer_key[..12.min(peer_key.len())], error = %e, "DM log read failed");
+                tracing::debug!(peer = %peer_key, error = %e, "DM log read failed");
             }
         }
     }

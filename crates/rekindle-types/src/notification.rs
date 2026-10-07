@@ -40,9 +40,6 @@ pub enum TransportNotification {
     /// One or more remote peer routes died.
     RemoteRoutesDied { peer_keys: Vec<String> },
 
-    /// A DHT watch expired or was cancelled.
-    WatchDied { record_key: String },
-
     /// A DM was received from a verified peer.
     DmReceived {
         sender_key: String,

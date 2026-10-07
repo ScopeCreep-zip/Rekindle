@@ -16,14 +16,14 @@ mod control_sync;
 mod dht_watch;
 pub(crate) mod ingress_queue;
 mod lifecycle;
-mod media_route;
 mod network;
+pub(crate) mod route_publish;
 
 pub(crate) use lifecycle::route_watchdog_loop;
 pub use lifecycle::{
-    emit_network_status, initialize_node, logout_cleanup, shutdown_app, start_dispatch_loop,
+    emit_network_status, initialize_node, logout_cleanup, route_status, shutdown_app,
+    start_dispatch_loop,
 };
-pub(crate) use network::{new_media_route_with_retry, new_private_route_with_retry};
 
 pub async fn handle_veilid_update(
     app_handle: &AppHandle,
@@ -40,7 +40,7 @@ pub async fn handle_veilid_update(
             network::handle_attachment(app_handle, state, &attachment);
         }
         VeilidUpdate::RouteChange(change) => {
-            network::handle_route_change(app_handle, state, &change).await;
+            network::handle_route_change(state, &change);
         }
         VeilidUpdate::Shutdown => {
             tracing::info!("veilid core shutdown event received");

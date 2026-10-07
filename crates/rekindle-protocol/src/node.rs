@@ -140,14 +140,13 @@ impl RekindleNode {
 
     /// Get a reference to the Veilid API handle.
     ///
-    /// Used by `RoutingManager` for private route allocation/import.
+    /// Used by `OwnRoutes` for private route allocation and by the importer.
     pub fn api(&self) -> &VeilidAPI {
         &self.api
     }
 
-    /// Get a reference to the routing context.
-    ///
-    /// Used by `DHTManager` for record CRUD operations.
+    /// Get a reference to the routing context (the record pool builds its
+    /// own from it, with the DHT safety selection).
     pub fn routing_context(&self) -> &RoutingContext {
         &self.routing_context
     }

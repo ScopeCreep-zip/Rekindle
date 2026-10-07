@@ -10,15 +10,14 @@ use rusqlite::Connection;
 
 use super::{activity_by_hour, channel_metrics, growth, member_metrics, storage};
 
-const MIGRATION: &str = include_str!("../../../src-tauri/migrations/001_init.sql");
-
 const NOW_MS: i64 = 1_700_000_000_000;
 const SEVEN_DAYS_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 fn open_db() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.execute_batch(MIGRATION).expect("apply migration");
+    conn.execute_batch(rekindle_db::SCHEMA)
+        .expect("apply schema");
     conn.execute(
         "INSERT INTO identity (id, public_key, created_at) VALUES (1, 'owner_pk', 0)",
         [],

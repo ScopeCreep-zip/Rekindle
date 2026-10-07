@@ -2,7 +2,7 @@
 //!
 //! Bag of operations the sync orchestrators need from their host.
 //! Implemented in src-tauri by `SyncAdapter` against the live
-//! `AppState` + `DbPool` + message-service helpers. Chiral split
+//! `AppState` + `Db` + message-service helpers. Chiral split
 //! pattern matches Phase 17/18/19/20/21 REDO.
 
 use async_trait::async_trait;
@@ -15,8 +15,8 @@ use async_trait::async_trait;
 pub struct PendingMessageRow {
     pub id: i64,
     pub recipient_key: String,
-    /// JSON-encoded body — the orchestrator decodes as either
-    /// `MessageEnvelope` (DM) or `PendingChannelMessage` (channel).
+    /// JSON-encoded DM `MessageEnvelope`. Channel writes are not queued
+    /// here: the record pool holds and re-pushes them (plan C7.13).
     pub body: String,
     pub retry_count: i64,
 }
@@ -31,6 +31,9 @@ pub enum PendingRetryOutcome {
     Delivered,
     Failed,
     Unrecognized,
+    /// The session ended during the attempt, which was left unfinished.
+    /// It is not counted against the message's retries.
+    Interrupted,
 }
 
 /// Composite trait covering every external touchpoint the sync
@@ -56,7 +59,7 @@ pub trait SyncDeps: Send + Sync + 'static {
 
     /// Attempt to deliver one pending row. The adapter parses the
     /// body, dispatches via the appropriate transport (DM via
-    /// message_service::send_to_peer_call, channel via DHTManager
+    /// message_service::send_to_peer_call, channel via a record-pool
     /// write), and reports the outcome back. Keeps the JSON parse +
     /// transport-specific orchestration in src-tauri (Invariant 7)
     /// while the crate owns the retry loop + eligibility decision.

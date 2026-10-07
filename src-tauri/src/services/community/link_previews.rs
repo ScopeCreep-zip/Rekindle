@@ -2,19 +2,18 @@
 //!
 //! Sender side: fetch OpenGraph metadata via `rekindle-link-preview`,
 //! broadcast a `ControlPayload::LinkPreview` to the community mesh.
-//! Receiver side: gate on the sender's `EMBED_LINKS` permission, then
-//! emit a `community-event` so the UI renders inline.
+//! Receiver side: gate on the sender's `EMBED_LINKS` permission, the
+//! shared `accept_inbound` policy and the message's author, then emit a
+//! `community-event` so the UI renders inline.
 
 use std::sync::Arc;
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::link_preview::LinkPreview;
 use rekindle_types::permissions;
-use tauri::Manager;
 
 use crate::channels::CommunityEvent;
 use crate::commands::community::require_permission;
-use crate::db::DbPool;
 use crate::db_helpers::db_call_or_default;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
@@ -44,7 +43,6 @@ pub async fn fetch_and_broadcast(
         url: preview.url.clone(),
         title: preview.title.clone(),
         description: preview.description.clone(),
-        image_url: preview.image_url.clone(),
         site_name: preview.site_name.clone(),
         fetched_at: preview.fetched_at,
     });
@@ -52,20 +50,20 @@ pub async fn fetch_and_broadcast(
     Ok(preview)
 }
 
-/// Receiver side: trust-gate the incoming preview, then emit it to the UI.
+/// Receiver side: accept a peer's preview only if
+/// - the sender holds `EMBED_LINKS`;
+/// - it passes `rekindle_link_preview::accept_inbound` (https, bounded text);
+/// - it names a message we hold in that channel, written by the sender.
+///
+/// The last check stops a member pinning a phishing card onto someone
+/// else's message, an admin announcement included.
 pub fn handle_incoming_link_preview(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
     channel_id: String,
-    message_id: String,
-    url: String,
-    title: Option<String>,
-    description: Option<String>,
-    image_url: Option<String>,
-    site_name: Option<String>,
-    fetched_at: u64,
+    preview: LinkPreview,
 ) {
     if !sender_has_embed_links(state, community_id, sender_pseudonym) {
         tracing::debug!(
@@ -75,43 +73,71 @@ pub fn handle_incoming_link_preview(
         );
         return;
     }
-    crate::event_dispatch::emit_live(
-        app_handle,
-        "community-event",
-        &CommunityEvent::LinkPreviewReceived {
-            community_id: community_id.to_string(),
-            sender_pseudonym: sender_pseudonym.to_string(),
-            channel_id,
-            message_id,
-            url,
-            title,
-            description,
-            image_url,
-            site_name,
-            fetched_at,
+    let Some(preview) = rekindle_link_preview::accept_inbound(preview) else {
+        tracing::debug!(community = %community_id, "dropping LinkPreview with a non-https URL");
+        return;
+    };
+    let Ok(owner_key) = state_helpers::current_owner_key(state) else {
+        return;
+    };
+    let app = app_handle.clone();
+    let community_id = community_id.to_owned();
+    let sender = sender_pseudonym.to_owned();
+    let Ok(pool) = state.db.current() else {
+        return;
+    };
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "link preview fetch",
+        async move {
+            let (chan, msg) = (channel_id.clone(), preview.message_id.clone());
+            let author: Option<String> = db_call_or_default(&pool, move |conn| {
+                conn.query_row(
+                    "SELECT sender_key FROM messages \
+                 WHERE owner_key = ?1 AND conversation_id = ?2 \
+                 AND conversation_type = 'channel' AND message_id = ?3",
+                    rusqlite::params![owner_key, chan, msg],
+                    |row| row.get(0),
+                )
+                .map(Some)
+                .or_else(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                    other => Err(other),
+                })
+            })
+            .await;
+            if author.as_deref() != Some(sender.as_str()) {
+                tracing::debug!(
+                    community = %community_id,
+                    "dropping LinkPreview not authored by the message's sender"
+                );
+                return;
+            }
+            crate::event_dispatch::emit_community(
+                &app,
+                CommunityEvent::LinkPreviewReceived {
+                    community_id,
+                    sender_pseudonym: sender,
+                    channel_id,
+                    message_id: preview.message_id,
+                    url: preview.url,
+                    title: preview.title,
+                    description: preview.description,
+                    site_name: preview.site_name,
+                    fetched_at: preview.fetched_at,
+                },
+            );
         },
     );
 }
 
 async fn user_link_previews_enabled(state: &SharedState) -> bool {
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {
-        return true;
+        return false;
     };
-    let Some(app_handle) = state_helpers::app_handle(state) else {
-        return true;
+    let Ok(pool) = state.db.current() else {
+        return false;
     };
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    db_call_or_default(pool.inner(), move |conn| {
-        let value: Option<i64> = conn
-            .query_row(
-                "SELECT link_previews_enabled FROM app_settings WHERE owner_key = ?1",
-                rusqlite::params![owner_key],
-                |row| row.get(0),
-            )
-            .ok();
-        Ok(value.unwrap_or(1) != 0)
-    })
-    .await
+    crate::services::community_link_previews_runtime::link_previews_enabled(&pool, owner_key).await
 }
 
 fn sender_has_embed_links(
@@ -119,23 +145,10 @@ fn sender_has_embed_links(
     community_id: &str,
     sender_pseudonym_hex: &str,
 ) -> bool {
-    use rekindle_governance::permissions::{compute_permissions, has_capability};
-    use rekindle_types::id::PseudonymKey;
-
-    let communities = state.communities.read();
-    let Some(community) = communities.get(community_id) else {
-        return false;
-    };
-    let Some(gov) = community.governance_state.as_ref() else {
-        return false;
-    };
-    let Ok(pk_bytes) = hex::decode(sender_pseudonym_hex) else {
-        return false;
-    };
-    let Ok(pk_arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) else {
-        return false;
-    };
-    let pseudonym = PseudonymKey(pk_arr);
-    let perms = compute_permissions(&pseudonym, None, gov, rekindle_utils::timestamp_secs());
-    has_capability(perms, rekindle_types::permissions::EMBED_LINKS)
+    let perms = state_helpers::permissions_for(state, community_id, sender_pseudonym_hex, None)
+        .unwrap_or(0);
+    rekindle_governance::permissions::has_capability(
+        perms,
+        rekindle_types::permissions::EMBED_LINKS,
+    )
 }

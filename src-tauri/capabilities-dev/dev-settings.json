@@ -1,0 +1,13 @@
+{
+  "identifier": "dev-settings",
+  "description": "Debug-build-only grants for the `settings` window: the PQXDH bundle inspector, vault diagnostics and the friendship watch-tier kill switch. Lives outside `capabilities/` so release builds never load or validate it; `setup::run` adds it at runtime under `cfg(debug_assertions)`, and the commands themselves are compiled out of release.",
+  "windows": [
+    "settings"
+  ],
+  "permissions": [
+    "allow-dev-disable-watch",
+    "allow-pqxdh-bundle-info",
+    "allow-vault-diagnostics"
+  ],
+  "$schema": "../gen/schemas/desktop-schema.json"
+}

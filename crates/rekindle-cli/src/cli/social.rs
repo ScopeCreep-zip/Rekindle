@@ -49,9 +49,9 @@ pub enum FriendCmd {
         /// Friend identifier (display name or public key).
         #[arg(long, short = 'f')]
         friend: String,
-        /// Skip confirmation.
+        /// Skip the confirmation prompt.
         #[arg(long)]
-        yes: bool,
+        force: bool,
     },
 
     /// List pending inbound/outbound requests.

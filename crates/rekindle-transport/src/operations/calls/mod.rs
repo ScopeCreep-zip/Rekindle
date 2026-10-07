@@ -44,16 +44,6 @@ mod util;
 /// rekindle-calls, which owns the state machine this paces.
 pub use rekindle_calls::signaling::outbound::RING_DURATION_MS;
 
-/// W16.5b — timeout for the `app_call` CallInvite handshake. Veilid's
-/// `network.rpc.timeout_ms` defaults to 5 s; through private routes
-/// `rpc_processor/mod.rs:1300-1303` doubles it to 10 s. We use 10 s
-/// to give the receiver's `on_call` handler enough budget for the
-/// state-machine + persist operations even on slow disks. If the
-/// receiver is unreachable, the timeout fires fast — well under the
-/// 30 s ring window — and the caller's UI surfaces "peer unreachable"
-/// immediately via `CallUnreachable`.
-pub const CALL_INVITE_RPC_TIMEOUT_MS: u64 = 10_000;
-
 /// Hook the runtime calls to bring up / tear down the audio + jitter
 /// pipeline for a call. Implementer is shell-specific (Tauri uses
 /// cpal-backed `rekindle-voice`; CLI/daemon could no-op or use a
@@ -68,7 +58,6 @@ pub trait VoiceSessionLauncher: Send + Sync {
         call_id: &str,
         peer: &str,
         kind: CallKind,
-        call_key: [u8; 32],
     ) -> Result<(), String>;
 
     async fn stop_voice_session(&self, call_id: &str, reason: &str);
@@ -85,7 +74,6 @@ impl VoiceSessionLauncher for NoopVoiceSessionLauncher {
         call_id: &str,
         peer: &str,
         _kind: CallKind,
-        _call_key: [u8; 32],
     ) -> Result<(), String> {
         debug!(
             call_id,

@@ -37,8 +37,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tokio::sync::{broadcast, mpsc};
-use tokio::task::JoinHandle;
+use rekindle_lifecycle::SessionScope;
+use tokio::sync::broadcast;
 
 use crate::broadcast::node::TransportNode;
 use crate::gossip::GossipMesh;
@@ -71,26 +71,22 @@ pub struct SubscriptionManager {
     meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
     /// Broadcast sender for subscription events.
     event_tx: broadcast::Sender<SubscriptionEvent>,
-    /// Handle for the background watch renewal task.
-    renewal_handle: Option<JoinHandle<()>>,
-    /// Shutdown signal for the renewal loop.
-    renewal_shutdown_tx: Option<mpsc::Sender<()>>,
-    /// Handle for the background poll loop (tier 3).
-    poll_handle: Option<JoinHandle<()>>,
-    /// Shutdown signal for the poll loop.
-    poll_shutdown_tx: Option<mpsc::Sender<()>>,
-    /// Handle for the maintenance loop (typing expiry, dedup eviction).
-    maintenance_handle: Option<JoinHandle<()>>,
-    /// Shutdown signal for the maintenance loop.
-    maintenance_shutdown_tx: Option<mpsc::Sender<()>>,
+    /// The scope its background tasks (renewal, poll, maintenance,
+    /// watch re-establishment) run in; a child of the host's unlock
+    /// scope, so locking stops them (plan C4).
+    scope: Arc<SessionScope>,
 }
 
 impl SubscriptionManager {
     /// Create a new subscription manager. Does NOT start background tasks.
     ///
     /// Call `setup_identity()` and `setup_community()` to begin watching.
-    /// Call `start_renewal_loop()` to enable automatic watch renewal.
-    pub fn new(node: Arc<TransportNode>, session: Arc<RwLock<Option<Session>>>) -> Self {
+    /// Background tasks run in `scope`.
+    pub fn new(
+        node: Arc<TransportNode>,
+        session: Arc<RwLock<Option<Session>>>,
+        scope: Arc<SessionScope>,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
             node,
@@ -100,12 +96,7 @@ impl SubscriptionManager {
             dedup: Arc::new(RwLock::new(dedup::EventDedup::default())),
             meshes: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
-            renewal_handle: None,
-            renewal_shutdown_tx: None,
-            poll_handle: None,
-            poll_shutdown_tx: None,
-            maintenance_handle: None,
-            maintenance_shutdown_tx: None,
+            scope,
         }
     }
 

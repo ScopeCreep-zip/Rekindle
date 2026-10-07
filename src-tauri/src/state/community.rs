@@ -2,11 +2,8 @@
 //! sub-DTOs (channels, categories, roles, RSVPs, profile snapshots).
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 
 use super::gossip::GossipOverlay;
 
@@ -45,6 +42,12 @@ pub struct CommunityState {
     /// for each expansion. Persisted to SQLite, restored on login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub my_segment_index: Option<u32>,
+    /// Plate Gate (architecture §15): every expansion segment merged from
+    /// governance state (segment 0 is implicit, not included here).
+    /// Populated on community load and kept current by the governance
+    /// adapter's `SegmentAdded` handler — see `governance_adapter::segments`.
+    #[serde(default)]
+    pub segments: Vec<rekindle_types::presence::SegmentDescriptor>,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.
@@ -56,13 +59,20 @@ pub struct CommunityState {
     #[serde(skip)]
     pub governance_state: Option<rekindle_governance::state::GovernanceState>,
 
-    /// Per-community Lamport counter for deterministic message ordering.
-    /// Incremented on every send, merged with max(local, received)+1 on receive.
+    /// Lamport clock for channel and control messages (text, polls,
+    /// stage, files, video topology). Ticked on every send, merged
+    /// (drift-clamped) on every received message. Loaded at login from
+    /// `MAX(messages.lamport_ts)`.
     #[serde(skip)]
-    pub lamport_counter: u64,
+    pub message_clock: u64,
+    /// Lamport clock for the `GovernanceEntry`s we write. Ticked per
+    /// entry, raised by governance rebuilds to what the accepted entries
+    /// justify. Persisted as `communities.lamport_clock`.
+    #[serde(skip)]
+    pub governance_clock: u64,
 
     // ── Gossip mesh fields (Phase 2) ──
-    /// Gossip overlay state (peer set, online members, lamport counter).
+    /// Gossip overlay state (peer set, online members).
     /// `None` until the presence poll loop initializes it.
     #[serde(skip)]
     pub gossip: Option<GossipOverlay>,
@@ -139,19 +149,28 @@ pub struct CommunityState {
     #[serde(skip)]
     pub peer_reliability: HashMap<String, (u32, u32)>,
 
-    /// Shutdown sender for the presence poll loop.
+    /// This community's tasks (presence poll, keepalive, inspect,
+    /// history catch-up): a child of the login scope, shut down when the
+    /// member leaves or the session ends (plan C4).
     #[serde(skip)]
-    pub presence_poll_shutdown_tx: Option<mpsc::Sender<()>>,
-
-    /// Shutdown sender for the DHT keepalive loop.
-    #[serde(skip)]
-    pub dht_keepalive_shutdown_tx: Option<mpsc::Sender<()>>,
+    pub tasks: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
 
     /// Tracks all DHT records opened for this community (VeilidChat-inspired lifecycle).
     /// Records are opened once during join and kept open until leave/logout.
     /// Prevents "record not open" errors and ensures proper cleanup.
     #[serde(skip)]
     pub open_community_records: CommunityRecords,
+
+    /// The records this community holds for the session, in the record
+    /// pool (plan C7.5): released on leave, closed by logout's pool
+    /// shutdown. See `services::community::leases`.
+    #[serde(skip)]
+    pub leases: rekindle_records::lease::CommunityLeases,
+
+    /// Whether the community's inspect, keepalive and presence loops have
+    /// started (once per session, from `leases::records_ready`).
+    #[serde(skip)]
+    pub loops_started: bool,
 
     /// Our locally persisted RSVPs for scheduled events.
     #[serde(skip)]
@@ -372,87 +391,23 @@ pub struct CategoryInfo {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ChannelType {
-    Text,
-    Voice,
-    Announcement,
-    Forum,
-    Stage,
-    Directory,
-    Media,
-    Events,
-    Dm,
-}
-
-impl AsRef<str> for ChannelType {
-    fn as_ref(&self) -> &str {
-        match self {
-            Self::Text => "text",
-            Self::Voice => "voice",
-            Self::Announcement => "announcement",
-            Self::Forum => "forum",
-            Self::Stage => "stage",
-            Self::Directory => "directory",
-            Self::Media => "media",
-            Self::Events => "events",
-            Self::Dm => "dm",
-        }
-    }
-}
-
-impl From<rekindle_protocol::dht::community::types::ChannelKind> for ChannelType {
-    fn from(kind: rekindle_protocol::dht::community::types::ChannelKind) -> Self {
-        use rekindle_protocol::dht::community::types::ChannelKind;
-        match kind {
-            ChannelKind::Text => Self::Text,
-            ChannelKind::Voice => Self::Voice,
-            ChannelKind::Announcement => Self::Announcement,
-            ChannelKind::Forum => Self::Forum,
-            ChannelKind::Stage => Self::Stage,
-            ChannelKind::Directory => Self::Directory,
-            ChannelKind::Media => Self::Media,
-            ChannelKind::Events => Self::Events,
-            ChannelKind::Dm => Self::Dm,
-        }
-    }
-}
-
-impl fmt::Display for ChannelType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_ref())
-    }
-}
-
-impl FromStr for ChannelType {
-    type Err = std::convert::Infallible;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "voice" => Self::Voice,
-            "announcement" => Self::Announcement,
-            "forum" => Self::Forum,
-            "stage" => Self::Stage,
-            "directory" => Self::Directory,
-            "media" => Self::Media,
-            "events" => Self::Events,
-            "dm" => Self::Dm,
-            _ => Self::Text,
-        })
-    }
-}
-
-impl rusqlite::types::ToSql for ChannelType {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
-        Ok(rusqlite::types::ToSqlOutput::Borrowed(
-            rusqlite::types::ValueRef::Text(self.as_ref().as_bytes()),
-        ))
-    }
-}
-
-impl rusqlite::types::FromSql for ChannelType {
-    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
-        let s = value.as_str()?;
-        Ok(s.parse().unwrap_or(Self::Text))
-    }
-}
+/// Canonical definition moved to Tier 1
+/// (`rekindle_types::channel::ChannelKind`) — this was a byte-identical
+/// second enum (same variants, same lowercase serde form) plus a
+/// `From<ChannelKind> for ChannelType` conversion that existed only to
+/// bridge the two and had no callers (confirmed by grep before
+/// deleting it: nothing in src-tauri ever constructed a `ChannelKind`
+/// to convert from). Aliased under this name so the ~12 existing call
+/// sites in this crate don't need to change.
+pub use rekindle_types::channel::ChannelKind as ChannelType;
+// `Display`/`FromStr` live on the canonical type now (same behavior:
+// this crate's old `FromStr` was infallible, silently mapping any
+// unrecognized string to `Text`; the canonical one is fallible, and
+// every caller here already does `.parse().unwrap_or(ChannelType::Text)`
+// — same net result). `ToSql`/`FromSql` can't move: implementing a
+// foreign trait (`rusqlite`'s) for a foreign type (`ChannelKind`, now
+// owned by `rekindle-types`, which the DB-storage traits don't belong
+// in anyway per the Tier 1 dependency rules) is an orphan-rule
+// violation. The two write sites (`channel_repo.rs`) go through
+// `.as_str()` and the one read site (`community_loader/rows.rs`) reads
+// a `String` and `.parse()`s it instead.

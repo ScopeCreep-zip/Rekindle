@@ -223,6 +223,41 @@
     flex-shrink: 0;
   }
 
+  /* Consent prompts (deep-link consent, session reset): a question the
+   * user answers explicitly, with the key they should check. */
+  .consent-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px 4px;
+  }
+
+  .consent-dialog-text {
+    margin: 0;
+    color: var(--color-xfire-text-primary);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .consent-dialog-key {
+    margin: 0;
+    color: var(--color-xfire-text-secondary);
+    font-size: 12px;
+  }
+
+  .consent-dialog-key code {
+    color: var(--color-xfire-text-primary);
+    font-family: var(--font-mono, monospace);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+  }
+
+  .consent-dialog-error {
+    margin: 0;
+    color: var(--color-xfire-busy);
+    font-size: 12px;
+  }
+
   .relay-section-subtitle {
     margin-top: 14px;
     margin-bottom: 6px;

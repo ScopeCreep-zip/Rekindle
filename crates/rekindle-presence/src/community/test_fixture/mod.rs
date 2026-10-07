@@ -27,10 +27,25 @@ pub use state::MockState;
 
 pub struct MockCommunityDeps {
     pub state: Mutex<MockState>,
+    /// An open session scope: the orchestrators run to completion.
+    pub scope: std::sync::Arc<rekindle_lifecycle::SessionScope>,
+}
+
+impl MockCommunityDeps {
+    /// A fixture over `state` inside an open session scope.
+    pub fn new(state: MockState) -> Self {
+        Self {
+            state: Mutex::new(state),
+            scope: rekindle_lifecycle::SessionScope::new("test", std::sync::Arc::new(|_| {})),
+        }
+    }
 }
 
 #[async_trait]
 impl CommunityPresenceDeps for MockCommunityDeps {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        std::sync::Arc::clone(&self.scope)
+    }
     fn my_pseudonym_for_community(&self, community_id: &str) -> String {
         let mut st = self.state.lock();
         st.calls_my_pseudonym.push(community_id.to_string());
@@ -58,10 +73,10 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         st.calls_channel_logs.push(community_id.to_string());
         st.channel_logs.clone()
     }
-    fn member_count_for_community(&self, community_id: &str) -> u32 {
+    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
         let mut st = self.state.lock();
-        st.calls_member_count.push(community_id.to_string());
-        st.member_count
+        st.calls_member_slots.push(community_id.to_string());
+        st.member_slots.clone()
     }
     fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
         self.state
@@ -82,14 +97,14 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             attempt,
         ));
     }
-    async fn read_all_channel_messages(
+    async fn read_channel_message_items(
         &self,
         record_key: &str,
-        member_count: u32,
-    ) -> Result<Vec<ChannelMessage>, PresenceError> {
+        member_slots: &[u32],
+    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
         let mut st = self.state.lock();
         st.calls_read_all
-            .push((record_key.to_string(), member_count));
+            .push((record_key.to_string(), member_slots.to_vec()));
         st.read_results
             .get(record_key)
             .cloned()
@@ -100,7 +115,8 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         &self,
         community_id: &str,
         channel_id: &str,
-        messages: Vec<ChannelMessage>,
+        _record_key: &str,
+        messages: Vec<(u32, ChannelMessage)>,
     ) {
         self.state.lock().catchups.push((
             community_id.to_string(),
@@ -231,17 +247,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .calls_run_tick
             .push(community_id.to_string());
         Ok(())
-    }
-    fn install_presence_poll_shutdown(
-        &self,
-        community_id: &str,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-    ) {
-        drop(shutdown_tx);
-        self.state
-            .lock()
-            .calls_install_shutdown
-            .push(community_id.to_string());
     }
     async fn ensure_registry_open(&self, community_id: &str) -> Result<Option<String>, String> {
         let mut st = self.state.lock();

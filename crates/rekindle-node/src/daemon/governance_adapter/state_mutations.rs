@@ -76,20 +76,23 @@ impl DaemonGovernanceAdapter<'_> {
     /// Persisted, because a counter that restarts at zero after a daemon
     /// restart would emit entries that lose every LWW merge against our
     /// own earlier writes.
-    pub(super) fn increment_lamport_impl(&self, community_id: &str) -> u64 {
+    pub(super) fn next_governance_lamport_impl(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
         let next = {
             let mut guard = self.ctx.session.write();
-            let Some(session) = guard.as_mut() else {
-                return 0;
-            };
-            let Some(membership) = session.communities.get_mut(community_id) else {
-                return 0;
-            };
-            membership.lamport_counter = membership.lamport_counter.saturating_add(1);
-            membership.lamport_counter
+            let membership = guard
+                .as_mut()
+                .and_then(|session| session.communities.get_mut(community_id))
+                .ok_or(rekindle_types::lamport::LamportError::UnknownCommunity)?;
+            let next = rekindle_types::lamport::LamportClock::new(membership.lamport_counter)
+                .increment()?;
+            membership.lamport_counter = next;
+            next
         };
         self.persist_session();
-        next
+        Ok(next)
     }
 
     /// Record a freshly created community (origin flow).
@@ -124,7 +127,7 @@ impl DaemonGovernanceAdapter<'_> {
                 .as_ref()
                 .map(|_| governance_keypair_label(&community.governance_key)),
             segment_index: Some(0),
-            lamport_counter: community.lamport_counter,
+            lamport_counter: community.governance_clock,
             mek_generation: community.mek.generation,
         };
 
@@ -194,7 +197,12 @@ impl DaemonGovernanceAdapter<'_> {
         let gov_label = governance_keypair_label(governance_key);
         let reg_label = registry_keypair_label(registry_key);
 
-        tokio::spawn(async move {
+        // The task ignores the stop token: an owner keypair must reach the
+        // keyring even when a lock starts mid-write, and the scope's
+        // shutdown waits for it.
+        let spawned = self.ctx.unlock_scope_or_closed().spawn_with_token(
+            "persist owner keypairs",
+            |_finish_first| async move {
             for (label, keypair, kind) in [
                 (gov_label, dht_owner_keypair, "governance"),
                 (reg_label, registry_owner_keypair, "registry"),
@@ -214,18 +222,9 @@ impl DaemonGovernanceAdapter<'_> {
                 }
             }
         });
-    }
-
-    pub(super) fn mark_open_channel_record_impl(&self, community_id: &str, record_key: String) {
-        self.ctx
-            .community_runtime
-            .mark_open_record(community_id, record_key);
-    }
-
-    pub(super) fn track_open_dht_records_impl(&self, community_id: &str, keys: &[String]) {
-        self.ctx
-            .community_runtime
-            .mark_open_records(community_id, keys);
+        if let Err(closed) = spawned {
+            tracing::error!(%closed, "owner keypairs not persisted: the identity is locked");
+        }
     }
 
     pub(super) fn register_governance_overflow_keys_impl(

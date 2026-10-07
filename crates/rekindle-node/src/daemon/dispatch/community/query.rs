@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::IpcResponse;
 
 use crate::daemon::dispatch::{state_error, DaemonContext};
 

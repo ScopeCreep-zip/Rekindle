@@ -1,0 +1,15 @@
+[package]
+name = "rekindle-idle"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform OS idle-time detection for Rekindle (auto-away)"
+
+[lints]
+workspace = true
+
+[dependencies]
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = [ "client", "staging" ] }

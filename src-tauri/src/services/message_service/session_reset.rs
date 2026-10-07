@@ -54,7 +54,7 @@ pub(super) fn handle_session_reset_payload(
         }
         MessagePayload::SessionResetDecline { reason } => {
             let display = state_helpers::friend_display_name(state, sender_hex)
-                .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
+                .unwrap_or_else(|| format!("{}...", rekindle_utils::text::prefix(sender_hex, 8)));
             let body = if reason.is_empty() {
                 format!("{display} declined your secure session reset request.")
             } else {
@@ -98,6 +98,16 @@ fn handle_session_reset_request(
         );
         return;
     }
+    // The user's only defence is comparing the safety number with the
+    // peer out-of-band; a request we cannot compute one for is never
+    // offered for acceptance.
+    let Some(safety_number) = compute_safety_number(state, sender_hex, prekey_bundle) else {
+        tracing::warn!(
+            from = %sender_hex,
+            "SessionResetRequest without a computable safety number — dropping",
+        );
+        return;
+    };
     // Stash the bundle for the user's accept_session_reset command
     // to consume. INSERT-OR-REPLACE: if the peer sent multiple reset
     // requests (e.g., a retry after their UI didn't see our reply),
@@ -108,10 +118,10 @@ fn handle_session_reset_request(
         .insert(sender_hex.to_string(), prekey_bundle.to_vec());
 
     let display_name = state_helpers::friend_display_name(state, sender_hex)
-        .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
-    let safety_number = compute_safety_number(state, sender_hex, prekey_bundle)
-        .unwrap_or_else(|| "<unavailable>".to_string());
+        .unwrap_or_else(|| format!("{}...", rekindle_utils::text::prefix(sender_hex, 8)));
 
+    // The prompt lives in the buddy list, which may be hidden to the tray.
+    crate::windows::surface_buddy_list(app_handle);
     crate::event_dispatch::emit_notification(
         app_handle,
         rekindle_types::subscription_events::NotificationEvent::SessionResetRequested {
@@ -174,7 +184,7 @@ fn handle_session_reset_accept(
                 "established responder Signal session from SessionResetAccept",
             );
             let display = state_helpers::friend_display_name(state, sender_hex)
-                .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
+                .unwrap_or_else(|| format!("{}...", rekindle_utils::text::prefix(sender_hex, 8)));
             crate::event_dispatch::emit_notification(
                 app_handle,
                 rekindle_types::subscription_events::NotificationEvent::SystemAlert {

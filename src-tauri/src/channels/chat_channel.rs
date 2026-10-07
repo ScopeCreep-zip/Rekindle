@@ -14,7 +14,7 @@ use serde::Serialize;
 /// carries `community`, `sequence` and `reply_to_sequence` — the DHT
 /// metadata the daemon has when it reads a message off a channel
 /// record. The desktop's five emitters do not have those: two are local
-/// echoes of a message we just sent (`emit_local_chat_event`,
+/// echoes of a message we just sent (the `rekindle_channel` echo,
 /// `emit_chat_event_local_impl`), and `SentChannelMessageEcho` carries
 /// no community id at all.
 ///

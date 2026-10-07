@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use rekindle_lifecycle::SessionScope;
+
 use crate::state::AppState;
 
 /// Replace the entire channel list for a community.
@@ -51,173 +53,54 @@ pub fn communities_with_governance_keys(state: &Arc<AppState>) -> Vec<(String, S
         .collect()
 }
 
-/// The MEK hierarchy for CHANNEL MEDIA (voice frames, video frames):
-/// the per-channel MEK when the §10.5 join/leave rotation has
-/// distributed one, otherwise the community MEK every member holds
-/// from join. This mirrors the text plane's
-/// `channel_or_community_mek_impl` — one key hierarchy for every
-/// channel payload. Stage channels never rotate (§10.7), so they
-/// resolve to the community MEK by construction. Returns
-/// `(key_bytes, generation)`.
-pub fn channel_media_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<([u8; 32], u64)> {
-    let channel = state
-        .channel_mek_cache
-        .lock()
-        .get(&(community_id.to_string(), channel_id.to_string()))
-        .map(|m| (*m.as_bytes(), m.generation()));
-    channel.or_else(|| {
-        state
-            .mek_cache
-            .lock()
-            .get(community_id)
-            .map(|m| (*m.as_bytes(), m.generation()))
-    })
+/// Whether `channel_id` is one of the community's stage channels.
+pub fn channel_is_stage(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> bool {
+    state
+        .communities
+        .read()
+        .get(community_id)
+        .and_then(|community| community.channels.iter().find(|ch| ch.id == channel_id))
+        .is_some_and(|channel| matches!(channel.channel_type, crate::state::ChannelType::Stage))
 }
 
-/// Like [`channel_media_mek`] but returns the FULL cached key (clone),
-/// preserving its provenance (rotator pseudonym + election rank). Use this
-/// when the key will be re-distributed (e.g. answering a `RequestMEK`) so the
-/// recipient learns the canonical rank and converges correctly — reconstructing
-/// via `from_bytes` would strip provenance and could let a requester later flip
-/// to a non-canonical same-generation key.
-pub fn channel_media_mek_full(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<rekindle_crypto::group::media_key::MediaEncryptionKey> {
-    let channel = state
-        .channel_mek_cache
-        .lock()
-        .get(&(community_id.to_string(), channel_id.to_string()))
-        .cloned();
-    channel.or_else(|| state.mek_cache.lock().get(community_id).cloned())
+/// The scope of a joined community's tasks: a child of the login scope,
+/// created on first use. A closed scope while logged out, for a community
+/// that is not joined, or once it was shut down (left), so work spawned
+/// for it is dropped (plan C4).
+pub fn community_scope(state: &AppState, community_id: &str) -> Arc<SessionScope> {
+    let Some(login) = super::login_scope(state) else {
+        return SessionScope::closed("community");
+    };
+    let mut communities = state.communities.write();
+    let Some(community) = communities.get_mut(community_id) else {
+        return SessionScope::closed("community");
+    };
+    Arc::clone(
+        community
+            .tasks
+            .get_or_insert_with(|| login.child("community")),
+    )
 }
 
-/// Retention window for the REPLACED channel key after a rotation —
-/// in-flight media encrypted under the old generation still decrypts
-/// during the transition. Matches Discord DAVE's previous-epoch
-/// ratchet retention ("up to ten seconds") and SFrame RFC 9605's
-/// "old key may be kept for some time ... deleted promptly".
-pub const PREV_MEK_RETENTION: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// The ONLY way a channel MEK enters the live cache. Refuses
-/// downgrades (an older-generation transfer must never replace the
-/// live key — rollback vector) and parks the key it replaces in the
-/// previous-generation slot for [`PREV_MEK_RETENTION`]. Returns
-/// `false` when the install was refused.
-pub fn install_channel_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    mek: rekindle_crypto::group::media_key::MediaEncryptionKey,
-) -> bool {
-    let key = (community_id.to_string(), channel_id.to_string());
-    let mut cache = state.channel_mek_cache.lock();
-    if let Some(cached) = cache.get(&key) {
-        if cached.generation() > mek.generation() {
-            tracing::debug!(
-                community = %community_id,
-                channel = %channel_id,
-                incoming = mek.generation(),
-                cached = cached.generation(),
-                "channel MEK older than cached — not applied to live cache"
-            );
-            return false;
-        }
-        if cached.generation() == mek.generation() {
-            // Same-generation collision (split-brain): two rotators minted
-            // different random keys for this generation. Keep the canonical
-            // one — the key whose minter has the lowest deterministic election
-            // rank (= the rightful primary rotator). Every peer applies this
-            // pure comparison and converges on the identical key, regardless of
-            // which transfer arrived first.
-            if !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
-                cached.election_rank().as_ref(),
-                mek.election_rank().as_ref(),
-            ) {
-                return false;
-            }
-            // Incoming is more canonical — park the superseded same-gen key so
-            // in-flight packets encrypted under it still decrypt during the
-            // brief convergence window (PREV_MEK_RETENTION).
-            state
-                .channel_mek_prev
-                .lock()
-                .insert(key.clone(), (cached.clone(), std::time::Instant::now()));
-        } else if cached.generation() < mek.generation() {
-            state
-                .channel_mek_prev
-                .lock()
-                .insert(key.clone(), (cached.clone(), std::time::Instant::now()));
-        }
-    }
-    cache.insert(key, mek);
-    true
+/// Spawn `fut` on the community's scope; dropped (and logged) when the
+/// community has no live scope.
+pub fn spawn_in_community<F>(state: &AppState, community_id: &str, name: &'static str, fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    community_scope(state, community_id).spawn_or_drop(name, fut);
 }
 
-/// The ONLY way a community-wide MEK enters the live cache. The
-/// community analogue of [`install_channel_mek`]: refuses downgrades (an
-/// older-generation transfer must never replace the live key — rollback
-/// vector) and resolves same-generation split-brain by keeping the key
-/// whose minter has the lowest deterministic election rank, so every peer
-/// converges on the identical key regardless of arrival order. Returns
-/// `false` when the install was refused.
-///
-/// Every write to `state.mek_cache` MUST go through here (rotation, received
-/// transfer, governance hydration, restore) so no path can re-introduce the
-/// last-write-wins divergence. (The community cache has no previous-key
-/// window like channels do; community-wide MEK rotations are rare and the
-/// 1:1 retention need is covered at the channel layer.)
-pub fn install_community_mek(
-    state: &Arc<AppState>,
+/// Spawn a token-watching task on the community's scope; dropped (and
+/// logged) when the community has no live scope.
+pub fn spawn_in_community_with_token<F, Fut>(
+    state: &AppState,
     community_id: &str,
-    mek: rekindle_crypto::group::media_key::MediaEncryptionKey,
-) -> bool {
-    let mut cache = state.mek_cache.lock();
-    if let Some(cached) = cache.get(community_id) {
-        if cached.generation() > mek.generation() {
-            tracing::debug!(
-                community = %community_id,
-                incoming = mek.generation(),
-                cached = cached.generation(),
-                "community MEK older than cached — not applied to live cache"
-            );
-            return false;
-        }
-        if cached.generation() == mek.generation()
-            && !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
-                cached.election_rank().as_ref(),
-                mek.election_rank().as_ref(),
-            )
-        {
-            return false;
-        }
-    }
-    cache.insert(community_id.to_string(), mek);
-    true
-}
-
-/// The replaced channel key, while still inside [`PREV_MEK_RETENTION`]
-/// — receive paths consult this on a generation mismatch so in-flight
-/// old-generation media decrypts instead of freezing every rotation.
-/// Expired entries are pruned on read.
-pub fn previous_channel_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<([u8; 32], u64)> {
-    let key = (community_id.to_string(), channel_id.to_string());
-    let mut prev = state.channel_mek_prev.lock();
-    match prev.get(&key) {
-        Some((_, installed)) if installed.elapsed() > PREV_MEK_RETENTION => {
-            prev.remove(&key);
-            None
-        }
-        Some((mek, _)) => Some((*mek.as_bytes(), mek.generation())),
-        None => None,
-    }
+    name: &'static str,
+    task: F,
+) where
+    F: FnOnce(tokio_util::sync::CancellationToken) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    community_scope(state, community_id).spawn_with_token_or_drop(name, task);
 }

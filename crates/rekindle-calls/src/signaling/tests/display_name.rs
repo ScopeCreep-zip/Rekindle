@@ -52,14 +52,8 @@ impl CallSignalingDeps for EmptyNameDeps {
     async fn send_to_peer(&self, p: &str, msg: MessagePayload) -> Result<(), CallError> {
         self.0.send_to_peer(p, msg).await
     }
-    async fn start_voice_session(
-        &self,
-        c: &str,
-        p: &str,
-        k: [u8; 32],
-        kind: CallKind,
-    ) -> Result<(), CallError> {
-        self.0.start_voice_session(c, p, k, kind).await
+    async fn start_voice_session(&self, c: &str, p: &str, kind: CallKind) -> Result<(), CallError> {
+        self.0.start_voice_session(c, p, kind).await
     }
     async fn shutdown_voice_session(&self) {
         self.0.shutdown_voice_session().await;
@@ -76,11 +70,11 @@ impl CallSignalingDeps for EmptyNameDeps {
     fn surface_window_for_call(&self, c: &str) {
         self.0.surface_window_for_call(c);
     }
+    fn present_active_call(&self, c: &str) {
+        self.0.present_active_call(c);
+    }
     fn emit_event(&self, e: CallSignalEvent) {
         self.0.emit_event(e);
-    }
-    fn register_background_handle(&self, h: tokio::task::JoinHandle<()>) {
-        self.0.register_background_handle(h);
     }
     fn spawn_incoming_call_timeout(&self, c: String, p: String, k: CallKind, e: u64) {
         self.0.spawn_incoming_call_timeout(c, p, k, e);

@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_presence_runtime::{
     get_community_members_inner, get_presence_policy_inner, send_channel_typing_inner,
     set_active_channel_inner, set_presence_policy_inner, update_community_presence_inner,
@@ -56,9 +55,9 @@ pub async fn set_presence_policy(
     community_id: String,
     policy: rekindle_types::presence::PresenceSharingPolicy,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    set_presence_policy_inner(state.inner(), pool.inner(), community_id, policy).await
+    let pool = state.db.current()?;
+    set_presence_policy_inner(state.inner(), &pool, community_id, policy).await
 }
 
 #[tauri::command]
@@ -73,9 +72,9 @@ pub async fn get_presence_policy(
 pub async fn get_community_members(
     community_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<MemberDto>, String> {
-    get_community_members_inner(state.inner(), pool.inner(), community_id).await
+    let pool = state.db.current()?;
+    get_community_members_inner(state.inner(), &pool, community_id).await
 }
 
 #[tauri::command]

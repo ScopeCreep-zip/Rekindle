@@ -305,7 +305,11 @@ impl VideoPacer {
             // (both data and parity fragments share the one counter).
             stamp_transport_seq(&mut released, self.next_transport_seq);
             self.next_transport_seq = self.next_transport_seq.wrapping_add(1);
-            out.push((front.community_id.clone(), front.channel_id.clone(), released));
+            out.push((
+                front.community_id.clone(),
+                front.channel_id.clone(),
+                released,
+            ));
             self.front_cursor += 1;
             self.sent_fragments += 1;
         }

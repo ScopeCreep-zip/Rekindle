@@ -9,9 +9,9 @@ license = "MIT"
 workspace = true
 
 [dependencies]
+regex = "1"
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
-regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 

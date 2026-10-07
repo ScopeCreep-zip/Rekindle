@@ -98,20 +98,10 @@ pub enum VideoEvent {
 /// buffer is NOT exposed through the trait — pass it as a parameter
 /// to crate-side fns instead.
 pub trait VideoDeps: Send + Sync + 'static {
-    /// The channel-media MEK (raw 32 bytes + generation) for envelope
-    /// encrypt/decrypt — §10.5 hierarchy: the per-channel MEK when the
-    /// join/leave rotation has distributed one, the community MEK
-    /// otherwise (stage channels never rotate and so resolve to the
-    /// community key). `None` if neither is cached.
-    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)>;
-
-    /// The key the live channel MEK replaced, while inside the
-    /// rotation retention window (~10s — SFrame RFC 9605 / Discord
-    /// DAVE previous-epoch retention). Consulted on a generation
-    /// mismatch so in-flight old-generation frames decrypt instead of
-    /// freezing the tile on every membership rotation.
-    fn previous_channel_mek(&self, community_id: &str, channel_id: &str)
-        -> Option<([u8; 32], u64)>;
+    /// Community and channel keys (plan D6). A channel's media is under
+    /// `scope_for_media`: its own key for a voice channel, the community
+    /// key for a stage.
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
 
     /// Derive the Ed25519 SigningKey for the community pseudonym (the
     /// fragment-level signature uses this). Returns `None` if the
@@ -140,10 +130,12 @@ pub trait VideoDeps: Send + Sync + 'static {
     /// channel is dropped before reassembly / decrypt / emit.
     fn local_active_channel(&self, community_id: &str) -> Option<String>;
 
-    /// Increment the per-community Lamport clock and return the new
-    /// value. Used by `TopologyChange` writes so lamport-LWW dedup
-    /// works at every receiver.
-    fn increment_lamport(&self, community_id: &str) -> u64;
+    /// Next message-clock value. Used by `TopologyChange` writes so
+    /// lamport-LWW dedup works at every receiver.
+    fn increment_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     /// A reassembled frame failed to decrypt under our current MEK —
     /// the sender is on a newer generation (voice MEK rotates on every

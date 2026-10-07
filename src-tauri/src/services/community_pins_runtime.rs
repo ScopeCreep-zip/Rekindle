@@ -6,10 +6,10 @@ use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayl
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,7 +64,7 @@ pub fn unpin_message_inner(
 
 pub async fn get_channel_pins_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<PinnedMessageInfoDto>, String> {

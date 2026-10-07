@@ -11,13 +11,10 @@
 //! Typed reads/writes via `dht/profile.rs`. Raw DHT I/O via
 //! `broadcast::dht_writes` for profile subkey writes.
 
-use std::sync::Arc;
-
-use parking_lot::RwLock;
 use tracing::info;
 
 use crate::broadcast::node::TransportNode;
-use crate::crypto::mek::{Mek, MekCache};
+use crate::crypto::mek::Mek;
 use crate::error::{Result, TransportError};
 
 fn parse_pseudonym_pub(hex_str: &str) -> Result<[u8; 32]> {
@@ -29,12 +26,17 @@ fn parse_pseudonym_pub(hex_str: &str) -> Result<[u8; 32]> {
     Ok(arr)
 }
 
-pub fn receive_mek_transfer_payload(
+/// Unwrap a MEK delivered by a rotator.
+///
+/// Returns the key without caching it: installing a key is protocol
+/// policy (refuse a downgrade, keep the lowest election rank at an equal
+/// generation — `rekindle_mek_rotation::ChannelMekCache::insert`), which
+/// the caller applies.
+pub fn unwrap_mek_transfer_payload(
     transfer: &crate::payload::rpc::MekTransferPayload,
     signing_key_bytes: &[u8; 32],
     governance_key: &str,
-    mek_cache: &Arc<RwLock<MekCache>>,
-) -> Result<u64> {
+) -> Result<Mek> {
     let rotator_pub = parse_pseudonym_pub(&transfer.rotator_pseudonym_hex)?;
     let our_pseudonym =
         crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, governance_key);
@@ -43,12 +45,17 @@ pub fn receive_mek_transfer_payload(
     let mek = Mek::from_wire_bytes(&mek_wire).ok_or_else(|| TransportError::MekUnwrapFailed {
         reason: "invalid MEK wire bytes".into(),
     })?;
-    let gen = mek.generation();
-    mek_cache
-        .write()
-        .insert(governance_key, &transfer.channel_id, mek);
-    info!(governance_key, channel_id = %transfer.channel_id, generation = gen, "MEK cached");
-    Ok(gen)
+    if mek.generation() != transfer.generation {
+        return Err(TransportError::MekUnwrapFailed {
+            reason: format!(
+                "wrapped key is generation {}, transfer names {}",
+                mek.generation(),
+                transfer.generation
+            ),
+        });
+    }
+    info!(governance_key, scope = %transfer.scope, generation = mek.generation(), "MEK unwrapped");
+    Ok(mek)
 }
 
 // `wrap_meks_for_member` lived here: the v1.0 flow where a coordinator
@@ -87,12 +94,11 @@ pub async fn replenish_prekeys(
             reason: format!("prekey bundle: {e}"),
         })?;
     let byte_count = bundle_bytes.len();
-    crate::broadcast::dht_writes::set(
+    crate::broadcast::dht_writes::set_own_profile_subkey(
         node,
         profile_dht_key,
         crate::payload::dht_types::PROFILE_SUBKEY_PREKEY_BUNDLE,
         bundle_bytes,
-        None,
     )
     .await?;
     let count = u32::try_from(byte_count).unwrap_or(u32::MAX);

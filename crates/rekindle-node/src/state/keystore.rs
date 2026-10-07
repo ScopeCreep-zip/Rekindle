@@ -12,6 +12,7 @@
 //! [RC-16] All secret material implements ZeroizeOnDrop.
 //! [RC-10] No unsafe code.
 
+use rekindle_types::domains;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 const SERVICE: &str = "rekindle";
@@ -57,9 +58,9 @@ impl std::fmt::Debug for SigningKeyHandle {
 ///
 /// Runs on a blocking thread because the `keyring` crate is synchronous.
 pub async fn load_signing_key() -> anyhow::Result<SigningKeyHandle> {
-    let hex_str = load_keyring_entry(KEY_SIGNING)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("signing key not found in keyring — run: rekindle init"))?;
+    let hex_str = load_keyring_entry(KEY_SIGNING).await?.ok_or_else(|| {
+        anyhow::anyhow!("signing key not found in keyring — initialize an identity first")
+    })?;
 
     let raw = hex::decode(&hex_str)
         .map_err(|e| anyhow::anyhow!("signing key in keyring is not valid hex: {e}"))?;
@@ -346,7 +347,7 @@ fn derive_machine_key() -> [u8; 32] {
     let mut input = machine_id.trim().as_bytes().to_vec();
     input.extend_from_slice(&uid.to_le_bytes());
     let base = blake3::hash(&input);
-    let derived = blake3::keyed_hash(base.as_bytes(), b"rekindle-disk-fallback-v1");
+    let derived = blake3::keyed_hash(base.as_bytes(), domains::DISK_FALLBACK_KEY.as_bytes());
     *derived.as_bytes()
 }
 

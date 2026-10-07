@@ -117,10 +117,11 @@ is established.
 ### Implementation
 
 The `rekindle-crypto` crate provides `SignalSessionManager` which wraps the
-Signal protocol primitives with vault-backed key storage (the
-`keystore/signal.rs` adapter on top of `rekindle-vault`). Session state is
-persisted in the `signal_sessions` SQLite table. PreKeys are managed in the
-`prekeys` table.
+Signal protocol primitives with vault-backed key storage
+(`rekindle_vault::typed::signal`). Sessions, prekeys and trusted peer
+identities are persisted in the vault; the `signal_sessions` and `prekeys`
+SQLite tables are unused, and plan E2.3 replaces both with
+`ratchet_sessions` / `signal_prekeys`.
 
 ## Layer 3: Group / DM Media Encryption Key (MEK)
 
@@ -147,7 +148,8 @@ group DMs the MEK is wrapped per recipient with X25519 (since ECDH is
 pairwise) and distributed in the `GroupDmInvite` payload. The
 `AppState.dm_mek_cache` holds the genesis MEK plus every materialized
 generation — receivers must keep historical MEKs because each envelope
-carries its `mek_generation`.
+carries its `mek_generation`. (Voice frames carry the generation's low
+bits in their SFrame KID instead; see `architecture/voice.md`.)
 
 ### MEK Rotation
 

@@ -182,7 +182,6 @@ impl CallSignalingDeps for MockDeps {
         &self,
         call_id: &str,
         _peer: &str,
-        _call_key: [u8; 32],
         kind: CallKind,
     ) -> Result<(), CallError> {
         let mut s = self.state.lock();
@@ -201,6 +200,7 @@ impl CallSignalingDeps for MockDeps {
     }
     fn persist_missed_call(&self, _: &str, _: &str, _: CallKind, _: u64) {}
     fn surface_window_for_call(&self, _: &str) {}
+    fn present_active_call(&self, _: &str) {}
     fn emit_event(&self, event: CallSignalEvent) {
         let mut s = self.state.lock();
         let label = match &event {
@@ -222,7 +222,6 @@ impl CallSignalingDeps for MockDeps {
         s.call_log.push(MockEvent::Emit(label.to_string()));
         s.emitted.push(event);
     }
-    fn register_background_handle(&self, _handle: tokio::task::JoinHandle<()>) {}
     fn spawn_incoming_call_timeout(
         &self,
         call_id: String,
@@ -267,7 +266,8 @@ pub(super) fn seed_outgoing_call(deps: &MockDeps, call_id: &str, peer_hex: &str,
         expires_at_ms: 9_999_999_999_999,
         my_x25519_secret: Some(my_secret),
         peer_x25519_pub: None,
-        call_key: None,
+        media_secret: None,
+        media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
         peer_video_decode_codecs: Vec::new(),
     });
 }

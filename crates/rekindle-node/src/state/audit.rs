@@ -11,7 +11,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ipc::message::SecurityLevel;
+use rekindle_ipc::message::SecurityLevel;
 
 /// A single audit log entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]

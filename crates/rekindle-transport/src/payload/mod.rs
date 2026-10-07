@@ -7,4 +7,3 @@ pub mod dht_types;
 pub mod dm;
 pub mod gossip;
 pub mod rpc;
-pub mod voice;

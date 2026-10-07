@@ -6,25 +6,23 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_files::{FilesError, FilesEvent};
 use rekindle_protocol::dht::community::channel_record::{
     write_member_attachment_cached, write_member_message, ChannelAttachmentCached, ChannelMessage,
 };
-use rekindle_protocol::dht::DHTManager;
 
 use crate::channels::CommunityEvent;
-use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 /// Shared prep for `write_channel_message_to_smpl` and
 /// `write_attachment_cached_to_smpl`: parse the slot keypair string,
-/// fetch a `RoutingContext`, construct a `DHTManager`, and look up
+/// borrow the record from the session's record pool, and look up
 /// `(pseudonym, signing_key)` for the community.
 pub(super) struct DhtWriterContext {
     pub(super) writer: veilid_core::KeyPair,
-    pub(super) mgr: DHTManager,
+    pub(super) pool: std::sync::Arc<rekindle_protocol::dht::pool::RecordPool>,
     pub(super) author_pseudo: rekindle_types::id::PseudonymKey,
     pub(super) signing_key: ed25519_dalek::SigningKey,
 }
@@ -37,14 +35,12 @@ pub(super) fn build_dht_writer_context(
     let writer = slot_keypair
         .parse::<veilid_core::KeyPair>()
         .map_err(|e| FilesError::Transport(format!("invalid slot keypair: {e}")))?;
-    let rc = state_helpers::safe_routing_context(state)
-        .ok_or_else(|| FilesError::Transport("not attached".into()))?;
-    let mgr = DHTManager::new(rc);
+    let pool = state_helpers::record_pool(state).map_err(FilesError::Transport)?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(state, community_id).map_err(FilesError::Transport)?;
     Ok(DhtWriterContext {
         writer,
-        mgr,
+        pool,
         author_pseudo,
         signing_key,
     })
@@ -59,8 +55,8 @@ pub(super) async fn write_channel_message_impl(
     message: &ChannelMessage,
 ) -> Result<(), FilesError> {
     let ctx = build_dht_writer_context(state, community_id, slot_keypair)?;
-    write_member_message(
-        &ctx.mgr,
+    let written = write_member_message(
+        &ctx.pool,
         channel_log_key,
         slot_index,
         ctx.writer,
@@ -68,8 +64,8 @@ pub(super) async fn write_channel_message_impl(
         &ctx.signing_key,
         message,
     )
-    .await
-    .map_err(|e| FilesError::Transport(format!("SMPL channel write: {e}")))
+    .await;
+    held_is_written(written, "SMPL channel write")
 }
 
 pub(super) async fn write_attachment_cached_impl(
@@ -81,8 +77,8 @@ pub(super) async fn write_attachment_cached_impl(
     cached: &ChannelAttachmentCached,
 ) -> Result<(), FilesError> {
     let ctx = build_dht_writer_context(state, community_id, slot_keypair)?;
-    write_member_attachment_cached(
-        &ctx.mgr,
+    let written = write_member_attachment_cached(
+        &ctx.pool,
         channel_log_key,
         slot_index,
         ctx.writer,
@@ -90,49 +86,28 @@ pub(super) async fn write_attachment_cached_impl(
         &ctx.signing_key,
         cached,
     )
-    .await
-    .map_err(|e| FilesError::Transport(format!("AttachmentCached SMPL write: {e}")))
+    .await;
+    held_is_written(written, "AttachmentCached SMPL write")
 }
 
-/// 3-tier MEK cascade matching the pre-Phase-15 `unwrap_fek_for_offer`
-/// body: keystore (historical) → channel_mek_cache → mek_cache.
-pub(super) fn historical_channel_mek_impl(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    generation: u64,
-) -> Option<MediaEncryptionKey> {
-    // Tier 1: keystore lookup at the requested generation.
-    let keystore = &state.keystore;
-    let guard = keystore.lock();
-    let from_keystore = guard.as_ref().and_then(|ks| {
-        crate::keystore::load_channel_mek_generation(ks, community_id, channel_id, generation)
-    });
-    drop(guard);
-    if let Some(mek) = from_keystore {
-        return Some(mek);
+/// A channel write the record pool holds (a miss, or one logout cut short)
+/// lands when it can (plan C7.13); file entries carry no delivery status,
+/// so held is written.
+fn held_is_written(
+    written: Result<
+        rekindle_protocol::dht::community::channel_record::AppendOutcome,
+        rekindle_protocol::ProtocolError,
+    >,
+    what: &str,
+) -> Result<(), FilesError> {
+    match written {
+        Ok(_) | Err(rekindle_protocol::ProtocolError::PoolClosed) => Ok(()),
+        Err(e) => Err(FilesError::Transport(format!("{what}: {e}"))),
     }
-
-    // Tier 2: per-channel cache, only if it matches the generation.
-    let cache = state.channel_mek_cache.lock();
-    if let Some(mek) = cache.get(&(community_id.to_string(), channel_id.to_string())) {
-        if mek.generation() == generation {
-            return Some(mek.clone());
-        }
-    }
-    drop(cache);
-
-    // Tier 3: community MEK at the requested generation.
-    state
-        .mek_cache
-        .lock()
-        .get(community_id)
-        .filter(|m| m.generation() == generation)
-        .cloned()
 }
 
 pub(super) async fn insert_channel_message_full_impl(
-    pool: &DbPool,
+    pool: &Db,
     row: rekindle_files::InsertChannelMessage<'_>,
 ) -> Result<(), FilesError> {
     let mek_generation = i64::try_from(row.mek_generation).unwrap_or(i64::MAX);
@@ -170,7 +145,7 @@ pub(super) async fn insert_channel_message_full_impl(
 }
 
 pub(super) async fn persist_local_path_impl(
-    pool: &DbPool,
+    pool: &Db,
     owner_key: &str,
     channel_id: &str,
     attachment_id_hex: &str,
@@ -217,7 +192,7 @@ pub(super) async fn persist_local_path_impl(
 
 pub(super) fn persist_slowmode_state_impl(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     community_id: &str,
     channel_id: &str,
     now_ms: i64,
@@ -258,12 +233,10 @@ pub(super) fn map_files_event(event: FilesEvent) -> CommunityEvent {
             community_id,
             channel_id,
             attachment_id_hex,
-            local_path,
         } => CommunityEvent::AttachmentDownloaded {
             community_id,
             channel_id,
             attachment_id: attachment_id_hex,
-            local_path,
         },
         FilesEvent::ExpressionAssetReady {
             community_id,

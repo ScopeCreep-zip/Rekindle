@@ -23,12 +23,12 @@ pub(in crate::signaling) fn handle_voice_leave(
         let cid = community_id.to_string();
         let ch_id = channel_id.clone();
         let sender = sender_pseudonym.to_string();
-        let handle = tokio::spawn(async move {
-            deps_rot
-                .rotate_voice_mek_for_membership(cid, ch_id, sender, false)
-                .await;
-        });
-        deps.register_background_handle(handle);
+        deps.scope()
+            .spawn_or_drop("voice mek rotate (leave)", async move {
+                deps_rot
+                    .rotate_voice_mek_for_membership(cid, ch_id, sender, false)
+                    .await;
+            });
     }
 
     // §10.6 channel scoping — mirror of the join gate: a leave in a
@@ -58,10 +58,9 @@ pub(in crate::signaling) fn handle_voice_leave(
         let transport = Arc::clone(&transport);
         let sender_key = sender_key.clone();
         let my_pk = my_pk.clone();
-        let handle = tokio::spawn(async move {
+        deps.scope().spawn_or_drop("voice leave apply", async move {
             voice_leave_apply(&*deps_task, &cid, &ch_id, transport, sender_key, my_pk).await;
         });
-        deps.register_background_handle(handle);
     }
 
     deps.emit_event(CommunityVoiceEvent::VoiceLeave {

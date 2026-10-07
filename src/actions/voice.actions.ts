@@ -138,7 +138,10 @@ export async function handleJoinVoice(channelId: string, communityId?: string): 
       });
     }
   } catch (e) {
+    // The backend's reason, shown as given (e.g. "media route unavailable":
+    // voice never falls back to the general route, plan C7.9c).
     console.error("Failed to join voice:", e);
+    addToast(`Couldn't join voice: ${String(e)}`, "error");
   }
 }
 

@@ -8,8 +8,6 @@
 
 use std::sync::Arc;
 
-use tauri::Manager;
-
 use crate::state::AppState;
 
 pub async fn build_bootstrap_response(
@@ -23,11 +21,7 @@ pub async fn build_bootstrap_response(
         .read()
         .clone()
         .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()
-        .ok_or_else(|| "DbPool state missing".to_string())?
-        .inner()
-        .clone();
+    let pool = state.db.current()?;
     let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
         Arc::clone(state),
         app_handle,

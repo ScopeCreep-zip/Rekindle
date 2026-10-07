@@ -8,7 +8,6 @@ use rekindle_types::permissions;
 use tauri::State;
 
 use crate::commands::community::require_permission;
-use crate::db::DbPool;
 use crate::services::community::analytics;
 use crate::state::SharedState;
 
@@ -16,8 +15,8 @@ use crate::state::SharedState;
 pub async fn get_community_analytics(
     community_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<CommunityAnalytics, String> {
+    let pool = state.db.current()?;
     require_permission(state.inner(), &community_id, permissions::VIEW_INSIGHTS)?;
-    analytics::compute_community_analytics(state.inner(), pool.inner(), &community_id).await
+    analytics::compute_community_analytics(state.inner(), &pool, &community_id).await
 }

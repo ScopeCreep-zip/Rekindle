@@ -3,17 +3,32 @@
 
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::state::SharedState;
-use crate::{db, event_dispatch, friend_store_sqlite, services, shortcuts, tray};
+use crate::{event_dispatch, services, shortcuts, tray};
+
+/// Grant the debug-only commands (compiled out of release) to their
+/// windows. The capability files live in `capabilities-dev/`, outside the
+/// `capabilities/` directory `tauri-build` validates, so a release build
+/// neither embeds nor can resolve them.
+#[cfg(debug_assertions)]
+fn add_dev_capabilities(app: &tauri::App) -> tauri::Result<()> {
+    app.add_capability(include_str!("../capabilities-dev/dev-settings.json"))?;
+    app.add_capability(include_str!("../capabilities-dev/dev-community.json"))
+}
 
 /// Run all one-time app setup. Invoked from the `tauri::Builder::setup` closure.
 pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::error::Error>> {
     // Store app handle in AppState so background services can emit events
     *state.app_handle.write() = Some(app.handle().clone());
-    services::community::start_write_retry_worker(Arc::clone(state));
+    #[cfg(debug_assertions)]
+    add_dev_capabilities(app)?;
+    // The first window. It is built here rather than declared in
+    // `tauri.conf.json` so it passes through `windows::base_builder` and
+    // its navigation guard like every other window.
+    crate::windows::open_login(app.handle(), None)?;
 
     tray::setup_tray(app)?;
 
@@ -53,10 +68,15 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // Register global keyboard shortcuts (plugin registered here for state access)
     shortcuts::register(app, state)?;
 
-    // Ensure config directory exists on first launch
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("failed to create config dir: {e}"))?;
+    // The data root every host shares (plan C5): the same folders Tauri's
+    // `app_{data,config}_dir` name, created owner-only. The node lock makes
+    // the desktop and `rekindled` refuse to run one node twice on a root
+    // (F3); it is held for the process's lifetime.
+    let root = rekindle_db::paths::DataRoot::resolve()?;
+    root.create_dirs()
+        .map_err(|e| format!("failed to create the data directories: {e}"))?;
+    app.manage(rekindle_db::lock::NodeLock::acquire(&root.data)?);
+    let config_dir = root.config.clone();
 
     // Phase 2 — detect leftover Stronghold-era identity files. We DO
     // NOT auto-delete (the user can remove them manually once they've
@@ -95,56 +115,52 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
             },
             config_dir.display(),
         );
-        // Direct emit, not `emit_notification`: this runs before
-        // `spawn_dispatch_loop`, so the queue would hold it rather than
-        // deliver it. Payload shape matches the rest of the channel.
-        let _ = app.handle().emit(
-            "notification-event",
-            &rekindle_types::subscription_events::SubscriptionEvent::Notification(
-                rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-                    title: "Identity format upgraded".to_string(),
-                    body,
-                },
-            ),
+        // Queued until the buddy list subscribes; the router holds no
+        // backlog, so it reaches only a buddy list that is already open.
+        event_dispatch::emit_notification(
+            app.handle(),
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title: "Identity format upgraded".to_string(),
+                body,
+            },
         );
     }
 
     // Resolve the Lost Cargo cache root (per-community sub-dirs are
     // created on first use). Stays None if the platform doesn't expose
     // an app data dir — file uploads will fail clearly in that case.
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        let cache_root = data_dir.join("file_cache");
-        if let Err(e) = std::fs::create_dir_all(&cache_root) {
-            tracing::warn!(error = %e, path = %cache_root.display(), "failed to create file_cache dir");
-        } else {
-            *state.file_cache_root.write() = Some(cache_root);
-        }
+    let cache_root = root.file_cache();
+    if let Err(e) = std::fs::create_dir_all(&cache_root) {
+        tracing::warn!(error = %e, path = %cache_root.display(), "failed to create file_cache dir");
+    } else {
+        *state.file_cache_root.write() = Some(cache_root);
     }
 
     // Initialize SQLite database pool
-    let db_path = config_dir.join("rekindle.db");
-    let db_path_str = db_path.to_string_lossy().to_string();
-    let db::DbOpenResult { pool, schema_reset } = db::create_pool(&db_path_str)?;
+    let db_path = root.database();
+    let rekindle_db::DbOpenResult {
+        db: pool,
+        schema_reset,
+    } = rekindle_db::open(&db_path).map_err(|e| e.to_string())?;
 
     // When the schema version changes, all SQLite tables are dropped and
     // recreated.  Stronghold files and Veilid's local storage must also
     // be wiped so there's no orphaned state (stale DHT records, old
     // private keys whose identity rows no longer exist).
     if schema_reset {
-        wipe_dependent_storage(&config_dir, app);
+        wipe_dependent_storage(&root);
     }
 
     // Phase 2 Track A — wire SqliteFriendStore into AppState BEFORE
     // the Veilid dispatch loop spawns. This eliminates the
     // dispatch-before-hydration race that caused
     // "not friends even though we are" AEAD failures.
-    let pool_for_friend_store = Arc::new(pool.clone());
-    let friend_store: Arc<dyn rekindle_transport::FriendStore> = Arc::new(
-        friend_store_sqlite::SqliteFriendStore::new(pool_for_friend_store),
-    );
+    let friend_store: Arc<dyn rekindle_types::friend_store::FriendStore> =
+        Arc::new(rekindle_db::SqliteFriendStore::new(pool.clone()));
     *state.friend_store.write() = Some(friend_store);
 
-    app.manage(pool);
+    state.db.set(pool);
+    app.manage(root);
 
     // Manage the Stronghold keystore handle (unlocked on login/create_identity).
     // AppState owns the same `Arc<Mutex<Option<StrongholdKeystore>>>` so
@@ -174,14 +190,13 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
             loop {
                 match rx.recv().await {
                     Ok(next) => {
-                        // Phase 5 — payload shape per plan: { state, at_ms }.
-                        // Frontend renders state badges live + timestamps for
-                        // diagnostic "last transition" displays.
-                        let payload = serde_json::json!({
-                            "state": next,
-                            "at_ms": rekindle_utils::timestamp_ms_i64(),
-                        });
-                        event_dispatch::emit_live(&app_for_lifecycle, "lifecycle-event", &payload);
+                        event_dispatch::emit(
+                            &app_for_lifecycle,
+                            event_dispatch::WebviewEvent::Lifecycle {
+                                state: next,
+                                at_ms: rekindle_utils::timestamp_ms_i64(),
+                            },
+                        );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         // Buffer overflowed (>64 queued transitions). Log
@@ -233,58 +248,59 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
         }
     });
 
-    // Phase 23.A — spawn the single event-dispatch loop. Every
-    // subsequent `emit_live` / `emit_journaled` call pushes
-    // through this loop's mpsc; this is the only place
-    // `app.emit()` runs inside the app.
-    event_dispatch::spawn_dispatch_loop(app.handle().clone(), &state.event_dispatch);
-
-    // Emit startup notification
-    let notification = rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-        title: "Rekindle".to_string(),
-        body: "Application started successfully".to_string(),
-    };
-    event_dispatch::emit_now(
-        state,
-        "notification-event",
-        &rekindle_types::subscription_events::SubscriptionEvent::Notification(notification),
-    );
+    // The single event-dispatch task: every webview event goes through
+    // it to the windows in its audience (`event_router`).
+    event_dispatch::spawn_dispatch_loop(app.handle().clone(), state);
 
     tracing::info!("Rekindle started");
     Ok(())
 }
 
-/// Wipe Stronghold snapshot files and Veilid local storage that are now
-/// orphaned after a schema reset.  Without this, old `.stronghold` files
-/// and cached DHT records would cause "wrong password" and "record already
+/// Whether `name` is a `rekindle-vault` file or its salt sidecar —
+/// `{name}.vault` or `{name}.vault.salt` (see
+/// `crates/rekindle-vault/src/store.rs`), case-insensitively.
+fn is_vault_file(name: &std::path::Path) -> bool {
+    let Some(ext) = name.extension().and_then(std::ffi::OsStr::to_str) else {
+        return false;
+    };
+    if ext.eq_ignore_ascii_case("vault") {
+        return true;
+    }
+    ext.eq_ignore_ascii_case("salt")
+        && name
+            .file_stem()
+            .map(std::path::Path::new)
+            .and_then(|stem| stem.extension())
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case("vault"))
+}
+
+/// Wipe `rekindle-vault` files and Veilid local storage that are now
+/// orphaned after a schema reset. Without this, old `.vault` files and
+/// cached DHT records would cause "wrong password" and "record already
 /// exists" errors on re-login.
-fn wipe_dependent_storage(config_dir: &std::path::Path, app: &tauri::App) {
-    // 1. Remove all .stronghold files and orphaned temp files in config dir.
-    //    Temp files are created by Stronghold's atomic write (encrypt_file)
-    //    and have the pattern `{name}.stronghold.{hex_salt}`.
-    if let Ok(entries) = std::fs::read_dir(config_dir) {
+fn wipe_dependent_storage(root: &rekindle_db::paths::DataRoot) {
+    // 1. Remove all vault files and their salt sidecars in config dir.
+    if let Ok(entries) = std::fs::read_dir(&root.config) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.ends_with(".stronghold") || name.contains(".stronghold.") {
+            if is_vault_file(&path) {
                 if let Err(e) = std::fs::remove_file(&path) {
-                    tracing::warn!(path = %path.display(), error = %e, "failed to remove orphaned stronghold file");
+                    tracing::warn!(path = %path.display(), error = %e, "failed to remove orphaned vault file");
                 } else {
-                    tracing::info!(path = %path.display(), "removed orphaned stronghold file");
+                    tracing::info!(path = %path.display(), "removed orphaned vault file");
                 }
             }
         }
     }
 
     // 2. Remove Veilid local storage directory (DHT record cache, table store, etc.)
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        let veilid_dir = data_dir.join("veilid");
-        if veilid_dir.exists() {
-            if let Err(e) = std::fs::remove_dir_all(&veilid_dir) {
-                tracing::warn!(path = %veilid_dir.display(), error = %e, "failed to remove veilid storage");
-            } else {
-                tracing::info!(path = %veilid_dir.display(), "removed orphaned veilid storage");
-            }
+    let veilid_dir = root.veilid();
+    if veilid_dir.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&veilid_dir) {
+            tracing::warn!(path = %veilid_dir.display(), error = %e, "failed to remove veilid storage");
+        } else {
+            tracing::info!(path = %veilid_dir.display(), "removed orphaned veilid storage");
         }
     }
 

@@ -552,8 +552,6 @@ pub enum ControlPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         description: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        image_url: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         site_name: Option<String>,
         fetched_at: u64,
     },

@@ -6,37 +6,33 @@
 //! and `RoleDefinition` governance entries — the caller now builds the
 //! display types from merged CRDT state directly.
 
-use crate::crypto::mek::MekCache;
-use crate::payload::dht_types::ChannelMessage;
+use rekindle_secrets::channel_body::BodyPosition;
+use rekindle_types::channel_keys::{ChannelKeyProvider, KeyEpoch, KeyScope};
 
-/// Abbreviate a hex key for display: first 8 + "…" + last 4.
-pub(super) fn abbreviate_key(key: &str) -> String {
-    if key.len() > 12 {
-        format!("{}…{}", &key[..8], &key[key.len() - 4..])
-    } else {
-        key.to_string()
-    }
-}
+use crate::payload::dht_types::ChannelMessage;
 
 /// Decrypt a channel message body using the MEK cache.
 ///
 /// Returns `(body, is_encrypted, needs_mek_generation)`.
 ///
-/// If the MEK for the message's generation is cached, decrypts and returns
-/// the UTF-8 body. If the MEK is missing, returns a placeholder body with
-/// `is_encrypted = true` and `needs_mek = Some(generation)` so the caller
-/// can request the MEK and retry.
+/// Channel text is under the channel's text scope (plan D6) at exactly the
+/// message's generation, bound to the record, subkey and Lamport position
+/// it was read from. If that generation is not cached, returns a
+/// placeholder with `needs_mek = Some(generation)` so the caller can
+/// request it; no other key is tried.
 pub(super) fn decrypt_channel_body(
-    mek_cache: &MekCache,
+    keys: &dyn ChannelKeyProvider,
     community_id: &str,
-    channel_id: &str,
+    scope: KeyScope,
+    channel_record_key: &str,
+    subkey_index: u32,
     msg: &ChannelMessage,
 ) -> (String, bool, Option<u64>) {
     if msg.ciphertext.is_empty() {
         return (String::new(), false, None);
     }
 
-    let Some(mek) = mek_cache.get_generation(community_id, channel_id, msg.mek_generation) else {
+    let Some(key) = keys.key(community_id, scope, KeyEpoch(msg.mek_generation)) else {
         return (
             format!("[encrypted, MEK gen {} not cached]", msg.mek_generation),
             true,
@@ -44,7 +40,12 @@ pub(super) fn decrypt_channel_body(
         );
     };
 
-    match mek.decrypt(&msg.ciphertext) {
+    let at = BodyPosition {
+        channel_record_key,
+        subkey_index,
+        lamport_ts: msg.lamport_ts,
+    };
+    match rekindle_secrets::channel_body::decrypt_channel_body(&key, at, &msg.ciphertext) {
         Ok(plaintext) => {
             let body = String::from_utf8_lossy(&plaintext).into_owned();
             (body, false, None)
@@ -53,7 +54,7 @@ pub(super) fn decrypt_channel_body(
             tracing::debug!(
                 generation = msg.mek_generation,
                 error = %e,
-                "MEK decryption failed — key may be stale or message corrupt"
+                "channel body failed to authenticate under its generation's key"
             );
             (
                 format!("[decryption failed, MEK gen {}]", msg.mek_generation),

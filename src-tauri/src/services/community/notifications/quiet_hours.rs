@@ -4,16 +4,16 @@
 
 use std::sync::Arc;
 
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 use super::QuietHoursSettings;
 
 pub async fn set_quiet_hours(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     settings: QuietHoursSettings,
 ) -> Result<(), String> {
     if settings.start_hour > 23 || settings.end_hour > 23 {
@@ -53,7 +53,7 @@ pub async fn set_quiet_hours(
 
 pub async fn get_quiet_hours(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
 ) -> Result<QuietHoursSettings, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
     db_call(pool, move |conn| {
@@ -79,7 +79,7 @@ pub async fn get_quiet_hours(
 /// Read the global Do Not Disturb flag for the current user. Falls
 /// back to `false` when unset or on any DB error so a malfunctioning
 /// settings table can never silently swallow notifications.
-pub async fn is_do_not_disturb_active(state: &Arc<AppState>, pool: &DbPool) -> bool {
+pub async fn is_do_not_disturb_active(state: &Arc<AppState>, pool: &Db) -> bool {
     let Ok(owner_key) = state_helpers::current_owner_key(state) else {
         return false;
     };
@@ -97,7 +97,7 @@ pub async fn is_do_not_disturb_active(state: &Arc<AppState>, pool: &DbPool) -> b
 /// Toggle the global Do Not Disturb flag for the current user.
 pub async fn set_do_not_disturb(
     state: &Arc<AppState>,
-    pool: &DbPool,
+    pool: &Db,
     enabled: bool,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state)?;
@@ -114,10 +114,7 @@ pub async fn set_do_not_disturb(
     .await
 }
 
-pub(super) async fn is_quiet_hours_active(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-) -> Result<bool, String> {
+pub async fn is_quiet_hours_active(state: &Arc<AppState>, pool: &Db) -> Result<bool, String> {
     use chrono::{Timelike, Utc};
 
     let settings = get_quiet_hours(state, pool).await?;

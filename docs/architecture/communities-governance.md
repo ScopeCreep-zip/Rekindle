@@ -36,6 +36,22 @@ sorts all entries from all subkeys by
 `(lamport, author_pseudonym)` for deterministic total order, then
 applies type-specific rules:
 
+**Clocks.** Each community keeps two Lamport clocks (plan step B4):
+the *governance clock* stamps the `GovernanceEntry`s we write, and the
+*message clock* stamps channel and control messages (text, polls,
+stage, files, video topology). Both use `rekindle_types::lamport::LamportClock`:
+a local tick fails at the `u64` ceiling instead of wrapping, and a
+received timestamp advances the clock by at most `MAX_LAMPORT_DRIFT + 1`
+(the message is kept; it orders by its own timestamp). A governance
+rebuild raises the governance clock to what
+`merge_with_accepted` returns — the accepted entries' timestamps
+folded through that clamped rule, so rejected or forged-far-future
+entries cannot pin it. On desktop the governance clock is persisted
+(`communities.lamport_clock`) on every tick and both clocks reload at
+login (the message clock from the community's highest stored message
+`lamport_ts`). The daemon stamps channel messages from its gossip mesh
+clock, never the wall clock.
+
 | Entry type | Strategy | Notes |
 |------------|----------|-------|
 | `ChannelCreated` / `ChannelArchived` | OR-Set | Active = created MINUS archived (matched by `channel_id`). |

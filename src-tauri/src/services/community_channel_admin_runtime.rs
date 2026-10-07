@@ -7,21 +7,22 @@
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub async fn delete_channel_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     channel_id: String,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -58,7 +59,7 @@ pub async fn delete_channel_inner(
 
 pub async fn rename_channel_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
     channel_id: String,
     new_name: String,
@@ -66,7 +67,8 @@ pub async fn rename_channel_inner(
     require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,

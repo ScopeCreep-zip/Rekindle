@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::friend_runtime::{
     accept_request_inner, accept_session_reset_inner, add_friend_from_invite_inner,
     add_friend_inner, block_user_inner, cancel_invite_inner, cancel_request_inner,
@@ -19,9 +18,9 @@ use crate::state::SharedState;
 #[tauri::command]
 pub async fn get_pending_requests(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<PendingFriendRequest>, String> {
-    get_pending_requests_inner(state.inner(), pool.inner()).await
+    let pool = state.db.current()?;
+    get_pending_requests_inner(state.inner(), &pool).await
 }
 
 /// Add a friend by their public key.
@@ -38,13 +37,13 @@ pub async fn add_friend(
     idempotency_key: uuid::Uuid,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     // Phase 5 — gate writes on lifecycle.
     let _g =
         rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let state_clone = state.inner().clone();
-    let pool_clone = pool.inner().clone();
+    let pool_clone = pool.clone();
     state
         .idempotency
         .wrap(idempotency_key, || async move {
@@ -67,9 +66,9 @@ pub async fn remove_friend(
     public_key: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    remove_friend_inner(state.inner().clone(), pool.inner().clone(), app, public_key).await
+    let pool = state.db.current()?;
+    remove_friend_inner(state.inner().clone(), pool.clone(), app, public_key).await
 }
 
 /// Accept a pending friend request.
@@ -79,11 +78,11 @@ pub async fn accept_request(
     display_name: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     accept_request_inner(
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         app,
         public_key,
         display_name,
@@ -105,9 +104,9 @@ pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResp
 pub async fn reject_request(
     public_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    reject_request_inner(state.inner().clone(), pool.inner().clone(), public_key).await
+    let pool = state.db.current()?;
+    reject_request_inner(state.inner().clone(), pool.clone(), public_key).await
 }
 
 /// Cancel an outbound pending friend request.
@@ -119,9 +118,9 @@ pub async fn cancel_request(
     public_key: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    cancel_request_inner(state.inner().clone(), pool.inner().clone(), app, public_key).await
+    let pool = state.db.current()?;
+    cancel_request_inner(state.inner().clone(), pool.clone(), app, public_key).await
 }
 
 /// B6 — explicit user-driven Signal session reset for a peer.
@@ -153,9 +152,9 @@ pub async fn cancel_request(
 pub async fn reset_signal_session(
     peer_public_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    reset_signal_session_inner(state.inner().clone(), pool.inner().clone(), peer_public_key).await
+    let pool = state.db.current()?;
+    reset_signal_session_inner(state.inner().clone(), pool.clone(), peer_public_key).await
 }
 
 /// P3.3 — accept a SessionResetRequest from a peer. Consumes the
@@ -172,9 +171,9 @@ pub async fn reset_signal_session(
 pub async fn accept_session_reset(
     peer_public_key: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    accept_session_reset_inner(state.inner().clone(), pool.inner().clone(), peer_public_key).await
+    let pool = state.db.current()?;
+    accept_session_reset_inner(state.inner().clone(), pool.clone(), peer_public_key).await
 }
 
 /// P3.3 — decline a SessionResetRequest. Clears the stashed bundle and
@@ -186,15 +185,9 @@ pub async fn decline_session_reset(
     peer_public_key: String,
     reason: Option<String>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    decline_session_reset_inner(
-        state.inner().clone(),
-        pool.inner().clone(),
-        peer_public_key,
-        reason,
-    )
-    .await
+    let pool = state.db.current()?;
+    decline_session_reset_inner(state.inner().clone(), pool.clone(), peer_public_key, reason).await
 }
 
 /// Create a new friend group.
@@ -202,9 +195,9 @@ pub async fn decline_session_reset(
 pub async fn create_friend_group(
     name: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<i64, String> {
-    create_friend_group_inner(state.inner(), pool.inner(), name).await
+    let pool = state.db.current()?;
+    create_friend_group_inner(state.inner(), &pool, name).await
 }
 
 /// Set (or clear) the local alias shown for one friend.
@@ -217,18 +210,19 @@ pub async fn set_friend_nickname(
     nickname: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    set_friend_nickname_inner(state.inner(), pool.inner(), &app, public_key, nickname).await
+    let pool = state.db.current()?;
+    set_friend_nickname_inner(state.inner(), &pool, &app, public_key, nickname).await
 }
 /// Rename a friend group.
 #[tauri::command]
 pub async fn rename_friend_group(
     group_id: i64,
     name: String,
-    pool: State<'_, DbPool>,
+    state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    rename_friend_group_inner(pool.inner(), group_id, name).await
+    let pool = state.db.current()?;
+    rename_friend_group_inner(&pool, group_id, name).await
 }
 
 /// Move a friend into a group (or remove from group with `group_id` = null).
@@ -237,24 +231,18 @@ pub async fn move_friend_to_group(
     public_key: String,
     group_id: Option<i64>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    move_friend_to_group_inner(
-        state.inner().clone(),
-        pool.inner().clone(),
-        public_key,
-        group_id,
-    )
-    .await
+    let pool = state.db.current()?;
+    move_friend_to_group_inner(state.inner().clone(), pool.clone(), public_key, group_id).await
 }
 
 /// Generate an invite link containing everything needed for a peer to add us.
 #[tauri::command]
 pub async fn generate_invite(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<GenerateInviteResult, String> {
-    generate_invite_inner(state.inner().clone(), pool.inner().clone()).await
+    let pool = state.db.current()?;
+    generate_invite_inner(state.inner().clone(), pool.clone()).await
 }
 
 /// Add a friend from a `rekindle://` invite string.
@@ -263,15 +251,9 @@ pub async fn add_friend_from_invite(
     invite_string: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    add_friend_from_invite_inner(
-        state.inner().clone(),
-        pool.inner().clone(),
-        app,
-        invite_string,
-    )
-    .await
+    let pool = state.db.current()?;
+    add_friend_from_invite_inner(state.inner().clone(), pool.clone(), app, invite_string).await
 }
 
 /// Block a user — works for any public key (friend, pending, invite, or raw key).
@@ -284,11 +266,11 @@ pub async fn block_user(
     display_name: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let pool = state.db.current()?;
     block_user_inner(
         state.inner().clone(),
-        pool.inner().clone(),
+        pool.clone(),
         app,
         public_key,
         display_name,
@@ -300,21 +282,16 @@ pub async fn block_user(
 ///
 /// Does NOT re-add them as a friend. The user must manually re-add if desired.
 #[tauri::command]
-pub async fn unblock_user(
-    public_key: String,
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<(), String> {
-    unblock_user_inner(state.inner(), pool.inner(), public_key).await
+pub async fn unblock_user(public_key: String, state: State<'_, SharedState>) -> Result<(), String> {
+    let pool = state.db.current()?;
+    unblock_user_inner(state.inner(), &pool, public_key).await
 }
 
 /// Get all blocked users for the current identity.
 #[tauri::command]
-pub async fn get_blocked_users(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<BlockedUser>, String> {
-    get_blocked_users_inner(state.inner(), pool.inner()).await
+pub async fn get_blocked_users(state: State<'_, SharedState>) -> Result<Vec<BlockedUser>, String> {
+    let pool = state.db.current()?;
+    get_blocked_users_inner(state.inner(), &pool).await
 }
 
 /// Re-emit presence events for all non-offline friends.
@@ -333,19 +310,16 @@ pub async fn emit_friends_presence(
 
 /// Cancel a pending outgoing invite by its `invite_id`.
 #[tauri::command]
-pub async fn cancel_invite(
-    invite_id: String,
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-) -> Result<(), String> {
-    cancel_invite_inner(state.inner(), pool.inner(), invite_id).await
+pub async fn cancel_invite(invite_id: String, state: State<'_, SharedState>) -> Result<(), String> {
+    let pool = state.db.current()?;
+    cancel_invite_inner(state.inner(), &pool, invite_id).await
 }
 
 /// Get all active (pending/responded) outgoing invites.
 #[tauri::command]
 pub async fn get_outgoing_invites(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<Vec<crate::invite_helpers::OutgoingInvite>, String> {
-    get_outgoing_invites_inner(state.inner(), pool.inner()).await
+    let pool = state.db.current()?;
+    get_outgoing_invites_inner(state.inner(), &pool).await
 }

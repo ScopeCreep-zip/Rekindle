@@ -33,11 +33,14 @@ export interface InviteDto {
   uses: number;
   expiresAt: number | null;
   createdAt: number;
-  /** Raw invite code — only available for invites this node created. */
-  code?: string;
-  /** VLD0 pointer to the encrypted InviteSecrets DFLT record. Carried in the
-   *  deep link so the joiner fetches secrets directly. Local-only invites. */
-  secretsRecordKey?: string;
+  /** The invite link, built by the backend — only for invites this node created. */
+  url?: string;
+}
+
+/** A freshly minted invite. */
+export interface InviteCreated {
+  codeHash: string;
+  url: string;
 }
 
 // ── Onboarding ──
@@ -98,7 +101,8 @@ export interface GossipDiagnostics {
   onlineMemberCount: number;
   knownMemberCount: number;
   needsInitialSync: boolean;
-  lamportCounter: number;
+  messageClock: number;
+  governanceClock: number;
   hasRouteBlob: boolean;
   myPseudonymKey: string | null;
   mySubkeyIndex: number | null;

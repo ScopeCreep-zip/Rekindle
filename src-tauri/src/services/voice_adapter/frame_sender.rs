@@ -4,33 +4,32 @@
 //! `veilid-core`, so the RoutingContext / RouteId / `app_message`
 //! plumbing that used to live inside `rekindle-voice::transport` lives
 //! here instead, keeping the voice crate free of `veilid-core`
-//! (Invariant 2). Imported routes are cached by route blob so repeated
-//! frames to the same peer don't leak a fresh `RouteId` each send.
+//! (Invariant 2). Routes are resolved through the process's one importer
+//! (`RouteImports`, plan C7.6). This sender used to keep its own map and
+//! release imported routes, and a release removes the **shared** import
+//! for every sender in the process, so a voice heal dropped the chat route
+//! to the same peer.
 
-use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use parking_lot::Mutex;
-use rekindle_types::config::ANONYMITY_HOP_FLOOR;
+use rekindle_protocol::dht::route_imports::RouteImports;
 use rekindle_voice::{VoiceError, VoiceFrameSender};
-use veilid_core::{
-    RouteId, RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, Target, VeilidAPI,
-    VeilidAPIError,
-};
+use veilid_core::{RoutingContext, Target, VeilidAPI, VeilidAPIError};
 
 pub struct VeilidVoiceFrameSender {
-    api: VeilidAPI,
-    /// route blob → (voice routing context, imported route id). Cached
-    /// so each peer's route is imported once, not per frame.
-    routes: Mutex<HashMap<Vec<u8>, (RoutingContext, RouteId)>>,
+    routing_context: RoutingContext,
+    route_imports: Arc<RouteImports>,
 }
 
 impl VeilidVoiceFrameSender {
-    pub fn new(api: VeilidAPI) -> Self {
-        Self {
-            api,
-            routes: Mutex::new(HashMap::new()),
-        }
+    /// # Errors
+    /// The voice routing context could not be built.
+    pub fn new(api: &VeilidAPI, route_imports: Arc<RouteImports>) -> Result<Self, VoiceError> {
+        Ok(Self {
+            routing_context: Self::build_voice_routing_context(api)?,
+            route_imports,
+        })
     }
 
     /// Build the voice routing context: a 3-hop Tor-class Safe route
@@ -43,115 +42,37 @@ impl VeilidVoiceFrameSender {
     fn build_voice_routing_context(api: &VeilidAPI) -> Result<RoutingContext, VoiceError> {
         api.routing_context()
             .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
-            .with_safety(SafetySelection::Safe(SafetySpec {
-                preferred_route: None,
-                hop_count: ANONYMITY_HOP_FLOOR as usize,
-                stability: Stability::LowLatency,
-                sequencing: Sequencing::PreferUnordered,
-            }))
+            .with_safety(rekindle_protocol::dht::pool::safety_selection(
+                &rekindle_types::config::SafetyProfile::default_voice(),
+            ))
             .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
-    }
-
-    /// Resolve (importing + caching on first use) the routing context +
-    /// route id for `route_blob`.
-    fn resolve_route(&self, route_blob: &[u8]) -> Result<(RoutingContext, RouteId), VoiceError> {
-        if let Some(entry) = self.routes.lock().get(route_blob) {
-            return Ok((entry.0.clone(), entry.1.clone()));
-        }
-        let routing_context = Self::build_voice_routing_context(&self.api)?;
-        let route_id = self
-            .api
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| VoiceError::Transport(format!("import route: {e}")))?;
-        let mut routes = self.routes.lock();
-        let entry = routes
-            .entry(route_blob.to_vec())
-            .or_insert((routing_context, route_id));
-        Ok((entry.0.clone(), entry.1.clone()))
-    }
-
-    /// Drop `route_blob`'s cached import and release its `RouteId`.
-    ///
-    /// Called on a `NoConnection` send failure (mechanism A): veilid has
-    /// reaped the import behind the cached id, but [`Self::resolve_route`]
-    /// keeps short-circuiting on the blob and re-sending to the same dead
-    /// id forever. Evicting forces the next frame to re-import fresh.
-    fn evict_route(&self, route_blob: &[u8]) {
-        // Take the entry out under the lock, drop the guard, THEN release
-        // (parking_lot guard is !Send — keep it off the release call).
-        let evicted = self.routes.lock().remove(route_blob);
-        if let Some((_, route_id)) = evicted {
-            self.release_route_id(route_id);
-        }
-    }
-
-    /// Invalidate every cached import whose `RouteId` veilid just declared
-    /// dead in a `dead_remote_routes` route-change event.
-    ///
-    /// The proactive counterpart to [`Self::evict_route`]'s per-send
-    /// healing (Piece 4 mechanism B): invoked from the veilid host's
-    /// `handle_route_change` so a reaped route is dropped even while the
-    /// send loop is idle (a muted peer, or between frames), rather than
-    /// only on the next failed send. `RouteId` is a veilid-core type, so
-    /// this lives on the concrete adapter, not the `VoiceFrameSender`
-    /// trait — Invariant 2 keeps veilid-core out of `rekindle-voice`.
-    pub fn invalidate_route_ids(&self, dead: &[RouteId]) {
-        if dead.is_empty() {
-            return;
-        }
-        // Collect the victims under the lock, drop the guard, THEN release
-        // each (parking_lot guard is !Send — kept off the release calls).
-        let victims: Vec<RouteId> = {
-            let mut routes = self.routes.lock();
-            let blobs: Vec<Vec<u8>> = routes
-                .iter()
-                .filter(|(_, (_, id))| dead.contains(id))
-                .map(|(blob, _)| blob.clone())
-                .collect();
-            blobs
-                .into_iter()
-                .filter_map(|blob| routes.remove(&blob).map(|(_, id)| id))
-                .collect()
-        };
-        for route_id in victims {
-            self.release_route_id(route_id);
-        }
-    }
-
-    /// Release an imported `RouteId`, tolerating the `InvalidArgument`
-    /// veilid returns when the import has already idle-expired — the map
-    /// entry is dropped regardless, so a later send re-imports cleanly.
-    fn release_route_id(&self, route_id: RouteId) {
-        if let Err(e) = self.api.release_private_route(route_id) {
-            tracing::debug!(
-                error = %e,
-                "release_private_route during voice route eviction (already expired — tolerated)"
-            );
-        }
     }
 }
 
 #[async_trait]
 impl VoiceFrameSender for VeilidVoiceFrameSender {
     async fn send_voice_frame(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), VoiceError> {
-        // Resolve + clone out of the lock before the await (parking_lot
-        // guard is !Send and must not cross `.await`).
-        let (routing_context, route_id) = self.resolve_route(route_blob)?;
-        match routing_context
-            .app_message(Target::RouteId(route_id), data)
+        let route_id = self
+            .route_imports
+            .get_or_import(route_blob)
+            .map_err(|e| VoiceError::Transport(format!("import route: {e}")))?;
+        match self
+            .routing_context
+            .app_message(Target::RouteId(route_id.clone()), data)
             .await
         {
             Ok(()) => Ok(()),
             Err(e) => {
                 // `NoConnection` ("could not get remote private route")
-                // means veilid reaped the import behind this cached
-                // RouteId. Matched on the veilid variant directly — this
-                // is the sanctioned adapter layer, so no string-matching
-                // is needed. Evict the blob's entry BEFORE returning so
-                // the next frame re-imports fresh instead of re-sending
-                // to the dead id forever (Piece 4 mechanism A).
-                if matches!(e, VeilidAPIError::NoConnection { .. }) {
-                    self.evict_route(route_blob);
+                // or `InvalidTarget`: the route is unusable. The importer
+                // forgets it, so the next frame re-imports
+                // fresh (Piece 4 mechanism A). Matched on the veilid
+                // variant — this is the sanctioned adapter layer.
+                if matches!(
+                    e,
+                    VeilidAPIError::NoConnection { .. } | VeilidAPIError::InvalidTarget { .. }
+                ) {
+                    self.route_imports.invalidate_after_send_failure(&route_id);
                 }
                 Err(VoiceError::Transport(format!("app_message: {e}")))
             }

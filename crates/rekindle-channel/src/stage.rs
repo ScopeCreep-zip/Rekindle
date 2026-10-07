@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use rekindle_protocol::dht::community::channel_record::{ChannelHandRaise, ChannelRecordEntry};
-use rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT;
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
@@ -21,7 +20,7 @@ pub async fn persist_hand_raise<D: ChannelMessagingDeps>(
     let context = deps.channel_write_context(community_id, channel_id)?;
     let hand_raise = ChannelHandRaise {
         raised,
-        lamport: deps.increment_lamport(community_id),
+        lamport: deps.increment_lamport(community_id)?,
     };
     deps.write_channel_hand_raise_smpl(&context, &hand_raise)
         .await
@@ -34,10 +33,7 @@ pub async fn list_hand_raises<D: ChannelMessagingDeps>(
 ) -> Result<Vec<String>, ChannelError> {
     let context = deps.channel_write_context(community_id, channel_id)?;
     let entries = deps
-        .read_all_channel_entries(
-            &context.channel_key,
-            u32::try_from(MAX_MEMBERS_PER_SEGMENT).unwrap_or(u32::MAX),
-        )
+        .read_all_channel_entries(community_id, &context.channel_key)
         .await?;
 
     let pseudonyms_by_subkey = deps.stage_pseudonyms_by_subkey(community_id).await?;

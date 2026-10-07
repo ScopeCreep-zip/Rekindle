@@ -43,7 +43,7 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     let deps_task = Arc::clone(deps);
     let cid = community_id.to_string();
     let acker = sender_pseudonym.to_string();
-    let handle = tokio::spawn(async move {
+    deps.scope().spawn_or_drop("voice join ack", async move {
         if !route_blob.is_empty() {
             let (newly_added, remote_count) = {
                 let mut t = transport.lock().await;
@@ -72,7 +72,6 @@ pub(in crate::signaling) fn handle_voice_join_ack(
         }
         send_confirmed_if_first(&*deps_task, &cid, &channel_id, &transport).await;
     });
-    deps.register_background_handle(handle);
 }
 
 /// Handshake leg 3, member side: the joiner confirmed it is
@@ -98,19 +97,19 @@ pub(in crate::signaling) fn handle_voice_join_confirmed(
         let cid = community_id.to_string();
         let ch = channel_id.clone();
         let peer = sender_pseudonym.to_string();
-        let handle = tokio::spawn(async move {
-            if transport.lock().await.advance_handshake_seen() {
-                deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                    community_id: cid.clone(),
-                    channel_id: ch.clone(),
-                    state: "seen".to_string(),
-                    peer: Some(peer),
-                    display_name: None,
-                });
-            }
-            send_confirmed_if_first(&*deps_task, &cid, &ch, &transport).await;
-        });
-        deps.register_background_handle(handle);
+        deps.scope()
+            .spawn_or_drop("voice join confirmed", async move {
+                if transport.lock().await.advance_handshake_seen() {
+                    deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
+                        community_id: cid.clone(),
+                        channel_id: ch.clone(),
+                        state: "seen".to_string(),
+                        peer: Some(peer),
+                        display_name: None,
+                    });
+                }
+                send_confirmed_if_first(&*deps_task, &cid, &ch, &transport).await;
+            });
     }
     deps.emit_event(CommunityVoiceEvent::VoicePeerConfirmed {
         community_id: community_id.to_string(),

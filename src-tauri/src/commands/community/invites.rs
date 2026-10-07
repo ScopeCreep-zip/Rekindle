@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::db::DbPool;
 use crate::services::community_invite_runtime::{
     create_community_invite_inner, list_community_invites_inner, revoke_community_invite_inner,
     InviteCreatedDto, InviteInfoDto,
@@ -13,11 +12,11 @@ pub async fn create_community_invite(
     max_uses: Option<u32>,
     expires_in_seconds: Option<u64>,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
 ) -> Result<InviteCreatedDto, String> {
+    let pool = state.db.current()?;
     create_community_invite_inner(
         state.inner(),
-        pool.inner(),
+        &pool,
         community_id,
         max_uses,
         expires_in_seconds,
@@ -37,7 +36,8 @@ pub async fn revoke_community_invite(
 #[tauri::command]
 pub async fn list_community_invites(
     community_id: String,
-    pool: State<'_, DbPool>,
+    state: State<'_, SharedState>,
 ) -> Result<Vec<InviteInfoDto>, String> {
-    list_community_invites_inner(pool.inner(), community_id).await
+    let pool = state.db.current()?;
+    list_community_invites_inner(state.inner(), &pool, community_id).await
 }

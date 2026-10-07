@@ -6,8 +6,8 @@ description = "Async handle for rusqlite on a dedicated background thread — ve
 license = "MIT"
 repository = "https://github.com/programatik29/tokio-rusqlite"
 readme = "README.md"
-keywords = ["async", "rusqlite", "sqlite"]
-categories = ["asynchronous", "database"]
+keywords = [ "async", "rusqlite", "sqlite" ]
+categories = [ "asynchronous", "database" ]
 
 # NOTE: This crate intentionally does NOT inherit `[lints] workspace = true`.
 # It is vendored third-party code carrying its own `#![warn(...)]` lint header
@@ -21,10 +21,10 @@ workspace = true
 # Features for rusqlite are supplied by the CONSUMER crates' own direct
 # rusqlite dependency (cargo unifies features across the graph), so this
 # stays featureless — it only needs the `Connection`/`close` API surface.
-rusqlite = "0.39"
 crossbeam-channel = "0.5"
-tokio = { version = "1", features = ["sync"] }
+rusqlite = "0.39"
+tokio = { version = "1", features = [ "sync" ] }
 
 [dev-dependencies]
-rusqlite = { version = "0.39", features = ["bundled"] }
-tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.39", features = [ "bundled" ] }
+tokio = { version = "1", features = [ "full" ] }

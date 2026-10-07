@@ -25,17 +25,17 @@ pub async fn rotate_mek_local(
     state: &SharedState,
     community_id: &str,
 ) -> Result<(), String> {
-    let pool = tauri::Manager::try_state::<crate::db::DbPool>(app_handle)
-        .ok_or_else(|| "DbPool state missing".to_string())?
-        .inner()
-        .clone();
+    let pool = state.db.current()?;
     let adapter =
         crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
 
-    // `None` = the community-wide key. The adapter's `MekPersist` impl
-    // writes it to the keystore, so the caller no longer threads a
-    // `KeystoreHandle` in just for that.
-    rekindle_mek_rotation::rotate_mek_on_request(adapter.as_ref(), community_id, None)
-        .await
-        .map_err(|e| e.to_string())
+    // The adapter persists the new key to the keystore, so the caller no
+    // longer threads a `KeystoreHandle` in just for that.
+    rekindle_mek_rotation::rotate_mek_on_request(
+        adapter.as_ref(),
+        community_id,
+        rekindle_types::channel_keys::KeyScope::Community,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }

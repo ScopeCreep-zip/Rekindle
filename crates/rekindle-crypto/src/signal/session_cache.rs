@@ -23,8 +23,10 @@
 //!
 //! Phase 6 of the decomposed-harvest plan;
 //! see `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 6.
-
-#![forbid(unsafe_code)]
+//!
+//! (This module used to carry its own local `#![forbid(unsafe_code)]`;
+//! the crate root now forbids it for every module, so the one here was
+//! redundant.)
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;

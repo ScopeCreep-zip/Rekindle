@@ -17,6 +17,7 @@
 
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::lamport::LamportClock;
 
 use crate::state::{
     AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
@@ -42,6 +43,21 @@ pub struct AuthoredEntry {
 /// # Returns
 /// A deterministic `GovernanceState` that all peers agree on.
 pub fn merge(subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)]) -> GovernanceState {
+    merge_with_accepted(subkeys).0
+}
+
+/// [`merge`], plus the Lamport clock value the accepted entries justify:
+/// their timestamps folded in order through [`LamportClock::merge`].
+///
+/// An honest history climbs in small steps, so this is the highest
+/// accepted timestamp + 1 — the floor for our next entry, so it wins
+/// last-writer-wins against everything already accepted. Rejected entries
+/// never count, and an accepted entry that jumps far ahead (an authorised
+/// member writing `u64::MAX`) advances it by at most
+/// `MAX_LAMPORT_DRIFT + 1`, so no single entry can pin the clock.
+pub fn merge_with_accepted(
+    subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
+) -> (GovernanceState, u64) {
     // 1. Collect all entries with their author
     let mut all: Vec<AuthoredEntry> = Vec::new();
     for (author, entries) in subkeys {
@@ -63,6 +79,7 @@ pub fn merge(subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)]) -> GovernanceStat
 
     // 3. Process in order, applying CRDT rules
     let mut state = GovernanceState::default();
+    let mut clock = LamportClock::default();
 
     for (idx, authored) in all.iter().enumerate() {
         let is_genesis = idx == 0;
@@ -73,11 +90,14 @@ pub fn merge(subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)]) -> GovernanceStat
             apply(&authored.author, &authored.entry, &mut state);
         } else if validate_write(&authored.author, &authored.entry, &state) {
             apply(&authored.author, &authored.entry, &mut state);
+        } else {
+            // Silently excluded (reader-validates).
+            continue;
         }
-        // else: silently excluded (reader-validates)
+        clock.merge(authored.entry.lamport());
     }
 
-    state
+    (state, clock.current())
 }
 
 /// Apply a single governance entry to the accumulated state.

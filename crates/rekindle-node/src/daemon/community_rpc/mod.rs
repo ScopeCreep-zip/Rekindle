@@ -23,7 +23,7 @@ pub(crate) use mek_transfer::handle_mek_transfer;
 pub(crate) fn governance_keypair_label(governance_key: &str) -> String {
     format!(
         "community-governance-{}",
-        &governance_key[..12.min(governance_key.len())]
+        rekindle_utils::text::prefix(governance_key, 12)
     )
 }
 
@@ -34,7 +34,10 @@ pub(crate) fn governance_keypair_label(governance_key: &str) -> String {
 /// because they are the only thing that can ever re-create a record, not
 /// because they authorize a write.
 pub(crate) fn registry_keypair_label(registry_key: &str) -> String {
-    format!("registry-{}", &registry_key[..12.min(registry_key.len())])
+    format!(
+        "registry-{}",
+        rekindle_utils::text::prefix(registry_key, 12)
+    )
 }
 
 pub(crate) fn get_signing_key(

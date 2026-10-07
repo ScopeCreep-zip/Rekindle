@@ -13,10 +13,9 @@ const NewChatModal: Component = () => {
       isOpen={friendsState.showNewChat}
       title="New Chat"
       onClose={handleClose}
-      onSubmit={(key, name) => commands.openChatWindow(key, name || key.slice(0, 12) + "...")}
+      onSubmit={(key) => commands.openChatWindow(key)}
       placeholder="Enter public key..."
       submitLabel="Start Chat"
-      secondaryPlaceholder="Display name (optional)"
     />
   );
 };

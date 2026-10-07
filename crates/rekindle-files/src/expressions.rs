@@ -38,13 +38,7 @@ pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
 ) -> Result<AttachmentOffer, FilesError> {
     let total_size = bytes.len() as u64;
 
-    let community_mek =
-        deps.community_mek(community_id)
-            .ok_or_else(|| FilesError::MekUnavailable {
-                community: community_id.to_string(),
-                generation: 0,
-            })?;
-    let mek_generation = deps.mek_generation(community_id)?;
+    let community_mek = crate::keys::current_community_key(deps, community_id)?;
 
     let fek = MediaEncryptionKey::generate(0);
 
@@ -88,7 +82,7 @@ pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
         merkle_root: chunked.merkle_root,
         chunk_hashes: chunked.chunk_hashes,
         wrapped_fek,
-        fek_mek_generation: mek_generation,
+        fek_mek_generation: community_mek.generation(),
     })
 }
 
@@ -97,17 +91,15 @@ pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
 /// is missing — the eager-fetch loop will fill the gap on the next
 /// merge.
 ///
-/// For now, only the *current* community MEK can unwrap. A full
-/// implementation would walk historical MEKs by `fek_mek_generation`;
-/// expressions uploaded under an old MEK will read as missing until
-/// re-uploaded after a rotation. Architecture §7 leaves the
-/// historical-MEK store as a follow-on for cross-rotation playback.
+/// The FEK is unwrapped under exactly the community key generation the
+/// offer names, current or historical.
 pub fn read_expression_bytes<D: FilesDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     offer: &AttachmentOffer,
 ) -> Option<Vec<u8>> {
-    let community_mek = deps.community_mek(community_id)?;
+    let community_mek =
+        crate::keys::community_key_at(deps, community_id, offer.fek_mek_generation).ok()?;
     let raw_fek = community_mek.decrypt(&offer.wrapped_fek).ok()?;
     let fek_bytes: [u8; 32] = raw_fek.as_slice().try_into().ok()?;
     let fek = MediaEncryptionKey::from_bytes(fek_bytes, 0);

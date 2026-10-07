@@ -37,8 +37,8 @@ Before tagging:
 - [ ] `Cargo.toml` workspace `version` is bumped.
 - [ ] `package.json` is bumped.
 - [ ] `src-tauri/tauri.conf.json` `version` is bumped.
-- [ ] `src-tauri/migrations/001_init.sql` was edited correctly and
-      `SCHEMA_VERSION` in `db.rs` was bumped if the schema changed.
+- [ ] `crates/rekindle-db/schema/001_init.sql` was edited correctly and
+      `SCHEMA_VERSION` in `crates/rekindle-db/src/open.rs` was bumped if the schema changed.
 - [ ] [`docs/roadmap.md`](../roadmap.md) is updated.
 - [ ] If any cryptographic primitive or wire format changed, the
       relevant ADR is added or updated under [`../decisions/`](../decisions/).

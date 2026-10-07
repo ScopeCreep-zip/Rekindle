@@ -5,12 +5,19 @@ use std::sync::Arc;
 use crate::state::AppState;
 use crate::state_helpers;
 
-/// Cache the route blob from an invite for immediate contact +
-/// establish a Signal session from the invite's prekey bundle +
-/// refresh the route blob from the peer's mailbox if available.
+/// Cache the route blob from an invite for immediate contact, delete any
+/// Signal session left from a prior friendship with this peer, and refresh
+/// the route blob from the peer's mailbox if available.
 ///
-/// Called from `add_friend_from_invite`. All operations are
-/// best-effort: failures log but don't block invite acceptance.
+/// Deliberately does NOT call `establish_session()`: the invite's bundle
+/// carries no one-time keys and `FriendRequest` has no session-init
+/// fields, so a session started here could never be completed by the
+/// peer. The handshake is the `FriendRequest` → `FriendAccept` round trip
+/// (`accept_request_inner` initiates; `handle_friend_accept` responds
+/// while we are `PendingOut`), identical to add-by-pubkey.
+///
+/// Called from `add_friend_from_invite`. Failures are logged and do not
+/// block invite acceptance.
 pub async fn setup_invite_contact(
     state: &Arc<AppState>,
     blob: &rekindle_protocol::messaging::envelope::InviteBlob,
@@ -23,53 +30,30 @@ pub async fn setup_invite_contact(
         route_blob_hex_preview = %hex::encode(&blob.route_blob[..blob.route_blob.len().min(32)]),
         "setup_invite_contact: received route blob from invite"
     );
-    let api = state_helpers::veilid_api(state);
-    if let Some(ref api) = api {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.manager
-                .cache_route(api, &blob.public_key, blob.route_blob.clone());
-        }
-    } else {
-        tracing::warn!("setup_invite_contact: no veilid API available — cannot cache route");
-    }
+    state_helpers::cache_peer_route(state, &blob.public_key, blob.route_blob.clone());
 
-    // Establish Signal session from invite's PreKeyBundle
-    // Clear any stale session first (e.g., from a previous friendship that was removed)
-    if let Ok(bundle) =
-        serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(&blob.prekey_bundle)
+    // A session from a previous friendship with this peer must not carry
+    // messages before the new handshake completes.
     {
         let signal = state.signal_manager.read();
         if let Some(handle) = signal.as_ref() {
-            let _ = handle.manager.delete_session(&blob.public_key);
-            match handle.manager.establish_session(&blob.public_key, &bundle) {
-                Ok(_init_info) => {
-                    tracing::info!(peer = %blob.public_key, "established Signal session from invite");
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to establish Signal session from invite");
-                }
+            if let Err(e) = handle.manager.delete_session(&blob.public_key) {
+                tracing::error!(peer = %blob.public_key, error = %e,
+                    "setup_invite_contact: failed to delete prior Signal session");
             }
         }
     }
 
     // Try reading the peer's mailbox for a fresh route blob (invite may be stale)
-    let rc = state
-        .node
-        .read()
-        .as_ref()
-        .map(|nh| nh.routing_context.clone());
-    if let Some(rc) = rc {
-        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &blob.mailbox_dht_key)
-            .await
+    if let Ok(record_pool) = state_helpers::record_pool(state) {
+        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(
+            &record_pool,
+            &blob.mailbox_dht_key,
+        )
+        .await
         {
             Ok(Some(fresh_blob)) if !fresh_blob.is_empty() => {
-                if let Some(ref api) = api {
-                    let mut dht_mgr = state.dht_manager.write();
-                    if let Some(mgr) = dht_mgr.as_mut() {
-                        mgr.manager.cache_route(api, &blob.public_key, fresh_blob);
-                    }
-                }
+                state_helpers::cache_peer_route(state, &blob.public_key, fresh_blob);
                 tracing::debug!("refreshed route blob from peer's mailbox");
             }
             _ => tracing::trace!("no fresh route blob in peer mailbox — using invite blob"),

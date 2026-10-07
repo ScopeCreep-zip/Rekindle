@@ -32,7 +32,7 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         my_pseudonym_hex,
         mek,
         governance_state,
-        lamport_counter,
+        governance_clock,
         creator_role_ids,
     } = community;
 
@@ -74,9 +74,7 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
     let open_records = CommunityRecords {
         governance_key: Some(governance_key.clone()),
         registry_key: Some(registry_key.clone()),
-        registry_writer: registry_owner_keypair.clone(),
         channel_keys: vec![channel_record_key.clone()],
-        records_open: true,
         ..Default::default()
     };
 
@@ -96,9 +94,11 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         member_registry_key: Some(registry_key),
         my_subkey_index: Some(0),
         my_segment_index: Some(0),
+        segments: Vec::new(),
         governance_key: Some(governance_key),
         governance_state: Some(governance_state),
-        lamport_counter,
+        message_clock: 0,
+        governance_clock,
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(slot_keypair),
         channel_log_keys: [(channel_id_hex, channel_record_key)].into_iter().collect(),
@@ -113,8 +113,9 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         slot_seed: Some(slot_seed_hex),
         member_roles: HashMap::new(),
         known_members: std::iter::once(my_pseudonym_hex.clone()).collect(),
-        presence_poll_shutdown_tx: None,
-        dht_keepalive_shutdown_tx: None,
+        tasks: None,
+        leases: rekindle_records::lease::CommunityLeases::default(),
+        loops_started: false,
         open_community_records: open_records,
         my_event_rsvps: HashMap::new(),
         event_rsvps_by_event: HashMap::new(),
@@ -133,9 +134,10 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
 
     // Centralized resolver: a hydrated snapshot must not downgrade a newer
     // live key or clobber a canonical same-gen key.
-    let _ = crate::state_helpers::install_community_mek(
+    let _ = crate::state_helpers::install_mek(
         state,
         &id,
+        rekindle_types::channel_keys::KeyScope::Community,
         CryptoMek::from_bytes(mek.key_bytes, mek.generation),
     );
     state.communities.write().insert(id, cs);

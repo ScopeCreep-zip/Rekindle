@@ -30,12 +30,13 @@ crates/
 
 # ── Tier 2 — Cryptographic boundary ───────────────────────────────────
 ├── rekindle-secrets/                (9) keys, MEK, signing — sole crypto boundary
-├── rekindle-vault/                  (5) SQLCipher double-encrypted store [NEW]
+├── rekindle-vault/                 (10) SQLCipher double-encrypted store + typed helpers [NEW]
 ├── rekindle-audit/                  (2) BLAKE3 keyed hash chain [NEW]
 
 # ── Tier 3 — Wire format, records, local state ────────────────────────
 ├── rekindle-codec/                  (3) signed envelope build/verify, dedup
 ├── rekindle-records/                (4) DHT record lifecycle, SMPL schema
+├── rekindle-db/                    (17) schema, Db handle, repositories, node lock [NEW]
 ├── rekindle-events/                 (5) dedup + SubscriptionState + EventJournal [NEW]
 ├── rekindle-idempotency/            (2) LRU+TTL command-dedup cache [NEW]
 ├── rekindle-mek-rotation/           (9) cascade election + MEK distribute [NEW]
@@ -71,12 +72,15 @@ crates/
 ├── rekindle-e2e-server/             (1) HTTP IPC bridge for Playwright E2E tests
 
 # ── Daemon / CLI track ────────────────────────────────────────────────
-├── rekindle-transport/             (87) sole Veilid boundary on the daemon track
-├── rekindle-node/                  (32) daemon: owns transport, serves IPC bus
-└── rekindle-cli/                   (65) CLI/TUI client of rekindle-node
+├── rekindle-transport/             (87) the daemon's Veilid adapter (over rekindle-protocol)
+├── rekindle-ipc/                   (14) IPC bus: protocol, Noise, client, server
+├── rekindle-node/                  (32) `rekindled`: owns transport, serves the bus
+├── rekindle-client/                (8) what every frontend shares: bus client, on-demand start, config, formatters
+├── rekindle-cli/                   (28) CLI frontend, binary `rekindle`
+└── rekindle-tui/                   (36) terminal UI frontend, binary `rekindle-tui`
 
 # ── Utilities (no tier) ───────────────────────────────────────────────
-└── rekindle-utils/                  (2) time helpers
+└── rekindle-utils/                  (9) time, hashing, retry, log scrub, config layers, data root
 ```
 
 Tag legend: `[NEW]` marks crates introduced after the May 2026 snapshot
@@ -108,15 +112,22 @@ The tier hierarchy is a contract. The CI gauntlet greps every crate's
 | 6 | `governance`, `governance-runtime` | `tokio` (runtime only), `async-trait` | `veilid-core`, `tauri`, `rusqlite`, `iota_stronghold` |
 | 7 | `channel`, `dm`, `calls`, `files`, `link-preview`, `video` | `tokio`, `async-trait`, file I/O (`files` cache) | `veilid-core`, `tauri` |
 
-Two crates are deliberate exceptions and carry `veilid-core`:
+The Veilid boundary is **transitive linkage**
+([ADR 0014](../decisions/0014-veilid-boundary-is-transitive.md)). Only these may
+link `veilid-core`:
 
-- `rekindle-protocol` — the Veilid boundary for the **desktop app** (Tauri).
-- `rekindle-transport` — the Veilid boundary for the **daemon track** (CLI).
+- `rekindle-protocol` — every Veilid call: the record pool (`dht::pool`),
+  `RouteImports`, `OwnRoutes`, node startup. Rule B22
+  (`cargo xtask check-veilid-dht-calls`) keeps each call in its owner.
+- `rekindle-transport` — the daemon's adapter over `rekindle-protocol`.
+- `rekindle-node` — the host, through `rekindle-transport`.
+- `rekindle-desktop` — until F1 makes it a thin client.
 
-Every other crate that touches Veilid does so through one of these two,
-parameterised over a `Deps` trait so the pure logic stays portable. See
-[`decisions/0001-veilid-as-transport.md`](../decisions/0001-veilid-as-transport.md)
-for the dual-boundary rationale.
+The tier crates reach Veilid only through a `Deps` trait, so their logic stays
+portable. **Today this is not yet true of linkage:** the wire types still live
+in `rekindle-protocol`, so 13 more crates link `veilid-core` transitively. Plan
+step C8 moves the types into `rekindle-codec` and `rekindle-types`, and makes
+`check-boundaries` transitive.
 
 `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`,
 and `rekindle-utils` are **cross-cutting**: they sit alongside the tier
@@ -129,8 +140,8 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
 
 ```
    ┌─────────────────┐                  ┌──────────────────┐
-   │ src-tauri       │                  │ rekindle-cli     │
-   │ (desktop app)   │                  │ (CLI + TUI)      │
+   │ src-tauri       │                  │ rekindle, -tui   │
+   │ (desktop app)   │                  │ (rekindle-client)│
    └────────┬────────┘                  └─────────┬────────┘
             │                                     │ IPC (Noise IK)
             │                                     ▼
@@ -142,8 +153,8 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
             ▼                                      ▼
    ┌──────────────────┐                  ┌────────────────────┐
    │ rekindle-protocol│                  │ rekindle-transport │
-   │  desktop Veilid  │                  │  daemon Veilid     │
-   │  boundary        │                  │  boundary          │
+   │  Veilid calls    │◄─────────────────│  daemon adapter    │
+   │  (pool, routes)  │                  │                    │
    └────────┬─────────┘                  └─────────┬──────────┘
             │                                      │
             └──────────────────┬───────────────────┘

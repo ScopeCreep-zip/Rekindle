@@ -73,7 +73,7 @@ pub async fn assign_role<D: GovernanceRuntimeDeps>(
     pseudonym_key: &str,
     role_id: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -100,7 +100,7 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
     pseudonym_key: &str,
     role_id: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -150,7 +150,7 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
         GovernanceRuntimeError::Adapter("failed to allocate unique role id".into())
     })?;
 
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -200,7 +200,7 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
         ExclusionGroupEdit::Set(s) => Some(s.clone()),
     };
 
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -227,7 +227,7 @@ pub async fn delete_role<D: GovernanceRuntimeDeps>(
     community_id: &str,
     role_id: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.increment_lamport(community_id);
+    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,

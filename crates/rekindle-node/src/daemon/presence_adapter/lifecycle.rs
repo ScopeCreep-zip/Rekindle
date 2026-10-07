@@ -49,14 +49,16 @@ impl DaemonPresenceAdapter {
     pub(super) async fn read_channel_record_impl(
         &self,
         record_key: &str,
-        member_count: u32,
-    ) -> Result<Vec<ChannelMessage>, PresenceError> {
+        member_slots: &[u32],
+    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
         let node = self.transport().ok_or(PresenceError::NotAttached)?;
-        let dht = node.dht().map_err(|_| PresenceError::NotAttached)?;
-        rekindle_transport::broadcast::dht::channel_smpl::read_messages(
-            dht.routing_context(),
+        let pool = node
+            .require_records()
+            .map_err(|_| PresenceError::NotAttached)?;
+        rekindle_transport::broadcast::dht::channel_smpl::read_message_items(
+            &pool,
             record_key,
-            member_count,
+            member_slots,
         )
         .await
         .map_err(|e| PresenceError::Dht(e.to_string()))
@@ -71,36 +73,5 @@ impl DaemonPresenceAdapter {
     pub(super) async fn run_poll_tick_impl(&self, community_id: &str) -> Result<(), String> {
         let adapter = Arc::new(Self::new(Arc::clone(&self.ctx)));
         rekindle_presence::community::presence_poll_tick(adapter, community_id).await
-    }
-
-    /// Record the poll's shutdown handle so lock/logout can stop it.
-    pub(super) fn install_poll_shutdown_impl(
-        &self,
-        community_id: &str,
-        shutdown_tx: tokio::sync::mpsc::Sender<()>,
-    ) {
-        self.ctx
-            .presence_shutdowns
-            .lock()
-            .insert(community_id.to_string(), shutdown_tx);
-    }
-
-    /// Stop every running presence poll.
-    ///
-    /// Called on lock and on shutdown: the polls hold an `Arc` to the
-    /// context and write presence rows, so leaving them running after a
-    /// lock would keep advertising a member who is no longer unlocked.
-    pub fn stop_all_polls(ctx: &crate::daemon::dispatch::DaemonContext) {
-        let handles: Vec<_> = ctx.presence_shutdowns.lock().drain().collect();
-        for (community_id, tx) in handles {
-            // The receiver is inside a `select!`; a closed channel ends
-            // the loop just as well as a message, so a full or dropped
-            // channel is not an error worth surfacing.
-            let _ = tx.try_send(());
-            tracing::debug!(
-                community = %&community_id[..16.min(community_id.len())],
-                "presence poll stopped"
-            );
-        }
     }
 }

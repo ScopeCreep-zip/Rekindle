@@ -111,7 +111,8 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
         expires_at_ms,
         my_x25519_secret: None,
         peer_x25519_pub: Some(peer_arr),
-        call_key: None,
+        media_secret: None,
+        media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
         peer_video_decode_codecs: video_decode_codecs.to_vec(),
     });
 
@@ -215,9 +216,9 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         }
     };
 
-    // Update registry: store call_key + transition to Connecting.
+    // Update registry: store the media secret + transition to Connecting.
     if let Some(mut call) = registry.get(call_id) {
-        call.call_key = Some(call_key);
+        call.media_secret = Some(zeroize::Zeroizing::new(call_key));
         call.status = CallStatus::Connecting;
         let mut peer_arr = [0u8; 32];
         peer_arr.copy_from_slice(acceptor_x25519_pub);
@@ -229,10 +230,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     }
 
     // Bring up voice. Adapter handles the W14.1 pre-stage internally.
-    if let Err(e) = deps
-        .start_voice_session(call_id, &peer_pubkey, call_key, kind)
-        .await
-    {
+    if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
         deps.shutdown_voice_session().await;
         let hangup = MessagePayload::CallEnd {
@@ -259,6 +257,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         peer_public_key: peer_pubkey.clone(),
         kind,
     });
+    deps.present_active_call(call_id);
     let display_name = {
         let name = deps.friend_display_name(&peer_pubkey);
         if name.is_empty() {

@@ -13,6 +13,13 @@ mod queries;
 /// Singleton — one per identity at a time; rotates rarely.
 pub const PQ_LR_ID: u32 = 0;
 
+/// Identifier of the signed prekey. Fixed until the bundle carries the
+/// signed prekey's id (PQXDH §3.2), which signed-prekey rotation needs.
+pub const SPK_ID: u32 = 1;
+
+/// Unclaimed one-time keys kept per kind; beyond this the oldest go.
+pub const MAX_UNCLAIMED_ONE_TIME: usize = 200;
+
 /// Metadata produced by initiator-side session establishment.
 ///
 /// The ephemeral key, prekey IDs, and PQXDH ML-KEM ciphertext must be

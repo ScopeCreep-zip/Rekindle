@@ -17,8 +17,10 @@
 
 pub mod error;
 pub mod guard;
+pub mod scope;
 pub mod state;
 
 pub use error::LifecycleError;
 pub use guard::TransportGuard;
+pub use scope::{OnPanic, ScopeClosed, SessionScope, StuckTasks};
 pub use state::{AppLifecycle, LifecycleState};

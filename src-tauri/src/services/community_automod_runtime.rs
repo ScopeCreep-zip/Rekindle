@@ -53,7 +53,8 @@ pub async fn set_automod_rule_inner(
         .map_err(|e| format!("invalid rule id: {e}"))?
         .and_then(|bytes| bytes.try_into().ok())
         .unwrap_or_else(random_16_bytes);
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,
@@ -87,7 +88,8 @@ pub async fn delete_automod_rule_inner(
         "regexPatterns": existing.regex_patterns,
     }))
     .map_err(|e| format!("serialize trigger: {e}"))?;
-    let lamport = state_helpers::increment_lamport(state, &community_id);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
     crate::services::community::write_entry(
         state,
         &community_id,

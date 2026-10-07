@@ -1,6 +1,7 @@
-//! `attempt_pending_retry` body — parses the row's JSON body as
-//! either a DM `MessageEnvelope` or `PendingChannelMessage` and
-//! dispatches via the appropriate transport. Lifted out of
+//! `attempt_pending_retry` body — parses the row's JSON body as a DM
+//! `MessageEnvelope` and sends it. Channel writes are not queued here: a
+//! missed channel write is held and re-pushed by the record pool and saved
+//! to `dht_outbox` at logout (plan C7.13). Lifted out of
 //! `deps_impl.rs` so each trait method body stays one-liner thin.
 //!
 //! Returns the [`PendingRetryOutcome`] verbatim — the orchestrator
@@ -18,25 +19,23 @@ use crate::state_helpers;
 pub(super) async fn attempt_pending_retry(
     state: &Arc<AppState>,
     row: &PendingMessageRow,
+    stop: &tokio_util::sync::CancellationToken,
 ) -> PendingRetryOutcome {
     if let Ok(envelope) = serde_json::from_str::<MessageEnvelope>(&row.body) {
-        return attempt_dm_retry(state, &row.recipient_key, &envelope).await;
-    }
-    if let Ok(channel_msg) =
-        serde_json::from_str::<crate::services::community::PendingChannelMessage>(&row.body)
-    {
-        return attempt_channel_retry(state, &channel_msg).await;
+        return attempt_dm_retry(state, &row.recipient_key, &envelope, stop).await;
     }
     PendingRetryOutcome::Unrecognized
 }
 
-/// Retry one pending DM envelope. Mirrors pre-port
-/// `retry_pending_dm`: import the cached route, fall back to a
-/// mailbox-DHT read on miss, send via `messaging::sender::send_envelope`.
+/// Retry one pending DM envelope: import the cached route, fall back to a
+/// mailbox-DHT read on miss, re-sign with a fresh timestamp, send via
+/// `messaging::sender::send_envelope`. Session end interrupts the mailbox
+/// read and the send; the row stays for the next session.
 async fn attempt_dm_retry(
     state: &Arc<AppState>,
     recipient_key: &str,
     envelope: &MessageEnvelope,
+    stop: &tokio_util::sync::CancellationToken,
 ) -> PendingRetryOutcome {
     let route_id_and_rc = state_helpers::try_import_peer_route(state, recipient_key);
     if route_id_and_rc.is_none() && state_helpers::safe_api_and_routing_context(state).is_none() {
@@ -46,14 +45,42 @@ async fn attempt_dm_retry(
     let route_id_and_rc = if route_id_and_rc.is_some() {
         route_id_and_rc
     } else {
-        try_mailbox_route_fallback(state, recipient_key).await
+        match stop
+            .run_until_cancelled(try_mailbox_route_fallback(state, recipient_key))
+            .await
+        {
+            Some(found) => found,
+            None => return PendingRetryOutcome::Interrupted,
+        }
     };
     let Some((route_id, routing_context)) = route_id_and_rc else {
         return PendingRetryOutcome::Failed;
     };
-    match rekindle_protocol::messaging::sender::send_envelope(&routing_context, route_id, envelope)
+    // Fresh timestamp, same nonce: the receiver's freshness window would
+    // reject the original signature, and a copy that already arrived is
+    // dropped as a duplicate.
+    let envelope = match crate::services::message_service::resign_for_retry(
+        state,
+        recipient_key,
+        envelope,
+    ) {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            tracing::warn!(to = %recipient_key, %error, "pending DM cannot be re-signed — dropping");
+            return PendingRetryOutcome::Unrecognized;
+        }
+    };
+    let Some(sent) = stop
+        .run_until_cancelled(rekindle_protocol::messaging::sender::send_envelope(
+            &routing_context,
+            route_id.clone(),
+            &envelope,
+        ))
         .await
-    {
+    else {
+        return PendingRetryOutcome::Interrupted;
+    };
+    match state_helpers::note_send_result(state, &route_id, sent) {
         Ok(()) => {
             tracing::debug!(to = %recipient_key, "pending DM delivered successfully");
             PendingRetryOutcome::Delivered
@@ -65,107 +92,17 @@ async fn attempt_dm_retry(
     }
 }
 
-/// Retry one pending channel message via SMPL DHT write. Mirrors
-/// pre-port `retry_pending_channel_message`.
-async fn attempt_channel_retry(
-    state: &Arc<AppState>,
-    channel_msg: &crate::services::community::PendingChannelMessage,
-) -> PendingRetryOutcome {
-    let lookup = {
-        let communities = state.communities.read();
-        let Some(community) = communities.get(&channel_msg.community_id) else {
-            return PendingRetryOutcome::Failed;
-        };
-        let Some(channel_key) = community
-            .channel_log_keys
-            .get(&channel_msg.channel_id)
-            .cloned()
-        else {
-            return PendingRetryOutcome::Failed;
-        };
-        let Some(slot_keypair_str) = community.slot_keypair.clone() else {
-            return PendingRetryOutcome::Failed;
-        };
-        let Some(slot_index) = community.my_subkey_index else {
-            return PendingRetryOutcome::Failed;
-        };
-        (channel_key, slot_keypair_str, slot_index)
-    };
-    let (channel_key, slot_keypair_str, slot_index) = lookup;
-
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
-        return PendingRetryOutcome::Failed;
-    };
-    let Ok(writer) = slot_keypair_str.parse::<veilid_core::KeyPair>() else {
-        return PendingRetryOutcome::Failed;
-    };
-    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
-    let channel_record_message =
-        rekindle_protocol::dht::community::channel_record::ChannelMessage {
-            sequence: channel_msg.sequence,
-            sender_pseudonym: channel_msg.author_pseudonym.clone(),
-            ciphertext: channel_msg.ciphertext.clone(),
-            mek_generation: channel_msg.mek_generation,
-            timestamp: channel_msg.timestamp.cast_unsigned(),
-            reply_to: None,
-            lamport_ts: channel_msg.lamport_ts,
-            message_id: Some(channel_msg.message_id.clone()),
-            attachment: None,
-            flags: channel_msg.mention_flag_bits,
-            mentioned_pseudonyms: channel_msg.mentioned_pseudonyms.clone(),
-            mentioned_roles: channel_msg.mentioned_roles.clone(),
-        };
-    let (author_pseudo, signing_key) =
-        match state_helpers::pseudonym_credentials(state, &channel_msg.community_id) {
-            Ok(creds) => creds,
-            Err(error) => {
-                tracing::debug!(%error, "pending channel retry: no pseudonym credentials");
-                return PendingRetryOutcome::Failed;
-            }
-        };
-    if let Err(error) = rekindle_protocol::dht::community::channel_record::write_member_message(
-        &mgr,
-        &channel_key,
-        slot_index,
-        writer,
-        author_pseudo,
-        &signing_key,
-        &channel_record_message,
-    )
-    .await
-    {
-        tracing::debug!(%error, "pending channel message retry failed");
-        return PendingRetryOutcome::Failed;
-    }
-    // Architecture §28.2 — also fire the gossip MessageNotification
-    // so peers reading the registry hear about the delivery
-    // immediately, not just on next SMPL read.
-    let _ = crate::services::community::send_to_mesh(
-        state,
-        &channel_msg.community_id,
-        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::MessageNotification {
-            channel_id: channel_msg.channel_id.clone(),
-            message_id: channel_msg.message_id.clone(),
-            author_pseudonym: channel_msg.author_pseudonym.clone(),
-            subkey_index: channel_msg.subkey_index,
-            lamport_ts: channel_msg.lamport_ts,
-            sequence: channel_msg.sequence,
-            content_hash: channel_msg.content_hash.clone(),
-            timestamp: channel_msg.timestamp.cast_unsigned(),
-        },
-    );
-    tracing::debug!("pending channel message delivered");
-    PendingRetryOutcome::Delivered
-}
-
 async fn try_mailbox_route_fallback(
     state: &Arc<AppState>,
     recipient_key: &str,
 ) -> Option<(veilid_core::RouteId, veilid_core::RoutingContext)> {
     let mailbox_key = state_helpers::friend_mailbox_key(state, recipient_key)?;
     let rc = state_helpers::safe_routing_context(state)?;
+    let record_pool = state_helpers::record_pool(state).ok()?;
     let route_blob =
-        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &mailbox_key).await {
+        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&record_pool, &mailbox_key)
+            .await
+        {
             Ok(Some(blob)) if !blob.is_empty() => blob,
             Ok(_) => return None,
             Err(error) => {

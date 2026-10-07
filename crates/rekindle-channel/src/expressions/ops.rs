@@ -5,7 +5,7 @@ use rekindle_governance::state::ExpressionState;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::governance::GovernanceEntry;
 
-use super::limits::detect_image_media_type;
+use super::limits::{detect_audio_kind, detect_image_media_type};
 use super::upload::next_lamport;
 use crate::deps::{ChannelMessagingDeps, ExpressionView};
 use crate::error::ChannelError;
@@ -91,20 +91,30 @@ fn to_expression_view<D: ChannelMessagingDeps>(
         .attachment
         .as_ref()
         .and_then(|offer| deps.read_expression_bytes(community_id, offer));
-    let media_type = bytes
-        .as_deref()
-        .and_then(|b| detect_image_media_type(b, expression.animated))
-        .map(str::to_string);
-    let inline_data_base64 = bytes
-        .as_deref()
-        .map(|b| base64::engine::general_purpose::STANDARD.encode(b));
+    // The media type comes from the bytes' magic numbers, checked against
+    // the per-kind allowlist; a `data:` URL is built only for a type on it.
+    // The webview never chooses the type of a `data:` URL it renders.
+    let media_type = bytes.as_deref().and_then(|b| {
+        if expression.kind == "soundboard" {
+            detect_audio_kind(b)
+        } else {
+            detect_image_media_type(b, expression.animated)
+        }
+    });
+    let inline_data_url = bytes.as_deref().zip(media_type).map(|(b, mt)| {
+        format!(
+            "data:{mt};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(b)
+        )
+    });
+    let media_type = media_type.map(str::to_string);
 
     ExpressionView {
         expression_id: hex::encode(expression_id),
         name: expression.name,
         kind: expression.kind,
         content_hash: expression.content_hash,
-        inline_data_base64,
+        inline_data_url,
         media_type,
         animated: expression.animated,
         tags: expression.tags,

@@ -8,10 +8,10 @@ use rekindle_types::permissions;
 
 use crate::channels::community_channel::GameServerInfoDto;
 use crate::commands::community::helpers::{random_nonce, require_permission};
-use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use rekindle_db::Db;
 
 pub fn add_game_server_inner(
     state: &SharedState,
@@ -45,7 +45,7 @@ pub fn add_game_server_inner(
 
 pub async fn get_game_servers_inner(
     state: &SharedState,
-    pool: &DbPool,
+    pool: &Db,
     community_id: String,
 ) -> Result<Vec<GameServerInfoDto>, String> {
     require_permission(state, &community_id, permissions::VIEW_CHANNELS)?;

@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use crate::daemon::dispatch::DaemonContext;
 
-pub use cache::{DaemonMekPersist, MekCacheAdapter};
+pub use cache::{key_provider, DaemonMekPersist, MekCacheAdapter};
 
 /// Why a MEK needs replacing.
 #[derive(Debug, Clone)]
@@ -47,14 +47,24 @@ pub enum MekRotationKind {
     /// every recipient of the same departure queues this and exactly one
     /// of them does the work.
     Departure { departed_pseudonym_hex: String },
-    /// An operator asked for a specific channel's key to be replaced.
+    /// A gossip `Kick` (plan D20: kick rotates). The kicked member still
+    /// holds the current key. Acted on only when `kicker` holds
+    /// KICK_MEMBERS under the merged governance — gossip is unauthenticated
+    /// as to authority, and an unchecked kick would let anyone force
+    /// rotations. Then it is a departure of `target`.
+    Kick {
+        target_pseudonym_hex: String,
+        kicker_pseudonym_hex: String,
+    },
+    /// An operator asked for a specific key (community or channel) to be
+    /// replaced.
     ///
     /// No election: there is no departure to seed one with, and the
-    /// request names *this* node as the initiator. Honest peers accept
-    /// the resulting `MEKGenerationBump` because the CRDT treats it as a
-    /// Max-Register from any non-banned writer
-    /// (`rekindle_governance::validate`).
-    Manual { channel_id: String },
+    /// request names *this* node as the initiator, which must hold a
+    /// rotation permission (`rekindle_governance::validate`, plan D20).
+    Manual {
+        scope: rekindle_types::channel_keys::KeyScope,
+    },
 }
 
 /// A reason to replace a community's MEK, queued for the worker.
@@ -80,14 +90,31 @@ impl MekRotationRequest {
         }
     }
 
-    /// An operator-requested rotation of one channel.
+    /// A rotation for a gossip `Kick` of `target` sent by `kicker`.
     #[must_use]
-    pub fn manual(community_id: impl Into<String>, channel_id: impl Into<String>) -> Self {
+    pub fn kick(
+        community_id: impl Into<String>,
+        target_pseudonym_hex: impl Into<String>,
+        kicker_pseudonym_hex: impl Into<String>,
+    ) -> Self {
         Self {
             community_id: community_id.into(),
-            kind: MekRotationKind::Manual {
-                channel_id: channel_id.into(),
+            kind: MekRotationKind::Kick {
+                target_pseudonym_hex: target_pseudonym_hex.into(),
+                kicker_pseudonym_hex: kicker_pseudonym_hex.into(),
             },
+        }
+    }
+
+    /// An operator-requested rotation of one key.
+    #[must_use]
+    pub fn manual(
+        community_id: impl Into<String>,
+        scope: rekindle_types::channel_keys::KeyScope,
+    ) -> Self {
+        Self {
+            community_id: community_id.into(),
+            kind: MekRotationKind::Manual { scope },
         }
     }
 }
@@ -137,36 +164,82 @@ impl DaemonMekAdapter {
 /// through `wait_for_rotation_slot` instead of duplicating the work.
 pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
     tracing::info!("MEK rotation worker started");
-    while let Some(request) = rx.recv().await {
+    while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
+        // A rotation belongs to the unlock that queued it: dropped while
+        // locked, and cut off when a lock starts (it needs the signing key).
+        let unlock = ctx.unlock_scope_or_closed();
+        if unlock.is_closed() {
+            tracing::debug!(community = %request.community_id, "locked — rotation request dropped");
+            continue;
+        }
         let adapter = DaemonMekAdapter::new(Arc::clone(&ctx));
-        let short = &request.community_id[..16.min(request.community_id.len())];
-        let outcome = match &request.kind {
-            MekRotationKind::Departure {
-                departed_pseudonym_hex,
-            } => {
-                rekindle_mek_rotation::rotate_text_mek_for_departure(
-                    &adapter,
-                    &request.community_id,
+        let community = &request.community_id;
+        let rotation = async {
+            match &request.kind {
+                MekRotationKind::Departure {
                     departed_pseudonym_hex,
-                )
-                .await
-            }
-            MekRotationKind::Manual { channel_id } => {
-                rekindle_mek_rotation::rotate_mek_on_request(
-                    &adapter,
-                    &request.community_id,
-                    Some(channel_id),
-                )
-                .await
+                } => {
+                    rekindle_mek_rotation::rotate_text_mek_for_departure(
+                        &adapter,
+                        &request.community_id,
+                        departed_pseudonym_hex,
+                    )
+                    .await
+                }
+                MekRotationKind::Kick {
+                    target_pseudonym_hex,
+                    kicker_pseudonym_hex,
+                } => {
+                    let kicker =
+                        rekindle_types::id::PseudonymKey::from_hex_lossy(kicker_pseudonym_hex);
+                    let authorized = ctx
+                        .community_runtime
+                        .governance_state(&request.community_id)
+                        .is_some_and(|state| {
+                            rekindle_types::permissions::Permissions(
+                                rekindle_governance::permissions::compute_permissions(
+                                    &kicker, None, &state, 0,
+                                ),
+                            )
+                            .has(rekindle_types::permissions::KICK_MEMBERS)
+                        });
+                    if authorized {
+                        rekindle_mek_rotation::rotate_text_mek_for_departure(
+                            &adapter,
+                            &request.community_id,
+                            target_pseudonym_hex,
+                        )
+                        .await
+                    } else {
+                        tracing::debug!(community = %community, "kick from a member without KICK_MEMBERS — no rotation");
+                        Ok(())
+                    }
+                }
+                MekRotationKind::Manual { scope } => {
+                    rekindle_mek_rotation::rotate_mek_on_request(
+                        &adapter,
+                        &request.community_id,
+                        *scope,
+                    )
+                    .await
+                }
             }
         };
+        // A lock or exit closes the unlock scope, and the rotation stops at
+        // its next safe point (the cascade wait or the next recipient): an
+        // unrotated key is the same outcome as a rotation nobody was online
+        // to receive, which the protocol repairs. No Veilid call is cut.
+        let outcome = rotation.await;
+        if unlock.is_closed() {
+            tracing::debug!(community = %community, "rotation stopped by lock");
+        }
         match outcome {
-            Ok(()) => tracing::debug!(community = %short, "rotation finished"),
+            Ok(()) => tracing::debug!(community = %community, "rotation finished"),
             // Not an error path in the common case: losing the cascade
             // to a better-ranked peer, or having no online recipients,
             // both end here and both are correct outcomes.
             Err(e) => tracing::debug!(
-                community = %short,
+                community = %community,
                 error = %e,
                 "rotation did not complete"
             ),

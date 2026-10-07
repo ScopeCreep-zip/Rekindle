@@ -5,7 +5,7 @@
 //!
 //! Phase 20 REDO adds the full chiral-split `mesh_broadcast` +
 //! `peer_select` modules so the entire gossip pipeline (sign + dedup
-//! + lamport-bump + reliability-weighted fan-out + supervised
+//! + reliability-weighted fan-out + supervised
 //! per-peer retry) lives in the crate, parameterised over the
 //! `GossipDeps` trait. The pre-port src-tauri module collapses to a
 //! thin facade.

@@ -9,8 +9,8 @@ workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
-tracing = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 # GStreamer is the capture+encode engine on ALL platforms: automatic
 # MJPEG/YUYV/NV12 negotiation (decodebin + videoconvert), scaling
