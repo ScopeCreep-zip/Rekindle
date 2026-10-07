@@ -58,7 +58,9 @@ pub(super) fn write_voice_media_key(
     payload: &ControlPayload,
 ) {
     let ControlPayload::VoiceMediaKey {
+        community_id,
         channel_id,
+        sender,
         recipient,
         key_index,
         sealed,
@@ -66,10 +68,33 @@ pub(super) fn write_voice_media_key(
     else {
         unreachable!("write_voice_media_key: variant mismatch")
     };
+    p.set_community_id(community_id);
     p.set_channel_id(channel_id);
+    p.set_sender(sender);
     p.set_recipient(recipient);
     p.set_key_index(*key_index);
     p.set_sealed(sealed);
+}
+
+pub(super) fn write_voice_media_key_ack(
+    mut p: cap::voice_media_key_ack_payload::Builder<'_>,
+    payload: &ControlPayload,
+) {
+    let ControlPayload::VoiceMediaKeyAck {
+        community_id,
+        channel_id,
+        sender,
+        recipient,
+        key_index,
+    } = payload
+    else {
+        unreachable!("write_voice_media_key_ack: variant mismatch")
+    };
+    p.set_community_id(community_id);
+    p.set_channel_id(channel_id);
+    p.set_sender(sender);
+    p.set_recipient(recipient);
+    p.set_key_index(*key_index);
 }
 
 pub(super) fn write_voice_media_key_request(
@@ -77,14 +102,18 @@ pub(super) fn write_voice_media_key_request(
     payload: &ControlPayload,
 ) {
     let ControlPayload::VoiceMediaKeyRequest {
+        community_id,
         channel_id,
+        requester,
         sender,
         key_index,
     } = payload
     else {
         unreachable!("write_voice_media_key_request: variant mismatch")
     };
+    p.set_community_id(community_id);
     p.set_channel_id(channel_id);
+    p.set_requester(requester);
     p.set_sender(sender);
     p.set_key_index(*key_index);
 }
@@ -288,10 +317,24 @@ pub(super) fn read_voice_media_key(
     p: cap::voice_media_key_payload::Reader<'_>,
 ) -> Result<ControlPayload, CodecError> {
     Ok(ControlPayload::VoiceMediaKey {
+        community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        sender: text_to_string(p.get_sender().map_err(|e| capnp_err(&e))?)?,
         recipient: text_to_string(p.get_recipient().map_err(|e| capnp_err(&e))?)?,
         key_index: p.get_key_index(),
         sealed: p.get_sealed().map_err(|e| capnp_err(&e))?.to_vec(),
+    })
+}
+
+pub(super) fn read_voice_media_key_ack(
+    p: cap::voice_media_key_ack_payload::Reader<'_>,
+) -> Result<ControlPayload, CodecError> {
+    Ok(ControlPayload::VoiceMediaKeyAck {
+        community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
+        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        sender: text_to_string(p.get_sender().map_err(|e| capnp_err(&e))?)?,
+        recipient: text_to_string(p.get_recipient().map_err(|e| capnp_err(&e))?)?,
+        key_index: p.get_key_index(),
     })
 }
 
@@ -299,7 +342,9 @@ pub(super) fn read_voice_media_key_request(
     p: cap::voice_media_key_request_payload::Reader<'_>,
 ) -> Result<ControlPayload, CodecError> {
     Ok(ControlPayload::VoiceMediaKeyRequest {
+        community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        requester: text_to_string(p.get_requester().map_err(|e| capnp_err(&e))?)?,
         sender: text_to_string(p.get_sender().map_err(|e| capnp_err(&e))?)?,
         key_index: p.get_key_index(),
     })

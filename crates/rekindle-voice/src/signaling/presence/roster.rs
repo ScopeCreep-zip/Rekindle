@@ -124,7 +124,21 @@ pub(in crate::signaling) fn handle_voice_roster(
                 }
                 (added, t.peer_count())
             };
+            let is_stage = deps_task
+                .stage_channel_info(&cid, &channel_id)
+                .is_some_and(|s| s.is_stage);
             for (pseudonym_key, display_name) in added {
+                // Plan C7.20 — every roster add hands the peer our key,
+                // as the join and ack paths do.
+                crate::signaling::media_keys::on_peer_added(
+                    &deps_task,
+                    &cid,
+                    &channel_id,
+                    &transport,
+                    &pseudonym_key,
+                    is_stage,
+                )
+                .await;
                 deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
                     community_id: cid.clone(),
                     channel_id: channel_id.clone(),

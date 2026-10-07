@@ -71,7 +71,7 @@ pub use routes::{
 };
 pub use voice::{
     current_voice_scope, media_live_peers, set_voice_engine_deafened, set_voice_engine_muted,
-    voice_engine_present,
+    voice_engine_present, voice_transport_for,
 };
 
 // ── Shared private helpers used across submodules ──────────────────────

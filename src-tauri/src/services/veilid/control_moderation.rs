@@ -96,16 +96,7 @@ pub(crate) fn handle_gossip_control_payloads(
                 },
             );
         }
-        ControlPayload::VoiceJoin { .. }
-        | ControlPayload::VoiceLeave { .. }
-        | ControlPayload::VoiceModeSwitch { .. }
-        | ControlPayload::StageUpdate { .. }
-        | ControlPayload::SpeakRequest { .. }
-        | ControlPayload::SpeakResponse { .. }
-        | ControlPayload::VoiceMute { .. }
-        | ControlPayload::VoiceDeafen { .. }
-        | ControlPayload::VoiceRoster { .. }
-        | ControlPayload::SoundboardPlay { .. } => {
+        payload if rekindle_voice::signaling::is_voice_signaling(&payload) => {
             // Voice signaling adapter handles the spawn-and-forget
             // dispatch internally — the gossip dispatcher stays sync.
             crate::services::voice_signaling_adapter::handle_voice_signaling(

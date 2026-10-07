@@ -167,3 +167,45 @@ fn signed_envelope_ttl_default_agrees() {
     assert_eq!(mine.ttl, 5);
     assert_eq!(mine.ttl, theirs.ttl);
 }
+
+/// Plan C7.22 — the call-media key payloads survive Cap'n Proto intact:
+/// every field, including the community and both pseudonyms the
+/// unsigned app_call path relies on.
+#[test]
+fn media_key_payloads_round_trip() {
+    let payloads = [
+        ControlPayload::VoiceMediaKey {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            sender: "s".into(),
+            recipient: "r".into(),
+            key_index: 0x1234_5678_9abc,
+            sealed: vec![7; 80],
+        },
+        ControlPayload::VoiceMediaKeyAck {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            sender: "s".into(),
+            recipient: "r".into(),
+            key_index: 9,
+        },
+        ControlPayload::VoiceMediaKeyRequest {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            requester: "q".into(),
+            sender: "s".into(),
+            key_index: 3,
+        },
+    ];
+    for payload in payloads {
+        let bytes =
+            encode_community_envelope(&CommunityEnvelope::Control(payload.clone())).unwrap();
+        let decoded = crate::capnp_envelope::try_decode_community_envelope(&bytes)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            format!("{decoded:?}"),
+            format!("{:?}", CommunityEnvelope::Control(payload))
+        );
+    }
+}

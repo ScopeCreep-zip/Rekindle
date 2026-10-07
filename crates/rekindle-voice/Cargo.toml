@@ -45,6 +45,8 @@ tokio-util = "0.7"
 rekindle-media-stats = { path = "../rekindle-media-stats" }
 
 [dev-dependencies]
+# Paused-clock tests for the media-key delivery backoff (plan C7.22).
+tokio = { workspace = true, features = [ "test-util" ] }
 # Phase 7 Week 26 — voice latency benchmark (architecture line 4147,
 # target <100ms mouth-to-ear).
 criterion = { version = "0.5", features = [ "html_reports" ] }

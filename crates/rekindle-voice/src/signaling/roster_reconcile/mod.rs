@@ -243,7 +243,7 @@ pub async fn reconcile_from_presence(
                 .stage_channel_info(community_id, &channel_id)
                 .is_some_and(|s| s.is_stage);
             crate::signaling::media_keys::on_peer_removed(
-                &**deps,
+                deps,
                 community_id,
                 &channel_id,
                 &transport,

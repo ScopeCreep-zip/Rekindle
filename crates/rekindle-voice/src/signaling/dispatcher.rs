@@ -12,7 +12,31 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 use crate::signaling::{mute, presence, stage};
 
-/// Main dispatcher for voice-related `ControlPayload` variants.
+/// Whether [`handle_voice_signaling`] handles `payload`. Hosts route on
+/// this rather than keeping their own list, which is how `VoiceJoinAck`
+/// and `VoiceJoinConfirmed` went unrouted. Media keys are not gossip:
+/// they arrive by `app_call` (`media_keys`, plan C7.22).
+#[must_use]
+pub fn is_voice_signaling(payload: &ControlPayload) -> bool {
+    matches!(
+        payload,
+        ControlPayload::VoiceJoin { .. }
+            | ControlPayload::VoiceJoinAck { .. }
+            | ControlPayload::VoiceJoinConfirmed { .. }
+            | ControlPayload::VoiceLeave { .. }
+            | ControlPayload::VoiceModeSwitch { .. }
+            | ControlPayload::StageUpdate { .. }
+            | ControlPayload::SpeakRequest { .. }
+            | ControlPayload::SpeakResponse { .. }
+            | ControlPayload::VoiceMute { .. }
+            | ControlPayload::VoiceDeafen { .. }
+            | ControlPayload::VoiceRoster { .. }
+            | ControlPayload::SoundboardPlay { .. }
+    )
+}
+
+/// Main dispatcher for voice-related `ControlPayload` variants
+/// ([`is_voice_signaling`]).
 pub async fn handle_voice_signaling(
     deps: Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
@@ -56,33 +80,6 @@ pub async fn handle_voice_signaling(
                 community_id,
                 sender_pseudonym,
                 channel_id,
-            );
-        }
-        ControlPayload::VoiceMediaKey {
-            channel_id,
-            recipient,
-            key_index,
-            sealed,
-        } => {
-            crate::signaling::media_keys::handle_voice_media_key(
-                &deps,
-                community_id,
-                sender_pseudonym,
-                &channel_id,
-                &recipient,
-                key_index,
-                &sealed,
-            );
-        }
-        ControlPayload::VoiceMediaKeyRequest {
-            channel_id, sender, ..
-        } => {
-            crate::signaling::media_keys::handle_voice_media_key_request(
-                &deps,
-                community_id,
-                sender_pseudonym,
-                &channel_id,
-                &sender,
             );
         }
         ControlPayload::VoiceLeave { channel_id } => {

@@ -371,16 +371,31 @@ pub enum ControlPayload {
     /// `recipient`, bound to the channel, recipient and index. Directed to
     /// the channel roster (ttl = 0); others ignore it.
     VoiceMediaKey {
+        community_id: String,
         channel_id: String,
+        /// Pseudonym (hex) whose key this is; it sealed it.
+        sender: String,
         /// Pseudonym (hex) the key is sealed to.
         recipient: String,
         key_index: u64,
         sealed: Vec<u8>,
     },
+    /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
+    /// installed `sender`'s key at `key_index` (plan C7.22).
+    VoiceMediaKeyAck {
+        community_id: String,
+        channel_id: String,
+        sender: String,
+        recipient: String,
+        key_index: u64,
+    },
     /// Ask `sender` for its call-media key at `key_index`: a frame arrived
     /// under it before (or without) its push. Directed, ttl = 0.
     VoiceMediaKeyRequest {
+        community_id: String,
         channel_id: String,
+        /// Pseudonym (hex) asking; the key is sealed to it.
+        requester: String,
         /// Pseudonym (hex) whose key is asked for.
         sender: String,
         key_index: u64,

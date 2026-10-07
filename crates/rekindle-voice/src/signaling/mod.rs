@@ -38,7 +38,8 @@ pub(crate) mod stage;
 pub use deps::{
     perms, CommunityVoiceEvent, StageChannelInfo, VoiceRosterParticipant, VoiceSignalingDeps,
 };
-pub use dispatcher::handle_voice_signaling;
+pub use dispatcher::{handle_voice_signaling, is_voice_signaling};
+pub use media_keys::{handle_voice_media_key, handle_voice_media_key_request};
 pub use presence::member_departed;
 pub use roster_reconcile::{
     compute_roster_reconcile, compute_route_reannounce, reconcile_from_presence, PresencePeerView,

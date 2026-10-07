@@ -274,6 +274,16 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
         sealed: &[u8],
     ) -> Option<zeroize::Zeroizing<[u8; 32]>>;
 
+    /// Send `envelope` to the peer at `route_blob` by `app_call` and
+    /// return its decoded reply (plan C7.22: media keys go point to point
+    /// and are acknowledged, never gossiped). `None` when the call or the
+    /// reply's decoding failed.
+    async fn call_peer(
+        &self,
+        route_blob: &[u8],
+        envelope: &CommunityEnvelope,
+    ) -> Option<CommunityEnvelope>;
+
     /// Send a gossip envelope to the community mesh. Phase 20
     /// (rekindle-gossip) eventually owns this; today the adapter
     /// delegates to `services::community::send_to_mesh`. Sync because

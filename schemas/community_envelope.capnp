@@ -464,20 +464,37 @@ struct VoiceJoinConfirmedPayload @0xea0046000000a000 {
     channelId            @0 :Text;
 }
 
-# Plan C7.20: a sender's call-media key sealed to one participant
-# (HPKE Auth, bound to channel, recipient and index). Directed, ttl=0.
+# Plan C7.20/C7.22: `sender`'s call-media key sealed to `recipient`
+# (HPKE Auth from sender to recipient, bound to channel, recipient and
+# index). Delivered by app_call to the recipient's route and answered
+# with VoiceMediaKeyAck; never gossiped.
 struct VoiceMediaKeyPayload @0xf0582658caa27994 {
     channelId            @0 :Text;
     recipient            @1 :Text;
     keyIndex             @2 :UInt64;
     sealed               @3 :Data;
+    communityId          @4 :Text;
+    sender               @5 :Text;
 }
 
-# Plan C7.20: ask `sender` for its call-media key at `keyIndex`.
+# Plan C7.20/C7.22: `requester` asks `sender` for its call-media key at
+# `keyIndex`, by app_call to the sender's route.
 struct VoiceMediaKeyRequestPayload @0xec201d80acd40911 {
     channelId            @0 :Text;
     sender               @1 :Text;
     keyIndex             @2 :UInt64;
+    communityId          @3 :Text;
+    requester            @4 :Text;
+}
+
+# Plan C7.22: the reply to a VoiceMediaKey — `recipient` opened and
+# installed `sender`'s key at `keyIndex`.
+struct VoiceMediaKeyAckPayload @0xabdce9cd05ea8d37 {
+    communityId          @0 :Text;
+    channelId            @1 :Text;
+    sender               @2 :Text;
+    recipient            @3 :Text;
+    keyIndex             @4 :UInt64;
 }
 
 struct VoiceLeavePayload @0xea002f000000a000 {
@@ -782,5 +799,6 @@ struct ControlPayload @0xeaffffff00000001 {
         voiceJoinConfirmed       @70 :VoiceJoinConfirmedPayload;
         voiceMediaKey            @71 :VoiceMediaKeyPayload;
         voiceMediaKeyRequest     @72 :VoiceMediaKeyRequestPayload;
+        voiceMediaKeyAck         @73 :VoiceMediaKeyAckPayload;
     }
 }

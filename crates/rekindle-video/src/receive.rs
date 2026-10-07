@@ -440,14 +440,16 @@ fn emit_frame_ready<D: VideoDeps>(
     {
         Ok(secret) => secret,
         Err(missing) => {
-            tracing::warn!(
-                target: "rekindle_video::receive",
-                community_id = %community_id,
-                sender_pseudonym = %sender_pseudonym,
-                key_index = frame.key_index,
-                "video frame under a sender key we lack — requesting it"
-            );
+            // Logged once per request, not per frame: frames under the
+            // key are dropped until it arrives.
             if reassembly.should_request_key(community_id, sender_pseudonym, now_ms) {
+                tracing::warn!(
+                    target: "rekindle_video::receive",
+                    community_id = %community_id,
+                    sender_pseudonym = %sender_pseudonym,
+                    key_index = frame.key_index,
+                    "video frames under a sender key we lack — dropped; requesting it"
+                );
                 deps.request_media_key(community_id, channel_id, &missing.sender, missing.index);
             }
             return;

@@ -322,6 +322,7 @@ pub fn control_into_event(
         | ControlPayload::VoiceJoinConfirmed { .. }
         | ControlPayload::VoiceMediaKey { .. }
         | ControlPayload::VoiceMediaKeyRequest { .. }
+        | ControlPayload::VoiceMediaKeyAck { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

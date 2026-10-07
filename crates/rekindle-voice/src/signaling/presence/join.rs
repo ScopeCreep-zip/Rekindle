@@ -136,7 +136,7 @@ async fn voice_join_apply(
         // rotated one to everyone. A re-announce is a route upsert and
         // shares nothing; a peer missing our key asks for it.
         crate::signaling::media_keys::on_peer_added(
-            &**deps,
+            deps,
             community_id,
             channel_id,
             &transport,

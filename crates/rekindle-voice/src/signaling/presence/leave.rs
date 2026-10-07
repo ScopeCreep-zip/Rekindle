@@ -44,7 +44,7 @@ pub(in crate::signaling) fn handle_voice_leave(
         let sender_key = sender_key.clone();
         let my_pk = my_pk.clone();
         deps.scope().spawn_or_drop("voice leave apply", async move {
-            voice_leave_apply(&*deps_task, &cid, &ch_id, transport, sender_key, my_pk).await;
+            voice_leave_apply(&deps_task, &cid, &ch_id, transport, sender_key, my_pk).await;
         });
     }
 
@@ -70,7 +70,7 @@ pub fn member_departed(deps: &Arc<dyn VoiceSignalingDeps>, community_id: &str, d
 }
 
 async fn voice_leave_apply(
-    deps: &dyn VoiceSignalingDeps,
+    deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
     channel_id: &str,
     transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
@@ -108,7 +108,7 @@ async fn voice_leave_apply(
     }
 
     if is_stage {
-        reconcile_stage_transport(deps, community_id, channel_id, &transport, &my_pk).await;
+        reconcile_stage_transport(&**deps, community_id, channel_id, &transport, &my_pk).await;
         return;
     }
 
@@ -138,7 +138,7 @@ async fn voice_leave_apply(
             transport.lock().await.set_mode(VoiceMode::Mesh);
             deps.stop_mcu_loop().await;
             crate::signaling::dispatcher::broadcast_mode_switch(
-                deps,
+                &**deps,
                 community_id,
                 channel_id,
                 "mesh",
@@ -148,7 +148,7 @@ async fn voice_leave_apply(
         topology::ModeDecision::SwitchToMcu { host } => {
             tracing::info!(host = %host, "voice mode → mcu (re-elected after host left)");
             crate::signaling::dispatcher::broadcast_mode_switch(
-                deps,
+                &**deps,
                 community_id,
                 channel_id,
                 "mcu",

@@ -81,6 +81,40 @@ pub fn member_departed(
     rekindle_voice::signaling::member_departed(&deps, community_id, departed);
 }
 
+/// An inbound media-key `app_call` (plan C7.22): a `VoiceMediaKey` is
+/// installed and answered with its `VoiceMediaKeyAck`; a
+/// `VoiceMediaKeyRequest` starts our deliveries and is answered with a
+/// bare acknowledgement. Returns the reply bytes.
+pub fn answer_media_key_call(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    payload: &rekindle_codec::community::envelope::ControlPayload,
+) -> Vec<u8> {
+    use rekindle_codec::community::envelope::ControlPayload;
+    let Ok(pool) = state.db.current() else {
+        return b"ACK".to_vec();
+    };
+    let deps: Arc<dyn VoiceSignalingDeps> =
+        VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
+    match payload {
+        ControlPayload::VoiceMediaKey { .. } => {
+            rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
+                .and_then(|ack| {
+                    rekindle_codec::capnp_envelope::encode_community_envelope(
+                        &CommunityEnvelope::Control(ack),
+                    )
+                    .ok()
+                })
+                .unwrap_or_else(|| b"ACK".to_vec())
+        }
+        ControlPayload::VoiceMediaKeyRequest { .. } => {
+            rekindle_voice::signaling::handle_voice_media_key_request(&deps, payload);
+            b"ACK".to_vec()
+        }
+        _ => b"ACK".to_vec(),
+    }
+}
+
 #[async_trait]
 impl VoiceSignalingDeps for VoiceSignalingAdapter {
     fn my_pseudonym(&self, community_id: &str) -> Option<String> {
@@ -248,6 +282,21 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
             state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
         let sender: [u8; 32] = hex::decode(sender).ok()?.try_into().ok()?;
         rekindle_secrets::media_sender_key::open(&signing_key, &sender, aad, sealed).ok()
+    }
+
+    async fn call_peer(
+        &self,
+        route_blob: &[u8],
+        envelope: &CommunityEnvelope,
+    ) -> Option<CommunityEnvelope> {
+        let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(envelope).ok()?;
+        let reply = state_helpers::call_route_blob(&self.state, route_blob, bytes)
+            .await
+            .map_err(|error| tracing::debug!(%error, "voice call_peer failed"))
+            .ok()?;
+        rekindle_codec::capnp_envelope::try_decode_community_envelope(&reply)
+            .ok()
+            .flatten()
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope) {

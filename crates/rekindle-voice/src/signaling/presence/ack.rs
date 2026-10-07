@@ -65,7 +65,7 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                     .stage_channel_info(&cid, &channel_id)
                     .is_some_and(|s| s.is_stage);
                 crate::signaling::media_keys::on_peer_added(
-                    &*deps_task,
+                    &deps_task,
                     &cid,
                     &channel_id,
                     &transport,

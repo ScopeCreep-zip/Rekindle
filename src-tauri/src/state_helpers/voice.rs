@@ -83,3 +83,18 @@ pub fn media_live_peers(state: &Arc<AppState>) -> std::collections::HashSet<Stri
             )
         })
 }
+
+/// The voice transport when the engine is bound to `community_id` /
+/// `channel_id`; `None` when no engine runs or it is on another channel.
+/// The `voice_engine` guard drops before this returns, so no sync guard
+/// is held across the caller's `.lock().await`.
+pub fn voice_transport_for(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>> {
+    let engine = state.voice_engine.lock();
+    let handle = engine.as_ref()?;
+    (handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id)
+        .then(|| Arc::clone(&handle.transport))
+}
