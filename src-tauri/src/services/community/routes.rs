@@ -23,25 +23,42 @@ pub async fn resolve_member_route(
     let owner_key = state_helpers::current_owner_key(state).ok()?;
     let cid = community_id.to_string();
     let pk = peer_pseudonym.to_string();
-    let (subkey_index, segment_index) = crate::db_helpers::db_call(pool, move |conn| {
+    let slot = crate::db_helpers::db_call(pool, move |conn| {
         rekindle_db::repo::members::slot(conn, &owner_key, &cid, &pk)
     })
     .await
-    .ok()??;
+    .ok()
+    .flatten();
+    let Some((subkey_index, segment_index)) = slot else {
+        tracing::debug!(community = %community_id, peer = %peer_pseudonym, "route resolve: no known slot for the peer");
+        return None;
+    };
 
-    let registry_key =
+    let Some(registry_key) =
         crate::services::community::segments::segment_descriptors(state, community_id)
             .into_iter()
             .find(|d| d.segment_index == segment_index)
-            .map(|d| d.registry_key)?;
+            .map(|d| d.registry_key)
+    else {
+        tracing::debug!(community = %community_id, peer = %peer_pseudonym, segment_index, "route resolve: no registry for the peer's segment");
+        return None;
+    };
 
-    let raw = state_helpers::record_pool(state)
-        .ok()?
+    let pool_records = state_helpers::record_pool(state).ok()?;
+    let read = pool_records
         .read_once(&registry_key.parse().ok()?, subkey_index, true)
-        .await
-        .ok()??
-        .data()
-        .to_vec();
+        .await;
+    let raw = match read {
+        Ok(Some(value)) => value.data().to_vec(),
+        Ok(None) => {
+            tracing::debug!(community = %community_id, peer = %peer_pseudonym, subkey_index, "route resolve: the peer's slot holds no value");
+            return None;
+        }
+        Err(error) => {
+            tracing::debug!(community = %community_id, peer = %peer_pseudonym, subkey_index, %error, "route resolve: reading the peer's slot failed");
+            return None;
+        }
+    };
 
     // Same trust gate as the presence scan (W26 signature + ban +
     // liveness) plus a pseudonym match — the slot index comes from
@@ -56,11 +73,17 @@ pub async fn resolve_member_route(
                     .collect()
             })
             .unwrap_or_default();
-    rekindle_presence::route_for_peer(
+    match rekindle_presence::explain_route_for_peer(
         &raw,
         peer_pseudonym,
         &banned,
         rekindle_presence::STALE_HEARTBEAT_SECS,
         rekindle_utils::timestamp_secs(),
-    )
+    ) {
+        Ok(route) => Some(route),
+        Err(refusal) => {
+            tracing::debug!(community = %community_id, peer = %peer_pseudonym, subkey_index, ?refusal, "route resolve: the peer's row has no usable route");
+            None
+        }
+    }
 }

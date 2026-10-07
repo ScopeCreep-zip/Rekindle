@@ -120,11 +120,24 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 skip_subkey,
             )
             .await;
+        tracing::debug!(
+            community = %community_id,
+            segment = descriptor.segment_index,
+            rows = raw_rows.len(),
+            "presence scan: segment rows read",
+        );
         for (subkey, raw_bytes) in raw_rows {
             let classified = crate::community::scan_row::parse_and_classify_row(
                 &raw_bytes,
                 &banned,
                 STALE_HEARTBEAT_SECS,
+                now_secs,
+            );
+            log_scanned_row(
+                community_id,
+                descriptor.segment_index,
+                subkey,
+                &classified,
                 now_secs,
             );
             if let crate::community::scan_row::ClassifiedRow::Accepted(row) = classified {
@@ -343,6 +356,38 @@ pub async fn presence_poll_tick_public<D: CommunityPresenceDeps>(
 #[must_use]
 pub fn steady_poll_duration() -> Duration {
     Duration::from_secs(crate::community::spawn::STEADY_TICK_INTERVAL_SECS)
+}
+
+/// One scanned registry row, as the scan judged it: what decides whether a
+/// member shows up and whether it can be reached.
+fn log_scanned_row(
+    community_id: &str,
+    segment: u32,
+    subkey: u32,
+    classified: &crate::community::scan_row::ClassifiedRow,
+    now_secs: u64,
+) {
+    match classified {
+        crate::community::scan_row::ClassifiedRow::Accepted(row) => tracing::debug!(
+            community = %community_id,
+            segment,
+            subkey,
+            member = %row.pseudonym_hex,
+            status = %row.presence.status,
+            heartbeat_age_secs = now_secs.saturating_sub(row.presence.last_heartbeat),
+            online = row.online_member.is_some(),
+            route_len = row.presence.route_blob.len(),
+            media_route_len = row.presence.media_route_blob.len(),
+            "presence scan: row accepted",
+        ),
+        other => tracing::debug!(
+            community = %community_id,
+            segment,
+            subkey,
+            outcome = other.label(),
+            "presence scan: row not accepted",
+        ),
+    }
 }
 
 #[cfg(test)]

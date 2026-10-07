@@ -249,10 +249,7 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          carries protocol's.",
     ),
     (
-        &[
-            "rekindle (src-tauri)::RoleDto",
-            "rekindle-codec::RoleDto",
-        ],
+        &["rekindle (src-tauri)::RoleDto", "rekindle-codec::RoleDto"],
         "src-tauri's serialises `permissions` as a string \
          (`serialize_u64_as_string`): a u64 above 2^53-1 loses low bits \
          through JavaScript's Number, which silently strips \

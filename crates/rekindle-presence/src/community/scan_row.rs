@@ -86,6 +86,22 @@ pub struct AcceptedRow {
 /// - `last_heartbeat <= stale_threshold` → stale; not online.
 /// - otherwise → online (route_blob carried through, may be empty),
 ///   with `last_seen = now_secs`.
+impl ClassifiedRow {
+    /// The classification's name, for diagnostics.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Accepted(_) => "accepted",
+            Self::MalformedJson => "malformed-json",
+            Self::InvalidSignatureLength => "invalid-signature-length",
+            Self::SignatureRejected => "signature-rejected",
+            Self::Banned => "banned",
+            Self::EmptyPayload => "empty-payload",
+            Self::Departed => "departed",
+        }
+    }
+}
+
 #[must_use]
 pub fn parse_and_classify_row<S: BuildHasher>(
     raw_bytes: &[u8],
@@ -169,23 +185,58 @@ pub fn route_for_peer<S: BuildHasher>(
     stale_heartbeat_threshold_secs: u64,
     now_secs: u64,
 ) -> Option<Vec<u8>> {
+    explain_route_for_peer(
+        raw_bytes,
+        expected_pseudonym_hex,
+        banned_pseudonyms,
+        stale_heartbeat_threshold_secs,
+        now_secs,
+    )
+    .ok()
+}
+
+/// Why [`route_for_peer`] found no usable route in a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteRefusal {
+    /// The row did not pass the scan's checks; the label names which.
+    Row(&'static str),
+    /// A valid row, but another member's.
+    PseudonymMismatch,
+    /// The member's heartbeat is stale or its status is offline.
+    Offline,
+    /// A live member whose row carries no route yet.
+    EmptyRoute,
+}
+
+/// [`route_for_peer`], saying why when there is no route.
+///
+/// # Errors
+/// The [`RouteRefusal`] that stopped it.
+pub fn explain_route_for_peer<S: BuildHasher>(
+    raw_bytes: &[u8],
+    expected_pseudonym_hex: &str,
+    banned_pseudonyms: &HashSet<String, S>,
+    stale_heartbeat_threshold_secs: u64,
+    now_secs: u64,
+) -> Result<Vec<u8>, RouteRefusal> {
     let classified = parse_and_classify_row(
         raw_bytes,
         banned_pseudonyms,
         stale_heartbeat_threshold_secs,
         now_secs,
     );
-    let ClassifiedRow::Accepted(row) = classified else {
-        return None;
+    let row = match classified {
+        ClassifiedRow::Accepted(row) => row,
+        other => return Err(RouteRefusal::Row(other.label())),
     };
     if row.pseudonym_hex != expected_pseudonym_hex {
-        return None;
+        return Err(RouteRefusal::PseudonymMismatch);
     }
-    let online = row.online_member?;
+    let online = row.online_member.ok_or(RouteRefusal::Offline)?;
     if online.route_blob.is_empty() {
-        return None;
+        return Err(RouteRefusal::EmptyRoute);
     }
-    Some(online.route_blob)
+    Ok(online.route_blob)
 }
 
 #[cfg(test)]

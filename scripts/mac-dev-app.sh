@@ -131,7 +131,12 @@ if pgrep -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle-desktop" >/dev/
 fi
 echo "→ launching Rekindle Dev.app (log: $APP_LOG)"
 : >"$APP_LOG"
-open --stdout "$APP_LOG" --stderr "$APP_LOG" "$APP_DIR"
+# LaunchServices does not hand the shell's environment to the app, so the
+# log filter is passed explicitly. Same default as scripts/linux-dev.sh:
+# the voice/video paths plus the presence scan and member-route resolve
+# diagnostics, which say why a peer is or is not visible and reachable.
+RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rekindle_video=debug,rekindle_voice=debug,rekindle_presence::community::poll=debug,rekindle_lib::services::community::routes=debug}"
+open --env "RUST_LOG=$RUST_LOG" --stdout "$APP_LOG" --stderr "$APP_LOG" "$APP_DIR"
 echo "✓ running — Rust changes need a re-run of this script; frontend hot-reloads"
 echo "── live logs (Ctrl-C stops the tail, NOT the app) ──"
 exec tail -f "$APP_LOG"
