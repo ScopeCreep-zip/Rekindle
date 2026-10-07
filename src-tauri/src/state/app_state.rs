@@ -265,6 +265,9 @@ pub struct AppState {
     /// recv loop so incoming media `AppMessage`s can't back up in the
     /// node's 4096-deep update channel behind them.
     pub control_ingress: Arc<crate::services::veilid::control_ingress::ControlIngressQueue>,
+    /// Inbound `app_call`s, served concurrently within Veilid's answer
+    /// deadline (plan C7.22).
+    pub app_call_lane: crate::services::veilid::app_call_lane::AppCallLane,
     /// Producer side of the per-session video pacer (Phase 4). `None`
     /// outside an active community voice session. Built frames are
     /// `try_send`-ed here; the pacer task releases them at the
@@ -408,6 +411,7 @@ impl Default for AppState {
             gossip_ingress: Arc::new(
                 crate::services::veilid::ingress_queue::GossipIngressQueue::new(),
             ),
+            app_call_lane: crate::services::veilid::app_call_lane::AppCallLane::default(),
             control_ingress: Arc::new(
                 crate::services::veilid::control_ingress::ControlIngressQueue::new(),
             ),

@@ -227,8 +227,14 @@ pub async fn start_dispatch_loop(
                         // and presence `ValueChange`s are staleness-checked
                         // via `last_heartbeat`.
                         match update {
-                            VeilidUpdate::ValueChange(_) | VeilidUpdate::AppCall(_) => {
+                            VeilidUpdate::ValueChange(_) => {
                                 state.control_ingress.push(update);
+                            }
+                            // Plan C7.22 — a call must be answered within
+                            // Veilid's 5 s deadline, so it never waits
+                            // behind `ValueChange`s (`app_call_lane`).
+                            VeilidUpdate::AppCall(_) => {
+                                state.app_call_lane.dispatch(&app_handle, &state, update);
                             }
                             _ => {
                                 crate::services::veilid::handle_veilid_update(
