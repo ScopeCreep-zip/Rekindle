@@ -83,6 +83,12 @@ labels! {
     /// sender keys) from the scope secret, the sender's key and the
     /// sender's session tag.
     VOICE_SENDER_KEY = "rekindle-voice-sender-key-v1";
+    /// HPKE info: a call-media sender key sealed to one participant
+    /// (RFC 9605 §5.1 sender keys, sent pairwise; plan C7.20).
+    MEDIA_KEY_SEAL = "rekindle-media-key-seal-v1";
+    /// HKDF info prefix: a video sender's frame key from its media sender
+    /// key and its own key, so the secret never keys two constructions.
+    VIDEO_SENDER_KEY = "rekindle-video-sender-key-v1";
     /// Signature prefix: voice packet (SFrame payload, Cap'n Proto).
     VOICE_PACKET = "rekindle-voice-packet-v2";
     /// Signature prefix: voice receiver report. Distinct from

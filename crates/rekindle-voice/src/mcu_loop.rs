@@ -38,8 +38,8 @@ pub struct McuParams {
     /// The loop's scope, which its per-recipient sends also run in.
     pub sends: std::sync::Arc<rekindle_lifecycle::SessionScope>,
     pub our_key_bytes: Vec<u8>,
-    /// The channel's media keys, for opening inbound frames and sealing
-    /// the mixes.
+    /// The call's media keys (each sender's own, plan C7.20), for opening
+    /// inbound frames and sealing the mixes.
     pub keys: std::sync::Arc<MediaKeys>,
 }
 

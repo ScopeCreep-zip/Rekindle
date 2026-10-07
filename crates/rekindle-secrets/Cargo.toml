@@ -23,6 +23,7 @@ x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 hex = "0.4"
 hpke = { version = "0.14", default-features = false, features = [ "alloc", "getrandom", "x25519", "hkdfsha2", "chacha" ] }
 libcrux-ml-kem = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 zeroize = { version = "1", features = [ "derive" ] }
 

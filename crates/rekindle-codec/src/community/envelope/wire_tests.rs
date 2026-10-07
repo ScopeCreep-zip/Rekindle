@@ -23,7 +23,7 @@ fn sample_video_fragment() -> ControlPayload {
         keyframe: true,
         codec: Codec::Vp9,
         timestamp: 123_456,
-        mek_generation: 9,
+        key_index: 9,
         transport_seq: 77,
         payload: vec![1, 2, 3],
         signature: vec![4, 5, 6],
@@ -41,7 +41,7 @@ fn sample_parity() -> ControlPayload {
         codec: Codec::Vp9,
         frame_len: 999,
         timestamp: 123_456,
-        mek_generation: 9,
+        key_index: 9,
         transport_seq: 78,
         payload: vec![9, 9],
         signature: vec![8, 8],
@@ -88,7 +88,7 @@ fn serde_json_wire_identity() {
     let v = serde_json::to_value(sample_video_fragment()).unwrap();
     assert_eq!(v["type"], "VideoFragment");
     assert_eq!(v["data"]["stream_id"][0], 7);
-    assert_eq!(v["data"]["mek_generation"], 9);
+    assert_eq!(v["data"]["key_index"], 9);
     let p = serde_json::to_value(sample_parity()).unwrap();
     assert_eq!(p["type"], "VideoParityFragment");
     assert_eq!(p["data"]["data_count"], 3);

@@ -1,7 +1,12 @@
 use crate::state::AppState;
 
 /// Clean up user-specific state on logout without shutting down the Veilid node.
-pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppState) {
+pub async fn logout_cleanup(end: crate::services::session::SessionEnd<'_>, state: &AppState) {
+    use crate::services::session::SessionEnd;
+    let app_handle = match end {
+        SessionEnd::Logout(app) => Some(app),
+        SessionEnd::Exit => None,
+    };
     crate::services::voice_adapter::shutdown_voice(state, &rekindle_voice::VoiceShutdownOpts::FULL)
         .await;
 
@@ -10,11 +15,12 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     // answer, never the next user's.
     *state.pending_deep_link.lock() = None;
 
-    // This session's routes go, and fresh ones are allocated for the next
-    // login: a route is never shared by two identities (plan C7.9b). A
-    // route left allocated would persist in Veilid's table store and keep
-    // answering peers' pings.
-    if let Some(routes) = state.own_routes.read().clone() {
+    // This session's routes go, and on a logout fresh ones are allocated
+    // for the next login: a route is never shared by two identities (plan
+    // C7.9b). A route left allocated would persist in Veilid's table store
+    // and keep answering peers' pings. At exit no login follows, and
+    // `shutdown_app` releases them for good.
+    if let (SessionEnd::Logout(_), Some(routes)) = (end, state.own_routes.read().clone()) {
         routes.renew();
     }
 
@@ -74,7 +80,7 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     state.relay_probe_cooldown.lock().clear();
     state.dedup_cache.lock().clear();
     state.envelope_replay.lock().clear();
-    state.voice_media_senders.clear();
+    state.voice_sender_keys.clear();
 
     tracing::info!("logout cleanup complete — node still running");
 }

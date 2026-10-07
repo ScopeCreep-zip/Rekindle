@@ -80,7 +80,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             keyframe,
             codec,
             timestamp,
-            mek_generation,
+            key_index,
             transport_seq,
             payload,
             signature,
@@ -104,7 +104,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 keyframe,
                 codec,
                 timestamp,
-                mek_generation,
+                key_index,
                 payload,
                 signature,
             };
@@ -162,7 +162,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             codec,
             frame_len,
             timestamp,
-            mek_generation,
+            key_index,
             transport_seq,
             payload,
             signature,
@@ -187,7 +187,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 codec,
                 frame_len,
                 timestamp,
-                mek_generation,
+                key_index,
                 payload,
                 signature,
             };
@@ -418,16 +418,13 @@ fn fragment_signature_valid(sender_hex: &str, to_sign: &[u8], signature: &[u8]) 
     rekindle_secrets::derive::verify_pseudonym_signature(&pseudonym, to_sign, &sig).is_ok()
 }
 
-/// Decrypt a reassembled frame under the channel-media MEK and emit
-/// `VideoEvent::FrameReady` with the plaintext payload. The channel
-/// gate in `handle_video_payload` already guarantees the frame belongs
-/// to the channel we're actively in. Every fragment carries the
-/// generation it was encrypted with, so recovery is CONVERGENT: a
-/// miss, mismatch, or decrypt failure requests EXACTLY the frame's
-/// generation (debounced) — never a guess. The same-generation
-/// decrypt-failure case covers split-brain rotations (both sides
-/// minted the same generation independently): the responder serves
-/// its key for that generation and the requester overwrites.
+/// Decrypt a reassembled frame under its sender's own media key (plan
+/// C7.20) and emit `VideoEvent::FrameReady` with the plaintext payload.
+/// The channel gate in `handle_video_payload` already guarantees the frame
+/// belongs to the channel we're actively in. The frame names its sender's
+/// key index; a key we lack is requested from that sender (debounced).
+/// A frame that does not open under its sender's exact key is tampered:
+/// each key has one writer, so there is no rotation race to recover from.
 fn emit_frame_ready<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
@@ -437,53 +434,30 @@ fn emit_frame_ready<D: VideoDeps>(
     frame: &ReassembledFrame,
     now_ms: u32,
 ) {
-    use rekindle_types::channel_keys::{media_key, KeyEpoch, MediaKey};
-
-    let provider = deps.keys();
-    let Some(scope) = rekindle_types::id::ChannelId::from_hex(channel_id)
-        .map(|channel| provider.scope_for_media(community_id, channel))
-    else {
-        tracing::debug!(target: "rekindle_video::receive", channel_id, "video frame for a non-channel id — dropped");
-        return;
-    };
-    // The frame names its generation; it opens only under that
-    // generation's key — the current one, or the one it replaced within
-    // the post-rotation grace (RFC 9605 §4.4.1; DAVE previous-epoch
-    // retention). Past the grace, a sender behind us is dropped without a
-    // request: an older key can't help, and the replaced key is one a
-    // removed member still holds.
-    let secret = match media_key(
-        &*provider,
-        community_id,
-        scope,
-        KeyEpoch(frame.mek_generation),
-    ) {
-        MediaKey::Key(secret) => secret,
-        MediaKey::Stale => {
-            tracing::debug!(
-                target: "rekindle_video::receive",
-                community_id = %community_id,
-                sender_pseudonym = %sender_pseudonym,
-                frame_generation = frame.mek_generation,
-                "video frame under a retired MEK generation — dropped"
-            );
-            return;
-        }
-        MediaKey::Missing { needed } => {
+    let secret = match deps
+        .channel_sender_keys(community_id, channel_id)
+        .secret_at(sender_pseudonym, frame.key_index)
+    {
+        Ok(secret) => secret,
+        Err(missing) => {
             tracing::warn!(
                 target: "rekindle_video::receive",
                 community_id = %community_id,
                 sender_pseudonym = %sender_pseudonym,
-                frame_generation = frame.mek_generation,
-                "video frame under a MEK generation we do not hold — requesting it"
+                key_index = frame.key_index,
+                "video frame under a sender key we lack — requesting it"
             );
-            if reassembly.should_request_mek(community_id, now_ms) {
-                deps.request_mek_refresh(community_id, channel_id, needed.0);
+            if reassembly.should_request_key(community_id, sender_pseudonym, now_ms) {
+                deps.request_media_key(community_id, channel_id, &missing.sender, missing.index);
             }
             return;
         }
     };
-    let mek = MediaEncryptionKey::from_bytes(*secret, frame.mek_generation);
+    let Ok(sender_key) = hex::decode(sender_pseudonym) else {
+        return;
+    };
+    let frame_key = rekindle_secrets::media_sender_key::video_frame_key(&secret, &sender_key);
+    let mek = MediaEncryptionKey::from_bytes(*frame_key, frame.key_index);
     let plaintext = match mek.decrypt(&frame.payload) {
         Ok(p) => p,
         Err(e) => {
@@ -494,12 +468,9 @@ fn emit_frame_ready<D: VideoDeps>(
                 sender_pseudonym = %sender_pseudonym,
                 stream_id = %hex::encode(frame.stream_id),
                 frame_seq = frame.frame_seq,
-                frame_generation = frame.mek_generation,
-                "video frame MEK decrypt failed at matching generation (split-brain or tamper) — requesting"
+                key_index = frame.key_index,
+                "video frame did not open under its sender's key — dropped"
             );
-            if reassembly.should_request_mek(community_id, now_ms) {
-                deps.request_mek_refresh(community_id, channel_id, frame.mek_generation);
-            }
             return;
         }
     };

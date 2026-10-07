@@ -2,7 +2,6 @@
 //!
 //! Route allocation routes through `broadcast::route`.
 
-use rekindle_types::channel_keys::ChannelKeyProvider;
 use tracing::info;
 
 use crate::broadcast::node::TransportNode;
@@ -23,31 +22,18 @@ pub fn join_voice(
     node: &TransportNode,
     membership: &CommunityMembership,
     channel_id: &str,
-    keys: &dyn ChannelKeyProvider,
     muted: bool,
     deafened: bool,
 ) -> Result<VoiceSession> {
     info!(channel = channel_id, community = %membership.community_name, "joining voice channel");
 
-    // Voice frames are SFrame-sealed under the channel's media key
-    // (`rekindle-voice::media_crypto`); without one there is nothing to
-    // join with.
-    let scope = rekindle_types::id::ChannelId::from_hex(channel_id)
-        .map(|channel| keys.scope_for_media(&membership.governance_key, channel))
-        .ok_or_else(|| TransportError::VoiceJoinFailed {
-            channel: channel_id.to_string(),
-            reason: "channel id is not a 32-hex channel id".to_string(),
-        })?;
-    if keys
-        .current_epoch(&membership.governance_key, scope)
-        .is_none()
-    {
+    // Each participant keys its own media and sends the key over voice
+    // signaling once peers are on the roster (plan C7.20), so joining
+    // needs no key in hand.
+    if rekindle_types::id::ChannelId::from_hex(channel_id).is_none() {
         return Err(TransportError::VoiceJoinFailed {
             channel: channel_id.to_string(),
-            reason: format!(
-                "no MEK cached for {}/{}",
-                membership.community_name, channel_id
-            ),
+            reason: "channel id is not a 32-hex channel id".to_string(),
         });
     }
 

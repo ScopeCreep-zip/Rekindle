@@ -10,7 +10,8 @@
 # docs/contributor/development.md.
 #
 # Usage:  ./scripts/linux-dev.sh        (or: pnpm dev:linux)
-#   - log: target/debug/rekindle-dev.log (truncated each run)
+#   - log: target/debug/rekindle-dev.log; the previous run's is kept as
+#     target/debug/rekindle-dev.prev.log
 #   - RUST_LOG is honored when set; the default mirrors the in-binary
 #     filter plus the media-plane debug targets — the dropped-frame
 #     paths worth a log file in the first place log at debug
@@ -35,6 +36,8 @@ done
 sleep 1
 
 mkdir -p "${LOG%/*}"
+# Keep the previous run's log: a shutdown is often what needs explaining.
+[ -s "$LOG" ] && mv -f "$LOG" "${LOG%.log}.prev.log"
 : >"$LOG"
 echo "→ live log: $LOG"
 echo "→ RUST_LOG: $RUST_LOG"

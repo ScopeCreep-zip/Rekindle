@@ -29,6 +29,7 @@
 
 pub mod deps;
 pub(crate) mod dispatcher;
+pub(crate) mod media_keys;
 pub(crate) mod mute;
 pub(crate) mod presence;
 pub mod roster_reconcile;
@@ -38,6 +39,7 @@ pub use deps::{
     perms, CommunityVoiceEvent, StageChannelInfo, VoiceRosterParticipant, VoiceSignalingDeps,
 };
 pub use dispatcher::handle_voice_signaling;
+pub use presence::member_departed;
 pub use roster_reconcile::{
     compute_roster_reconcile, compute_route_reannounce, reconcile_from_presence, PresencePeerView,
     ReconcilePlan, JOIN_GRACE_SECS,

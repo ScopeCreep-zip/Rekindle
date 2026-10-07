@@ -153,6 +153,7 @@ impl DaemonGovernanceAdapter<'_> {
         let node = self.transport()?;
         dht_writes::set_leased_str(&node, lease, subkey, value, writer.as_deref())
             .await
+            .map(|newer| newer.map(|n| n.data))
             .map_err(|e| dht_err("set_dht_value", e))
     }
 

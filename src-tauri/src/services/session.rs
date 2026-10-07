@@ -65,13 +65,28 @@ pub fn begin(app: &tauri::AppHandle, state: &SharedState) -> Arc<SessionScope> {
     scope
 }
 
-/// End the login session. `app` is `None` at app exit, when no window is
-/// left to update.
-pub async fn end_session(
-    app: Option<&tauri::AppHandle>,
-    state: &Arc<AppState>,
-    keystore: &KeystoreHandle,
-) {
+/// Why a login session ends.
+#[derive(Clone, Copy)]
+pub enum SessionEnd<'a> {
+    /// The user logged out; the app stays, with windows to update and a
+    /// next login to prepare routes for.
+    Logout(&'a tauri::AppHandle),
+    /// The app is exiting: no window is left and no login follows.
+    Exit,
+}
+
+impl<'a> SessionEnd<'a> {
+    fn app(self) -> Option<&'a tauri::AppHandle> {
+        match self {
+            Self::Logout(app) => Some(app),
+            Self::Exit => None,
+        }
+    }
+}
+
+/// End the login session.
+pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &KeystoreHandle) {
+    let app = end.app();
     // 1. Every session task. The stop token first, so a task sees stop
     //    before any refused call; then draining the record pool releases
     //    every task waiting on it (their DHT work is pool calls), so the
@@ -123,7 +138,7 @@ pub async fn end_session(
         }
     }
     // 5. Routes, flushes and in-memory state.
-    services::veilid::logout_cleanup(app, state).await;
+    services::veilid::logout_cleanup(end, state).await;
     // 6. The keys, last: everything above may still sign or decrypt.
     keystore.lock().take();
 }

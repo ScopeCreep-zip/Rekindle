@@ -115,7 +115,7 @@ pub(super) fn write_video_fragment(
         keyframe,
         codec,
         timestamp,
-        mek_generation,
+        key_index,
         transport_seq,
         payload: data,
         signature,
@@ -131,7 +131,7 @@ pub(super) fn write_video_fragment(
     p.set_keyframe(*keyframe);
     p.set_codec(codec_to_capnp(*codec));
     p.set_timestamp(*timestamp);
-    p.set_mek_generation(*mek_generation);
+    p.set_key_index(*key_index);
     p.set_transport_seq(*transport_seq);
     p.set_payload(data);
     p.set_signature(signature);
@@ -151,7 +151,7 @@ pub(super) fn write_video_parity_fragment(
         codec,
         frame_len,
         timestamp,
-        mek_generation,
+        key_index,
         transport_seq,
         payload: data,
         signature,
@@ -168,7 +168,7 @@ pub(super) fn write_video_parity_fragment(
     p.set_codec(codec_to_capnp(*codec));
     p.set_frame_len(*frame_len);
     p.set_timestamp(*timestamp);
-    p.set_mek_generation(*mek_generation);
+    p.set_key_index(*key_index);
     p.set_transport_seq(*transport_seq);
     p.set_payload(data);
     p.set_signature(signature);
@@ -366,7 +366,7 @@ pub(super) fn read_video_fragment(
         keyframe: p.get_keyframe(),
         codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
         timestamp: p.get_timestamp(),
-        mek_generation: p.get_mek_generation(),
+        key_index: p.get_key_index(),
         transport_seq: p.get_transport_seq(),
         payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
@@ -391,7 +391,7 @@ pub(super) fn read_video_parity_fragment(
             codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
             frame_len: p.get_frame_len(),
             timestamp: p.get_timestamp(),
-            mek_generation: p.get_mek_generation(),
+            key_index: p.get_key_index(),
             transport_seq: p.get_transport_seq(),
             payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
             signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),

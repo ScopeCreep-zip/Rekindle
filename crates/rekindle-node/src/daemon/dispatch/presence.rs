@@ -124,7 +124,6 @@ pub(crate) fn handle_voice_join(
         &transport,
         &membership,
         channel,
-        &*crate::daemon::mek_rotation::key_provider(ctx),
         muted,
         deafened,
     ) {

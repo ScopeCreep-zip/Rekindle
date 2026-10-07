@@ -36,19 +36,15 @@ impl VaultStore {
 
         let conn = Connection::open(path)?;
         let key_pragma = format!("x'{}'", hex::encode(*sqlcipher_key));
-        conn.pragma_update(None, "key", key_pragma)?;
-        conn.pragma_update(None, "cipher_page_size", 4096_i64)?;
-
-        // First query forces SQLCipher to validate the key by reading the
-        // header — wrong passphrase fails here with a SqliteFailure error.
-        conn.query_row("PRAGMA cipher_version;", [], |_| Ok(()))
-            .map_err(|e| {
-                VaultError::Schema(format!(
-                    "SQLCipher key validation failed (wrong passphrase or corrupt vault): {e}"
-                ))
-            })?;
-
-        schema::ensure(&conn)?;
+        // Keying, then the first reads, which make SQLCipher decrypt the
+        // header. A key that does not decrypt it surfaces from any of these
+        // as NOMEM or NOTADB (`VaultError::WrongPassphrase` says why).
+        conn.pragma_update(None, "key", key_pragma)
+            .and_then(|()| conn.pragma_update(None, "cipher_page_size", 4096_i64))
+            .and_then(|()| conn.query_row("PRAGMA cipher_version;", [], |_| Ok(())))
+            .map_err(VaultError::Sqlite)
+            .and_then(|()| schema::ensure(&conn))
+            .map_err(wrong_key_or)?;
         Ok(Self {
             conn: Mutex::new(conn),
             entry_key,
@@ -192,8 +188,36 @@ fn open_aes_gcm(key: &[u8; 32], nonce: &[u8], ct: &[u8]) -> Result<Zeroizing<Vec
     Ok(Zeroizing::new(pt))
 }
 
+/// A keying-phase error: a page that will not decrypt under this key is
+/// [`VaultError::WrongPassphrase`]; anything else stands.
+fn wrong_key_or(error: VaultError) -> VaultError {
+    match &error {
+        VaultError::Sqlite(e)
+            if matches!(
+                e.sqlite_error_code(),
+                Some(rusqlite::ErrorCode::OutOfMemory | rusqlite::ErrorCode::NotADatabase)
+            ) =>
+        {
+            VaultError::WrongPassphrase
+        }
+        _ => error,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_wrong_passphrase_is_reported_as_one() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("x.vault");
+        drop(VaultStore::open(&path, "right").unwrap());
+        assert!(matches!(
+            VaultStore::open(&path, "wrong"),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(VaultStore::open(&path, "right").is_ok());
+    }
     use super::*;
     use tempfile::TempDir;
 

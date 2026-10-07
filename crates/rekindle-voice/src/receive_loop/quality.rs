@@ -1,4 +1,4 @@
-//! The 5-second window cadence: MEK-drop accounting and the quality /
+//! The 5-second window cadence: key-drop accounting and the quality /
 //! receiver-report pass.
 //!
 //! Split from the loop body because it is the only part that runs on a
@@ -21,31 +21,38 @@
 use std::time::{Duration, Instant};
 
 use super::VoiceReceiveLoop;
+
+/// The least time between two requests for one sender's key: its push is
+/// on the way or was lost, and one request per window recovers either.
+const KEY_REQUEST_INTERVAL: Duration = Duration::from_secs(10);
 use crate::receiver_report::VoiceReceiverReport;
 use crate::session_deps::VoiceSessionEvent;
 
 impl VoiceReceiveLoop {
-    /// Count an undecryptable packet and (debounced, 10s) fire the
-    /// RequestMEK cascade. Drops are surfaced in ReceiveStats — a
-    /// security-relevant drop must never be silent.
-    pub(super) fn note_mek_drop(
+    /// Count a packet under a sender key we lack and (debounced per
+    /// sender, 10 s) ask that sender for it (plan C7.20). Drops are
+    /// surfaced in ReceiveStats — a security-relevant drop must never be
+    /// silent.
+    pub(super) fn note_missing_key(
         &mut self,
         community_id: &str,
         channel_id: &str,
-        reason: &'static str,
-        needed_generation: u64,
+        sender: &str,
+        index: u64,
     ) {
-        self.mek_drops += 1;
+        self.key_drops += 1;
         self.deps.record_packet_drop();
         let due = self
-            .last_mek_request
-            .is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
+            .last_key_request
+            .get(sender)
+            .is_none_or(|t| t.elapsed() >= KEY_REQUEST_INTERVAL);
         if due {
-            tracing::info!(community = %community_id, channel = %channel_id, reason,
-                needed_generation, "requesting channel MEK refresh");
+            tracing::info!(community = %community_id, channel = %channel_id, sender, index,
+                "requesting a sender's media key");
             self.deps
-                .request_mek_refresh(community_id, channel_id, needed_generation);
-            self.last_mek_request = Some(Instant::now());
+                .request_media_key(community_id, channel_id, sender, index);
+            self.last_key_request
+                .insert(sender.to_string(), Instant::now());
         }
     }
 
@@ -121,17 +128,17 @@ impl VoiceReceiveLoop {
                 "voice receive-side drops in the last 5s"
             );
         }
-        let mek_drops = std::mem::take(&mut self.mek_drops);
-        if mek_drops > 0 {
+        let key_drops = std::mem::take(&mut self.key_drops);
+        if key_drops > 0 {
             tracing::warn!(
-                rx_mek_drops = mek_drops,
+                rx_key_drops = key_drops,
                 "voice packets dropped for MEK reasons in the last 5s"
             );
         }
         self.deps.emit_voice_event(VoiceSessionEvent::ReceiveStats {
             rx_overflow_drops: overflow,
             rx_late_drops: late,
-            rx_mek_drops: mek_drops,
+            rx_key_drops: key_drops,
         });
         tracing::debug!(
             participants = self.participants.len(),

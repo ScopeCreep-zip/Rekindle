@@ -54,7 +54,7 @@ pub struct VoiceSendParams {
     pub echo_cancellation: bool,
     pub muted_flag: Arc<AtomicBool>,
     pub speaker_ref_rx: broadcast::Receiver<Vec<f32>>,
-    /// Community ID (the channel-media MEK keys the session). `None` for
+    /// Community ID (with the channel, it names our sender key). `None` for
     /// 1:1 calls, whose channel id is the peer.
     pub community_id: Option<String>,
     /// Voice channel ID we're transmitting in. Used with the stage

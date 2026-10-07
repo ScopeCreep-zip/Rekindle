@@ -246,7 +246,7 @@ pub enum VoiceEvent {
         quality: String,
         rx_overflow_drops: u64,
         rx_late_drops: u64,
-        rx_mek_drops: u64,
+        rx_key_drops: u64,
         ingress_drops: u64,
         /// What the far end measured about our outbound stream, from
         /// its RFC 3550 receiver reports. `None` means no peer has
@@ -466,7 +466,7 @@ mod tests {
                 quality: "good".into(),
                 rx_overflow_drops: 1,
                 rx_late_drops: 2,
-                rx_mek_drops: 3,
+                rx_key_drops: 3,
                 ingress_drops: 4,
                 // Populated: pins `Option<u32>` and `f32` through
                 // postcard, the two shapes in `LinkMeasurement` that a
@@ -489,7 +489,7 @@ mod tests {
                 quality: "recovering".into(),
                 rx_overflow_drops: 0,
                 rx_late_drops: 0,
-                rx_mek_drops: 0,
+                rx_key_drops: 0,
                 ingress_drops: 0,
                 link: None,
             },

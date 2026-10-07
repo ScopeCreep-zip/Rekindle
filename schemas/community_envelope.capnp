@@ -464,6 +464,22 @@ struct VoiceJoinConfirmedPayload @0xea0046000000a000 {
     channelId            @0 :Text;
 }
 
+# Plan C7.20: a sender's call-media key sealed to one participant
+# (HPKE Auth, bound to channel, recipient and index). Directed, ttl=0.
+struct VoiceMediaKeyPayload @0xf0582658caa27994 {
+    channelId            @0 :Text;
+    recipient            @1 :Text;
+    keyIndex             @2 :UInt64;
+    sealed               @3 :Data;
+}
+
+# Plan C7.20: ask `sender` for its call-media key at `keyIndex`.
+struct VoiceMediaKeyRequestPayload @0xec201d80acd40911 {
+    channelId            @0 :Text;
+    sender               @1 :Text;
+    keyIndex             @2 :UInt64;
+}
+
 struct VoiceLeavePayload @0xea002f000000a000 {
     channelId            @0 :Text;
 }
@@ -558,10 +574,10 @@ struct VideoFragmentPayload @0xea003b000000a000 {
     # this tag. Signature-covered (the codec byte rides the fragment
     # signing bytes).
     codec                @9 :Codec;
-    # Generation of the channel-media MEK that encrypted the frame —
-    # receivers request exactly this generation on decrypt failure
-    # instead of guessing. Signature-covered.
-    mekGeneration        @10 :UInt64;
+    # The sender's media key index (plan C7.20: sender-owned keys) the
+    # frame is encrypted under; a receiver without it asks the sender for
+    # exactly this index. Signature-covered.
+    keyIndex             @10 :UInt64;
     # Transport-wide send sequence, stamped by the sender's VideoPacer
     # at egress (the libwebrtc transport-cc analog) — gap-free over
     # fragments ACTUALLY transmitted. The receiver measures wire loss
@@ -587,8 +603,8 @@ struct VideoParityFragmentPayload @0xea003c000000a000 {
     # Codec of the frame this parity covers — mirrors
     # VideoFragmentPayload.codec; signature-covered.
     codec                @10 :Codec;
-    # Mirrors VideoFragmentPayload.mekGeneration; signature-covered.
-    mekGeneration        @11 :UInt64;
+    # Mirrors VideoFragmentPayload.keyIndex; signature-covered.
+    keyIndex             @11 :UInt64;
     # Transport-wide send sequence — mirrors VideoFragmentPayload.transportSeq.
     # Parity fragments are paced and transmitted like data fragments, so
     # they share the sender's one gap-free transport sequence and count
@@ -764,5 +780,7 @@ struct ControlPayload @0xeaffffff00000001 {
         requestSegmentExpansion  @68 :RequestSegmentExpansionPayload;
         voiceJoinAck             @69 :VoiceJoinAckPayload;
         voiceJoinConfirmed       @70 :VoiceJoinConfirmedPayload;
+        voiceMediaKey            @71 :VoiceMediaKeyPayload;
+        voiceMediaKeyRequest     @72 :VoiceMediaKeyRequestPayload;
     }
 }

@@ -2,13 +2,13 @@
 //! shared community-presence test fixture. Extracted from the
 //! `impl` block so the trait-impl file stays focused on dispatch.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::GossipOverlaySnapshot;
-use crate::deps::{OnlineMember, PresenceCredentials, SegmentDescriptor};
+use crate::deps::{OnlineMember, PresenceCredentials, RowWrite, SegmentDescriptor};
 
 #[derive(Default)]
 pub struct MockState {
@@ -31,6 +31,9 @@ pub struct MockState {
     pub offline_diff: Vec<String>,
     pub gossip_snapshot: GossipOverlaySnapshot,
     pub stale_syncs: Vec<(String, u32)>,
+    /// Outcomes `write_presence_to_registry_subkey` returns in order;
+    /// `RowWrite::Stored` once exhausted.
+    pub write_outcomes: VecDeque<RowWrite>,
     /// Peers the mock's `extend_online_with_recent_gossip` should
     /// inject into the orchestrator's `online_members` map — drives
     /// the `online_count > 0` gate that controls the stale-sync

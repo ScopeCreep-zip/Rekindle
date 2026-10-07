@@ -10,8 +10,9 @@ use rekindle_types::presence::{
     SessionLocation,
 };
 
-use super::{fit_history_ad, signed_len, PRESENCE_ROW_CAP};
+use super::{fit_history_ad, resolve_superseded, signed_len, RowTarget, PRESENCE_ROW_CAP};
 use crate::community::test_fixture::{MockCommunityDeps, MockState};
+use crate::deps::RowWrite;
 
 /// A route blob larger than any seen (733 B general, 976 B media in the
 /// two-machine run): one crypto kind, first-hop node info included.
@@ -130,4 +131,84 @@ fn a_small_row_carries_every_range() {
     let ad = fit_history_ad(&deps, "c1", &row, ranges.clone()).expect("fits");
     let all = 12 + serde_json::to_vec(&ranges).unwrap().len() + 16;
     assert_eq!(ad.ciphertext.len(), all);
+}
+
+/// A validly signed row by the pseudonym derived from `secret`, and that
+/// pseudonym's hex.
+fn signed_row(secret: u8) -> (Vec<u8>, String) {
+    let key = rekindle_secrets::derive::derive_community_pseudonym(&[secret; 32], "c1");
+    let mut row = MemberPresence {
+        pseudonym_key: PseudonymKey(key.verifying_key().to_bytes()),
+        route_blob: vec![1; 16],
+        ..Default::default()
+    };
+    row.signature =
+        rekindle_secrets::derive::sign_with_pseudonym(&key, &row.signing_bytes()).to_vec();
+    (
+        serde_json::to_vec(&row).unwrap(),
+        hex::encode(row.pseudonym_key.0),
+    )
+}
+
+fn target(my_pseudonym_hex: &str) -> RowTarget<'_> {
+    RowTarget {
+        community_id: "c1",
+        registry_key: "reg",
+        subkey: 0,
+        writer: "kp",
+        my_pseudonym_hex,
+    }
+}
+
+fn writes(deps: &MockCommunityDeps) -> usize {
+    deps.state.lock().calls_write_registry.len()
+}
+
+/// Our own newer copy held the slot: write again at once.
+#[tokio::test]
+async fn superseded_by_our_own_row_is_rewritten() {
+    let deps = MockCommunityDeps::new(MockState::default());
+    let (ours, me) = signed_row(1);
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(184), &ours).await;
+    assert_eq!(writes(&deps), 1, "one rewrite");
+}
+
+/// Another member's validly signed row: a slot collision, never fought.
+#[tokio::test]
+async fn superseded_by_another_member_is_not_overwritten() {
+    let deps = MockCommunityDeps::new(MockState::default());
+    let (theirs, _) = signed_row(2);
+    let (_, me) = signed_row(1);
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), &theirs).await;
+    assert_eq!(writes(&deps), 0);
+}
+
+/// A value that does not verify is not overwritten either.
+#[tokio::test]
+async fn superseded_by_an_unverified_value_is_not_overwritten() {
+    let deps = MockCommunityDeps::new(MockState::default());
+    let (ours, me) = signed_row(1);
+    // Signed content changed after signing.
+    let forged = String::from_utf8(ours.clone())
+        .unwrap()
+        .replacen("\"status\":\"online\"", "\"status\":\"away\"", 1)
+        .into_bytes();
+    assert_ne!(forged, ours);
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), &forged).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), b"not json").await;
+    assert_eq!(writes(&deps), 0);
+}
+
+/// A rewrite that is itself superseded stops there; the next tick writes.
+#[tokio::test]
+async fn a_rewrite_is_attempted_once() {
+    let (ours, me) = signed_row(1);
+    let mut state = MockState::default();
+    state.write_outcomes.push_back(RowWrite::Superseded {
+        seq: Some(185),
+        data: ours.clone(),
+    });
+    let deps = MockCommunityDeps::new(state);
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(184), &ours).await;
+    assert_eq!(writes(&deps), 1);
 }

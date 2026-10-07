@@ -47,14 +47,14 @@ impl Reassembler {
                 fragment.codec,
                 fragment.timestamp,
                 now_ms,
-                fragment.mek_generation,
+                fragment.key_index,
             )
         });
 
         if partial.codec != fragment.codec {
             return Err(ReassemblerError::CodecMismatch);
         }
-        if partial.mek_generation != fragment.mek_generation {
+        if partial.key_index != fragment.key_index {
             return Err(ReassemblerError::MekGenerationMismatch);
         }
         if partial.frag_total != total {
@@ -126,7 +126,7 @@ impl Reassembler {
                 fragment.codec,
                 fragment.timestamp,
                 now_ms,
-                fragment.mek_generation,
+                fragment.key_index,
             )
         });
 

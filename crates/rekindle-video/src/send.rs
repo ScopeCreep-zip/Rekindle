@@ -71,7 +71,7 @@ pub fn build_video_frame<D: VideoDeps>(
     // an encoded VP9 chunk from the WebView; record the byte count and
     // routing context (no payload bytes) so a `RUST_LOG=rekindle_video=
     // debug` operator can confirm the chunk arrived from the frontend
-    // before MEK-encrypt + fragment + sign run.
+    // before encrypt + fragment + sign run.
     tracing::debug!(
         target: "rekindle_video::send",
         community_id = %community_id,
@@ -86,25 +86,22 @@ pub fn build_video_frame<D: VideoDeps>(
         return Err(VideoError::InvalidInput("empty encoded payload".into()));
     }
 
-    let provider = deps.keys();
-    let unavailable = || VideoError::MekUnavailable {
-        community: community_id.to_string(),
-    };
-    let scope = rekindle_types::id::ChannelId::from_hex(channel_id)
-        .map(|channel| provider.scope_for_media(community_id, channel))
-        .ok_or_else(unavailable)?;
-    let (epoch, secret) =
-        rekindle_types::channel_keys::current_key(&*provider, community_id, scope)
-            .ok_or_else(unavailable)?;
-    let mek_gen = epoch.0;
-    let mek = rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*secret, mek_gen);
-    let ciphertext = mek
-        .encrypt(&request.encoded_payload)
-        .map_err(|e| VideoError::Encrypt(format!("MEK encrypt: {e}")))?;
-
     let signing_key = deps
         .community_signing_key(community_id)
         .ok_or(VideoError::IdentityNotLoaded)?;
+    // Our own media key (plan C7.20): the one voice seals under too, sent
+    // to every participant we hold on the roster.
+    let key = deps
+        .channel_sender_keys(community_id, channel_id)
+        .send_key(std::time::Instant::now());
+    let frame_key = rekindle_secrets::media_sender_key::video_frame_key(
+        &key.secret,
+        &signing_key.verifying_key().to_bytes(),
+    );
+    let ciphertext =
+        rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*frame_key, key.index)
+            .encrypt(&request.encoded_payload)
+            .map_err(|e| VideoError::Encrypt(format!("frame encrypt: {e}")))?;
 
     let ctx = SendCtx {
         channel_id,
@@ -113,7 +110,7 @@ pub fn build_video_frame<D: VideoDeps>(
         keyframe: request.keyframe,
         codec: request.codec,
         timestamp: request.timestamp,
-        mek_generation: mek_gen,
+        key_index: key.index,
         signing_key: &signing_key,
     };
 
@@ -185,9 +182,9 @@ struct SendCtx<'a> {
     keyframe: bool,
     codec: Codec,
     timestamp: u32,
-    /// Generation of the channel-media MEK that encrypted the frame —
-    /// rides every fragment so receivers can request the exact key.
-    mek_generation: u64,
+    /// Index of our media sender key that encrypted the frame (plan
+    /// C7.20) — rides every fragment so receivers can request that key.
+    key_index: u64,
     signing_key: &'a SigningKey,
 }
 
@@ -199,7 +196,7 @@ impl SendCtx<'_> {
             keyframe: self.keyframe,
             codec: self.codec,
             timestamp: self.timestamp,
-            mek_generation: self.mek_generation,
+            key_index: self.key_index,
         }
     }
 }
@@ -225,7 +222,7 @@ impl SendCtx<'_> {
                     keyframe: fragment.keyframe,
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
-                    mek_generation: fragment.mek_generation,
+                    key_index: fragment.key_index,
                     // Placeholder — the pacer stamps the real gap-free
                     // transport sequence at egress (`VideoPacer::poll`).
                     transport_seq: 0,
@@ -280,7 +277,7 @@ impl SendCtx<'_> {
                     keyframe: fragment.keyframe,
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
-                    mek_generation: fragment.mek_generation,
+                    key_index: fragment.key_index,
                     // Placeholder — stamped by `VideoPacer::poll` at egress.
                     transport_seq: 0,
                     payload: fragment.payload,
@@ -309,7 +306,7 @@ impl SendCtx<'_> {
                     codec: fragment.codec,
                     frame_len: fragment.frame_len,
                     timestamp: fragment.timestamp,
-                    mek_generation: fragment.mek_generation,
+                    key_index: fragment.key_index,
                     // Placeholder — stamped by `VideoPacer::poll` at egress.
                     transport_seq: 0,
                     payload: fragment.payload,

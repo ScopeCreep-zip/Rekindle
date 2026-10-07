@@ -12,8 +12,7 @@
 //! * `my_pseudonym_hex` / `my_pseudonym` / `pseudonym_from_hex`
 //!
 //! What moved into the crate (and was deleted from this file):
-//! * `RotationRecipient`, `online_recipients`, `voice_recipients`,
-//!   `effective_voice_participants` — `MekDistributeDeps` methods
+//! * `RotationRecipient`, `online_recipients` — `MekDistributeDeps` methods
 //!   (with the same body) on `MekAdapter`.
 //! * `cascade_delay`, `wait_for_rotation_slot`, `distribute_mek`,
 //!   `generation_advanced`, `max_cascades`, `CASCADE_TIMEOUT_SECS`,

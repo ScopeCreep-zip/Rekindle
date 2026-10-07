@@ -72,7 +72,7 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       setVoiceState("connectionQuality", q.quality);
       setVoiceState("rxOverflowDrops", q.rxOverflowDrops);
       setVoiceState("rxLateDrops", q.rxLateDrops);
-      setVoiceState("rxMekDrops", q.rxMekDrops);
+      setVoiceState("rxKeyDrops", q.rxKeyDrops);
       setVoiceState("ingressDrops", q.ingressDrops);
       // Keep the last known measurement when a window carried none,
       // so the readout doesn't blink empty between reports.

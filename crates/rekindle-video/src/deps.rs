@@ -98,10 +98,14 @@ pub enum VideoEvent {
 /// buffer is NOT exposed through the trait — pass it as a parameter
 /// to crate-side fns instead.
 pub trait VideoDeps: Send + Sync + 'static {
-    /// Community and channel keys (plan D6). A channel's media is under
-    /// `scope_for_media`: its own key for a voice channel, the community
-    /// key for a stage.
-    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
+    /// The sender keys of our session on `(community, channel)` (plan
+    /// C7.20), the same store voice uses: frames are sealed under our own
+    /// media key and opened under each sender's.
+    fn channel_sender_keys(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> std::sync::Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
 
     /// Derive the Ed25519 SigningKey for the community pseudonym (the
     /// fragment-level signature uses this). Returns `None` if the
@@ -137,17 +141,12 @@ pub trait VideoDeps: Send + Sync + 'static {
         community_id: &str,
     ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
-    /// A reassembled frame failed to decrypt under our current MEK —
-    /// the sender is on a newer generation (voice MEK rotates on every
-    /// membership change, §10.7), classically right after WE joined.
-    /// Fire the RequestMEK cascade instead of dropping silently
-    /// (silent drop = permanently black tile). Debounced by the
-    /// caller; fire-and-forget.
-    /// Fire the RequestMEK cascade naming the EXACT generation needed
-    /// (from the undecryptable frame's wire field). `0` = "send me your
-    /// current generation" (used at session join when nothing is
-    /// cached).
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64);
+    /// Ask `sender` (pseudonym hex) for its media key at `index`
+    /// (`VoiceMediaKeyRequest`, plan C7.20): a reassembled frame arrived
+    /// under a key it has not sent us, or whose push was lost. Silence
+    /// would be a permanently black tile. Debounced by the caller;
+    /// fire-and-forget.
+    fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64);
 
     /// Emit a UI-facing event from a receive-side handler.
     fn emit_event(&self, event: VideoEvent);

@@ -7,8 +7,6 @@
 //! (voice_join / voice_leave / stage_update / etc.) consume this trait
 //! via `Arc<dyn VoiceSignalingDeps>`.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
-
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -19,14 +17,9 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
-use rekindle_db::Db;
 
-/// The nine voice-signalling emits below all name the same kind of
-/// scope; spelling out `VoiceScope::Community` at each one cost four
-/// lines apiece and pushed this file past the size ceiling.
-fn community_scope(community: String, channel: String) -> VoiceScope {
-    VoiceScope::Community { community, channel }
-}
+mod events;
+use rekindle_db::Db;
 
 pub struct VoiceSignalingAdapter {
     state: Arc<AppState>,
@@ -69,6 +62,23 @@ pub fn handle_voice_signaling(
             rekindle_voice::signaling::handle_voice_signaling(deps, &cid, &sender, payload).await;
         },
     );
+}
+
+/// `departed` left the community: drop them from the voice channel we
+/// share and rotate our media key
+/// (`rekindle_voice::signaling::member_departed`, plan C7.20).
+pub fn member_departed(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    departed: &str,
+) {
+    let Ok(pool) = state.db.current() else {
+        return;
+    };
+    let deps: Arc<dyn VoiceSignalingDeps> =
+        VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
+    rekindle_voice::signaling::member_departed(&deps, community_id, departed);
 }
 
 #[async_trait]
@@ -206,30 +216,38 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         state_helpers::media_live_peers(&self.state)
     }
 
-    async fn rotate_voice_mek_for_membership(
+    fn channel_sender_keys(
         &self,
-        community_id: String,
-        channel_id: String,
-        member_pseudonym: String,
-        joined: bool,
-    ) {
-        if let Err(error) = crate::services::community::rotate_voice_mek_for_membership(
-            &self.app_handle,
-            &self.state,
-            &community_id,
-            &channel_id,
-            &member_pseudonym,
-            joined,
-        )
-        .await
-        {
-            tracing::debug!(
-                community = %community_id,
-                channel = %channel_id,
-                error = %error,
-                "voice MEK rotation skipped"
-            );
-        }
+        community_id: &str,
+        channel_id: &str,
+    ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys> {
+        self.state.voice_sender_keys.keys(community_id, channel_id)
+    }
+
+    fn seal_media_key(
+        &self,
+        community_id: &str,
+        recipient: &str,
+        aad: &[u8],
+        secret: &[u8; 32],
+    ) -> Option<Vec<u8>> {
+        let (_, signing_key) =
+            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
+        let recipient: [u8; 32] = hex::decode(recipient).ok()?.try_into().ok()?;
+        rekindle_secrets::media_sender_key::seal(&signing_key, &recipient, aad, secret).ok()
+    }
+
+    fn open_media_key(
+        &self,
+        community_id: &str,
+        sender: &str,
+        aad: &[u8],
+        sealed: &[u8],
+    ) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+        let (_, signing_key) =
+            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
+        let sender: [u8; 32] = hex::decode(sender).ok()?.try_into().ok()?;
+        rekindle_secrets::media_sender_key::open(&signing_key, &sender, aad, sealed).ok()
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope) {
@@ -355,233 +373,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn emit_event(&self, event: CommunityVoiceEvent) {
-        match event {
-            CommunityVoiceEvent::VoiceJoin {
-                community_id,
-                channel_id,
-                pseudonym_key,
-                route_blob,
-                display_name,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::Joined {
-                        scope: community_scope(community_id, channel_id),
-                        pseudonym: pseudonym_key,
-                        display_name,
-                        route_blob: Some(route_blob),
-                    },
-                );
-            }
-            CommunityVoiceEvent::VoiceRosterChanged {
-                community_id,
-                channel_id,
-                pseudonym_key,
-                present,
-                display_name: _,
-                remote_count,
-            } => {
-                // Session membership is SIGNALING-driven (the transport
-                // roster), never media-driven — a VAD-silent peer sends
-                // no packets but is fully present. This feeds both the
-                // video-session caps slot and the media-ready roster
-                // input; the old path hung both off the first received
-                // voice packet, so video egress deadlocked on inbound
-                // audio.
-                let result = if present {
-                    crate::services::community::video_session::on_peer_joined(
-                        &self.state,
-                        &community_id,
-                        &channel_id,
-                        &pseudonym_key,
-                    )
-                } else {
-                    crate::services::community::video_session::on_peer_left(
-                        &self.state,
-                        &community_id,
-                        &channel_id,
-                        &pseudonym_key,
-                    )
-                };
-                if let Err(e) = result {
-                    tracing::warn!(error = %e, present, "video_session roster sync failed");
-                }
-                crate::services::community::media_ready_runtime::update_media_ready(
-                    &self.state,
-                    &community_id,
-                    &channel_id,
-                    |i| i.roster_non_empty = remote_count > 0,
-                );
-            }
-            CommunityVoiceEvent::VoiceJoinHandshake {
-                community_id,
-                channel_id,
-                state,
-                peer,
-                display_name,
-            } => {
-                // Media-ready input: the three-way handshake stage.
-                let handshake = match state.as_str() {
-                    "seen" => Some(rekindle_voice::transport::JoinHandshake::Seen),
-                    "connected" => Some(rekindle_voice::transport::JoinHandshake::Connected),
-                    _ => None,
-                };
-                if let Some(hs) = handshake {
-                    crate::services::community::media_ready_runtime::update_media_ready(
-                        &self.state,
-                        &community_id,
-                        &channel_id,
-                        |i| i.handshake = hs,
-                    );
-                }
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::JoinHandshake {
-                        scope: community_scope(community_id, channel_id),
-                        state,
-                        peer,
-                        display_name,
-                    },
-                );
-            }
-            CommunityVoiceEvent::VoicePeerConfirmed {
-                community_id,
-                channel_id,
-                pseudonym_key,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::PeerConfirmed {
-                        scope: community_scope(community_id, channel_id),
-                        pseudonym: pseudonym_key,
-                    },
-                );
-            }
-            CommunityVoiceEvent::VoiceLeave {
-                community_id,
-                channel_id,
-                pseudonym_key,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::Left {
-                        scope: community_scope(community_id, channel_id),
-                        pseudonym: pseudonym_key,
-                    },
-                );
-            }
-            CommunityVoiceEvent::VoiceRoster {
-                community_id,
-                channel_id,
-                participants,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::RosterUpdated {
-                        scope: community_scope(community_id, channel_id),
-                        participants: participants
-                            .into_iter()
-                            .map(|p| rekindle_types::subscription_events::VoiceParticipant {
-                                pseudonym_key: p.pseudonym_key,
-                                display_name: p.display_name,
-                            })
-                            .collect(),
-                    },
-                );
-            }
-            CommunityVoiceEvent::VoiceModeSwitch {
-                community_id,
-                channel_id,
-                mode,
-                host_pseudonym,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::ModeChanged {
-                        scope: community_scope(community_id, channel_id),
-                        mode,
-                        host_pseudonym,
-                    },
-                );
-            }
-            CommunityVoiceEvent::StageUpdate {
-                community_id,
-                channel_id,
-                topic,
-                speakers,
-                moderator_pseudonym,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::StageUpdated {
-                        scope: community_scope(community_id, channel_id),
-                        topic,
-                        speakers,
-                        moderator_pseudonym,
-                    },
-                );
-            }
-            CommunityVoiceEvent::SpeakRequest {
-                community_id,
-                channel_id,
-                requester_pseudonym,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::SpeakRequested {
-                        scope: community_scope(community_id, channel_id),
-                        requester_pseudonym,
-                    },
-                );
-            }
-            CommunityVoiceEvent::SpeakResponse {
-                community_id,
-                channel_id,
-                requester_pseudonym,
-                granted,
-                moderator_pseudonym,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    rekindle_types::subscription_events::VoiceEvent::SpeakResponded {
-                        scope: community_scope(community_id, channel_id),
-                        requester_pseudonym,
-                        granted,
-                        moderator_pseudonym,
-                    },
-                );
-            }
-            CommunityVoiceEvent::SoundboardPlay {
-                community_id,
-                channel_id,
-                expression_id,
-                actor_pseudonym,
-            } => {
-                crate::event_dispatch::emit_voice(
-                    &self.app_handle,
-                    VoiceEvent::SoundboardPlayed {
-                        scope: community_scope(community_id, channel_id),
-                        expression_id,
-                        actor_pseudonym,
-                    },
-                );
-            }
-            CommunityVoiceEvent::UserMuted {
-                target_pseudonym,
-                muted,
-            } => {
-                if let Some(scope) = state_helpers::current_voice_scope(&self.state) {
-                    crate::event_dispatch::emit_subscription(
-                        &self.app_handle,
-                        &SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
-                            scope,
-                            target_pseudonym,
-                            muted,
-                        }),
-                    );
-                }
-            }
-        }
+        events::emit(&self.state, &self.app_handle, event);
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {

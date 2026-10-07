@@ -131,21 +131,19 @@ async fn voice_join_apply(
             display_name: joiner_name.clone(),
             remote_count,
         });
-        // §10.5 — rotate ONLY on a genuine membership change (this
-        // peer was not on the roster). Stage channels never rotate
-        // (§10.7: anyone may listen; only speakers transmit).
-        if !is_stage {
-            let deps_rot = Arc::clone(deps);
-            let cid = community_id.to_string();
-            let ch_id = channel_id.to_string();
-            let sender = sender_key.clone();
-            deps.scope()
-                .spawn_or_drop("voice mek rotate (join)", async move {
-                    deps_rot
-                        .rotate_voice_mek_for_membership(cid, ch_id, sender, true)
-                        .await;
-                });
-        }
+        // Plan C7.20 — a genuine membership change (this peer was not on
+        // the roster) gets it our media key: the current one, or a
+        // rotated one to everyone. A re-announce is a route upsert and
+        // shares nothing; a peer missing our key asks for it.
+        crate::signaling::media_keys::on_peer_added(
+            &**deps,
+            community_id,
+            channel_id,
+            &transport,
+            &sender_key,
+            is_stage,
+        )
+        .await;
     }
 
     // Handshake leg 2 — "seen": directed ack carrying OUR identity +

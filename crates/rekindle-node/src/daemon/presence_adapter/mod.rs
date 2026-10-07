@@ -42,7 +42,7 @@
 //! |---|---|
 //! | channel message catch-up | no local message store to catch up *into* — the DHT read itself works, both tracks now writing SMPL channel segment records |
 //! | event RSVPs | no event store |
-//! | voice roster | no voice engine — same gap as `MekDistributeDeps::voice_recipients` |
+//! | voice roster | no voice engine |
 //!
 //! Each is a recorded capability gap, not a stub to be forgotten: the
 //! presence poll degrades to "roster and gossip overlay only", which is

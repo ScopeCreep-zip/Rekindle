@@ -7,24 +7,22 @@
 //! another scope's key, never a guessed generation.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_mek_rotation::{ChannelKinds, ChannelMekCache, MekHistory, MekKeyProvider};
+use rekindle_mek_rotation::{ChannelMekCache, MekHistory, MekKeyProvider};
 use rekindle_types::channel_keys::{ChannelKeyProvider, KeyScope};
 use rekindle_types::id::ChannelId;
 
 use crate::state::AppState;
 
-/// A scope's live key, when it became current, and the key it replaced.
+/// A scope's live key and the key it replaced.
 ///
-/// The replaced key stays in memory so media under it still opens during
-/// `MEDIA_PREVIOUS_EPOCH_GRACE` without a vault read per frame; the grace
-/// itself is enforced by `rekindle_types::channel_keys::media_key`.
+/// The replaced key stays in memory so messages sent across a rotation
+/// still open without a vault read; older generations come from the
+/// vault's history.
 #[derive(Clone)]
 pub struct LiveMek {
     current: MediaEncryptionKey,
-    installed_at: Instant,
     previous: Option<MediaEncryptionKey>,
 }
 
@@ -71,7 +69,6 @@ pub fn install_mek(
         key,
         LiveMek {
             current: mek,
-            installed_at: Instant::now(),
             previous,
         },
     );
@@ -154,14 +151,6 @@ impl ChannelMekCache for LiveMekCache {
             .cloned()
     }
 
-    fn current_age(&self, community_id: &str, scope: KeyScope) -> Option<Duration> {
-        self.state
-            .meks
-            .lock()
-            .get(&(community_id.to_string(), scope))
-            .map(|live| live.installed_at.elapsed())
-    }
-
     fn insert(&self, community_id: &str, scope: KeyScope, mek: MediaEncryptionKey) -> bool {
         install_mek(&self.state, community_id, scope, mek)
     }
@@ -184,38 +173,10 @@ impl MekHistory for VaultMekHistory {
     }
 }
 
-/// Channel types, from the community's channel list.
-struct CommunityChannelKinds {
-    state: Arc<AppState>,
-}
-
-impl ChannelKinds for CommunityChannelKinds {
-    fn is_stage(&self, community_id: &str, channel: ChannelId) -> bool {
-        super::channel_is_stage(&self.state, community_id, &channel.to_hex())
-    }
-}
-
 /// The scope a channel's text is under, or `None` for a non-channel id.
 pub fn text_scope(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> Option<KeyScope> {
     let channel = ChannelId::from_hex(channel_id)?;
     Some(key_provider(state).scope_for_text(community_id, channel))
-}
-
-/// The scope a channel's voice and video are under, or `None` for a
-/// non-channel id.
-pub fn media_scope(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<KeyScope> {
-    let channel = ChannelId::from_hex(channel_id)?;
-    Some(key_provider(state).scope_for_media(community_id, channel))
-}
-
-/// Whether we hold a key for `channel_id`'s media scope.
-pub fn media_key_present(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> bool {
-    media_scope(state, community_id, channel_id)
-        .is_some_and(|scope| current_mek(state, community_id, scope).is_some())
 }
 
 /// The key provider every desktop key consumer reads through.
@@ -223,9 +184,6 @@ pub fn key_provider(state: &Arc<AppState>) -> Arc<dyn ChannelKeyProvider> {
     Arc::new(MekKeyProvider::new(
         Arc::new(LiveMekCache::new(Arc::clone(state))),
         Arc::new(VaultMekHistory {
-            state: Arc::clone(state),
-        }),
-        Arc::new(CommunityChannelKinds {
             state: Arc::clone(state),
         }),
     ))

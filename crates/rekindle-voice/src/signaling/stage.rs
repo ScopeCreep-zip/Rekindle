@@ -195,8 +195,9 @@ pub async fn request_to_speak<D: VoiceSignalingDeps + ?Sized>(
 }
 
 /// Moderator clicked Approve/Deny on a SpeakRequest. If granted:
-/// rotate the voice MEK (since membership effectively changed) and
-/// broadcast a StageUpdate adding the requester to `stage_speakers`.
+/// broadcast a StageUpdate adding the requester to `stage_speakers`. No
+/// key changes: the new speaker sent its own media key to everyone it
+/// holds on its roster when it added them (plan C7.20).
 /// Always broadcasts the `SpeakResponse` envelope so the requester
 /// gets feedback.
 pub async fn respond_to_speak_request<D: VoiceSignalingDeps + ?Sized>(
@@ -209,16 +210,6 @@ pub async fn respond_to_speak_request<D: VoiceSignalingDeps + ?Sized>(
     let moderator_pseudonym = deps
         .my_pseudonym(community_id)
         .ok_or_else(|| VoiceError::Session("no pseudonym for community".into()))?;
-
-    if granted {
-        deps.rotate_voice_mek_for_membership(
-            community_id.to_string(),
-            channel_id.to_string(),
-            requester_pseudonym.to_string(),
-            true,
-        )
-        .await;
-    }
 
     let lamport = deps.next_lamport(community_id)?;
     let response = CommunityEnvelope::Control(ControlPayload::SpeakResponse {

@@ -366,6 +366,25 @@ pub enum ControlPayload {
     /// force a video keyframe (RFC 5104 FIR semantics — a new member
     /// needs a full intra to start decoding). Directed, ttl = 0.
     VoiceJoinConfirmed { channel_id: String },
+    /// A sender's call-media key, sealed to one participant (plan C7.20,
+    /// RFC 9605 §5.1 sender keys). HPKE Auth from the envelope's signer to
+    /// `recipient`, bound to the channel, recipient and index. Directed to
+    /// the channel roster (ttl = 0); others ignore it.
+    VoiceMediaKey {
+        channel_id: String,
+        /// Pseudonym (hex) the key is sealed to.
+        recipient: String,
+        key_index: u64,
+        sealed: Vec<u8>,
+    },
+    /// Ask `sender` for its call-media key at `key_index`: a frame arrived
+    /// under it before (or without) its push. Directed, ttl = 0.
+    VoiceMediaKeyRequest {
+        channel_id: String,
+        /// Pseudonym (hex) whose key is asked for.
+        sender: String,
+        key_index: u64,
+    },
     /// Broadcast: member left a voice channel.
     VoiceLeave { channel_id: String },
     /// Broadcast: voice channel mode switch (mesh ↔ MCU).

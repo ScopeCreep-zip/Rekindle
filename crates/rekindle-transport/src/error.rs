@@ -249,9 +249,11 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
             // two impls used to carry the same seven-arm mapping.
             C::Core(core) => core.into(),
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
-            other @ (C::SessionError(_) | C::VaultLocked) => Self::SignalProtocol {
-                reason: other.to_string(),
-            },
+            other @ (C::SessionError(_) | C::VaultLocked | C::WrongPassphrase) => {
+                Self::SignalProtocol {
+                    reason: other.to_string(),
+                }
+            }
         }
     }
 }

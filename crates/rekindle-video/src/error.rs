@@ -16,9 +16,6 @@ pub enum VideoError {
     #[error("identity not unlocked — cannot derive signing key")]
     IdentityNotLoaded,
 
-    #[error("MEK unavailable for community {community} — join voice/video first")]
-    MekUnavailable { community: String },
-
     #[error("encrypt failed: {0}")]
     Encrypt(String),
 

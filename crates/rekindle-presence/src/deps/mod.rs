@@ -10,7 +10,7 @@ pub mod community;
 pub mod friend;
 
 pub use community::{
-    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials,
+    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, RowWrite,
     SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
 };
 pub use friend::{

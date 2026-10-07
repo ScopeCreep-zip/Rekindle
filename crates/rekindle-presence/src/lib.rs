@@ -29,8 +29,9 @@ pub use community::{
 };
 pub use deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, FriendPresenceDeps, FriendPresenceEvent,
-    GameInfoSnapshot, OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor,
-    SelfPresenceSnapshot, SetFriendStatusOutcome, StatusPublisherDeps, VoicePresenceRow,
+    GameInfoSnapshot, OnlineMember, PresenceCredentials, PresenceError, RowWrite,
+    SegmentDescriptor, SelfPresenceSnapshot, SetFriendStatusOutcome, StatusPublisherDeps,
+    VoicePresenceRow,
 };
 pub use friend::{
     handle_value_change, parse_status, parse_status_timestamp, publish_status, status_to_wire_byte,

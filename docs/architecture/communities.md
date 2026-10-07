@@ -33,8 +33,8 @@ Read this first if you are new to the architecture.
 The channel-level surfaces:
 
 - MEK lifecycle — peer-to-peer distribution, deterministic rotator
-  selection, cascading fallback, per-channel and voice MEK
-  rotation.
+  selection, cascading fallback, per-channel MEK rotation. (Call
+  media uses sender-owned keys instead; see `voice.md`.)
 - Channel messaging via the Tier-7 `rekindle-channel` crate and the
   Tauri-side `channel_adapter` integration.
 - Voice, video, and stage channels — mutual-aid SFU election,

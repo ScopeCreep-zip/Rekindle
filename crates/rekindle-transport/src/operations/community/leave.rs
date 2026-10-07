@@ -69,6 +69,63 @@ pub async fn leave_community(
     })
 }
 
+/// Write the tombstone; a supersede is acted on, never reported as released
+/// (plan C7.17). Over our own newer row (the network held a copy our local
+/// store missed) it writes once more, above it; over another member's row
+/// or an unverifiable value the slot is not ours to release.
+async fn write_tombstone(
+    node: &TransportNode,
+    lease: crate::broadcast::dht_writes::LeaseId,
+    subkey: u32,
+    bytes: Vec<u8>,
+    writer: &str,
+    my_pseudonym_hex: &str,
+) -> Result<()> {
+    use rekindle_codec::presence_row::{classify_superseding_row, SupersedingRow};
+    let first = crate::broadcast::dht_writes::set_leased_str(
+        node,
+        lease,
+        subkey,
+        bytes.clone(),
+        Some(writer),
+    )
+    .await?;
+    let Some(newer) = first else {
+        return Ok(());
+    };
+    match classify_superseding_row(&newer.data, my_pseudonym_hex) {
+        SupersedingRow::Ours => {
+            match crate::broadcast::dht_writes::set_leased_str(
+                node,
+                lease,
+                subkey,
+                bytes,
+                Some(writer),
+            )
+            .await?
+            {
+                None => Ok(()),
+                Some(again) => Err(TransportError::DhtError {
+                    reason: format!(
+                        "departure tombstone superseded twice (seq {:?}, then {:?})",
+                        newer.seq, again.seq
+                    ),
+                }),
+            }
+        }
+        SupersedingRow::Member(author) => Err(TransportError::DhtError {
+            reason: format!(
+                "slot {subkey} holds member {author}'s row; departure tombstone not written"
+            ),
+        }),
+        SupersedingRow::Unverified(reason) => Err(TransportError::DhtError {
+            reason: format!(
+                "slot {subkey} holds an unverified value ({reason}); departure tombstone not written"
+            ),
+        }),
+    }
+}
+
 /// Write a signed `departed` row into our own registry subkey.
 async fn release_registry_slot(
     node: &TransportNode,
@@ -91,20 +148,9 @@ async fn release_registry_slot(
         signing_key_bytes,
         &membership.governance_key,
     );
-    let mut presence = rekindle_types::presence::MemberPresence {
-        pseudonym_key: rekindle_types::id::PseudonymKey(pseudonym.verifying_key().to_bytes()),
-        // "offline" so a reader that predates `departed` still drops us
-        // from its roster rather than showing a ghost.
-        status: "offline".into(),
-        departed: true,
-        last_heartbeat: rekindle_utils::timestamp_secs(),
-        ..Default::default()
-    };
-    let sig = rekindle_secrets::derive::sign_with_pseudonym(&pseudonym, &presence.signing_bytes());
-    presence.signature = sig.to_vec();
-    let bytes = serde_json::to_vec(&presence).map_err(|e| TransportError::SerializationFailed {
-        reason: e.to_string(),
-    })?;
+    let bytes =
+        rekindle_codec::presence_row::departure_row(&pseudonym, rekindle_utils::timestamp_secs());
+    let my_pseudonym_hex = hex::encode(pseudonym.verifying_key().to_bytes());
 
     // A table hit while the community holds its registry (the slot writer
     // is already its sticky writer); the write names the slot keypair
@@ -115,12 +161,13 @@ async fn release_registry_slot(
         Some(&slot_kp.to_string()),
     )
     .await?;
-    let written = crate::broadcast::dht_writes::set_leased_str(
+    let written = write_tombstone(
         node,
         lease,
         membership.slot_index,
         bytes,
-        Some(&slot_kp.to_string()),
+        &slot_kp.to_string(),
+        &my_pseudonym_hex,
     )
     .await;
     crate::broadcast::dht_writes::release(node, lease).await;

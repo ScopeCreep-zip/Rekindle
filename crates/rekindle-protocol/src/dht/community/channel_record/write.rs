@@ -290,10 +290,6 @@ async fn write_member_entry(
     written
 }
 
-/// Bound on compare-and-swap rounds when the network keeps holding a newer
-/// page of our slot.
-const CAS_ROUNDS: usize = 3;
-
 /// Whether `entry` is already among `entries` (same canonical encoding):
 /// an append is idempotent, and a merge keeps one copy of each entry.
 pub(super) fn contains_entry(entries: &[ChannelRecordEntry], entry: &ChannelRecordEntry) -> bool {
@@ -384,7 +380,7 @@ async fn append_entry(
         entries.push(entry);
     }
 
-    for _ in 0..CAS_ROUNDS {
+    for _ in 0..crate::dht::pool::CAS_ROUNDS {
         let bytes = encode_trimmed(&author_pseudonym, pseudonym_signing_key, &mut entries)?;
         match pool
             .set_durable_as(lease, subkey, bytes, Some(writer.clone()))
@@ -400,6 +396,9 @@ async fn append_entry(
     }
     Err(ProtocolError::NotStored {
         subkey,
-        outcome: format!("still superseded after {CAS_ROUNDS} merges"),
+        outcome: format!(
+            "still superseded after {} merges",
+            crate::dht::pool::CAS_ROUNDS
+        ),
     })
 }

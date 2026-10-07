@@ -3,17 +3,40 @@ use crate::reassembly_state::VideoReassemblyState;
 use crate::test_mock::MockDeps;
 use rekindle_types::video::Codec;
 
+/// A frame encrypted the way a sender seals it: under its own media key
+/// at `index` (plan C7.20). Returns the ciphertext and the key's secret.
+fn sealed_by(
+    signing_key: &rekindle_secrets::ed25519_dalek::SigningKey,
+    index: u64,
+    secret: &[u8; 32],
+    plaintext: &[u8],
+) -> Vec<u8> {
+    let frame_key = rekindle_secrets::media_sender_key::video_frame_key(
+        secret,
+        &signing_key.verifying_key().to_bytes(),
+    );
+    rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*frame_key, index)
+        .encrypt(plaintext)
+        .expect("encrypt")
+}
+
 /// Build a single-fragment VideoFragment payload signed by the
-/// pseudonym derived from `seed` for community `"c1"`, MEK-encrypted
-/// under the MockDeps key. Returns `(sender_hex, payload)`.
-fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPayload) {
-    use rekindle_crypto::group::media_key::MediaEncryptionKey;
+/// pseudonym derived from `seed` for community `"c1"`, sealed under that
+/// sender's media key at index 1, whose key `deps` holds as if pushed.
+/// Returns `(sender_hex, payload)`.
+fn signed_fragment(
+    deps: &MockDeps,
+    seed: &[u8; 32],
+    forge_signature: bool,
+) -> (String, ControlPayload) {
     use rekindle_secrets::derive::{derive_community_pseudonym, sign_with_pseudonym};
 
     let signing_key = derive_community_pseudonym(seed, "c1");
     let sender_hex = hex::encode(signing_key.verifying_key().to_bytes());
-    let mek = MediaEncryptionKey::from_bytes([1u8; 32], 1);
-    let ciphertext = mek.encrypt(b"vp9-keyframe-bytes").expect("mek encrypt");
+    let secret = [1u8; 32];
+    deps.keys
+        .install(&sender_hex, 1, zeroize::Zeroizing::new(secret));
+    let ciphertext = sealed_by(&signing_key, 1, &secret, b"vp9-keyframe-bytes");
 
     let mut frag = VideoFragment {
         stream_id: [3u8; 16],
@@ -23,7 +46,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
         keyframe: true,
         codec: Codec::Vp9,
         timestamp: 42,
-        mek_generation: 1,
+        key_index: 1,
         payload: ciphertext,
         signature: Vec::new(),
     };
@@ -47,7 +70,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
             keyframe: frag.keyframe,
             codec: frag.codec,
             timestamp: frag.timestamp,
-            mek_generation: frag.mek_generation,
+            key_index: frag.key_index,
             transport_seq: 0,
             payload: frag.payload,
             signature: frag.signature,
@@ -59,7 +82,7 @@ fn signed_fragment(seed: &[u8; 32], forge_signature: bool) -> (String, ControlPa
 fn valid_fragment_signature_reaches_frame_ready() {
     let deps = MockDeps::new();
     let reassembly = VideoReassemblyState::new();
-    let (sender_hex, payload) = signed_fragment(&[9u8; 32], false);
+    let (sender_hex, payload) = signed_fragment(&deps, &[9u8; 32], false);
     handle_video_payload(&deps, &reassembly, "c1", &sender_hex, payload, 0);
     let calls = deps.calls.lock();
     assert!(
@@ -75,7 +98,7 @@ fn valid_fragment_signature_reaches_frame_ready() {
 fn forged_fragment_signature_is_dropped_before_reassembly() {
     let deps = MockDeps::new();
     let reassembly = VideoReassemblyState::new();
-    let (sender_hex, payload) = signed_fragment(&[9u8; 32], true);
+    let (sender_hex, payload) = signed_fragment(&deps, &[9u8; 32], true);
     handle_video_payload(&deps, &reassembly, "c1", &sender_hex, payload, 0);
     let calls = deps.calls.lock();
     assert!(
@@ -83,8 +106,8 @@ fn forged_fragment_signature_is_dropped_before_reassembly() {
         "forged fragment signature must never produce an event"
     );
     assert!(
-        calls.mek_refresh_requests.is_empty(),
-        "forged fragments must not trigger MEK requests either"
+        calls.key_requests.is_empty(),
+        "forged fragments must not trigger key requests either"
     );
 }
 
@@ -95,26 +118,24 @@ fn mismatched_sender_pseudonym_is_dropped() {
     // own envelope must be rejected.
     let deps = MockDeps::new();
     let reassembly = VideoReassemblyState::new();
-    let (_real_sender, payload) = signed_fragment(&[9u8; 32], false);
+    let (_real_sender, payload) = signed_fragment(&deps, &[9u8; 32], false);
     let other_sender = hex::encode([8u8; 32]);
     handle_video_payload(&deps, &reassembly, "c1", &other_sender, payload, 0);
     assert!(deps.calls.lock().events.is_empty());
 }
 
 #[test]
-fn mek_mismatch_fires_debounced_refresh_request() {
-    use rekindle_crypto::group::media_key::MediaEncryptionKey;
+fn a_missing_sender_key_fires_one_debounced_request() {
     use rekindle_secrets::derive::{derive_community_pseudonym, sign_with_pseudonym};
 
-    // Sender encrypts under generation 2; MockDeps holds gen 1
-    // with DIFFERENT bytes → decrypt fails → RequestMEK fires once
-    // (debounced) instead of a silent drop.
+    // The sender seals under its key at index 2, which it has not sent
+    // us: one debounced request to that sender for index 2, never a
+    // silent drop.
     let deps = MockDeps::new();
     let reassembly = VideoReassemblyState::new();
 
     let signing_key = derive_community_pseudonym(&[9u8; 32], "c1");
     let sender_hex = hex::encode(signing_key.verifying_key().to_bytes());
-    let newer_mek = MediaEncryptionKey::from_bytes([2u8; 32], 2);
 
     let make_payload = |frame_seq: u32| {
         let mut frag = VideoFragment {
@@ -125,8 +146,8 @@ fn mek_mismatch_fires_debounced_refresh_request() {
             keyframe: true,
             codec: Codec::Vp9,
             timestamp: 7,
-            mek_generation: 2,
-            payload: newer_mek.encrypt(b"frame").expect("encrypt"),
+            key_index: 2,
+            payload: sealed_by(&signing_key, 2, &[2u8; 32], b"frame"),
             signature: Vec::new(),
         };
         frag.signature = sign_with_pseudonym(
@@ -143,7 +164,7 @@ fn mek_mismatch_fires_debounced_refresh_request() {
             keyframe: frag.keyframe,
             codec: frag.codec,
             timestamp: frag.timestamp,
-            mek_generation: frag.mek_generation,
+            key_index: frag.key_index,
             transport_seq: 0,
             payload: frag.payload,
             signature: frag.signature,
@@ -151,7 +172,7 @@ fn mek_mismatch_fires_debounced_refresh_request() {
     };
 
     handle_video_payload(&deps, &reassembly, "c1", &sender_hex, make_payload(1), 0);
-    // Second failing frame inside the debounce window: no new request.
+    // Second frame inside the debounce window: no new request.
     handle_video_payload(
         &deps,
         &reassembly,
@@ -163,12 +184,14 @@ fn mek_mismatch_fires_debounced_refresh_request() {
 
     let calls = deps.calls.lock();
     assert_eq!(
-        calls.mek_refresh_requests,
+        calls.key_requests,
         vec![(
             "c1".to_string(),
-            "11111111111111111111111111111111".to_string()
+            "11111111111111111111111111111111".to_string(),
+            sender_hex.clone(),
+            2
         )],
-        "exactly one debounced MEK refresh request"
+        "exactly one debounced request to the sender for its index"
     );
     assert!(
         calls
@@ -251,7 +274,7 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
             keyframe: false,
             codec: Codec::Vp9,
             timestamp: 0,
-            mek_generation: 0,
+            key_index: 0,
             transport_seq: 0,
             payload: vec![0xAB; 64],
             signature: vec![0u8; 64],

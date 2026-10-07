@@ -36,3 +36,6 @@ tracing-subscriber = { workspace = true }
 # Phase 4 - pacer invariants (rate bound, keyframe survival, fragment
 # order) are property-tested. Precedent: rekindle-gossip.
 proptest = "1"
+# Tests install pushed sender keys (`ChannelSenderKeys::install` takes
+# a `Zeroizing` secret, plan C7.20).
+zeroize = "1"

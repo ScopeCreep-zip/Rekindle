@@ -2,10 +2,12 @@
 //! unit tests. Held in-tree (cfg-gated) so any crate test can exercise
 //! send/receive paths against deterministic state.
 
+use std::sync::Arc;
+
 use parking_lot::Mutex;
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys;
 
 use crate::deps::{VideoDeps, VideoEvent};
 use crate::error::VideoError;
@@ -15,14 +17,17 @@ pub struct MockCalls {
     pub sent: Vec<CommunityEnvelope>,
     pub events: Vec<VideoEvent>,
     pub lamport_calls: u64,
-    pub mek_refresh_requests: Vec<(String, String)>,
+    /// `(community_id, channel_id, sender, index)` per key request.
+    pub key_requests: Vec<(String, String, String, u64)>,
     /// `(community_id, channel_id, last_frame_seq, kbps, loss_q8)` for
     /// each receiver `FrameAck` the receive path emitted.
     pub frame_acks: Vec<(String, String, u32, u32, u8)>,
 }
 
 pub struct MockDeps {
-    pub mek: Option<MediaEncryptionKey>,
+    /// Our channel session's sender keys: the key we send under, and
+    /// the keys senders "pushed" to us (tests install them).
+    pub keys: Arc<ChannelSenderKeys>,
     pub signing_key: Option<SigningKey>,
     /// Channel the mock reports as the local active voice/video
     /// session for every community. Tests default to `"11111111111111111111111111111111"`; the
@@ -38,18 +43,12 @@ impl MockDeps {
         // Deterministic signing key for tests
         let sk = SigningKey::from_bytes(&[7u8; 32]);
         Self {
-            mek: Some(MediaEncryptionKey::from_bytes([1u8; 32], 1)),
+            keys: Arc::new(ChannelSenderKeys::default()),
             signing_key: Some(sk),
             active_channel: Some("11111111111111111111111111111111".to_string()),
             calls: Mutex::new(MockCalls::default()),
             next_lamport: Mutex::new(0),
         }
-    }
-
-    pub fn without_mek() -> Self {
-        let mut me = Self::new();
-        me.mek = None;
-        me
     }
 
     pub fn without_signing_key() -> Self {
@@ -66,8 +65,8 @@ impl MockDeps {
 }
 
 impl VideoDeps for MockDeps {
-    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
-        std::sync::Arc::new(MockKeys(self.mek.clone()))
+    fn channel_sender_keys(&self, _: &str, _: &str) -> Arc<ChannelSenderKeys> {
+        Arc::clone(&self.keys)
     }
 
     fn community_signing_key(&self, _c: &str) -> Option<SigningKey> {
@@ -88,11 +87,13 @@ impl VideoDeps for MockDeps {
         self.active_channel.clone()
     }
 
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, _needed_generation: u64) {
-        self.calls
-            .lock()
-            .mek_refresh_requests
-            .push((community_id.to_string(), channel_id.to_string()));
+    fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64) {
+        self.calls.lock().key_requests.push((
+            community_id.to_string(),
+            channel_id.to_string(),
+            sender.to_string(),
+            index,
+        ));
     }
 
     fn increment_lamport(&self, _c: &str) -> Result<u64, rekindle_types::lamport::LamportError> {
@@ -125,7 +126,7 @@ impl VideoDeps for MockDeps {
     }
 }
 
-/// Build a `FrameShape` for tests, with `mek_generation: 0`.
+/// Build a `FrameShape` for tests, with `key_index: 0`.
 ///
 /// `fragment/tests.rs` and `reassembler/tests.rs` each carried a
 /// byte-identical copy of this — a duplicate introduced when those two
@@ -144,57 +145,6 @@ pub(crate) fn test_shape(
         keyframe,
         codec,
         timestamp,
-        mek_generation: 0,
-    }
-}
-
-/// The mock's one channel key, under every channel's media scope.
-struct MockKeys(Option<MediaEncryptionKey>);
-
-impl rekindle_types::channel_keys::ChannelKeyProvider for MockKeys {
-    fn current_epoch(
-        &self,
-        _: &str,
-        _: rekindle_types::channel_keys::KeyScope,
-    ) -> Option<rekindle_types::channel_keys::KeyEpoch> {
-        self.0
-            .as_ref()
-            .map(|m| rekindle_types::channel_keys::KeyEpoch(m.generation()))
-    }
-
-    fn key(
-        &self,
-        _: &str,
-        _: rekindle_types::channel_keys::KeyScope,
-        epoch: rekindle_types::channel_keys::KeyEpoch,
-    ) -> Option<rekindle_types::channel_keys::Zeroizing<[u8; 32]>> {
-        self.0
-            .as_ref()
-            .filter(|m| m.generation() == epoch.0)
-            .map(|m| rekindle_types::channel_keys::Zeroizing::new(*m.as_bytes()))
-    }
-
-    fn current_epoch_age(
-        &self,
-        _: &str,
-        _: rekindle_types::channel_keys::KeyScope,
-    ) -> Option<std::time::Duration> {
-        self.0.as_ref().map(|_| std::time::Duration::from_secs(60))
-    }
-
-    fn scope_for_text(
-        &self,
-        _: &str,
-        _: rekindle_types::id::ChannelId,
-    ) -> rekindle_types::channel_keys::KeyScope {
-        rekindle_types::channel_keys::KeyScope::Community
-    }
-
-    fn scope_for_media(
-        &self,
-        _: &str,
-        channel: rekindle_types::id::ChannelId,
-    ) -> rekindle_types::channel_keys::KeyScope {
-        rekindle_types::channel_keys::KeyScope::Channel(channel)
+        key_index: 0,
     }
 }

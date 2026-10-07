@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use rekindle_presence::deps::{DiscoveredMemberRow, PresenceError};
+use rekindle_presence::deps::{DiscoveredMemberRow, PresenceError, RowWrite};
 
 use crate::daemon::community_runtime::MemberRecord;
 
@@ -64,7 +64,7 @@ impl DaemonPresenceAdapter {
         subkey_index: u32,
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
-    ) -> Result<(), PresenceError> {
+    ) -> Result<RowWrite, PresenceError> {
         let node = self.transport().ok_or(PresenceError::NotAttached)?;
 
         // A table hit while the community holds its registry with our slot
@@ -90,9 +90,16 @@ impl DaemonPresenceAdapter {
         )
         .await;
         rekindle_transport::broadcast::dht_writes::release(node.as_ref(), lease).await;
-        written
-            .map(|_| ())
-            .map_err(|e| PresenceError::Dht(format!("write presence: {e}")))
+        // A supersede goes back to the writer, which decides from whose row
+        // it is (plan C7.16); it used to be reported as written.
+        match written {
+            Ok(None) => Ok(RowWrite::Stored),
+            Ok(Some(newer)) => Ok(RowWrite::Superseded {
+                seq: newer.seq,
+                data: newer.data,
+            }),
+            Err(e) => Err(PresenceError::Dht(format!("write presence: {e}"))),
+        }
     }
 
     /// Land the poll's validated roster in the runtime map.

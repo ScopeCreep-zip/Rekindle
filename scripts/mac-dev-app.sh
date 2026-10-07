@@ -130,6 +130,8 @@ if pgrep -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle-desktop" >/dev/
     sleep 1
 fi
 echo "→ launching Rekindle Dev.app (log: $APP_LOG)"
+# Keep the previous run's log: a shutdown is often what needs explaining.
+[ -s "$APP_LOG" ] && mv -f "$APP_LOG" "${APP_LOG%.log}.prev.log"
 : >"$APP_LOG"
 # LaunchServices does not hand the shell's environment to the app, so the
 # log filter is passed explicitly. Same default as scripts/linux-dev.sh:

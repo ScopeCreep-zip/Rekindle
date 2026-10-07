@@ -53,6 +53,42 @@ pub(super) fn write_voice_join_confirmed(
     p.set_channel_id(channel_id);
 }
 
+pub(super) fn write_voice_media_key(
+    mut p: cap::voice_media_key_payload::Builder<'_>,
+    payload: &ControlPayload,
+) {
+    let ControlPayload::VoiceMediaKey {
+        channel_id,
+        recipient,
+        key_index,
+        sealed,
+    } = payload
+    else {
+        unreachable!("write_voice_media_key: variant mismatch")
+    };
+    p.set_channel_id(channel_id);
+    p.set_recipient(recipient);
+    p.set_key_index(*key_index);
+    p.set_sealed(sealed);
+}
+
+pub(super) fn write_voice_media_key_request(
+    mut p: cap::voice_media_key_request_payload::Builder<'_>,
+    payload: &ControlPayload,
+) {
+    let ControlPayload::VoiceMediaKeyRequest {
+        channel_id,
+        sender,
+        key_index,
+    } = payload
+    else {
+        unreachable!("write_voice_media_key_request: variant mismatch")
+    };
+    p.set_channel_id(channel_id);
+    p.set_sender(sender);
+    p.set_key_index(*key_index);
+}
+
 pub(super) fn write_voice_leave(
     mut p: cap::voice_leave_payload::Builder<'_>,
     payload: &ControlPayload,
@@ -245,6 +281,27 @@ pub(super) fn read_voice_join_confirmed(
 ) -> Result<ControlPayload, CodecError> {
     Ok(ControlPayload::VoiceJoinConfirmed {
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+    })
+}
+
+pub(super) fn read_voice_media_key(
+    p: cap::voice_media_key_payload::Reader<'_>,
+) -> Result<ControlPayload, CodecError> {
+    Ok(ControlPayload::VoiceMediaKey {
+        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        recipient: text_to_string(p.get_recipient().map_err(|e| capnp_err(&e))?)?,
+        key_index: p.get_key_index(),
+        sealed: p.get_sealed().map_err(|e| capnp_err(&e))?.to_vec(),
+    })
+}
+
+pub(super) fn read_voice_media_key_request(
+    p: cap::voice_media_key_request_payload::Reader<'_>,
+) -> Result<ControlPayload, CodecError> {
+    Ok(ControlPayload::VoiceMediaKeyRequest {
+        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        sender: text_to_string(p.get_sender().map_err(|e| capnp_err(&e))?)?,
+        key_index: p.get_key_index(),
     })
 }
 

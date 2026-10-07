@@ -390,17 +390,7 @@ impl ChannelKeyProvider for MockKeys {
             .map(|m| Zeroizing::new(*m.as_bytes()))
     }
 
-    fn current_epoch_age(&self, _: &str, _: KeyScope) -> Option<std::time::Duration> {
-        self.current
-            .as_ref()
-            .map(|_| std::time::Duration::from_secs(60))
-    }
-
     fn scope_for_text(&self, _: &str, _: ChannelId) -> KeyScope {
         KeyScope::Community
-    }
-
-    fn scope_for_media(&self, _: &str, channel: ChannelId) -> KeyScope {
-        KeyScope::Channel(channel)
     }
 }

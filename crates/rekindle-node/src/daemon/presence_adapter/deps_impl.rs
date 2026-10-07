@@ -92,7 +92,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         subkey_index: u32,
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
-    ) -> Result<(), PresenceError> {
+    ) -> Result<rekindle_presence::RowWrite, PresenceError> {
         self.write_presence_impl(
             registry_key,
             subkey_index,

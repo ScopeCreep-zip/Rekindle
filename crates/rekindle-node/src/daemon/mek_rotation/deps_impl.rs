@@ -20,7 +20,7 @@ use rekindle_mek_rotation::{
     RotationRecipient,
 };
 use rekindle_types::channel_keys::KeyScope;
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
 use super::DaemonMekAdapter;
@@ -88,23 +88,6 @@ impl MekDistributeDeps for DaemonMekAdapter {
                 route_blob: m.route_blob,
             })
             .collect()
-    }
-
-    async fn voice_recipients(
-        &self,
-        _community_id: &str,
-        _channel: ChannelId,
-        _trigger_pseudonym: &str,
-        _include_trigger_in_recipients: bool,
-    ) -> Vec<RotationRecipient> {
-        // The daemon hosts no voice engine — there is no voice channel
-        // transport to enumerate participants from, which is why
-        // `InboundCall::CallInvite` is rejected here too. Empty makes
-        // `rotate_voice_mek_for_membership` a no-op rather than a wrong
-        // answer. Recorded as a capability gap rather than silently
-        // stubbed: when the daemon grows a voice runtime, this method
-        // has to grow with it.
-        Vec::new()
     }
 
     async fn broadcast_to_peer(

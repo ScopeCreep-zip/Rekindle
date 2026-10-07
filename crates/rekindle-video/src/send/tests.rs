@@ -33,22 +33,6 @@ fn empty_payload_rejected() {
 }
 
 #[test]
-fn missing_mek_rejected() {
-    let deps = MockDeps::without_mek();
-    let reassembly = VideoReassemblyState::new();
-    let err = build_video_frame(
-        &deps,
-        &reassembly,
-        "c1",
-        "11111111111111111111111111111111",
-        &small_request(false),
-        0,
-    )
-    .unwrap_err();
-    assert!(matches!(err, VideoError::MekUnavailable { .. }));
-}
-
-#[test]
 fn missing_identity_rejected() {
     let deps = MockDeps::without_signing_key();
     let reassembly = VideoReassemblyState::new();

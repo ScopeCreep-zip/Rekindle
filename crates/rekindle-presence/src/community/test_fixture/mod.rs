@@ -198,14 +198,18 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         subkey: u32,
         payload: Vec<u8>,
         writer_keypair_str: &str,
-    ) -> Result<(), PresenceError> {
-        self.state.lock().calls_write_registry.push((
+    ) -> Result<crate::deps::RowWrite, PresenceError> {
+        let mut st = self.state.lock();
+        st.calls_write_registry.push((
             registry_key.to_string(),
             subkey,
             payload.len(),
             writer_keypair_str.to_string(),
         ));
-        Ok(())
+        Ok(st
+            .write_outcomes
+            .pop_front()
+            .unwrap_or(crate::deps::RowWrite::Stored))
     }
     fn persist_discovered_member_rows(
         &self,

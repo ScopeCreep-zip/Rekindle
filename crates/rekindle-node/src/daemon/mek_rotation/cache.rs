@@ -65,13 +65,6 @@ impl ChannelMekCache for MekCacheAdapter {
         self.inner.read().current(community_id, scope).cloned()
     }
 
-    fn current_age(&self, community_id: &str, scope: KeyScope) -> Option<std::time::Duration> {
-        self.inner
-            .read()
-            .current_since(community_id, scope)
-            .map(|since| since.elapsed())
-    }
-
     /// Accept a key only if it is genuinely newer, or wins the
     /// same-generation tiebreak.
     ///
@@ -185,17 +178,6 @@ impl MekPersist for DaemonMekPersist {
     }
 }
 
-/// Stage channels from the merged governance.
-struct DaemonChannelKinds {
-    runtime: Arc<crate::daemon::community_runtime::CommunityRuntimeMap>,
-}
-
-impl rekindle_mek_rotation::ChannelKinds for DaemonChannelKinds {
-    fn is_stage(&self, community_id: &str, channel: rekindle_types::id::ChannelId) -> bool {
-        self.runtime.is_stage_channel(community_id, channel)
-    }
-}
-
 /// The key provider every daemon key consumer reads through (plan D6).
 pub fn key_provider(
     ctx: &crate::daemon::dispatch::DaemonContext,
@@ -204,9 +186,6 @@ pub fn key_provider(
     Arc::new(rekindle_mek_rotation::MekKeyProvider::new(
         cache.clone(),
         cache,
-        Arc::new(DaemonChannelKinds {
-            runtime: Arc::clone(&ctx.community_runtime),
-        }),
     ))
 }
 

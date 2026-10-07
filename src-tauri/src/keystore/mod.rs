@@ -99,8 +99,10 @@ impl StrongholdKeystore {
     /// given passphrase. Wrong passphrase fails here (SQLCipher key
     /// validation).
     fn initialize_from_file(path: &Path, passphrase: &str) -> Result<Self, CryptoError> {
-        let vault = VaultStore::open(path, passphrase)
-            .map_err(|e| CryptoError::storage(format!("vault open: {e}")))?;
+        let vault = VaultStore::open(path, passphrase).map_err(|e| match e {
+            rekindle_vault::VaultError::WrongPassphrase => CryptoError::WrongPassphrase,
+            other => CryptoError::storage(format!("vault open: {other}")),
+        })?;
         Ok(Self { vault })
     }
 
@@ -136,26 +138,16 @@ impl StrongholdKeystore {
     }
 }
 
-/// Map a keystore initialization / unlock error to a user-friendly string.
-///
-/// Detects the SQLCipher "wrong key" failure pattern (surfaced as
-/// `vault open: ...` containing the SQLCipher key validation message)
-/// and returns the "Wrong passphrase" prompt; otherwise passes the
-/// original error text through.
-///
-/// Function name is unchanged (`map_stronghold_error`) so the consumer
-/// sites and CLAUDE.md references don't break.
+/// Map a keystore initialization / unlock error to a user-facing string:
+/// a passphrase that does not open the vault is "Wrong passphrase"
+/// (`CryptoError::WrongPassphrase`, typed at the vault's keying phase);
+/// anything else passes its own text through.
 pub fn map_stronghold_error(e: &rekindle_crypto::CryptoError) -> String {
-    let msg = e.to_string();
-    if msg.contains("wrong passphrase")
-        || msg.contains("corrupt vault")
-        || msg.contains("not a database")
-        || msg.contains("SQLCipher")
-        || msg.contains("vault open:")
-    {
-        "Wrong passphrase — unable to unlock keystore".to_string()
-    } else {
-        msg
+    match e {
+        rekindle_crypto::CryptoError::WrongPassphrase => {
+            "Wrong passphrase — unable to unlock keystore".to_string()
+        }
+        other => other.to_string(),
     }
 }
 

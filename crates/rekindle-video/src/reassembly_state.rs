@@ -32,10 +32,10 @@ pub struct VideoReassemblyState {
     /// wins; lower-lamport messages are dropped so the reassembler
     /// doesn't flap between relays. Keyed by `(community_id, stream_id)`.
     last_topology_lamport: Mutex<HashMap<(String, [u8; 16]), u64>>,
-    /// Per-community clock (ms) of the last MEK-refresh request fired
-    /// by the decrypt-failure path — debounces the cascade request to
-    /// once per window even at 15 fps of undecryptable frames.
-    last_mek_request_ms: Mutex<HashMap<String, u32>>,
+    /// Clock (ms) of the last key request per `(community_id, sender)`
+    /// (plan C7.20) — one request per window even at 15 fps of frames
+    /// under a key we lack.
+    last_key_request_ms: Mutex<HashMap<(String, String), u32>>,
     /// Receiver-side transport loss/goodput window per `(community_id,
     /// sender_pseudonym)`. Fed one `observe` per authentic received
     /// fragment; emits a `FrameAckOut` on the AIMD cadence. Keyed by
@@ -45,9 +45,10 @@ pub struct VideoReassemblyState {
     reception: Mutex<HashMap<(String, String), VideoReceptionWindow>>,
 }
 
-/// Decrypt failures within this window of a fired MEK request don't
-/// fire another one (the request cascade retries internally anyway).
-pub const MEK_REQUEST_DEBOUNCE_MS: u32 = 10_000;
+/// Frames under a key we lack within this window of a request to their
+/// sender don't fire another (its push is on the way or was lost; one
+/// request per window recovers either).
+pub const KEY_REQUEST_DEBOUNCE_MS: u32 = 10_000;
 
 impl VideoReassemblyState {
     #[must_use]
@@ -154,7 +155,9 @@ impl VideoReassemblyState {
         self.last_topology_lamport
             .lock()
             .retain(|(cid, _), _| cid != community_id);
-        self.last_mek_request_ms.lock().remove(community_id);
+        self.last_key_request_ms
+            .lock()
+            .retain(|(cid, _), _| cid != community_id);
         self.reception
             .lock()
             .retain(|(cid, _), _| cid != community_id);
@@ -164,19 +167,20 @@ impl VideoReassemblyState {
         self.inner.lock().clear();
         self.started_streams.lock().clear();
         self.last_topology_lamport.lock().clear();
-        self.last_mek_request_ms.lock().clear();
+        self.last_key_request_ms.lock().clear();
         self.reception.lock().clear();
     }
 
-    /// Debounce gate for the decrypt-failure MEK refresh: returns
-    /// `true` (and stamps the clock) at most once per
-    /// [`MEK_REQUEST_DEBOUNCE_MS`] per community.
-    pub fn should_request_mek(&self, community_id: &str, now_ms: u32) -> bool {
-        let mut map = self.last_mek_request_ms.lock();
-        match map.get(community_id) {
-            Some(last) if now_ms.wrapping_sub(*last) < MEK_REQUEST_DEBOUNCE_MS => false,
+    /// Debounce gate for asking `sender` for a key: returns `true` (and
+    /// stamps the clock) at most once per [`KEY_REQUEST_DEBOUNCE_MS`] per
+    /// `(community, sender)`.
+    pub fn should_request_key(&self, community_id: &str, sender: &str, now_ms: u32) -> bool {
+        let mut map = self.last_key_request_ms.lock();
+        let key = (community_id.to_string(), sender.to_string());
+        match map.get(&key) {
+            Some(last) if now_ms.wrapping_sub(*last) < KEY_REQUEST_DEBOUNCE_MS => false,
             _ => {
-                map.insert(community_id.to_string(), now_ms);
+                map.insert(key, now_ms);
                 true
             }
         }

@@ -503,9 +503,14 @@ async fn write_and_verify(
 }
 
 /// Read existing entries from a subkey, append our entry, write back.
-/// Returns error only on write failure — empty/unparseable subkeys are
-/// treated as empty arrays (safe to overwrite). A newer value on the
-/// network (a concurrent writer) is not an error: the verify re-reads.
+/// Empty/unparseable subkeys are treated as empty arrays (safe to
+/// overwrite). A write that comes back superseded (a concurrent writer) is
+/// a compare-and-swap conflict: merge our entry into the newer array and
+/// write again, as the channel append does (plan C7.17).
+///
+/// # Errors
+/// A write that failed outright, or one still superseded after
+/// `CAS_ROUNDS` merges.
 async fn read_append_write(
     node: &TransportNode,
     lease: LeaseId,
@@ -513,31 +518,45 @@ async fn read_append_write(
     entry: &FriendRequestEntry,
 ) -> Result<()> {
     // Read current state
-    let existing = match crate::broadcast::dht_writes::get_leased(node, lease, subkey, true).await {
-        Ok(Some(data)) if !data.is_empty() && data != b"[]" => data,
-        _ => Vec::new(),
-    };
+    let mut current =
+        match crate::broadcast::dht_writes::get_leased(node, lease, subkey, true).await {
+            Ok(Some(data)) if !data.is_empty() && data != b"[]" => data,
+            _ => Vec::new(),
+        };
 
-    // Parse existing array (or start fresh if unparseable)
-    let mut entries: Vec<FriendRequestEntry> = if existing.is_empty() {
-        Vec::new()
-    } else {
-        // Try array first, then single entry for backward compatibility
-        serde_json::from_slice::<Vec<FriendRequestEntry>>(&existing)
-            .or_else(|_| serde_json::from_slice::<FriendRequestEntry>(&existing).map(|e| vec![e]))
-            .unwrap_or_default()
-    };
+    for _ in 0..rekindle_protocol::dht::pool::CAS_ROUNDS {
+        let mut entries = parse_inbox(&current);
+        // Remove any existing entry from the same sender (idempotent upsert)
+        entries.retain(|e| e.sender_public_key != entry.sender_public_key);
+        entries.push(entry.clone());
 
-    // Remove any existing entry from the same sender (idempotent upsert)
-    entries.retain(|e| e.sender_public_key != entry.sender_public_key);
-    entries.push(entry.clone());
+        let bytes =
+            serde_json::to_vec(&entries).map_err(|e| TransportError::SerializationFailed {
+                reason: e.to_string(),
+            })?;
+        match crate::broadcast::dht_writes::set_leased_str(node, lease, subkey, bytes, None).await?
+        {
+            None => return Ok(()),
+            Some(newer) => current = newer.data,
+        }
+    }
+    Err(TransportError::DhtError {
+        reason: format!(
+            "inbox still superseded after {} merges",
+            rekindle_protocol::dht::pool::CAS_ROUNDS
+        ),
+    })
+}
 
-    let bytes = serde_json::to_vec(&entries).map_err(|e| TransportError::SerializationFailed {
-        reason: e.to_string(),
-    })?;
-    crate::broadcast::dht_writes::set_leased_str(node, lease, subkey, bytes, None)
-        .await
-        .map(|_| ())
+/// The entries of an inbox subkey: an array, or a single entry for
+/// backward compatibility; empty or unparseable reads as empty.
+fn parse_inbox(data: &[u8]) -> Vec<FriendRequestEntry> {
+    if data.is_empty() || data == b"[]" {
+        return Vec::new();
+    }
+    serde_json::from_slice::<Vec<FriendRequestEntry>>(data)
+        .or_else(|_| serde_json::from_slice::<FriendRequestEntry>(data).map(|e| vec![e]))
+        .unwrap_or_default()
 }
 
 /// Verify our entry is present in the subkey after writing.
@@ -556,11 +575,7 @@ async fn verify_entry_present(
     loop {
         match crate::broadcast::dht_writes::get_leased(node, lease, subkey, true).await {
             Ok(Some(data)) if !data.is_empty() && data != b"[]" => {
-                let entries: Vec<FriendRequestEntry> = serde_json::from_slice::<
-                    Vec<FriendRequestEntry>,
-                >(&data)
-                .or_else(|_| serde_json::from_slice::<FriendRequestEntry>(&data).map(|e| vec![e]))
-                .unwrap_or_default();
+                let entries = parse_inbox(&data);
                 if entries
                     .iter()
                     .any(|e| e.sender_public_key == entry.sender_public_key)

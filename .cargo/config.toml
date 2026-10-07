@@ -43,3 +43,9 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[net]
+# The patched veilid-core (root Cargo.toml [patch.crates-io]) is a private
+# GitHub repository: fetch git dependencies with the git CLI so its
+# credentials (credential helper / gh) are used.
+git-fetch-with-cli = true

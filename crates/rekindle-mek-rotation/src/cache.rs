@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
@@ -15,8 +14,8 @@ use rekindle_types::channel_keys::KeyScope;
 
 use crate::deps::ChannelMekCache;
 
-/// Each `(community, scope)`'s current key and when it was installed.
-type Entries = HashMap<(String, KeyScope), (MediaEncryptionKey, Instant)>;
+/// Each `(community, scope)`'s current key.
+type Entries = HashMap<(String, KeyScope), MediaEncryptionKey>;
 
 /// Thread-safe in-memory MEK cache. Cheaply clonable (Arc-backed).
 #[derive(Clone, Default)]
@@ -37,7 +36,7 @@ impl InMemoryMekCache {
         self.inner
             .lock()
             .iter()
-            .map(|(key, (mek, _))| (key.clone(), mek.generation()))
+            .map(|(key, mek)| (key.clone(), mek.generation()))
             .collect()
     }
 
@@ -52,20 +51,13 @@ impl ChannelMekCache for InMemoryMekCache {
         self.inner
             .lock()
             .get(&(community_id.to_string(), scope))
-            .map(|(mek, _)| mek.clone())
-    }
-
-    fn current_age(&self, community_id: &str, scope: KeyScope) -> Option<Duration> {
-        self.inner
-            .lock()
-            .get(&(community_id.to_string(), scope))
-            .map(|(_, installed)| installed.elapsed())
+            .cloned()
     }
 
     fn insert(&self, community_id: &str, scope: KeyScope, mek: MediaEncryptionKey) -> bool {
         let mut map = self.inner.lock();
         let key = (community_id.to_string(), scope);
-        if let Some((cached, _)) = map.get(&key) {
+        if let Some(cached) = map.get(&key) {
             if mek.generation() < cached.generation() {
                 return false;
             }
@@ -78,7 +70,7 @@ impl ChannelMekCache for InMemoryMekCache {
                 return false;
             }
         }
-        map.insert(key, (mek, Instant::now()));
+        map.insert(key, mek);
         true
     }
 }

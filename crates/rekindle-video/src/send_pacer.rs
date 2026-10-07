@@ -142,7 +142,7 @@ mod tests {
                     keyframe: true,
                     codec: rekindle_types::video::Codec::Vp9,
                     timestamp: 0,
-                    mek_generation: 0,
+                    key_index: 0,
                     transport_seq: 0,
                     payload: vec![0; 4_000],
                     signature: Vec::new(),

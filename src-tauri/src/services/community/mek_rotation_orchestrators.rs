@@ -1,6 +1,5 @@
-//! Phase 23.D.11 — thin facade. Both rotator-initiated rotations
-//! (rotate_text_mek_for_departure + rotate_voice_mek_for_membership)
-//! ported into `rekindle_mek_rotation::rotate` parameterised over
+//! Phase 23.D.11 — thin facade. The rotator-initiated rotation
+//! (rotate_text_mek_for_departure) is ported into `rekindle_mek_rotation::rotate` parameterised over
 //! `MekDistributeDeps`. `handle_request_mek` stays here as a Tier-9
 //! facade because it dispatches local `selected_request_responder`
 //! gating before delegating distribute.
@@ -71,26 +70,6 @@ pub async fn rotate_text_mek_for_departure(
         adapter.as_ref(),
         community_id,
         departed_pseudonym,
-    )
-    .await
-    .map_err(|e| e.to_string())
-}
-
-pub async fn rotate_voice_mek_for_membership(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    trigger_pseudonym: &str,
-    include_trigger_in_recipients: bool,
-) -> Result<(), String> {
-    let adapter = build_adapter(app_handle, state)?;
-    rekindle_mek_rotation::rotate_voice_mek_for_membership(
-        adapter.as_ref(),
-        community_id,
-        channel_id,
-        trigger_pseudonym,
-        include_trigger_in_recipients,
     )
     .await
     .map_err(|e| e.to_string())
@@ -185,69 +164,31 @@ pub async fn handle_request_mek(
 }
 
 /// A member left the community — kicked, banned or departed: replace the
-/// keys they hold. The community key always; and the key of the voice
-/// channel we share with them, when they are a peer of our active voice
-/// session (plan D20; architecture §10.5). Fire-and-forget: the removal
-/// itself has already happened and must not wait on distribution.
+/// keys they hold. The community key (plan D20; architecture §10.5), and
+/// our call-media key when they share our voice channel (plan C7.20).
+/// Fire-and-forget: the removal itself has already happened and must not
+/// wait on distribution.
 pub fn spawn_departure_rotations(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
     departed_pseudonym: &str,
 ) {
+    crate::services::voice_signaling_adapter::member_departed(
+        app_handle,
+        state,
+        community_id,
+        departed_pseudonym,
+    );
     let app_handle = app_handle.clone();
     let state = Arc::clone(state);
     let community_id = community_id.to_string();
     let departed = departed_pseudonym.to_string();
-    crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop("departure MEK rotations", async move {
+    crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop("departure MEK rotation", async move {
         if let Err(error) =
             rotate_text_mek_for_departure(&app_handle, &state, &community_id, &departed).await
         {
             tracing::debug!(community = %community_id, member = %departed, %error, "community MEK rotation skipped after departure");
         }
-        let voice_channel = {
-            let engine = state.voice_engine.lock();
-            engine
-                .as_ref()
-                .filter(|handle| handle.community_id.as_deref() == Some(community_id.as_str()))
-                .map(|handle| (handle.channel_id.clone(), Arc::clone(&handle.transport)))
-        };
-        let Some((channel_id, transport)) = voice_channel else {
-            return;
-        };
-        if !transport.lock().await.peer_keys().contains(&departed) {
-            return;
-        }
-        if let Err(error) = rotate_voice_mek_for_membership(
-            &app_handle,
-            &state,
-            &community_id,
-            &channel_id,
-            &departed,
-            false,
-        )
-        .await
-        {
-            tracing::debug!(community = %community_id, channel = %channel_id, member = %departed, %error, "voice MEK rotation skipped after departure");
-        }
     });
-}
-
-/// Mint `channel_id`'s first media key when we join it holding none
-/// (`rekindle_mek_rotation::mint_first_channel_key`). A stage channel's
-/// media is under the community key and is never minted here.
-pub fn mint_first_channel_key(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Result<bool, String> {
-    let Some(rekindle_types::channel_keys::KeyScope::Channel(channel)) =
-        crate::state_helpers::media_scope(state, community_id, channel_id)
-    else {
-        return Ok(false);
-    };
-    let adapter = build_adapter(app_handle, state)?;
-    rekindle_mek_rotation::mint_first_channel_key(adapter.as_ref(), community_id, channel)
-        .map_err(|e| e.to_string())
 }

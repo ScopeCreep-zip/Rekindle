@@ -17,6 +17,7 @@ pub mod channel_body;
 pub mod derive;
 pub mod invite;
 pub mod keys;
+pub mod media_sender_key;
 pub mod mek;
 pub mod pq_keys;
 pub mod rotator;

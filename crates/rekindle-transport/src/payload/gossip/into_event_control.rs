@@ -320,6 +320,8 @@ pub fn control_into_event(
         | ControlPayload::RequestSegmentExpansion { .. }
         | ControlPayload::VoiceJoinAck { .. }
         | ControlPayload::VoiceJoinConfirmed { .. }
+        | ControlPayload::VoiceMediaKey { .. }
+        | ControlPayload::VoiceMediaKeyRequest { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

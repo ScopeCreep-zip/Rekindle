@@ -59,11 +59,11 @@ pub struct VideoFragment {
     /// to u32 — drift across ~50 days is acceptable for a streaming
     /// protocol where freshness is local-relative).
     pub timestamp: u32,
-    /// Generation of the channel-media MEK that encrypted the frame
-    /// (architecture line 1100: the generation rides the envelope so
-    /// receivers know WHICH key — recovery requests name this exact
-    /// generation instead of guessing). Covered by the signature.
-    pub mek_generation: u64,
+    /// Index of the sender's media key that encrypted the frame (plan
+    /// C7.20): it rides the envelope so receivers know WHICH key, and a
+    /// recovery request names this exact index instead of guessing.
+    /// Covered by the signature.
+    pub key_index: u64,
     /// MEK-encrypted fragment payload. Per architecture §10.6 line 2057
     /// the MEK encryption happens before fragmentation.
     pub payload: Vec<u8>,
@@ -103,9 +103,9 @@ pub struct VideoParityFragment {
     /// reconstruction.
     pub frame_len: u32,
     pub timestamp: u32,
-    /// Mirrors [`VideoFragment::mek_generation`] — FEC-recovered
+    /// Mirrors [`VideoFragment::key_index`] — FEC-recovered
     /// frames need the generation too. Covered by the signature.
-    pub mek_generation: u64,
+    pub key_index: u64,
     /// MEK-encrypted parity bytes — same shard size as the data
     /// fragments' payload (i.e. `ceil(frame_len / data_count)`).
     pub payload: Vec<u8>,
@@ -143,7 +143,7 @@ pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
     buf.push(u8::from(fragment.keyframe));
     buf.push(fragment.codec.wire_byte());
     buf.extend_from_slice(&fragment.timestamp.to_le_bytes());
-    buf.extend_from_slice(&fragment.mek_generation.to_le_bytes());
+    buf.extend_from_slice(&fragment.key_index.to_le_bytes());
     buf.extend_from_slice(&fragment.payload);
     buf
 }
@@ -162,7 +162,7 @@ pub fn parity_signing_bytes(fragment: &VideoParityFragment) -> Vec<u8> {
     buf.push(fragment.codec.wire_byte());
     buf.extend_from_slice(&fragment.frame_len.to_le_bytes());
     buf.extend_from_slice(&fragment.timestamp.to_le_bytes());
-    buf.extend_from_slice(&fragment.mek_generation.to_le_bytes());
+    buf.extend_from_slice(&fragment.key_index.to_le_bytes());
     buf.extend_from_slice(&fragment.payload);
     buf
 }
@@ -179,8 +179,8 @@ pub struct FrameShape {
     pub keyframe: bool,
     pub codec: Codec,
     pub timestamp: u32,
-    /// Generation of the channel-media MEK that encrypted the frame.
-    pub mek_generation: u64,
+    /// Index of the sender's media key that encrypted the frame.
+    pub key_index: u64,
 }
 
 pub fn fragment_frame(
@@ -193,7 +193,7 @@ pub fn fragment_frame(
         keyframe,
         codec,
         timestamp,
-        mek_generation,
+        key_index,
     } = shape;
     if encrypted_frame.is_empty() {
         return Err(FragmentError::EmptyFrame);
@@ -214,7 +214,7 @@ pub fn fragment_frame(
             keyframe,
             codec,
             timestamp,
-            mek_generation,
+            key_index,
             payload: chunk.to_vec(),
             signature: Vec::new(),
         });
@@ -250,7 +250,7 @@ pub fn fragment_frame_with_fec(
         keyframe,
         codec,
         timestamp,
-        mek_generation,
+        key_index,
     } = shape;
     use reed_solomon_erasure::galois_8::ReedSolomon;
 
@@ -307,7 +307,7 @@ pub fn fragment_frame_with_fec(
             keyframe,
             codec,
             timestamp,
-            mek_generation,
+            key_index,
             payload: encrypted_frame[start..end].to_vec(),
             signature: Vec::new(),
         });
@@ -323,7 +323,7 @@ pub fn fragment_frame_with_fec(
             codec,
             frame_len,
             timestamp,
-            mek_generation,
+            key_index,
             payload: shard.clone(),
             signature: Vec::new(),
         });

@@ -73,10 +73,11 @@ use moderation::{
 use voice::{
     read_soundboard_play, read_speak_request, read_speak_response, read_stage_update,
     read_voice_deafen, read_voice_join, read_voice_join_ack, read_voice_join_confirmed,
-    read_voice_leave, read_voice_mode_switch, read_voice_mute, read_voice_roster,
-    write_soundboard_play, write_speak_request, write_speak_response, write_stage_update,
-    write_voice_deafen, write_voice_join, write_voice_join_ack, write_voice_join_confirmed,
-    write_voice_leave, write_voice_mode_switch, write_voice_mute, write_voice_roster,
+    read_voice_leave, read_voice_media_key, read_voice_media_key_request, read_voice_mode_switch,
+    read_voice_mute, read_voice_roster, write_soundboard_play, write_speak_request,
+    write_speak_response, write_stage_update, write_voice_deafen, write_voice_join,
+    write_voice_join_ack, write_voice_join_confirmed, write_voice_leave, write_voice_media_key,
+    write_voice_media_key_request, write_voice_mode_switch, write_voice_mute, write_voice_roster,
 };
 
 pub fn encode_control_payload(
@@ -203,6 +204,12 @@ pub fn encode_control_payload(
         CP::VoiceJoinConfirmed { .. } => {
             write_voice_join_confirmed(b.reborrow().init_voice_join_confirmed(), payload);
         }
+        CP::VoiceMediaKey { .. } => {
+            write_voice_media_key(b.reborrow().init_voice_media_key(), payload);
+        }
+        CP::VoiceMediaKeyRequest { .. } => {
+            write_voice_media_key_request(b.reborrow().init_voice_media_key_request(), payload);
+        }
         CP::VoiceLeave { .. } => write_voice_leave(b.reborrow().init_voice_leave(), payload),
         CP::VoiceModeSwitch { .. } => {
             write_voice_mode_switch(b.reborrow().init_voice_mode_switch(), payload);
@@ -313,6 +320,10 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::VoiceJoin(p) => read_voice_join(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoinAck(p) => read_voice_join_ack(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoinConfirmed(p) => read_voice_join_confirmed(p.map_err(|e| capnp_err(&e))?),
+        Which::VoiceMediaKey(p) => read_voice_media_key(p.map_err(|e| capnp_err(&e))?),
+        Which::VoiceMediaKeyRequest(p) => {
+            read_voice_media_key_request(p.map_err(|e| capnp_err(&e))?)
+        }
         Which::VoiceLeave(p) => read_voice_leave(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceModeSwitch(p) => read_voice_mode_switch(p.map_err(|e| capnp_err(&e))?),
         Which::StageUpdate(p) => read_stage_update(p.map_err(|e| capnp_err(&e))?),

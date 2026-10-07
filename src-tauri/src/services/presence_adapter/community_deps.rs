@@ -272,7 +272,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
         subkey_index: u32,
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
-    ) -> Result<(), PresenceError> {
+    ) -> Result<rekindle_presence::RowWrite, PresenceError> {
         let writer_kp = writer_keypair_str
             .parse::<veilid_core::KeyPair>()
             .map_err(|e| PresenceError::InvalidDhtKey(format!("writer keypair: {e}")))?;
@@ -285,13 +285,19 @@ impl CommunityPresenceDeps for PresenceAdapter {
             .await
             .map_err(|e| PresenceError::Dht(e.to_string()))?;
         // A presence row asserts the present: a miss is an error, never a
-        // write queued to land later.
-        if outcome.missed() {
-            return Err(PresenceError::Dht(format!(
-                "presence not stored ({outcome:?})"
-            )));
+        // write queued to land later. A supersede goes back to the writer,
+        // which decides from whose row it is (plan C7.16).
+        use rekindle_protocol::dht::pool::SetOutcome;
+        match outcome {
+            SetOutcome::Landed | SetOutcome::Unchanged => Ok(rekindle_presence::RowWrite::Stored),
+            SetOutcome::Superseded(newer) => Ok(rekindle_presence::RowWrite::Superseded {
+                seq: newer.seq().to_option(),
+                data: newer.data().to_vec(),
+            }),
+            missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => Err(PresenceError::Dht(
+                format!("presence not stored ({missed:?})"),
+            )),
         }
-        Ok(())
     }
 
     fn persist_discovered_member_rows(

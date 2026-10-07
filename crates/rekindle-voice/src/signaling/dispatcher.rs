@@ -58,6 +58,33 @@ pub async fn handle_voice_signaling(
                 channel_id,
             );
         }
+        ControlPayload::VoiceMediaKey {
+            channel_id,
+            recipient,
+            key_index,
+            sealed,
+        } => {
+            crate::signaling::media_keys::handle_voice_media_key(
+                &deps,
+                community_id,
+                sender_pseudonym,
+                &channel_id,
+                &recipient,
+                key_index,
+                &sealed,
+            );
+        }
+        ControlPayload::VoiceMediaKeyRequest {
+            channel_id, sender, ..
+        } => {
+            crate::signaling::media_keys::handle_voice_media_key_request(
+                &deps,
+                community_id,
+                sender_pseudonym,
+                &channel_id,
+                &sender,
+            );
+        }
         ControlPayload::VoiceLeave { channel_id } => {
             presence::handle_voice_leave(&deps, community_id, sender_pseudonym, channel_id);
         }

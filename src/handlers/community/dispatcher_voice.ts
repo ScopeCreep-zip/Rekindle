@@ -112,13 +112,6 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
   if (idx >= 0) {
     setCommunityState("communities", community, "channels", idx, "mekGeneration", generation);
   }
-  // Architecture §7.2 + §10.7 — voice MEK rotates on every join/leave
-  // for forward+backward secrecy. Surface a cue when it is the channel
-  // the user is actively connected to, so they know keys advanced
-  // (e.g. a new speaker just joined the stage).
-  if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
-    announce("Voice keys rotated", "polite");
-  }
 }
 
 // ── Daemon vocabulary ──────────────────────────────────────────────

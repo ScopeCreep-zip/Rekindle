@@ -152,6 +152,9 @@ allow-git = [
     # Pinned git deps already in Cargo.toml. Keep this list in sync
     # with `[patch.crates-io]` and any `git = "..."` entries.
     "https://github.com/mcginty/snow",
+    # veilid-core 0.5.7 + the route select/release drain fix, until a Veilid
+    # release carries it (plan C7.18 note, root Cargo.toml [patch.crates-io]).
+    "https://github.com/radicalkjax/veilid.git",
 ]
 
 [sources.allow-org]

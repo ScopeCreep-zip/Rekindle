@@ -183,7 +183,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         subkey_index: u32,
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
-    ) -> Result<(), PresenceError>;
+    ) -> Result<RowWrite, PresenceError>;
 
     /// Persist a batch of discovered presence rows into
     /// `community_members` (one upsert per row, plus deletes for
@@ -430,6 +430,16 @@ pub struct PresenceCredentials {
 
 /// Plate Gate segment descriptor (architecture §15.5).
 pub use rekindle_types::presence::SegmentDescriptor;
+
+/// How a presence-row write went (plan C7.16).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowWrite {
+    /// Stored at consensus, or already the network's copy.
+    Stored,
+    /// The network held another value at our sequence number or above:
+    /// Veilid adopted it and stored it locally (`set_value.rs:620-645`).
+    Superseded { seq: Option<u32>, data: Vec<u8> },
+}
 
 /// Presence-derived voice membership view of one community member,
 /// handed from the registry scan to the voice roster reconcile

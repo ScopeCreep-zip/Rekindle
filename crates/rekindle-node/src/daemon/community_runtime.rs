@@ -97,20 +97,6 @@ impl CommunityRuntimeMap {
     }
 
     /// Cached governance state for a community, if it has been merged.
-    /// Whether `channel` is a stage channel in the merged governance.
-    pub fn is_stage_channel(
-        &self,
-        community_id: &str,
-        channel: rekindle_types::id::ChannelId,
-    ) -> bool {
-        self.inner
-            .read()
-            .get(community_id)
-            .and_then(|runtime| runtime.governance.as_ref())
-            .and_then(|governance| governance.channels.get(&channel))
-            .is_some_and(|c| c.channel_type == "stage")
-    }
-
     pub fn governance_state(&self, community_id: &str) -> Option<GovernanceState> {
         self.inner.read().get(community_id)?.governance.clone()
     }

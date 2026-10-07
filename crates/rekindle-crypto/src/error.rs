@@ -45,6 +45,11 @@ pub enum CryptoError {
     /// load/store of session state is unavailable until unlock.
     #[error("vault locked — session persistence unavailable")]
     VaultLocked,
+
+    /// The passphrase does not open the vault (or the vault is corrupt):
+    /// what a login reports as "wrong passphrase".
+    #[error("wrong passphrase or corrupt vault")]
+    WrongPassphrase,
 }
 
 /// Constructors for the wrapped Tier 1 variants.

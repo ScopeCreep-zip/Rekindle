@@ -14,7 +14,8 @@ use rekindle_types::presence::{EncryptedHistoryRanges, HistoryRange, MemberPrese
 
 use crate::community::scan_row::SUBKEYS_PER_SEGMENT;
 use crate::community::time::now_secs;
-use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow};
+use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow, RowWrite};
+use rekindle_codec::presence_row::{classify_superseding_row, SupersedingRow};
 
 /// The most a presence row may encode to: one subkey of the SMPL(0,
 /// 255×1) registry, 4112 bytes (plan V2, C7.15). `RecordPool::set`
@@ -202,23 +203,113 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     }
 
     let route_len = presence.route_blob.len();
+    let target = RowTarget {
+        community_id,
+        registry_key,
+        subkey: subkey_idx,
+        writer: kp_str,
+        my_pseudonym_hex,
+    };
     match deps
-        .write_presence_to_registry_subkey(registry_key, subkey_idx, presence_json, kp_str)
+        .write_presence_to_registry_subkey(registry_key, subkey_idx, presence_json.clone(), kp_str)
         .await
     {
-        Ok(()) => tracing::debug!(
+        Ok(RowWrite::Stored) => tracing::debug!(
             community = %community_id,
             registry_key,
             subkey = subkey_idx,
             route_len,
             "presence row written",
         ),
+        Ok(RowWrite::Superseded { seq, data }) => {
+            resolve_superseded(deps, &target, presence_json, seq, &data).await;
+        }
         Err(error) => tracing::warn!(
             community = %community_id,
             registry_key,
             subkey = subkey_idx,
             %error,
             "failed to write presence to registry",
+        ),
+    }
+}
+
+/// Where our row is written: enough to rewrite it after a supersede.
+struct RowTarget<'a> {
+    community_id: &'a str,
+    registry_key: &'a str,
+    subkey: u32,
+    writer: &'a str,
+    my_pseudonym_hex: &'a str,
+}
+
+/// A write to our slot came back superseded (plan C7.16). Veilid has
+/// already adopted the network's value and stored it locally
+/// (`set_value.rs:620-645`), so the classification decides:
+///
+/// - our own newer copy (a write the network holds and our local store
+///   missed): write again now, and Veilid's local seq + 1 lands above it
+///   (BEP 44's rejected-put-then-bump; libtorrent: "first retrieve it, then
+///   modify it, then write it back");
+/// - another member's validly signed row: a slot collision, possible only
+///   because every member can derive every slot key from the shared seed
+///   (ADR 0011 removes that). Never overwritten, which would start a write
+///   war: reported;
+/// - an unverifiable value: reported, not overwritten.
+async fn resolve_superseded<D: CommunityPresenceDeps>(
+    deps: &D,
+    target: &RowTarget<'_>,
+    presence_json: Vec<u8>,
+    seq: Option<u32>,
+    data: &[u8],
+) {
+    let RowTarget {
+        community_id,
+        registry_key,
+        subkey,
+        writer,
+        my_pseudonym_hex,
+    } = *target;
+    match classify_superseding_row(data, my_pseudonym_hex) {
+        SupersedingRow::Ours => {
+            let rewrite = deps
+                .write_presence_to_registry_subkey(registry_key, subkey, presence_json, writer)
+                .await;
+            match rewrite {
+                Ok(RowWrite::Stored) => tracing::info!(
+                    community = %community_id,
+                    subkey,
+                    superseding_seq = ?seq,
+                    "presence row was behind our own newer copy on the network; rewritten above it",
+                ),
+                Ok(RowWrite::Superseded { seq: again, .. }) => tracing::warn!(
+                    community = %community_id,
+                    subkey,
+                    superseding_seq = ?seq,
+                    again_seq = ?again,
+                    "presence row superseded again after the rewrite; the next tick writes",
+                ),
+                Err(error) => tracing::warn!(
+                    community = %community_id,
+                    subkey,
+                    %error,
+                    "presence row rewrite after a supersede failed",
+                ),
+            }
+        }
+        SupersedingRow::Member(author) => tracing::warn!(
+            community = %community_id,
+            subkey,
+            superseding_seq = ?seq,
+            author = %author,
+            "another member's row holds our presence slot (slot collision); not overwritten",
+        ),
+        SupersedingRow::Unverified(reason) => tracing::warn!(
+            community = %community_id,
+            subkey,
+            superseding_seq = ?seq,
+            reason,
+            "an unverified value holds our presence slot; not overwritten",
         ),
     }
 }

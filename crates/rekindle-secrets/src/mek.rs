@@ -95,12 +95,12 @@ pub fn wrap_mek(
 /// Version byte prefixing HPKE-wrapped (v2) MEK blobs.
 pub const HPKE_MEK_VERSION: u8 = 0x02;
 
-type HpkeKem = hpke::kem::X25519HkdfSha256;
-type HpkeKdf = hpke::kdf::HkdfSha256;
-type HpkeAead = hpke::aead::ChaCha20Poly1305;
+pub(crate) type HpkeKem = hpke::kem::X25519HkdfSha256;
+pub(crate) type HpkeKdf = hpke::kdf::HkdfSha256;
+pub(crate) type HpkeAead = hpke::aead::ChaCha20Poly1305;
 
 /// Convert our Ed25519-derived X25519 keys into the hpke crate's types.
-fn hpke_keys(
+pub(crate) fn hpke_keys(
     our_signing_key: &SigningKey,
     their_ed25519_public: &[u8; 32],
 ) -> Result<

@@ -89,14 +89,14 @@ struct VoiceReceiveLoop {
     packets_received: u64,
     last_quality_check: Instant,
     /// Packets dropped this stats window because they could not be
-    /// opened (no key for their generation, wrong sender, or rejected).
-    mek_drops: u64,
+    /// opened (no key from their sender yet, wrong sender, or rejected).
+    key_drops: u64,
     /// SFrame-opens inbound frames; owns the per-sender CTR replay
     /// windows (M9.3), so replays are dropped before the jitter buffer.
     opener: FrameOpener,
-    /// Debounce for the RequestMEK cascade — one fire per window even
-    /// when every packet of a 50/s stream is undecryptable.
-    last_mek_request: Option<Instant>,
+    /// When we last asked each sender for a key: one request per window
+    /// even when every packet of a 50/s stream is undecryptable.
+    last_key_request: HashMap<String, Instant>,
     community_id: Option<String>,
     channel_id: Option<String>,
     member_names: HashMap<String, String>,
@@ -153,8 +153,8 @@ impl VoiceReceiveLoop {
             jitter_base_ms: params.jitter_base_ms,
             packets_received: 0,
             last_quality_check: Instant::now(),
-            mek_drops: 0,
-            last_mek_request: None,
+            key_drops: 0,
+            last_key_request: HashMap::new(),
             community_id: params.community_id,
             channel_id: params.channel_id,
             member_names: params.member_names,
@@ -215,23 +215,23 @@ impl VoiceReceiveLoop {
         }
 
         // SFrame open under the sender's key (RFC 9605). Failures are
-        // counted, not logged per packet (§4.4.4); a missing channel key
-        // fires the debounced RequestMEK cascade for the frame's
-        // generation.
+        // counted, not logged per packet (§4.4.4); a key the sender has not
+        // sent us is requested from that sender, debounced (plan C7.20).
         let opus = match self.opener.open(packet) {
             Ok(opus) => opus,
-            Err(OpenError::NoKey { needed_generation }) => {
-                if let (Some(cid), Some(needed)) = (self.community_id.clone(), needed_generation) {
+            Err(OpenError::NoKey { needed_index }) => {
+                if let (Some(cid), Some(needed)) = (self.community_id.clone(), needed_index) {
                     let channel = self.channel_id.clone().unwrap_or_default();
-                    self.note_mek_drop(&cid, &channel, "no key for frame generation", needed);
+                    let sender = hex::encode(&packet.sender_key);
+                    self.note_missing_key(&cid, &channel, &sender, needed);
                 } else {
-                    self.mek_drops += 1;
+                    self.key_drops += 1;
                     self.deps.record_packet_drop();
                 }
                 return;
             }
             Err(OpenError::WrongSender | OpenError::Rejected) => {
-                self.mek_drops += 1;
+                self.key_drops += 1;
                 self.deps.record_packet_drop();
                 return;
             }

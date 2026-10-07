@@ -142,6 +142,9 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
             &community_id,
             &channel_id,
         );
+        // The channel session's keys end with it; a rejoin draws new ones
+        // (plan C7.20).
+        state_arc.voice_sender_keys.end(&community_id, &channel_id);
     }
     // Native camera session dies with the voice session — its frames
     // have nowhere to go without the pacer/roster below.

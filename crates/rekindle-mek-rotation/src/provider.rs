@@ -14,7 +14,6 @@
 //! below that.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::channel_keys::{ChannelKeyProvider, KeyEpoch, KeyScope};
@@ -34,34 +33,16 @@ pub trait MekHistory: Send + Sync {
     ) -> Option<MediaEncryptionKey>;
 }
 
-/// The governance fact media scoping depends on.
-pub trait ChannelKinds: Send + Sync {
-    /// Whether `channel` is a stage channel. Stage channels never rotate
-    /// (architecture §10.7: anyone may listen), so their media is under
-    /// the community key; every other channel's media is under its own
-    /// key, rotated on each join and leave (§10.5).
-    fn is_stage(&self, community_id: &str, channel: ChannelId) -> bool;
-}
-
 /// [`ChannelKeyProvider`] over a host's MEK cache and history.
 pub struct MekKeyProvider {
     cache: Arc<dyn ChannelMekCache>,
     history: Arc<dyn MekHistory>,
-    kinds: Arc<dyn ChannelKinds>,
 }
 
 impl MekKeyProvider {
     #[must_use]
-    pub fn new(
-        cache: Arc<dyn ChannelMekCache>,
-        history: Arc<dyn MekHistory>,
-        kinds: Arc<dyn ChannelKinds>,
-    ) -> Self {
-        Self {
-            cache,
-            history,
-            kinds,
-        }
+    pub fn new(cache: Arc<dyn ChannelMekCache>, history: Arc<dyn MekHistory>) -> Self {
+        Self { cache, history }
     }
 }
 
@@ -88,23 +69,11 @@ impl ChannelKeyProvider for MekKeyProvider {
         (mek.generation() == epoch.0).then(|| Zeroizing::new(*mek.as_bytes()))
     }
 
-    fn current_epoch_age(&self, community_id: &str, scope: KeyScope) -> Option<Duration> {
-        self.cache.current_age(community_id, scope)
-    }
-
     fn scope_for_text(&self, _community_id: &str, _channel: ChannelId) -> KeyScope {
         // Plan D6: channel text, its attachments and threads use the
         // community key. Per-channel text keys arrive with private
         // channels (D11, step E3.5).
         KeyScope::Community
-    }
-
-    fn scope_for_media(&self, community_id: &str, channel: ChannelId) -> KeyScope {
-        if self.kinds.is_stage(community_id, channel) {
-            KeyScope::Community
-        } else {
-            KeyScope::Channel(channel)
-        }
     }
 }
 
@@ -114,7 +83,6 @@ mod tests {
     use crate::cache::InMemoryMekCache;
     use std::collections::HashMap;
 
-    const STAGE: ChannelId = ChannelId([1; 16]);
     const VOICE: ChannelId = ChannelId([2; 16]);
 
     #[derive(Default)]
@@ -126,22 +94,13 @@ mod tests {
         }
     }
 
-    struct Kinds;
-
-    impl ChannelKinds for Kinds {
-        fn is_stage(&self, _: &str, channel: ChannelId) -> bool {
-            channel == STAGE
-        }
-    }
-
     fn mek(byte: u8, generation: u64) -> MediaEncryptionKey {
         MediaEncryptionKey::from_bytes([byte; 32], generation)
     }
 
     fn provider(history: History) -> (MekKeyProvider, InMemoryMekCache) {
         let cache = InMemoryMekCache::new();
-        let provider =
-            MekKeyProvider::new(Arc::new(cache.clone()), Arc::new(history), Arc::new(Kinds));
+        let provider = MekKeyProvider::new(Arc::new(cache.clone()), Arc::new(history));
         (provider, cache)
     }
 
@@ -194,10 +153,5 @@ mod tests {
     fn scope_policy() {
         let (provider, _) = provider(History::default());
         assert_eq!(provider.scope_for_text("c", VOICE), KeyScope::Community);
-        assert_eq!(provider.scope_for_media("c", STAGE), KeyScope::Community);
-        assert_eq!(
-            provider.scope_for_media("c", VOICE),
-            KeyScope::Channel(VOICE)
-        );
     }
 }

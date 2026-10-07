@@ -158,3 +158,13 @@ unimplemented = "deny"              # no unimplemented!() in shipped code
 undocumented-unsafe-blocks = "deny" # every unsafe block needs // SAFETY: comment
 print-stdout = "warn"               # prefer tracing over println!
 print-stderr = "warn"               # prefer tracing over eprintln!
+
+# veilid-core 0.5.7 plus one fix, pinned by commit, until a Veilid release
+# carries it: a route chosen for a reply or a safety route is held until it
+# is used, and a release of a held route drains instead of removing it
+# ("Invalid target: route key does not exist", dropped rehydration
+# requests). Branch rekindle/v0.5.7-route-drain = the upstream v0.5.7 tree
+# (f5cdcca) + that commit; the same commit is the upstream MR. Keep
+# deny.toml's allow-git in sync.
+[patch.crates-io]
+veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "0cd847debfaee427eeceeb5046ad48cd85540d63" }

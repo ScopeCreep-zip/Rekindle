@@ -26,7 +26,7 @@ pub async fn leave_community_inner(
     keystore_handle: &KeystoreHandle,
     community_id: &str,
 ) -> Result<(), String> {
-    use crate::services::community_registry_slot::clear_registry_presence_slot;
+    use crate::services::community_registry_slot::write_departure_tombstone;
 
     let my_pseudonym_key = {
         let communities = state.communities.read();
@@ -58,13 +58,11 @@ pub async fn leave_community_inner(
         ),
     );
 
-    if let Err(error) =
-        clear_registry_presence_slot(state, pool, community_id, &my_pseudonym_key).await
-    {
-        tracing::debug!(
+    if let Err(error) = write_departure_tombstone(state, community_id).await {
+        tracing::warn!(
             community = %community_id,
             error = %error,
-            "failed to clear local registry slot during leave"
+            "departure tombstone not written; the slot stays ours until reclaimed",
         );
     }
 

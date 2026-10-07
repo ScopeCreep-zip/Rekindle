@@ -43,7 +43,7 @@ const CallControlBar: Component<{
   const qualityTooltip = (): string => {
     const rx =
       `rx drops 5s: ${voiceState.rxOverflowDrops + voiceState.rxLateDrops}, ` +
-      `key drops 5s: ${voiceState.rxMekDrops}, ` +
+      `key drops 5s: ${voiceState.rxKeyDrops}, ` +
       `inbound drops total: ${voiceState.ingressDrops}`;
     const link = voiceState.link;
     if (link === null) {

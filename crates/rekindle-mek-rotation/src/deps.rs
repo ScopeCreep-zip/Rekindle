@@ -10,7 +10,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::channel_keys::KeyScope;
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::id::PseudonymKey;
 
 use crate::error::MekRotationError;
 use crate::event::MekRotationEvent;
@@ -51,10 +51,6 @@ pub trait ChannelMekCache: Send + Sync {
     /// (`convergence::incoming_wins_same_generation`). Returns whether the
     /// key was installed.
     fn insert(&self, community_id: &str, scope: KeyScope, mek: MediaEncryptionKey) -> bool;
-
-    /// How long the scope's current key has been current, or `None` when
-    /// no key is held.
-    fn current_age(&self, community_id: &str, scope: KeyScope) -> Option<std::time::Duration>;
 
     /// The scope's current generation, or 0 when no key is held.
     fn current_generation(&self, community_id: &str, scope: KeyScope) -> u64 {
@@ -119,19 +115,6 @@ pub trait MekDistributeDeps: Send + Sync {
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,
-    ) -> Vec<RotationRecipient>;
-
-    /// Voice-channel-scoped recipients — voice MEK rotation only
-    /// targets peers currently in the voice channel transport. Async
-    /// because the roster lives behind the transport's async lock and
-    /// rotation always runs on the runtime (a blocking read here
-    /// panics tokio workers).
-    async fn voice_recipients(
-        &self,
-        community_id: &str,
-        channel: ChannelId,
-        trigger_pseudonym: &str,
-        include_trigger_in_recipients: bool,
     ) -> Vec<RotationRecipient>;
 
     /// Deliver a wrapped-MEK envelope to a single peer. The adapter

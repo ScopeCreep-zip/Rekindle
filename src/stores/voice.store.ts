@@ -23,7 +23,7 @@ export interface VoiceState {
   rxOverflowDrops: number;
   rxLateDrops: number;
   /** Inbound media dropped for MEK reasons (rotation race signal). */
-  rxMekDrops: number;
+  rxKeyDrops: number;
   /** Cumulative inbound voice-channel drops since login. */
   ingressDrops: number;
   /**
@@ -51,7 +51,7 @@ export interface VoiceState {
    *  Null outside community calls. */
   joinHandshake: "announced" | "seen" | "connected" | null;
   /** Backend media-ready gate: video may only start when `ready`.
-   *  `reason` names the next blocker ("handshake-seen", "mek-missing",
+   *  `reason` names the next blocker ("handshake-seen", "roster-empty",
    *  …) for the connecting state. Null until the first transition. */
   mediaReady: { ready: boolean; reason: string } | null;
 }
@@ -65,7 +65,7 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   connectionQuality: "good",
   rxOverflowDrops: 0,
   rxLateDrops: 0,
-  rxMekDrops: 0,
+  rxKeyDrops: 0,
   ingressDrops: 0,
   link: null,
   activeCallType: null,

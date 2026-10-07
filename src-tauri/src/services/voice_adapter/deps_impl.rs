@@ -60,30 +60,8 @@ impl VoiceSessionDeps for VoiceAdapter {
         *self.state.voice_report_tx.write() = None;
     }
 
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64) {
-        // Exact-generation request resolved from the undecryptable
-        // frame's KID (0 = "send me your current") — never a guess; the
-        // responder can always satisfy it, so recovery converges.
-        let Some(my_pseudonym) = self
-            .state
-            .communities
-            .read()
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-        else {
-            return;
-        };
-        let Some(scope) = crate::state_helpers::media_scope(&self.state, community_id, channel_id)
-        else {
-            return;
-        };
-        crate::services::community::mek_rotation::spawn_mek_request_with_retry(
-            std::sync::Arc::clone(&self.state),
-            community_id.to_string(),
-            scope,
-            needed_generation,
-            my_pseudonym,
-        );
+    fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64) {
+        super::media_keys::request_media_key(&self.state, community_id, channel_id, sender, index);
     }
 
     fn send_receiver_report(&self, peer_pubkey_hex: &str, wire: Vec<u8>) {

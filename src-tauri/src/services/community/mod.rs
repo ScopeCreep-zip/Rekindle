@@ -59,10 +59,7 @@ pub use governance::write_entry;
 pub(crate) use join::try_derive_slot_keypair;
 pub use join::{join_community, rejoin_community};
 pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
-pub use mek_rotation_orchestrators::{
-    handle_request_mek, mint_first_channel_key, rotate_voice_mek_for_membership,
-    spawn_departure_rotations,
-};
+pub use mek_rotation_orchestrators::{handle_request_mek, spawn_departure_rotations};
 pub use message_notifications_handle::handle_message_notification;
 pub use notifications::{emit_message_notification, should_emit_message_notification};
 pub use presence::{

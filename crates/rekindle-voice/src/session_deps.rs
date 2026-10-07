@@ -124,23 +124,18 @@ pub struct VoiceLoopScopes {
 }
 
 /// The key sources SFrame needs for a voice session (`media_crypto`):
-/// the call secret and our sender state for a 1:1 call; the channel key
-/// provider and our sender state per generation for a community channel.
+/// the call secret and our sender state for a 1:1 call; the channel
+/// session's sender keys for a community channel (plan C7.20).
 pub trait MediaKeySource: Send + Sync {
-    /// Community and channel keys (plan D6). A channel's media is under
-    /// `scope_for_media`: its own key for a voice channel (rotated on each
-    /// join and leave, §10.5), the community key for a stage (§10.7).
-    fn keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
-
-    /// Our SFrame sender state for `(community, channel)` at MEK
-    /// `generation`, created on first use and kept for the app run so
-    /// every transport the session builds continues one counter.
-    fn channel_media_sender(
+    /// The sender keys of our session on `(community, channel)`: our own
+    /// key and the keys the other participants sent us. One per channel
+    /// session, so every transport the session builds continues one
+    /// counter.
+    fn channel_sender_keys(
         &self,
         community_id: &str,
         channel_id: &str,
-        generation: u64,
-    ) -> Arc<rekindle_secrets::sframe::SframeSender>;
+    ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
 
     /// The media keys of the active 1:1 call with `peer_pubkey`, or
     /// `None` when there is no such call or it has no key yet.
@@ -210,19 +205,17 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// gate (§10.7).
     fn channel_is_stage(&self, community_id: &str, channel_id: &str) -> bool;
 
-    /// Fire the RequestMEK cascade naming the EXACT generation needed
-    /// (resolved from the undecryptable frame's KID; `0` = "send me your
-    /// current"). Called when inbound media can't be decrypted (no key
-    /// cached, generation mismatch, or AEAD failure after a rotation
-    /// race). The adapter owns retry/cascade policy; the loop
-    /// debounces calls.
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64);
+    /// Ask `sender` (pseudonym hex) for its media key at `index`
+    /// (`VoiceMediaKeyRequest`, plan C7.20): a frame arrived under a key
+    /// it has not sent us, or whose push was lost. The loop debounces
+    /// calls per sender; the adapter sends the request.
+    fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64);
 
     /// Ship a signed receiver report (`b'R'`-tagged wire bytes, from
     /// [`crate::receiver_report::VoiceReceiverReport::to_wire`]) back to
     /// the peer whose stream it describes.
     ///
-    /// Fire-and-forget, like [`Self::request_mek_refresh`]: the adapter
+    /// Fire-and-forget, like [`Self::request_media_key`]: the adapter
     /// owns route resolution and drops the report if the peer's route
     /// is unknown. A lost report costs the sender one 5 s window of
     /// blindness, which is never worth blocking the receive path for.
@@ -556,11 +549,11 @@ pub enum VoiceSessionEvent {
     ReceiveStats {
         rx_overflow_drops: u64,
         rx_late_drops: u64,
-        /// Packets dropped because the channel-media MEK was missing,
-        /// a different generation, or failed to decrypt — the visible
-        /// signal for a rotation race (silence is not an option for a
-        /// security-relevant drop).
-        rx_mek_drops: u64,
+        /// Packets dropped because the sender's media key at the
+        /// packet's index was missing or failed to decrypt — the visible
+        /// signal for a key-distribution race (silence is not an option
+        /// for a security-relevant drop).
+        rx_key_drops: u64,
     },
 }
 

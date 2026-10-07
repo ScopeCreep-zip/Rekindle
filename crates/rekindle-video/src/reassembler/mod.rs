@@ -60,10 +60,10 @@ pub struct ReassembledFrame {
     /// decoder.
     pub codec: Codec,
     pub timestamp: u32,
-    /// Generation of the channel-media MEK that encrypted the frame —
-    /// from the fragments; the decrypt step requests exactly this
-    /// generation on failure.
-    pub mek_generation: u64,
+    /// Index of the sender's media key that encrypted the frame — from
+    /// the fragments; the decrypt step requests exactly this key when it
+    /// lacks it.
+    pub key_index: u64,
     pub payload: Vec<u8>,
     /// `true` if at least one parity fragment was used to recover a
     /// missing data fragment. Caller may emit a `KeyframeRequest` to
@@ -98,7 +98,7 @@ struct PartialFrame {
     frame_len: u32,
     /// MEK generation from the first fragment (data or parity); a
     /// mid-frame mismatch drops the frame like a codec mismatch.
-    mek_generation: u64,
+    key_index: u64,
 }
 
 impl PartialFrame {
@@ -108,7 +108,7 @@ impl PartialFrame {
         codec: Codec,
         timestamp: u32,
         received_at_ms: u32,
-        mek_generation: u64,
+        key_index: u64,
     ) -> Self {
         Self {
             frag_total,
@@ -121,7 +121,7 @@ impl PartialFrame {
             parity_chunks: Vec::new(),
             received_parity_count: 0,
             frame_len: 0,
-            mek_generation,
+            key_index,
         }
     }
 
@@ -130,7 +130,7 @@ impl PartialFrame {
         codec: Codec,
         timestamp: u32,
         received_at_ms: u32,
-        mek_generation: u64,
+        key_index: u64,
     ) -> Self {
         Self {
             frag_total: data_count,
@@ -143,7 +143,7 @@ impl PartialFrame {
             parity_chunks: Vec::new(),
             received_parity_count: 0,
             frame_len: 0,
-            mek_generation,
+            key_index,
         }
     }
 }

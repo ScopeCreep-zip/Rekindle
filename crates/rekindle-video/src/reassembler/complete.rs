@@ -56,7 +56,7 @@ pub(super) fn try_complete(
             keyframe: partial.keyframe.unwrap_or(false),
             codec: partial.codec,
             timestamp: partial.timestamp,
-            mek_generation: partial.mek_generation,
+            key_index: partial.key_index,
             payload,
             recovered_via_fec: false,
         };
@@ -109,7 +109,7 @@ pub(super) fn try_complete(
         keyframe: partial.keyframe.unwrap_or(false),
         codec: partial.codec,
         timestamp: partial.timestamp,
-        mek_generation: partial.mek_generation,
+        key_index: partial.key_index,
         payload,
         recovered_via_fec: true,
     };

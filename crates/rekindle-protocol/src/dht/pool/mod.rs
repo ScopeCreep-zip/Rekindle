@@ -47,6 +47,12 @@ mod read;
 mod safety;
 mod watch;
 
+/// Bound on compare-and-swap rounds for a read-merge-write whose write keeps
+/// coming back `Superseded`: the channel append and the friend-inbox append.
+/// Veilid stores the newer value locally on each supersede
+/// (`set_value.rs:620-645`), so every round writes above what it lost to.
+pub const CAS_ROUNDS: usize = 3;
+
 pub use closer::RecordCloser;
 pub use durable::UnsentWrite;
 pub use io::SetOutcome;

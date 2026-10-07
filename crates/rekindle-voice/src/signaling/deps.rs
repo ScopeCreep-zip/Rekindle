@@ -5,15 +5,13 @@
 //! speak_response / voice_mute / voice_deafen / voice_roster /
 //! soundboard_play) talk to for every outside-world operation:
 //! identity, community state lookups, voice engine control, mesh
-//! broadcast, MEK rotation, MCU loop lifecycle, persistence, and
+//! broadcast, media sender keys, MCU loop lifecycle, persistence, and
 //! frontend emit.
 //!
 //! The src-tauri adapter implements this trait against `AppState` +
 //! `tauri::AppHandle` + `Db` + `services::community::*` (where
-//! `rotate_voice_mek_for_membership`, `send_to_mesh`, and
-//! `persist_hand_raise` still live until Phases 17/19/20 take
-//! ownership of MEK rotation, gossip mesh, and channel persistence
-//! respectively). The trait lets the crate be free of `AppState`,
+//! `send_to_mesh` and `persist_hand_raise` still live until Phases 19/20
+//! take ownership of the gossip mesh and channel persistence). The trait lets the crate be free of `AppState`,
 //! `tauri::AppHandle`, and `services::community::*` references — exactly
 //! the same shape used for `DmDeps`, `CallSignalingDeps`, and
 //! `VoiceSessionDeps`.
@@ -247,17 +245,34 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
 
     // ── Cross-subsystem ops (deferred to Phase 17 / 19 / 20) ────
 
-    /// W11.2 — rotate the channel MEK on membership change. Phase 17
-    /// (rekindle-mek-rotation) eventually owns this; today the
-    /// adapter delegates to `services::community::rotate_voice_mek_for_membership`.
-    /// Fire-and-forget: failures log but don't propagate.
-    async fn rotate_voice_mek_for_membership(
+    /// The sender keys of our session on `(community, channel)` (plan
+    /// C7.20): the same store the media loops seal and open with.
+    fn channel_sender_keys(
         &self,
-        community_id: String,
-        channel_id: String,
-        member_pseudonym: String,
-        joined: bool,
-    );
+        community_id: &str,
+        channel_id: &str,
+    ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
+
+    /// Seal our media `secret` to `recipient` (pseudonym hex) under our
+    /// community pseudonym (`rekindle_secrets::media_sender_key::seal`),
+    /// or `None` when the pseudonym key or the recipient key is unusable.
+    fn seal_media_key(
+        &self,
+        community_id: &str,
+        recipient: &str,
+        aad: &[u8],
+        secret: &[u8; 32],
+    ) -> Option<Vec<u8>>;
+
+    /// Open a media key `sender` (pseudonym hex) sealed to us, or `None`
+    /// when it was not sealed by that sender to us under this AAD.
+    fn open_media_key(
+        &self,
+        community_id: &str,
+        sender: &str,
+        aad: &[u8],
+        sealed: &[u8],
+    ) -> Option<zeroize::Zeroizing<[u8; 32]>>;
 
     /// Send a gossip envelope to the community mesh. Phase 20
     /// (rekindle-gossip) eventually owns this; today the adapter

@@ -44,7 +44,8 @@ pub struct MekTransferAckPayload {
 }
 
 /// Architecture §10.6 video / screen-share fragment. Frames are
-/// encoded with `codec`, MEK-encrypted, then split into ≤28 KB
+/// encoded with `codec`, encrypted under the sender's own media key
+/// (plan C7.20), then split into ≤28 KB
 /// chunks so they fit inside Veilid `app_message`. The 16-byte
 /// `stream_id` is `blake3(channel_id || sender_pseudonym)[..16]` so
 /// concurrent streams in the same channel never collide. Reassembly
@@ -61,10 +62,10 @@ pub struct VideoFragmentPayload {
     /// from this tag. Signature-covered.
     pub codec: Codec,
     pub timestamp: u32,
-    /// Generation of the channel-media MEK that encrypted the
-    /// frame — receivers request exactly this generation on
-    /// decrypt failure instead of guessing. Signature-covered.
-    pub mek_generation: u64,
+    /// The sender's media key index the frame is encrypted under; a
+    /// receiver without it asks the sender for exactly this index.
+    /// Signature-covered.
+    pub key_index: u64,
     /// Transport-wide send sequence, stamped by the sender's
     /// `VideoPacer` at egress — the libwebrtc transport-cc analog.
     /// Gap-free over fragments ACTUALLY transmitted, so the receiver
@@ -96,8 +97,8 @@ pub struct VideoParityFragmentPayload {
     pub codec: Codec,
     pub frame_len: u32,
     pub timestamp: u32,
-    /// Mirrors `VideoFragment::mek_generation`. Signature-covered.
-    pub mek_generation: u64,
+    /// Mirrors `VideoFragment::key_index`. Signature-covered.
+    pub key_index: u64,
     /// Transport-wide send sequence — mirrors
     /// `VideoFragmentPayload::transport_seq`. Parity is paced and
     /// transmitted like data, so it shares the sender's one gap-free

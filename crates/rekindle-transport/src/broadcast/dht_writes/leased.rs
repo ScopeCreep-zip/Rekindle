@@ -92,6 +92,14 @@ pub async fn get_leased(
     Ok(value.map(|v| v.data().to_vec()))
 }
 
+/// The value the network held instead of ours when a write was superseded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewerValue {
+    /// `None` only if Veilid returned a value without a sequence number.
+    pub seq: Option<u32>,
+    pub data: Vec<u8>,
+}
+
 /// Write a subkey of a leased record as `writer`. `Ok(Some(newer))` when the
 /// network already held a newer value (the compare-and-swap outcome);
 /// `Ok(None)` when the value is stored or was already ours. A write that did
@@ -102,11 +110,14 @@ pub async fn set_leased_str(
     subkey: u32,
     data: Vec<u8>,
     writer: Option<&str>,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<Option<NewerValue>> {
     use rekindle_protocol::dht::pool::SetOutcome;
     let writer = writer.map(parse_writer).transpose()?;
     match pool(node)?.set(lease, subkey, data, writer).await? {
-        SetOutcome::Superseded(newer) => Ok(Some(newer.data().to_vec())),
+        SetOutcome::Superseded(newer) => Ok(Some(NewerValue {
+            seq: newer.seq().to_option(),
+            data: newer.data().to_vec(),
+        })),
         SetOutcome::Landed | SetOutcome::Unchanged => Ok(None),
         missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => {
             Err(TransportError::DhtError {

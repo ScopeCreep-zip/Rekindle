@@ -3,10 +3,12 @@
 //! and decrypts the same way.
 //!
 //! Keying follows `rekindle_secrets::sframe`: each sender encrypts under
-//! its own key, derived from the session's scope secret (the call secret
-//! or the channel-media MEK), its signing key and a per-session tag in the
-//! KID. The receiver derives the sender's key from the packet's signed
-//! `sender_key`, so a frame only opens as the sender who signed it.
+//! its own key, derived from a 32-byte secret, its signing key and a
+//! per-session tag in the KID. The receiver derives the sender's key from
+//! the packet's signed `sender_key`, so a frame only opens as the sender
+//! who signed it. The secret is the call secret in a 1:1 call; in a
+//! community channel it is the sender's own media key, which only that
+//! sender encrypts under (`rekindle_secrets::media_sender_key::keyring`, plan C7.20).
 //!
 //! The SFrame plaintext is `level ‖ opus`: one VAD audio-level byte (plan
 //! step E4 fills it; 0 until then) and the Opus frame.
@@ -15,8 +17,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use rekindle_secrets::sframe::{self, Kid, SframeKey, SframeSender};
-use rekindle_types::channel_keys::{self, ChannelKeyProvider, KeyEpoch, KeyScope, MediaKey};
-use rekindle_types::id::ChannelId;
 use zeroize::Zeroizing;
 
 use crate::replay_window::CtrWindow;
@@ -56,9 +56,9 @@ impl MediaScope {
 /// Why a frame was not opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenError {
-    /// No scope secret for the frame's key generation. For a channel,
-    /// `needed_generation` names the generation to request.
-    NoKey { needed_generation: Option<u64> },
+    /// No key for the frame. For a channel, `needed_index` names the
+    /// sender's key index to request.
+    NoKey { needed_index: Option<u64> },
     /// In a 1:1 call, a frame from someone other than the call's peer.
     WrongSender,
     /// Malformed, unauthenticated or replayed. Callers count these and
@@ -104,15 +104,14 @@ impl MediaKeys {
                 community_id,
                 channel_id,
             } => {
-                let provider = self.deps.keys();
-                let scope = media_key_scope(&*provider, community_id, channel_id)?;
-                let (epoch, secret) = channel_keys::current_key(&*provider, community_id, scope)?;
+                let key = self
+                    .deps
+                    .channel_sender_keys(community_id, channel_id)
+                    .send_key(std::time::Instant::now());
                 Some(SendSource {
-                    secret,
-                    generation: epoch.0,
-                    sender: self
-                        .deps
-                        .channel_media_sender(community_id, channel_id, epoch.0),
+                    secret: key.secret,
+                    generation: key.index,
+                    sender: key.sender,
                 })
             }
         }
@@ -135,100 +134,19 @@ impl MediaKeys {
                 self.deps
                     .call_media(peer)
                     .map(|m| m.secret)
-                    .ok_or(OpenError::NoKey {
-                        needed_generation: None,
-                    })
+                    .ok_or(OpenError::NoKey { needed_index: None })
             }
             MediaScope::Channel {
                 community_id,
                 channel_id,
-            } => {
-                let provider = self.deps.keys();
-                let scope = media_key_scope(&*provider, community_id, channel_id)
-                    .ok_or(OpenError::Rejected)?;
-                let current = provider
-                    .current_epoch(community_id, scope)
-                    .map_or(0, |epoch| epoch.0);
-                let named = generation_named(current, kid);
-                match channel_keys::media_key(&*provider, community_id, scope, KeyEpoch(named)) {
-                    MediaKey::Key(secret) => Ok(secret),
-                    MediaKey::Stale => Err(OpenError::Rejected),
-                    MediaKey::Missing { needed } => Err(OpenError::NoKey {
-                        needed_generation: Some(needed.0),
-                    }),
-                }
-            }
+            } => self
+                .deps
+                .channel_sender_keys(community_id, channel_id)
+                .receive_secret(&hex::encode(sender_key), sframe::kid_generation_low(kid))
+                .map_err(|missing| OpenError::NoKey {
+                    needed_index: Some(missing.index),
+                }),
         }
-    }
-}
-
-/// The key scope of a community channel's media, or `None` when the
-/// channel id is not a channel id.
-fn media_key_scope(
-    provider: &dyn ChannelKeyProvider,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<KeyScope> {
-    ChannelId::from_hex(channel_id).map(|channel| provider.scope_for_media(community_id, channel))
-}
-
-/// The full generation a KID's low bits name, relative to our current
-/// one: the current generation, the one it replaced, or the next one
-/// ahead of us with those low bits (RFC 9605 §5.2: the low-order epoch
-/// bits are a window, and a newer epoch with the same bits retires the
-/// older).
-fn generation_named(current: u64, kid: Kid) -> u64 {
-    if current > 0 && sframe::kid_names_generation(kid, current) {
-        current
-    } else if current > 1 && sframe::kid_names_generation(kid, current - 1) {
-        current - 1
-    } else {
-        next_generation_named(current, kid)
-    }
-}
-
-/// The first generation after `current` whose low bits the KID carries:
-/// a sender ahead of us is on the next generation we have not seen.
-fn next_generation_named(current: u64, kid: Kid) -> u64 {
-    let low = u64::from(sframe::kid_generation_low(kid));
-    let candidate = (current & !0xff) | low;
-    if candidate > current {
-        candidate
-    } else {
-        candidate.saturating_add(0x100)
-    }
-}
-
-/// Our sender state per community voice channel: one per channel, for
-/// the channel's current key generation. A new generation gets a fresh
-/// state (new tag, CTR from 0); within a generation every session and
-/// rebuilt transport continues the same counter (RFC 9605 §9.1).
-#[derive(Default)]
-pub struct ChannelSframeSenders {
-    by_channel: parking_lot::Mutex<HashMap<(String, String), (u64, Arc<SframeSender>)>>,
-}
-
-impl ChannelSframeSenders {
-    /// The sender state for `(community_id, channel_id)` at `generation`.
-    pub fn sender_for(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        generation: u64,
-    ) -> Arc<SframeSender> {
-        let mut by_channel = self.by_channel.lock();
-        let entry = by_channel
-            .entry((community_id.to_string(), channel_id.to_string()))
-            .or_insert_with(|| (generation, Arc::new(SframeSender::fresh())));
-        if entry.0 != generation {
-            *entry = (generation, Arc::new(SframeSender::fresh()));
-        }
-        Arc::clone(&entry.1)
-    }
-
-    /// Forget every channel (logout).
-    pub fn clear(&self) {
-        self.by_channel.lock().clear();
     }
 }
 
@@ -369,46 +287,15 @@ mod tests {
     use super::*;
     use crate::session_deps::CallMediaKeys;
     use ed25519_dalek::SigningKey;
-    use parking_lot::Mutex;
+    use rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys;
 
-    /// Key source with one call and one channel. `current`/`previous`
-    /// are the channel's (MEK, generation); `sender` is our state.
+    /// One side's key source: a call with `call_peer`, and one channel
+    /// session's sender keys.
     struct Keys {
         call_secret: [u8; 32],
         call_peer: String,
         call_sender: Arc<SframeSender>,
-        channel: Arc<ChannelKeys>,
-        channel_senders: Mutex<HashMap<u64, Arc<SframeSender>>>,
-    }
-
-    /// The channel's keys: current and the one it replaced, rotated
-    /// `age` ago.
-    struct ChannelKeys {
-        current: Mutex<Option<([u8; 32], u64)>>,
-        previous: Mutex<Option<([u8; 32], u64)>>,
-        age: Mutex<std::time::Duration>,
-    }
-
-    impl ChannelKeyProvider for ChannelKeys {
-        fn current_epoch(&self, _: &str, _: KeyScope) -> Option<KeyEpoch> {
-            self.current.lock().map(|(_, g)| KeyEpoch(g))
-        }
-        fn key(&self, _: &str, _: KeyScope, epoch: KeyEpoch) -> Option<Zeroizing<[u8; 32]>> {
-            [*self.current.lock(), *self.previous.lock()]
-                .into_iter()
-                .flatten()
-                .find(|(_, g)| *g == epoch.0)
-                .map(|(k, _)| Zeroizing::new(k))
-        }
-        fn current_epoch_age(&self, _: &str, _: KeyScope) -> Option<std::time::Duration> {
-            Some(*self.age.lock())
-        }
-        fn scope_for_text(&self, _: &str, _: ChannelId) -> KeyScope {
-            KeyScope::Community
-        }
-        fn scope_for_media(&self, _: &str, channel: ChannelId) -> KeyScope {
-            KeyScope::Channel(channel)
-        }
+        channel: Arc<ChannelSenderKeys>,
     }
 
     impl Keys {
@@ -417,27 +304,14 @@ mod tests {
                 call_secret: [7u8; 32],
                 call_peer: call_peer.to_string(),
                 call_sender: Arc::new(SframeSender::fresh()),
-                channel: Arc::new(ChannelKeys {
-                    current: Mutex::new(Some(([1u8; 32], 5))),
-                    previous: Mutex::new(None),
-                    age: Mutex::new(std::time::Duration::ZERO),
-                }),
-                channel_senders: Mutex::new(HashMap::new()),
+                channel: Arc::new(ChannelSenderKeys::default()),
             })
         }
     }
 
     impl MediaKeySource for Keys {
-        fn keys(&self) -> Arc<dyn ChannelKeyProvider> {
-            self.channel.clone()
-        }
-        fn channel_media_sender(&self, _: &str, _: &str, generation: u64) -> Arc<SframeSender> {
-            Arc::clone(
-                self.channel_senders
-                    .lock()
-                    .entry(generation)
-                    .or_insert_with(|| Arc::new(SframeSender::fresh())),
-            )
+        fn channel_sender_keys(&self, _: &str, _: &str) -> Arc<ChannelSenderKeys> {
+            Arc::clone(&self.channel)
         }
         fn call_media(&self, peer: &str) -> Option<CallMediaKeys> {
             (peer == self.call_peer).then(|| CallMediaKeys {
@@ -479,6 +353,12 @@ mod tests {
         Arc::new(MediaKeys::new(source, scope))
     }
 
+    /// Give `receiver` the key `sender` sends under now, as a pushed key.
+    fn share(sender: &Arc<Keys>, sender_hex: &str, receiver: &Arc<Keys>) {
+        let key = sender.channel.send_key(std::time::Instant::now());
+        receiver.channel.install(sender_hex, key.index, key.secret);
+    }
+
     #[test]
     fn call_frames_open_only_from_the_peer_and_only_once() {
         let alice = SigningKey::from_bytes(&[1u8; 32]);
@@ -499,66 +379,67 @@ mod tests {
         assert_eq!(opener.open(&forged), Err(OpenError::WrongSender));
     }
 
+    /// A channel frame opens with the sender's own key once it was pushed
+    /// to us, and names the index to ask for before then.
+    #[test]
+    fn channel_frames_open_under_the_senders_own_key() {
+        let alice = SigningKey::from_bytes(&[1u8; 32]);
+        let alice_hex = hex::encode(alice.verifying_key().to_bytes());
+        let alice_side = Keys::new("unused");
+        let bob_side = Keys::new("unused");
+        let mut sealer = FrameSealer::new(keys(&alice_side, channel()));
+        let p = packet(&alice, &mut sealer, 1, b"hello");
+
+        let mut opener = FrameOpener::new(keys(&bob_side, channel()));
+        let index = alice_side.channel.send_key(std::time::Instant::now()).index;
+        assert_eq!(
+            opener.open(&p),
+            Err(OpenError::NoKey {
+                needed_index: Some(index & 0xff)
+            })
+        );
+        share(&alice_side, &alice_hex, &bob_side);
+        assert_eq!(opener.open(&p).unwrap(), b"hello");
+    }
+
+    /// Another member's key never opens Alice's frames: each sender's key
+    /// has one writer, so no two members can disagree on it.
+    #[test]
+    fn a_frame_does_not_open_under_another_senders_key() {
+        let alice = SigningKey::from_bytes(&[1u8; 32]);
+        let alice_hex = hex::encode(alice.verifying_key().to_bytes());
+        let alice_side = Keys::new("unused");
+        let carol_side = Keys::new("unused");
+        let bob_side = Keys::new("unused");
+        let mut sealer = FrameSealer::new(keys(&alice_side, channel()));
+        let p = packet(&alice, &mut sealer, 1, b"x");
+        // Bob holds Carol's key filed under Alice: it does not open.
+        share(&carol_side, &alice_hex, &bob_side);
+        let index = alice_side.channel.send_key(std::time::Instant::now()).index;
+        let carol_index = carol_side.channel.send_key(std::time::Instant::now()).index;
+        let result = FrameOpener::new(keys(&bob_side, channel())).open(&p);
+        if index & 0xff == carol_index & 0xff {
+            assert_eq!(result, Err(OpenError::Rejected));
+        } else {
+            assert!(matches!(result, Err(OpenError::NoKey { .. })));
+        }
+    }
+
     #[test]
     fn metadata_is_bound() {
         let alice = SigningKey::from_bytes(&[1u8; 32]);
+        let alice_hex = hex::encode(alice.verifying_key().to_bytes());
         let source = Keys::new("unused");
         let mut sealer = FrameSealer::new(keys(&source, channel()));
+        share(&source, &alice_hex, &source);
         let mut opener = FrameOpener::new(keys(&source, channel()));
         let mut p = packet(&alice, &mut sealer, 1, b"opus");
         p.sequence = 2;
         assert_eq!(opener.open(&p), Err(OpenError::Rejected));
     }
 
-    #[test]
-    fn channel_generations_current_previous_and_ahead() {
-        let alice = SigningKey::from_bytes(&[1u8; 32]);
-        let sender_side = Keys::new("unused");
-        let mut sealer = FrameSealer::new(keys(&sender_side, channel()));
-        let p = packet(&alice, &mut sealer, 1, b"gen5");
-
-        // Receiver on the same generation.
-        let same = Keys::new("unused");
-        assert_eq!(
-            FrameOpener::new(keys(&same, channel())).open(&p).unwrap(),
-            b"gen5"
-        );
-
-        // Receiver rotated to 6 moments ago, still holding 5.
-        let rotated = Keys::new("unused");
-        *rotated.channel.current.lock() = Some(([2u8; 32], 6));
-        *rotated.channel.previous.lock() = Some(([1u8; 32], 5));
-        assert_eq!(
-            FrameOpener::new(keys(&rotated, channel()))
-                .open(&p)
-                .unwrap(),
-            b"gen5"
-        );
-
-        // Past the grace, the replaced key opens nothing: a removed
-        // member's frames under it are refused.
-        let settled = Keys::new("unused");
-        *settled.channel.current.lock() = Some(([2u8; 32], 6));
-        *settled.channel.previous.lock() = Some(([1u8; 32], 5));
-        *settled.channel.age.lock() = channel_keys::MEDIA_PREVIOUS_EPOCH_GRACE;
-        assert_eq!(
-            FrameOpener::new(keys(&settled, channel())).open(&p),
-            Err(OpenError::Rejected)
-        );
-
-        // Receiver behind on 4: names the generation to request.
-        let behind = Keys::new("unused");
-        *behind.channel.current.lock() = Some(([9u8; 32], 4));
-        assert_eq!(
-            FrameOpener::new(keys(&behind, channel())).open(&p),
-            Err(OpenError::NoKey {
-                needed_generation: Some(5)
-            })
-        );
-    }
-
     /// A rebuilt transport gets a new sealer, but the sender state lives
-    /// in the key source, so the counter continues (RFC 9605 §9.1).
+    /// in the session's keys, so the counter continues (RFC 9605 §9.1).
     #[test]
     fn counter_continues_across_sealer_rebuilds() {
         let source = Keys::new("unused");
@@ -571,26 +452,5 @@ mod tests {
         let (kid_b, ctr_b, _) = sframe::parse_header(&b.sframe).unwrap();
         assert_eq!(kid_a, kid_b);
         assert_ne!(ctr_a, ctr_b);
-    }
-
-    #[test]
-    fn channel_senders_continue_within_a_generation_and_renew_across() {
-        let senders = ChannelSframeSenders::default();
-        let a = senders.sender_for("c", "v", 3);
-        assert!(Arc::ptr_eq(&a, &senders.sender_for("c", "v", 3)));
-        assert!(!Arc::ptr_eq(&a, &senders.sender_for("c", "other", 3)));
-        let renewed = senders.sender_for("c", "v", 4);
-        assert!(!Arc::ptr_eq(&a, &renewed));
-        assert_ne!(a.kid(4), renewed.kid(4), "a new generation gets a new tag");
-    }
-
-    #[test]
-    fn next_generation_named_wraps_low_bits() {
-        assert_eq!(next_generation_named(5, sframe::media_kid(1, 7)), 7);
-        assert_eq!(
-            next_generation_named(0x1fe, sframe::media_kid(1, 0x02)),
-            0x202
-        );
-        assert_eq!(next_generation_named(9, sframe::media_kid(1, 9)), 0x109);
     }
 }

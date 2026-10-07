@@ -264,7 +264,7 @@ fn parity_signing_bytes_layout() {
         codec: Codec::H264,
         frame_len: 1234,
         timestamp: 0xCAFE_BABE,
-        mek_generation: 0,
+        key_index: 0,
         payload: vec![0x10, 0x20],
         signature: Vec::new(),
     };
@@ -298,7 +298,7 @@ fn signing_bytes_match_spec_layout() {
     // Architecture §10.6 line 2071 extended with the codec tag and
     // the MEK generation — the canonical bytes-to-sign are
     // `(stream_id || frame_seq || frag_index || frag_total ||
-    // keyframe || codec || timestamp || mek_generation || payload)`.
+    // keyframe || codec || timestamp || key_index || payload)`.
     let frag = VideoFragment {
         stream_id: [0xABu8; STREAM_ID_LEN],
         frame_seq: 0x1122_3344,
@@ -307,7 +307,7 @@ fn signing_bytes_match_spec_layout() {
         keyframe: true,
         codec: Codec::Vp8,
         timestamp: 0xDEAD_BEEF,
-        mek_generation: 0,
+        key_index: 0,
         payload: vec![0x01, 0x02, 0x03],
         signature: Vec::new(),
     };
@@ -345,7 +345,7 @@ fn codec_byte_is_signature_covered() {
         keyframe: true,
         codec: Codec::Vp9,
         timestamp: 0,
-        mek_generation: 0,
+        key_index: 0,
         payload: vec![0xFF],
         signature: Vec::new(),
     };

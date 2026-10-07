@@ -70,7 +70,12 @@ pub async fn logout_inner(
         .as_ref()
         .map(|id| id.public_key.clone());
 
-    services::session::end_session(Some(&app), &state, &keystore_handle).await;
+    services::session::end_session(
+        services::session::SessionEnd::Logout(&app),
+        &state,
+        &keystore_handle,
+    )
+    .await;
 
     let preselect = active_key
         .as_deref()
@@ -112,7 +117,12 @@ pub async fn delete_identity_inner(
         .is_some_and(|id| id.public_key == public_key);
 
     if is_active {
-        services::session::end_session(Some(&app), &state, &keystore_handle).await;
+        services::session::end_session(
+            services::session::SessionEnd::Logout(&app),
+            &state,
+            &keystore_handle,
+        )
+        .await;
         for (label, window) in app.webview_windows() {
             if label != crate::window_labels::LOGIN {
                 let _ = window.destroy();
@@ -231,7 +241,12 @@ async fn abort_unlock(
     error: String,
 ) -> String {
     tracing::error!(error = %error, "post-unlock setup failed — locking again");
-    services::session::end_session(Some(app), state, keystore_handle).await;
+    services::session::end_session(
+        services::session::SessionEnd::Logout(app),
+        state,
+        keystore_handle,
+    )
+    .await;
     let _ = state
         .lifecycle
         .transition(rekindle_lifecycle::LifecycleState::Locked);

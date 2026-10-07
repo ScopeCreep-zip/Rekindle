@@ -110,7 +110,7 @@ export type VoiceEvent =
         rxOverflowDrops: number;
         rxLateDrops: number;
         /** Inbound media dropped for MEK reasons (rotation race signal). */
-        rxMekDrops: number;
+        rxKeyDrops: number;
         ingressDrops: number;
         /**
          * End-to-end measurement of our OUTBOUND stream as the far end

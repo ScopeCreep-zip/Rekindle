@@ -295,17 +295,18 @@ primitive in `rekindle-secrets::sframe`.
 
 - **Sender keys (RFC 9605 §5.1).** Each sender encrypts under its own
   base key: `HKDF-SHA512(scope_secret, "rekindle-voice-sender-key-v1" ‖
-  sender_key ‖ tag)`. The scope secret is the call secret (1:1) or the
-  channel-media MEK (community). The receiver derives the key from the
+  sender_key ‖ tag)`. The secret is the call secret (1:1) or, in a
+  community channel, the sender's own media key (below). The receiver derives the key from the
   packet's signed `sender_key`, so a frame opens only as the member who
   signed it, and no shared member ordering is needed (MatrixRTC
   MSC4143 `m.per_member` uses the same per-member model).
 - **KID** = 56-bit random per-session sender tag ‖ low 8 bits of the key
-  generation (0 for calls, the MEK generation for channels). The tag
-  makes every session's key fresh, so a long-lived MEK never repeats a
-  `(key, nonce)` across restarts.
+  index (0 for calls, the sender key's index for channels). The tag
+  makes every session's key fresh, so no key repeats a `(key, nonce)`
+  across restarts.
 - **Counter.** The CTR lives with the call (`CallState.media_sender`) or
-  per channel and generation (`ChannelSframeSenders`), so a rebuilt
+  with each of our channel sender keys (`ChannelSenderKeys`, kept in
+  `AppState.voice_sender_keys` for the channel session), so a rebuilt
   transport (route heal, device switch) continues it (§9.1).
 - **Metadata.** The packet's `sender_key ‖ sequence ‖ timestamp ‖
   transport_seq` is SFrame metadata (§9.4): a relay cannot splice a
@@ -317,14 +318,36 @@ The wire packet is `schemas/voice_packet.capnp` behind the one-byte
 `'V'` media tag, signed under `rekindle-voice-packet-v2`. The SFrame
 plaintext is a VAD level byte followed by the Opus frame.
 
-## Voice MEK rotation
+## Channel media keys (plan C7.20)
 
-For community voice channels, the MEK rotates on every join and every
-leave — providing strong forward and backward secrecy for live
-conversations. A late joiner cannot decrypt earlier voice packets; a
-departing member cannot decrypt subsequent packets. See
-[`communities.md` §5](communities.md#5-mek-lifecycle-peer-to-peer-no-vault)
-for the rotator selection and cascade fallback protocols.
+Community call media — voice and video — is not under a MEK. Each
+participant keys its own media and hands the key to each participant on
+its roster (`rekindle_secrets::media_sender_key`; RFC 9605 §5.1 sender
+keys, the MatrixRTC per-member model). No rotator is elected: every
+sender owns its own key, so there is nothing to agree on.
+
+- **Key.** A random 32-byte secret per channel session, with a random
+  starting index. Video derives its frame key from it
+  (`video_frame_key`).
+- **Distribution.** `ControlPayload::VoiceMediaKey`, HPKE Auth-sealed
+  from our channel pseudonym to the recipient's, with AAD binding
+  channel ‖ recipient ‖ index. It is sent to the channel roster and
+  opened only by its recipient.
+- **Join.** A joiner gets our current key if it is under 10 s old;
+  otherwise we rotate and send the new key to everyone (MatrixRTC's
+  share-or-rotate rule), so a late joiner cannot read earlier media.
+- **Leave.** When a participant leaves the channel, is expired from
+  the roster, or leaves the community (kicked, banned, departed), we
+  rotate and send the new key to everyone left. The new key is used
+  after 5 s, and rotations within that delay coalesce.
+- **Missing key.** A frame under an index we lack sends a
+  `VoiceMediaKeyRequest` to its sender (at most once per sender every
+  10 s). The sender answers only a requester on its roster.
+- **Retention.** Five keys per sender, so frames in flight across a
+  rotation still open.
+- **Stage channels** never rotate on a listener's join or leave
+  (§10.7: anyone may listen). A joiner still gets every speaker's
+  current key.
 
 For 1:1 and DM/group-DM calls, the call key is derived deterministically
 via X25519 ECDH over the participants' identity keys plus the call ID as

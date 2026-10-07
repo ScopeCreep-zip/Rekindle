@@ -174,9 +174,11 @@ pub struct AppState {
     pub app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Global dedup cache for gossip mesh message deduplication.
     pub dedup_cache: Mutex<DedupCache>,
-    /// Our SFrame sender state per community voice channel (survives
-    /// voice-session and transport rebuilds; cleared on logout).
-    pub voice_media_senders: rekindle_voice::media_crypto::ChannelSframeSenders,
+    /// Call-media sender keys per community voice channel session (plan
+    /// C7.20): our own key and the keys participants sent us. Kept across
+    /// transport rebuilds, ended with the channel session, cleared on
+    /// logout.
+    pub voice_sender_keys: rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore,
     /// 1:1 envelopes already accepted, until they leave the freshness
     /// window.
     pub envelope_replay: Mutex<rekindle_protocol::messaging::replay::ReplayGuard>,
@@ -372,7 +374,8 @@ impl Default for AppState {
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
-            voice_media_senders: rekindle_voice::media_crypto::ChannelSframeSenders::default(),
+            voice_sender_keys:
+                rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore::default(),
             envelope_replay: Mutex::new(rekindle_protocol::messaging::replay::ReplayGuard::new()),
             gossip_rate_limits: Mutex::new(HashMap::new()),
             channel_last_received: Mutex::new(HashMap::new()),
@@ -451,26 +454,5 @@ impl AppState {
                 .muted_flag
                 .store(true, std::sync::atomic::Ordering::Relaxed);
         }
-    }
-
-    /// Hand out the voice transport `Arc` when the active engine is
-    /// joined to the given community + channel; `None` when no engine
-    /// is active or it's on a different channel. §10.5 MEK rotation
-    /// reads the roster (peer keys + the routes each peer advertised
-    /// in its VoiceJoin) through this — the transport sits behind an
-    /// async lock, so callers `.lock().await` it themselves. The
-    /// parking_lot `voice_engine` guard drops before this returns, so
-    /// no sync guard is ever held across the caller's await.
-    pub fn voice_engine_transport_for_channel(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>> {
-        let ve = self.voice_engine.lock();
-        let handle = ve.as_ref()?;
-        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
-            return None;
-        }
-        Some(std::sync::Arc::clone(&handle.transport))
     }
 }

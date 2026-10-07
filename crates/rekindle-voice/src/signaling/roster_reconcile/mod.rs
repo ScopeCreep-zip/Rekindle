@@ -238,6 +238,19 @@ pub async fn reconcile_from_presence(
                 display_name: None,
                 remote_count,
             });
+            // Plan C7.20 — an expired peer is a departure: rotate.
+            let is_stage = deps
+                .stage_channel_info(community_id, &channel_id)
+                .is_some_and(|s| s.is_stage);
+            crate::signaling::media_keys::on_peer_removed(
+                &**deps,
+                community_id,
+                &channel_id,
+                &transport,
+                gone,
+                is_stage,
+            )
+            .await;
         }
     }
 

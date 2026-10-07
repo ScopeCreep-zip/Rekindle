@@ -476,36 +476,9 @@ pub(super) fn seed_community_media_session(
 ) {
     // Seed the media-ready gate BEFORE the config emit below, so its
     // `session_config_emitted` hook lands on a slot whose other inputs
-    // already reflect reality. MEK presence is the channel's media scope
-    // (its own key for a voice channel, the community key for a stage).
-    if !crate::state_helpers::media_key_present(&adapter.state, community_id, channel_id) {
-        // A voice channel's media is under its own key; joining one we
-        // hold no key for, we mint its first (plan B5.4). Members already
-        // here rotate on our join and supersede it.
-        if let Err(e) = crate::services::community::mint_first_channel_key(
-            &adapter.app_handle,
-            &adapter.state,
-            community_id,
-            channel_id,
-        ) {
-            tracing::warn!(community = %community_id, channel = %channel_id, error = %e, "first channel key not minted");
-        }
-    }
-    let mek_present =
-        crate::state_helpers::media_key_present(&adapter.state, community_id, channel_id);
-    if !mek_present {
-        // Deterministic acquisition: fire the RequestMEK cascade NOW
-        // instead of waiting for the first undecryptable frame
-        // (fresh-device / missed-rotation edge — the join-triggered
-        // rotation usually delivers first, so this is a cache-hit
-        // no-op).
-        rekindle_voice::VoiceSessionDeps::request_mek_refresh(
-            adapter,
-            community_id,
-            channel_id,
-            0, // "send me your current generation"
-        );
-    }
+    // already reflect reality. No key is acquired here: our media key is
+    // our own, and each participant sends us theirs as it adds us (plan
+    // C7.20).
     let caps_reported =
         crate::services::community::video_session::reported_local_caps(&adapter.state).is_some();
     crate::services::community::media_ready_runtime::update_media_ready(
@@ -513,7 +486,6 @@ pub(super) fn seed_community_media_session(
         community_id,
         channel_id,
         |i| {
-            i.mek_present = mek_present;
             i.local_caps_reported = caps_reported;
         },
     );

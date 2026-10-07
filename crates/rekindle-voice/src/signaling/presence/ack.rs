@@ -59,6 +59,20 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                     display_name: display_name.clone(),
                     remote_count,
                 });
+                // Plan C7.20 — the acker added us and sent its key; it
+                // gets ours.
+                let is_stage = deps_task
+                    .stage_channel_info(&cid, &channel_id)
+                    .is_some_and(|s| s.is_stage);
+                crate::signaling::media_keys::on_peer_added(
+                    &*deps_task,
+                    &cid,
+                    &channel_id,
+                    &transport,
+                    &acker,
+                    is_stage,
+                )
+                .await;
             }
         }
         if transport.lock().await.advance_handshake_seen() {

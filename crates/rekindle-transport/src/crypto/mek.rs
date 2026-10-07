@@ -172,13 +172,6 @@ impl MekCache {
             .map(|cm| &cm.mek)
     }
 
-    /// When the scope's current MEK was cached.
-    pub fn current_since(&self, community_id: &str, scope: KeyScope) -> Option<Instant> {
-        self.generations(community_id, scope)
-            .and_then(|gens| gens.last())
-            .map(|cm| cm.cached_at)
-    }
-
     /// The scope's MEK at exactly `generation`.
     pub fn get_generation(
         &self,

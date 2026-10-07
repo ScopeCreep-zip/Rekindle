@@ -16,6 +16,7 @@ pub mod envelope;
 pub mod error;
 pub mod friend;
 pub mod message;
+pub mod presence_row;
 
 pub use error::CodecError;
 
