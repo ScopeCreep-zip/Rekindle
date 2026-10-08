@@ -3,12 +3,15 @@
 //! Keeps the open capture and playback devices on the ones a call should
 //! use: the saved device when it is connected, otherwise the system
 //! default ([`crate::device::select_device`]). It re-checks on two signals:
-//! 1. cpal stream-error callbacks (device disconnected mid-stream);
-//! 2. periodic (5 s) enumeration, because cpal resolves "default" to one
-//!    concrete CoreAudio device when the stream opens and only listens for
-//!    that device dying (`kAudioDevicePropertyDeviceIsAlive`), so neither a
-//!    saved device being plugged back in nor a change of system default
-//!    reaches an open stream on its own.
+//! 1. cpal stream-error callbacks: the device went away, or the system
+//!    default changed under the stream (cpal 0.18 reports both on PipeWire,
+//!    and default-output changes on CoreAudio);
+//! 2. a periodic (5 s) check, because no host reports a device being added:
+//!    a saved device plugged back in reaches no open stream on its own.
+//!    The check reads the host's device list. On Linux that is the
+//!    PipeWire (or PulseAudio) server's registry, which opens nothing;
+//!    cpal's ALSA enumeration, by contrast, opens every PCM in both
+//!    directions to list it, which is why the sound-server hosts are on.
 //!
 //! When the target differs from what is open, it reopens on the target —
 //! switching to the default when the saved device goes, back to the saved
@@ -36,16 +39,25 @@ pub(crate) struct AudioTargets {
 impl AudioTargets {
     /// Resolve the saved choices in `prefs` against the connected devices.
     pub(crate) fn select(prefs: &AudioPrefs) -> Result<Self, VoiceError> {
+        let host = cpal::default_host();
         Ok(Self {
-            input: select_device(prefs.input_device.as_deref(), &DeviceDirection::Input)?,
-            output: select_device(prefs.output_device.as_deref(), &DeviceDirection::Output)?,
+            input: select_device(
+                &host,
+                prefs.input_device.as_deref(),
+                &DeviceDirection::Input,
+            )?,
+            output: select_device(
+                &host,
+                prefs.output_device.as_deref(),
+                &DeviceDirection::Output,
+            )?,
         })
     }
 
     /// Whether these are the devices already open.
     fn match_open(&self, open: &(Option<String>, Option<String>)) -> bool {
-        open.0.as_deref() == Some(self.input.name.as_str())
-            && open.1.as_deref() == Some(self.output.name.as_str())
+        open.0.as_deref() == Some(self.input.id.as_str())
+            && open.1.as_deref() == Some(self.output.id.as_str())
     }
 
     /// Tell the user about each stand-in for a saved device that is not
@@ -53,14 +65,14 @@ impl AudioTargets {
     pub(crate) fn announce_missing<D: VoiceSessionDeps + ?Sized>(&self, deps: &Arc<D>) {
         for (kind, selected) in [("microphone", &self.input), ("speaker", &self.output)] {
             if let Some(saved) = &selected.saved_missing {
-                tracing::warn!(kind, saved = %saved, using = %selected.name,
+                tracing::warn!(kind, saved = %saved, using = %selected.label,
                     "saved audio device not connected; using the system default");
                 deps.emit_system_alert(
                     format!("Your {kind} isn't connected"),
                     format!(
-                        "\"{saved}\" isn't connected, so Rekindle is using \"{}\". It switches \
-                         back when \"{saved}\" is plugged in.",
-                        selected.name
+                        "Your chosen {kind} isn't connected, so Rekindle is using \"{}\". It \
+                         switches back when it is plugged in.",
+                        selected.label
                     ),
                 );
             }
@@ -157,8 +169,8 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
     crate::session::shutdown::shutdown_voice(deps, &VoiceShutdownOpts::LOOPS_ONLY).await;
     deps.stop_audio_devices();
     deps.set_voice_engine_devices(
-        Some(targets.input.name.clone()),
-        Some(targets.output.name.clone()),
+        Some(targets.input.id.clone()),
+        Some(targets.output.id.clone()),
     );
     deps.set_voice_engine_input_channels(prefs.input_channels.clone());
     crate::session::restart::restart_loops(deps)
@@ -169,22 +181,22 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
         ("input", &targets.input, &open.0, &prefs.input_device),
         ("output", &targets.output, &open.1, &prefs.output_device),
     ] {
-        if was.as_deref() == Some(selected.name.as_str()) {
+        if was.as_deref() == Some(selected.id.as_str()) {
             continue;
         }
         let reason = if selected.saved_missing.is_some() {
             "saved device disconnected"
-        } else if saved.as_deref() == Some(selected.name.as_str()) {
+        } else if saved.as_deref() == Some(selected.id.as_str()) {
             "saved device reconnected"
         } else {
             "system default changed"
         };
-        tracing::info!(kind, device = %selected.name, reason, "device monitor: switched device");
-        deps.emit_device_changed(kind.to_string(), selected.name.clone(), reason.to_string());
+        tracing::info!(kind, device = %selected.label, reason, "device monitor: switched device");
+        deps.emit_device_changed(kind.to_string(), selected.label.clone(), reason.to_string());
         if selected.saved_missing.is_none() {
             deps.emit_system_alert(
                 "Audio device switched".to_string(),
-                format!("Now using \"{}\" for {kind} ({reason}).", selected.name),
+                format!("Now using \"{}\" for {kind} ({reason}).", selected.label),
             );
         }
     }

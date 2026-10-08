@@ -18,6 +18,11 @@
           libsodium.dev
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           alsa-lib.dev
+          # cpal's native PipeWire host (crates/rekindle-voice): pipewire-sys
+          # finds libpipewire-0.3 through pkg-config and generates its
+          # bindings with bindgen, which loads libclang at build time.
+          pipewire.dev
+          llvmPackages.libclang
           libopus.dev
           dbus.dev
           # Native video capture (crates/rekindle-video-capture):
@@ -34,6 +39,7 @@
             libsodium
             libopus
             alsa-lib
+            pipewire
             dbus
             gst_all_1.gstreamer
             gst_all_1.gst-plugins-base
@@ -60,6 +66,9 @@
           env = {
             KONDUCTOR_SHELL = "rekindle";
             SODIUM_USE_PKG_CONFIG = "1";
+          } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          } // {
             REKINDLE_LIB_PATH = rekindleLibPath;
             LD_LIBRARY_PATH = rekindleLibPath;
             GST_PLUGIN_SYSTEM_PATH_1_0 = rekindleGstPluginPath;

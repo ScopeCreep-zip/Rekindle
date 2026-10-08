@@ -98,7 +98,7 @@ fn build_capture_stream(
     };
     let (config, sample_format) = negotiate_input_config(&device, sample_rate, open_channels)?;
     let dev_channels = config.channels;
-    let dev_rate = config.sample_rate.0;
+    let dev_rate = config.sample_rate;
     if let Some(bad) = picked.iter().flatten().find(|&&c| c >= dev_channels) {
         return Err(VoiceError::AudioDevice(format!(
             "input channel {} is not on this device ({dev_channels} channels)",
@@ -108,7 +108,7 @@ fn build_capture_stream(
     let needs_adapt = picked.is_some() || dev_channels != channels || dev_rate != sample_rate;
 
     tracing::info!(
-        device = %cpal::traits::DeviceTrait::name(&device).unwrap_or_else(|_| "unnamed".into()),
+        device = %crate::device::device_label(&device),
         dev_channels,
         dev_rate,
         want_channels = channels,
@@ -140,15 +140,12 @@ fn build_capture_stream(
     };
 
     let make_error_callback = |error_tx: std_mpsc::Sender<String>| {
-        move |err: cpal::StreamError| {
-            tracing::error!("input stream error: {err}");
-            let _ = error_tx.send(format!("input: {err}"));
-        }
+        move |err: cpal::Error| crate::device::on_stream_error("input", &err, &error_tx)
     };
 
     match sample_format {
         cpal::SampleFormat::F32 => device.build_input_stream(
-            &config,
+            config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 forward(data.to_vec(), &tx);
             },
@@ -156,7 +153,7 @@ fn build_capture_stream(
             None,
         ),
         cpal::SampleFormat::I16 => device.build_input_stream(
-            &config,
+            config,
             move |data: &[i16], _: &cpal::InputCallbackInfo| {
                 let samples: Vec<f32> = data
                     .iter()
@@ -168,7 +165,7 @@ fn build_capture_stream(
             None,
         ),
         cpal::SampleFormat::U16 => device.build_input_stream(
-            &config,
+            config,
             move |data: &[u16], _: &cpal::InputCallbackInfo| {
                 let samples: Vec<f32> = data
                     .iter()

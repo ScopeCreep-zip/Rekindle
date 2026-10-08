@@ -72,6 +72,9 @@ case "$DISTRO_FAMILY" in
             librsvg2-dev \
             libxdo-dev \
             libasound2-dev \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            libclang-dev \
             libopus-dev \
             capnproto \
             patchelf
@@ -91,6 +94,8 @@ case "$DISTRO_FAMILY" in
             librsvg2-devel \
             libxdo-devel \
             alsa-lib-devel \
+            pipewire-devel \
+            clang-devel \
             opus-devel \
             capnproto \
             patchelf
@@ -110,6 +115,8 @@ case "$DISTRO_FAMILY" in
             librsvg \
             xdotool \
             alsa-lib \
+            pipewire \
+            clang \
             opus \
             capnproto \
             patchelf

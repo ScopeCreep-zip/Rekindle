@@ -17,7 +17,9 @@ use crate::state::{ChannelType, SharedState};
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioDeviceInfo {
+    /// Stable id (cpal `DeviceId`): what a choice saves.
     pub id: String,
+    /// Display name.
     pub name: String,
     pub is_default: bool,
     /// Input channels an input-channel choice picks from (plan C7.24b);
@@ -38,20 +40,20 @@ pub fn list_audio_devices_inner() -> AudioDevices {
         input_devices: devices
             .input_devices
             .into_iter()
-            .map(|(name, is_default, channels)| AudioDeviceInfo {
-                id: name.clone(),
-                name,
-                is_default,
+            .map(|(d, channels)| AudioDeviceInfo {
+                id: d.id,
+                name: d.label,
+                is_default: d.is_default,
                 channels,
             })
             .collect(),
         output_devices: devices
             .output_devices
             .into_iter()
-            .map(|(name, is_default)| AudioDeviceInfo {
-                id: name.clone(),
-                name,
-                is_default,
+            .map(|d| AudioDeviceInfo {
+                id: d.id,
+                name: d.label,
+                is_default: d.is_default,
                 channels: 0,
             })
             .collect(),
@@ -86,7 +88,7 @@ pub fn persist_input_channels(
     let available = rekindle_voice::device::enumerate_audio_devices()
         .input_devices
         .into_iter()
-        .find_map(|(name, _, count)| (name == device).then_some(count))
+        .find_map(|(d, count)| (d.id == device).then_some(count))
         .ok_or_else(|| format!("input device \"{device}\" is not connected"))?;
     channels.sort_unstable();
     channels.dedup();

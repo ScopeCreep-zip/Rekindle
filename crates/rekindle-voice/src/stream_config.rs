@@ -81,7 +81,7 @@ where
 {
     let ranges: Vec<_> = ranges.collect();
     let covers_rate = |r: &cpal::SupportedStreamConfigRange| {
-        r.min_sample_rate().0 <= want_rate && r.max_sample_rate().0 >= want_rate
+        r.min_sample_rate() <= want_rate && r.max_sample_rate() >= want_rate
     };
     // Openable format first, then the existing rate/channel preference
     // within each tier; `min_by_key` keeps the best-ranked format.
@@ -121,7 +121,7 @@ where
 fn stream_config(channels: u16, rate: u32) -> cpal::StreamConfig {
     cpal::StreamConfig {
         channels,
-        sample_rate: cpal::SampleRate(rate),
+        sample_rate: rate,
         buffer_size: cpal::BufferSize::Default,
     }
 }
@@ -259,8 +259,8 @@ mod tests {
     ) -> cpal::SupportedStreamConfigRange {
         cpal::SupportedStreamConfigRange::new(
             channels,
-            cpal::SampleRate(min_rate),
-            cpal::SampleRate(max_rate),
+            min_rate,
+            max_rate,
             cpal::SupportedBufferSize::Unknown,
             format,
         )
@@ -276,7 +276,7 @@ mod tests {
         ];
         let (config, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
         assert_eq!(format, cpal::SampleFormat::F32);
-        assert_eq!(config.sample_rate.0, 48000);
+        assert_eq!(config.sample_rate, 48000);
         assert_eq!(config.channels, 1);
     }
 
@@ -303,7 +303,7 @@ mod tests {
         let (config, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
         assert_eq!(format, cpal::SampleFormat::F32);
         assert_eq!(config.channels, 2);
-        assert_eq!(config.sample_rate.0, 48000);
+        assert_eq!(config.sample_rate, 48000);
     }
 
     #[test]
@@ -316,7 +316,7 @@ mod tests {
         ];
         let (config, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
         assert_eq!(format, cpal::SampleFormat::I16);
-        assert_eq!(config.sample_rate.0, 44100);
+        assert_eq!(config.sample_rate, 44100);
     }
 
     #[test]

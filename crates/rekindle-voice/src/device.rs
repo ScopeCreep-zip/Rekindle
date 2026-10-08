@@ -34,22 +34,57 @@ impl DeviceDirection {
     }
 }
 
-/// Find an audio device by name. A device that is not connected is an
+/// A stream's error callback. A device that went away, changed under the
+/// stream (the system default moved) or invalidated it is handed to the
+/// device monitor, which reselects and reopens (plan C7.24): the host's
+/// own notifications, as Jitsi Meet follows `devicechange` instead of
+/// polling. An underrun is the stream recovering on its own (cpal 0.18
+/// reports it as an error) and is only logged.
+pub fn on_stream_error(
+    direction: &'static str,
+    err: &cpal::Error,
+    error_tx: &std::sync::mpsc::Sender<String>,
+) {
+    if err.kind() == cpal::ErrorKind::Xrun {
+        tracing::debug!(direction, error = %err, "audio stream xrun");
+        return;
+    }
+    tracing::warn!(direction, kind = ?err.kind(), error = %err, "audio stream error");
+    let _ = error_tx.send(format!("{direction}: {err}"));
+}
+
+/// A device's stable identifier: cpal's `DeviceId` in its string form,
+/// which survives reconnects and reboots and round-trips through
+/// `FromStr` (cpal 0.17+). Saved choices and per-device settings are keyed
+/// by it; the description is only for display.
+pub fn device_id(device: &cpal::Device) -> Option<String> {
+    device.id().ok().map(|id| id.to_string())
+}
+
+/// A device's human-readable name, for logs and the settings list.
+pub fn device_label(device: &cpal::Device) -> String {
+    device.description().map_or_else(
+        |_| device_id(device).unwrap_or_else(|| "unnamed".into()),
+        |d| d.name().to_string(),
+    )
+}
+
+/// Find an audio device by id. A device that is not connected is an
 /// error, never a silent substitute: which device to open when the saved
 /// one is missing is [`select_device`]'s decision, made visibly before a
 /// stream opens (plan C7.24).
 pub fn find_device(
     host: &cpal::Host,
-    name: &str,
+    id: &str,
     direction: &DeviceDirection,
 ) -> Result<cpal::Device, VoiceError> {
     direction
         .devices(host)
         .into_iter()
-        .find(|device| device.name().ok().as_deref() == Some(name))
+        .find(|device| device_id(device).as_deref() == Some(id))
         .ok_or_else(|| {
             VoiceError::AudioDevice(format!(
-                "{} device \"{name}\" is not connected",
+                "{} device \"{id}\" is not connected",
                 direction.label()
             ))
         })
@@ -68,9 +103,11 @@ pub fn max_input_channels(device: &cpal::Device) -> u16 {
 /// The device a saved choice resolves to right now (plan C7.24).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectedDevice {
-    /// The concrete device to open.
-    pub name: String,
-    /// The saved choice, when it is not connected and `name` is the
+    /// The id of the concrete device to open.
+    pub id: String,
+    /// Its display name, for what the user is told.
+    pub label: String,
+    /// The saved choice, when it is not connected and `id` is the
     /// system default standing in for it. The choice itself is kept.
     pub saved_missing: Option<String>,
 }
@@ -87,137 +124,103 @@ pub struct SelectedDevice {
 /// # Errors
 /// No device exists for the direction at all.
 pub fn select_device(
+    host: &cpal::Host,
     saved: Option<&str>,
     direction: &DeviceDirection,
 ) -> Result<SelectedDevice, VoiceError> {
-    let host = cpal::default_host();
-    if let Some(name) = saved {
-        if direction
-            .devices(&host)
+    if let Some(id) = saved {
+        if let Some(device) = direction
+            .devices(host)
             .iter()
-            .any(|device| device.name().ok().as_deref() == Some(name))
+            .find(|device| device_id(device).as_deref() == Some(id))
         {
             return Ok(SelectedDevice {
-                name: name.to_string(),
+                id: id.to_string(),
+                label: device_label(device),
                 saved_missing: None,
             });
         }
     }
-    let default = preferred_default_device(&host, direction)?;
-    let name = default.name().map_err(|e| {
-        VoiceError::AudioDevice(format!(
-            "{} default device has no name: {e}",
-            direction.label()
-        ))
+    let default = direction.default_device(host).ok_or_else(|| {
+        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
+    })?;
+    let id = device_id(&default).ok_or_else(|| {
+        VoiceError::AudioDevice(format!("{} default device has no id", direction.label()))
     })?;
     Ok(SelectedDevice {
-        name,
+        id,
+        label: device_label(&default),
         saved_missing: saved.map(str::to_string),
     })
 }
 
-/// Resolve an audio device by optional name for the given direction.
+/// Resolve an audio device by optional id for the given direction.
 ///
-/// - `Some(name)` → exactly that device ([`find_device`]).
-/// - `None` → the preferred default (see [`preferred_default_device`]).
+/// - `Some(id)` → exactly that device ([`find_device`]).
+/// - `None` → the host's default device. On Linux the host is PipeWire or
+///   PulseAudio when one is running (cpal's host order), so the default is
+///   the sound server's, never a raw ALSA PCM.
 pub fn resolve_device(
     host: &cpal::Host,
-    device_name: Option<&str>,
+    device_id: Option<&str>,
     direction: &DeviceDirection,
 ) -> Result<cpal::Device, VoiceError> {
-    match device_name {
-        Some(name) => find_device(host, name, direction),
-        None => preferred_default_device(host, direction),
+    match device_id {
+        Some(id) => find_device(host, id, direction),
+        None => direction.default_device(host).ok_or_else(|| {
+            VoiceError::AudioDevice(format!("no {} device available", direction.label()))
+        }),
     }
 }
 
-/// The default device to open when the user hasn't pinned a specific one.
-///
-/// On a sound-server Linux stack (PipeWire/PulseAudio) the raw ALSA `default`
-/// PCM is backed by the hardware device the server holds exclusively, so cpal's
-/// blocking `snd_pcm_open`/`snd_pcm_start` inside `build_*_stream` can hang
-/// indefinitely. The `pipewire`/`pulse` ALSA bridge PCMs are non-exclusive
-/// client connections to the server and open without blocking, so we prefer
-/// them over `default` and only fall back to the raw default when no bridge is
-/// present (e.g. a bare-ALSA system). Other platforms use the system default
-/// directly. This mirrors cpal's own documented Linux workaround for versions
-/// without a native PipeWire backend.
-fn preferred_default_device(
-    host: &cpal::Host,
-    direction: &DeviceDirection,
-) -> Result<cpal::Device, VoiceError> {
-    #[cfg(target_os = "linux")]
-    {
-        for bridge in ["pipewire", "pulse"] {
-            if let Some(device) = direction
-                .devices(host)
-                .into_iter()
-                .find(|device| device.name().ok().as_deref() == Some(bridge))
-            {
-                tracing::info!(
-                    device = bridge,
-                    direction = direction.label(),
-                    "using sound-server bridge device instead of raw ALSA default"
-                );
-                return Ok(device);
-            }
-        }
-    }
-
-    direction.default_device(host).ok_or_else(|| {
-        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
-    })
+/// One device in a settings list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedDevice {
+    /// Stable id ([`device_id`]): what a choice saves.
+    pub id: String,
+    /// Display name.
+    pub label: String,
+    pub is_default: bool,
 }
 
 /// Enumerated audio devices (input and output).
 pub struct EnumeratedDevices {
-    /// Input devices: `(name, is_default, channels)`, `channels` being what
-    /// an input-channel choice picks from.
-    pub input_devices: Vec<(String, bool, u16)>,
-    /// Output devices: `(name, is_default)`.
-    pub output_devices: Vec<(String, bool)>,
+    /// Input devices with their channel counts, which an input-channel
+    /// choice picks from.
+    pub input_devices: Vec<(ListedDevice, u16)>,
+    pub output_devices: Vec<ListedDevice>,
 }
 
-/// Collect `(name, is_default)` pairs for the devices in a direction.
-fn collect_device_names(
-    host: &cpal::Host,
-    direction: &DeviceDirection,
-    default_name: Option<&str>,
-) -> Vec<(String, bool)> {
-    let mut result = Vec::new();
-    for device in direction.devices(host) {
-        if let Ok(name) = device.name() {
-            let is_default = default_name == Some(name.as_str());
-            result.push((name, is_default));
-        }
-    }
-    result
+fn listed(device: &cpal::Device, default_id: Option<&str>) -> Option<ListedDevice> {
+    let id = device_id(device)?;
+    Some(ListedDevice {
+        is_default: default_id == Some(id.as_str()),
+        label: device_label(device),
+        id,
+    })
 }
 
 /// Enumerate all available audio input and output devices.
 pub fn enumerate_audio_devices() -> EnumeratedDevices {
     let host = cpal::default_host();
-    let default_input_name = DeviceDirection::Input
+    let default_input = DeviceDirection::Input
         .default_device(&host)
-        .and_then(|d| d.name().ok());
-    let default_output_name = DeviceDirection::Output
+        .as_ref()
+        .and_then(device_id);
+    let default_output = DeviceDirection::Output
         .default_device(&host)
-        .and_then(|d| d.name().ok());
-
+        .as_ref()
+        .and_then(device_id);
     EnumeratedDevices {
         input_devices: DeviceDirection::Input
             .devices(&host)
-            .into_iter()
-            .filter_map(|device| {
-                let name = device.name().ok()?;
-                let is_default = default_input_name.as_deref() == Some(name.as_str());
-                Some((name, is_default, max_input_channels(&device)))
-            })
+            .iter()
+            .filter_map(|d| listed(d, default_input.as_deref()).map(|l| (l, max_input_channels(d))))
             .collect(),
-        output_devices: collect_device_names(
-            &host,
-            &DeviceDirection::Output,
-            default_output_name.as_deref(),
-        ),
+        output_devices: DeviceDirection::Output
+            .devices(&host)
+            .iter()
+            .filter_map(|d| listed(d, default_output.as_deref()))
+            .collect(),
     }
 }

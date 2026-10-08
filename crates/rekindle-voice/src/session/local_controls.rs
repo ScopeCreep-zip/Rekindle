@@ -148,7 +148,7 @@ pub async fn change_audio_devices<D: VoiceSessionDeps + ?Sized>(
     targets.announce_missing(deps);
     crate::session::shutdown_voice(deps, &VoiceShutdownOpts::KEEP_ENGINE).await;
     deps.stop_audio_devices();
-    deps.set_voice_engine_devices(Some(targets.input.name), Some(targets.output.name));
+    deps.set_voice_engine_devices(Some(targets.input.id), Some(targets.output.id));
     deps.set_voice_engine_input_channels(prefs.input_channels);
     crate::session::restart_loops(deps)
         .await

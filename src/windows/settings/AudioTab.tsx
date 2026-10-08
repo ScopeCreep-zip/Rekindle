@@ -97,8 +97,8 @@ const AudioTab: Component = () => {
                 <label class="settings-option">
                   <input
                     type="checkbox"
-                    checked={channelOn(device().name, index)}
-                    onChange={() => void toggleChannel(device().name, device().channels, index)}
+                    checked={channelOn(device().id, index)}
+                    onChange={() => void toggleChannel(device().id, device().channels, index)}
                   />
                   <span class="buddy-name">Input {index + 1}</span>
                 </label>

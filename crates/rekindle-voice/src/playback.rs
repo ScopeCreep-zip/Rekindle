@@ -94,11 +94,11 @@ fn build_playback_stream(
 
     let (config, sample_format) = negotiate_output_config(&device, sample_rate, channels)?;
     let dev_channels = config.channels;
-    let dev_rate = config.sample_rate.0;
+    let dev_rate = config.sample_rate;
     let needs_adapt = dev_channels != channels || dev_rate != sample_rate;
 
     tracing::info!(
-        device = %cpal::traits::DeviceTrait::name(&device).unwrap_or_else(|_| "unnamed".into()),
+        device = %crate::device::device_label(&device),
         dev_channels,
         dev_rate,
         want_channels = channels,
@@ -112,14 +112,12 @@ fn build_playback_stream(
     // ceiling.
     let buffer_capacity = dev_rate as usize * usize::from(dev_channels.max(1));
 
-    let error_callback = move |err: cpal::StreamError| {
-        tracing::error!("output stream error: {err}");
-        let _ = error_tx.send(format!("output: {err}"));
-    };
+    let error_callback =
+        move |err: cpal::Error| crate::device::on_stream_error("output", &err, &error_tx);
 
     match sample_format {
         cpal::SampleFormat::F32 => device.build_output_stream(
-            &config,
+            config,
             output_callback::<f32>(
                 rx,
                 needs_adapt,
@@ -134,7 +132,7 @@ fn build_playback_stream(
             None,
         ),
         cpal::SampleFormat::I16 => device.build_output_stream(
-            &config,
+            config,
             output_callback::<i16>(
                 rx,
                 needs_adapt,
@@ -149,7 +147,7 @@ fn build_playback_stream(
             None,
         ),
         cpal::SampleFormat::U16 => device.build_output_stream(
-            &config,
+            config,
             output_callback::<u16>(
                 rx,
                 needs_adapt,
