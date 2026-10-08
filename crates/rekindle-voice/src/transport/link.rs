@@ -125,6 +125,10 @@ impl PeerLink {
     ) {
         let mut streak = 0u64;
         let mut last_stats = Instant::now();
+        // How long each `app_message` took to hand off, since the last
+        // stats line: while one is in flight, everything queued behind it
+        // (voice included) waits.
+        let mut send_times = SendTimes::default();
         loop {
             let now = Instant::now();
             let (datagram, next, keyframe, stats) = {
@@ -139,7 +143,7 @@ impl PeerLink {
             }
             if let Some(stats) = stats {
                 last_stats = now;
-                self.log_stats(&peer, &stats);
+                self.log_stats(&peer, &stats, &mut send_times);
             }
             if let Some(mut datagram) = datagram {
                 if datagram.first() == Some(&crate::media_frame::PADDING_TAG) {
@@ -153,7 +157,10 @@ impl PeerLink {
                     }
                 }
                 let route = self.route();
-                match sender.send_voice_frame(&route, datagram).await {
+                let started = Instant::now();
+                let result = sender.send_voice_frame(&route, datagram).await;
+                send_times.note(started.elapsed());
+                match result {
                     Ok(()) => {
                         self.sent.fetch_add(1, Ordering::Relaxed);
                         streak = 0;
@@ -182,10 +189,14 @@ impl PeerLink {
         }
     }
 
-    fn log_stats(&self, peer: &str, s: &RouteStats) {
+    fn log_stats(&self, peer: &str, s: &RouteStats, send_times: &mut SendTimes) {
         let (sent, failed) = self.send_counts();
+        let (send_p50_ms, send_p95_ms, send_max_ms) = send_times.take();
         tracing::info!(
             peer = %peer,
+            send_p50_ms,
+            send_p95_ms,
+            send_max_ms,
             estimate_kbps = s.estimate_bps / 1_000,
             overusing = s.overusing,
             video_queue_ms = s.video_queue_ms,
@@ -196,6 +207,35 @@ impl PeerLink {
             "media route"
         );
     }
+}
+
+/// Send hand-off times over one stats window, in microseconds.
+#[derive(Default)]
+struct SendTimes(Vec<u64>);
+
+impl SendTimes {
+    fn note(&mut self, took: Duration) {
+        self.0
+            .push(u64::try_from(took.as_micros()).unwrap_or(u64::MAX));
+    }
+
+    /// Median, 95th percentile and maximum, ms, and start a new window.
+    fn take(&mut self) -> (f64, f64, f64) {
+        let mut v = std::mem::take(&mut self.0);
+        if v.is_empty() {
+            return (0.0, 0.0, 0.0);
+        }
+        v.sort_unstable();
+        let at = |pct: usize| {
+            let rank = (v.len() * pct).div_ceil(100).max(1) - 1;
+            ms(v[rank.min(v.len() - 1)])
+        };
+        (at(50), at(95), ms(v[v.len() - 1]))
+    }
+}
+
+fn ms(us: u64) -> f64 {
+    f64::from(u32::try_from(us).unwrap_or(u32::MAX)) / 1_000.0
 }
 
 fn log_failure(peer: &str, streak: u64, error: &VoiceError) {

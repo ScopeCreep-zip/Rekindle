@@ -319,7 +319,7 @@ impl ProbeControl {
         }
 
         // ALR periodic probing
-        if self.in_alr() {
+        if self.config.periodic_alr_probing && self.in_alr() {
             if self.scheduled_periodic_alr.is_none() {
                 self.scheduled_periodic_alr = Some(now + MIN_TIME_BETWEEN_ALR_PROBES);
             }
@@ -400,6 +400,14 @@ struct Config {
 
     // Gating / limits
     loss_limited_probe_scale: f64, // 1.5
+
+    /// Periodic probes while application-limited. Off, as in libwebrtc,
+    /// where `RateControlSettings::alr_probing` defaults to false and only
+    /// screenshare field trials turn it on
+    /// (`rtc_base/experiments/rate_control_settings.h`). str0m always
+    /// probes; on a Veilid route each probe overshot the sustainable rate
+    /// and the call oscillated (plan E4.3.3).
+    periodic_alr_probing: bool,
 }
 
 impl Default for Config {
@@ -419,6 +427,8 @@ impl Default for Config {
             min_probe_delta: Duration::from_millis(2),
 
             loss_limited_probe_scale: 1.5,
+
+            periodic_alr_probing: false,
         }
     }
 }

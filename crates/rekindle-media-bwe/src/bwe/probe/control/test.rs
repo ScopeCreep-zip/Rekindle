@@ -243,8 +243,20 @@ fn allocation_probe_requires_desired_increase_in_alr() {
 }
 
 #[test]
+fn no_periodic_alr_probing_by_default() {
+    let mut pc = ProbeControl::new();
+    assert!(!pc.config.periodic_alr_probing);
+    pc.enable(true);
+    let now = Instant::now();
+    pc.set_alr_start_time(now);
+    let later = now + Duration::from_secs(30);
+    assert!(!pc.maybe_periodic_alr(later, Bitrate::mbps(2)));
+}
+
+#[test]
 fn periodic_alr_probing() {
     let mut pc = ProbeControl::new();
+    pc.config.periodic_alr_probing = true;
     pc.enable(true);
     let now = Instant::now();
 
@@ -276,6 +288,7 @@ fn periodic_alr_probing() {
 #[test]
 fn periodic_alr_probing_continues_even_when_estimate_reaches_max() {
     let mut pc = ProbeControl::new();
+    pc.config.periodic_alr_probing = true;
     pc.enable(true);
     let now = Instant::now();
 

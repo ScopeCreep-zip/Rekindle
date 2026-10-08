@@ -8,8 +8,8 @@
 //! and always keeps its minimum (libwebrtc's `enforce_min_bitrate`, which
 //! audio streams set); video takes what remains and is paused below its
 //! minimum. A paused video resumes only once the remainder clears its
-//! minimum by libwebrtc's `kToggleFactor` (10 %), so it does not flap at
-//! the edge.
+//! minimum by libwebrtc's hysteresis (10 % of it, at least 20 kbps), so it
+//! does not flap at the edge.
 //!
 //! The estimate is a rate on the wire, transport overhead included. Each
 //! stream's cost on the wire is given by the caller: audio as its encoder
@@ -18,8 +18,11 @@
 
 use crate::Bitrate;
 
-/// libwebrtc `bitrate_allocator.cc` `kToggleFactor`.
+/// libwebrtc `bitrate_allocator.cc` `kToggleFactor` and
+/// `kMinToggleBitrateBps`: a paused stream resumes at its minimum plus the
+/// larger of the two (`MinBitrateWithHysteresis`).
 const TOGGLE_FACTOR: f64 = 0.1;
+const MIN_TOGGLE_BPS: f64 = 20_000.0;
 
 /// An encoder's range.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,7 +78,7 @@ pub fn split(
     let needed = if video_was_allowed {
         min
     } else {
-        min * (1.0 + TOGGLE_FACTOR)
+        min + (min * TOGGLE_FACTOR).max(MIN_TOGGLE_BPS)
     };
     let video_rate = (room >= needed).then(|| Bitrate::from(room.min(video.range.max.as_f64())));
 
@@ -150,10 +153,11 @@ mod tests {
 
     #[test]
     fn paused_video_resumes_only_past_the_toggle_margin() {
-        // 210 kbps of wire → 105 kbps of video: enough to keep, not resume.
+        // 210 kbps of wire → 105 kbps of video: enough to keep, not resume
+        // (resuming needs 100 + max(10, 20) = 120 kbps).
         assert!(at(784_000 + 210_000, true).video.is_some());
-        assert!(at(784_000 + 210_000, false).video.is_none());
-        assert!(at(784_000 + 230_000, false).video.is_some());
+        assert!(at(784_000 + 230_000, false).video.is_none());
+        assert!(at(784_000 + 240_000, false).video.is_some());
     }
 
     #[test]

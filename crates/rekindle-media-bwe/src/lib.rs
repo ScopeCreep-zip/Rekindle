@@ -5,7 +5,9 @@
 //! supporting types those modules import from elsewhere in str0m. The changes
 //! are mechanical: paths, visibility, the RTP-stack identity of a queue
 //! (`MidRid` → [`QueueId`]) and lint-driven rewrites that keep behaviour. The
-//! algorithms, constants and unit tests are str0m's (ADR 0015, plan E4.3.3).
+//! algorithms, constants and unit tests are str0m's (ADR 0015, plan E4.3.3),
+//! with one behavioral difference: periodic probing while application-limited
+//! is off by default, as in libwebrtc (`ProbeControl` `periodic_alr_probing`).
 //!
 //! - [`Bwe`]: the estimator (trendline delay detector, loss controller,
 //!   acked-bitrate estimator, probe controller and estimator, ALR detector,

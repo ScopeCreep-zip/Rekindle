@@ -125,6 +125,10 @@ impl ProbeControl {
     }
 
     pub(super) fn maybe_periodic_alr(&mut self, now: Instant, desired: Bitrate) -> bool {
+        if !self.config.periodic_alr_probing {
+            return false;
+        }
+
         // Don't interfere with initial probing phase.
         if self.is_during_initial(now) {
             return false;
