@@ -22,7 +22,7 @@ rand = "0.8"
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }

@@ -14,7 +14,7 @@ blake3 = "1"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hkdf = "0.12"
 rekindle-types = { path = "../rekindle-types" }
-sha2 = "0.10"
+sha2 = "0.11"
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 # RFC 9180 HPKE for MEK wrapping v2 — the same crate veilid-core uses
 # (already in the dependency graph transitively). X25519-DHKEM +
