@@ -13,7 +13,7 @@ workspace = true
 aes-gcm = "0.10"
 blake3 = "1"
 chacha20poly1305 = "0.10"
-ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
+ed25519-dalek = { version = "3", features = [ "rand_core", "zeroize" ] }
 hex = "0.4"
 hkdf = "0.12"
 parking_lot = "0.12"

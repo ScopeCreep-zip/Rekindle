@@ -63,7 +63,7 @@ rekindle-voice = { path = "../crates/rekindle-voice" }
 # signaling (operations::calls); subsequent waves migrate more
 # services through transport.
 async-trait = "0.1"
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 futures.workspace = true
 rekindle-transport = { path = "../crates/rekindle-transport" }
 
