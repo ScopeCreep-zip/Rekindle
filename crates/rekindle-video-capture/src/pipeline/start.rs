@@ -98,18 +98,12 @@ impl NativeCaptureSession {
         let fps = i32::try_from(config.fps).unwrap_or(15);
         // Feature-less (bare `video/x-raw` = implicit memory:SystemMemory)
         // — deliberately NOT `video/x-raw(ANY)`, which would re-admit
-        // GLMemory and reintroduce the bug. No width/height/format/fps
-        // pinned: the source keeps its native mode; `videoconvert` +
-        // head_caps (I420) + the per-branch videoscale/videorate normalize.
-        // `image/jpeg` lets MJPEG-only cameras negotiate + decode via
-        // decodebin→jpegdec.
-        src_caps.set_property(
-            "caps",
-            gst::Caps::builder_full()
-                .structure(gst::Structure::builder("video/x-raw").build())
-                .structure(gst::Structure::builder("image/jpeg").build())
-                .build(),
-        );
+        // GLMemory and reintroduce the bug. Bounded by the capture ceiling
+        // (`source_constraints`); the source fixates its own mode within it,
+        // and `videoconvert` + head_caps (I420) + the per-branch
+        // videoscale/videorate normalize. `image/jpeg` lets MJPEG-only
+        // cameras negotiate + decode via decodebin→jpegdec.
+        src_caps.set_property("caps", super::source_constraints());
         head_caps.set_property(
             "caps",
             gst::Caps::builder("video/x-raw")
@@ -316,9 +310,15 @@ impl NativeCaptureSession {
         if let Some(message) = pending_error {
             let _ = error_tx.try_send(message);
         }
+        // What the camera actually delivers, as negotiated on the source pad.
+        let negotiated = src_caps
+            .static_pad("sink")
+            .and_then(|pad| pad.current_caps())
+            .map_or_else(|| "unknown".to_string(), |caps| caps.to_string());
         tracing::info!(
             target: "rekindle_video_capture",
             source = %source_desc,
+            %negotiated,
             width = config.width,
             height = config.height,
             fps = config.fps,

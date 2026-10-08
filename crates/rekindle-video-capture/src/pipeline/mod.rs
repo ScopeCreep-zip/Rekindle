@@ -69,6 +69,44 @@ pub struct PreviewFrame {
     pub jpeg: Vec<u8>,
 }
 
+/// The largest camera mode the source may negotiate. Encode runs at
+/// 854×480@15 (the session's video constraints); a 720p capture is a 1.5×
+/// downscale. Production capturers choose a camera mode near the request
+/// rather than the largest (libwebrtc `GetBestMatchedCapability`, Chromium
+/// and Firefox fitness distance + `activeFormat`); in GStreamer that choice
+/// is expressed as a capsfilter after the live source, through which "the
+/// caps information flow proceeds from the user, through the potential caps
+/// of the source" (gst-docs design/negotiation.md), and the source fixates
+/// among its real modes. Left open, `avfvideosrc` fixates height to the
+/// maximum and `v4l2src` toward 3840×2160, whatever the encode needs.
+const CAPTURE_MAX_WIDTH: i32 = 1280;
+const CAPTURE_MAX_HEIGHT: i32 = 720;
+const CAPTURE_MAX_FPS: i32 = 30;
+
+/// The source capsfilter: raw first, then MJPEG (filter order is preference
+/// order), each bounded by the capture ceiling, with no caps features so
+/// GLMemory modes cannot negotiate (avfvideosrc offers them first; their
+/// buffers do not link to `videoconvert`'s system-memory sink).
+pub(super) fn source_constraints() -> gst::Caps {
+    let bounded = |media: &str| {
+        gst::Structure::builder(media)
+            .field("width", gst::IntRange::new(1, CAPTURE_MAX_WIDTH))
+            .field("height", gst::IntRange::new(1, CAPTURE_MAX_HEIGHT))
+            .field(
+                "framerate",
+                gst::FractionRange::new(
+                    gst::Fraction::new(1, 1),
+                    gst::Fraction::new(CAPTURE_MAX_FPS, 1),
+                ),
+            )
+            .build()
+    };
+    gst::Caps::builder_full()
+        .structure(bounded("video/x-raw"))
+        .structure(bounded("image/jpeg"))
+        .build()
+}
+
 /// Preview self-view dimensions — a small thumbnail; the heavy lifting
 /// (resolution, bitrate) is the encode branch's job.
 const PREVIEW_WIDTH: i32 = 320;

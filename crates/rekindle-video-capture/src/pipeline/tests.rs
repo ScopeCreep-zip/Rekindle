@@ -164,3 +164,73 @@ fn broken_pipeline_reports_unavailable() {
     let err = NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx).unwrap_err();
     assert!(matches!(err, CaptureError::Unavailable(_)), "{err}");
 }
+
+/// The Mac's Dell WB7022 as `gst-device-monitor-1.0 Video/Source` lists it
+/// (avfvideosrc device caps, 2026-10-08).
+const DELL_WB7022: &str = "video/x-raw(memory:GLMemory), width=1920, height=1080, format={ (string)UYVY, (string)YUY2 }, framerate={ (fraction)30/1, (fraction)60/1, (fraction)5/1 }, texture-target=rectangle; video/x-raw(memory:GLMemory), width=1280, height=720, format={ (string)UYVY, (string)YUY2 }, framerate={ (fraction)30/1, (fraction)60/1, (fraction)10/1 }, texture-target=rectangle; video/x-raw(memory:GLMemory), width=640, height={ (int)360, (int)480 }, format={ (string)UYVY, (string)YUY2 }, framerate=30/1, texture-target=rectangle; video/x-raw, width=1920, height=1080, format={ (string)UYVY, (string)YUY2, (string)NV12, (string)ARGB, (string)BGRA }, framerate={ (fraction)30/1, (fraction)60/1, (fraction)5/1 }; video/x-raw, width=1280, height=720, format={ (string)UYVY, (string)YUY2, (string)NV12, (string)ARGB, (string)BGRA }, framerate={ (fraction)30/1, (fraction)60/1, (fraction)10/1 }; video/x-raw, width=640, height={ (int)360, (int)480 }, format={ (string)UYVY, (string)YUY2, (string)NV12, (string)ARGB, (string)BGRA }, framerate=30/1";
+
+/// The Linux laptop's Integrated_Webcam_HD (v4l2 device caps, 2026-10-08).
+const INTEGRATED_WEBCAM_HD: &str = "video/x-raw, format=YUY2, width=1280, height=720, pixel-aspect-ratio=1/1, framerate=10/1; video/x-raw, format=YUY2, width=640, height=480, pixel-aspect-ratio=1/1, framerate=30/1; video/x-raw, format=YUY2, width=640, height=360, pixel-aspect-ratio=1/1, framerate=30/1; video/x-raw, format=YUY2, width=424, height=240, pixel-aspect-ratio=1/1, framerate=30/1; video/x-raw, format=YUY2, width=320, height=240, pixel-aspect-ratio=1/1, framerate=30/1; video/x-raw, format=YUY2, width=320, height=180, pixel-aspect-ratio=1/1, framerate=30/1; video/x-raw, format=YUY2, width=160, height=120, pixel-aspect-ratio=1/1, framerate=30/1; image/jpeg, parsed=true, width=1280, height=720, pixel-aspect-ratio=1/1, framerate=30/1; image/jpeg, parsed=true, width=960, height=540, pixel-aspect-ratio=1/1, framerate=30/1; image/jpeg, parsed=true, width=848, height=480, pixel-aspect-ratio=1/1, framerate=30/1; image/jpeg, parsed=true, width=640, height=480, pixel-aspect-ratio=1/1, framerate=30/1; image/jpeg, parsed=true, width=640, height=360, pixel-aspect-ratio=1/1, framerate=30/1";
+
+/// avfvideosrc's `fixate` (avfvideosrc.m 1.28.6): truncate to the first
+/// structure, height to the maximum, framerate nearest 30, then fixate the
+/// rest.
+fn avf_fixate(caps: gst::Caps) -> gst::Caps {
+    let mut caps = caps;
+    caps.truncate();
+    {
+        let s = caps.make_mut().structure_mut(0).unwrap();
+        s.fixate_field_nearest_int("height", i32::MAX);
+        s.fixate_field_nearest_fraction("framerate", gst::Fraction::new(30, 1));
+    }
+    caps.fixate();
+    caps
+}
+
+#[test]
+fn constraints_land_the_dell_on_a_mode_it_supports() {
+    if gst::init().is_err() {
+        eprintln!("skip: GStreamer unavailable");
+        return;
+    }
+    let device: gst::Caps = DELL_WB7022.parse().unwrap();
+    let constraints = super::source_constraints();
+    // Either intersection order (source first, or filter first) must give
+    // a valid mode.
+    for allowed in [
+        device.intersect_with_mode(&constraints, gst::CapsIntersectMode::First),
+        constraints.intersect_with_mode(&device, gst::CapsIntersectMode::First),
+    ] {
+        assert!(!allowed.is_empty());
+        let fixed = avf_fixate(allowed);
+        let s = fixed.structure(0).unwrap();
+        assert!(!fixed.features(0).unwrap().is_any());
+        assert_eq!(s.get::<i32>("width").unwrap(), 1280);
+        assert_eq!(s.get::<i32>("height").unwrap(), 720);
+        assert_eq!(
+            s.get::<gst::Fraction>("framerate").unwrap(),
+            gst::Fraction::new(30, 1),
+            "a rate the device lists for 720p"
+        );
+        assert!(
+            device.can_intersect(&fixed),
+            "the fixed caps are one of the device's own modes: {fixed}"
+        );
+    }
+}
+
+#[test]
+fn constraints_leave_the_linux_webcam_modes_unchanged() {
+    if gst::init().is_err() {
+        eprintln!("skip: GStreamer unavailable");
+        return;
+    }
+    let device: gst::Caps = INTEGRATED_WEBCAM_HD.parse().unwrap();
+    let allowed =
+        device.intersect_with_mode(&super::source_constraints(), gst::CapsIntersectMode::First);
+    assert_eq!(
+        allowed.size(),
+        device.size(),
+        "a 720p camera keeps every mode: v4l2src chooses as before"
+    );
+}
