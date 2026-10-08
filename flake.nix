@@ -7,37 +7,56 @@
     flake-utils.follows = "konductor/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, konductor, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      konductor,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs { inherit system; };
 
-        rekindlePackages = with pkgs; [
-          capnproto
-          protobuf
-          cmake
-          gnuplot
-          nasm
-          libsodium.dev
-        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-          linuxPackages.perf
-          alsa-lib.dev
-          libopus.dev
-          libseccomp.dev
-          dbus.dev
-        ];
+        rekindlePackages =
+          with pkgs;
+          [
+            capnproto
+            protobuf
+            cmake
+            gnuplot
+            nasm
+            libsodium.dev
+          ]
+          ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+            # User-mode CPU emulation for rekindle-hash's ISA matrix
+            # (crates/rekindle-hash/scripts/isa-matrix.sh).
+            qemu-user
+            linuxPackages.perf
+            alsa-lib.dev
+            libopus.dev
+            libseccomp.dev
+            dbus.dev
+          ];
 
         # Runtime library path for Nix-provided shared libs on Linux.
-        rekindleLibPath = pkgs.lib.optionalString pkgs.stdenv.isLinux
-          (pkgs.lib.makeLibraryPath (with pkgs; [
-            libsodium
-            libopus
-            libseccomp
-            alsa-lib
-            dbus
-          ]));
+        rekindleLibPath = pkgs.lib.optionalString pkgs.stdenv.isLinux (
+          pkgs.lib.makeLibraryPath (
+            with pkgs;
+            [
+              libsodium
+              libopus
+              libseccomp
+              alsa-lib
+              dbus
+            ]
+          )
+        );
 
-      in {
+      in
+      {
         devShells.default = pkgs.mkShell {
           name = "rekindle";
           packages = rekindlePackages;
