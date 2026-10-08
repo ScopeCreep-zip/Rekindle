@@ -426,7 +426,11 @@ pub async fn start(
                             pump_state.native_video.active.lock().take();
                             break;
                         };
-                        frame_seq = frame_seq.wrapping_add(1);
+                        // The frame sequence numbers only frames the egress
+                        // took (media-ready gate passed): a frame dropped
+                        // before any route never reaches a peer, so it must
+                        // not look like loss in their post-FEC count.
+                        let next_seq = frame_seq.wrapping_add(1);
                         // Wire timestamp = capture time on the wall clock, ms mod
                         // 2^32 (the field is u32), as the webview sender
                         // stamps it: receivers difference it for jitter and
@@ -440,19 +444,22 @@ pub async fn start(
                         // direct getUserMedia preview in the webview
                         // (PipeWire shares the camera), never a decode
                         // round-trip.
-                        let _ = crate::services::community_video_runtime::send_encoded_video_frame(
+                        let sent = crate::services::community_video_runtime::send_encoded_video_frame(
                             &pump_state,
                             &pump_community,
                             &pump_channel,
                             &crate::services::community::video::VideoFrameSend {
                                 stream_id,
-                                frame_seq,
+                                frame_seq: next_seq,
                                 keyframe: frame.keyframe,
                                 codec: rekindle_types::video::Codec::Vp9,
                                 timestamp: wire_ts,
                                 encoded_payload: frame.payload,
                             },
                         );
+                        if sent.is_ok() {
+                            frame_seq = next_seq;
+                        }
                     }
                 }
             }

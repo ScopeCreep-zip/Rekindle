@@ -17,6 +17,16 @@
 //! number itself. A sequence number keeps its first arrival, so a replay
 //! under the same number cannot move it.
 //!
+//! Arrivals are kept after they are reported, for [`BACK_WINDOW`], as
+//! libwebrtc's feedback generator keeps them
+//! (`transport_sequence_number_feedback_generator.cc`): a packet that
+//! arrives after a report already called it lost moves the next report's
+//! start back to it, so it is reported received (RFC 8888 §3 overlapping
+//! reports). Veilid's RPC workers deliver out of order and release bursts;
+//! clearing at each report turned every such late arrival into permanent
+//! loss (call 1: 6.5 % feedback loss against 0 % voice loss,
+//! `evidence/e4-3-transport-on-veilid.md`).
+//!
 //! Every kind is recorded on the dispatch thread, before any queue, as
 //! libwebrtc hands each packet's arrival to feedback before delivering it
 //! to a stream (`call/call.cc` `NotifyBweOfReceivedPacket`): an arrival
@@ -24,7 +34,7 @@
 //! its sequence number lost.
 
 use std::collections::{BTreeMap, HashMap};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
@@ -36,19 +46,95 @@ use rekindle_codec::capnp_codec::transport_feedback::{MAX_ARRIVAL_OFFSET, NOT_RE
 /// newest packets: the estimator needs recent arrivals, not a backlog.
 pub const MAX_REPORT_SPAN: u32 = 1_000;
 
-/// One peer's arrivals since its last report.
+/// How long an arrival is kept after newer ones, so a late packet can still
+/// be reported: libwebrtc's `kBackWindow`.
+pub const BACK_WINDOW: Duration = Duration::from_millis(500);
+
+/// One peer's recent arrivals.
 #[derive(Debug, Default)]
 struct PeerArrivals {
+    /// The newest sequence number unwrapped so far: sequence numbers are
+    /// kept as `i64` so ordering survives the u32 wrap (libwebrtc's
+    /// `SeqNumUnwrapper`).
+    last_unwrapped: Option<i64>,
     /// First sequence number the next report covers.
-    next_report_seq: Option<u32>,
-    /// Arrivals not yet reported, keyed by sequence number relative to
-    /// `next_report_seq` (so ordering survives the u32 wrap).
-    pending: BTreeMap<u32, Instant>,
+    window_start: Option<i64>,
+    /// Arrivals within [`BACK_WINDOW`] of the newest, reported or not.
+    arrivals: BTreeMap<i64, Instant>,
+    /// Whether anything arrived since the last report.
+    unreported: bool,
     /// Voice sequence numbers already counted (RFC 3711 §3.3.2 window).
     voice_seen: CtrWindow,
     /// Envelope signatures already counted, oldest first (bounded).
     signed_seen: std::collections::VecDeque<[u8; 16]>,
     signed_set: std::collections::HashSet<[u8; 16]>,
+}
+
+impl PeerArrivals {
+    fn unwrap(&mut self, seq: u32) -> i64 {
+        let unwrapped = match self.last_unwrapped {
+            None => i64::from(seq),
+            Some(last) => {
+                let low = u32::try_from(last & i64::from(u32::MAX)).unwrap_or_default();
+                // The signed distance from the last one: a u32 delta read
+                // as i32 (libwebrtc's unwrapper).
+                last + i64::from(seq.wrapping_sub(low).cast_signed())
+            }
+        };
+        self.last_unwrapped = Some(self.last_unwrapped.map_or(unwrapped, |l| l.max(unwrapped)));
+        unwrapped
+    }
+
+    fn record(&mut self, transport_seq: u32, at: Instant) {
+        let seq = self.unwrap(transport_seq);
+        // A sequence number keeps its first arrival; a duplicate changes
+        // nothing and asks for no report.
+        if self.arrivals.contains_key(&seq) {
+            return;
+        }
+        // Drop arrivals older than the back window behind this one
+        // (`MaybeCullOldPackets`).
+        if let Some(cutoff) = at.checked_sub(BACK_WINDOW) {
+            self.arrivals.retain(|_, t| *t >= cutoff);
+        }
+        // A late packet moves the next report back to include it.
+        self.window_start = Some(self.window_start.map_or(seq, |w| w.min(seq)));
+        self.arrivals.insert(seq, at);
+        if let Some((&oldest, _)) = self.arrivals.first_key_value() {
+            if self.window_start.is_some_and(|w| w < oldest) {
+                self.window_start = Some(oldest);
+            }
+        }
+        self.unreported = true;
+    }
+
+    fn take_report(&mut self, now: Instant) -> Option<ReportBody> {
+        if !self.unreported {
+            return None;
+        }
+        let (&newest, _) = self.arrivals.last_key_value()?;
+        let start = self
+            .window_start?
+            .max(newest + 1 - i64::from(MAX_REPORT_SPAN));
+        let arrivals = (start..=newest)
+            .map(|seq| {
+                self.arrivals.get(&seq).map_or(NOT_RECEIVED, |at| {
+                    let ticks = now.saturating_duration_since(*at).as_micros() * 1024 / 1_000_000;
+                    u16::try_from(ticks)
+                        .unwrap_or(MAX_ARRIVAL_OFFSET)
+                        .min(MAX_ARRIVAL_OFFSET)
+                })
+            })
+            .collect();
+        // Reported arrivals stay until the back window culls them, in case
+        // a reordering needs them again.
+        self.window_start = Some(newest + 1);
+        self.unreported = false;
+        Some(ReportBody {
+            begin_seq: u32::try_from(start & i64::from(u32::MAX)).unwrap_or_default(),
+            arrivals,
+        })
+    }
 }
 
 /// Envelope signatures remembered per peer for the replay check: well over
@@ -84,14 +170,10 @@ impl ArrivalLedger {
     /// Note that `peer`'s datagram `transport_seq` arrived at `at`.
     pub fn record(&self, peer: &str, transport_seq: u32, at: Instant) {
         let mut peers = self.peers.lock();
-        let entry = peers.entry(peer.to_string()).or_default();
-        let base = *entry.next_report_seq.get_or_insert(transport_seq);
-        let offset = transport_seq.wrapping_sub(base);
-        // Before the window (a late duplicate of something already
-        // reported) is dropped: its loss was already reported.
-        if offset < u32::MAX / 2 {
-            entry.pending.entry(offset).or_insert(at);
-        }
+        peers
+            .entry(peer.to_string())
+            .or_default()
+            .record(transport_seq, at);
     }
 
     /// Note a signed envelope's arrival unless the same signature was
@@ -135,35 +217,13 @@ impl ArrivalLedger {
     }
 
     /// Build `peer`'s report as of `now`: every sequence number from the
-    /// last report through the newest arrival, each received (with its
-    /// offset before `now` in 1/1024 s) or not. `None` when nothing new
-    /// arrived.
+    /// report window's start through the newest arrival, each received
+    /// (with its offset before `now` in 1/1024 s) or not. The window starts
+    /// after the last report, or earlier when a packet arrived late. `None`
+    /// when nothing arrived since the last report.
     pub fn take_report(&self, peer: &str, now: Instant) -> Option<ReportBody> {
         let mut peers = self.peers.lock();
-        let entry = peers.get_mut(peer)?;
-        let base = entry.next_report_seq?;
-        let (&last, _) = entry.pending.last_key_value()?;
-        let (begin_offset, span) = if last >= MAX_REPORT_SPAN {
-            (last + 1 - MAX_REPORT_SPAN, MAX_REPORT_SPAN)
-        } else {
-            (0, last + 1)
-        };
-        let arrivals = (begin_offset..begin_offset + span)
-            .map(|offset| {
-                entry.pending.get(&offset).map_or(NOT_RECEIVED, |at| {
-                    let ticks = now.saturating_duration_since(*at).as_micros() * 1024 / 1_000_000;
-                    u16::try_from(ticks)
-                        .unwrap_or(MAX_ARRIVAL_OFFSET)
-                        .min(MAX_ARRIVAL_OFFSET)
-                })
-            })
-            .collect();
-        entry.next_report_seq = Some(base.wrapping_add(last + 1));
-        entry.pending.clear();
-        Some(ReportBody {
-            begin_seq: base.wrapping_add(begin_offset),
-            arrivals,
-        })
+        peers.get_mut(peer)?.take_report(now)
     }
 
     /// `now` on the report clock, milliseconds.
@@ -178,7 +238,7 @@ impl ArrivalLedger {
         self.peers
             .lock()
             .iter()
-            .filter(|(_, a)| !a.pending.is_empty())
+            .filter(|(_, a)| a.unreported)
             .map(|(k, _)| k.clone())
             .collect()
     }
@@ -265,12 +325,98 @@ mod tests {
     }
 
     #[test]
-    fn late_duplicates_of_reported_packets_are_ignored() {
+    fn duplicates_of_reported_packets_ask_for_nothing() {
+        let ledger = ArrivalLedger::default();
+        let t0 = Instant::now();
+        ledger.record("a", 100, t0);
+        ledger.take_report("a", t0).unwrap();
+        ledger.record("a", 100, t0 + Duration::from_millis(5));
+        assert!(ledger.take_report("a", t0).is_none());
+    }
+
+    #[test]
+    fn a_packet_behind_the_first_report_is_reported_late() {
         let ledger = ArrivalLedger::default();
         let t0 = Instant::now();
         ledger.record("a", 100, t0);
         ledger.take_report("a", t0).unwrap();
         ledger.record("a", 99, t0);
-        assert!(ledger.take_report("a", t0).is_none());
+        let report = ledger.take_report("a", t0).unwrap();
+        assert_eq!(report.begin_seq, 99);
+        assert_ne!(report.arrivals[0], NOT_RECEIVED);
+    }
+
+    #[test]
+    fn a_late_packet_is_reported_received_after_all() {
+        let ledger = ArrivalLedger::default();
+        let t0 = Instant::now();
+        ledger.record("a", 10, t0);
+        ledger.record("a", 12, t0 + Duration::from_millis(20));
+        let first = ledger
+            .take_report("a", t0 + Duration::from_millis(50))
+            .unwrap();
+        assert_eq!(first.arrivals[1], NOT_RECEIVED, "11 had not arrived");
+        // 11 arrives late, after the report that called it lost.
+        ledger.record("a", 11, t0 + Duration::from_millis(100));
+        ledger.record("a", 13, t0 + Duration::from_millis(110));
+        let second = ledger
+            .take_report("a", t0 + Duration::from_millis(120))
+            .unwrap();
+        assert_eq!(
+            second.begin_seq, 11,
+            "the window moved back to the late packet"
+        );
+        assert_eq!(second.arrivals.len(), 3);
+        assert_ne!(second.arrivals[0], NOT_RECEIVED, "11 reported received");
+    }
+
+    #[test]
+    fn reordering_inside_the_back_window_loses_nothing() {
+        let ledger = ArrivalLedger::default();
+        let t0 = Instant::now();
+        let mut lost = 0;
+        // Arrivals in bursts, each burst reversed, a report between bursts.
+        for burst in 0..10_u32 {
+            let at = t0 + Duration::from_millis(u64::from(burst) * 40);
+            for seq in (burst * 4..burst * 4 + 4).rev() {
+                if seq % 4 != 0 || burst == 0 {
+                    ledger.record("a", seq, at);
+                }
+            }
+            // The first of each burst arrives after the report.
+            let report = ledger
+                .take_report("a", at + Duration::from_millis(1))
+                .unwrap();
+            if burst > 0 {
+                ledger.record("a", burst * 4, at + Duration::from_millis(2));
+            }
+            lost += report
+                .arrivals
+                .iter()
+                .filter(|a| **a == NOT_RECEIVED)
+                .count();
+        }
+        let last = ledger
+            .take_report("a", t0 + Duration::from_secs(1))
+            .unwrap();
+        assert!(last.arrivals.iter().all(|a| *a != NOT_RECEIVED));
+        assert!(lost > 0, "reports did call them lost at the time");
+    }
+
+    #[test]
+    fn an_arrival_older_than_the_back_window_is_gone() {
+        let ledger = ArrivalLedger::default();
+        let t0 = Instant::now();
+        ledger.record("a", 1, t0);
+        ledger.take_report("a", t0).unwrap();
+        ledger.record("a", 3, t0 + BACK_WINDOW + Duration::from_millis(100));
+        let report = ledger
+            .take_report("a", t0 + BACK_WINDOW + Duration::from_millis(100))
+            .unwrap();
+        assert_eq!(
+            report.begin_seq, 3,
+            "1 was culled; the window starts at what is kept"
+        );
+        assert_eq!(report.arrivals.len(), 1);
     }
 }
