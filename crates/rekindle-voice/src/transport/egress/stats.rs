@@ -21,6 +21,8 @@ pub struct RouteStats {
     /// diagnostics): acked rate, delay and loss estimates, loss state,
     /// RTT backoff cuts and probes applied.
     pub bwe: rekindle_media_bwe::BweDiagnostics,
+    /// Voice frames per message (plan E4.3 T3).
+    pub voice_frames: usize,
 }
 
 impl RouteController {
@@ -41,6 +43,7 @@ impl RouteController {
             dropped_video: self.dropped_video,
             sent: self.next_seq,
             bwe: self.bwe.diagnostics(),
+            voice_frames: self.voice_frames(),
         }
     }
 }

@@ -301,7 +301,11 @@ impl VoiceTransport {
             peer = %pseudonym_key,
             "added voice peer"
         );
-        let link = PeerLink::new(route_blob, self.media.padding_key());
+        let link = PeerLink::new(
+            route_blob,
+            self.media.padding_key(),
+            std::sync::Arc::clone(self.media.feedback_stats()),
+        );
         self.spawn_driver(pseudonym_key, &link);
         self.media.insert(pseudonym_key, Arc::clone(&link));
         self.peers.insert(

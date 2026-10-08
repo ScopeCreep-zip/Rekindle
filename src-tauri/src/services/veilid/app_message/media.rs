@@ -22,6 +22,30 @@ pub(super) fn handle_media_tag(state: &Arc<AppState>, message: &[u8]) -> bool {
     // Arrival is stamped here, on the dispatch thread, before any queue
     // adds its own delay to what the estimator measures.
     let arrived = std::time::Instant::now();
+    // A bundle (plan E4.3 T3): each datagram inside is handled as if it
+    // had come alone, with the message's arrival. A malformed bundle is
+    // dropped whole; a bundle inside a bundle is not a media datagram.
+    if message.first() == Some(&rekindle_voice::bundle::BUNDLE_TAG) {
+        let Some(datagrams) = rekindle_voice::bundle::decode(message) else {
+            tracing::debug!("malformed media bundle — dropped");
+            return true;
+        };
+        for datagram in datagrams {
+            if datagram.first() != Some(&rekindle_voice::bundle::BUNDLE_TAG) {
+                handle_media_datagram(state, datagram, arrived);
+            }
+        }
+        return true;
+    }
+    handle_media_datagram(state, message, arrived)
+}
+
+/// One media datagram that arrived at `arrived`; `true` if it was one.
+fn handle_media_datagram(
+    state: &Arc<AppState>,
+    message: &[u8],
+    arrived: std::time::Instant,
+) -> bool {
     if let Some((tag, transport_seq, payload)) =
         rekindle_voice::media_frame::split_sequenced(message)
     {

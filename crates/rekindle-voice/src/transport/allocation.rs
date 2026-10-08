@@ -53,6 +53,45 @@ fn opus_bps(bps: i32) -> Bitrate {
     Bitrate::bps(u64::try_from(bps).unwrap_or_default())
 }
 
+/// Voice frames (20 ms each) per message the batching may choose: 20, 40,
+/// 60 or 120 ms, libwebrtc's Opus frame lengths with 120 ms support
+/// (`audio_encoder_opus.cc`).
+pub const VOICE_FRAMES_PER_MESSAGE: [usize; 4] = [1, 2, 3, 6];
+
+/// The audio payload that must remain once message overhead is paid
+/// (libwebrtc `AdaptivePtimeConfig::min_payload_bitrate`, 16 kbps).
+const MIN_AUDIO_PAYLOAD_BPS: f64 = 16_000.0;
+
+/// How many 20 ms voice frames go in one message on a route: libwebrtc's
+/// `FrameLengthControllerV2` rule (`frame_length_controller_v2.cc:59-71`),
+/// the shortest frame length whose per-message overhead still leaves
+/// [`MIN_AUDIO_PAYLOAD_BPS`] of the bandwidth audio has, or the longest
+/// when none does. 3GPP calls it frame aggregation, the step after a
+/// lower codec rate (TS 26.114 Annex C).
+///
+/// The bandwidth audio has is the route estimate less what video's minimum
+/// costs on the wire (`use_slow_adaptation`: libwebrtc then compares the
+/// uplink bandwidth). `overhead_bytes` is what one message costs beyond its
+/// payload (Veilid's route plus our framing).
+#[must_use]
+pub fn voice_frames_per_message(
+    estimate: Bitrate,
+    video_share: Option<f64>,
+    overhead_bytes: f64,
+) -> usize {
+    let video_min_on_wire =
+        f64::from(VIDEO_MIN_BPS) / video_share.unwrap_or(VIDEO_START_SHARE).max(0.01);
+    let audio_budget = estimate.as_f64() - video_min_on_wire;
+    VOICE_FRAMES_PER_MESSAGE
+        .iter()
+        .copied()
+        .find(|&n| {
+            let message_ms = 20.0 * f64::from(u32::try_from(n).unwrap_or(1));
+            audio_budget - overhead_bytes * 8.0 * 1_000.0 / message_ms > MIN_AUDIO_PAYLOAD_BPS
+        })
+        .unwrap_or(VOICE_FRAMES_PER_MESSAGE[VOICE_FRAMES_PER_MESSAGE.len() - 1])
+}
+
 /// Split `estimate` for one route, given what it measured of each media
 /// kind's cost.
 #[must_use]
@@ -199,6 +238,35 @@ mod tests {
         assert_eq!(a.estimate_bps, 1_184_000);
         let starved = allocate(Bitrate::kbps(300), share, true);
         assert_eq!((starved.audio_bps, starved.video_bps), (24_000, 100_000));
+    }
+
+    #[test]
+    fn voice_batches_grow_as_the_route_narrows() {
+        let h = 1_665.0;
+        // Video's minimum at a 0.57 share costs ~175 kbps on the wire.
+        // 20 ms needs 666 + 16 kbps for audio, 40 ms 333 + 16, 60 ms 222
+        // + 16, 120 ms 111 + 16.
+        assert_eq!(
+            voice_frames_per_message(Bitrate::kbps(1_500), Some(0.57), h),
+            1
+        );
+        assert_eq!(
+            voice_frames_per_message(Bitrate::kbps(600), Some(0.57), h),
+            2
+        );
+        assert_eq!(
+            voice_frames_per_message(Bitrate::kbps(500), Some(0.57), h),
+            3
+        );
+        assert_eq!(
+            voice_frames_per_message(Bitrate::kbps(320), Some(0.57), h),
+            6
+        );
+        assert_eq!(
+            voice_frames_per_message(Bitrate::kbps(100), Some(0.57), h),
+            6,
+            "the longest when none fits"
+        );
     }
 
     #[test]

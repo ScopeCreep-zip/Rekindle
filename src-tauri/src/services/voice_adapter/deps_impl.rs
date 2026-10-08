@@ -65,12 +65,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn send_receiver_report(&self, peer_pubkey_hex: &str, wire: Vec<u8>) {
-        io_helpers::send_receiver_report_impl(
-            &self.state,
-            self.current_shared_transport(),
-            peer_pubkey_hex,
-            wire,
-        );
+        io_helpers::send_receiver_report_impl(&self.state, peer_pubkey_hex, wire);
     }
 
     fn voice_peers(&self, community_id: &str, _channel_id: &str) -> Vec<VoicePeer> {
