@@ -96,7 +96,7 @@ tracing-subscriber = { workspace = true }
 # conflicts with veilid-core 0.5.3's sqlite chain). package-renamed so all
 # `tokio_rusqlite::` references compile unchanged.
 argon2 = "0.5"
-base64 = "0.22"
+base64 = "0.23"
 blake2 = "0.10"
 blake3 = "1"
 hex = "0.4"

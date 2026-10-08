@@ -9,7 +9,7 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 blake2 = "0.10"
 capnp = { workspace = true }
 ed25519-dalek = { version = "2", features = [ "rand_core" ] }

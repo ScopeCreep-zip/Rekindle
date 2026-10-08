@@ -15,7 +15,7 @@ rekindle-types = { path = "../rekindle-types" }
 # represents a real member — so slot reclamation and presence polling
 # cannot drift on what "occupied" means.
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 blake3 = "1"
 futures = { workspace = true }
 hex = { workspace = true }

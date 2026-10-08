@@ -13,7 +13,7 @@ workspace = true
 
 [dependencies]
 axum = "0.8"
-base64 = "0.22"
+base64 = "0.23"
 rekindle-db = { path = "../rekindle-db" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
 rekindle_lib = { package = "rekindle-desktop", path = "../../src-tauri" }
