@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
+use gstreamer_video as gst_video;
 
 use crate::device::create_source;
 use crate::error::CaptureError;
@@ -191,6 +192,8 @@ impl NativeCaptureSession {
             }
         });
 
+        guard_frame_geometry(&src_caps);
+
         // Success is judged on the ENCODE branch's first sample — peers
         // are the priority; the preview branch is best-effort.
         let first_sample = Arc::new(AtomicBool::new(false));
@@ -366,4 +369,56 @@ impl NativeCaptureSession {
             source_desc,
         })
     }
+}
+
+/// Fail the session when the camera delivers frames of a different size
+/// than the caps it negotiated. A capture device is shared: on macOS
+/// another client of the same `AVCaptureDevice` (WebKit's getUserMedia,
+/// another app) can set its `activeFormat`, and `avfvideosrc` keeps its
+/// negotiated caps while its buffers' `GstVideoMeta` carries the new size,
+/// so every downstream map fails (`info->width <= meta->width`) and no
+/// frame reaches the encoder. Chromium reads each sample's dimensions
+/// instead; a GStreamer pipeline would have to renegotiate, which
+/// `avfvideosrc` does not do. The first mismatched buffer is dropped and
+/// posted as a stream error, which ends the session through the bus
+/// (`map_bus_error` prefixes the source).
+pub(super) fn guard_frame_geometry(src_caps: &gst::Element) {
+    let Some(pad) = src_caps.static_pad("src") else {
+        return;
+    };
+    let element = src_caps.downgrade();
+    let reported = AtomicBool::new(false);
+    pad.add_probe(gst::PadProbeType::BUFFER, move |pad, info| {
+        let Some(buffer) = info.buffer() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Some(meta) = buffer.meta::<gst_video::VideoMeta>() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Some(negotiated) = pad
+            .current_caps()
+            .and_then(|caps| gst_video::VideoInfo::from_caps(&caps).ok())
+        else {
+            return gst::PadProbeReturn::Ok;
+        };
+        if meta.width() == negotiated.width() && meta.height() == negotiated.height() {
+            return gst::PadProbeReturn::Ok;
+        }
+        if !reported.swap(true, Ordering::AcqRel) {
+            if let Some(element) = element.upgrade() {
+                gst::element_error!(
+                    element,
+                    gst::StreamError::Format,
+                    (
+                        "camera format changed under the session ({}x{} delivered, {}x{} negotiated); another application may be using the camera",
+                        meta.width(),
+                        meta.height(),
+                        negotiated.width(),
+                        negotiated.height()
+                    )
+                );
+            }
+        }
+        gst::PadProbeReturn::Drop
+    });
 }

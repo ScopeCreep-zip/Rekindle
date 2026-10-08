@@ -269,6 +269,9 @@ export const syncCommands = {
       deviceLabel,
     }),
   stopNativeVideo: () => invoke<void>("stop_native_video"),
+  /** Save the camera choice; a running native camera moves to it. */
+  setVideoDevice: (deviceId: string | null, deviceLabel: string | null) =>
+    invoke<void>("set_video_device", { deviceId, deviceLabel }),
   forceNativeKeyframes: () => invoke<void>("force_native_keyframes"),
   /**
    * Architecture §10.6 Phase 6 Week 22 — broadcast that the active

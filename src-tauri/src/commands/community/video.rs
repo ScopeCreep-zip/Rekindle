@@ -93,6 +93,24 @@ pub async fn stop_native_video(state: State<'_, SharedState>) -> Result<(), Stri
     Ok(())
 }
 
+/// Save the camera choice and, mid-call, move the running native camera
+/// to it, as `set_audio_devices` hot-swaps audio.
+#[tauri::command]
+pub async fn set_video_device(
+    device_id: Option<String>,
+    device_label: Option<String>,
+    state: State<'_, SharedState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::services::native_video::persist_video_device_prefs(
+        &app,
+        device_id,
+        device_label.clone(),
+    )?;
+    crate::services::native_video::switch_device(state.inner(), device_label);
+    Ok(())
+}
+
 /// FIR semantics for the native path — `voicePeerConfirmed` forces a
 /// keyframe so a joiner's tile lights immediately.
 #[tauri::command]

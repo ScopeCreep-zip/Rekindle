@@ -40,6 +40,7 @@
     "allow-set-preferences",
     "allow-set-quiet-hours",
     "allow-set-status-message",
+    "allow-set-video-device",
     "allow-start-pairing-session",
     "allow-unblock-user",
     "allow-unregister-with-push-relay",

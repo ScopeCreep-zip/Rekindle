@@ -234,3 +234,76 @@ fn constraints_leave_the_linux_webcam_modes_unchanged() {
         "a 720p camera keeps every mode: v4l2src chooses as before"
     );
 }
+
+/// A buffer whose video meta disagrees with the negotiated caps (what
+/// `avfvideosrc` delivers after another client changes the camera's
+/// format) is dropped and ends the session with a stream error.
+#[test]
+fn frame_geometry_change_is_a_stream_error() {
+    use gstreamer_app as gst_app;
+    if gst::init().is_err() {
+        eprintln!("skip: GStreamer unavailable");
+        return;
+    }
+    let pipeline = gst::Pipeline::new();
+    let src = gst_app::AppSrc::builder()
+        .caps(
+            &gst_video::VideoInfo::builder(gst_video::VideoFormat::I420, 64, 48)
+                .build()
+                .unwrap()
+                .to_caps()
+                .unwrap(),
+        )
+        .format(gst::Format::Time)
+        .build();
+    let filter = gst::ElementFactory::make("capsfilter").build().unwrap();
+    let sink = gst_app::AppSink::builder().sync(false).build();
+    pipeline
+        .add_many([src.upcast_ref(), &filter, sink.upcast_ref()])
+        .unwrap();
+    gst::Element::link_many([src.upcast_ref(), &filter, sink.upcast_ref()]).unwrap();
+    super::start::guard_frame_geometry(&filter);
+    pipeline.set_state(gst::State::Playing).unwrap();
+
+    let frame = |width: u32, height: u32| {
+        let info = gst_video::VideoInfo::builder(gst_video::VideoFormat::I420, width, height)
+            .build()
+            .unwrap();
+        let mut buffer = gst::Buffer::with_size(info.size()).unwrap();
+        gst_video::VideoMeta::add(
+            buffer.get_mut().unwrap(),
+            gst_video::VideoFrameFlags::empty(),
+            gst_video::VideoFormat::I420,
+            width,
+            height,
+        )
+        .unwrap();
+        buffer
+    };
+    src.push_buffer(frame(64, 48)).unwrap();
+    assert!(
+        sink.try_pull_sample(gst::ClockTime::from_seconds(2))
+            .is_some(),
+        "a frame of the negotiated size passes"
+    );
+    let _ = src.push_buffer(frame(32, 24));
+    let bus = pipeline.bus().unwrap();
+    let msg = bus
+        .timed_pop_filtered(gst::ClockTime::from_seconds(2), &[gst::MessageType::Error])
+        .expect("a stream error on the bus");
+    let gst::MessageView::Error(err) = msg.view() else {
+        unreachable!()
+    };
+    assert!(
+        err.error()
+            .to_string()
+            .contains("32x24 delivered, 64x48 negotiated"),
+        "{err:?}"
+    );
+    assert!(
+        sink.try_pull_sample(gst::ClockTime::from_mseconds(200))
+            .is_none(),
+        "the mismatched frame never reaches the branches"
+    );
+    pipeline.set_state(gst::State::Null).unwrap();
+}

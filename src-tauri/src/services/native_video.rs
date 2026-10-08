@@ -55,6 +55,8 @@ enum Control {
     ForceKeyframe,
     /// The allocator's encoder target, kbps (plan E4.3.3).
     Bitrate(u32),
+    /// The user chose another camera (`None` = the first device).
+    SwitchDevice(Option<String>),
 }
 
 struct ActiveSession {
@@ -141,6 +143,88 @@ pub fn set_target_kbps(state: &AppState, kbps: u32) {
     }
 }
 
+/// Move the running camera session to `device_label` (the user chose
+/// another camera mid-call). The capture is reopened under the same stream
+/// id and frame sequence, the way `RTCRtpSender.replaceTrack` swaps a
+/// sender's source without renegotiation (W3C webrtc-pc §5.2); the new
+/// encoder's first frame is a keyframe. No-op when no session runs: the
+/// next start reads the saved choice.
+pub fn switch_device(state: &AppState, device_label: Option<String>) {
+    if let Some(session) = state.native_video.active.lock().as_ref() {
+        let _ = session
+            .control_tx
+            .try_send(Control::SwitchDevice(device_label));
+    }
+}
+
+/// Save the camera choice: the device id the webview path resolves first,
+/// and the label both paths share.
+pub fn persist_video_device_prefs(
+    app: &tauri::AppHandle,
+    device_id: Option<String>,
+    device_label: Option<String>,
+) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+
+    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
+    let mut prefs: crate::commands::settings::Preferences = store
+        .get("preferences")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    prefs.video_device_id = device_id;
+    prefs.video_device_label = device_label;
+    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
+    store.set("preferences", val);
+    store.save().map_err(|e| e.to_string())
+}
+
+/// Stop `session` and open the camera again with `config`: stop first,
+/// since a capture device may allow only one opener (V4L2). The new
+/// pipeline gets its own error channel, so a late error from the stopped
+/// one cannot end it.
+async fn reopen(
+    session: NativeCaptureSession,
+    config: CaptureConfig,
+    frame_tx: tokio::sync::mpsc::Sender<rekindle_video_capture::EncodedFrame>,
+    preview_tx: tokio::sync::mpsc::Sender<rekindle_video_capture::PreviewFrame>,
+) -> Result<(NativeCaptureSession, tokio::sync::mpsc::Receiver<String>), String> {
+    session.stop();
+    let (error_tx, error_rx) = tokio::sync::mpsc::channel(4);
+    let session = tokio::task::spawn_blocking(move || {
+        NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx)
+    })
+    .await
+    .map_err(|e| format!("capture start task: {e}"))?
+    .map_err(|e| e.to_string())?;
+    Ok((session, error_rx))
+}
+
+/// The session ended on an error: release the slot and tell the call
+/// window, which reverts the camera toggle and shows `message`.
+fn fail_session(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    community_id: &str,
+    channel_id: &str,
+    message: String,
+) {
+    tracing::warn!(
+        target: "rekindle_video_capture",
+        community_id = %community_id,
+        %message,
+        "native capture failed — stopping session"
+    );
+    state.native_video.active.lock().take();
+    crate::event_dispatch::emit_community(
+        app,
+        crate::channels::CommunityEvent::NativeVideoError(crate::channels::NativeVideoErrorEvent {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            message,
+        }),
+    );
+}
+
 /// Start the native camera for the given voice channel. Returns the
 /// stream id (hex) on success. Errors are user-displayable strings
 /// (`camera busy: …`, `camera-session-active`, …).
@@ -203,9 +287,11 @@ pub async fn start(
         start_bitrate_kbps: crate::services::voice_adapter::video_allocation::encoder_kbps(state),
         keyframe_max_dist: NATIVE_KEYFRAME_MAX_DIST,
     };
-    // start() blocks up to its 2 s first-sample deadline.
+    // start() blocks up to its 2 s first-sample deadline. The pump keeps
+    // the senders, so a device switch reopens onto the same channels.
     let session = tokio::task::spawn_blocking({
         let config = config.clone();
+        let (frame_tx, preview_tx) = (frame_tx.clone(), preview_tx.clone());
         move || NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx)
     })
     .await
@@ -229,6 +315,8 @@ pub async fn start(
         state,
         "native video pump",
         |stop| async move {
+            let mut session = session;
+            let mut config = config;
             let mut frame_seq: u32 = 0;
             let mut preview_count: u64 = 0;
             let mut last_forced = Instant::now();
@@ -250,7 +338,40 @@ pub async fn start(
                                 }
                             }
                             Some(Control::Bitrate(kbps)) => {
+                                config.start_bitrate_kbps = kbps;
                                 session.set_bitrate_kbps(kbps);
+                            }
+                            Some(Control::SwitchDevice(device_label)) => {
+                                tracing::info!(
+                                    target: "rekindle_video_capture",
+                                    community_id = %pump_community,
+                                    device = ?device_label,
+                                    "switching camera"
+                                );
+                                config.device_label = device_label;
+                                let reopened = reopen(
+                                    session,
+                                    config.clone(),
+                                    frame_tx.clone(),
+                                    preview_tx.clone(),
+                                )
+                                .await;
+                                match reopened {
+                                    Ok((next, next_errors)) => {
+                                        session = next;
+                                        error_rx = next_errors;
+                                    }
+                                    Err(message) => {
+                                        fail_session(
+                                            &pump_state,
+                                            &pump_app,
+                                            &pump_community,
+                                            &pump_channel,
+                                            message,
+                                        );
+                                        break;
+                                    }
+                                }
                             }
                             Some(Control::Stop) | None => {
                                 session.stop();
@@ -260,23 +381,13 @@ pub async fn start(
                     }
                     error = error_rx.recv() => {
                         let message = error.unwrap_or_else(|| "camera pipeline ended".into());
-                        tracing::warn!(
-                            target: "rekindle_video_capture",
-                            community_id = %pump_community,
-                            %message,
-                            "native capture failed — stopping session"
-                        );
-                        pump_state.native_video.active.lock().take();
                         session.stop();
-                        crate::event_dispatch::emit_community(
+                        fail_session(
+                            &pump_state,
                             &pump_app,
-                            crate::channels::CommunityEvent::NativeVideoError(
-                                crate::channels::NativeVideoErrorEvent {
-                                    community_id: pump_community.clone(),
-                                    channel_id: pump_channel.clone(),
-                                    message,
-                                },
-                            ),
+                            &pump_community,
+                            &pump_channel,
+                            message,
                         );
                         break;
                     }
