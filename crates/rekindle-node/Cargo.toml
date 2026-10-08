@@ -91,7 +91,7 @@ clap = { version = "4", features = [ "derive", "std", "help", "usage", "error-co
 tracing-appender = "0.2"
 
 # systemd integration (sd_notify READY=1, watchdog keepalive)
-sd-notify = "0.4"
+sd-notify = "0.5"
 
 # OS keyring for signing key storage
 hex = "0.4"
