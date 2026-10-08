@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$ROOT/target/debug/rekindle-dev.log"
 
-export RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rtab=debug,net=debug,rpc=debug,rekindle_video=debug,rekindle_voice=debug,rekindle_presence::community::poll=debug,rekindle_presence::community::registry=debug,rekindle_protocol::dht::pool::read=debug,rekindle_lib::services::community::routes=debug}"
+export RUST_LOG="${RUST_LOG:-info,veilid_api=warn,veilid_core=warn,rekindle_video=debug,rekindle_voice=debug,rekindle_presence::community::poll=debug,rekindle_presence::community::registry=debug,rekindle_protocol::dht::pool::read=debug,rekindle_lib::services::community::routes=debug}"
 
 # A still-running dev instance must exit first — the single-instance
 # plugin turns a second launch into a focus-the-old no-op. Take the old
