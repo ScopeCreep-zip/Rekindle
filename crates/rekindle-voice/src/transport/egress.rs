@@ -168,9 +168,8 @@ pub struct RouteController {
     /// Local instant the remote timeline is laid on (first feedback).
     time_zero: Option<Instant>,
     round: u64,
-    /// The allocation leaves room for video on this route.
-    video_allowed: bool,
-    /// Video was dropped or paused: refuse delta frames until a keyframe.
+    /// Video was dropped (or the route is new): refuse delta frames until
+    /// a keyframe.
     awaiting_keyframe: bool,
     /// A keyframe should be requested from the local encoder.
     keyframe_wanted: bool,
@@ -202,12 +201,10 @@ impl RouteController {
             history: VecDeque::new(),
             time_zero: None,
             round: 0,
-            // The start estimate does not cover voice on a Veilid route
-            // (`allocation`), so video starts paused and resumes once the
-            // estimator's probes find room for it.
-            video_allowed: false,
+            // A new route's receiver can decode nothing before a keyframe
+            // (RFC 5104 FIR semantics for a new participant).
             awaiting_keyframe: true,
-            keyframe_wanted: false,
+            keyframe_wanted: true,
             last_media: None,
             last_video: None,
             audio_share: Share::default(),
@@ -237,14 +234,12 @@ impl RouteController {
         self.last_media = Some(now);
     }
 
-    /// Queue a video frame's fragments behind audio. Refused (and counted
-    /// as dropped) while the allocation has no room for video, and for a
-    /// delta frame while a keyframe is awaited. Returns whether it queued.
+    /// Queue a video frame's fragments behind audio. A delta frame is
+    /// refused (and counted as dropped) while a keyframe is awaited.
+    /// Returns whether it queued.
     pub fn enqueue_video(&mut self, frame: &VideoFrame, now: Instant) -> bool {
-        // Wanting to send video is what lets the estimator probe, so a
-        // paused route can find the room to resume.
         self.last_video = Some(now);
-        if !self.video_allowed || (self.awaiting_keyframe && !frame.keyframe) {
+        if self.awaiting_keyframe && !frame.keyframe {
             self.dropped_video += 1;
             return false;
         }
@@ -262,18 +257,6 @@ impl RouteController {
         }
         self.last_media = Some(now);
         true
-    }
-
-    /// The allocator's decision for this route. Pausing drops queued video;
-    /// resuming wants a keyframe, since the receiver lost its reference.
-    pub fn set_video_allowed(&mut self, allowed: bool) {
-        if allowed && !self.video_allowed {
-            self.keyframe_wanted = true;
-        }
-        if !allowed && self.video_allowed {
-            self.drop_video();
-        }
-        self.video_allowed = allowed;
     }
 
     /// Whether video was offered recently: the allocator then includes it

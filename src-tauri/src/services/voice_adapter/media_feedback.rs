@@ -28,6 +28,8 @@ pub(crate) fn on_transport_feedback(
             "transport feedback from a peer not on our roster — dropped");
         return;
     };
+    // A roster peer reporting on our media is alive even when silent.
+    crate::state_helpers::note_media_live(state, &reporter);
     tracing::debug!(
         peer = %reporter,
         reported = feedback.arrivals.len(),

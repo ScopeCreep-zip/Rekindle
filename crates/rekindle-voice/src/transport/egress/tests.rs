@@ -3,10 +3,9 @@ use super::*;
 
 const AUDIO_PAYLOAD: usize = 200;
 
-/// A controller whose allocation has room for video.
+/// A controller past its first keyframe request.
 fn with_video() -> RouteController {
     let mut c = RouteController::new();
-    c.set_video_allowed(true);
     c.take_keyframe_wanted();
     c
 }
@@ -141,17 +140,16 @@ fn stale_video_is_dropped_and_deltas_wait_for_a_keyframe() {
 }
 
 #[test]
-fn a_paused_route_refuses_video_and_resumes_on_a_keyframe() {
-    let mut c = with_video();
+fn a_new_route_wants_a_keyframe_and_refuses_deltas_until_it_comes() {
+    let mut c = RouteController::new();
     let t0 = Instant::now();
-    assert!(c.enqueue_video(&frame(true, 2, 1000), t0));
-    c.set_video_allowed(false);
-    assert!(c.video.is_empty(), "pausing drops what was queued");
-    assert!(!c.enqueue_video(&frame(true, 1, 100), t0));
-    c.set_video_allowed(true);
-    assert!(c.take_keyframe_wanted());
+    assert!(
+        c.take_keyframe_wanted(),
+        "the new receiver needs a keyframe"
+    );
     assert!(!c.enqueue_video(&frame(false, 1, 100), t0));
     assert!(c.enqueue_video(&frame(true, 1, 100), t0));
+    assert!(c.enqueue_video(&frame(false, 1, 100), t0));
 }
 
 /// A bottleneck link: FIFO at `capacity_bps` plus `base` one-way delay,

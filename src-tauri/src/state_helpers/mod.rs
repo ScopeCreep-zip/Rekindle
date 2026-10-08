@@ -70,8 +70,9 @@ pub use routes::{
     try_import_peer_route,
 };
 pub use voice::{
-    current_voice_scope, media_live_peers, media_roster_for, set_voice_engine_deafened,
-    set_voice_engine_muted, voice_engine_present, voice_media, voice_transport_for,
+    current_voice_scope, media_live_peers, media_roster_for, note_media_live,
+    set_voice_engine_deafened, set_voice_engine_muted, voice_engine_present, voice_media,
+    voice_transport_for,
 };
 
 // ── Shared private helpers used across submodules ──────────────────────

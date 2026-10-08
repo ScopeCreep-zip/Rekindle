@@ -80,15 +80,14 @@ impl PeerLink {
     }
 
     /// Hand the peer's feedback about our media to the controller, divide
-    /// the new estimate and apply the route's share (video on or off, how
-    /// far to probe). Returns the split.
-    pub fn on_feedback(&self, feedback: &TransportFeedback, was_allowed: bool) -> RouteAllocation {
+    /// the new estimate and tell the estimator how far to probe. Returns
+    /// the split.
+    pub fn on_feedback(&self, feedback: &TransportFeedback) -> RouteAllocation {
         let now = Instant::now();
         let mut c = self.controller.lock();
         let estimate = c.on_feedback(feedback, now);
         let video_offered = c.video_offered(now);
-        let split = allocate(estimate, c.media_share(), video_offered, was_allowed);
-        c.set_video_allowed(split.video_allowed());
+        let split = allocate(estimate, c.media_share(), video_offered);
         c.set_desired_bitrate(rekindle_media_bwe::Bitrate::bps(split.desired_on_wire), now);
         drop(c);
         self.wake.notify_one();

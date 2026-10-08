@@ -4,12 +4,14 @@
 //! The phases follow libwebrtc's `BitrateAllocator`
 //! (`call/bitrate_allocator.cc`): every stream gets its minimum if the
 //! estimate allows, then the remainder is shared out up to each maximum.
-//! The priority is Rekindle's: audio is filled first, within its range,
-//! and always keeps its minimum (libwebrtc's `enforce_min_bitrate`, which
-//! audio streams set); video takes what remains and is paused below its
-//! minimum. A paused video resumes only once the remainder clears its
-//! minimum by libwebrtc's hysteresis (10 % of it, at least 20 kbps), so it
-//! does not flap at the edge.
+//! The priority is Rekindle's: audio is filled first, within its range;
+//! video takes what remains, within its range. Both always keep their
+//! minimum (libwebrtc's `enforce_min_bitrate`): audio streams set it, and so
+//! does camera video, whose `suspend_below_min_bitrate` defaults to false
+//! (`call/video_send_stream.h`, `video/video_send_stream_impl.cc`). Video
+//! sent at its minimum is what lets the estimator find room for more; a
+//! suspended stream sends nothing to measure, and with no periodic probing
+//! it would stay suspended. Overload is bounded by the pacer's queue time.
 //!
 //! The estimate is a rate on the wire, transport overhead included. Each
 //! stream's cost on the wire is given by the caller: audio as its encoder
@@ -17,12 +19,6 @@
 //! cost), video as a share of encoder bytes per wire byte.
 
 use crate::Bitrate;
-
-/// libwebrtc `bitrate_allocator.cc` `kToggleFactor` and
-/// `kMinToggleBitrateBps`: a paused stream resumes at its minimum plus the
-/// larger of the two (`MinBitrateWithHysteresis`).
-const TOGGLE_FACTOR: f64 = 0.1;
-const MIN_TOGGLE_BPS: f64 = 20_000.0;
 
 /// An encoder's range.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,8 +46,7 @@ pub struct VideoCost {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Split {
     pub audio: Bitrate,
-    /// `None` while video is paused on the route.
-    pub video: Option<Bitrate>,
+    pub video: Bitrate,
     /// What the route would carry unconstrained, for the estimator's
     /// probes: audio at its maximum, plus video at its maximum when video
     /// is being offered (str0m `set_bwe_desired_bitrate`).
@@ -60,13 +55,7 @@ pub struct Split {
 
 /// Split `estimate` between audio and video.
 #[must_use]
-pub fn split(
-    estimate: Bitrate,
-    audio: AudioCost,
-    video: VideoCost,
-    video_offered: bool,
-    video_was_allowed: bool,
-) -> Split {
+pub fn split(estimate: Bitrate, audio: AudioCost, video: VideoCost, video_offered: bool) -> Split {
     let estimate = estimate.as_f64();
     let overhead = audio.overhead.as_f64();
     let audio_max = audio.range.max.as_f64() + overhead;
@@ -74,13 +63,7 @@ pub fn split(
 
     let share = video.share.max(0.01);
     let room = (estimate - audio_on_wire).max(0.0) * share;
-    let min = video.range.min.as_f64();
-    let needed = if video_was_allowed {
-        min
-    } else {
-        min + (min * TOGGLE_FACTOR).max(MIN_TOGGLE_BPS)
-    };
-    let video_rate = (room >= needed).then(|| Bitrate::from(room.min(video.range.max.as_f64())));
+    let video_rate = room.clamp(video.range.min.as_f64(), video.range.max.as_f64());
 
     let video_desired = if video_offered {
         video.range.max.as_f64() / share
@@ -89,7 +72,7 @@ pub fn split(
     };
     Split {
         audio: Bitrate::from(audio_on_wire - overhead),
-        video: video_rate,
+        video: Bitrate::from(video_rate),
         desired: Bitrate::from(audio_max + video_desired),
     }
 }
@@ -121,49 +104,40 @@ mod tests {
         }
     }
 
-    fn at(bps: u64, was_allowed: bool) -> Split {
-        split(Bitrate::bps(bps), audio(), video(), true, was_allowed)
+    fn at(bps: u64) -> Split {
+        split(Bitrate::bps(bps), audio(), video(), true)
     }
 
     #[test]
     fn audio_keeps_its_minimum_below_any_estimate() {
-        let s = at(100_000, true);
+        let s = at(100_000);
         assert_eq!(s.audio, Bitrate::kbps(24));
-        assert_eq!(s.video, None);
+        assert_eq!(s.video, Bitrate::kbps(100), "video keeps its minimum too");
     }
 
     #[test]
     fn between_audio_min_and_max_audio_takes_it_all() {
-        let s = at(720_000 + 44_000, true);
+        let s = at(720_000 + 44_000);
         assert_eq!(s.audio, Bitrate::kbps(44));
-        assert_eq!(s.video, None);
+        assert_eq!(s.video, Bitrate::kbps(100));
     }
 
     #[test]
     fn audio_fills_first_then_video_takes_the_rest() {
-        let s = at(784_000 + 400_000, true);
+        let s = at(784_000 + 400_000);
         assert_eq!(s.audio, Bitrate::kbps(64));
         assert_eq!(
             s.video,
-            Some(Bitrate::kbps(200)),
+            Bitrate::kbps(200),
             "400 kbps of wire at a 0.5 share"
         );
-        assert_eq!(at(10_000_000, true).video, Some(Bitrate::kbps(600)));
-    }
-
-    #[test]
-    fn paused_video_resumes_only_past_the_toggle_margin() {
-        // 210 kbps of wire → 105 kbps of video: enough to keep, not resume
-        // (resuming needs 100 + max(10, 20) = 120 kbps).
-        assert!(at(784_000 + 210_000, true).video.is_some());
-        assert!(at(784_000 + 230_000, false).video.is_none());
-        assert!(at(784_000 + 240_000, false).video.is_some());
+        assert_eq!(at(10_000_000).video, Bitrate::kbps(600));
     }
 
     #[test]
     fn desired_includes_video_only_when_offered() {
-        let without = split(Bitrate::kbps(300), audio(), video(), false, true);
-        let with = split(Bitrate::kbps(300), audio(), video(), true, true);
+        let without = split(Bitrate::kbps(300), audio(), video(), false);
+        let with = split(Bitrate::kbps(300), audio(), video(), true);
         assert_eq!(without.desired, Bitrate::bps(784_000));
         assert_eq!(with.desired, Bitrate::bps(784_000 + 1_200_000));
     }

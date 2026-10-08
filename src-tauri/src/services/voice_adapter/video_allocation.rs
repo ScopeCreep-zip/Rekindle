@@ -4,8 +4,9 @@
 //! audio and video. The send loop applies the audio half to Opus; this
 //! task applies the video half to whichever encoder is running — the
 //! native camera session directly, the webview encoder through
-//! `VideoBitrateTarget` — and turns a route's "keyframe wanted" (after it
-//! dropped or paused video) into a keyframe request for our own streams.
+//! `VideoBitrateTarget` — and turns a route's "keyframe wanted" (a new
+//! route, or video dropped past the queue-time bound) into a keyframe
+//! request for our own streams.
 
 use std::sync::Arc;
 
@@ -22,9 +23,8 @@ const WEBVIEW_HYSTERESIS: f64 = 0.15;
 /// (`video_sender.ts`).
 const TRACK_LABELS: [&str; 2] = ["camera", "screen"];
 
-/// The encoder rate for `allocation`: video paused on every route still
-/// leaves the encoder at its minimum, since the routes refuse the frames
-/// and resume on a keyframe.
+/// The encoder rate for `allocation`, at least video's minimum (before any
+/// route has an estimate the allocation carries 0).
 fn kbps_for(allocation: Allocation) -> u32 {
     allocation.video_bps.max(VIDEO_MIN_BPS) / 1_000
 }

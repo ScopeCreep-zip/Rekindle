@@ -138,12 +138,13 @@ async fn handle_gossip_envelope(
     // its sender's transport feedback, timed when it arrived. Recorded
     // after the dedup cache, so a replay under a new route sequence
     // number never counts as an arrival.
-    if let (Some((transport_seq, arrived)), Some(media)) =
-        (media_arrival, crate::state_helpers::voice_media(state))
-    {
-        media
-            .arrivals()
-            .record(&signed.sender_pseudonym, transport_seq, arrived);
+    if let Some((transport_seq, arrived)) = media_arrival {
+        crate::state_helpers::note_media_live(state, &signed.sender_pseudonym);
+        if let Some(media) = crate::state_helpers::voice_media(state) {
+            media
+                .arrivals()
+                .record(&signed.sender_pseudonym, transport_seq, arrived);
+        }
     }
 
     let video_channel = video_payload_channel_from_bytes(&signed.envelope_bytes);

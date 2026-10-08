@@ -2,7 +2,7 @@
 //!
 //! Each route's estimate is split by `rekindle_media_bwe::allocation`:
 //! audio first within Opus's 24–64 kbps, video the rest between 100 and
-//! 600 kbps (`evidence/e4-3-bandwidth-owner-design.md` #6). This module
+//! 600 kbps, each keeping its minimum (`evidence/e4-3-bandwidth-owner-design.md` #6). This module
 //! supplies what the split needs from the voice side — what each media
 //! kind costs on a Veilid route — and keeps the session's targets.
 //!
@@ -13,8 +13,7 @@
 //! per wire byte.
 //!
 //! A mesh sender has one encoder per media kind for all peers (#8), so it
-//! encodes at the lowest allocation over the routes, and over the routes
-//! with video running for video.
+//! encodes at the lowest allocation over the routes.
 
 use std::collections::HashMap;
 
@@ -44,18 +43,10 @@ pub struct RouteAllocation {
     /// The route's estimate on the wire.
     pub estimate_bps: u64,
     pub audio_bps: u32,
-    /// 0 while video is paused on this route.
     pub video_bps: u32,
     /// What the route would carry unconstrained, bits per second on the
     /// wire, for the estimator's probes.
     pub desired_on_wire: u64,
-}
-
-impl RouteAllocation {
-    #[must_use]
-    pub fn video_allowed(&self) -> bool {
-        self.video_bps > 0
-    }
 }
 
 fn opus_bps(bps: i32) -> Bitrate {
@@ -65,12 +56,7 @@ fn opus_bps(bps: i32) -> Bitrate {
 /// Split `estimate` for one route, given what it measured of each media
 /// kind's cost.
 #[must_use]
-pub fn allocate(
-    estimate: Bitrate,
-    share: MediaShare,
-    video_offered: bool,
-    video_was_allowed: bool,
-) -> RouteAllocation {
+pub fn allocate(estimate: Bitrate, share: MediaShare, video_offered: bool) -> RouteAllocation {
     // Until voice has been sent the overhead is at least the route's and
     // our sequence header.
     let audio_overhead = share.audio_overhead_bytes.unwrap_or_else(|| {
@@ -90,11 +76,11 @@ pub fn allocate(
         },
         share: share.video_share.unwrap_or(VIDEO_START_SHARE),
     };
-    let s = split(estimate, audio, video, video_offered, video_was_allowed);
+    let s = split(estimate, audio, video, video_offered);
     RouteAllocation {
         estimate_bps: estimate.as_u64(),
         audio_bps: to_u32(s.audio),
-        video_bps: s.video.map_or(0, to_u32),
+        video_bps: to_u32(s.video),
         desired_on_wire: s.desired.as_u64(),
     }
 }
@@ -107,7 +93,7 @@ fn to_u32(b: Bitrate) -> u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Allocation {
     pub audio_bps: u32,
-    /// 0 when video is paused on every route.
+    /// 0 until a route has an estimate.
     pub video_bps: u32,
 }
 
@@ -167,12 +153,7 @@ impl Allocator {
 
     fn publish(&self, routes: &HashMap<String, RouteAllocation>) {
         let audio_bps = routes.values().map(|r| r.audio_bps).min();
-        let video_bps = routes
-            .values()
-            .filter(|r| r.video_allowed())
-            .map(|r| r.video_bps)
-            .min()
-            .unwrap_or(0);
+        let video_bps = routes.values().map(|r| r.video_bps).min().unwrap_or(0);
         let next = Allocation {
             audio_bps: audio_bps.unwrap_or(Allocation::default().audio_bps),
             video_bps,
@@ -213,11 +194,11 @@ mod tests {
             video_share: Some(0.5),
         };
         // Audio at 64 kbps costs 64k + 50 × 8 × 1800 = 784 kbps of wire.
-        let a = allocate(Bitrate::bps(784_000 + 400_000), share, true, true);
+        let a = allocate(Bitrate::bps(784_000 + 400_000), share, true);
         assert_eq!((a.audio_bps, a.video_bps), (64_000, 200_000));
         assert_eq!(a.estimate_bps, 1_184_000);
-        let starved = allocate(Bitrate::kbps(300), share, true, true);
-        assert_eq!((starved.audio_bps, starved.video_bps), (24_000, 0));
+        let starved = allocate(Bitrate::kbps(300), share, true);
+        assert_eq!((starved.audio_bps, starved.video_bps), (24_000, 100_000));
     }
 
     #[test]
@@ -238,7 +219,7 @@ mod tests {
             RouteAllocation {
                 estimate_bps: 0,
                 audio_bps: 40_000,
-                video_bps: 0,
+                video_bps: 200_000,
                 desired_on_wire: 0,
             },
         );
@@ -246,9 +227,9 @@ mod tests {
             *rx.borrow(),
             Allocation {
                 audio_bps: 40_000,
-                video_bps: 500_000
+                video_bps: 200_000
             },
-            "a paused route does not hold video down for the others"
+            "one encoder per kind: the lowest route sets both"
         );
         alloc.forget("b");
         assert_eq!(rx.borrow().audio_bps, 64_000);

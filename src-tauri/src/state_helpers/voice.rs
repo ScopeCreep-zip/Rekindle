@@ -95,6 +95,19 @@ pub fn voice_media(
         .map(|h| Arc::clone(&h.media))
 }
 
+/// Media-plane proof that `peer_hex` is alive: a verified datagram from it
+/// (voice, video-plane envelope, padding or transport feedback). The
+/// presence reconcile never expires a peer seen here within its window, so
+/// a peer that is silent (VAD) but still streaming video, padding or
+/// feedback stays on the roster.
+pub fn note_media_live(state: &AppState, peer_hex: &str) {
+    if let Some(handle) = state.voice_engine.lock().as_ref() {
+        handle
+            .media_liveness
+            .note(peer_hex, rekindle_utils::timestamp_ms());
+    }
+}
+
 /// The media roster of the voice session bound to
 /// `community_id`/`channel_id`: its route queues, without the transport's
 /// async lock (plan E4.3.3).

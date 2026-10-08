@@ -106,11 +106,7 @@ impl MediaRoster {
         feedback: &TransportFeedback,
     ) -> Option<RouteAllocation> {
         let link = self.link(peer)?;
-        let was_allowed = self
-            .allocator
-            .route(peer)
-            .is_some_and(|r| r.video_allowed());
-        let split = link.on_feedback(feedback, was_allowed);
+        let split = link.on_feedback(feedback);
         self.allocator.note(peer, split);
         Some(split)
     }

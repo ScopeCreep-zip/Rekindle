@@ -82,13 +82,12 @@ fn handle_voice_packet(
 ) {
     match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
         Ok(packet) => {
+            let sender = hex::encode(&packet.sender_key);
+            crate::state_helpers::note_media_live(state, &sender);
             if let Some(media) = crate::state_helpers::voice_media(state) {
-                media.arrivals().record_voice(
-                    &hex::encode(&packet.sender_key),
-                    packet.sequence,
-                    transport_seq,
-                    arrived,
-                );
+                media
+                    .arrivals()
+                    .record_voice(&sender, packet.sequence, transport_seq, arrived);
             }
             let tx = state.voice_packet_tx.read().clone();
             if let Some(tx) = tx {
@@ -133,10 +132,10 @@ fn handle_padding(
         tracing::debug!("padding with no valid signature — dropping");
         return;
     };
+    let sender = hex::encode(sender);
+    crate::state_helpers::note_media_live(state, &sender);
     if let Some(media) = crate::state_helpers::voice_media(state) {
-        media
-            .arrivals()
-            .record(&hex::encode(sender), transport_seq, arrived);
+        media.arrivals().record(&sender, transport_seq, arrived);
     }
 }
 
