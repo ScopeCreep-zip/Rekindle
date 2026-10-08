@@ -55,6 +55,10 @@ fn project_link(stats: &rekindle_voice::session_deps::SendLinkStats) -> LinkMeas
         mos_lq: stats.score.mos_lq,
         mos_cq: stats.score.mos_cq,
         bitrate_bps: stats.bitrate_bps,
+        one_way_p50_ms: stats.route.map(|r| r.one_way_p50_ms),
+        one_way_p95_ms: stats.route.map(|r| r.one_way_p95_ms),
+        mouth_to_ear_ms: stats.route.map(|r| r.mouth_to_ear_ms),
+        outside_g114: stats.route.is_some_and(|r| r.outside_g114),
     }
 }
 

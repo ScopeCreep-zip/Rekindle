@@ -54,6 +54,7 @@ pub(super) fn init_voice_session_impl(
         output_volume: prefs.output_volume,
         noise_suppression: prefs.noise_suppression,
         echo_cancellation: prefs.echo_cancellation,
+        input_channels: prefs.input_channels.clone(),
         ..rekindle_voice::VoiceConfig::default()
     };
     let engine = rekindle_voice::VoiceEngine::new(config)

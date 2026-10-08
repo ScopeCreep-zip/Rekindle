@@ -45,6 +45,10 @@
 
 pub mod quality;
 mod reception;
+pub mod route;
 
 pub use quality::{mos_from_r, r_factor, score, LinkState, LinkTracker, QualityScore};
-pub use reception::{ReceptionMetrics, ReceptionTracker, DEFAULT_GMIN};
+pub use reception::{ReceptionMetrics, ReceptionTracker, DEFAULT_GMIN, DELAY_WINDOW_PACKETS};
+pub use route::{
+    route_estimate, RouteEstimate, RouteHistory, RouteSummary, G114_LIMIT_MS, IN_PROCESS_DELAY_MS,
+};

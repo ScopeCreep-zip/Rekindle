@@ -84,6 +84,10 @@ pub struct VoiceConfig {
     pub input_volume: f32,
     /// Output volume multiplier (0.0–1.0).
     pub output_volume: f32,
+    /// Input-channel choice per input device name (0-based channel
+    /// indices, plan C7.24b). A device without an entry averages all its
+    /// channels.
+    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
 }
 
 /// Returns recommended voice settings based on group size (9E: Adaptive Codec).
@@ -142,6 +146,7 @@ impl Default for VoiceConfig {
             output_device: None,
             input_volume: 1.0,
             output_volume: 1.0,
+            input_channels: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -229,9 +234,16 @@ impl VoiceEngine {
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
         let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels);
+        let picked = self
+            .config
+            .input_device
+            .as_ref()
+            .and_then(|name| self.config.input_channels.get(name))
+            .cloned();
         capture.start(
             tx,
             self.config.input_device.as_deref(),
+            picked,
             self.device_error_tx.clone(),
         )?;
 
@@ -316,6 +328,15 @@ impl VoiceEngine {
     pub fn set_devices(&mut self, input_device: Option<String>, output_device: Option<String>) {
         self.config.input_device = input_device;
         self.config.output_device = output_device;
+    }
+
+    /// Replace the per-device input-channel choices (plan C7.24b). Takes
+    /// effect on the next `start_capture`.
+    pub fn set_input_channels(
+        &mut self,
+        input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    ) {
+        self.config.input_channels = input_channels;
     }
 
     /// Take the device error receiver for use in a device monitor loop.

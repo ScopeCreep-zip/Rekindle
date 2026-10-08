@@ -22,6 +22,10 @@ export interface SettingsState {
    *  (cpal `default_input_device`/`default_output_device`). */
   selectedInputDevice: string | null;
   selectedOutputDevice: string | null;
+  /** Input channels captured per input device (0-based); a device without
+   *  an entry averages all its channels. `undefined` deletes an entry
+   *  (Solid stores merge objects, so removal is by `undefined`). */
+  inputChannels: Record<string, number[] | undefined>;
   /** Plan §Failure 2 — `videoDeviceId` from `Preferences`. Persisted
    *  through the same path as audio. WebView enumerates camera devices
    *  client-side so the dropdown lives entirely in the frontend. */
@@ -53,6 +57,7 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   outputDevices: [],
   selectedInputDevice: null,
   selectedOutputDevice: null,
+  inputChannels: {},
   selectedVideoDeviceId: null,
   selectedVideoDeviceLabel: null,
   ringtoneEnabled: true,

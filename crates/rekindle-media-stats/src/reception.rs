@@ -32,11 +32,17 @@
 //! Reporting a single "loss" figure hides which of those is happening,
 //! and they call for opposite responses — send less versus buffer more.
 
+use std::collections::VecDeque;
+
 use serde::{Deserialize, Serialize};
 
 /// RFC 3611's recommended gap threshold: the number of consecutive
 /// received packets that ends a burst.
 pub const DEFAULT_GMIN: u32 = 16;
+
+/// Packets in the relative-delay window: 250 × 20 ms ≈ 5 s, one receiver
+/// report's span (plan E4.3.0).
+pub const DELAY_WINDOW_PACKETS: usize = 250;
 
 /// A point-in-time snapshot of one inbound stream.
 ///
@@ -61,6 +67,16 @@ pub struct ReceptionMetrics {
     pub gap_duration_ms: u32,
     /// RFC 3550 interarrival jitter, milliseconds.
     pub jitter_ms: u32,
+    /// Median relative one-way delay over the last
+    /// [`DELAY_WINDOW_PACKETS`]: each packet's transit (arrival − sender
+    /// timestamp) above the window's minimum transit, milliseconds. The
+    /// unknown clock offset between the two machines cancels in the
+    /// difference; it is NetEQ's relative packet arrival delay
+    /// (`packet_arrival_history`). Plan E4.3.0.
+    pub delay_p50_ms: u32,
+    /// 95th percentile of the same relative delay — what a jitter buffer
+    /// must hold to play 95 % of packets on time.
+    pub delay_p95_ms: u32,
     /// Packets expected so far — the denominator behind every rate.
     pub packets_expected: u64,
     /// Packets actually received.
@@ -86,6 +102,9 @@ pub struct ReceptionTracker {
     jitter: f64,
     /// Previous packet's transit time (arrival − sender timestamp).
     prev_transit: Option<i64>,
+    /// Transit times of the last [`DELAY_WINDOW_PACKETS`] packets, for the
+    /// relative-delay percentiles.
+    recent_transit: VecDeque<i64>,
 
     /// Run of consecutive received packets, for the Gmin test.
     run_length: u32,
@@ -118,6 +137,7 @@ impl ReceptionTracker {
             discarded: 0,
             jitter: 0.0,
             prev_transit: None,
+            recent_transit: VecDeque::with_capacity(DELAY_WINDOW_PACKETS),
             run_length: 0,
             in_burst: false,
             burst_packets: 0,
@@ -160,6 +180,10 @@ impl ReceptionTracker {
             self.jitter += (d - self.jitter) / 16.0;
         }
         self.prev_transit = Some(transit);
+        if self.recent_transit.len() == DELAY_WINDOW_PACKETS {
+            self.recent_transit.pop_front();
+        }
+        self.recent_transit.push_back(transit);
 
         // ── Loss detection and the burst/gap walk ────────────────
         //
@@ -263,10 +287,24 @@ impl ReceptionTracker {
             // still jitter, and truncation would report a jittery link
             // as perfectly clean.
             jitter_ms: self.jitter.round().clamp(0.0, f64::from(u32::MAX)) as u32,
+            delay_p50_ms: relative_delay_percentile(&self.recent_transit, 50),
+            delay_p95_ms: relative_delay_percentile(&self.recent_transit, 95),
             packets_expected: expected,
             packets_received: self.received,
         }
     }
+}
+
+/// The `pct`th percentile (nearest rank) of each transit's excess over the
+/// window minimum, milliseconds; 0 for an empty window.
+fn relative_delay_percentile(transits: &VecDeque<i64>, pct: usize) -> u32 {
+    let Some(&floor) = transits.iter().min() else {
+        return 0;
+    };
+    let mut excess: Vec<i64> = transits.iter().map(|t| t.saturating_sub(floor)).collect();
+    excess.sort_unstable();
+    let rank = (excess.len() * pct).div_ceil(100).max(1) - 1;
+    u32::try_from(excess[rank.min(excess.len() - 1)]).unwrap_or(u32::MAX)
 }
 
 /// A count over a total, as Q8. Saturates rather than wrapping, and
@@ -406,5 +444,44 @@ mod tests {
         let m = ReceptionTracker::new(20).metrics();
         assert_eq!(m.loss_rate_q8, 0);
         assert_eq!(m.packets_expected, 0);
+    }
+
+    /// Plan E4.3.0 — relative delay is each packet's transit above the
+    /// window floor, so a constant clock offset between the machines
+    /// cancels and a queue building on the route shows in the tail.
+    #[test]
+    fn relative_delay_percentiles_ignore_clock_offset() {
+        let mut t = ReceptionTracker::new(20);
+        // Sender clock 10 s ahead of ours; 100 packets on time, then 5
+        // queued 200 ms behind.
+        for seq in 0..105u32 {
+            let sent = 10_000_000 + u64::from(seq) * 20;
+            let queued = if seq >= 100 { 200 } else { 0 };
+            t.on_packet(seq, sent, u64::from(seq) * 20 + 40 + queued, true);
+        }
+        let m = t.metrics();
+        assert_eq!(m.delay_p50_ms, 0);
+        assert_eq!(m.delay_p95_ms, 0);
+        // Ten more queued packets push them past the 95th percentile.
+        for seq in 105..115u32 {
+            let sent = 10_000_000 + u64::from(seq) * 20;
+            t.on_packet(seq, sent, u64::from(seq) * 20 + 240, true);
+        }
+        let m = t.metrics();
+        assert_eq!(m.delay_p50_ms, 0);
+        assert_eq!(m.delay_p95_ms, 200);
+    }
+
+    #[test]
+    fn delay_window_forgets_old_packets() {
+        let mut t = ReceptionTracker::new(20);
+        // A slow start, then a full window on time.
+        for seq in 0..10u32 {
+            t.on_packet(seq, u64::from(seq) * 20, u64::from(seq) * 20 + 300, true);
+        }
+        for seq in 10..(10 + u32::try_from(DELAY_WINDOW_PACKETS).unwrap()) {
+            t.on_packet(seq, u64::from(seq) * 20, u64::from(seq) * 20 + 50, true);
+        }
+        assert_eq!(t.metrics().delay_p95_ms, 0);
     }
 }

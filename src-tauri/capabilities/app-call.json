@@ -19,6 +19,7 @@
     "allow-end-dm-call",
     "allow-send-call-media-state",
     "allow-set-audio-devices",
+    "allow-set-input-channels",
     "allow-set-voice-mode",
     "allow-open-call-window",
     "allow-dm-peer-video-decode-codecs",

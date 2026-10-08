@@ -233,6 +233,12 @@
   .call-control-quality-good { background: var(--color-xfire-online); }
   .call-control-quality-fair { background: var(--color-xfire-away); }
   .call-control-quality-poor { background: var(--color-xfire-busy); }
+  /* Plan E4.3.0 — estimated mouth-to-ear above ITU-T G.114's 400 ms. */
+  .call-control-g114 {
+    margin-left: 6px;
+    font-size: 10px;
+    color: var(--color-xfire-busy);
+  }
 
   /* Architecture §24 — community analytics dashboard. */
   .analytics-grid {

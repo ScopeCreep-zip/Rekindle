@@ -34,31 +34,91 @@ impl DeviceDirection {
     }
 }
 
-/// Find an audio device by name, falling back to the default for that direction.
+/// Find an audio device by name. A device that is not connected is an
+/// error, never a silent substitute: which device to open when the saved
+/// one is missing is [`select_device`]'s decision, made visibly before a
+/// stream opens (plan C7.24).
 pub fn find_device(
     host: &cpal::Host,
     name: &str,
     direction: &DeviceDirection,
 ) -> Result<cpal::Device, VoiceError> {
-    for device in direction.devices(host) {
-        if device.name().ok().as_deref() == Some(name) {
-            return Ok(device);
+    direction
+        .devices(host)
+        .into_iter()
+        .find(|device| device.name().ok().as_deref() == Some(name))
+        .ok_or_else(|| {
+            VoiceError::AudioDevice(format!(
+                "{} device \"{name}\" is not connected",
+                direction.label()
+            ))
+        })
+}
+
+/// The most input channels `device` offers (1 when it reports none) — what
+/// an input-channel choice picks from (plan C7.24b).
+pub fn max_input_channels(device: &cpal::Device) -> u16 {
+    device
+        .supported_input_configs()
+        .map(|ranges| ranges.map(|r| r.channels()).max().unwrap_or(1))
+        .unwrap_or(1)
+        .max(1)
+}
+
+/// The device a saved choice resolves to right now (plan C7.24).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedDevice {
+    /// The concrete device to open.
+    pub name: String,
+    /// The saved choice, when it is not connected and `name` is the
+    /// system default standing in for it. The choice itself is kept.
+    pub saved_missing: Option<String>,
+}
+
+/// Which device to open for a saved choice: the saved device when it is
+/// connected, otherwise the system default, with the saved choice kept so
+/// the device monitor switches back when it returns. This is Jitsi Meet's
+/// policy (`getUserSelectedMicDeviceId` resolves the stored device or
+/// yields the default; `getNewAudioInputDevice` switches back to the
+/// stored device when it is plugged in) and the W3C `getUserMedia`
+/// guidance (request the stored `deviceId` without `exact`, so an absent
+/// device is replaced rather than failing).
+///
+/// # Errors
+/// No device exists for the direction at all.
+pub fn select_device(
+    saved: Option<&str>,
+    direction: &DeviceDirection,
+) -> Result<SelectedDevice, VoiceError> {
+    let host = cpal::default_host();
+    if let Some(name) = saved {
+        if direction
+            .devices(&host)
+            .iter()
+            .any(|device| device.name().ok().as_deref() == Some(name))
+        {
+            return Ok(SelectedDevice {
+                name: name.to_string(),
+                saved_missing: None,
+            });
         }
     }
-
-    tracing::warn!(
-        device = %name,
-        direction = direction.label(),
-        "requested device not found — falling back to default"
-    );
-    direction.default_device(host).ok_or_else(|| {
-        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
+    let default = preferred_default_device(&host, direction)?;
+    let name = default.name().map_err(|e| {
+        VoiceError::AudioDevice(format!(
+            "{} default device has no name: {e}",
+            direction.label()
+        ))
+    })?;
+    Ok(SelectedDevice {
+        name,
+        saved_missing: saved.map(str::to_string),
     })
 }
 
 /// Resolve an audio device by optional name for the given direction.
 ///
-/// - `Some(name)` → search by name, fall back to default (via `find_device`).
+/// - `Some(name)` → exactly that device ([`find_device`]).
 /// - `None` → the preferred default (see [`preferred_default_device`]).
 pub fn resolve_device(
     host: &cpal::Host,
@@ -111,13 +171,14 @@ fn preferred_default_device(
 
 /// Enumerated audio devices (input and output).
 pub struct EnumeratedDevices {
-    /// Input devices: `(name, is_default)`.
-    pub input_devices: Vec<(String, bool)>,
+    /// Input devices: `(name, is_default, channels)`, `channels` being what
+    /// an input-channel choice picks from.
+    pub input_devices: Vec<(String, bool, u16)>,
     /// Output devices: `(name, is_default)`.
     pub output_devices: Vec<(String, bool)>,
 }
 
-/// Collect `(name, is_default)` pairs for all devices in the given direction.
+/// Collect `(name, is_default)` pairs for the devices in a direction.
 fn collect_device_names(
     host: &cpal::Host,
     direction: &DeviceDirection,
@@ -144,11 +205,15 @@ pub fn enumerate_audio_devices() -> EnumeratedDevices {
         .and_then(|d| d.name().ok());
 
     EnumeratedDevices {
-        input_devices: collect_device_names(
-            &host,
-            &DeviceDirection::Input,
-            default_input_name.as_deref(),
-        ),
+        input_devices: DeviceDirection::Input
+            .devices(&host)
+            .into_iter()
+            .filter_map(|device| {
+                let name = device.name().ok()?;
+                let is_default = default_input_name.as_deref() == Some(name.as_str());
+                Some((name, is_default, max_input_channels(&device)))
+            })
+            .collect(),
         output_devices: collect_device_names(
             &host,
             &DeviceDirection::Output,

@@ -23,7 +23,9 @@ use rekindle_codec::community::envelope::{
 // an app_message again.
 pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     let message = msg.message().to_vec();
-    tracing::info!(msg_len = message.len(), "app_message received");
+    // Trace, not info: this runs for every media packet (50+/s per peer)
+    // on the serial dispatch loop the audio fast path shares (plan C7.23).
+    tracing::trace!(msg_len = message.len(), "app_message received");
 
     // Both media fast paths (audio packets and their receiver
     // reports) live in `media`: verify, `try_send`, return — never

@@ -67,6 +67,8 @@ fn clean() -> ReceptionMetrics {
         burst_duration_ms: 0,
         gap_duration_ms: 0,
         jitter_ms: 0,
+        delay_p50_ms: 0,
+        delay_p95_ms: 0,
         packets_expected: 1000,
         packets_received: 1000,
     }

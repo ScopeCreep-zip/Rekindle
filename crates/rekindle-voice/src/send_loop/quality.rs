@@ -81,6 +81,11 @@ pub(super) struct PeerLink {
     /// which inflates RTT independently of how promptly our audio
     /// reached the peer. Part of the Phase 1 RTT decomposition.
     last_report_at: Option<std::time::Instant>,
+    /// Route delay estimate from the newest report with a round trip
+    /// (plan E4.3.0).
+    route: Option<rekindle_media_stats::RouteEstimate>,
+    /// Every window's route estimate over the call, for its distribution.
+    pub(super) route_history: rekindle_media_stats::RouteHistory,
 }
 
 impl VoiceSendLoop {
@@ -108,6 +113,8 @@ impl VoiceSendLoop {
                     state: LinkState::Good,
                 },
                 last_report_at: None,
+                route: None,
+                route_history: rekindle_media_stats::RouteHistory::default(),
             });
 
         // RTT decomposition (Phase 1): `rtt = (now − lsr) − dlsr`.
@@ -145,6 +152,24 @@ impl VoiceSendLoop {
         if rtt_ms.is_some() {
             link.rtt_ms = rtt_ms;
         }
+        // Plan E4.3.0 — the route's one-way delay: rtt / 2 plus the
+        // receiver's relative-delay percentiles.
+        if let Some(rtt) = rtt_ms {
+            let estimate = rekindle_media_stats::route_estimate(
+                rtt,
+                report.metrics.delay_p50_ms,
+                report.metrics.delay_p95_ms,
+                report.jb_nominal_ms,
+            );
+            link.route = Some(estimate);
+            link.route_history.note(
+                estimate,
+                report.metrics.jitter_ms,
+                report.metrics.loss_rate_q8,
+                report.metrics.burst_duration_ms,
+            );
+        }
+        let route = link.route;
 
         // One-way delay for the E-model: half the round trip plus the
         // depth the far end is holding before playout. Both are real
@@ -170,7 +195,14 @@ impl VoiceSendLoop {
             discard_pct = q8_pct(report.metrics.discard_rate_q8),
             burst_pct = q8_pct(report.metrics.burst_density_q8),
             jitter_ms = report.metrics.jitter_ms,
+            delay_p50_ms = report.metrics.delay_p50_ms,
+            delay_p95_ms = report.metrics.delay_p95_ms,
+            burst_ms = report.metrics.burst_duration_ms,
             rtt_ms = ?rtt_ms,
+            route_one_way_p50_ms = ?route.map(|r| r.one_way_p50_ms),
+            route_one_way_p95_ms = ?route.map(|r| r.one_way_p95_ms),
+            mouth_to_ear_ms = ?route.map(|r| r.mouth_to_ear_ms),
+            outside_g114 = route.is_some_and(|r| r.outside_g114),
             lsr_age_ms,
             dlsr_ms = report.dlsr_ms,
             report_gap_ms = ?report_gap_ms,
@@ -202,9 +234,33 @@ impl VoiceSendLoop {
                 metrics: l.metrics,
                 score: l.score,
                 rtt_ms: l.rtt_ms,
+                route: l.route,
                 bitrate_bps: 0,
             })
             .max_by_key(|s| (link_severity(s.score.state), s.metrics.loss_rate_q8))
+    }
+
+    /// Plan E4.3.0 — the call's route measurement, one line per peer, when
+    /// the send loop ends: the record a two-machine run is read from.
+    pub(super) fn log_route_summaries(&self) {
+        for (peer, link) in &self.peer_links {
+            let s = link.route_history.summary();
+            if s.windows == 0 {
+                continue;
+            }
+            tracing::info!(
+                peer = %peer,
+                windows = s.windows,
+                one_way_p50_ms = s.one_way_p50_ms,
+                one_way_p95_ms = s.one_way_p95_ms,
+                jitter_p95_ms = s.jitter_p95_ms,
+                mouth_to_ear_p95_ms = s.mouth_to_ear_p95_ms,
+                outside_g114 = s.mouth_to_ear_p95_ms > rekindle_media_stats::G114_LIMIT_MS,
+                loss_pct = q8_pct(s.loss_rate_q8),
+                burst_ms = s.burst_duration_ms,
+                "voice route summary"
+            );
+        }
     }
 
     pub(super) fn report_quality_if_due(&mut self) {

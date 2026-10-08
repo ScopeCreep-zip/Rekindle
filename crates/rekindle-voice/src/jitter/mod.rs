@@ -389,6 +389,13 @@ impl JitterBuffer {
         self.buffer.get(&next_seq).map(|p| p.opus.as_slice())
     }
 
+    /// Buffered playout delay: the frames waiting, at 20 ms each.
+    pub fn playout_delay_ms(&self) -> u32 {
+        u32::try_from(self.buffer.len())
+            .unwrap_or(u32::MAX)
+            .saturating_mul(FRAME_MS)
+    }
+
     /// Get the current buffer depth (number of buffered packets).
     pub fn depth(&self) -> usize {
         self.buffer.len()

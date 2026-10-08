@@ -50,11 +50,19 @@ const CallControlBar: Component<{
       return `Connection: ${voiceState.connectionQuality} — ${rx} (no peer report yet)`;
     }
     const rtt = link.rttMs === null ? "—" : `${link.rttMs} ms`;
+    const route =
+      link.oneWayP50Ms === null || link.oneWayP95Ms === null
+        ? "route —"
+        : `route one-way ${link.oneWayP50Ms}/${link.oneWayP95Ms} ms (p50/p95)`;
+    const m2e =
+      link.mouthToEarMs === null
+        ? ""
+        : `, mouth-to-ear ~${link.mouthToEarMs} ms${link.outsideG114 ? " (outside G.114)" : ""}`;
     return (
       `Connection: ${voiceState.connectionQuality} — ` +
       `peer loss ${q8ToPercent(link.lossQ8)}%, ` +
       `discard ${q8ToPercent(link.discardQ8)}%, ` +
-      `jitter ${link.jitterMs} ms, rtt ${rtt}, ` +
+      `jitter ${link.jitterMs} ms, rtt ${rtt}, ${route}${m2e}, ` +
       `MOS ${link.mosCq.toFixed(1)} (R ${link.rFactor}), ` +
       `${Math.round(link.bitrateBps / 1000)} kbps — ${rx}`
     );
@@ -79,6 +87,9 @@ const CallControlBar: Component<{
           aria-hidden="true"
         />
         <span class="call-control-quality-label">{voiceState.connectionQuality}</span>
+        <Show when={voiceState.link?.outsideG114}>
+          <span class="call-control-g114">delay &gt; G.114</span>
+        </Show>
       </div>
 
       <div class="call-control-group">

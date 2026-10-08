@@ -58,25 +58,7 @@ impl GossipDeps for GossipAdapter {
         status: &str,
         route_blob: Vec<u8>,
     ) {
-        let transport = state_mutations::update_peer_route(
-            &self.state,
-            community_id,
-            peer_key,
-            status,
-            route_blob.clone(),
-        );
-        // Heal the bound voice transport's roster entry outside the
-        // state lock — the await cannot happen while a parking_lot
-        // guard is alive.
-        if let Some(transport) = transport {
-            let pk = peer_key.to_string();
-            crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
-                "voice route refresh",
-                async move {
-                    transport.lock().await.refresh_peer_route(&pk, &route_blob);
-                },
-            );
-        }
+        state_mutations::update_peer_route(&self.state, community_id, peer_key, status, route_blob);
     }
 
     fn record_peer_reliability(&self, community_id: &str, peer_key: &str, success: bool) {

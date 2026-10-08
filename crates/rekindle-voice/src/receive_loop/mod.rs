@@ -87,6 +87,9 @@ struct VoiceReceiveLoop {
     channels: u16,
     jitter_base_ms: u32,
     packets_received: u64,
+    /// Playout ticks this stats window that ran a full frame late, so a
+    /// tick was skipped and a frame of delay added (plan C7.23).
+    late_ticks: u64,
     last_quality_check: Instant,
     /// Packets dropped this stats window because they could not be
     /// opened (no key from their sender yet, wrong sender, or rejected).
@@ -152,6 +155,7 @@ impl VoiceReceiveLoop {
             channels,
             jitter_base_ms: params.jitter_base_ms,
             packets_received: 0,
+            late_ticks: 0,
             last_quality_check: Instant::now(),
             key_drops: 0,
             last_key_request: HashMap::new(),
@@ -194,7 +198,13 @@ impl VoiceReceiveLoop {
                 Some(packet) = self.packet_rx.recv() => {
                     self.ingest_packet(&packet);
                 }
-                _ = tick.tick() => {
+                scheduled = tick.tick() => {
+                    // `Skip` drops ticks we are a whole frame late for, so
+                    // each one adds a frame of playout delay; count them
+                    // for the stats line.
+                    if scheduled.elapsed() >= Duration::from_millis(20) {
+                        self.late_ticks += 1;
+                    }
                     self.tick();
                 }
             }

@@ -131,6 +131,8 @@ export interface AudioDeviceInfo {
   id: string;
   name: string;
   isDefault: boolean;
+  /** Input channels an input-channel choice picks from; 0 for outputs. */
+  channels: number;
 }
 
 export interface AudioDevices {
@@ -155,6 +157,9 @@ export interface Preferences {
   gameScanIntervalSecs: number;
   inputDevice: string | null;
   outputDevice: string | null;
+  /** Input-channel choice per input device name, 0-based. A device without
+   *  an entry averages all its channels. */
+  inputChannels: Record<string, number[]>;
   videoDeviceId: string | null;
   videoDeviceLabel: string | null;
   inputVolume: number;

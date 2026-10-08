@@ -477,7 +477,7 @@ fn emit_frame_ready<D: VideoDeps>(
         }
     };
     let plaintext_bytes = plaintext.len();
-    tracing::info!(
+    tracing::trace!(
         target: "rekindle_video::receive",
         frame_seq = frame.frame_seq,
         stream_id = %hex::encode(frame.stream_id),

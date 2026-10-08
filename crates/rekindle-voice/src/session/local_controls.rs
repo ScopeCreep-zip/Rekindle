@@ -136,9 +136,20 @@ pub async fn change_audio_devices<D: VoiceSessionDeps + ?Sized>(
         return Ok(()); // No active call — settings take effect next join.
     }
     tracing::info!(?input, ?output, "hot-swapping audio devices mid-call");
+    // Plan C7.24 — open the concrete devices the choice resolves to (the
+    // system default for "default"), so the device monitor compares like
+    // with like.
+    let prefs = crate::AudioPrefs {
+        input_device: input,
+        output_device: output,
+        ..deps.audio_prefs()
+    };
+    let targets = crate::session::device_monitor::AudioTargets::select(&prefs)?;
+    targets.announce_missing(deps);
     crate::session::shutdown_voice(deps, &VoiceShutdownOpts::KEEP_ENGINE).await;
     deps.stop_audio_devices();
-    deps.set_voice_engine_devices(input, output);
+    deps.set_voice_engine_devices(Some(targets.input.name), Some(targets.output.name));
+    deps.set_voice_engine_input_channels(prefs.input_channels);
     crate::session::restart_loops(deps).await?;
     Ok(())
 }

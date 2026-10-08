@@ -139,6 +139,41 @@ pub fn adapt_audio(
     dst_channels: u16,
     dst_rate: u32,
 ) -> Vec<f32> {
+    adapt(input, src_channels, None, src_rate, dst_channels, dst_rate)
+}
+
+/// [`adapt_audio`] for capture with an input-channel choice (plan C7.24b):
+/// the mono downmix averages only `picked` (0-based channel indices, each
+/// below `src_channels`), so a mic on input 1 of a two-input interface is
+/// not halved by a silent instrument input. Mumble's channel mask
+/// (`AudioInput.cpp` `inMixerFloatMask`) averages its selected channels
+/// the same way.
+pub fn adapt_capture(
+    input: &[f32],
+    src_channels: u16,
+    picked: &[u16],
+    src_rate: u32,
+    dst_channels: u16,
+    dst_rate: u32,
+) -> Vec<f32> {
+    adapt(
+        input,
+        src_channels,
+        Some(picked),
+        src_rate,
+        dst_channels,
+        dst_rate,
+    )
+}
+
+fn adapt(
+    input: &[f32],
+    src_channels: u16,
+    picked: Option<&[u16]>,
+    src_rate: u32,
+    dst_channels: u16,
+    dst_rate: u32,
+) -> Vec<f32> {
     if input.is_empty() {
         return Vec::new();
     }
@@ -147,14 +182,26 @@ pub fn adapt_audio(
     let src_ch_n = usize::from(src_ch);
     let dst_ch_n = usize::from(dst_ch);
 
-    // 1. Downmix to mono.
-    let mono: Vec<f32> = if src_ch_n == 1 {
-        input.to_vec()
-    } else {
-        input
+    // 1. Downmix to mono: the picked channels, or all of them.
+    let mono: Vec<f32> = match picked {
+        Some(picked) if !picked.is_empty() => {
+            let n = f32::from(u16::try_from(picked.len()).unwrap_or(u16::MAX));
+            input
+                .chunks(src_ch_n)
+                .map(|frame| {
+                    picked
+                        .iter()
+                        .filter_map(|&c| frame.get(usize::from(c)))
+                        .sum::<f32>()
+                        / n
+                })
+                .collect()
+        }
+        _ if src_ch_n == 1 => input.to_vec(),
+        _ => input
             .chunks(src_ch_n)
             .map(|frame| frame.iter().sum::<f32>() / f32::from(src_ch))
-            .collect()
+            .collect(),
     };
 
     // 2. Linear-resample mono to dst_rate. Integer fixed-point position
@@ -297,6 +344,27 @@ mod tests {
         // Interleaved L/R frames: (1.0,0.0),(0.0,1.0) → averages 0.5,0.5.
         let out = adapt_audio(&[1.0, 0.0, 0.0, 1.0], 2, 48000, 1, 48000);
         assert_eq!(out, vec![0.5, 0.5]);
+    }
+
+    /// Plan C7.24b — picking input 1 of a two-input interface keeps the mic
+    /// at full level instead of averaging it with a silent second input.
+    #[test]
+    fn picked_channels_downmix_only_those() {
+        // Two frames: mic on channel 0, silence on channel 1.
+        let input = [0.8, 0.0, -0.4, 0.0];
+        assert_eq!(adapt_audio(&input, 2, 48000, 1, 48000), vec![0.4, -0.2]);
+        assert_eq!(
+            adapt_capture(&input, 2, &[0], 48000, 1, 48000),
+            vec![0.8, -0.4]
+        );
+        assert_eq!(
+            adapt_capture(&input, 2, &[1], 48000, 1, 48000),
+            vec![0.0, 0.0]
+        );
+        assert_eq!(
+            adapt_capture(&input, 2, &[0, 1], 48000, 1, 48000),
+            adapt_audio(&input, 2, 48000, 1, 48000)
+        );
     }
 
     #[test]

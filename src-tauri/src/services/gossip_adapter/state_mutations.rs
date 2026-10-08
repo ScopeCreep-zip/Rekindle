@@ -31,18 +31,17 @@ pub(super) fn enqueue_pending_mesh(
 
 /// Record a freshly re-resolved route for a peer in the gossip overlay.
 ///
-/// Returns the bound voice transport when one is attached to this
-/// community, so the caller can heal its roster entry outside the lock.
-/// A successful re-resolve proves the peer's advertised voice route is
-/// stale too, and frame sends have no re-resolve of their own.
-#[must_use]
+/// The route is the peer's general route, from its presence row. It never
+/// reaches the voice transport: a call's media route travels only in voice
+/// signaling, and the owner re-announces it when it changes (plan C7.15,
+/// C7.23).
 pub(super) fn update_peer_route(
     state: &Arc<AppState>,
     community_id: &str,
     peer_key: &str,
     status: &str,
     route_blob: Vec<u8>,
-) -> Option<std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>> {
+) {
     {
         let mut communities = state.communities.write();
         if let Some(community) = communities.get_mut(community_id) {
@@ -64,9 +63,4 @@ pub(super) fn update_peer_route(
             }
         }
     }
-
-    let ve = state.voice_engine.lock();
-    ve.as_ref()
-        .filter(|h| h.community_id.as_deref() == Some(community_id))
-        .map(|h| h.transport.clone())
 }

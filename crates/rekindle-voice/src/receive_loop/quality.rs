@@ -140,12 +140,21 @@ impl VoiceReceiveLoop {
             rx_late_drops: late,
             rx_key_drops: key_drops,
         });
+        let max_delay_ms = self
+            .participants
+            .values()
+            .map(|p| p.jitter_buffer.playout_delay_ms())
+            .max()
+            .unwrap_or(0);
         tracing::debug!(
             participants = self.participants.len(),
             self.packets_received,
+            max_delay_ms,
+            late_ticks = self.late_ticks,
             "voice receive loop stats"
         );
         self.packets_received = 0;
+        self.late_ticks = 0;
         self.last_quality_check = Instant::now();
     }
 }

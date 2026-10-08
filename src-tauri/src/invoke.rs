@@ -214,6 +214,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::voice::set_deafen,
         commands::voice::list_audio_devices,
         commands::voice::set_audio_devices,
+        commands::voice::set_input_channels,
         commands::voice::set_voice_mode,
         commands::voice::server_mute_member,
         commands::voice::server_deafen_member,

@@ -93,6 +93,24 @@ pub async fn set_audio_devices(
         .map_err(|e| e.to_string())
 }
 
+/// Save the input-channel choice for input `device` (0-based channel
+/// indices; empty means every channel, averaged) and, mid-call, reopen
+/// capture on it (plan C7.24b, Mumble's input channel mask).
+#[tauri::command]
+pub async fn set_input_channels(
+    device: String,
+    channels: Vec<u16>,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    crate::services::voice_runtime::persist_input_channels(&app, &device, channels)?;
+    let prefs = crate::commands::settings::load_preferences(&app);
+    let deps = build_voice_session_deps(&app, state.inner())?;
+    rekindle_voice::session::change_audio_devices(&deps, prefs.input_device, prefs.output_device)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Switch voice mode between mesh and MCU.
 ///
 /// When switching to MCU mode with ourselves as host, starts the MCU mixing

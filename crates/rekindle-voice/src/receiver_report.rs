@@ -129,6 +129,8 @@ impl VoiceReceiverReport {
         out.extend_from_slice(&m.burst_duration_ms.to_le_bytes());
         out.extend_from_slice(&m.gap_duration_ms.to_le_bytes());
         out.extend_from_slice(&m.jitter_ms.to_le_bytes());
+        out.extend_from_slice(&m.delay_p50_ms.to_le_bytes());
+        out.extend_from_slice(&m.delay_p95_ms.to_le_bytes());
         out.extend_from_slice(&m.packets_expected.to_le_bytes());
         out.extend_from_slice(&m.packets_received.to_le_bytes());
         out
@@ -291,6 +293,8 @@ mod tests {
             burst_duration_ms: 120,
             gap_duration_ms: 4200,
             jitter_ms: 27,
+            delay_p50_ms: 12,
+            delay_p95_ms: 48,
             packets_expected: 500,
             packets_received: 487,
         }

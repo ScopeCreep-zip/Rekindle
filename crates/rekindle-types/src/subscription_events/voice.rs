@@ -287,6 +287,15 @@ pub struct LinkMeasurement {
     pub mos_cq: f32,
     /// The Opus bitrate this measurement led the sender to set.
     pub bitrate_bps: u32,
+    /// Estimated one-way route delay, median and 95th percentile, ms
+    /// (plan E4.3.0) — `None` until a report yields a round trip.
+    pub one_way_p50_ms: Option<u32>,
+    pub one_way_p95_ms: Option<u32>,
+    /// Estimated mouth-to-ear at the far end: one-way p95 + its playout
+    /// depth + the in-process stages, ms.
+    pub mouth_to_ear_ms: Option<u32>,
+    /// Mouth-to-ear above ITU-T G.114's 400 ms limit.
+    pub outside_g114: bool,
 }
 
 impl VoiceEvent {
@@ -480,6 +489,10 @@ mod tests {
                     mos_lq: 4.1,
                     mos_cq: 3.9,
                     bitrate_bps: 32_000,
+                    one_way_p50_ms: Some(120),
+                    one_way_p95_ms: Some(180),
+                    mouth_to_ear_ms: None,
+                    outside_g114: false,
                 }),
             },
             // And the pre-first-report case: no peer has reported, so

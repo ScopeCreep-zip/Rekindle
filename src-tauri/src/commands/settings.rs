@@ -28,6 +28,11 @@ pub struct Preferences {
     /// Input volume multiplier (0.0–1.0).
     #[serde(default = "default_volume")]
     pub input_volume: f32,
+    /// Input-channel choice per input device name, 0-based (plan C7.24b,
+    /// Mumble's input channel mask). A device without an entry averages
+    /// all its channels.
+    #[serde(default)]
+    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
     /// Output volume multiplier (0.0–1.0).
     #[serde(default = "default_volume")]
     pub output_volume: f32,
@@ -93,6 +98,7 @@ impl Default for Preferences {
             game_detection_enabled: true,
             game_scan_interval_secs: 15,
             input_device: None,
+            input_channels: std::collections::BTreeMap::new(),
             output_device: None,
             video_device_id: None,
             video_device_label: None,

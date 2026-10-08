@@ -199,10 +199,11 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn audio_prefs(&self) -> AudioPrefs {
-        let prefs =
-            tauri::Manager::try_state::<crate::commands::settings::Preferences>(&self.app_handle)
-                .map(|s| (*s.inner()).clone())
-                .unwrap_or_default();
+        // The saved preferences live in the `preferences.json` store. They
+        // were read from Tauri managed state, where nothing ever put them,
+        // so every call ran on defaults: the system input instead of the
+        // chosen one, default volumes and processing (plan C7.23).
+        let prefs = crate::commands::settings::load_preferences(&self.app_handle);
         AudioPrefs {
             noise_suppression: prefs.noise_suppression,
             echo_cancellation: prefs.echo_cancellation,
@@ -210,6 +211,7 @@ impl VoiceSessionDeps for VoiceAdapter {
             output_volume: prefs.output_volume,
             input_device: prefs.input_device,
             output_device: prefs.output_device,
+            input_channels: prefs.input_channels,
         }
     }
 
@@ -231,20 +233,6 @@ impl VoiceSessionDeps for VoiceAdapter {
 
     async fn resolve_peer_route(&self, peer_pubkey_hex: &str) -> Option<Vec<u8>> {
         io_helpers::resolve_peer_route_impl(&self.state, peer_pubkey_hex).await
-    }
-
-    async fn resolve_peer_route_from_dht(
-        &self,
-        community_id: &str,
-        peer_pseudonym: &str,
-    ) -> Option<Vec<u8>> {
-        crate::services::community::routes::resolve_member_route(
-            &self.state,
-            &self.pool,
-            community_id,
-            peer_pseudonym,
-        )
-        .await
     }
 
     async fn load_member_names(
@@ -428,6 +416,15 @@ impl VoiceSessionDeps for VoiceAdapter {
         let mut ve = self.state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.engine.set_devices(input, output);
+        }
+    }
+
+    fn set_voice_engine_input_channels(
+        &self,
+        input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    ) {
+        if let Some(handle) = self.state.voice_engine.lock().as_mut() {
+            handle.engine.set_input_channels(input_channels);
         }
     }
 

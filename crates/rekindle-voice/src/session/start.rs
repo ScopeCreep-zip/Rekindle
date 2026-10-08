@@ -44,7 +44,14 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     deps.check_not_in_call(channel_id)?;
 
     let identity = deps.current_identity()?;
-    let prefs = deps.audio_prefs();
+    // Plan C7.24 — open concrete devices: the saved ones when connected,
+    // else the system default, said out loud. The device monitor keeps
+    // them current from here on.
+    let mut prefs = deps.audio_prefs();
+    let targets = crate::session::device_monitor::AudioTargets::select(&prefs)?;
+    targets.announce_missing(deps);
+    prefs.input_device = Some(targets.input.name);
+    prefs.output_device = Some(targets.output.name);
 
     // Self-identity on the voice wire: the per-community pseudonym for
     // community voice (so our signed packets verify against the

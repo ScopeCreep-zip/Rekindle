@@ -232,11 +232,6 @@ impl VoiceTransport {
         route_blob: &[u8],
         display_name: Option<&str>,
     ) -> bool {
-        tracing::info!(
-            channel = %self.channel_id,
-            peer = %pseudonym_key,
-            "added voice peer"
-        );
         // Re-add keeps the original added_at (route upsert, not a
         // fresh join) so the presence-reconcile grace isn't reset by
         // repeat VoiceJoin announces. A name supplied by any handshake
@@ -246,8 +241,18 @@ impl VoiceTransport {
             if let Some(name) = display_name {
                 existing.display_name = Some(name.to_string());
             }
+            tracing::debug!(
+                channel = %self.channel_id,
+                peer = %pseudonym_key,
+                "voice peer route updated"
+            );
             return false;
         }
+        tracing::info!(
+            channel = %self.channel_id,
+            peer = %pseudonym_key,
+            "added voice peer"
+        );
         self.peers.insert(
             pseudonym_key.to_string(),
             VoicePeer {

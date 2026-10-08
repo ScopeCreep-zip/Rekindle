@@ -55,6 +55,9 @@ export const voiceCommands = {
   listAudioDevices: () => invoke<AudioDevices>("list_audio_devices"),
   setAudioDevices: (inputDevice: string | null, outputDevice: string | null) =>
     invoke<void>("set_audio_devices", { inputDevice, outputDevice }),
+  /** Save the input channels to capture on `device` (0-based; [] = all). */
+  setInputChannels: (device: string, channels: number[]) =>
+    invoke<void>("set_input_channels", { device, channels }),
   setVoiceMode: (mode: string, hostPseudonym?: string) =>
     invoke<void>("set_voice_mode", { mode, hostPseudonym: hostPseudonym ?? null }),
 

@@ -31,17 +31,12 @@ use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::{OutboundFrame, VoiceTransport};
 use crate::VoiceMode;
 
-/// Steady-state rate-limit for the route-heal hook (and the warn re-log):
-/// after the first heal, re-heal only every this-many consecutive failures.
-/// 50 ≈ one second of speech at 20 ms frames.
-const ROUTE_HEAL_THRESHOLD: u64 = 50;
-
-/// First route-heal fires after this many consecutive per-peer failures —
-/// ~60 ms, not the ~1 s of waiting for the full [`ROUTE_HEAL_THRESHOLD`].
-/// A peer whose Veilid route went stale mid-call gets re-resolved promptly
-/// instead of dropping a second of audio first; > 1 so a single transient
-/// blip doesn't trigger a needless DHT re-resolve.
-const ROUTE_HEAL_FIRST: u64 = 3;
+/// A peer's send-failure streak is logged at its first failure and then
+/// every this-many (≈ one second of speech at 20 ms frames), not per frame.
+/// There is no sender-side route repair: a call's media route travels only
+/// in voice signaling, and its owner re-announces it when Veilid reports
+/// it dead (plan C7.15, C7.23).
+const SEND_FAILURE_LOG_EVERY: u64 = 50;
 
 pub struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
@@ -359,10 +354,10 @@ impl VoiceSendLoop {
         self.report_quality_if_due();
     }
 
-    /// Per-peer send accounting: success resets the failure streak; a
-    /// streak hitting multiples of [`ROUTE_HEAL_THRESHOLD`] fires the
-    /// deps route-heal hook (presence re-resolve → roster refresh) and
-    /// the rate-limited warn — NOT one log line per frame per peer.
+    /// Per-peer send accounting: success resets the failure streak, and a
+    /// streak is warned about at its start and every
+    /// [`SEND_FAILURE_LOG_EVERY`] frames — NOT one log line per frame per
+    /// peer.
     /// The whole-frame `send_failures` counter (quality classification)
     /// counts a frame failed only when EVERY peer failed, preserving
     /// the original loss semantics.
@@ -389,7 +384,7 @@ impl VoiceSendLoop {
             }
             let n = self.peer_send_failures.entry(key.clone()).or_insert(0);
             *n += 1;
-            if *n == 1 || *n == ROUTE_HEAL_FIRST || n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
+            if *n == 1 || n.is_multiple_of(SEND_FAILURE_LOG_EVERY) {
                 tracing::warn!(
                     peer = %key,
                     consecutive_failures = *n,
@@ -397,50 +392,7 @@ impl VoiceSendLoop {
                     "voice send failing for peer"
                 );
             }
-            // Heal promptly on the first short streak, then rate-limit to
-            // every ROUTE_HEAL_THRESHOLD so a persistently-dead route isn't
-            // re-resolved 50×/s.
-            if *n == ROUTE_HEAL_FIRST || n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
-                self.spawn_route_heal(key.clone());
-            }
         }
-    }
-
-    /// Crate-side route heal — the voice mirror of gossip's
-    /// `send_to_one_peer` re-resolve. Spawned off the 20 ms hot path:
-    /// resolve the peer's CURRENT route through the deps port, then
-    /// refresh the transport roster entry (refresh-only: a peer who
-    /// left must not be re-added). Community sessions only — DM 1:1
-    /// call routes heal via call signaling.
-    fn spawn_route_heal(&self, peer: String) {
-        let Some(community_id) = self.community_id.clone() else {
-            return;
-        };
-        let deps = Arc::clone(&self.deps);
-        let transport = Arc::clone(&self.transport);
-        self.deps
-            .scope()
-            .spawn_or_drop("voice route heal", async move {
-                let Some(fresh) = deps.resolve_peer_route_from_dht(&community_id, &peer).await
-                else {
-                    tracing::warn!(
-                        community = %community_id,
-                        peer = %peer,
-                        "voice route heal: no fresh route in presence registry"
-                    );
-                    return;
-                };
-                if fresh.is_empty() {
-                    return;
-                }
-                let refreshed = transport.lock().await.refresh_peer_route(&peer, &fresh);
-                tracing::info!(
-                    community = %community_id,
-                    peer = %peer,
-                    refreshed,
-                    "voice route heal: presence re-resolve applied"
-                );
-            });
     }
 
     fn flip_speaking_off_if_needed(&mut self) {
@@ -457,6 +409,7 @@ impl VoiceSendLoop {
         // Transport disconnect is handled by shutdown_voice — we don't
         // clear the shared transport here since other loops or handlers
         // may still use it.
+        self.log_route_summaries();
         if self.was_speaking {
             self.deps.emit_voice_event(VoiceSessionEvent::UserSpeaking {
                 peer_pubkey: self.public_key,

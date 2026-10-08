@@ -140,6 +140,14 @@ export interface LinkMeasurement {
   mosCq: number;
   /** Opus bitrate this measurement led the sender to set. */
   bitrateBps: number;
+  /** Estimated one-way route delay, median / 95th percentile, ms
+   *  (plan E4.3.0); null until a report yields a round trip. */
+  oneWayP50Ms: number | null;
+  oneWayP95Ms: number | null;
+  /** Estimated mouth-to-ear at the far end, ms. */
+  mouthToEarMs: number | null;
+  /** Mouth-to-ear above ITU-T G.114's 400 ms limit. */
+  outsideG114: boolean;
 }
 
 /** Q8 rate as a whole percent, for display. */

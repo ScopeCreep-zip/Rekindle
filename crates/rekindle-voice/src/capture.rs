@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use crate::audio_thread::{AudioThread, AudioThreadLabels};
 use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
-use crate::stream_config::{adapt_audio, negotiate_input_config};
+use crate::stream_config::{adapt_audio, adapt_capture, negotiate_input_config};
 
 const CAPTURE_LABELS: AudioThreadLabels = AudioThreadLabels {
     audio_thread: "audio-capture",
@@ -36,10 +36,14 @@ impl AudioCapture {
     }
 
     /// Start capturing audio, sending PCM frames to the provided sender.
+    ///
+    /// `picked` is the input-channel choice for this device (0-based
+    /// indices, plan C7.24b); `None` averages every channel.
     pub fn start(
         &mut self,
         tx: mpsc::Sender<Vec<f32>>,
         device_name: Option<&str>,
+        picked: Option<Vec<u16>>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
         self.thread.start(
@@ -51,6 +55,7 @@ impl AudioCapture {
                     channels,
                     tx,
                     device_name_owned.as_deref(),
+                    picked,
                     error_tx,
                 )
             },
@@ -78,30 +83,55 @@ fn build_capture_stream(
     channels: u16,
     tx: mpsc::Sender<Vec<f32>>,
     device_name: Option<&str>,
+    picked: Option<Vec<u16>>,
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
     let device = resolve_device(&host, device_name, &DeviceDirection::Input)?;
 
-    let (config, sample_format) = negotiate_input_config(&device, sample_rate, channels)?;
+    // A channel choice needs every input channel delivered, so open the
+    // device at its full channel count rather than the pipeline's mono.
+    let open_channels = if picked.is_some() {
+        crate::device::max_input_channels(&device)
+    } else {
+        channels
+    };
+    let (config, sample_format) = negotiate_input_config(&device, sample_rate, open_channels)?;
     let dev_channels = config.channels;
     let dev_rate = config.sample_rate.0;
-    let needs_adapt = dev_channels != channels || dev_rate != sample_rate;
+    if let Some(bad) = picked.iter().flatten().find(|&&c| c >= dev_channels) {
+        return Err(VoiceError::AudioDevice(format!(
+            "input channel {} is not on this device ({dev_channels} channels)",
+            bad + 1
+        )));
+    }
+    let needs_adapt = picked.is_some() || dev_channels != channels || dev_rate != sample_rate;
 
     tracing::info!(
+        device = %cpal::traits::DeviceTrait::name(&device).unwrap_or_else(|_| "unnamed".into()),
         dev_channels,
         dev_rate,
         want_channels = channels,
         want_rate = sample_rate,
         ?sample_format,
         needs_adapt,
+        ?picked,
         "negotiated capture config"
     );
 
     // Forward captured f32 PCM to the pipeline, adapting to the codec format
     // first when the device config differs.
     let forward = move |samples: Vec<f32>, tx: &mpsc::Sender<Vec<f32>>| {
-        let out = if needs_adapt {
+        let out = if let Some(picked) = &picked {
+            adapt_capture(
+                &samples,
+                dev_channels,
+                picked,
+                dev_rate,
+                channels,
+                sample_rate,
+            )
+        } else if needs_adapt {
             adapt_audio(&samples, dev_channels, dev_rate, channels, sample_rate)
         } else {
             samples

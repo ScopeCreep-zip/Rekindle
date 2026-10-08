@@ -58,6 +58,8 @@ pub struct AudioPrefs {
     pub output_volume: f32,
     pub input_device: Option<String>,
     pub output_device: Option<String>,
+    /// Input-channel choice per input device name (0-based, plan C7.24b).
+    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
 }
 
 /// Identity snapshot returned by the adapter for `start_session`
@@ -256,21 +258,6 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
 
     // --- Background tasks ---
 
-    /// Re-resolve a community member's CURRENT route from the presence
-    /// registry (same contract as `GossipDeps::resolve_peer_route_from_dht`
-    /// — both adapters delegate to the one shared
-    /// `services::community::routes::resolve_member_route`, one trust
-    /// gate). Pure I/O port: the heal ORCHESTRATION (failure threshold,
-    /// refresh application) lives crate-side in the send loop, exactly
-    /// like gossip's `send_to_one_peer` owns its own re-resolve. This
-    /// is distinct from `resolve_peer_route` above, which resolves 1:1
-    /// FRIEND routes from the profile record — community pseudonyms
-    /// publish routes to the community presence registry instead.
-    async fn resolve_peer_route_from_dht(
-        &self,
-        community_id: &str,
-        peer_pseudonym: &str,
-    ) -> Option<Vec<u8>>;
     /// The scope this session's background work runs in; it ends with the
     /// session (plan C4).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
@@ -468,6 +455,13 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// config. Returns `(None, None)` if no engine or both defaults.
     fn voice_engine_device_config(&self) -> (Option<String>, Option<String>);
 
+    /// Replace the engine's per-device input-channel choices (plan
+    /// C7.24b); takes effect on the next capture start.
+    fn set_voice_engine_input_channels(
+        &self,
+        input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    );
+
     /// Emit a `VoiceEvent::DeviceChanged` with the given fields.
     /// Distinct from `emit_voice_event(VoiceSessionEvent::DeviceChanged)`
     /// because the existing wire variant carries `device_name` which
@@ -507,6 +501,9 @@ pub struct SendLinkStats {
     /// Round trip, when the report's LSR/DLSR echo yielded a believable
     /// one.
     pub rtt_ms: Option<u32>,
+    /// Route one-way delay and mouth-to-ear estimate from the newest
+    /// report with a round trip (plan E4.3.0).
+    pub route: Option<rekindle_media_stats::RouteEstimate>,
     /// The Opus bitrate this window's measurement led us to set — the
     /// action taken, recorded alongside the reason for it.
     pub bitrate_bps: u32,
