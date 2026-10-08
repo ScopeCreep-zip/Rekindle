@@ -15,7 +15,7 @@ ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hkdf = "0.12"
 rekindle-types = { path = "../rekindle-types" }
 sha2 = "0.10"
-x25519-dalek = { version = "2", features = [ "static_secrets" ] }
+x25519-dalek = { version = "3", features = [ "static_secrets" ] }
 # RFC 9180 HPKE for MEK wrapping v2 — the same crate veilid-core uses
 # (already in the dependency graph transitively). X25519-DHKEM +
 # HKDF-SHA256 + ChaCha20Poly1305, Auth mode (static-static, preserving

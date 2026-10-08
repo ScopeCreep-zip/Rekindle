@@ -25,7 +25,7 @@ serde = { workspace = true }
 sha2 = "0.10"
 thiserror = { workspace = true }
 tracing = { workspace = true }
-x25519-dalek = { version = "2", features = [ "static_secrets" ] }
+x25519-dalek = { version = "3", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
 # Phase 6 — SessionCache infrastructure
 async-trait = "0.1"
