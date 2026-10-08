@@ -32,6 +32,12 @@ pub struct DelayController {
     smoothed_rtt: MovingAverage,
     /// History of the max RTT derived for each TWCC report (kept for fallback).
     max_rtt_history: VecDeque<Duration>,
+    /// The route's RTCP-style round trip, for the rate control's response
+    /// time: libwebrtc feeds AIMD the RTCP RTT (`OnRttUpdate`,
+    /// `goog_cc_network_control.cc`), not the feedback RTT, which carries the
+    /// receiver's report hold. `None` until measured (AIMD then assumes
+    /// libwebrtc's 200 ms default).
+    rtcp_rtt: Option<Duration>,
 
     /// The next time we should poll.
     next_timeout: Instant,
@@ -48,6 +54,7 @@ impl DelayController {
             last_estimate: Some(initial_bitrate),
             smoothed_rtt: MovingAverage::new(RTT_SMOOTHING_FACTOR),
             max_rtt_history: VecDeque::default(),
+            rtcp_rtt: None,
             next_timeout: already_happened(),
             last_twcc_report: already_happened(),
         }
@@ -97,7 +104,7 @@ impl DelayController {
             new_hypothesis,
             acked_bitrate,
             probe_bitrate,
-            self.get_smoothed_rtt(),
+            self.rtcp_rtt,
             now,
         );
         self.last_twcc_report = now;
@@ -129,9 +136,22 @@ impl DelayController {
             self.trendline_estimator.hypothesis(),
             acked_bitrate,
             None,
-            self.get_smoothed_rtt(),
+            self.rtcp_rtt,
             now,
         );
+    }
+
+    /// The route's round trip from the receiver reports (libwebrtc
+    /// `DelayBasedBwe::OnRttUpdate`).
+    pub fn set_rtt(&mut self, rtt: Duration) {
+        self.rtcp_rtt = Some(rtt);
+    }
+
+    /// Set the estimate outright, as libwebrtc's `SetEstimate` does for an
+    /// RTT backoff.
+    pub fn set_estimate(&mut self, bitrate: Bitrate, now: Instant) {
+        self.rate_control.set_probe_result(bitrate, now);
+        self.last_estimate = Some(self.rate_control.estimated_bitrate());
     }
 
     /// Get the latest estimate.

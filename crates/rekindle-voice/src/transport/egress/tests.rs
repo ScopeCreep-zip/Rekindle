@@ -218,8 +218,15 @@ fn simulate(capacity_bps: f64, video_bps: u32, secs: u64) -> Bitrate {
             audio(&mut c, now);
         }
         if tick.is_multiple_of(13) {
-            // ~15 fps
-            let bytes = usize::try_from(video_bps / 15 / 8).unwrap();
+            // ~15 fps, at the allocation's encoder target up to `video_bps`,
+            // as the encoder follows it in the app (a source that ignores
+            // the target floods the link once the pacer drains its queue,
+            // and the RTT backoff then rightly cuts).
+            let target =
+                crate::transport::allocation::allocate(c.estimate(), c.media_share(), true)
+                    .video_bps
+                    .min(video_bps);
+            let bytes = usize::try_from(target / 15 / 8).unwrap().max(1);
             let n = bytes.div_ceil(4096).max(1);
             c.enqueue_video(&frame(false, n, bytes / n), now);
             c.awaiting_keyframe = false;
@@ -260,4 +267,16 @@ fn the_estimate_stays_under_a_slow_link() {
         est > Bitrate::bps(900_000) && est < Bitrate::bps(1_500_000),
         "estimate {est} should sit just under a 1.5 Mbps bottleneck"
     );
+}
+
+#[test]
+fn the_send_time_is_the_hand_off() {
+    let mut c = RouteController::new();
+    let t0 = Instant::now();
+    audio(&mut c, t0);
+    let sent = drive(&mut c, t0);
+    let (_, seq, _) = media_frame::split_sequenced(&sent[0]).unwrap();
+    let handed = t0 + Duration::from_millis(40);
+    c.on_handed_off(seq, handed);
+    assert_eq!(c.history.back().unwrap().sent_at, handed);
 }

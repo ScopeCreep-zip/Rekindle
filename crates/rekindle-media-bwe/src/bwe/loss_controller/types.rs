@@ -44,6 +44,15 @@ pub(super) struct Config {
     pub(super) hold_duration_factor: f64,
     pub(super) bandwidth_rampup_hold_threshold: f64,
     pub(super) bandwidth_rampup_upper_bound_factor_in_hold: f64,
+    /// Observations needed before the loss-based result is used
+    /// (libwebrtc `MinNumObservations`, `loss_based_bwe_v2.cc`).
+    pub(super) min_num_observations: u64,
+    /// The estimate never goes below this times the acknowledged rate
+    /// (libwebrtc `LowerBoundByAckedRateFactor`).
+    pub(super) lower_bound_by_acked_rate_factor: f64,
+    /// Cap the best candidate itself by the bounds (libwebrtc
+    /// `BoundBestCandidate`).
+    pub(super) bound_best_candidate: bool,
 }
 
 #[derive(Debug)]
@@ -227,6 +236,9 @@ impl Default for Config {
             hold_duration_factor: 2.0,
             bandwidth_rampup_hold_threshold: 1.3,
             bandwidth_rampup_upper_bound_factor_in_hold: 1.2,
+            min_num_observations: 3,
+            lower_bound_by_acked_rate_factor: 1.0,
+            bound_best_candidate: true,
         }
     }
 }

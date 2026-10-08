@@ -152,6 +152,12 @@ impl VoiceSendLoop {
         if rtt_ms.is_some() {
             link.rtt_ms = rtt_ms;
         }
+        if let (Some(rtt), Some(route)) = (
+            rtt_ms,
+            self.media.as_ref().and_then(|media| media.link(&peer)),
+        ) {
+            route.set_rtt(std::time::Duration::from_millis(u64::from(rtt)));
+        }
         // Plan E4.3.0 — the route's one-way delay: rtt / 2 plus the
         // receiver's relative-delay percentiles.
         if let Some(rtt) = rtt_ms {

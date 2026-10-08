@@ -61,6 +61,10 @@ pub struct LossController {
 
     /// Precomputed instantaneous upper bound on bandwidth estimate.
     cached_instant_upper_bound: Option<Bitrate>,
+    /// The estimate's floor: the acknowledged rate times
+    /// `lower_bound_by_acked_rate_factor`, at least the minimum bitrate
+    /// (libwebrtc `CalculateInstantLowerBound`).
+    cached_instant_lower_bound: Bitrate,
     /// Last time we reduced the estimate.
     last_time_estimate_reduced: BweTimestamp,
 
@@ -133,6 +137,7 @@ impl LossController {
             instant_upper_bound_temporal_weights: vec![0_f64; config.observation_window_size]
                 .into_boxed_slice(),
             cached_instant_upper_bound: None,
+            cached_instant_lower_bound: Bitrate::ZERO,
             last_time_estimate_reduced: BweTimestamp::DistantPast,
             recovering_after_loss_timestamp: BweTimestamp::DistantPast,
             bandwidth_limit_in_current_window: Bitrate::MAX,
@@ -180,6 +185,24 @@ impl LossController {
     /// Update the acknowledged bitrate based on TWCC feedback.
     pub fn set_acknowledged_bitrate(&mut self, acknowledged_bitrate: Bitrate) {
         self.acknowledged_bitrate = acknowledged_bitrate;
+        self.calculate_instant_lower_bound();
+    }
+
+    /// libwebrtc `CalculateInstantLowerBound` (`loss_based_bwe_v2.cc`).
+    fn calculate_instant_lower_bound(&mut self) {
+        let mut lower = Bitrate::ZERO;
+        if self.acknowledged_bitrate.is_valid()
+            && self.config.lower_bound_by_acked_rate_factor > 0.0
+        {
+            lower = self.acknowledged_bitrate * self.config.lower_bound_by_acked_rate_factor;
+        }
+        self.cached_instant_lower_bound = lower.max(self.min_bitrate);
+    }
+
+    /// Enough observations to use the loss-based result (libwebrtc
+    /// `IsReady`).
+    fn is_ready(&self) -> bool {
+        self.num_observations >= self.config.min_num_observations
     }
 
     /// Set ALR start time from the ALR detector.
@@ -326,6 +349,25 @@ impl LossController {
             }
         }
 
+        // libwebrtc `UpdateBandwidthEstimate` (`loss_based_bwe_v2.cc:295-318`):
+        // bound the best candidate between the instant lower bound (the
+        // acknowledged rate) and the instant upper bound and delay-based
+        // estimate. Without the lower bound a burst of reported loss drives
+        // the estimate below what is being delivered.
+        let lower = self.cached_instant_lower_bound;
+        let mut upper = self.get_instant_upper_bound();
+        if self.delay_based_estimate.is_valid() {
+            upper = upper.min(self.delay_based_estimate);
+        }
+        let bounded = best_candidate.loss_limited_bandwidth.min(upper).max(lower);
+        if self.config.bound_best_candidate && bounded < best_candidate.loss_limited_bandwidth {
+            best_candidate.loss_limited_bandwidth = bounded;
+            best_candidate.inherent_loss = 0.0;
+        } else if self.config.lower_bound_by_acked_rate_factor > 0.0 {
+            best_candidate.loss_limited_bandwidth =
+                best_candidate.loss_limited_bandwidth.max(lower);
+        }
+
         let loss_limited_bandwidth = best_candidate.loss_limited_bandwidth;
 
         // HOLD check (WebRTC lines 321-334): If in Decreasing state and HOLD timer active, cap at HOLD rate
@@ -333,7 +375,11 @@ impl LossController {
             && self.last_hold_info.timestamp > self.last_send_time_most_recent_observation
             && loss_limited_bandwidth < self.delay_based_estimate
         {
-            // During HOLD period, cap estimate at HOLD rate
+            // During HOLD period, cap estimate at HOLD rate; the acked rate
+            // is the HOLD rate's floor (libwebrtc `:321-327`).
+            if self.config.lower_bound_by_acked_rate_factor > 0.0 {
+                self.last_hold_info.rate = self.last_hold_info.rate.max(lower);
+            }
             self.current_estimate = best_candidate;
             self.current_estimate.loss_limited_bandwidth =
                 loss_limited_bandwidth.min(self.last_hold_info.rate);
@@ -407,6 +453,7 @@ impl LossController {
     #[cfg(test)]
     pub fn set_min_bitrate(&mut self, min_bitrate: Bitrate) {
         self.min_bitrate = min_bitrate;
+        self.calculate_instant_lower_bound();
     }
 
     pub fn loss_based_result(&self) -> LossBasedBweResult {
@@ -415,7 +462,12 @@ impl LossController {
             state: self.state,
         };
 
-        if self.num_observations == 0 {
+        // Not ready: the delay-based estimate stands (libwebrtc
+        // `GetLossBasedResult`).
+        if !self.is_ready() {
+            if self.delay_based_estimate.is_valid() {
+                result.bandwidth_estimate = Some(self.delay_based_estimate);
+            }
             return result;
         }
 
@@ -425,14 +477,17 @@ impl LossController {
         };
         let instant_upper_bound = self.get_instant_upper_bound();
 
+        let lower = self.cached_instant_lower_bound;
         if self.delay_based_estimate.is_valid() {
             result.bandwidth_estimate = Some(
                 loss_limited_bandwidth
                     .min(self.delay_based_estimate)
-                    .min(instant_upper_bound),
+                    .min(instant_upper_bound)
+                    .max(lower),
             );
         } else {
-            result.bandwidth_estimate = Some(loss_limited_bandwidth.min(instant_upper_bound));
+            result.bandwidth_estimate =
+                Some(loss_limited_bandwidth.min(instant_upper_bound).max(lower));
         }
 
         result

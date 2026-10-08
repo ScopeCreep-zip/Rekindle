@@ -384,6 +384,28 @@ impl RouteController {
         }
     }
 
+    /// The datagram numbered `wire_seq` was handed to Veilid at `at`: its
+    /// send time is then, as libwebrtc stamps it at `OnSentPacket`, not
+    /// when the pacer released it (the hand-off took up to 57 ms on Pop in
+    /// call 1). Sends leave in sequence, so the record is near the back.
+    pub fn on_handed_off(&mut self, wire_seq_sent: u32, at: Instant) {
+        if let Some(record) = self
+            .history
+            .iter_mut()
+            .rev()
+            .take(64)
+            .find(|r| wire_seq(r.seq) == wire_seq_sent)
+        {
+            record.sent_at = at;
+        }
+    }
+
+    /// The route's round trip from the voice receiver reports, for the
+    /// estimator's rate control (libwebrtc feeds AIMD the RTCP RTT).
+    pub fn set_rtt(&mut self, rtt: Duration) {
+        self.bwe.set_rtt(rtt);
+    }
+
     /// Hand a feedback report from this route's receiver to the estimator
     /// and reconfigure the pacer (str0m `apply_report`, `bwe.update`,
     /// `configure_pacer`). Returns the estimate after it.

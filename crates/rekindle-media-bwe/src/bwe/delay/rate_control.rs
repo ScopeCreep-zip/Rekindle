@@ -21,6 +21,13 @@ const MULTIPLICATIVE_INCREASE_COEF: f64 = 1.08;
 const MAX_ESTIMATE_RATIO: f64 = 1.5;
 /// Default backoff time added to RTT for response time calculation (kDefaultBackoffTimeInMs in WebRTC).
 const DEFAULT_BACKOFF_TIME: Duration = Duration::from_millis(100);
+/// RTT assumed before one is measured (libwebrtc `kDefaultRtt`).
+const DEFAULT_RTT: Duration = Duration::from_millis(200);
+/// Packet size the near-max increase assumes (libwebrtc `kPacketSize`).
+const PACKET_SIZE_BITS: f64 = 1200.0 * 8.0;
+/// Floor of the near-max increase (libwebrtc
+/// `kMinIncreaseRateBpsPerSecond`).
+const MIN_NEAR_MAX_INCREASE_BPS_PER_S: f64 = 4_000.0;
 /// Number of standard deviations below mean to reset observed bitrate average.
 const OBSERVED_BITRATE_RESET_THRESHOLD_STD: f64 = 3.0;
 
@@ -221,12 +228,10 @@ impl RateControl {
         let mut new_estimate = if near_convergence {
             // Additive increase
             log_rate_control_applied_change!("increase_additive");
-            let response_time = self.last_rtt.unwrap_or(Duration::ZERO) + DEFAULT_BACKOFF_TIME;
-
-            let alpha =
-                0.5 * (since_last_update.as_secs_f64() / response_time.as_secs_f64()).min(1.0);
-            let expected_packet_size = self.estimated_packet_size();
-            self.estimated_bitrate.as_f64() + (alpha * expected_packet_size).max(1000.0)
+            // libwebrtc `AdditiveRateIncrease`: the near-max rate times the
+            // time since the last change.
+            self.estimated_bitrate.as_f64()
+                + self.near_max_increase_bps_per_s() * since_last_update.as_secs_f64()
         } else {
             // Multiplicative increase
             log_rate_control_applied_change!("increase_multiplicative");
@@ -286,12 +291,17 @@ impl RateControl {
         self.last_estimate_update = Some(now);
     }
 
-    fn estimated_packet_size(&self) -> f64 {
-        // Assume 30 FPS video dominates the send rate
-        let bits_per_frame = self.estimated_bitrate.as_f64() / 30.0;
-        let packets_per_frame = (bits_per_frame / (1200.0 / 8.0)).ceil();
-
-        bits_per_frame / packets_per_frame
+    /// libwebrtc `GetNearMaxIncreaseRateBpsPerSecond`
+    /// (`aimd_rate_control.cc`): one average packet per response time,
+    /// assuming 30 fps video in 1,200-byte packets, at least 4 kbps/s.
+    /// (str0m divided bits by 1200/8, a bytes-to-bits slip that made the
+    /// packet ~150 bits and the increase its 1 kbps floor.)
+    fn near_max_increase_bps_per_s(&self) -> f64 {
+        let frame_bits = self.estimated_bitrate.as_f64() / 30.0;
+        let packets_per_frame = (frame_bits / PACKET_SIZE_BITS).ceil().max(1.0);
+        let avg_packet_bits = frame_bits / packets_per_frame;
+        let response_time = (self.last_rtt.unwrap_or(DEFAULT_RTT) + DEFAULT_BACKOFF_TIME) * 2;
+        (avg_packet_bits / response_time.as_secs_f64()).max(MIN_NEAR_MAX_INCREASE_BPS_PER_S)
     }
 }
 
@@ -404,6 +414,21 @@ mod test {
         }
 
         #[test]
+        fn near_max_increase_follows_libwebrtc() {
+            // 500 kbps at 30 fps: 16,667-bit frames in 2 packets of 8,333
+            // bits; RTT 300 ms gives a response time of (300 + 100) · 2 =
+            // 800 ms: 10.4 kbps/s.
+            let mut rate_controller = make_control(500_000);
+            rate_controller.last_rtt = Some(duration_ms(300));
+            let rate = rate_controller.near_max_increase_bps_per_s();
+            assert!((rate - 10_416.7).abs() < 1.0, "{rate}");
+            // At low rates the 4 kbps/s floor holds.
+            let mut low = make_control(20_000);
+            low.last_rtt = Some(duration_ms(300));
+            assert!((low.near_max_increase_bps_per_s() - 4_000.0).abs() < f64::EPSILON);
+        }
+
+        #[test]
         fn test_initial_estimate() {
             let rate_controller = make_control(100_000);
 
@@ -509,9 +534,12 @@ mod test {
             rate_controller.update(Signal::Normal, 60_000.into(), None, now + duration_ms(2500));
             assert_eq!(rate_controller.estimated_bitrate().as_u64(), 71_552,);
 
-            // NB: Additive increase because we are nearing convergence
+            // NB: Additive increase because we are nearing convergence. At
+            // 71,552 bps a 30 fps frame is 2,385 bits (one packet); RTT
+            // 80 ms gives a 360 ms response time: 6,625 bps/s over 1 s
+            // (libwebrtc `AdditiveRateIncrease`).
             rate_controller.update(Signal::Normal, 70_000.into(), None, now + duration_ms(3500));
-            assert_eq!(rate_controller.estimated_bitrate().as_u64(), 72552);
+            assert_eq!(rate_controller.estimated_bitrate().as_u64(), 78_177);
         }
     }
 

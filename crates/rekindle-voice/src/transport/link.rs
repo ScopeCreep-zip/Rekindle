@@ -82,6 +82,11 @@ impl PeerLink {
     /// Hand the peer's feedback about our media to the controller, divide
     /// the new estimate and tell the estimator how far to probe. Returns
     /// the split.
+    /// The route's round trip from the voice receiver reports (plan E4.3 T2).
+    pub fn set_rtt(&self, rtt: std::time::Duration) {
+        self.controller.lock().set_rtt(rtt);
+    }
+
     pub fn on_feedback(&self, feedback: &TransportFeedback) -> RouteAllocation {
         let now = Instant::now();
         let mut c = self.controller.lock();
@@ -156,11 +161,15 @@ impl PeerLink {
                     }
                 }
                 let route = self.route();
+                let seq = crate::media_frame::split_sequenced(&datagram).map(|(_, seq, _)| seq);
                 let started = Instant::now();
                 let result = sender.send_voice_frame(&route, datagram).await;
                 send_times.note(started.elapsed());
                 match result {
                     Ok(()) => {
+                        if let Some(seq) = seq {
+                            self.controller.lock().on_handed_off(seq, Instant::now());
+                        }
                         self.sent.fetch_add(1, Ordering::Relaxed);
                         streak = 0;
                     }

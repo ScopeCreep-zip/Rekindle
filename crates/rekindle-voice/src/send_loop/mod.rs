@@ -98,6 +98,9 @@ struct VoiceSendLoop {
     /// classification, not be declared lost for staying quiet.
     peer_links: HashMap<String, PeerLink>,
     media_liveness: Arc<MediaLiveness>,
+    /// The session's media routes, taken once at start: each receiver
+    /// report's round trip goes to its route's estimator (plan E4.3 T2).
+    media: Option<Arc<crate::transport::roster::MediaRoster>>,
     /// SFrame-seals every outbound frame under our sender key.
     sealer: FrameSealer,
 }
@@ -169,12 +172,17 @@ impl VoiceSendLoop {
             report_rx: params.report_rx,
             peer_links: HashMap::new(),
             media_liveness: params.media_liveness,
+            media: None,
         })
     }
 
     async fn run_loop(mut self) {
         tracing::info!("voice send loop started");
-        let mut allocation = self.transport.lock().await.allocator().subscribe();
+        let mut allocation = {
+            let transport = self.transport.lock().await;
+            self.media = Some(transport.media());
+            transport.allocator().subscribe()
+        };
         loop {
             tokio::select! {
                 biased;

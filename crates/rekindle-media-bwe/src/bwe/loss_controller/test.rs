@@ -133,6 +133,9 @@ fn stable_loss_with_loss_spike() {
     }
 
     pkt_builder = pkt_builder.with_loss(0.9);
+    // What is delivered is what is acknowledged: libwebrtc's acked-rate
+    // lower bound follows it down (LowerBoundByAckedRateFactor 1.0).
+    lbc.set_acknowledged_bitrate(acknowledged_bitrate * 0.1);
     // Loss spike(1second at 90% loss)
     for _ in 0..4 {
         let result = pkt_builder.build_packets();
@@ -180,13 +183,15 @@ fn loss_spike_recovery() {
         pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
     }
 
-    // Loss spike
+    // Loss spike; the acknowledged rate is what is delivered.
     pkt_builder = pkt_builder.with_loss(0.9);
+    lbc.set_acknowledged_bitrate(acknowledged_bitrate * 0.1);
     let result = pkt_builder.build_packets();
     lbc.update_bandwidth_estimate(&result, Bitrate::bps(1_500_000));
     pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
 
     pkt_builder = pkt_builder.with_loss(0.05);
+    lbc.set_acknowledged_bitrate(acknowledged_bitrate * 0.95);
     // Set loss back to 5% and gradually ramp up the bitrate
     for i in 0..40 {
         pkt_builder = pkt_builder.num_packets(6 + i / 2);
@@ -237,7 +242,10 @@ fn stable_loss_gradual_overuse() {
 
     // Gradual increase
     for inc in 0..10 {
-        pkt_builder = pkt_builder.with_loss(0.05 + (f64::from(inc) / 10.0));
+        let loss = 0.05 + (f64::from(inc) / 10.0);
+        pkt_builder = pkt_builder.with_loss(loss);
+        // The acknowledged rate is what is delivered.
+        lbc.set_acknowledged_bitrate(acknowledged_bitrate * (1.0 - loss));
 
         for _ in 0..4 {
             let result = pkt_builder.build_packets();
@@ -280,11 +288,16 @@ fn test_loss_limited_window() {
     }
 
     let loss_limited = {
-        // loss spike observation at 50%
+        // A loss spike at 50 % lasting until the result is usable
+        // (libwebrtc `MinNumObservations` 3); half is delivered and
+        // acknowledged.
         pkt_builder = pkt_builder.with_loss(0.5);
-        let result = pkt_builder.build_packets();
-        lbc.update_bandwidth_estimate(&result, Bitrate::bps(1_500_000));
-        pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
+        lbc.set_acknowledged_bitrate(Bitrate::kbps(500));
+        for _ in 0..4 {
+            let result = pkt_builder.build_packets();
+            lbc.update_bandwidth_estimate(&result, Bitrate::bps(1_500_000));
+            pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
+        }
 
         let LossBasedBweResult {
             bandwidth_estimate,
@@ -301,47 +314,47 @@ fn test_loss_limited_window() {
         estimate
     };
 
-    {
-        // Recovery observation at 0% loss
-        pkt_builder = pkt_builder.with_loss(0.0);
+    // Recovery at 0 % loss while 300 kbps is delivered: the loss still in
+    // the window holds the estimate down, and the acknowledged rate is its
+    // floor (libwebrtc `LowerBoundByAckedRateFactor`).
+    pkt_builder = pkt_builder.with_loss(0.0);
+    lbc.set_acknowledged_bitrate(Bitrate::kbps(300));
+    for _ in 0..4 {
         let result = pkt_builder.build_packets();
-        // Lower acknowledged bitrate to simulate reacting to estimate due to spike
-        lbc.set_acknowledged_bitrate(Bitrate::kbps(300));
         lbc.update_bandwidth_estimate(&result, Bitrate::bps(1_500_000));
         pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
-
-        let LossBasedBweResult {
-            bandwidth_estimate,
-            state,
-        } = lbc.loss_based_result();
-
-        let estimate = bandwidth_estimate.expect("Should have an estimate");
+        let estimate = lbc.loss_based_result().bandwidth_estimate.unwrap();
         assert!(
-            estimate > loss_limited && estimate <= Bitrate::mbps(1),
-            "During the recovery window after a loss spike the estimate should increase, but be bounded. loss_limited={loss_limited}, estimate={estimate}, expected <= 1 Mbps"
+            estimate >= Bitrate::kbps(300) && estimate <= loss_limited,
+            "bounded between the acked rate and the loss-limited rate, got {estimate}"
         );
-        assert_eq!(state, LossControllerState::Decreasing);
     }
 
-    {
-        // Another recovery observation at 0% loss, outside of the limit window
-        pkt_builder = pkt_builder.num_packets(80);
+    // Delivery back at 1 Mbps: the acked rate lifts the estimate, which
+    // stays loss-limited below the delay estimate until the spike ages
+    // out of the window.
+    lbc.set_acknowledged_bitrate(Bitrate::mbps(1));
+    let result = pkt_builder.build_packets();
+    lbc.update_bandwidth_estimate(&result, Bitrate::bps(1_500_000));
+    pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
+    let LossBasedBweResult {
+        bandwidth_estimate,
+        state,
+    } = lbc.loss_based_result();
+    assert_eq!(bandwidth_estimate, Some(Bitrate::mbps(1)));
+    assert_eq!(state, LossControllerState::Increasing);
+
+    for _ in 0..20 {
         let result = pkt_builder.build_packets();
-        lbc.set_acknowledged_bitrate(Bitrate::mbps(1));
         lbc.update_bandwidth_estimate(&result, Bitrate::bps(1_500_000));
-
-        let LossBasedBweResult {
-            bandwidth_estimate,
-            state,
-        } = lbc.loss_based_result();
-
-        let estimate = bandwidth_estimate.expect("Should have an estimate");
-        assert!(
-            estimate == Bitrate::bps(1_000_000),
-            "Eventually the estimate should recover but still remain bounded until the average loss caused by spike ages out"
-        );
-        assert_eq!(state, LossControllerState::Decreasing);
+        pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
     }
+    let LossBasedBweResult {
+        bandwidth_estimate,
+        state,
+    } = lbc.loss_based_result();
+    assert_eq!(bandwidth_estimate, Some(Bitrate::bps(1_500_000)));
+    assert_eq!(state, LossControllerState::DelayBased);
 }
 
 struct PacketBuilder {
@@ -436,4 +449,54 @@ fn normal_distribution(rng: &mut Rng) -> f64 {
     let u2 = rng.f64();
 
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+}
+
+#[test]
+fn reported_loss_never_drops_the_estimate_below_what_is_acknowledged() {
+    // Call 1 on Pop (evidence/e4-3-transport-on-veilid.md): one report
+    // with 28 % of its bytes "lost" while delivery held at ~600 kbps. The
+    // instant upper bound alone is 100 kbps / (0.28 - 0.05) = 435 kbps;
+    // libwebrtc's acked-rate lower bound keeps the estimate at the
+    // delivered rate.
+    let mut lbc = LossController::new();
+    lbc.set_min_bitrate(Bitrate::kbps(30));
+    lbc.set_max_bitrate(Bitrate::gbps(1));
+    lbc.set_acknowledged_bitrate(Bitrate::kbps(600));
+    lbc.set_bandwidth_estimate(Bitrate::kbps(800));
+
+    let mut pkt_builder = PacketBuilder::new(Instant::now()).num_packets(25);
+    for _ in 0..4 {
+        let result = pkt_builder.build_packets();
+        lbc.update_bandwidth_estimate(&result, Bitrate::kbps(900));
+        pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
+    }
+    pkt_builder = pkt_builder.with_loss(0.28);
+    for _ in 0..4 {
+        let result = pkt_builder.build_packets();
+        lbc.update_bandwidth_estimate(&result, Bitrate::kbps(900));
+        pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
+    }
+    let estimate = lbc.loss_based_result().bandwidth_estimate.unwrap();
+    assert!(estimate >= Bitrate::kbps(600), "{estimate}");
+}
+
+#[test]
+fn the_delay_estimate_stands_until_three_observations() {
+    let mut lbc = LossController::new();
+    lbc.set_min_bitrate(Bitrate::kbps(30));
+    lbc.set_max_bitrate(Bitrate::gbps(1));
+    lbc.set_acknowledged_bitrate(Bitrate::kbps(100));
+    lbc.set_bandwidth_estimate(Bitrate::kbps(800));
+    let mut pkt_builder = PacketBuilder::new(Instant::now())
+        .num_packets(25)
+        .with_loss(0.5);
+    for _ in 0..2 {
+        let result = pkt_builder.build_packets();
+        lbc.update_bandwidth_estimate(&result, Bitrate::kbps(900));
+        pkt_builder = pkt_builder.forward_time(Duration::from_millis(250));
+    }
+    assert_eq!(
+        lbc.loss_based_result().bandwidth_estimate,
+        Some(Bitrate::kbps(900))
+    );
 }
