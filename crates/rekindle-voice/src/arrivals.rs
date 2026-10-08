@@ -12,10 +12,16 @@
 //! a peer's signed packet under a new sequence number and fake an arrival
 //! for it (plan E4.3.3). Each kind is recorded only once fresh: a voice
 //! packet through a replay window over its own signed sequence
-//! ([`ArrivalLedger::record_voice`]); an envelope after the gossip dedup
-//! cache passes it; padding signs the sequence number itself. A sequence
-//! number keeps its first arrival, so a replay under the same number
-//! cannot move it.
+//! ([`ArrivalLedger::record_voice`]); an envelope by its signature, seen
+//! once ([`ArrivalLedger::record_signed`]); padding signs the sequence
+//! number itself. A sequence number keeps its first arrival, so a replay
+//! under the same number cannot move it.
+//!
+//! Every kind is recorded on the dispatch thread, before any queue, as
+//! libwebrtc hands each packet's arrival to feedback before delivering it
+//! to a stream (`call/call.cc` `NotifyBweOfReceivedPacket`): an arrival
+//! recorded behind a queue can land after a report has already counted
+//! its sequence number lost.
 
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
@@ -40,7 +46,14 @@ struct PeerArrivals {
     pending: BTreeMap<u32, Instant>,
     /// Voice sequence numbers already counted (RFC 3711 §3.3.2 window).
     voice_seen: CtrWindow,
+    /// Envelope signatures already counted, oldest first (bounded).
+    signed_seen: std::collections::VecDeque<[u8; 16]>,
+    signed_set: std::collections::HashSet<[u8; 16]>,
 }
+
+/// Envelope signatures remembered per peer for the replay check: well over
+/// a feedback interval of video at any rate the route carries.
+const SIGNED_SEEN_MAX: usize = 4_096;
 
 /// A report's content before it is signed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +91,31 @@ impl ArrivalLedger {
         // reported) is dropped: its loss was already reported.
         if offset < u32::MAX / 2 {
             entry.pending.entry(offset).or_insert(at);
+        }
+    }
+
+    /// Note a signed envelope's arrival unless the same signature was
+    /// counted before (a replay under a new route sequence number).
+    pub fn record_signed(&self, peer: &str, signature: &[u8], transport_seq: u32, at: Instant) {
+        let mut key = [0u8; 16];
+        let n = signature.len().min(16);
+        key[..n].copy_from_slice(&signature[..n]);
+        let fresh = {
+            let mut peers = self.peers.lock();
+            let entry = peers.entry(peer.to_string()).or_default();
+            let fresh = entry.signed_set.insert(key);
+            if fresh {
+                entry.signed_seen.push_back(key);
+                if entry.signed_seen.len() > SIGNED_SEEN_MAX {
+                    if let Some(old) = entry.signed_seen.pop_front() {
+                        entry.signed_set.remove(&old);
+                    }
+                }
+            }
+            fresh
+        };
+        if fresh {
+            self.record(peer, transport_seq, at);
         }
     }
 
@@ -199,6 +237,19 @@ mod tests {
         ledger.record_voice("a", 7, 101, t0);
         let report = ledger.take_report("a", t0).unwrap();
         assert_eq!(report.arrivals.len(), 1);
+    }
+
+    #[test]
+    fn a_replayed_envelope_does_not_count_again() {
+        let ledger = ArrivalLedger::default();
+        let t0 = Instant::now();
+        ledger.record_signed("a", &[7u8; 64], 10, t0);
+        ledger.record_signed("a", &[7u8; 64], 11, t0);
+        ledger.record_signed("a", &[8u8; 64], 12, t0);
+        let report = ledger.take_report("a", t0).unwrap();
+        assert_eq!(report.begin_seq, 10);
+        assert_eq!(report.arrivals.len(), 3);
+        assert_eq!(report.arrivals[1], NOT_RECEIVED, "seq 11 was the replay");
     }
 
     #[test]

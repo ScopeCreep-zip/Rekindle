@@ -43,11 +43,9 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
     use crate::services::veilid::ingress_queue::IngressItem;
     if let Ok(signed) = decode_signed_envelope(&message) {
         let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
-        state.gossip_ingress.push(IngressItem::Gossip {
-            signed,
-            is_video,
-            media_arrival: None,
-        });
+        state
+            .gossip_ingress
+            .push(IngressItem::Gossip { signed, is_video });
         return;
     }
 
@@ -64,12 +62,8 @@ pub(crate) async fn process_ingress_item(
 ) {
     use crate::services::veilid::ingress_queue::IngressItem;
     match item {
-        IngressItem::Gossip {
-            signed,
-            media_arrival,
-            ..
-        } => {
-            handle_gossip_envelope(app_handle, state, signed, media_arrival).await;
+        IngressItem::Gossip { signed, .. } => {
+            handle_gossip_envelope(app_handle, state, signed).await;
         }
         IngressItem::Legacy(message) => {
             let Ok(pool) = state.db.current() else {
@@ -85,7 +79,6 @@ async fn handle_gossip_envelope(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
     signed: SignedEnvelope,
-    media_arrival: Option<(u32, std::time::Instant)>,
 ) {
     let community_id = &signed.community_id;
 
@@ -131,19 +124,6 @@ async fn handle_gossip_envelope(
         if cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key) {
             tracing::trace!(dedup_key = %dedup_key, "gossip dedup: dropping duplicate");
             return;
-        }
-    }
-
-    // Plans E4.3.2, E4.3.3 — a verified media-plane envelope counts toward
-    // its sender's transport feedback, timed when it arrived. Recorded
-    // after the dedup cache, so a replay under a new route sequence
-    // number never counts as an arrival.
-    if let Some((transport_seq, arrived)) = media_arrival {
-        crate::state_helpers::note_media_live(state, &signed.sender_pseudonym);
-        if let Some(media) = crate::state_helpers::voice_media(state) {
-            media
-                .arrivals()
-                .record(&signed.sender_pseudonym, transport_seq, arrived);
         }
     }
 

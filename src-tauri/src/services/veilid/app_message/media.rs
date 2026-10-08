@@ -139,9 +139,12 @@ fn handle_padding(
     }
 }
 
-/// A video-plane envelope on the media route: queued to the gossip
-/// ingress worker like any signed envelope, carrying its arrival so the
-/// worker records it for feedback once the signature verifies.
+/// A video-plane envelope on the media route. Its arrival is recorded for
+/// transport feedback here, on the dispatch thread, once its signature
+/// verifies (only a sender's own envelopes count toward its feedback,
+/// r6 R-BW6); then it is queued to the gossip ingress worker like any
+/// signed envelope. Recorded behind the queue, it could land after a
+/// report had already counted it lost (plan E4.3.3).
 fn handle_media_envelope(
     state: &Arc<AppState>,
     transport_seq: u32,
@@ -152,14 +155,21 @@ fn handle_media_envelope(
         tracing::debug!("media envelope did not decode — dropping");
         return;
     };
+    if rekindle_codec::community::envelope::verify_envelope(&signed).is_ok() {
+        crate::state_helpers::note_media_live(state, &signed.sender_pseudonym);
+        if let Some(media) = crate::state_helpers::voice_media(state) {
+            media.arrivals().record_signed(
+                &signed.sender_pseudonym,
+                &signed.signature,
+                transport_seq,
+                arrived,
+            );
+        }
+    }
     let is_video = super::video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
-    state.gossip_ingress.push(
-        crate::services::veilid::ingress_queue::IngressItem::Gossip {
-            signed,
-            is_video,
-            media_arrival: Some((transport_seq, arrived)),
-        },
-    );
+    state
+        .gossip_ingress
+        .push(crate::services::veilid::ingress_queue::IngressItem::Gossip { signed, is_video });
 }
 
 /// Transport feedback about our outbound stream to one peer: verified,
