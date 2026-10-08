@@ -34,7 +34,7 @@
     "dependency-cruiser": "^18.2.0",
     "knip": "^6.39.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.2",
     "vite": "^6.0.0",
     "vite-plugin-solid": "^2.0.0"
   }
