@@ -2,9 +2,18 @@
 //! task that sends what the pacer releases (plan E4.3.3).
 //!
 //! Producers (the voice send loop, the video frame path) only enqueue and
-//! wake the driver; the driver alone talks to Veilid, one datagram at a
-//! time, so a slow `app_message` to one peer never holds up another peer
-//! or the encoder (str0m's I/O loop: `poll_output`, send, repeat).
+//! wake the driver, so a slow `app_message` to one peer never holds up
+//! another peer or the encoder (str0m's I/O loop: `poll_output`, send,
+//! repeat).
+//!
+//! The driver hands each released datagram to one of two send lanes
+//! ([`SendLane`]): voice and video-plane control, or video and padding. Each
+//! lane sends in order, one `app_message` at a time; the two run side by
+//! side, so a video hand-off that blocks (call 3: 2 s on Pop) never holds
+//! up voice. Veilid statements promise dispatch, not order, and nothing in
+//! veilid-core serialises them per destination beyond its compiled-route
+//! and socket locks (`evidence/e4-3-transport-on-veilid.md` §7), so
+//! concurrent sends to one route are safe.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -16,7 +25,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use super::allocation::{allocate, Allocator, RouteAllocation};
-use super::egress::{RouteController, RouteStats, VideoFrame};
+use super::egress::{RouteController, RouteStats, SendLane, VideoFrame};
 use super::VoiceFrameSender;
 use crate::error::VoiceError;
 
@@ -36,6 +45,11 @@ pub struct PeerLink {
     stop: CancellationToken,
     sent: AtomicU64,
     failed: AtomicU64,
+    /// A video datagram is being handed to Veilid.
+    video_in_flight: std::sync::atomic::AtomicBool,
+    /// Hand-off times per lane since the last stats line.
+    voice_times: Mutex<SendTimes>,
+    video_times: Mutex<SendTimes>,
 }
 
 impl PeerLink {
@@ -49,6 +63,9 @@ impl PeerLink {
             stop: CancellationToken::new(),
             sent: AtomicU64::new(0),
             failed: AtomicU64::new(0),
+            video_in_flight: std::sync::atomic::AtomicBool::new(false),
+            voice_times: Mutex::new(SendTimes::default()),
+            video_times: Mutex::new(SendTimes::default()),
         })
     }
 
@@ -119,7 +136,8 @@ impl PeerLink {
         self.stop.is_cancelled()
     }
 
-    /// Run the driver until [`Self::stop`] or the scope's cancellation.
+    /// Run the driver until [`Self::stop`] or the scope's cancellation:
+    /// the release loop and the two send lanes, side by side.
     pub async fn drive(
         self: Arc<Self>,
         peer: String,
@@ -127,29 +145,46 @@ impl PeerLink {
         allocator: Arc<Allocator>,
         scope_stop: CancellationToken,
     ) {
-        let mut streak = 0u64;
+        let (voice_tx, voice_rx) = tokio::sync::mpsc::unbounded_channel();
+        // The video lane takes one datagram at a time; the controller keeps
+        // the rest while it is busy.
+        let (video_tx, video_rx) = tokio::sync::mpsc::channel(1);
+        tokio::join!(
+            self.release(&peer, &allocator, &scope_stop, voice_tx, video_tx),
+            self.lane(&peer, &*sender, SendLane::Voice, LaneRx::Voice(voice_rx)),
+            self.lane(&peer, &*sender, SendLane::Video, LaneRx::Video(video_rx)),
+        );
+    }
+
+    /// Release what the pacer lets go and hand it to its lane; never
+    /// awaits a send. Ends (closing both lanes) on stop.
+    async fn release(
+        &self,
+        peer: &str,
+        allocator: &Allocator,
+        scope_stop: &CancellationToken,
+        voice_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        video_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    ) {
         let mut last_stats = Instant::now();
-        // How long each `app_message` took to hand off, since the last
-        // stats line: while one is in flight, everything queued behind it
-        // (voice included) waits.
-        let mut send_times = SendTimes::default();
         loop {
             let now = Instant::now();
-            let (datagram, next, keyframe, stats) = {
+            let (polled, next, keyframe, stats) = {
                 let mut c = self.controller.lock();
+                c.set_video_lane_busy(self.video_in_flight.load(Ordering::Acquire));
                 c.handle_timeout(now);
-                let datagram = c.poll_datagram(now);
+                let polled = c.poll_datagram(now);
                 let stats = (now.duration_since(last_stats) >= STATS_EVERY).then(|| c.stats(now));
-                (datagram, c.poll_timeout(), c.take_keyframe_wanted(), stats)
+                (polled, c.poll_timeout(), c.take_keyframe_wanted(), stats)
             };
             if keyframe {
                 allocator.request_keyframe();
             }
             if let Some(stats) = stats {
                 last_stats = now;
-                self.log_stats(&peer, &stats, &mut send_times);
+                self.log_stats(peer, &stats);
             }
-            if let Some(mut datagram) = datagram {
+            if let Some((mut datagram, lane)) = polled {
                 if datagram.first() == Some(&crate::media_frame::PADDING_TAG) {
                     let signed =
                         self.padding_key.read().as_ref().is_some_and(|key| {
@@ -160,23 +195,17 @@ impl PeerLink {
                         continue;
                     }
                 }
-                let route = self.route();
-                let seq = crate::media_frame::split_sequenced(&datagram).map(|(_, seq, _)| seq);
-                let started = Instant::now();
-                let result = sender.send_voice_frame(&route, datagram).await;
-                send_times.note(started.elapsed());
-                match result {
-                    Ok(()) => {
-                        if let Some(seq) = seq {
-                            self.controller.lock().on_handed_off(seq, Instant::now());
-                        }
-                        self.sent.fetch_add(1, Ordering::Relaxed);
-                        streak = 0;
+                match lane {
+                    SendLane::Voice => {
+                        let _ = voice_tx.send(datagram);
                     }
-                    Err(e) => {
-                        self.failed.fetch_add(1, Ordering::Relaxed);
-                        streak += 1;
-                        log_failure(&peer, streak, &e);
+                    SendLane::Video => {
+                        self.video_in_flight.store(true, Ordering::Release);
+                        if video_tx.try_send(datagram).is_err() {
+                            // Not reachable: the controller hides video
+                            // while a hand-off is in flight.
+                            self.video_in_flight.store(false, Ordering::Release);
+                        }
                     }
                 }
                 continue;
@@ -197,11 +226,57 @@ impl PeerLink {
         }
     }
 
-    fn log_stats(&self, peer: &str, s: &RouteStats, send_times: &mut SendTimes) {
+    /// One send lane: hand each datagram to Veilid in order, until the
+    /// release loop ends.
+    async fn lane(
+        &self,
+        peer: &str,
+        sender: &dyn VoiceFrameSender,
+        lane: SendLane,
+        mut rx: LaneRx,
+    ) {
+        let mut streak = 0u64;
+        while let Some(datagram) = rx.recv().await {
+            let route = self.route();
+            let seq = crate::media_frame::split_sequenced(&datagram).map(|(_, seq, _)| seq);
+            let started = Instant::now();
+            let result = sender.send_voice_frame(&route, datagram).await;
+            let times = match lane {
+                SendLane::Voice => &self.voice_times,
+                SendLane::Video => &self.video_times,
+            };
+            times.lock().note(started.elapsed());
+            match result {
+                Ok(()) => {
+                    if let Some(seq) = seq {
+                        self.controller.lock().on_handed_off(seq, Instant::now());
+                    }
+                    self.sent.fetch_add(1, Ordering::Relaxed);
+                    streak = 0;
+                }
+                Err(e) => {
+                    self.failed.fetch_add(1, Ordering::Relaxed);
+                    streak += 1;
+                    log_failure(peer, streak, &e);
+                }
+            }
+            if lane == SendLane::Video {
+                self.video_in_flight.store(false, Ordering::Release);
+                self.wake.notify_one();
+            }
+        }
+    }
+
+    fn log_stats(&self, peer: &str, s: &RouteStats) {
         let (sent, failed) = self.send_counts();
-        let (send_p50_ms, send_p95_ms, send_max_ms) = send_times.take();
+        let (voice_send_p50_ms, voice_send_p95_ms, voice_send_max_ms) =
+            self.voice_times.lock().take();
+        let (send_p50_ms, send_p95_ms, send_max_ms) = self.video_times.lock().take();
         tracing::info!(
             peer = %peer,
+            voice_send_p50_ms,
+            voice_send_p95_ms,
+            voice_send_max_ms,
             send_p50_ms,
             send_p95_ms,
             send_max_ms,
@@ -261,5 +336,21 @@ fn log_failure(peer: &str, streak: u64, error: &VoiceError) {
         // datagrams cannot reach the peer.
         tracing::warn!(peer = %peer, consecutive_failures = streak, error = %error,
             one_way_dead = super::is_no_connection(error), "media send failing for peer");
+    }
+}
+
+/// A lane's receiving end: voice is unbounded (never held), video takes
+/// one datagram at a time.
+enum LaneRx {
+    Voice(tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>),
+    Video(tokio::sync::mpsc::Receiver<Vec<u8>>),
+}
+
+impl LaneRx {
+    async fn recv(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Self::Voice(rx) => rx.recv().await,
+            Self::Video(rx) => rx.recv().await,
+        }
     }
 }
