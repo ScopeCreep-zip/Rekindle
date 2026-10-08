@@ -44,6 +44,15 @@ pub fn list_devices() -> Vec<VideoDevice> {
     devices
 }
 
+/// A resolved camera: its configured source element, its description for
+/// errors, and the modes it offers (the device provider's caps), from which
+/// the pipeline picks the one to capture in.
+pub(crate) struct ResolvedSource {
+    pub element: gst::Element,
+    pub desc: String,
+    pub modes: Option<gst::Caps>,
+}
+
 /// Resolve the saved label (or the first available camera) to a
 /// configured source element + its description for error messages.
 ///
@@ -62,9 +71,7 @@ pub fn list_devices() -> Vec<VideoDevice> {
 /// drives label matching and yields the `/dev/videoN` path from its
 /// properties; if no v4l2 path is exposed we fall back to the monitor's
 /// own `create_element`.
-pub(crate) fn create_source(
-    saved_label: Option<&str>,
-) -> Result<(gst::Element, String), CaptureError> {
+pub(crate) fn create_source(saved_label: Option<&str>) -> Result<ResolvedSource, CaptureError> {
     let monitor = monitor()?;
     let devices = monitor.devices();
     monitor.stop();
@@ -94,9 +101,10 @@ pub(crate) fn create_source(
     // Prefer a device that exposes a v4l2 capture path → build v4l2src
     // on it directly. Fall back to the monitor's create_element for a
     // device with no readable path.
-    let mut fallback: Option<(gst::Element, String)> = None;
+    let mut fallback: Option<ResolvedSource> = None;
     for device in &candidates {
         let desc = device.display_name().to_string();
+        let modes = device.caps();
         // Linux fast-path: build `v4l2src` directly on the resolved
         // `/dev/videoN` (the single-opener model). macOS/Windows have no
         // such path and use the provider's own configured source element
@@ -107,11 +115,19 @@ pub(crate) fn create_source(
                 .property("device", &path)
                 .build()
                 .map_err(|e| CaptureError::Unavailable(format!("v4l2src {path}: {e}")))?;
-            return Ok((element, desc));
+            return Ok(ResolvedSource {
+                element,
+                desc,
+                modes,
+            });
         }
         if fallback.is_none() {
             if let Ok(element) = device.create_element(None) {
-                fallback = Some((element, desc));
+                fallback = Some(ResolvedSource {
+                    element,
+                    desc,
+                    modes,
+                });
             }
         }
     }

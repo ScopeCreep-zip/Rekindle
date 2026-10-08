@@ -26,6 +26,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_video as gst_video;
 
+mod capability;
 mod gst_util;
 mod probe;
 mod start;
