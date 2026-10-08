@@ -138,6 +138,18 @@ impl NativeCaptureSession {
             mode = %chosen.as_ref().map_or_else(|| "any".to_string(), |m| m.describe(fps_req)),
             "camera capture mode"
         );
+        if chosen.is_none() {
+            if let Some(caps) = &device_modes {
+                // A camera with a mode list none of which parsed: say what
+                // it offered rather than capture in an unchosen mode silently.
+                tracing::warn!(
+                    target: "rekindle_video_capture",
+                    source = %source_desc,
+                    device_caps = %caps,
+                    "no camera mode parsed from the device caps"
+                );
+            }
+        }
         src_caps.set_property("caps", source_caps);
         head_caps.set_property(
             "caps",
