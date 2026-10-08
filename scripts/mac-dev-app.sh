@@ -88,6 +88,10 @@ if [ -f "$APP_DIR/Contents/MacOS/rekindle-desktop" ] \
     tccutil reset Camera com.rekindle.app.dev >/dev/null 2>&1 || true
     tccutil reset Microphone com.rekindle.app.dev >/dev/null 2>&1 || true
 fi
+# Replace, never overwrite: copying over the old file keeps its inode, and
+# the kernel's cached code-signing data for that file no longer matches the
+# new bytes, so the launch fails ("Launchd job spawn failed", POSIX 162).
+rm -f "$APP_DIR/Contents/MacOS/rekindle-desktop"
 cp "$ROOT/target/debug/rekindle-desktop" "$APP_DIR/Contents/MacOS/rekindle-desktop"
 cat >"$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -115,6 +119,11 @@ cat >"$APP_DIR/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+# Sign the bundle as a bundle (ad hoc): the linker's signature covers only
+# the bare binary, and a bundle whose Info.plist is not sealed fails
+# verification ("code has no resources but signature indicates they must
+# be present").
+codesign --force --sign - "$APP_DIR" >/dev/null
 
 # 4. Launch through LaunchServices (NOT by exec'ing the binary — the
 #    bundle attribution comes from how it's launched; running the
