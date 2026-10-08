@@ -116,7 +116,6 @@ pub(super) fn write_video_fragment(
         codec,
         timestamp,
         key_index,
-        transport_seq,
         payload: data,
         signature,
     }) = payload
@@ -132,7 +131,6 @@ pub(super) fn write_video_fragment(
     p.set_codec(codec_to_capnp(*codec));
     p.set_timestamp(*timestamp);
     p.set_key_index(*key_index);
-    p.set_transport_seq(*transport_seq);
     p.set_payload(data);
     p.set_signature(signature);
 }
@@ -152,7 +150,6 @@ pub(super) fn write_video_parity_fragment(
         frame_len,
         timestamp,
         key_index,
-        transport_seq,
         payload: data,
         signature,
     }) = payload
@@ -169,30 +166,8 @@ pub(super) fn write_video_parity_fragment(
     p.set_frame_len(*frame_len);
     p.set_timestamp(*timestamp);
     p.set_key_index(*key_index);
-    p.set_transport_seq(*transport_seq);
     p.set_payload(data);
     p.set_signature(signature);
-}
-
-pub(super) fn write_frame_ack(
-    mut p: cap::frame_ack_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::FrameAck {
-        channel_id,
-        stream_id,
-        last_frame_seq,
-        kbps,
-        loss_q8,
-    } = payload
-    else {
-        unreachable!("write_frame_ack: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-    p.set_stream_id(stream_id);
-    p.set_last_frame_seq(*last_frame_seq);
-    p.set_kbps(*kbps);
-    p.set_loss_q8(*loss_q8);
 }
 
 pub(super) fn write_keyframe_request(
@@ -208,25 +183,6 @@ pub(super) fn write_keyframe_request(
     };
     p.set_channel_id(channel_id);
     p.set_stream_id(stream_id);
-}
-
-pub(super) fn write_bandwidth_estimate(
-    mut p: cap::bandwidth_estimate_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::BandwidthEstimate {
-        channel_id,
-        kbps,
-        window_secs,
-        loss_q8,
-    } = payload
-    else {
-        unreachable!("write_bandwidth_estimate: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-    p.set_kbps(*kbps);
-    p.set_window_secs(*window_secs);
-    p.set_loss_q8(*loss_q8);
 }
 
 pub(super) fn write_media_capabilities(
@@ -367,7 +323,6 @@ pub(super) fn read_video_fragment(
         codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
         timestamp: p.get_timestamp(),
         key_index: p.get_key_index(),
-        transport_seq: p.get_transport_seq(),
         payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
     }))
@@ -392,27 +347,10 @@ pub(super) fn read_video_parity_fragment(
             frame_len: p.get_frame_len(),
             timestamp: p.get_timestamp(),
             key_index: p.get_key_index(),
-            transport_seq: p.get_transport_seq(),
             payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
             signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
         },
     ))
-}
-
-pub(super) fn read_frame_ack(
-    p: cap::frame_ack_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    let stream_id_bytes = p.get_stream_id().map_err(|e| capnp_err(&e))?;
-    let stream_id: [u8; 16] = stream_id_bytes
-        .try_into()
-        .map_err(|_| CodecError::Deserialization("stream_id must be 16 bytes".into()))?;
-    Ok(ControlPayload::FrameAck {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        stream_id,
-        last_frame_seq: p.get_last_frame_seq(),
-        kbps: p.get_kbps(),
-        loss_q8: p.get_loss_q8(),
-    })
 }
 
 pub(super) fn read_keyframe_request(
@@ -425,17 +363,6 @@ pub(super) fn read_keyframe_request(
     Ok(ControlPayload::KeyframeRequest {
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         stream_id,
-    })
-}
-
-pub(super) fn read_bandwidth_estimate(
-    p: cap::bandwidth_estimate_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::BandwidthEstimate {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        kbps: p.get_kbps(),
-        window_secs: p.get_window_secs(),
-        loss_q8: p.get_loss_q8(),
     })
 }
 

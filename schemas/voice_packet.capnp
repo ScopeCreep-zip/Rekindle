@@ -10,14 +10,13 @@ struct VoicePacket {
     sequence @1 :UInt32;
     # Sender clock, milliseconds.
     timestamp @2 :UInt64;
-    # Transport-wide sequence for congestion feedback (filled by plan
-    # step E4; 0 until then).
-    transportSeq @3 :UInt64;
     # RFC 9605 SFrame ciphertext: header || AES-256-GCM(level || opus).
     # The first plaintext byte is the VAD audio level (plan step E4; 0
-    # until then).
-    sframe @4 :Data;
-    # Ed25519 signature by senderKey over rekindle-voice-packet-v2 ||
-    # senderKey || sequence || timestamp || transportSeq || sframe.
-    sig @5 :Data;
+    # until then). The transport-wide sequence for congestion feedback
+    # is not here: it is stamped per route in the media datagram header
+    # (plan E4.3.1).
+    sframe @3 :Data;
+    # Ed25519 signature by senderKey over rekindle-voice-packet-v3 ||
+    # senderKey || sequence || timestamp || sframe.
+    sig @4 :Data;
 }

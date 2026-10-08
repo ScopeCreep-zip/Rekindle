@@ -42,12 +42,12 @@ use keys::{
     write_request_mek, write_slot_keypair_grant,
 };
 use media::{
-    read_attachment_chunk, read_bandwidth_estimate, read_frame_ack, read_keyframe_request,
-    read_media_capabilities, read_multi_attachment_chunk, read_request_attachment,
-    read_topology_change, read_video_fragment, read_video_parity_fragment, write_attachment_chunk,
-    write_bandwidth_estimate, write_frame_ack, write_keyframe_request, write_media_capabilities,
-    write_multi_attachment_chunk, write_request_attachment, write_topology_change,
-    write_video_fragment, write_video_parity_fragment,
+    read_attachment_chunk, read_keyframe_request, read_media_capabilities,
+    read_multi_attachment_chunk, read_request_attachment, read_topology_change,
+    read_video_fragment, read_video_parity_fragment, write_attachment_chunk,
+    write_keyframe_request, write_media_capabilities, write_multi_attachment_chunk,
+    write_request_attachment, write_topology_change, write_video_fragment,
+    write_video_parity_fragment,
 };
 use membership::{
     read_channel_overwrite_changed, read_join_accepted, read_join_rejected,
@@ -244,12 +244,8 @@ pub fn encode_control_payload(
         CP::VideoParityFragment { .. } => {
             write_video_parity_fragment(b.reborrow().init_video_parity_fragment(), payload);
         }
-        CP::FrameAck { .. } => write_frame_ack(b.reborrow().init_frame_ack(), payload),
         CP::KeyframeRequest { .. } => {
             write_keyframe_request(b.reborrow().init_keyframe_request(), payload);
-        }
-        CP::BandwidthEstimate { .. } => {
-            write_bandwidth_estimate(b.reborrow().init_bandwidth_estimate(), payload);
         }
         CP::MediaCapabilities { .. } => {
             write_media_capabilities(b.reborrow().init_media_capabilities(), payload);
@@ -345,9 +341,11 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::SoundboardPlay(p) => read_soundboard_play(p.map_err(|e| capnp_err(&e))?),
         Which::VideoFragment(p) => read_video_fragment(p.map_err(|e| capnp_err(&e))?),
         Which::VideoParityFragment(p) => read_video_parity_fragment(p.map_err(|e| capnp_err(&e))?),
-        Which::FrameAck(p) => read_frame_ack(p.map_err(|e| capnp_err(&e))?),
         Which::KeyframeRequest(p) => read_keyframe_request(p.map_err(|e| capnp_err(&e))?),
-        Which::BandwidthEstimate(p) => read_bandwidth_estimate(p.map_err(|e| capnp_err(&e))?),
+        // Removed variants (plan E4.3.3): skipped like an unknown one.
+        Which::Obsolete61(()) | Which::Obsolete63(()) => Err(CodecError::UnknownVariant(
+            "obsolete control payload".to_string(),
+        )),
         Which::MediaCapabilities(p) => read_media_capabilities(p.map_err(|e| capnp_err(&e))?),
         Which::TopologyChange(p) => read_topology_change(p.map_err(|e| capnp_err(&e))?),
         Which::LinkPreview(p) => read_link_preview(p.map_err(|e| capnp_err(&e))?),

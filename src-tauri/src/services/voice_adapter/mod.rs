@@ -35,8 +35,11 @@ pub mod deps_impl;
 pub mod event_mapping;
 pub mod frame_sender;
 pub mod io_helpers;
+pub mod media_egress;
+pub mod media_feedback;
 pub mod media_keys;
 pub mod session_setup;
+pub mod video_allocation;
 
 pub struct VoiceAdapter {
     pub(super) state: Arc<AppState>,
@@ -147,14 +150,8 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
         state_arc.voice_sender_keys.end(&community_id, &channel_id);
     }
     // Native camera session dies with the voice session — its frames
-    // have nowhere to go without the pacer/roster below.
+    // have nowhere to go without the roster's routes.
     crate::services::native_video::stop(state);
-    // Phase 4 — the video pacer stopped with the voice loops' scope;
-    // clear its channels so the next session starts a fresh one.
-    *state.video_pacer_tx.write() = None;
-    *state.video_pacer_rate_tx.write() = None;
-    *state.video_payload_share_rx.write() = None;
-    state.video_bitrate_targets.lock().clear();
 
     // Belt-and-suspenders: clear voice channels even if the adapter
     // path early-returned (no AppHandle in tests, etc.).

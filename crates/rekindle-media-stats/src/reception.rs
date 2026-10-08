@@ -47,8 +47,7 @@ pub const DELAY_WINDOW_PACKETS: usize = 250;
 /// A point-in-time snapshot of one inbound stream.
 ///
 /// Rates are Q8 fixed point — `0..=255` maps to `0.0..=1.0` — matching
-/// how RFC 3611 puts loss and discard rates on the wire and how our own
-/// `loss_q8` already travels in `FrameAck`.
+/// how RFC 3611 puts loss and discard rates on the wire.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceptionMetrics {

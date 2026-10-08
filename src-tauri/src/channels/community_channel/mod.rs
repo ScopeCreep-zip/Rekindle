@@ -39,11 +39,10 @@ pub enum CommunityEvent {
     /// [`VideoKeyframeRequestEvent`]).
     ///
     /// The only receiver-feedback message that reaches a frontend, and
-    /// only because the webview may own the encoder: `FrameAck`,
-    /// `BandwidthEstimate` and `MediaCapabilities` used to sit beside
-    /// it here and were read by nothing — the backend consumes them in
-    /// `apply_bitrate_feedback` / `on_peer_caps_received`. When the
-    /// encoder moves behind the daemon this one follows them.
+    /// only because the webview may own the encoder: `MediaCapabilities`
+    /// is consumed in the backend (`on_peer_caps_received`), and
+    /// congestion feedback is the media route's (plan E4.3.3). When the
+    /// encoder moves behind the daemon this one follows.
     /// See `docs/plans/video-media-engine.md`.
     VideoKeyframeRequest(VideoKeyframeRequestEvent),
     /// Architecture §10.6 — backend-negotiated per-call video config
@@ -52,7 +51,7 @@ pub enum CommunityEvent {
     /// Phase 3 — no mutually-decodable encoder codec (see
     /// [`VideoCodecIncompatibleEvent`]).
     VideoCodecIncompatible(VideoCodecIncompatibleEvent),
-    /// Phase 4 — backend bitrate policy target (see
+    /// The allocator's video encoder target (see
     /// [`VideoBitrateTargetEvent`]).
     VideoBitrateTarget(VideoBitrateTargetEvent),
     /// Native capture session died (see [`NativeVideoErrorEvent`]).

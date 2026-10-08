@@ -119,9 +119,7 @@ impl CommunityEnvelope {
                 // the fan-out degree at every hop.
                 | ControlPayload::VideoFragment(_)
                 | ControlPayload::VideoParityFragment(_)
-                | ControlPayload::FrameAck { .. }
                 | ControlPayload::KeyframeRequest { .. }
-                | ControlPayload::BandwidthEstimate { .. }
                 | ControlPayload::MediaCapabilities { .. }
                 | ControlPayload::TopologyChange { .. }
                 | ControlPayload::AttachmentChunk { .. }

@@ -205,19 +205,6 @@ pub struct SessionVideoConfig {
     pub decoder: DecoderConstraints,
 }
 
-/// Bandwidth feedback from a receiver. Architecture §10.6 specifies
-/// 500ms cadence; senders adjust their VP9 bitrate to fit.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BandwidthEstimate {
-    /// Receiver's measured downstream bandwidth in kbps.
-    pub kbps: u32,
-    /// Window duration (seconds) the kbps was averaged over.
-    pub window_secs: u8,
-    /// Fraction of fragments lost in the same window (0–255 → 0..=1).
-    pub loss_q8: u8,
-}
-
 /// One compressed video frame crossing the daemon↔client IPC bus as a
 /// `BusPayload::Media`. This is the postcard-native sibling of the webview
 /// `CommunityVideoFrameMsg` (`src-tauri/src/video_channels.rs`), which is
@@ -359,23 +346,6 @@ mod tests {
         assert_eq!(
             obj["supportedScalabilityModes"],
             serde_json::json!(["flat"])
-        );
-    }
-
-    #[test]
-    fn bandwidth_estimate_camel_case_wire() {
-        let est = BandwidthEstimate {
-            kbps: 600,
-            window_secs: 2,
-            loss_q8: 13,
-        };
-        assert_eq!(
-            serde_json::to_value(&est).unwrap(),
-            serde_json::json!({
-                "kbps": 600,
-                "windowSecs": 2,
-                "lossQ8": 13,
-            })
         );
     }
 

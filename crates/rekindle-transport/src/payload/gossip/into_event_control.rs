@@ -328,9 +328,7 @@ pub fn control_into_event(
         | ControlPayload::MultiAttachmentChunk { .. }
         | ControlPayload::VideoFragment(_)
         | ControlPayload::VideoParityFragment(_)
-        | ControlPayload::FrameAck { .. }
         | ControlPayload::KeyframeRequest { .. }
-        | ControlPayload::BandwidthEstimate { .. }
         | ControlPayload::MediaCapabilities { .. }
         | ControlPayload::TopologyChange { .. }
         | ControlPayload::LinkPreview { .. } => return None,

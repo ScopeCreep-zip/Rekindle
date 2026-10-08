@@ -46,6 +46,7 @@ capnp_module!(identity_capnp);
 capnp_module!(friend_capnp);
 capnp_module!(voice_capnp);
 capnp_module!(voice_packet_capnp);
+capnp_module!(media_feedback_capnp);
 capnp_module!(account_capnp);
 capnp_module!(conversation_capnp);
 

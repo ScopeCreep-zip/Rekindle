@@ -117,6 +117,23 @@ pub async fn run<D: VoiceSessionDeps + ?Sized>(mut params: DeviceMonitorParams<D
     tracing::info!("device monitor loop exited");
 }
 
+/// A device change stopped the call's audio and could not start it again:
+/// say so in the log and to the user, who is otherwise left in a silent
+/// call (Jitsi Meet raises a warning notification for every microphone
+/// error, `base/devices/middleware.web.ts`).
+pub(crate) fn report_reopen_failure<D: VoiceSessionDeps + ?Sized>(
+    deps: &Arc<D>,
+    error: &VoiceError,
+) {
+    tracing::error!(%error, "audio devices not reopened after a device change; the call has no audio");
+    deps.emit_system_alert(
+        "Audio couldn't restart".to_string(),
+        format!(
+            "Rekindle couldn't reopen your audio devices ({error}). Leave and rejoin the call."
+        ),
+    );
+}
+
 /// Reopen on the devices the call should use if they differ from the open
 /// ones (or always, after a stream error). Returns whether it reopened; the
 /// caller (the monitor loop) MUST exit then — `restart_loops` spawns a
@@ -144,7 +161,9 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
         Some(targets.output.name.clone()),
     );
     deps.set_voice_engine_input_channels(prefs.input_channels.clone());
-    crate::session::restart::restart_loops(deps).await?;
+    crate::session::restart::restart_loops(deps)
+        .await
+        .inspect_err(|e| report_reopen_failure(deps, e))?;
 
     for (kind, selected, was, saved) in [
         ("input", &targets.input, &open.0, &prefs.input_device),

@@ -90,7 +90,7 @@ export function buildEncoderConfig(
 }
 
 /** Encoder bitrate coupled to the EFFECTIVE fps. Under CBR,
- *  per-frame bytes = bitrate ÷ fps — handing the full AIMD target
+ *  per-frame bytes = bitrate ÷ fps — handing the full allocated target
  *  to a low-fps stream concentrates the whole budget into a few
  *  giant frames (live: 1200 kbps at 2 fps = 75 KB average frames,
  *  ~190 KB keyframes via libvpx's 250% max-intra, each costing

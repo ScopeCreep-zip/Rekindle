@@ -168,7 +168,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::start_native_video,
         commands::community::stop_native_video,
         commands::community::force_native_keyframes,
-        commands::community::send_video_bandwidth_estimate,
         commands::community::notify_video_topology_change,
         commands::community::register_community_video_channel,
         commands::community::unregister_community_video_channel,

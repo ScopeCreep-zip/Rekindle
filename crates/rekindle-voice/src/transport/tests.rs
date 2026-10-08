@@ -24,7 +24,11 @@ impl VoiceFrameSender for SelectiveSender {
 
 fn test_transport(dead_blob: Vec<u8>) -> VoiceTransport {
     let mut t = VoiceTransport::new("chan".into());
-    t.init(Arc::new(SelectiveSender { dead_blob }), vec![1, 2, 3]);
+    t.init(
+        Arc::new(SelectiveSender { dead_blob }),
+        vec![1, 2, 3],
+        rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {})),
+    );
     // build_packet_data requires a signing key.
     t.set_signing_key(ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]));
     t
@@ -34,8 +38,8 @@ fn frame() -> OutboundFrame {
     OutboundFrame {
         sequence: 1,
         timestamp: 1,
-        transport_seq: 0,
         sframe: vec![0u8; 8],
+        media_bytes: 8,
     }
 }
 
@@ -50,28 +54,44 @@ fn no_connection_classifier() {
     assert!(!is_no_connection(&VoiceError::NotConnected));
 }
 
+/// Each peer's driver delivers on its own: a dead route fails without
+/// holding up the live one.
 #[tokio::test]
-async fn broadcast_reports_dead_peer_but_send_survives_partial_failure() {
+async fn a_dead_route_does_not_hold_up_a_live_one() {
     let dead = vec![9u8, 9, 9];
     let live = vec![1u8, 1, 1];
     let mut t = test_transport(dead.clone());
     t.add_peer("dead_peer", &dead, None);
     t.add_peer("live_peer", &live, None);
+    for _ in 0..3 {
+        t.send(&frame()).unwrap();
+    }
+    let link = |k: &str| Arc::clone(&t.peers[k].link);
+    let (dead_link, live_link) = (link("dead_peer"), link("live_peer"));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while live_link.send_counts().0 < 3 || dead_link.send_counts().1 < 3 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("both drivers ran");
+    assert_eq!(live_link.send_counts(), (3, 0));
+    assert_eq!(dead_link.send_counts(), (0, 3));
+    assert_eq!(t.send_counts(), (3, 3));
+}
 
-    let errors = t.broadcast(&frame()).await;
-    assert_eq!(errors.len(), 1, "only the dead peer should fail");
-    assert_eq!(errors[0].0, "dead_peer");
-    assert!(is_no_connection(&errors[0].1));
-
-    // Partial failure must NOT surface from `send` — the live peer
-    // keeps the call alive (the all-fail-only return contract).
-    assert!(t.send(&frame()).await.is_ok());
+#[test]
+fn send_needs_a_peer() {
+    let t = test_transport(Vec::new());
+    assert!(matches!(t.send(&frame()), Err(VoiceError::NotConnected)));
 }
 
 #[tokio::test]
-async fn send_fails_only_when_every_peer_fails() {
-    let dead = vec![9u8, 9, 9];
-    let mut t = test_transport(dead.clone());
-    t.add_peer("dead_peer", &dead, None);
-    assert!(t.send(&frame()).await.is_err());
+async fn removing_a_peer_stops_its_driver_and_forgets_its_allocation() {
+    let mut t = test_transport(Vec::new());
+    t.add_peer("p", &[1], None);
+    let link = Arc::clone(&t.peers["p"].link);
+    assert!(t.remove_peer("p"));
+    assert!(link.is_stopped());
+    assert!(t.allocator().route("p").is_none());
 }

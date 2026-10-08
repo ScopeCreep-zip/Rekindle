@@ -3,9 +3,10 @@
 //! Routes inbound `ControlPayload::Video*` variants from the directed
 //! channel-peer transport: fragment + parity fragment ingest into the
 //! per-community reassembler, then MEK-decrypt the assembled frame and
-//! emit `VideoEvent::FrameReady`. The other control variants (FrameAck,
-//! KeyframeRequest, BandwidthEstimate, TopologyChange,
-//! MediaCapabilities) map 1:1 to their VideoEvent variants.
+//! emit `VideoEvent::FrameReady`. The other control variants
+//! (KeyframeRequest, TopologyChange, MediaCapabilities) map 1:1 to their
+//! VideoEvent variants. Congestion feedback is not video's: the route's
+//! transport feedback covers every media datagram (plan E4.3.3).
 //!
 //! Architecture §10.6 reader-validates gate: every payload carries the
 //! channel it belongs to, and anything addressed to a channel the
@@ -33,9 +34,7 @@ pub fn video_payload_channel(payload: &ControlPayload) -> Option<&str> {
     match payload {
         ControlPayload::VideoFragment(VideoFragmentPayload { channel_id, .. })
         | ControlPayload::VideoParityFragment(VideoParityFragmentPayload { channel_id, .. })
-        | ControlPayload::FrameAck { channel_id, .. }
         | ControlPayload::KeyframeRequest { channel_id, .. }
-        | ControlPayload::BandwidthEstimate { channel_id, .. }
         | ControlPayload::TopologyChange { channel_id, .. }
         | ControlPayload::MediaCapabilities { channel_id, .. } => Some(channel_id),
         _ => None,
@@ -81,7 +80,6 @@ pub fn handle_video_payload<D: VideoDeps>(
             codec,
             timestamp,
             key_index,
-            transport_seq,
             payload,
             signature,
         }) => {
@@ -125,21 +123,6 @@ pub fn handle_video_payload<D: VideoDeps>(
                 );
                 return;
             }
-            // Wire-loss feedback: count this authentic fragment against
-            // the sender's transport-sequence window (real loss, not
-            // frame_seq gaps) and ack the sender on the AIMD cadence.
-            emit_frame_ack_if_due(
-                deps,
-                reassembly,
-                community_id,
-                sender_pseudonym,
-                &payload_channel,
-                transport_seq,
-                frame_seq,
-                stream_id,
-                payload_len,
-                now_ms,
-            );
             if let Some(frame) = reassembly.ingest(community_id, sender_pseudonym, frag, now_ms) {
                 emit_frame_ready(
                     deps,
@@ -163,7 +146,6 @@ pub fn handle_video_payload<D: VideoDeps>(
             frame_len,
             timestamp,
             key_index,
-            transport_seq,
             payload,
             signature,
         }) => {
@@ -207,21 +189,6 @@ pub fn handle_video_payload<D: VideoDeps>(
                 );
                 return;
             }
-            // Parity is paced and transmitted like data — count it in
-            // the same transport-loss window so the wire-loss estimate
-            // reflects everything actually sent.
-            emit_frame_ack_if_due(
-                deps,
-                reassembly,
-                community_id,
-                sender_pseudonym,
-                &payload_channel,
-                transport_seq,
-                frame_seq,
-                stream_id,
-                payload_len,
-                now_ms,
-            );
             if let Some(frame) =
                 reassembly.ingest_parity(community_id, sender_pseudonym, frag, now_ms)
             {
@@ -235,23 +202,6 @@ pub fn handle_video_payload<D: VideoDeps>(
                     now_ms,
                 );
             }
-        }
-        ControlPayload::FrameAck {
-            channel_id,
-            stream_id,
-            last_frame_seq,
-            kbps,
-            loss_q8,
-        } => {
-            deps.emit_event(VideoEvent::FrameAck {
-                community_id: community_id.to_string(),
-                sender_pseudonym: sender_pseudonym.to_string(),
-                channel_id,
-                stream_id,
-                last_frame_seq,
-                kbps,
-                loss_q8,
-            });
         }
         ControlPayload::KeyframeRequest {
             channel_id,
@@ -277,21 +227,6 @@ pub fn handle_video_payload<D: VideoDeps>(
                 sender_pseudonym: sender_pseudonym.to_string(),
                 channel_id,
                 stream_id,
-            });
-        }
-        ControlPayload::BandwidthEstimate {
-            channel_id,
-            kbps,
-            window_secs,
-            loss_q8,
-        } => {
-            deps.emit_event(VideoEvent::BandwidthEstimate {
-                community_id: community_id.to_string(),
-                sender_pseudonym: sender_pseudonym.to_string(),
-                channel_id,
-                kbps,
-                window_secs,
-                loss_q8,
             });
         }
         ControlPayload::TopologyChange {
@@ -351,53 +286,6 @@ pub fn handle_video_payload<D: VideoDeps>(
             });
         }
         _ => {}
-    }
-}
-
-/// Feed one authentic received fragment into the sender's transport
-/// loss/goodput window and, when the AIMD window elapses, send a
-/// `FrameAck` back to the channel so the sender adapts. This is the
-/// congestion feedback loop that used to live in the frontend
-/// `playout_buffer` — now Rust-owned, and measured over `transport_seq`
-/// (real wire loss) instead of `frame_seq` (which counted sender-side
-/// pacer expiry as phantom loss and collapsed the rate).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "each param is distinct per-fragment metadata forwarded \
-              verbatim into reassembly.note_received(); bundling them \
-              into a struct used by no other caller just relocates the \
-              field count"
-)]
-fn emit_frame_ack_if_due<D: VideoDeps>(
-    deps: &D,
-    reassembly: &VideoReassemblyState,
-    community_id: &str,
-    sender_pseudonym: &str,
-    channel_id: &str,
-    transport_seq: u32,
-    frame_seq: u32,
-    stream_id: [u8; 16],
-    bytes: usize,
-    now_ms: u32,
-) {
-    if let Some(ack) = reassembly.note_received(
-        community_id,
-        sender_pseudonym,
-        transport_seq,
-        frame_seq,
-        stream_id,
-        channel_id,
-        bytes,
-        now_ms,
-    ) {
-        deps.send_frame_ack(
-            community_id,
-            &ack.channel_id,
-            ack.stream_id,
-            ack.last_frame_seq,
-            ack.kbps,
-            ack.loss_q8,
-        );
     }
 }
 

@@ -9,6 +9,7 @@
 //! Pre-Phase-14 this lived in `src-tauri/services/voice/receive_loop.rs`
 //! (463 LoC).
 
+mod feedback;
 mod quality;
 
 use std::collections::HashMap;
@@ -60,6 +61,13 @@ pub struct VoiceReceiveParams {
     /// their DHT presence row goes stale exactly when the call
     /// saturates the relays their presence writes need.
     pub media_liveness: Arc<MediaLiveness>,
+    /// The playback ring's depth gauge, ms (`VoiceEngine::playback_depth`).
+    pub playback_depth_ms: Arc<std::sync::atomic::AtomicU32>,
+    /// Arrivals of sequenced media datagrams, drained into transport
+    /// feedback (plan E4.3.2).
+    pub arrivals: Arc<crate::arrivals::ArrivalLedger>,
+    /// The session's allocator (`VoiceTransport::allocator`).
+    pub allocator: Arc<crate::transport::allocation::Allocator>,
 }
 
 struct ParticipantDecoder {
@@ -70,6 +78,24 @@ struct ParticipantDecoder {
     echo: SenderEcho,
     is_speaking: bool,
     last_packet_time: Instant,
+}
+
+/// Where received audio went this stats window, from the jitter buffer to
+/// the playback thread — the record that says which stage lost it.
+#[derive(Debug, Default)]
+pub(super) struct PlayoutCounters {
+    /// Frames the jitter buffer released and Opus decoded.
+    pub decoded: u64,
+    /// Released frames Opus could not decode (concealed instead).
+    pub decode_failures: u64,
+    /// Mixed frames produced for the speaker.
+    pub mixed: u64,
+    /// Of those, frames silenced because the call is deafened.
+    pub deafened: u64,
+    /// Mixed frames the playback thread's channel refused (full or gone).
+    pub handoff_failures: u64,
+    /// Loudest mixed sample, 0.0–1.0.
+    pub peak: f32,
 }
 
 struct VoiceReceiveLoop {
@@ -90,6 +116,17 @@ struct VoiceReceiveLoop {
     /// Playout ticks this stats window that ran a full frame late, so a
     /// tick was skipped and a frame of delay added (plan C7.23).
     late_ticks: u64,
+    /// Playout path counters for this stats window: where received audio
+    /// goes between the jitter buffer and the speaker.
+    playout: PlayoutCounters,
+    /// The playback ring's depth gauge, ms.
+    playback_depth_ms: Arc<std::sync::atomic::AtomicU32>,
+    /// Arrivals to report as transport feedback, and when we last did.
+    arrivals: Arc<crate::arrivals::ArrivalLedger>,
+    /// Per peer: when its last report went and how big it was on the wire.
+    feedback_sent: std::collections::HashMap<String, (Option<Instant>, usize)>,
+    /// Our send estimate toward each peer paces its feedback.
+    allocator: Arc<crate::transport::allocation::Allocator>,
     last_quality_check: Instant,
     /// Packets dropped this stats window because they could not be
     /// opened (no key from their sender yet, wrong sender, or rejected).
@@ -156,6 +193,7 @@ impl VoiceReceiveLoop {
             jitter_base_ms: params.jitter_base_ms,
             packets_received: 0,
             late_ticks: 0,
+            playout: PlayoutCounters::default(),
             last_quality_check: Instant::now(),
             key_drops: 0,
             last_key_request: HashMap::new(),
@@ -164,6 +202,10 @@ impl VoiceReceiveLoop {
             member_names: params.member_names,
             report_signing_key: params.report_signing_key,
             media_liveness: params.media_liveness,
+            playback_depth_ms: params.playback_depth_ms,
+            arrivals: params.arrivals,
+            feedback_sent: std::collections::HashMap::new(),
+            allocator: params.allocator,
             origin: Instant::now(),
         })
     }
@@ -333,6 +375,7 @@ impl VoiceReceiveLoop {
         }
         self.cleanup_stale_participants();
         self.update_speaking_states();
+        self.send_feedback_if_due();
         self.log_quality_if_due();
     }
 
@@ -345,15 +388,21 @@ impl VoiceReceiveLoop {
         // elapsed time.
         let now_ms = self.local_ms();
         let frame_size = self.frame_size;
-        let decode_packet = |participant: &mut ParticipantDecoder, packet: JitterFrame| {
+        let mut decoded_frames = 0u64;
+        let mut decode_failures = 0u64;
+        let mut decode_packet = |participant: &mut ParticipantDecoder, packet: JitterFrame| {
             let frame = EncodedFrame {
                 data: packet.opus,
                 timestamp: packet.timestamp,
                 sequence: packet.sequence,
             };
             match participant.codec.decode(&frame) {
-                Ok(decoded) => decoded.samples,
+                Ok(decoded) => {
+                    decoded_frames += 1;
+                    decoded.samples
+                }
                 Err(e) => {
+                    decode_failures += 1;
                     tracing::trace!(error = %e, "decode failed — using PLC");
                     participant
                         .codec
@@ -400,11 +449,13 @@ impl VoiceReceiveLoop {
 
             streams.push((hex::encode(key), decoded));
         }
+        self.playout.decoded += decoded_frames;
+        self.playout.decode_failures += decode_failures;
 
         streams
     }
 
-    fn mix_and_send(&self, streams: &[(String, Vec<f32>)]) {
+    fn mix_and_send(&mut self, streams: &[(String, Vec<f32>)]) {
         let refs: Vec<(&str, &[f32])> = streams
             .iter()
             .map(|(id, samples)| (id.as_str(), samples.as_slice()))
@@ -417,12 +468,20 @@ impl VoiceReceiveLoop {
             // actually output).
             let _ = self.speaker_ref_tx.send(mixed.clone());
 
-            let output = if self.deafened_flag.load(Ordering::Relaxed) {
+            let deafened = self.deafened_flag.load(Ordering::Relaxed);
+            let peak = mixed.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+            self.playout.peak = self.playout.peak.max(peak);
+            self.playout.mixed += 1;
+            if deafened {
+                self.playout.deafened += 1;
+            }
+            let output = if deafened {
                 vec![0.0f32; mixed.len()]
             } else {
                 mixed
             };
             if self.playback_tx.try_send(output).is_err() {
+                self.playout.handoff_failures += 1;
                 tracing::trace!("playback channel full — dropping mixed frame");
             }
         }

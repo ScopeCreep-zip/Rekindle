@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc as std_mpsc;
+use std::sync::Arc;
 
 use cpal::traits::DeviceTrait;
 use tokio::sync::mpsc;
@@ -43,6 +45,7 @@ impl AudioPlayback {
         &mut self,
         rx: mpsc::Receiver<Vec<f32>>,
         device_name: Option<&str>,
+        depth_ms: Arc<AtomicU32>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
         self.thread.start(
@@ -54,6 +57,7 @@ impl AudioPlayback {
                     channels,
                     rx,
                     device_name_owned.as_deref(),
+                    &depth_ms,
                     error_tx,
                 )
             },
@@ -82,6 +86,7 @@ fn build_playback_stream(
     channels: u16,
     rx: mpsc::Receiver<Vec<f32>>,
     device_name: Option<&str>,
+    depth_ms: &Arc<AtomicU32>,
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
@@ -93,6 +98,7 @@ fn build_playback_stream(
     let needs_adapt = dev_channels != channels || dev_rate != sample_rate;
 
     tracing::info!(
+        device = %cpal::traits::DeviceTrait::name(&device).unwrap_or_else(|_| "unnamed".into()),
         dev_channels,
         dev_rate,
         want_channels = channels,
@@ -122,6 +128,7 @@ fn build_playback_stream(
                 dev_channels,
                 dev_rate,
                 buffer_capacity,
+                Arc::clone(depth_ms),
             ),
             error_callback,
             None,
@@ -136,6 +143,7 @@ fn build_playback_stream(
                 dev_channels,
                 dev_rate,
                 buffer_capacity,
+                Arc::clone(depth_ms),
             ),
             error_callback,
             None,
@@ -150,6 +158,7 @@ fn build_playback_stream(
                 dev_channels,
                 dev_rate,
                 buffer_capacity,
+                Arc::clone(depth_ms),
             ),
             error_callback,
             None,
@@ -177,6 +186,7 @@ fn output_callback<T>(
     dst_channels: u16,
     dst_rate: u32,
     buffer_capacity: usize,
+    depth_ms: Arc<AtomicU32>,
 ) -> impl FnMut(&mut [T], &cpal::OutputCallbackInfo)
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
@@ -199,5 +209,9 @@ where
         for slot in data.iter_mut() {
             *slot = T::from_sample(sample_buffer.pop_front().unwrap_or(0.0));
         }
+        // Queued audio left after this callback, ms.
+        let per_ms = u64::from(dst_rate / 1000).max(1) * u64::from(dst_channels.max(1));
+        let queued = u64::try_from(sample_buffer.len()).unwrap_or(u64::MAX) / per_ms;
+        depth_ms.store(u32::try_from(queued).unwrap_or(u32::MAX), Ordering::Relaxed);
     }
 }

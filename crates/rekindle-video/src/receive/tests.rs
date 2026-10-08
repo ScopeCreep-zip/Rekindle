@@ -71,7 +71,6 @@ fn signed_fragment(
             codec: frag.codec,
             timestamp: frag.timestamp,
             key_index: frag.key_index,
-            transport_seq: 0,
             payload: frag.payload,
             signature: frag.signature,
         }),
@@ -165,7 +164,6 @@ fn a_missing_sender_key_fires_one_debounced_request() {
             codec: frag.codec,
             timestamp: frag.timestamp,
             key_index: frag.key_index,
-            transport_seq: 0,
             payload: frag.payload,
             signature: frag.signature,
         })
@@ -204,7 +202,7 @@ fn a_missing_sender_key_fires_one_debounced_request() {
 
 #[test]
 fn payload_for_other_channel_is_dropped() {
-    // Local user is in ch1; a FrameAck addressed to ch2 must be
+    // Local user is in ch1; a KeyframeRequest addressed to ch2 must be
     // dropped before any event reaches the frontend.
     let deps = MockDeps::new();
     let reassembly = VideoReassemblyState::new();
@@ -213,12 +211,9 @@ fn payload_for_other_channel_is_dropped() {
         &reassembly,
         "c1",
         "peer1",
-        ControlPayload::FrameAck {
+        ControlPayload::KeyframeRequest {
             channel_id: "22222222222222222222222222222222".into(),
             stream_id: [5u8; 16],
-            last_frame_seq: 7,
-            kbps: 1000,
-            loss_q8: 12,
         },
         0,
     );
@@ -275,7 +270,6 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
             codec: Codec::Vp9,
             timestamp: 0,
             key_index: 0,
-            transport_seq: 0,
             payload: vec![0xAB; 64],
             signature: vec![0u8; 64],
         }),
@@ -285,38 +279,6 @@ fn fragment_for_other_channel_never_reaches_reassembly() {
         deps.calls.lock().events.is_empty(),
         "single-fragment frame for another channel must not be reassembled or emitted"
     );
-}
-
-#[test]
-fn frame_ack_maps_to_event() {
-    let deps = MockDeps::new();
-    let reassembly = VideoReassemblyState::new();
-    handle_video_payload(
-        &deps,
-        &reassembly,
-        "c1",
-        "peer1",
-        ControlPayload::FrameAck {
-            channel_id: "11111111111111111111111111111111".into(),
-            stream_id: [5u8; 16],
-            last_frame_seq: 7,
-            kbps: 1000,
-            loss_q8: 12,
-        },
-        0,
-    );
-    let calls = deps.calls.lock();
-    assert_eq!(calls.events.len(), 1);
-    let VideoEvent::FrameAck {
-        last_frame_seq,
-        kbps,
-        ..
-    } = &calls.events[0]
-    else {
-        panic!("expected FrameAck variant");
-    };
-    assert_eq!(*last_frame_seq, 7);
-    assert_eq!(*kbps, 1000);
 }
 
 #[test]
@@ -339,34 +301,6 @@ fn keyframe_request_resets_stream_and_emits_event() {
         calls.events[0],
         VideoEvent::KeyframeRequest { .. }
     ));
-}
-
-#[test]
-fn bandwidth_estimate_maps_to_event() {
-    let deps = MockDeps::new();
-    let reassembly = VideoReassemblyState::new();
-    handle_video_payload(
-        &deps,
-        &reassembly,
-        "c1",
-        "peer1",
-        ControlPayload::BandwidthEstimate {
-            channel_id: "11111111111111111111111111111111".into(),
-            kbps: 2500,
-            window_secs: 5,
-            loss_q8: 0,
-        },
-        0,
-    );
-    let calls = deps.calls.lock();
-    let VideoEvent::BandwidthEstimate {
-        kbps, window_secs, ..
-    } = &calls.events[0]
-    else {
-        panic!("expected BandwidthEstimate variant");
-    };
-    assert_eq!(*kbps, 2500);
-    assert_eq!(*window_secs, 5);
 }
 
 #[test]

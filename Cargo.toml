@@ -15,6 +15,7 @@ members = [
     "crates/rekindle-dm",
     "crates/rekindle-calls",
     "crates/rekindle-media-stats",
+    "crates/rekindle-media-bwe",
     "crates/rekindle-video",
     "crates/rekindle-video-capture",
     "crates/rekindle-video-libvpx",

@@ -1,8 +1,8 @@
 // Architecture §10.6 — send-side of the interim video pipeline. Owns the
 // WebCodecs VideoEncoder, the canvas-capture pump loop, and the per-track
 // adaptive-bitrate state. Split out of VideoCallPanel so the orchestration
-// hook stays focused on UI lifecycle + the receiver path. Types/ladder
-// policy live in sender_types.ts; the pure negotiation/config helpers in
+// hook stays focused on UI lifecycle + the receiver path. Types live in
+// sender_types.ts; the pure negotiation/config helpers in
 // encoder_config.ts — this file is only the (heavily stateful) pump.
 //
 // Encoder lifecycle (Phase 2): the negotiated codec is cross-checked
@@ -20,11 +20,8 @@ import { commands } from "../../../ipc/commands";
 import type { Codec } from "../../../ipc/commands";
 import { localVideoCapabilities } from "../../../actions/video.actions";
 import {
+  KEYFRAME_INTERVAL_MS,
   KEYFRAME_MIN_INTERVAL_MS,
-  LADDER_OVERSHOOT_RATIO,
-  LADDER_UNDERSHOOT_RATIO,
-  LADDER_UP_STREAK,
-  LADDER_WINDOW_MS,
   bytesToBase64,
   randomStreamIdHex,
 } from "./codec_utils";
@@ -37,7 +34,6 @@ import {
 } from "./encoder_config";
 import {
   FIRST_CHUNK_DEADLINE_MS,
-  LADDER,
   RECREATE_COOLDOWN_MS,
   freshTrack,
 } from "./sender_types";
@@ -109,23 +105,16 @@ export function createVideoSender(
     // of the old codec keep their truthful tag.
     let currentCodec = constraints.codec;
 
-    // Output-measured ladder state (see sender_types LADDER rationale):
-    // level indexes LADDER; bytes/windowStart accumulate real encoder
-    // output between evaluations. Width/height stay at the negotiated
-    // constraints for the stream's whole life (see LADDER comment).
-    let ladderLevel = 0;
-    let ladderBytes = 0;
-    let ladderWindowStart = performance.now();
-    let ladderUpStreak = 0;
-    const appliedShape = (): { width: number; height: number; fps: number } => {
-      const step = LADDER[ladderLevel];
-      return {
-        width: constraints!.maxWidth,
-        height: constraints!.maxHeight,
-        fps: Math.max(1, Math.round(constraints!.maxFps * step.fpsScale)),
-      };
-    };
-    const ladderKfIntervalMs = (): number => LADDER[ladderLevel].kfIntervalMs;
+    // Width, height and fps stay at the negotiated constraints for the
+    // stream's whole life: an in-band resolution switch broke both
+    // receiving platforms' WebCodecs decoders. The bitrate follows the
+    // backend allocator (plan E4.3.3); whatever the encoder overshoots,
+    // the route's pacer bounds by queue time and answers with a keyframe.
+    const appliedShape = (): { width: number; height: number; fps: number } => ({
+      width: constraints!.maxWidth,
+      height: constraints!.maxHeight,
+      fps: Math.max(1, Math.round(constraints!.maxFps)),
+    });
 
     const captureCanvas = document.createElement("canvas");
     captureCanvas.width = constraints.maxWidth;
@@ -151,7 +140,6 @@ export function createVideoSender(
       new VideoEncoder({
         output: (chunk: EncodedVideoChunk) => {
           chunksOut += 1;
-          ladderBytes += chunk.byteLength;
           const buf = new Uint8Array(chunk.byteLength);
           chunk.copyTo(buf);
           const payloadB64 = bytesToBase64(buf);
@@ -212,10 +200,6 @@ export function createVideoSender(
         framesFed = 0;
         chunksOut = 0;
         firstFedAt = 0;
-        // Stale output bytes from the dead encoder must not skew the
-        // next ladder evaluation.
-        ladderBytes = 0;
-        ladderWindowStart = now;
         console.warn(`video encoder recreated (${reason})`);
         reportEncoderStatus(route, currentCodec, true, `recreated: ${reason}`);
       } catch (e) {
@@ -329,13 +313,6 @@ export function createVideoSender(
         reportedUnencodable = null;
         const codecChanged = fresh.codec !== currentCodec;
         constraints = fresh;
-        // New negotiated ceiling — re-discover the sustainable shape
-        // below it from scratch rather than carry over a ladder level
-        // measured against the old one.
-        ladderLevel = 0;
-        ladderBytes = 0;
-        ladderWindowStart = performance.now();
-        ladderUpStreak = 0;
         const shape = appliedShape();
         captureCanvas.width = shape.width;
         captureCanvas.height = shape.height;
@@ -411,7 +388,7 @@ export function createVideoSender(
         }
         try {
           captureCtx.drawImage(captureVideo, 0, 0, captureCanvas.width, captureCanvas.height);
-          const isKeyframe = now - ts.lastKeyframeMs >= ladderKfIntervalMs();
+          const isKeyframe = now - ts.lastKeyframeMs >= KEYFRAME_INTERVAL_MS;
           if (isKeyframe) ts.lastKeyframeMs = now;
           // Explicit duration: canvas-sourced frames otherwise carry
           // WebKitGTK's hardcoded 1-second GstBuffer duration, which
@@ -429,73 +406,6 @@ export function createVideoSender(
           console.error("encode failed:", e);
         }
         lastEmittedAt = now;
-      }
-      // Output-measured ladder: compare REAL encoder output against the
-      // bitrate target and step fps/keyframe-cadence until it fits —
-      // the configured bitrate is loosely honored on WebKitGTK (VP9
-      // rides libvpx GOOD-quality deadline, not realtime). Windows with
-      // zero output (encoder warming/stalled) are skipped: silence is
-      // not headroom.
-      if (now - ladderWindowStart >= LADDER_WINDOW_MS) {
-        const measuredKbps = (ladderBytes * 8) / (now - ladderWindowStart);
-        const produced = ladderBytes > 0;
-        ladderBytes = 0;
-        ladderWindowStart = now;
-        if (produced) {
-          let next = ladderLevel;
-          if (
-            measuredKbps > configuredKbps * LADDER_OVERSHOOT_RATIO &&
-            ladderLevel < LADDER.length - 1
-          ) {
-            next = ladderLevel + 1;
-            ladderUpStreak = 0;
-          } else if (
-            measuredKbps < configuredKbps * LADDER_UNDERSHOOT_RATIO &&
-            ladderLevel > 0
-          ) {
-            ladderUpStreak += 1;
-            if (ladderUpStreak >= LADDER_UP_STREAK) {
-              next = ladderLevel - 1;
-              ladderUpStreak = 0;
-            }
-          } else {
-            ladderUpStreak = 0;
-          }
-          if (next !== ladderLevel) {
-            ladderLevel = next;
-            // Same-dimension reconfigure (the proven-safe class — the
-            // drift path does it): the encoder must hear the TRUTHFUL
-            // framerate and the fps-coupled bitrate, or CBR keeps
-            // splitting the old budget across the new frame count and
-            // each frame balloons (the 2 fps / 75 KB-frame failure).
-            // Resolution never changes here.
-            const shape = appliedShape();
-            frameIntervalMs = 1000 / shape.fps;
-            try {
-              encoder.configure(
-                buildEncoderConfig(
-                  constraints!,
-                  effectiveBitrate(configuredKbps, shape.fps),
-                  shape,
-                ),
-              );
-              ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
-            } catch (e) {
-              console.error("ladder reconfigure failed:", e);
-              recreateEncoder("ladder-reconfigure-failed");
-              scheduleNext();
-              return;
-            }
-            reportEncoderStatus(
-              route,
-              currentCodec,
-              true,
-              `ladder ${ladderLevel}: ${shape.fps}fps kf=${ladderKfIntervalMs()}ms ` +
-                `bitrate=${Math.round(effectiveBitrate(configuredKbps, shape.fps) / 1000)}kbps ` +
-                `measured=${Math.round(measuredKbps)}kbps target=${configuredKbps}kbps`,
-            );
-          }
-        }
       }
       // First-chunk watchdog: frames going in, nothing coming out.
       if (

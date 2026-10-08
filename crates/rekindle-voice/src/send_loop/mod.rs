@@ -31,13 +31,6 @@ use crate::session_deps::{MediaKeySource, VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::{OutboundFrame, VoiceTransport};
 use crate::VoiceMode;
 
-/// A peer's send-failure streak is logged at its first failure and then
-/// every this-many (≈ one second of speech at 20 ms frames), not per frame.
-/// There is no sender-side route repair: a call's media route travels only
-/// in voice signaling, and its owner re-announces it when Veilid reports
-/// it dead (plan C7.15, C7.23).
-const SEND_FAILURE_LOG_EVERY: u64 = 50;
-
 pub struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
     pub transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
@@ -86,14 +79,14 @@ struct VoiceSendLoop {
     sequence: u32,
     was_speaking: bool,
     packets_sent: u64,
-    send_failures: u64,
+    /// Datagrams sent and failed over every route at the last quality
+    /// pass, for the local-failure rate when no peer has reported.
+    sends_at_last_pass: (u64, u64),
+    /// The audio bitrate the allocator gave us (plan E4.3.3).
+    audio_bps: u32,
     /// Diagnostic: frames seen by `process_frame`, for periodic capture
     /// level + VAD logging (the only outbound-voice observability we have).
     diag_frames: u64,
-    /// Consecutive send failures per peer — drives the route-heal
-    /// escalation (a dead remote route fails every frame; without
-    /// healing it is hammered 50×/s forever).
-    peer_send_failures: HashMap<String, u64>,
     last_quality_report: Instant,
     community_id: Option<String>,
     channel_id: String,
@@ -166,9 +159,9 @@ impl VoiceSendLoop {
             sequence: 0,
             was_speaking: false,
             packets_sent: 0,
-            send_failures: 0,
+            sends_at_last_pass: (0, 0),
+            audio_bps: crate::transport::allocation::Allocation::default().audio_bps,
             diag_frames: 0,
-            peer_send_failures: HashMap::new(),
             last_quality_report: Instant::now(),
             community_id: params.community_id,
             channel_id: params.channel_id,
@@ -181,6 +174,7 @@ impl VoiceSendLoop {
 
     async fn run_loop(mut self) {
         tracing::info!("voice send loop started");
+        let mut allocation = self.transport.lock().await.allocator().subscribe();
         loop {
             tokio::select! {
                 biased;
@@ -197,6 +191,10 @@ impl VoiceSendLoop {
                 }
                 Some(report) = self.report_rx.recv() => {
                     self.note_receiver_report(&report);
+                }
+                Ok(()) = allocation.changed() => {
+                    let audio_bps = allocation.borrow_and_update().audio_bps;
+                    self.apply_audio_bitrate(audio_bps);
                 }
             }
         }
@@ -310,7 +308,6 @@ impl VoiceSendLoop {
                     transport.sender_key(),
                     encoded.sequence,
                     encoded.timestamp,
-                    0,
                     &encoded.data,
                 ) else {
                     tracing::debug!(
@@ -322,77 +319,34 @@ impl VoiceSendLoop {
                 let frame = OutboundFrame {
                     sequence: encoded.sequence,
                     timestamp: encoded.timestamp,
-                    transport_seq: 0,
                     sframe,
+                    media_bytes: encoded.data.len(),
                 };
-                let (roster, errors) = match transport.mode() {
-                    VoiceMode::Mesh => {
-                        let roster = transport.peer_keys();
-                        let errors = transport.broadcast(&frame).await;
-                        (roster, errors)
-                    }
+                // Queued on each route's pacer; the routes' egress drivers
+                // deliver and log failures (plan E4.3.3). There is no
+                // sender-side route repair: a call's media route travels
+                // only in voice signaling, and its owner re-announces it
+                // when Veilid reports it dead (plans C7.15, C7.23).
+                let queued = match transport.mode() {
+                    VoiceMode::Mesh => transport.broadcast(&frame),
                     VoiceMode::Mcu { ref host_pseudonym } if *host_pseudonym == self.public_key => {
                         // We are the MCU host — MCU loop handles mixing + distribution.
-                        (Vec::new(), Vec::new())
+                        Ok(())
                     }
+                    // Non-host: send only to the MCU host.
                     VoiceMode::Mcu { ref host_pseudonym } => {
-                        // Non-host: send only to the MCU host.
-                        let roster = vec![host_pseudonym.clone()];
-                        let errors = match transport.send_to_peer(host_pseudonym, &frame).await {
-                            Ok(()) => Vec::new(),
-                            Err(e) => vec![(host_pseudonym.clone(), e)],
-                        };
-                        (roster, errors)
+                        transport.send_to_peer(host_pseudonym, &frame)
                     }
                 };
                 drop(transport);
-                self.note_send_results(&roster, &errors);
-                self.packets_sent += 1;
+                match queued {
+                    Ok(()) => self.packets_sent += 1,
+                    Err(e) => tracing::warn!(error = %e, "voice send loop: frame not queued"),
+                }
             }
         }
 
         self.report_quality_if_due();
-    }
-
-    /// Per-peer send accounting: success resets the failure streak, and a
-    /// streak is warned about at its start and every
-    /// [`SEND_FAILURE_LOG_EVERY`] frames — NOT one log line per frame per
-    /// peer.
-    /// The whole-frame `send_failures` counter (quality classification)
-    /// counts a frame failed only when EVERY peer failed, preserving
-    /// the original loss semantics.
-    fn note_send_results(
-        &mut self,
-        roster: &[String],
-        errors: &[(String, crate::error::VoiceError)],
-    ) {
-        if !roster.is_empty() && !errors.is_empty() && errors.len() >= roster.len() {
-            self.send_failures += 1;
-        }
-        let failed: std::collections::HashSet<&str> =
-            errors.iter().map(|(k, _)| k.as_str()).collect();
-        for key in roster {
-            if !failed.contains(key.as_str()) {
-                self.peer_send_failures.remove(key);
-            }
-        }
-        for (key, error) in errors {
-            // "*" is the transport's not-initialized sentinel, not a peer.
-            if key == "*" {
-                tracing::warn!(error = %error, "voice send loop: transport send failed");
-                continue;
-            }
-            let n = self.peer_send_failures.entry(key.clone()).or_insert(0);
-            *n += 1;
-            if *n == 1 || n.is_multiple_of(SEND_FAILURE_LOG_EVERY) {
-                tracing::warn!(
-                    peer = %key,
-                    consecutive_failures = *n,
-                    error = %error,
-                    "voice send failing for peer"
-                );
-            }
-        }
     }
 
     fn flip_speaking_off_if_needed(&mut self) {

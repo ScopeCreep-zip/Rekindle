@@ -29,9 +29,9 @@ export type CommunityVideoEvent =
       };
     }
   | {
-      // Phase 4 — backend bitrate policy output (AIMD over receiver
-      // feedback, audio reserve subtracted). The encoder follows this
-      // target; the backend pacer rate moves with it.
+      // The backend allocator's video target (plan E4.3.3): each media
+      // route's estimate, audio first, video the rest. The encoder
+      // follows it.
       type: "videoBitrateTarget";
       data: {
         communityId: string;

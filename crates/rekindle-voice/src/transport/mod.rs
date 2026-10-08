@@ -1,20 +1,26 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::VoiceError;
+use rekindle_codec::capnp_codec::SignedWire;
 
+pub mod allocation;
+pub mod egress;
+pub mod link;
 mod packet;
+pub mod roster;
+
+use link::PeerLink;
+use roster::MediaRoster;
 
 pub use packet::{OutboundFrame, VoicePacket};
 
 /// One-byte media tag a voice packet travels under on `app_message`, so
 /// ingress can tell it from envelopes and receiver reports (`b'R'`).
-pub const VOICE_PACKET_TAG: u8 = b'V';
+pub const VOICE_PACKET_TAG: u8 = crate::media_frame::VOICE_TAG;
 
 /// Voice channel operating mode.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,19 +78,12 @@ pub struct VoiceTransport {
     mode: VoiceMode,
     /// Local three-way join handshake progress.
     handshake: JoinHandshake,
-    /// Monotonic reference for the `NoConnection` warn rate-limiter below.
-    created_at: Instant,
-    /// Millis-since-`created_at` of the last per-peer `NoConnection` warn.
-    /// The broadcast path runs at the ~50 Hz frame cadence, so a one-way
-    /// dead peer would otherwise flood the log 50×/s; this collapses the
-    /// warns to at most one per [`NO_CONN_WARN_INTERVAL_MS`]. `0` = never
-    /// warned. Interior-mutable via `&self` (broadcast takes `&self`) and
-    /// `Sync` so the transport stays `Send + Sync` behind its async mutex.
-    last_no_conn_warn_ms: AtomicU64,
+    /// Every peer's media link and the allocator over them (plan E4.3.3),
+    /// shared with producers that must not wait on this transport's lock.
+    media: Arc<MediaRoster>,
+    /// Scope the per-peer egress drivers run in; set by `init`.
+    scope: Option<Arc<rekindle_lifecycle::SessionScope>>,
 }
-
-/// Rate-limit window (ms) for the per-peer `NoConnection` broadcast warning.
-const NO_CONN_WARN_INTERVAL_MS: u64 = 5_000;
 
 /// Whether a per-peer send error is a Veilid `NoConnection`.
 ///
@@ -102,15 +101,17 @@ fn is_no_connection(err: &VoiceError) -> bool {
 /// One connected roster entry. `added_at` powers the presence-reconcile
 /// join-grace: a peer added moments ago via gossip must not be expired
 /// just because their presence row hasn't propagated yet.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VoicePeer {
-    /// Route blob the peer advertised (VoiceJoin / roster / re-resolve).
-    pub route_blob: Vec<u8>,
     /// When this entry was (first) added to the roster.
     pub added_at: std::time::Instant,
     /// Display name as carried by the join handshake (VoiceJoin /
     /// VoiceJoinAck / roster entry). `None` until any leg supplies it.
     pub display_name: Option<String>,
+    /// The peer's media link: the route it advertised (VoiceJoin /
+    /// roster / re-resolve), its bandwidth owner and egress driver (plan
+    /// E4.3.3).
+    pub link: Arc<PeerLink>,
 }
 
 /// Local three-way join handshake progress (SimpleX
@@ -142,8 +143,8 @@ impl VoiceTransport {
             peers: HashMap::new(),
             mode: VoiceMode::default(),
             handshake: JoinHandshake::default(),
-            created_at: Instant::now(),
-            last_no_conn_warn_ms: AtomicU64::new(0),
+            media: Arc::default(),
+            scope: None,
         }
     }
 
@@ -180,11 +181,54 @@ impl VoiceTransport {
         &self.sender_key
     }
 
-    /// Initialize the transport with a frame-sender backend and sender
-    /// identity. After calling `init()`, add peers with `add_peer()`.
-    pub fn init(&mut self, sender: Arc<dyn VoiceFrameSender>, sender_key: Vec<u8>) {
+    /// Initialize the transport with a frame-sender backend, sender
+    /// identity and the scope its per-peer egress drivers run in. After
+    /// calling `init()`, add peers with `add_peer()`.
+    pub fn init(
+        &mut self,
+        sender: Arc<dyn VoiceFrameSender>,
+        sender_key: Vec<u8>,
+        scope: Arc<rekindle_lifecycle::SessionScope>,
+    ) {
         self.sender = Some(sender);
         self.sender_key = sender_key;
+        self.scope = Some(scope);
+        let peers: Vec<(String, Arc<PeerLink>)> = self
+            .peers
+            .iter()
+            .map(|(k, p)| (k.clone(), Arc::clone(&p.link)))
+            .collect();
+        for (key, link) in peers {
+            self.spawn_driver(&key, &link);
+        }
+    }
+
+    /// The session's media roster: route queues, feedback intake and the
+    /// allocator.
+    #[must_use]
+    pub fn media(&self) -> Arc<MediaRoster> {
+        Arc::clone(&self.media)
+    }
+
+    /// The session's allocator: encoder targets and keyframe requests.
+    #[must_use]
+    pub fn allocator(&self) -> Arc<allocation::Allocator> {
+        Arc::clone(self.media.allocator())
+    }
+
+    /// Start `link`'s egress driver, once the transport has a sender and
+    /// a scope.
+    fn spawn_driver(&self, key: &str, link: &Arc<PeerLink>) {
+        let (Some(sender), Some(scope)) = (self.sender.as_ref(), self.scope.as_ref()) else {
+            return;
+        };
+        let task = Arc::clone(link).drive(
+            key.to_string(),
+            Arc::clone(sender),
+            Arc::clone(self.media.allocator()),
+            scope.token(),
+        );
+        scope.spawn_or_drop("voice media egress", task);
     }
 
     /// Architecture §26 W26 — install the pseudonym signing key the
@@ -192,6 +236,8 @@ impl VoiceTransport {
     /// responsible for re-installing on community switch (the key is
     /// derived per-community).
     pub fn set_signing_key(&mut self, signing_key: ed25519_dalek::SigningKey) {
+        // The same key signs our padding (plan E4.3.3).
+        self.media.set_padding_key(Some(signing_key.clone()));
         self.signing_key = Some(signing_key);
     }
 
@@ -210,8 +256,9 @@ impl VoiceTransport {
         route_blob: &[u8],
         sender_key: Vec<u8>,
         peer_key: &str,
+        scope: Arc<rekindle_lifecycle::SessionScope>,
     ) {
-        self.init(sender, sender_key);
+        self.init(sender, sender_key, scope);
         self.add_peer(peer_key, route_blob, None);
         tracing::info!(
             channel = %self.channel_id,
@@ -237,7 +284,7 @@ impl VoiceTransport {
         // repeat VoiceJoin announces. A name supplied by any handshake
         // leg upgrades a missing one; `None` never erases a known name.
         if let Some(existing) = self.peers.get_mut(pseudonym_key) {
-            existing.route_blob = route_blob.to_vec();
+            existing.link.set_route(route_blob);
             if let Some(name) = display_name {
                 existing.display_name = Some(name.to_string());
             }
@@ -253,12 +300,15 @@ impl VoiceTransport {
             peer = %pseudonym_key,
             "added voice peer"
         );
+        let link = PeerLink::new(route_blob, self.media.padding_key());
+        self.spawn_driver(pseudonym_key, &link);
+        self.media.insert(pseudonym_key, Arc::clone(&link));
         self.peers.insert(
             pseudonym_key.to_string(),
             VoicePeer {
-                route_blob: route_blob.to_vec(),
                 added_at: std::time::Instant::now(),
                 display_name: display_name.map(str::to_string),
+                link,
             },
         );
         true
@@ -273,7 +323,7 @@ impl VoiceTransport {
     pub fn refresh_peer_route(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> bool {
         match self.peers.get_mut(pseudonym_key) {
             Some(existing) => {
-                existing.route_blob = route_blob.to_vec();
+                existing.link.set_route(route_blob);
                 tracing::info!(
                     channel = %self.channel_id,
                     peer = %pseudonym_key,
@@ -299,7 +349,7 @@ impl VoiceTransport {
     pub fn peer_named_entries(&self) -> Vec<(String, Vec<u8>, Option<String>)> {
         self.peers
             .iter()
-            .map(|(k, v)| (k.clone(), v.route_blob.clone(), v.display_name.clone()))
+            .map(|(k, v)| (k.clone(), v.link.route(), v.display_name.clone()))
             .collect()
     }
 
@@ -309,6 +359,7 @@ impl VoiceTransport {
     pub fn remove_peer(&mut self, pseudonym_key: &str) -> bool {
         let removed = self.peers.remove(pseudonym_key).is_some();
         if removed {
+            self.media.remove(pseudonym_key);
             tracing::info!(
                 channel = %self.channel_id,
                 peer = %pseudonym_key,
@@ -347,76 +398,48 @@ impl VoiceTransport {
     pub fn peer_entries(&self) -> Vec<(String, Vec<u8>)> {
         self.peers
             .iter()
-            .map(|(k, v)| (k.clone(), v.route_blob.clone()))
+            .map(|(k, v)| (k.clone(), v.link.route()))
             .collect()
     }
 
-    /// Broadcast an encoded audio frame to ALL connected peers (mesh mode).
+    /// Queue an encoded audio frame for ALL connected peers (mesh mode),
+    /// at the head of each route's pacer.
     ///
-    /// Returns a list of (pseudonym_key, error) for any failed sends.
-    pub async fn broadcast(&self, frame: &OutboundFrame) -> Vec<(String, VoiceError)> {
-        let data = match self.build_packet_data(frame) {
-            Ok(d) => d,
-            Err(e) => return vec![("*".into(), e)],
-        };
-
-        let Some(sender) = self.sender.as_ref() else {
-            return vec![(
-                "*".into(),
-                VoiceError::Transport("transport not initialized".into()),
-            )];
-        };
-
-        let mut errors = Vec::new();
-        for (key, peer) in &self.peers {
-            if let Err(e) = sender
-                .send_voice_frame(&peer.route_blob, data.clone())
-                .await
-            {
-                // A one-way-dead peer (our frames can't reach it, so its
-                // route keeps returning `NoConnection`) would otherwise be
-                // swallowed by the partial-failure rule in `send`. Surface
-                // it, rate-limited, so the peer is log-visible. The return
-                // contract is unchanged — the error still goes into
-                // `errors`, which `send` only escalates when ALL peers
-                // fail.
-                if is_no_connection(&e) {
-                    self.warn_no_connection(key);
-                }
-                errors.push((key.clone(), e));
-            }
-        }
-        errors
+    /// # Errors
+    /// The frame cannot be signed (no signing key installed).
+    pub fn broadcast(&self, frame: &OutboundFrame) -> Result<(), VoiceError> {
+        let payload: Arc<[u8]> = Arc::from(self.build_packet_payload(frame)?);
+        self.media
+            .send_unpaced_to_all(crate::media_frame::VOICE_TAG, &payload, frame.media_bytes);
+        Ok(())
     }
 
-    /// Emit a rate-limited warning that a per-peer send failed with
-    /// `NoConnection`. See [`Self::last_no_conn_warn_ms`].
-    fn warn_no_connection(&self, pseudonym_key: &str) {
-        // Saturate rather than truncate: a session outliving u64 ms
-        // (~584 M years) simply always warns — harmless.
-        let now_ms = u64::try_from(self.created_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let last = self.last_no_conn_warn_ms.load(Ordering::Relaxed);
-        // `last == 0` is the never-warned sentinel — always warn the first
-        // time, then enforce the interval.
-        if last != 0 && now_ms.saturating_sub(last) < NO_CONN_WARN_INTERVAL_MS {
-            return;
-        }
-        self.last_no_conn_warn_ms.store(now_ms, Ordering::Relaxed);
-        tracing::warn!(
-            channel = %self.channel_id,
-            peer = %pseudonym_key,
-            "voice frame send failed with NoConnection — peer route may be one-way dead"
-        );
+    /// Datagrams sent and failed over every route so far.
+    #[must_use]
+    pub fn send_counts(&self) -> (u64, u64) {
+        self.media.send_counts()
     }
 
-    /// Send an encoded audio frame to a specific peer (MCU mode).
-    pub async fn send_to_peer(
+    /// Queue an encoded audio frame for one peer (MCU mode).
+    ///
+    /// # Errors
+    /// The peer is not on the roster, or the frame cannot be signed.
+    pub fn send_to_peer(
         &self,
         pseudonym_key: &str,
         frame: &OutboundFrame,
     ) -> Result<(), VoiceError> {
-        let data = self.build_packet_data(frame)?;
-        self.send_bytes_to_peer(pseudonym_key, data).await
+        let payload = self.build_packet_payload(frame)?;
+        let peer = self
+            .peers
+            .get(pseudonym_key)
+            .ok_or_else(|| VoiceError::Transport(format!("peer not found: {pseudonym_key}")))?;
+        peer.link.enqueue_unpaced(
+            crate::media_frame::VOICE_TAG,
+            Arc::from(payload),
+            frame.media_bytes,
+        );
+        Ok(())
     }
 
     /// Ship already-built wire bytes to one peer's cached route.
@@ -440,38 +463,34 @@ impl VoiceTransport {
             .sender
             .as_ref()
             .ok_or_else(|| VoiceError::Transport("transport not initialized".into()))?;
-        sender.send_voice_frame(&peer.route_blob, data).await
+        sender.send_voice_frame(&peer.link.route(), data).await
     }
 
-    /// Send a frame to the whole roster, failing only if every peer
-    /// failed.
+    /// Queue a frame for the whole roster.
     ///
     /// This is the send loop's normal path in both topologies: a DM
-    /// roster holds one peer, a mesh roster holds all of them, and the
-    /// partial-failure rule is what keeps one dead route from silencing
-    /// a call for everyone else.
-    pub async fn send(&self, frame: &OutboundFrame) -> Result<(), VoiceError> {
+    /// roster holds one peer, a mesh roster holds all of them. Delivery
+    /// happens in each peer's egress driver, so one dead route never holds
+    /// up the others.
+    ///
+    /// # Errors
+    /// No peers, or the frame cannot be signed.
+    pub fn send(&self, frame: &OutboundFrame) -> Result<(), VoiceError> {
         if self.peers.is_empty() {
             return Err(VoiceError::NotConnected);
         }
-
-        let errors = self.broadcast(frame).await;
-        if errors.len() == self.peers.len() {
-            // All sends failed — report the first error
-            return Err(errors
-                .into_iter()
-                .next()
-                .map_or(VoiceError::NotConnected, |(_, e)| e));
-        }
-        Ok(())
+        self.broadcast(frame)
     }
 
     /// Disconnect from the voice channel — removes all peers.
     pub fn disconnect(&mut self) {
-        self.peers.clear();
+        for (key, _) in self.peers.drain() {
+            self.media.remove(&key);
+        }
         self.sender = None;
         self.sender_key.clear();
         self.signing_key = None;
+        self.media.set_padding_key(None);
         self.mode = VoiceMode::default();
         self.handshake = JoinHandshake::default();
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
@@ -498,9 +517,9 @@ impl VoiceTransport {
         &self.channel_id
     }
 
-    /// Sign `frame` as a packet from this transport's sender and frame it
-    /// with the voice tag.
-    fn build_packet_data(&self, frame: &OutboundFrame) -> Result<Vec<u8>, VoiceError> {
+    /// Sign `frame` as a packet from this transport's sender. The per-route
+    /// framing (tag and `transport_seq`) is added at egress.
+    fn build_packet_payload(&self, frame: &OutboundFrame) -> Result<Vec<u8>, VoiceError> {
         let signing_key = self
             .signing_key
             .as_ref()
@@ -509,16 +528,11 @@ impl VoiceTransport {
             sender_key: self.sender_key.clone(),
             sequence: frame.sequence,
             timestamp: frame.timestamp,
-            transport_seq: frame.transport_seq,
             sframe: frame.sframe.clone(),
             sig: Vec::new(),
         };
         packet.sign(signing_key);
-        let payload = packet.encode();
-        let mut data = Vec::with_capacity(1 + payload.len());
-        data.push(VOICE_PACKET_TAG);
-        data.extend_from_slice(&payload);
-        Ok(data)
+        Ok(packet.encode())
     }
 }
 

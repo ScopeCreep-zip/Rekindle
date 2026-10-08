@@ -91,8 +91,12 @@ pub struct VoiceEngineHandle {
     pub engine: rekindle_voice::VoiceEngine,
     /// Shared voice transport — used by send loop, MCU loop, and VoiceJoin handler.
     pub transport: std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
+    /// The transport's media roster: route queues, feedback intake and the
+    /// allocator, reachable without the transport's async lock (plan E4.3.3).
+    pub media: std::sync::Arc<rekindle_voice::transport::roster::MediaRoster>,
     /// Which channel/call we're currently in (prevents double-joining).
-    /// The send and receive loops and the video pacer (plan C4).
+    /// The send and receive loops and the video allocation follower
+    /// (plan C4).
     pub loops: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
     /// The device monitor.
     pub monitor: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,

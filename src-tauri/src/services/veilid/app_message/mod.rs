@@ -43,9 +43,11 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
     use crate::services::veilid::ingress_queue::IngressItem;
     if let Ok(signed) = decode_signed_envelope(&message) {
         let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
-        state
-            .gossip_ingress
-            .push(IngressItem::Gossip { signed, is_video });
+        state.gossip_ingress.push(IngressItem::Gossip {
+            signed,
+            is_video,
+            media_arrival: None,
+        });
         return;
     }
 
@@ -62,8 +64,12 @@ pub(crate) async fn process_ingress_item(
 ) {
     use crate::services::veilid::ingress_queue::IngressItem;
     match item {
-        IngressItem::Gossip { signed, .. } => {
-            handle_gossip_envelope(app_handle, state, signed).await;
+        IngressItem::Gossip {
+            signed,
+            media_arrival,
+            ..
+        } => {
+            handle_gossip_envelope(app_handle, state, signed, media_arrival).await;
         }
         IngressItem::Legacy(message) => {
             let Ok(pool) = state.db.current() else {
@@ -79,6 +85,7 @@ async fn handle_gossip_envelope(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
     signed: SignedEnvelope,
+    media_arrival: Option<(u32, std::time::Instant)>,
 ) {
     let community_id = &signed.community_id;
 
@@ -127,6 +134,18 @@ async fn handle_gossip_envelope(
         }
     }
 
+    // Plans E4.3.2, E4.3.3 — a verified media-plane envelope counts toward
+    // its sender's transport feedback, timed when it arrived. Recorded
+    // after the dedup cache, so a replay under a new route sequence
+    // number never counts as an arrival.
+    if let (Some((transport_seq, arrived)), Some(media)) =
+        (media_arrival, crate::state_helpers::voice_media(state))
+    {
+        media
+            .arrivals()
+            .record(&signed.sender_pseudonym, transport_seq, arrived);
+    }
+
     let video_channel = video_payload_channel_from_bytes(&signed.envelope_bytes);
 
     // M10.4 — receiver-side per-sender gossip rate floor (architecture
@@ -137,7 +156,7 @@ async fn handle_gossip_envelope(
     //
     // §10.6 exemption: directed channel media (video fragments arrive
     // at frame rate, well above 10/s) has its own congestion control
-    // (FrameAck / BandwidthEstimate / KeyframeRequest) and is exempt
+    // (the media route's transport feedback, plan E4.3.3) and is exempt
     // — but ONLY when we are actively in the addressed channel. Video
     // for any other channel stays under the floor and is then dropped
     // by the receive gate regardless.

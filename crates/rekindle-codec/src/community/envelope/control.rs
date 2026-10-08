@@ -498,39 +498,18 @@ pub enum ControlPayload {
         actor_pseudonym: String,
     },
 
-    /// Architecture §10.6 — receiver acknowledges fragments roughly
-    /// every 500 ms and reports their measured downstream bandwidth.
-    /// Senders adjust VP9 bitrate to match the slowest receiver.
     /// One transport-sized piece of an encoded video frame (see
     /// [`VideoFragmentPayload`]).
     VideoFragment(VideoFragmentPayload),
     /// Reed-Solomon parity for the matching `VideoFragment` stream
     /// (see [`VideoParityFragmentPayload`]).
     VideoParityFragment(VideoParityFragmentPayload),
-    FrameAck {
-        channel_id: String,
-        stream_id: [u8; 16],
-        last_frame_seq: u32,
-        kbps: u32,
-        loss_q8: u8,
-    },
-
     /// Sent by a receiver who has lost too many inter-frames to keep
     /// rendering. Senders treat this as a request to encode the next
     /// frame as a keyframe (architecture §10.6).
     KeyframeRequest {
         channel_id: String,
         stream_id: [u8; 16],
-    },
-
-    /// Bandwidth advertisement decoupled from `FrameAck` — used when
-    /// network conditions change without a frame in flight (e.g.
-    /// Wi-Fi → cellular hand-off).
-    BandwidthEstimate {
-        channel_id: String,
-        kbps: u32,
-        window_secs: u8,
-        loss_q8: u8,
     },
 
     /// Capability negotiation broadcast on join. Senders intersect

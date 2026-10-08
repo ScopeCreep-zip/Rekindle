@@ -271,24 +271,6 @@ export const syncCommands = {
   stopNativeVideo: () => invoke<void>("stop_native_video"),
   forceNativeKeyframes: () => invoke<void>("force_native_keyframes"),
   /**
-   * Architecture §10.6 line 4082 — out-of-band bandwidth advertisement
-   * when network conditions change between frames (Wi-Fi → cellular).
-   */
-  sendVideoBandwidthEstimate: (
-    communityId: string,
-    channelId: string,
-    kbps: number,
-    windowSecs: number,
-    lossQ8: number,
-  ) =>
-    invoke<void>("send_video_bandwidth_estimate", {
-      communityId,
-      channelId,
-      kbps,
-      windowSecs,
-      lossQ8,
-    }),
-  /**
    * Architecture §10.6 Phase 6 Week 22 — broadcast that the active
    * video relay for `(channelId, streamIdHex)` has changed. Receivers
    * re-attach decoders to the new relay's stream and reset reassembly

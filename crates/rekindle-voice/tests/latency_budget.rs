@@ -27,6 +27,7 @@
 
 use std::time::{Duration, Instant};
 
+use rekindle_codec::capnp_codec::SignedWire;
 use rekindle_secrets::sframe;
 use rekindle_voice::codec::{EncodedFrame, OpusCodec};
 use rekindle_voice::jitter::{JitterBuffer, JitterFrame};
@@ -149,14 +150,13 @@ fn measure_pipeline_compute_p95() -> Duration {
     let mut one_pass = |seq: u32| -> JitterFrame {
         let encoded = encoder.encode(&frame).expect("encode");
         let timestamp = u64::from(seq) * 20;
-        let metadata = VoicePacket::sframe_metadata(&sender_key, seq, timestamp, 0);
+        let metadata = VoicePacket::sframe_metadata(&sender_key, seq, timestamp);
         let mut plaintext = vec![0u8];
         plaintext.extend_from_slice(&encoded.data);
         let mut packet = VoicePacket {
             sender_key: sender_key.clone(),
             sequence: seq,
             timestamp,
-            transport_seq: 0,
             sframe: sframe::seal(&key, kid, ctr, &metadata, &plaintext).expect("seal"),
             sig: Vec::new(),
         };

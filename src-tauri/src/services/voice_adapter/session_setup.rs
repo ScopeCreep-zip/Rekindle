@@ -70,6 +70,7 @@ pub(super) fn init_voice_session_impl(
         transport: Arc::new(tokio::sync::Mutex::new(
             rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
         )),
+        media: Arc::default(),
         loops: None,
         monitor: None,
         mcu: None,
@@ -125,6 +126,7 @@ pub(super) fn init_voice_session_impl(
         community_id,
         peer_route_blob,
     );
+    let media = transport.media();
     let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
 
     // Install the real transport on the handle (overwrite the placeholder).
@@ -132,6 +134,7 @@ pub(super) fn init_voice_session_impl(
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.transport = Arc::clone(&shared_transport);
+            handle.media = media;
         }
     }
 
@@ -201,14 +204,17 @@ fn create_transport_impl(
         _ => None,
     };
     if let Some(sender) = sender {
+        // Each roster peer's egress driver runs here, ending with the
+        // login at the latest; leaving the call stops them one by one.
+        let egress = state_helpers::login_scope_or_closed(state).child("voice media egress");
         if community_id.is_some() {
-            transport.init(sender, sender_key);
+            transport.init(sender, sender_key, egress);
         } else if let Some(blob) = resolved_peer_route {
             // For a DM call the channel id *is* the peer's public key,
             // so the roster is keyed by the peer's real identity.
-            transport.connect(sender, blob, sender_key, channel_id);
+            transport.connect(sender, blob, sender_key, channel_id, egress);
         } else {
-            transport.init(sender, sender_key);
+            transport.init(sender, sender_key, egress);
         }
     }
 
@@ -285,7 +291,7 @@ pub(super) fn spawn_voice_loops_impl(
     // The liveness ledger is shared: both loops note into the SAME
     // Arc the engine handle owns, and the signaling adapter reads it
     // for the presence reconcile's media veto.
-    let (voice_community_id, voice_channel_id, media_liveness) = {
+    let (voice_community_id, voice_channel_id, media_liveness, playback_depth_ms, media) = {
         let ve = state.voice_engine.lock();
         ve.as_ref().map_or_else(
             || {
@@ -293,6 +299,8 @@ pub(super) fn spawn_voice_loops_impl(
                     None,
                     String::new(),
                     Arc::new(rekindle_voice::liveness::MediaLiveness::default()),
+                    Arc::default(),
+                    Arc::default(),
                 )
             },
             |h| {
@@ -300,10 +308,17 @@ pub(super) fn spawn_voice_loops_impl(
                     h.community_id.clone(),
                     h.channel_id.clone(),
                     Arc::clone(&h.media_liveness),
+                    h.engine.playback_depth(),
+                    Arc::clone(&h.media),
                 )
             },
         )
     };
+    let follower_scope = voice_community_id
+        .clone()
+        .map(|c| (c, voice_channel_id.clone()));
+    let recv_allocator = Arc::clone(media.allocator());
+    let recv_arrivals = Arc::clone(media.arrivals());
 
     // Build a per-loop adapter Arc for the crate-side loop deps.
     let adapter_for_send: Arc<dyn VoiceSessionDeps> =
@@ -394,6 +409,9 @@ pub(super) fn spawn_voice_loops_impl(
         jitter_base_ms: bundle.jitter_base_ms,
         report_signing_key,
         media_liveness,
+        playback_depth_ms,
+        arrivals: recv_arrivals,
+        allocator: recv_allocator,
     };
     loops
         .spawn_with_token("voice receive loop", |stop| {
@@ -434,32 +452,20 @@ pub(super) fn spawn_voice_loops_impl(
         }
     }
 
-    // Phase 4 — per-session video pacer (community sessions only; DM
-    // video is 1:1 and unpaced). Frames built by `build_video_frame`
-    // queue here and release at the audio-first budgeted rate.
-    {
-        let already_running = state.video_pacer_tx.read().is_some();
-        if !already_running {
-            let (frame_tx, frame_rx) = mpsc::channel::<rekindle_video::PacedFrame>(
-                rekindle_video::pacer::MAX_QUEUED_FRAMES,
-            );
-            let (rate_tx, rate_rx) = tokio::sync::watch::channel(rekindle_video::VIDEO_START_KBPS);
-            // Wire↔media unit bridge (R4): the pacer measures the real
-            // payload share of released traffic; the AIMD step and the
-            // encoder-target conversion read it from this watch.
-            let (share_tx, share_rx) =
-                tokio::sync::watch::channel(rekindle_video::START_PAYLOAD_SHARE_Q10);
-            let pacer_deps =
-                crate::services::video_adapter::VideoAdapter::new(state.clone(), app.clone());
-            loops
-                .spawn_with_token("video pacer", |stop| {
-                    rekindle_video::run_video_pacer(pacer_deps, frame_rx, rate_rx, share_tx, stop)
-                })
-                .map_err(|e| e.to_string())?;
-            *state.video_pacer_tx.write() = Some(frame_tx);
-            *state.video_pacer_rate_tx.write() = Some(rate_tx);
-            *state.video_payload_share_rx.write() = Some(share_rx);
-        }
+    // Community video follows the allocator: encoder targets and the
+    // keyframes a route asks for after dropping or pausing video (plan
+    // E4.3.3). DM video is 1:1 over its own path.
+    if let Some((community_id, channel_id)) = follower_scope {
+        let follower = super::video_allocation::VideoAllocationFollower {
+            state: Arc::clone(state),
+            app: app.clone(),
+            allocator: Arc::clone(media.allocator()),
+            community_id,
+            channel_id,
+        };
+        loops
+            .spawn_with_token("video allocation", |stop| follower.run(stop))
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

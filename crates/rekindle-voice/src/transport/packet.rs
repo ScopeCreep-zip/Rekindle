@@ -10,6 +10,7 @@ pub use rekindle_codec::capnp_codec::voice_packet::VoicePacket;
 pub struct OutboundFrame {
     pub sequence: u32,
     pub timestamp: u64,
-    pub transport_seq: u64,
     pub sframe: Vec<u8>,
+    /// Opus bytes the frame carries, for the route's cost accounting.
+    pub media_bytes: usize,
 }

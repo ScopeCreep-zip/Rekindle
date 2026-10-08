@@ -53,6 +53,8 @@ const FORCE_KEYFRAME_FLOOR: Duration = Duration::from_millis(300);
 enum Control {
     Stop,
     ForceKeyframe,
+    /// The allocator's encoder target, kbps (plan E4.3.3).
+    Bitrate(u32),
 }
 
 struct ActiveSession {
@@ -132,21 +134,11 @@ pub fn on_keyframe_request(state: &AppState, stream_id: &[u8; 16]) -> bool {
     }
 }
 
-/// The wire target is in the pacer's WIRE domain; the encoder must
-/// aim at the media-domain conversion or it overproduces into the
-/// pacer queue (R4).
-fn encoder_kbps(state: &AppState, community_id: &str, channel_id: &str) -> u32 {
-    let share = state
-        .video_payload_share_rx
-        .read()
-        .as_ref()
-        .map_or(rekindle_video::START_PAYLOAD_SHARE_Q10, |rx| *rx.borrow());
-    let wire = state
-        .video_bitrate_targets
-        .lock()
-        .get(&(community_id.to_string(), channel_id.to_string()))
-        .map_or(rekindle_video::VIDEO_START_KBPS, |(target, _)| *target);
-    rekindle_video::encoder_target_kbps(wire, share)
+/// The allocator moved the video encoder target (plan E4.3.3).
+pub fn set_target_kbps(state: &AppState, kbps: u32) {
+    if let Some(session) = state.native_video.active.lock().as_ref() {
+        let _ = session.control_tx.try_send(Control::Bitrate(kbps));
+    }
 }
 
 /// Start the native camera for the given voice channel. Returns the
@@ -208,7 +200,7 @@ pub async fn start(
         width: target_width,
         height: target_height,
         fps: target_fps,
-        start_bitrate_kbps: encoder_kbps(state, community_id, channel_id),
+        start_bitrate_kbps: crate::services::voice_adapter::video_allocation::encoder_kbps(state),
         keyframe_max_dist: NATIVE_KEYFRAME_MAX_DIST,
     };
     // start() blocks up to its 2 s first-sample deadline.
@@ -226,8 +218,8 @@ pub async fn start(
         control_tx,
     });
 
-    // The pump: frames out, preview out, control in, bitrate
-    // follow-the-watch.
+    // The pump: frames out, preview out, control (stop, keyframe,
+    // bitrate) in.
     let pump_state = Arc::clone(state);
     let pump_app = app.clone();
     let pump_community = community_id.to_string();
@@ -240,12 +232,6 @@ pub async fn start(
             let mut frame_seq: u32 = 0;
             let mut preview_count: u64 = 0;
             let mut last_forced = Instant::now();
-            let mut rate_rx = pump_state
-                .video_pacer_rate_tx
-                .read()
-                .as_ref()
-                .map(tokio::sync::watch::Sender::subscribe);
-            let mut share_rx = pump_state.video_payload_share_rx.read().clone();
             loop {
                 tokio::select! {
                     biased;
@@ -262,7 +248,9 @@ pub async fn start(
                                     last_forced = Instant::now();
                                     session.force_keyframe();
                                 }
-                                continue;
+                            }
+                            Some(Control::Bitrate(kbps)) => {
+                                session.set_bitrate_kbps(kbps);
                             }
                             Some(Control::Stop) | None => {
                                 session.stop();
@@ -292,22 +280,6 @@ pub async fn start(
                         );
                         break;
                     }
-                    changed = async {
-                        match rate_rx.as_mut() {
-                            Some(rx) => rx.changed().await.is_ok(),
-                            None => std::future::pending().await,
-                        }
-                    } => {
-                        if changed {
-                            let wire = rate_rx.as_ref().map_or(0, |rx| *rx.borrow());
-                            let share = share_rx.as_ref().map_or(
-                                rekindle_video::START_PAYLOAD_SHARE_Q10,
-                                |rx| *rx.borrow(),
-                            );
-                            session.set_bitrate_kbps(rekindle_video::encoder_target_kbps(wire, share));
-                        }
-                        continue;
-                    }
                     preview = preview_rx.recv() => {
                         let Some(preview) = preview else {
                             // Preview branch ended — the encode branch's
@@ -336,7 +308,6 @@ pub async fn start(
                                 jpeg_b64,
                             },
                         );
-                        continue;
                     }
                     frame = frame_rx.recv() => {
                         let Some(frame) = frame else {
@@ -371,11 +342,6 @@ pub async fn start(
                             },
                         );
                     }
-                }
-                // Share moves rarely; fold it into the rate poll by
-                // re-reading on every loop instead of a fifth arm.
-                if share_rx.is_none() {
-                    share_rx.clone_from(&pump_state.video_payload_share_rx.read());
                 }
             }
             tracing::info!(

@@ -179,7 +179,6 @@ impl FrameSealer {
         sender_key: &[u8],
         sequence: u32,
         timestamp: u64,
-        transport_seq: u64,
         opus: &[u8],
     ) -> Option<Vec<u8>> {
         let source = self.keys.send_source()?;
@@ -199,7 +198,7 @@ impl FrameSealer {
             });
         }
         let cached = self.cached.as_ref()?;
-        let metadata = VoicePacket::sframe_metadata(sender_key, sequence, timestamp, transport_seq);
+        let metadata = VoicePacket::sframe_metadata(sender_key, sequence, timestamp);
         let mut plaintext = Vec::with_capacity(1 + opus.len());
         plaintext.push(0);
         plaintext.extend_from_slice(opus);
@@ -262,12 +261,8 @@ impl FrameOpener {
             states.len() - 1
         };
         let state = &mut states[index];
-        let metadata = VoicePacket::sframe_metadata(
-            &packet.sender_key,
-            packet.sequence,
-            packet.timestamp,
-            packet.transport_seq,
-        );
+        let metadata =
+            VoicePacket::sframe_metadata(&packet.sender_key, packet.sequence, packet.timestamp);
         let plaintext =
             sframe::open(&state.key, &packet.sframe, &metadata).map_err(|_| OpenError::Rejected)?;
         // Replay is checked after authentication, so forged frames can't
@@ -287,6 +282,7 @@ mod tests {
     use super::*;
     use crate::session_deps::CallMediaKeys;
     use ed25519_dalek::SigningKey;
+    use rekindle_codec::capnp_codec::SignedWire;
     use rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys;
 
     /// One side's key source: a call with `call_peer`, and one channel
@@ -335,12 +331,11 @@ mod tests {
         opus: &[u8],
     ) -> VoicePacket {
         let sender_key = signer.verifying_key().to_bytes().to_vec();
-        let sframe = sealer.seal(&sender_key, sequence, 1_000, 0, opus).unwrap();
+        let sframe = sealer.seal(&sender_key, sequence, 1_000, opus).unwrap();
         let mut p = VoicePacket {
             sender_key,
             sequence,
             timestamp: 1_000,
-            transport_seq: 0,
             sframe,
             sig: Vec::new(),
         };

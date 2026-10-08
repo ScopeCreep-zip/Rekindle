@@ -111,7 +111,6 @@
     "allow-send-channel-message",
     "allow-send-channel-typing",
     "allow-send-thread-message",
-    "allow-send-video-bandwidth-estimate",
     "allow-send-video-frame",
     "allow-send-video-keyframe-request",
     "allow-send-voice-message",

@@ -150,10 +150,9 @@ pub struct VideoCodecIncompatibleEvent {
     pub peers: Vec<String>,
 }
 
-/// Phase 4 — backend bitrate policy output (AIMD over receiver
-/// FrameAck/BandwidthEstimate feedback, audio reserve subtracted).
-/// The frontend encoder follows this target; the pacer rate moves
-/// with it on the backend.
+/// The allocator's video encoder target (plan E4.3.3): each media route's
+/// estimate, audio first, video the rest, lowest over the routes with
+/// video running. The webview encoder follows it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoBitrateTargetEvent {

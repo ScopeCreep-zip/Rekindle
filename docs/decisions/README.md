@@ -26,7 +26,7 @@ filename is `NNNN-short-title.md`.
 | [0012](0012-community-keys-stay-on-mek.md) | Community channel keys stay on MEK + deterministic rotator (MLS re-evaluated) | Accepted (re-affirms 0002) |
 | [0013](0013-per-window-event-router.md) | Typed webview events delivered per window, no Tauri `Emitter` | Accepted (supersedes 0007 delivery and replay) |
 | [0014](0014-veilid-boundary-is-transitive.md) | The Veilid boundary is transitive | Accepted (supersedes the 0001 and 0009 boundary sentences) |
-| [0015](0015-media-engine.md) | Media engine: one Rust engine built from ported production components | Proposed (awaiting ruling Q5) |
+| [0015](0015-media-engine.md) | Media engine: one Rust engine built from ported production components | Accepted (ruling Q5, Option F) |
 
 ## How to write a new ADR
 

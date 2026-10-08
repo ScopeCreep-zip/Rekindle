@@ -26,7 +26,6 @@ fn empty_payload_rejected() {
         "c1",
         "11111111111111111111111111111111",
         &req,
-        0,
     )
     .unwrap_err();
     assert!(matches!(err, VideoError::InvalidInput(_)));
@@ -42,7 +41,6 @@ fn missing_identity_rejected() {
         "c1",
         "11111111111111111111111111111111",
         &small_request(false),
-        0,
     )
     .unwrap_err();
     assert!(matches!(err, VideoError::IdentityNotLoaded));
@@ -146,7 +144,6 @@ fn structured_trace_emits_on_send() {
         "c_smoke_phase_f",
         "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
         &req,
-        0,
     )
     .expect("build happy path");
 
@@ -201,12 +198,14 @@ fn first_frame_emits_initial_topology_change() {
         "c1",
         "11111111111111111111111111111111",
         &small_request(false),
-        7,
     )
     .expect("build happy path");
     assert!(!frame.envelopes.is_empty(), "at least one fragment");
-    assert_eq!(frame.enqueued_ms, 7);
-    // The pacer-bypassing control envelope: exactly the initial
+    assert_eq!(
+        frame.media_bytes,
+        small_request(false).encoded_payload.len()
+    );
+    // The control envelope that bypasses the route queues: exactly the initial
     // TopologyChange went straight to deps; the fragments did NOT.
     let calls = deps.calls.lock();
     assert_eq!(
@@ -237,7 +236,6 @@ fn second_frame_same_stream_skips_initial_topology() {
         "c1",
         "11111111111111111111111111111111",
         &small_request(false),
-        0,
     )
     .unwrap();
     let mut req2 = small_request(false);
@@ -248,7 +246,6 @@ fn second_frame_same_stream_skips_initial_topology() {
         "c1",
         "11111111111111111111111111111111",
         &req2,
-        0,
     )
     .unwrap();
     // The second build must NOT dispatch another TopologyChange.

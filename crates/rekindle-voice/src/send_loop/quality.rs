@@ -11,15 +11,15 @@
 //! Opus FEC sizing, the bitrate ladder — was therefore tuned against a
 //! number that did not measure the thing being tuned.
 //!
-//! The fallback is still here, used only when no peer has reported, and
-//! it is a fallback rather than a default for that reason.
+//! The local count is still here, used only for the quality label before
+//! any peer has reported. The audio bitrate is not decided here: the
+//! allocator sets it from each route's estimate (plan E4.3.3).
 
 use std::time::{Duration, Instant};
 
 use rekindle_media_stats::{LinkState, LinkTracker, QualityScore, ReceptionMetrics};
 
 use super::VoiceSendLoop;
-use crate::codec::{DEFAULT_BITRATE_BPS, MIN_BITRATE_BPS};
 use crate::receiver_report::VoiceReceiverReport;
 use crate::session_deps::{SendLinkStats, VoiceSessionEvent};
 
@@ -269,11 +269,10 @@ impl VoiceSendLoop {
         }
 
         // Loss as the far end actually measured it, when any peer has
-        // reported. Falling back to `send_failures / packets_sent` is
-        // strictly a last resort: that ratio counts our own local send
-        // errors, and a `send()` that succeeds says nothing about
-        // whether the packet arrived — so on a link dropping a fifth of
-        // its packets it reads a clean 0 %.
+        // reported. Before then the label comes from our own routes'
+        // send failures, which say nothing about arrival: a `send()` that
+        // succeeds can still be lost, so this only labels the first
+        // seconds of a call.
         let worst = self.worst_link();
         let (quality, loss_pct_u32) = if let Some(w) = worst.as_ref() {
             (
@@ -281,12 +280,7 @@ impl VoiceSendLoop {
                 u32::from(w.metrics.loss_rate_q8.max(w.metrics.discard_rate_q8)) * 100 / 255,
             )
         } else {
-            let local = self
-                .send_failures
-                .saturating_mul(100)
-                .checked_div(self.packets_sent)
-                .and_then(|loss| u32::try_from(loss).ok())
-                .unwrap_or(0);
+            let local = self.local_failure_pct();
             let label = match local {
                 0..5 => "good",
                 5..15 => "fair",
@@ -301,52 +295,48 @@ impl VoiceSendLoop {
         let loss_i32 = i32::try_from(loss_pct_u32.min(100)).unwrap_or(100);
         let _ = self.codec.set_packet_loss_perc(loss_i32);
 
-        // Bitrate: group size sets the baseline (a mesh sender pays it
-        // once per peer), then a struggling link pulls it down. Cannot
-        // hold the tokio Mutex synchronously, so use try_lock.
-        // A mesh sender pays the bitrate once per peer, so the ladder
-        // trades per-stream quality against total egress as the roster
-        // grows. Rungs are relative to the codec default rather than
-        // spelled out, so raising that raises the whole ladder and the
-        // two cannot drift.
-        let peer_count = self.transport.try_lock().map(|t| t.peer_count()).ok();
-        let baseline = match peer_count {
-            // DM, or a mesh small enough to afford full rate.
-            Some(0..=2) | None => DEFAULT_BITRATE_BPS,
-            // Still full mesh (the topology switches to an SFU above
-            // four), so egress is the binding constraint here.
-            Some(3..=7) => DEFAULT_BITRATE_BPS * 3 / 4,
-            Some(_) => DEFAULT_BITRATE_BPS / 2,
-        };
-        // Backing off on a Poor link trades clarity for arrival: fewer
-        // bits per packet means smaller packets, which a congested path
-        // is likelier to deliver. `Lost` holds the floor rather than
-        // dropping further — there is nothing left to concede, and it
-        // has to be able to recover.
-        let target_bps = match worst.as_ref().map(|w| w.score.state) {
-            Some(LinkState::Poor | LinkState::Lost) => (baseline * 2 / 3).max(MIN_BITRATE_BPS),
-            Some(LinkState::Fair | LinkState::Recovering) => {
-                (baseline * 5 / 6).max(MIN_BITRATE_BPS)
-            }
-            Some(LinkState::Good) | None => baseline,
-        };
-        if peer_count.is_some() {
-            let _ = self.codec.set_bitrate(target_bps);
-        }
-
-        // Emitted after the decisions above so the event carries the
-        // action taken, not just the measurement behind it.
+        let audio_bps = self.audio_bps;
         self.deps
             .emit_voice_event(VoiceSessionEvent::ConnectionQuality {
                 quality: quality.to_string(),
                 link: worst.map(|mut w| {
-                    w.bitrate_bps = u32::try_from(target_bps).unwrap_or(0);
+                    w.bitrate_bps = audio_bps;
                     w
                 }),
             });
 
         self.packets_sent = 0;
-        self.send_failures = 0;
         self.last_quality_report = Instant::now();
+    }
+
+    /// Percent of datagrams our routes failed to send since the last pass.
+    fn local_failure_pct(&mut self) -> u32 {
+        let Some((sent, failed)) = self.transport.try_lock().ok().map(|t| t.send_counts()) else {
+            return 0;
+        };
+        let (sent0, failed0) = std::mem::replace(&mut self.sends_at_last_pass, (sent, failed));
+        let (ds, df) = (sent.saturating_sub(sent0), failed.saturating_sub(failed0));
+        u32::try_from((df * 100).checked_div(ds + df).unwrap_or(0)).unwrap_or(100)
+    }
+
+    /// The allocator moved our audio target (plan E4.3.3).
+    pub(super) fn apply_audio_bitrate(&mut self, bps: u32) {
+        if bps == self.audio_bps {
+            return;
+        }
+        match self
+            .codec
+            .set_bitrate(i32::try_from(bps).unwrap_or(i32::MAX))
+        {
+            Ok(()) => {
+                tracing::info!(
+                    from_bps = self.audio_bps,
+                    to_bps = bps,
+                    "audio bitrate allocated"
+                );
+                self.audio_bps = bps;
+            }
+            Err(e) => tracing::warn!(error = %e, bps, "audio bitrate not applied"),
+        }
     }
 }

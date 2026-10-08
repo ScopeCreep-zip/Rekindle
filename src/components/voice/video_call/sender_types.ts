@@ -1,29 +1,5 @@
-// Send-side types, constants, and the fps/keyframe ladder policy —
-// extracted from video_sender.ts so the encoder pump file stays focused
+// Send-side types and constants — extracted from video_sender.ts so the encoder pump file stays focused
 // on the (heavily stateful) capture/encode loop.
-
-import { KEYFRAME_INTERVAL_MS } from "./codec_utils";
-
-/** Fps/keyframe-cadence steps below the negotiated ceiling. Resolution
- *  NEVER changes mid-stream: a ladder move that reconfigured the
- *  encoder to new dimensions broke both receiving platforms' WebCodecs
- *  decoders on the in-band resolution switch (WebKitGTK stalled with
- *  no output and no error callback; WKWebView painted a black tile).
- *  Fps is floored near 7: under CBR, per-frame bytes = bitrate ÷ fps,
- *  so cutting fps below that point GROWS each frame instead of
- *  shedding bytes — the 2 fps depths of the previous ladder produced
- *  40 KB deltas / 160 KB keyframes (temporal prediction collapses at
- *  500 ms frame spacing) and froze the far end. Bytes are shed by the
- *  fps-coupled encoder bitrate (`effectiveBitrate`) following the AIMD
- *  target down, not by fps alone. Late joiners aren't stranded by the
- *  6 s cadence: the keyframe-request path (proven live) forces one on
- *  demand. */
-export const LADDER: ReadonlyArray<{ fpsScale: number; kfIntervalMs: number }> = [
-  { fpsScale: 1, kfIntervalMs: KEYFRAME_INTERVAL_MS },
-  { fpsScale: 0.8, kfIntervalMs: KEYFRAME_INTERVAL_MS },
-  { fpsScale: 0.66, kfIntervalMs: 6000 },
-  { fpsScale: 0.5, kfIntervalMs: 6000 },
-];
 
 export type TrackLabel = "camera" | "screen";
 
@@ -79,8 +55,8 @@ export interface VideoSender {
   /** Force a keyframe on EVERY active local stream — RFC 5104 FIR
    *  semantics for "a new member entered the conference". */
   forceKeyframeAll(): void;
-  /** Follow the backend bitrate policy's target (Phase 4 — assignment,
-   *  not a min-clamp: the backend already ran the AIMD + audio-reserve
-   *  math over receiver feedback). Applies to both tracks. */
+  /** Follow the backend allocator's target (plan E4.3.3 — assignment,
+   *  not a min-clamp: the backend already split the route estimate,
+   *  audio first). Applies to both tracks. */
   setTargetKbps(kbps: number): void;
 }

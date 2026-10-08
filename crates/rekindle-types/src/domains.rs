@@ -90,11 +90,18 @@ labels! {
     /// key and its own key, so the secret never keys two constructions.
     VIDEO_SENDER_KEY = "rekindle-video-sender-key-v1";
     /// Signature prefix: voice packet (SFrame payload, Cap'n Proto).
-    VOICE_PACKET = "rekindle-voice-packet-v2";
+    VOICE_PACKET = "rekindle-voice-packet-v3";
     /// Signature prefix: voice receiver report. Distinct from
     /// `VOICE_PACKET` so a captured packet signature cannot be presented
     /// as a report signature.
     VOICE_RECEIVER_REPORT = "rekindle-voice-receiver-report-v1";
+    /// Signature prefix: a padding datagram on a media route (plan
+    /// E4.3.3), binding the sender to the route sequence number it fills.
+    MEDIA_PADDING = "rekindle-media-padding-v1";
+    /// Signature prefix: transport feedback for the per-route bandwidth
+    /// estimator (plan E4.3.2). Distinct from the media and report
+    /// prefixes so no other signature can be presented as feedback.
+    TRANSPORT_FEEDBACK = "rekindle-transport-feedback-v1";
 
     // ── Cross-device sync and local storage ──────────────────────────
     /// HKDF salt: personal sync-record key.

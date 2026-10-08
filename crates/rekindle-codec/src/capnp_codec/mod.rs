@@ -22,6 +22,71 @@ pub(crate) fn text_to_string(t: capnp::text::Reader<'_>) -> Result<String, Codec
 }
 
 /// Serialize a Cap'n Proto builder into packed bytes.
+/// A wire type signed with Ed25519 over its domain-prefixed signing
+/// bytes: the voice packet and transport feedback share one definition of
+/// signing and strict verification.
+pub trait SignedWire {
+    /// Names the type in verification errors.
+    const WHAT: &'static str;
+    /// The domain-prefixed bytes the signature covers.
+    fn signing_bytes(&self) -> Vec<u8>;
+    /// The signer's public key (32 bytes).
+    fn signer_key(&self) -> &[u8];
+    /// The signature (64 bytes).
+    fn signature(&self) -> &[u8];
+    /// Store a signature.
+    fn set_signature(&mut self, sig: Vec<u8>);
+
+    /// Sign with `key`, whose public half must be [`Self::signer_key`].
+    fn sign(&mut self, key: &rekindle_secrets::ed25519_dalek::SigningKey) {
+        let sig = ed25519_sign(key, &self.signing_bytes());
+        self.set_signature(sig);
+    }
+
+    /// Strictly verify the signature against [`Self::signer_key`].
+    ///
+    /// # Errors
+    /// A malformed key or signature, or one that does not verify.
+    fn verify(&self) -> Result<(), CodecError> {
+        ed25519_verify(
+            self.signer_key(),
+            self.signature(),
+            &self.signing_bytes(),
+            Self::WHAT,
+        )
+    }
+}
+
+/// Ed25519-sign `bytes` (a type's domain-prefixed signing bytes).
+pub(crate) fn ed25519_sign(
+    key: &rekindle_secrets::ed25519_dalek::SigningKey,
+    bytes: &[u8],
+) -> Vec<u8> {
+    use rekindle_secrets::ed25519_dalek::Signer;
+    key.sign(bytes).to_bytes().to_vec()
+}
+
+/// Strictly verify Ed25519 `sig` by `key` over `bytes`; `what` names the
+/// signed type in errors.
+pub(crate) fn ed25519_verify(
+    key: &[u8],
+    sig: &[u8],
+    bytes: &[u8],
+    what: &str,
+) -> Result<(), CodecError> {
+    use rekindle_secrets::ed25519_dalek::{Signature, VerifyingKey};
+    let key: [u8; 32] = key
+        .try_into()
+        .map_err(|_| CodecError::Verification(format!("{what} key length")))?;
+    let key = VerifyingKey::from_bytes(&key)
+        .map_err(|e| CodecError::Verification(format!("{what} key: {e}")))?;
+    let sig: [u8; 64] = sig
+        .try_into()
+        .map_err(|_| CodecError::Verification(format!("{what} signature length")))?;
+    key.verify_strict(bytes, &Signature::from_bytes(&sig))
+        .map_err(|e| CodecError::Verification(format!("{what} signature: {e}")))
+}
+
 pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
     let mut output = Vec::new();
     capnp::serialize_packed::write_message(&mut output, builder).expect("write to Vec never fails");
@@ -165,6 +230,7 @@ pub mod friend;
 pub mod identity;
 pub mod message;
 pub mod presence;
+pub mod transport_feedback;
 pub mod voice;
 pub mod voice_packet;
 

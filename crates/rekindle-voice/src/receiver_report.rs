@@ -4,9 +4,9 @@
 //! Voice had no return path at all. The send loop could count its own
 //! failed `send()` calls and nothing else, so a sender could not tell a
 //! clean link from one dropping a fifth of its packets: `send()`
-//! succeeds either way. Video has `FrameAck`/`BandwidthEstimate`; this
-//! is the voice equivalent, and it carries the two things a sender
-//! cannot derive locally.
+//! succeeds either way. Reports carry the two things a sender cannot
+//! derive locally; the media route's transport feedback (plan E4.3.3)
+//! carries per-datagram arrivals for the bandwidth estimator.
 //!
 //! - The receiver's view of the stream —
 //!   [`ReceptionMetrics`](rekindle_media_stats::ReceptionMetrics): loss
@@ -319,7 +319,6 @@ mod tests {
             sender_key: vec![0; 32],
             sequence: seq,
             timestamp: ts,
-            transport_seq: 0,
             sframe: vec![0; 8],
             sig: Vec::new(),
         }

@@ -36,6 +36,10 @@ pub enum IngressItem {
     Gossip {
         signed: SignedEnvelope,
         is_video: bool,
+        /// For a media-plane envelope (`b'M'`, plan E4.3.1): its route
+        /// `transport_seq` and when the dispatch thread saw it. Recorded
+        /// for transport feedback only after the signature verifies.
+        media_arrival: Option<(u32, std::time::Instant)>,
     },
     /// Everything that isn't voice or gossip — the legacy
     /// `message_service` path (DMs, friend requests, call signaling).
@@ -130,6 +134,7 @@ mod tests {
                 ttl: 0,
             },
             is_video,
+            media_arrival: None,
         }
     }
 

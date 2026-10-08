@@ -84,6 +84,31 @@ pub fn media_live_peers(state: &Arc<AppState>) -> std::collections::HashSet<Stri
         })
 }
 
+/// The active voice session's media roster, whatever it is bound to.
+pub fn voice_media(
+    state: &AppState,
+) -> Option<Arc<rekindle_voice::transport::roster::MediaRoster>> {
+    state
+        .voice_engine
+        .lock()
+        .as_ref()
+        .map(|h| Arc::clone(&h.media))
+}
+
+/// The media roster of the voice session bound to
+/// `community_id`/`channel_id`: its route queues, without the transport's
+/// async lock (plan E4.3.3).
+pub fn media_roster_for(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<Arc<rekindle_voice::transport::roster::MediaRoster>> {
+    let engine = state.voice_engine.lock();
+    let handle = engine.as_ref()?;
+    (handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id)
+        .then(|| Arc::clone(&handle.media))
+}
+
 /// The voice transport when the engine is bound to `community_id` /
 /// `channel_id`; `None` when no engine runs or it is on another channel.
 /// The `voice_engine` guard drops before this returns, so no sync guard

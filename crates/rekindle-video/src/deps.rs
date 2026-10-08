@@ -35,28 +35,11 @@ pub enum VideoEvent {
         timestamp: u32,
         payload: Vec<u8>,
     },
-    FrameAck {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        stream_id: [u8; 16],
-        last_frame_seq: u32,
-        kbps: u32,
-        loss_q8: u8,
-    },
     KeyframeRequest {
         community_id: String,
         sender_pseudonym: String,
         channel_id: String,
         stream_id: [u8; 16],
-    },
-    BandwidthEstimate {
-        community_id: String,
-        sender_pseudonym: String,
-        channel_id: String,
-        kbps: u32,
-        window_secs: u8,
-        loss_q8: u8,
     },
     TopologyChange {
         community_id: String,
@@ -150,22 +133,6 @@ pub trait VideoDeps: Send + Sync + 'static {
 
     /// Emit a UI-facing event from a receive-side handler.
     fn emit_event(&self, event: VideoEvent);
-
-    /// Send a receiver `FrameAck` back to the channel so the SENDER's
-    /// AIMD (`budget::target_from_feedback`) adapts its encoder + pacer
-    /// rate. Called from the receive path on the AIMD feedback cadence
-    /// — this is the congestion feedback loop, now Rust-owned rather
-    /// than driven from the thin frontend. `loss_q8` is wire loss over
-    /// the transport sequence (never `frame_seq`). Fire-and-forget.
-    fn send_frame_ack(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        stream_id: [u8; 16],
-        last_frame_seq: u32,
-        kbps: u32,
-        loss_q8: u8,
-    );
 }
 
 #[cfg(test)]

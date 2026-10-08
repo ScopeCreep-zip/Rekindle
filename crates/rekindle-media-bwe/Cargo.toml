@@ -1,0 +1,18 @@
+[package]
+name = "rekindle-media-bwe"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "GoogCC send-side bandwidth estimation and leaky-bucket pacer, copied from str0m 0.24.1 (see NOTICE)"
+
+[lints]
+workspace = true
+
+# Tier 3: pure logic. Sans-I/O: no sockets, no async, no veilid-core, no
+# tauri. Time is driven by the caller through `Instant`s, so the estimator
+# and the pacer run unchanged under a virtual clock.
+[dependencies]
+tracing = { workspace = true }
+
+[dev-dependencies]
+fastrand = "2"

@@ -6,35 +6,25 @@
 //! reassembly buffer with bounded memory).
 //!
 //! The pure video-vocabulary structs (`MediaCapabilities`,
-//! `EncoderConstraints`, `DecoderConstraints`, `SessionVideoConfig`,
-//! `BandwidthEstimate`) live in Tier 1 `rekindle-types` alongside
+//! `EncoderConstraints`, `DecoderConstraints`, `SessionVideoConfig`) live in Tier 1 `rekindle-types` alongside
 //! `Codec`/`ScalabilityMode` and are re-exported here so this crate's
 //! public API is unchanged. A Tier-1 event family cannot depend upward
 //! on this Tier-7 crate, which is why the vocabulary lives below.
 
-pub mod budget;
 pub mod codec;
 pub mod deps;
 pub mod error;
 pub mod fragment;
-pub mod pacer;
 pub mod policy;
 pub mod reassembler;
 pub mod reassembly_state;
 pub mod receive;
-pub mod reception;
 pub mod send;
-pub mod send_pacer;
 pub mod stream_id;
 
 #[cfg(test)]
 mod test_mock;
 
-pub use budget::{
-    encoder_target_kbps, target_from_feedback, target_from_feedback_ceiled, wire_feedback_kbps,
-    START_PAYLOAD_SHARE_Q10, VIDEO_MAX_KBPS, VIDEO_MAX_KBPS_VOICE_PRESSURE, VIDEO_MIN_KBPS,
-    VIDEO_START_KBPS,
-};
 pub use codec::{EncodedVideoFrame, RawFrame, VideoDecoder, VideoEncoder};
 pub use deps::{VideoDeps, VideoEvent};
 pub use error::VideoError;
@@ -43,16 +33,13 @@ pub use fragment::{
     reconstruct_frame, FecFragments, FragmentError, VideoFragment, VideoParityFragment,
     FRAGMENT_PAYLOAD_LIMIT, MAX_FRAGMENTS_PER_FRAME, STREAM_ID_LEN,
 };
-pub use pacer::{PacedFrame, PacerStats, VideoPacer};
 pub use policy::negotiate_session_config;
 pub use reassembler::{ReassembledFrame, Reassembler, ReassemblerError};
 pub use reassembly_state::VideoReassemblyState;
 pub use receive::{handle_video_payload, video_payload_channel};
-pub use reception::{FrameAckOut, VideoReceptionWindow, ACK_WINDOW_MS};
 pub use rekindle_types::video::{
-    BandwidthEstimate, Codec, DecoderConstraints, EncoderConstraints, MediaCapabilities,
-    ScalabilityMode, SessionVideoConfig,
+    Codec, DecoderConstraints, EncoderConstraints, MediaCapabilities, ScalabilityMode,
+    SessionVideoConfig,
 };
-pub use send::{build_video_frame, VideoFrameSend};
-pub use send_pacer::run_video_pacer;
+pub use send::{build_video_frame, BuiltVideoFrame, VideoFrameSend};
 pub use stream_id::derive_stream_id;

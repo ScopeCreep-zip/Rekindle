@@ -109,9 +109,7 @@ pub(crate) fn handle_gossip_control_payloads(
         }
         ControlPayload::VideoFragment { .. }
         | ControlPayload::VideoParityFragment { .. }
-        | ControlPayload::FrameAck { .. }
         | ControlPayload::KeyframeRequest { .. }
-        | ControlPayload::BandwidthEstimate { .. }
         | ControlPayload::TopologyChange { .. }
         | ControlPayload::MediaCapabilities { .. } => {
             crate::services::community::video::handle_video_payload(

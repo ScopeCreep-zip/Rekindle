@@ -241,14 +241,14 @@ impl McuLoop {
                     // No key → drop the mix; it is never sent in the clear.
                     let Some(sframe) =
                         self.sealer
-                            .seal(&sender_key, sequence, timestamp, 0, &encoded.data)
+                            .seal(&sender_key, sequence, timestamp, &encoded.data)
                     else {
                         continue;
                     };
                     let frame = OutboundFrame {
                         sequence,
                         timestamp,
-                        transport_seq: 0,
+                        media_bytes: encoded.data.len(),
                         sframe,
                     };
 
@@ -256,7 +256,7 @@ impl McuLoop {
                     let transport = self.transport.clone();
                     self.sends.spawn_or_drop("voice mcu send", async move {
                         let t = transport.lock().await;
-                        if let Err(e) = t.send_to_peer(&recipient_hex, &frame).await {
+                        if let Err(e) = t.send_to_peer(&recipient_hex, &frame) {
                             tracing::trace!(error = %e, peer = %recipient_hex, "MCU send failed");
                         }
                     });

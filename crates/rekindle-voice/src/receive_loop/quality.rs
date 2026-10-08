@@ -151,8 +151,18 @@ impl VoiceReceiveLoop {
             self.packets_received,
             max_delay_ms,
             late_ticks = self.late_ticks,
+            decoded = self.playout.decoded,
+            decode_failures = self.playout.decode_failures,
+            mixed = self.playout.mixed,
+            deafened = self.playout.deafened,
+            handoff_failures = self.playout.handoff_failures,
+            mixed_peak = self.playout.peak,
+            playback_queue_ms = self
+                .playback_depth_ms
+                .load(std::sync::atomic::Ordering::Relaxed),
             "voice receive loop stats"
         );
+        self.playout = super::PlayoutCounters::default();
         self.packets_received = 0;
         self.late_ticks = 0;
         self.last_quality_check = Instant::now();

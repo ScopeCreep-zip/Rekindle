@@ -213,11 +213,10 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         } else if (event.type === "videoKeyframeRequest") {
           sender.forceKeyframe(event.data.streamId);
         } else if (event.type === "videoBitrateTarget") {
-          // Phase 4 — the BACKEND owns the bitrate policy now (AIMD
-          // over FrameAck/BandwidthEstimate feedback with the audio
-          // reserve subtracted). The encoder just follows the target;
-          // the raw ack events no longer steer it directly. The native
-          // path follows the bitrate watch in the backend already.
+          // The backend allocator owns the bitrate (plan E4.3.3): each
+          // media route's estimate, audio first, video the rest. The
+          // encoder just follows the target; the native path is set
+          // by the backend directly.
           if (event.data.channelId === props.channelId && !ctx.nativeStreamId) {
             sender.setTargetKbps(event.data.kbps);
           }

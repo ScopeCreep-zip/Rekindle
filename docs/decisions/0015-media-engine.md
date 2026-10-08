@@ -1,6 +1,6 @@
 # 0015 — Media engine: one Rust engine built from ported production components, not libwebrtc `Call` and not re-derived loops
 
-- **Status:** Proposed (awaiting owner ruling Q5)
+- **Status:** Accepted (owner ruling Q5, 2026-10-07: Option F)
 - **Date:** 2026-10-07
 - **Plan step:** E4.3.0 part 2, research spike for ruling Q5
   (`.claude/plans/standards-remediation/00-integration-plan.md` §0 table and E4.3)

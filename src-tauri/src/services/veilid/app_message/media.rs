@@ -12,47 +12,32 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
-/// Handle a `b'V'` voice packet (SFrame, Cap'n Proto) or a `b'R'`
-/// receiver report.
-/// Returns `true` if the message was one of them and is now dealt with.
+/// Handle a media datagram: a `b'V'` voice packet, `b'M'` video-plane
+/// envelope or `b'P'` padding (each after its route `transport_seq`,
+/// plans E4.3.1, E4.3.3), a
+/// `b'T'` transport feedback report (plan E4.3.2), or a `b'R'` receiver
+/// report. Returns `true` if the message was one of them and is now
+/// dealt with.
 pub(super) fn handle_media_tag(state: &Arc<AppState>, message: &[u8]) -> bool {
-    if message.first() == Some(&rekindle_voice::transport::VOICE_PACKET_TAG) {
-        let voice_data = &message[1..];
-        match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
-            Ok(packet) => {
-                let tx = state.voice_packet_tx.read().clone();
-                if let Some(tx) = tx {
-                    if tx.try_send(packet).is_err() {
-                        // W14.4 — was trace! (invisible). Channel
-                        // full = real backpressure; surface it.
-                        tracing::warn!("voice packet channel full, dropping packet");
-                        state
-                            .voice_pkt_drops
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    }
-                } else {
-                    // W14.4 — voice_packet_tx is None. Once W14.1's
-                    // permanent-ingress refactor lands this branch
-                    // is unreachable. Until then, the lazy-init
-                    // race (caller-side post-CallAccept) drops
-                    // packets here.
-                    tracing::warn!(
-                            "voice packet arrived before voice session was set up — dropping (W14.1 will fix)"
-                        );
-                    state
-                        .voice_pkt_drops
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
+    // Arrival is stamped here, on the dispatch thread, before any queue
+    // adds its own delay to what the estimator measures.
+    let arrived = std::time::Instant::now();
+    if let Some((tag, transport_seq, payload)) =
+        rekindle_voice::media_frame::split_sequenced(message)
+    {
+        match tag {
+            rekindle_voice::media_frame::VOICE_TAG => {
+                handle_voice_packet(state, transport_seq, payload, arrived);
             }
-            Err(e) => {
-                // Deserialize / signature verify failure. Could be a
-                // forged packet or a stale-bytes-on-route artifact.
-                tracing::info!(error = %e, "voice packet rejected (deserialize/sig)");
-                state
-                    .voice_pkt_drops
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            rekindle_voice::media_frame::PADDING_TAG => {
+                handle_padding(state, transport_seq, payload, arrived);
             }
+            _ => handle_media_envelope(state, transport_seq, payload, arrived),
         }
+        return true;
+    }
+    if message.first() == Some(&rekindle_voice::media_frame::FEEDBACK_TAG) {
+        handle_transport_feedback(state, &message[1..], arrived);
         return true;
     }
 
@@ -85,4 +70,117 @@ pub(super) fn handle_media_tag(state: &Arc<AppState>, message: &[u8]) -> bool {
     }
 
     false
+}
+
+/// A voice packet: verified, recorded for transport feedback, then handed
+/// to the receive loop.
+fn handle_voice_packet(
+    state: &Arc<AppState>,
+    transport_seq: u32,
+    voice_data: &[u8],
+    arrived: std::time::Instant,
+) {
+    match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
+        Ok(packet) => {
+            if let Some(media) = crate::state_helpers::voice_media(state) {
+                media.arrivals().record_voice(
+                    &hex::encode(&packet.sender_key),
+                    packet.sequence,
+                    transport_seq,
+                    arrived,
+                );
+            }
+            let tx = state.voice_packet_tx.read().clone();
+            if let Some(tx) = tx {
+                if tx.try_send(packet).is_err() {
+                    // W14.4 — was trace! (invisible). Channel
+                    // full = real backpressure; surface it.
+                    tracing::warn!("voice packet channel full, dropping packet");
+                    state
+                        .voice_pkt_drops
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            } else {
+                // No voice session takes packets (none started yet, or
+                // the peer has not yet seen us leave).
+                tracing::debug!("voice packet with no voice session — dropping");
+                state
+                    .voice_pkt_drops
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        Err(e) => {
+            // Deserialize / signature verify failure. Could be a
+            // forged packet or a stale-bytes-on-route artifact.
+            tracing::info!(error = %e, "voice packet rejected (deserialize/sig)");
+            state
+                .voice_pkt_drops
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// Padding the sender's pacer sent to probe the route: counted for its
+/// sender's feedback if its signature binds it to this sequence number,
+/// then discarded.
+fn handle_padding(
+    state: &Arc<AppState>,
+    transport_seq: u32,
+    payload: &[u8],
+    arrived: std::time::Instant,
+) {
+    let Some(sender) = rekindle_voice::media_frame::open_padding(transport_seq, payload) else {
+        tracing::debug!("padding with no valid signature — dropping");
+        return;
+    };
+    if let Some(media) = crate::state_helpers::voice_media(state) {
+        media
+            .arrivals()
+            .record(&hex::encode(sender), transport_seq, arrived);
+    }
+}
+
+/// A video-plane envelope on the media route: queued to the gossip
+/// ingress worker like any signed envelope, carrying its arrival so the
+/// worker records it for feedback once the signature verifies.
+fn handle_media_envelope(
+    state: &Arc<AppState>,
+    transport_seq: u32,
+    envelope: &[u8],
+    arrived: std::time::Instant,
+) {
+    let Ok(signed) = rekindle_codec::capnp_envelope::decode_signed_envelope(envelope) else {
+        tracing::debug!("media envelope did not decode — dropping");
+        return;
+    };
+    let is_video = super::video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
+    state.gossip_ingress.push(
+        crate::services::veilid::ingress_queue::IngressItem::Gossip {
+            signed,
+            is_video,
+            media_arrival: Some((transport_seq, arrived)),
+        },
+    );
+}
+
+/// Transport feedback about our outbound stream to one peer: verified,
+/// then matched against that route's send history (plan E4.3.2).
+fn handle_transport_feedback(state: &Arc<AppState>, data: &[u8], arrived: std::time::Instant) {
+    let feedback =
+        match rekindle_codec::capnp_codec::transport_feedback::TransportFeedback::decode(data) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::debug!(error = %e, "transport feedback did not decode — dropping");
+                return;
+            }
+        };
+    if let Err(e) = rekindle_codec::capnp_codec::SignedWire::verify(&feedback) {
+        // Feedback steers our send rate: an unauthenticated report is a
+        // rate lever for anyone holding our route.
+        tracing::info!(error = %e, "transport feedback rejected (signature)");
+        return;
+    }
+    crate::services::voice_adapter::media_feedback::on_transport_feedback(
+        state, &feedback, arrived,
+    );
 }

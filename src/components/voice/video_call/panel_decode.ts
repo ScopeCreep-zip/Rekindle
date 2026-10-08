@@ -318,10 +318,9 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
             `lastDecode=${Math.round(r.lastDecodeMs)}ms jitter=${s.jitterMs}ms`,
         );
       }
-      // Receiver→sender congestion feedback (FrameAck) is now owned by
-      // the Rust receive path (rekindle-video), measured over the
-      // transport sequence — the thin frontend no longer computes or
-      // sends loss. It only decodes, paints, and asks for keyframes.
+      // Congestion feedback is the backend's: the media route's transport
+      // feedback covers every datagram (plan E4.3.3). The frontend only
+      // decodes, paints, and asks for keyframes.
     }
     ctx.schedulePlayout();
   }

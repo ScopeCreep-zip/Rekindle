@@ -1,7 +1,7 @@
 //! Phase 23.C — video-handler Tauri-runtime orchestration lifted from
 //! `commands/community/video.rs`. Hosts the per-handler inners plus a
 //! shared `decode_stream_id` helper used by the four envelope-based
-//! commands (frame_ack, keyframe_request, frame_send, topology_change).
+//! commands (keyframe_request, frame_send, topology_change).
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
@@ -107,26 +107,6 @@ pub fn send_encoded_video_frame(
     video::send_video_frame(state, community_id, channel_id, request)
 }
 
-pub fn send_video_frame_ack_inner(
-    state: &SharedState,
-    community_id: &str,
-    channel_id: &str,
-    stream_id_hex: &str,
-    last_frame_seq: u32,
-    kbps: u32,
-    loss_q8: u8,
-) -> Result<(), String> {
-    let stream_id = decode_stream_id(stream_id_hex)?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::FrameAck {
-        channel_id: channel_id.to_string(),
-        stream_id,
-        last_frame_seq,
-        kbps,
-        loss_q8,
-    });
-    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
-}
-
 pub fn send_video_keyframe_request_inner(
     state: &SharedState,
     community_id: &str,
@@ -148,24 +128,12 @@ pub fn send_video_keyframe_request_inner(
         channel_id: channel_id.to_string(),
         stream_id,
     });
-    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
-}
-
-pub fn send_video_bandwidth_estimate_inner(
-    state: &SharedState,
-    community_id: &str,
-    channel_id: &str,
-    kbps: u32,
-    window_secs: u8,
-    loss_q8: u8,
-) -> Result<(), String> {
-    let envelope = CommunityEnvelope::Control(ControlPayload::BandwidthEstimate {
-        channel_id: channel_id.to_string(),
-        kbps,
-        window_secs,
-        loss_q8,
-    });
-    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
+    crate::services::voice_adapter::media_egress::send_video_envelope(
+        state,
+        community_id,
+        channel_id,
+        &envelope,
+    )
 }
 
 pub fn notify_video_topology_change_inner(
@@ -186,7 +154,12 @@ pub fn notify_video_topology_change_inner(
         reason,
         lamport,
     });
-    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
+    crate::services::voice_adapter::media_egress::send_video_envelope(
+        state,
+        community_id,
+        channel_id,
+        &envelope,
+    )
 }
 
 #[cfg(test)]

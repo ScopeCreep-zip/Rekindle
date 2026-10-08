@@ -595,14 +595,6 @@ struct VideoFragmentPayload @0xea003b000000a000 {
     # frame is encrypted under; a receiver without it asks the sender for
     # exactly this index. Signature-covered.
     keyIndex             @10 :UInt64;
-    # Transport-wide send sequence, stamped by the sender's VideoPacer
-    # at egress (the libwebrtc transport-cc analog) — gap-free over
-    # fragments ACTUALLY transmitted. The receiver measures wire loss
-    # over THIS, never over frameSeq: frames the pacer expired never
-    # get a transportSeq, so sender-side pacing drops can't masquerade
-    # as network loss. Transport metadata like channelId — NOT
-    # signature-covered (assigned after signing, at the pacer).
-    transportSeq         @11 :UInt32;
 }
 
 struct VideoParityFragmentPayload @0xea003c000000a000 {
@@ -622,33 +614,12 @@ struct VideoParityFragmentPayload @0xea003c000000a000 {
     codec                @10 :Codec;
     # Mirrors VideoFragmentPayload.keyIndex; signature-covered.
     keyIndex             @11 :UInt64;
-    # Transport-wide send sequence — mirrors VideoFragmentPayload.transportSeq.
-    # Parity fragments are paced and transmitted like data fragments, so
-    # they share the sender's one gap-free transport sequence and count
-    # toward wire-loss measurement. NOT signature-covered.
-    transportSeq         @12 :UInt32;
-}
-
-struct FrameAckPayload @0xea003d000000a000 {
-    channelId            @0 :Text;
-    # 16-byte stream id.
-    streamId             @1 :Data;
-    lastFrameSeq         @2 :UInt32;
-    kbps                 @3 :UInt32;
-    lossQ8               @4 :UInt8;
 }
 
 struct KeyframeRequestPayload @0xea003e000000a000 {
     channelId            @0 :Text;
     # 16-byte stream id.
     streamId             @1 :Data;
-}
-
-struct BandwidthEstimatePayload @0xea003f000000a000 {
-    channelId            @0 :Text;
-    kbps                 @1 :UInt32;
-    windowSecs           @2 :UInt8;
-    lossQ8               @3 :UInt8;
 }
 
 # Video codec identifier. Mirrors `rekindle_types::video::Codec`.
@@ -719,8 +690,10 @@ struct LinkPreviewPayload @0xea0042000000a000 {
 # ── 67-arm union ──────────────────────────────────────────────────────
 #
 # Append-only ordinals. New variants get the next number. Removed
-# variants (none yet) become the sentinel `obsolete<N>` arm that
-# decoders skip.
+# variants become the sentinel `obsolete<N>` arm that decoders skip:
+# @61 (frameAck) and @63 (bandwidthEstimate), video's own congestion
+# feedback, replaced by the media route's transport feedback (plan
+# E4.3.3).
 
 struct ControlPayload @0xeaffffff00000001 {
     union {
@@ -787,9 +760,9 @@ struct ControlPayload @0xeaffffff00000001 {
         soundboardPlay           @58 :SoundboardPlayPayload;
         videoFragment            @59 :VideoFragmentPayload;
         videoParityFragment      @60 :VideoParityFragmentPayload;
-        frameAck                 @61 :FrameAckPayload;
+        obsolete61               @61 :Void;
         keyframeRequest          @62 :KeyframeRequestPayload;
-        bandwidthEstimate        @63 :BandwidthEstimatePayload;
+        obsolete63               @63 :Void;
         mediaCapabilities        @64 :MediaCapabilitiesPayload;
         topologyChange           @65 :TopologyChangePayload;
         linkPreview              @66 :LinkPreviewPayload;

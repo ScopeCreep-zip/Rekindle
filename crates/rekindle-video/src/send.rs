@@ -3,11 +3,10 @@
 //! Architecture §10.6 — MEK-encrypt the encoded payload, fragment to
 //! the 4 KiB transport budget, sign each fragment with the community
 //! pseudonym Ed25519
-//! key. Phase 4: the signed envelopes are NOT dispatched here — they
-//! are returned as one `PacedFrame` and released through the
-//! audio-first `VideoPacer` (`send_pacer::run_video_pacer`), which
-//! fans out to the channel roster via `VideoDeps::send_to_channel` —
-//! never to the community gossip mesh.
+//! key. The signed envelopes are NOT dispatched here: they are returned
+//! as one [`BuiltVideoFrame`], which the caller queues on each roster
+//! peer's route, behind audio (plan E4.3.3) — never on the community
+//! gossip mesh.
 //!
 //! The reassembly state is consulted ONLY to fire a one-shot
 //! `TopologyChange { reason: "initial" }` per (community, stream) so
@@ -26,7 +25,6 @@ use crate::fragment::{
     fragment_frame, fragment_frame_with_fec, fragment_signing_bytes, parity_signing_bytes,
     FRAGMENT_PAYLOAD_LIMIT,
 };
-use crate::pacer::PacedFrame;
 use crate::reassembly_state::VideoReassemblyState;
 
 /// One parity per N data shards for any multi-fragment frame. With 4×
@@ -35,6 +33,19 @@ use crate::reassembly_state::VideoReassemblyState;
 /// delta fragment now costs a keyframe request (a full intra on the
 /// wire), which is far more expensive than 25% parity on the delta.
 const PARITY_RATIO_DENOM: usize = 4;
+
+/// One encoded frame, encrypted, fragmented and signed, ready for every
+/// peer's route.
+#[derive(Debug, Clone)]
+pub struct BuiltVideoFrame {
+    pub stream_id: [u8; 16],
+    pub frame_seq: u32,
+    pub keyframe: bool,
+    /// Signed data + parity fragment envelopes, in send order.
+    pub envelopes: Vec<CommunityEnvelope>,
+    /// Encoder output bytes the envelopes carry.
+    pub media_bytes: usize,
+}
 
 /// Per-frame send request. Bundling all the variable-per-frame fields
 /// into a struct keeps the orchestration helpers below a sane argument
@@ -57,16 +68,14 @@ pub struct VideoFrameSend {
 /// chunk. MEK-encrypts the payload, fragments to the transport budget
 /// (`FRAGMENT_PAYLOAD_LIMIT`, 4 KiB), signs each
 /// fragment with the sender's pseudonym Ed25519 key, and returns the
-/// envelopes as ONE `PacedFrame` for the pacer to release at the
-/// budgeted rate.
+/// envelopes as one [`BuiltVideoFrame`].
 pub fn build_video_frame<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
     community_id: &str,
     channel_id: &str,
     request: &VideoFrameSend,
-    now_ms: u64,
-) -> Result<PacedFrame, VideoError> {
+) -> Result<BuiltVideoFrame, VideoError> {
     // Phase F — IPC entry trace. The Tauri command in src-tauri delivered
     // an encoded VP9 chunk from the WebView; record the byte count and
     // routing context (no payload bytes) so a `RUST_LOG=rekindle_video=
@@ -128,16 +137,12 @@ pub fn build_video_frame<D: VideoDeps>(
     } else {
         ctx.collect_without_fec(&ciphertext)?
     };
-    let bytes = ciphertext.len();
-    Ok(PacedFrame {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
+    Ok(BuiltVideoFrame {
         stream_id: request.stream_id,
         frame_seq: request.frame_seq,
         keyframe: request.keyframe,
         envelopes,
-        bytes,
-        enqueued_ms: now_ms,
+        media_bytes: request.encoded_payload.len(),
     })
 }
 
@@ -223,9 +228,6 @@ impl SendCtx<'_> {
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
                     key_index: fragment.key_index,
-                    // Placeholder — the pacer stamps the real gap-free
-                    // transport sequence at egress (`VideoPacer::poll`).
-                    transport_seq: 0,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 }))
@@ -278,8 +280,6 @@ impl SendCtx<'_> {
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
                     key_index: fragment.key_index,
-                    // Placeholder — stamped by `VideoPacer::poll` at egress.
-                    transport_seq: 0,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 },
@@ -307,8 +307,6 @@ impl SendCtx<'_> {
                     frame_len: fragment.frame_len,
                     timestamp: fragment.timestamp,
                     key_index: fragment.key_index,
-                    // Placeholder — stamped by `VideoPacer::poll` at egress.
-                    transport_seq: 0,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 }),

@@ -268,31 +268,8 @@ pub struct AppState {
     /// Inbound `app_call`s, served concurrently within Veilid's answer
     /// deadline (plan C7.22).
     pub app_call_lane: crate::services::veilid::app_call_lane::AppCallLane,
-    /// Producer side of the per-session video pacer (Phase 4). `None`
-    /// outside an active community voice session. Built frames are
-    /// `try_send`-ed here; the pacer task releases them at the
-    /// budgeted, audio-first rate.
-    pub video_pacer_tx: RwLock<Option<mpsc::Sender<rekindle_video::PacedFrame>>>,
-    /// Rate input of the running pacer (kbps). Driven by the backend
-    /// bitrate policy in `video_adapter::emit_event`.
-    pub video_pacer_rate_tx: RwLock<Option<tokio::sync::watch::Sender<u32>>>,
-    /// Measured payload share (Q10: data payload ÷ wire bytes) from
-    /// the pacer — the AIMD's wire↔media unit bridge (R4). `None`
-    /// outside a voice session.
-    pub video_payload_share_rx: RwLock<Option<tokio::sync::watch::Receiver<u32>>>,
     /// Linux-native camera session slot (unit type off-Linux).
     pub native_video: crate::services::native_video::NativeVideoSlot,
-    /// Bitrate-policy state per (community, channel):
-    /// `(policy_target, last_emitted)`. The policy target advances on
-    /// EVERY feedback step — a +10% AIMD ramp must compound, so it can
-    /// never sit behind the >15% emit hysteresis (that gate once also
-    /// blocked the state write, which froze the target at the floor).
-    /// `last_emitted` anchors the hysteresis for the frontend
-    /// `VideoBitrateTarget` event alone (an encoder reconfigure forces
-    /// a keyframe; the pacer follows every step for free).
-    pub video_bitrate_targets: Mutex<HashMap<(String, String), (u32, u32)>>,
-    /// Frames refused because the pacer channel was full/absent.
-    pub video_pacer_send_drops: std::sync::atomic::AtomicU64,
     /// Phase 5 — last-known halves of the merged ConnectionQuality
     /// emission (send-side quality + receive-side jitter drops arrive
     /// on different 5 s cadences; each emission carries both).
@@ -305,15 +282,6 @@ pub struct AppState {
     /// Channel-media sends that found an empty roster (observability —
     /// frames encoded but with nobody to send to).
     pub channel_send_empty_roster_drops: std::sync::atomic::AtomicU64,
-    /// Wall-clock ms of the last voice-link report that showed the
-    /// outbound audio stream under pressure (Poor/Lost, or elevated
-    /// loss/RTT). Voice and video share the peer's media-class egress,
-    /// and video's AIMD is driven only by its own receiver — blind to
-    /// voice. When this is fresh, the video bitrate controller yields
-    /// headroom so the low-bandwidth, latency-critical audio survives
-    /// (WebRTC prioritises audio in its shared estimator for the same
-    /// reason). `0` = never observed. See `apply_bitrate_feedback`.
-    pub voice_route_pressure_ms: std::sync::atomic::AtomicU64,
     /// Single-flight gate for per-(community, peer) DHT route
     /// re-resolution. Lives on AppState because the gossip adapter is
     /// rebuilt per send — the coalescing window must span sends.
@@ -415,19 +383,13 @@ impl Default for AppState {
             control_ingress: Arc::new(
                 crate::services::veilid::control_ingress::ControlIngressQueue::new(),
             ),
-            video_pacer_tx: RwLock::new(None),
-            video_pacer_rate_tx: RwLock::new(None),
-            video_payload_share_rx: RwLock::new(None),
             native_video: crate::services::native_video::NativeVideoSlot::default(),
-            video_bitrate_targets: Mutex::new(HashMap::new()),
-            video_pacer_send_drops: std::sync::atomic::AtomicU64::new(0),
             voice_quality_cache: Mutex::new(
                 crate::services::voice_adapter::event_mapping::VoiceQualityCache::default(),
             ),
             voice_ingress_drops_total: std::sync::atomic::AtomicU64::new(0),
             video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
             channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),
-            voice_route_pressure_ms: std::sync::atomic::AtomicU64::new(0),
             gossip_resolve_gate: rekindle_gossip::ResolveGate::new(),
         }
     }

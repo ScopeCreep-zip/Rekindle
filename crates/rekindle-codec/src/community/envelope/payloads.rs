@@ -66,15 +66,6 @@ pub struct VideoFragmentPayload {
     /// receiver without it asks the sender for exactly this index.
     /// Signature-covered.
     pub key_index: u64,
-    /// Transport-wide send sequence, stamped by the sender's
-    /// `VideoPacer` at egress — the libwebrtc transport-cc analog.
-    /// Gap-free over fragments ACTUALLY transmitted, so the receiver
-    /// measures wire loss over this rather than `frame_seq`: frames the
-    /// pacer expired never receive a `transport_seq` and thus can't be
-    /// counted as network loss (the phantom-loss death-spiral fix).
-    /// Transport metadata like `channel_id` — NOT signature-covered
-    /// (it is assigned after signing, inside the pacer).
-    pub transport_seq: u32,
     pub payload: Vec<u8>,
     pub signature: Vec<u8>,
 }
@@ -99,12 +90,6 @@ pub struct VideoParityFragmentPayload {
     pub timestamp: u32,
     /// Mirrors `VideoFragment::key_index`. Signature-covered.
     pub key_index: u64,
-    /// Transport-wide send sequence — mirrors
-    /// `VideoFragmentPayload::transport_seq`. Parity is paced and
-    /// transmitted like data, so it shares the sender's one gap-free
-    /// transport sequence and counts toward wire-loss measurement. NOT
-    /// signature-covered.
-    pub transport_seq: u32,
     pub payload: Vec<u8>,
     pub signature: Vec<u8>,
 }

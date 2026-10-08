@@ -22,6 +22,7 @@ pub const FRAME_SAMPLES_20MS: usize = 960;
 /// Channel count for the voice pipeline. Mono throughout.
 pub const CHANNELS: u16 = 1;
 
+pub mod arrivals; // Receive-side arrival record for transport feedback (plan E4.3.2).
 pub mod audio_processing;
 pub(crate) mod audio_thread;
 pub mod capture;
@@ -33,6 +34,7 @@ pub mod jitter;
 pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
 pub mod media_crypto; // RFC 9605 SFrame sealing/opening of voice frames.
+pub mod media_frame; // Media datagram framing: tag + per-route transport_seq (plan E4.3.1).
 pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
 pub mod playback;
@@ -185,6 +187,10 @@ pub struct VoiceEngine {
     /// A processing loop should decode incoming packets and send mixed audio here.
     playback_tx: Option<mpsc::Sender<Vec<f32>>>,
 
+    /// Audio queued in the playback ring, ms — set by the output callback,
+    /// read by the receive loop's stats. Survives playback restarts.
+    playback_depth_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+
     /// Merged device error receiver — capture and playback errors both funnel here.
     /// Taken by the device monitor loop via `take_device_error_rx()`.
     device_error_rx: Option<mpsc::Receiver<String>>,
@@ -217,6 +223,7 @@ impl VoiceEngine {
             is_deafened: false,
             capture_rx: None,
             playback_tx: None,
+            playback_depth_ms: std::sync::Arc::default(),
             device_error_rx: Some(device_error_rx),
             device_error_tx: Some(device_error_tx),
             config,
@@ -273,6 +280,7 @@ impl VoiceEngine {
         pb.start(
             rx,
             self.config.output_device.as_deref(),
+            std::sync::Arc::clone(&self.playback_depth_ms),
             self.device_error_tx.clone(),
         )?;
 
@@ -280,6 +288,12 @@ impl VoiceEngine {
         self.playback_tx = Some(tx);
         tracing::info!("voice playback pipeline started");
         Ok(())
+    }
+
+    /// The playback ring's depth gauge, ms (see `playback_depth_ms`).
+    #[must_use]
+    pub fn playback_depth(&self) -> std::sync::Arc<std::sync::atomic::AtomicU32> {
+        std::sync::Arc::clone(&self.playback_depth_ms)
     }
 
     /// Stop audio playback.
