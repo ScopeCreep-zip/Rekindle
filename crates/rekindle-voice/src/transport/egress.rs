@@ -153,6 +153,11 @@ pub struct RouteStats {
     pub video_queue_ms: u64,
     pub dropped_video: u64,
     pub sent: u64,
+    /// Since the last stats: feedback reports applied, and the datagrams
+    /// they reported received and lost (what the loss controller sees).
+    pub feedback_reports: u64,
+    pub reported_received: u64,
+    pub reported_lost: u64,
 }
 
 /// The bandwidth owner of one peer route.
@@ -178,6 +183,8 @@ pub struct RouteController {
     audio_share: Share,
     video_share: Share,
     dropped_video: u64,
+    /// Feedback seen since the last stats: reports, received, lost.
+    window_feedback: (u64, u64, u64),
 }
 
 impl Default for RouteController {
@@ -210,6 +217,7 @@ impl RouteController {
             audio_share: Share::default(),
             video_share: Share::default(),
             dropped_video: 0,
+            window_feedback: (0, 0, 0),
         }
     }
 
@@ -391,6 +399,7 @@ impl RouteController {
     fn apply_report(&mut self, feedback: &TransportFeedback, now: Instant) -> Vec<TwccSendRecord> {
         let time_zero = *self.time_zero.get_or_insert(now);
         self.round += 1;
+        self.window_feedback.0 += 1;
         let round = self.round;
         let Some(front_wire) = self.history.front().map(|r| wire_seq(r.seq)) else {
             return Vec::new();
@@ -430,6 +439,11 @@ impl RouteController {
                 round: handed_round,
             });
             if handed_round == round {
+                if remote.is_some() {
+                    self.window_feedback.1 += 1;
+                } else {
+                    self.window_feedback.2 += 1;
+                }
                 let id = record.cluster.map_or_else(
                     || TwccPacketId::new(record.seq),
                     |c| TwccPacketId::with_cluster(record.seq, c),
@@ -463,7 +477,12 @@ impl RouteController {
     /// For the periodic log line.
     pub fn stats(&mut self, now: Instant) -> RouteStats {
         let first = self.video.snapshot(now).first_unsent;
+        let (feedback_reports, reported_received, reported_lost) =
+            std::mem::take(&mut self.window_feedback);
         RouteStats {
+            feedback_reports,
+            reported_received,
+            reported_lost,
             estimate_bps: self.estimate().as_u64(),
             overusing: self.bwe.is_overusing(),
             video_queue_ms: first.map_or(0, |t| {
