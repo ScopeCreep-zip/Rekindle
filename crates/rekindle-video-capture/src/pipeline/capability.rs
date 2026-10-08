@@ -96,59 +96,33 @@ fn fps_bounds(s: &gst::StructureRef) -> Option<(gst::Fraction, gst::Fraction)> {
     None
 }
 
-/// A field's values: a single value or a list of them. Device providers
-/// simplify their caps (`avfvideosrc.m` ends `gst_av_capture_device_get_caps`
-/// with `gst_caps_simplify`), which merges modes that differ in one field
-/// into a list on that field — the Mac's caps list several pixel formats
-/// per size this way.
-fn values<T: for<'a> gst::glib::value::FromValue<'a> + 'static>(
-    s: &gst::StructureRef,
-    field: &str,
-) -> Vec<T> {
-    if let Ok(v) = s.get::<T>(field) {
-        return vec![v];
-    }
-    s.get::<gst::List>(field)
-        .map(|list| list.iter().filter_map(|v| v.get::<T>().ok()).collect())
-        .unwrap_or_default()
-}
-
-/// Every fixed-size mode in `caps` the pipeline can decode (raw or MJPEG),
-/// one per size and pixel format.
+/// Every fixed-size mode in `caps` the pipeline can decode (raw or MJPEG).
 pub(crate) fn modes(caps: &gst::Caps) -> Vec<CameraMode> {
-    let mut out = Vec::new();
-    for s in caps.iter() {
-        let media = s.name().to_string();
-        if media != "video/x-raw" && media != "image/jpeg" {
-            continue;
-        }
-        let Some((min_fps, max_fps)) = fps_bounds(s) else {
-            continue;
-        };
-        let formats: Vec<Option<String>> = if media == "video/x-raw" {
-            values::<String>(s, "format")
-                .into_iter()
-                .map(Some)
-                .collect()
-        } else {
-            vec![None]
-        };
-        for width in values::<i32>(s, "width") {
-            for height in values::<i32>(s, "height") {
-                for format in &formats {
-                    out.push(CameraMode {
-                        media: media.clone(),
-                        format: format.clone(),
-                        width,
-                        height,
-                        max_fps,
-                        min_fps,
-                    });
-                }
+    caps.iter()
+        .filter_map(|s| {
+            let media = s.name().to_string();
+            if media != "video/x-raw" && media != "image/jpeg" {
+                return None;
             }
-        }
-    }
-    out
+            let width = s.get::<i32>("width").ok()?;
+            let height = s.get::<i32>("height").ok()?;
+            let (min_fps, max_fps) = fps_bounds(s)?;
+            let format = (media == "video/x-raw")
+                .then(|| s.get::<String>("format").ok())
+                .flatten();
+            if media == "video/x-raw" && format.is_none() {
+                return None;
+            }
+            Some(CameraMode {
+                media,
+                format,
+                width,
+                height,
+                max_fps,
+                min_fps,
+            })
+        })
+        .collect()
 }
 
 /// libwebrtc's ordering for one dimension: a value at or above the target
@@ -279,35 +253,6 @@ mod tests {
         let m = mode("video/x-raw", Some("NV12"), 960, 540, 30);
         assert_eq!(m.rate_for(15), gst::Fraction::new(15, 1));
         assert_eq!(m.rate_for(60), gst::Fraction::new(30, 1));
-    }
-
-    /// The Mac's shape: simplified caps with the pixel formats of one size
-    /// merged into a list.
-    #[test]
-    fn reads_simplified_caps_with_format_lists() {
-        gst::init().unwrap();
-        let formats = gst::List::new(["UYVY", "NV12", "BGRA"]);
-        let structure = |w: i32, h: i32| {
-            gst::Structure::builder("video/x-raw")
-                .field("width", w)
-                .field("height", h)
-                .field("format", formats.clone())
-                .field(
-                    "framerate",
-                    gst::FractionRange::new(gst::Fraction::new(1, 1), gst::Fraction::new(30, 1)),
-                )
-                .build()
-        };
-        let caps = gst::Caps::builder_full()
-            .structure(structure(3840, 2160))
-            .structure(structure(1280, 720))
-            .structure(structure(640, 360))
-            .build();
-        let modes = modes(&caps);
-        assert_eq!(modes.len(), 9, "three sizes x three formats");
-        let m = best_matched(&modes, 854, 480, 15).unwrap();
-        assert_eq!((m.width, m.height), (1280, 720));
-        assert_eq!(m.format.as_deref(), Some("NV12"));
     }
 
     #[test]
