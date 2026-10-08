@@ -96,16 +96,6 @@ pub struct VideoFrame {
     pub media_bytes: usize,
 }
 
-/// Which of a route's send lanes a datagram goes out on: voice and
-/// video-plane control on one, video fragments and padding on the other,
-/// so a slow or blocked video hand-off never holds up voice (call 3: one
-/// 2 s `app_message` on Pop froze both).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SendLane {
-    Voice,
-    Video,
-}
-
 /// A datagram payload waiting for the pacer.
 #[derive(Debug)]
 struct Queued {
@@ -180,11 +170,6 @@ pub struct RouteController {
     dropped_video: u64,
     /// Feedback seen since the last stats: reports, received, lost.
     window_feedback: (u64, u64, u64),
-    /// A video datagram is being handed to Veilid: the video queue is
-    /// hidden from the pacer until it returns, so video stays queued here
-    /// (under the pacer and the queue-time bound) rather than piling up
-    /// behind a slow hand-off.
-    video_lane_busy: bool,
 }
 
 impl Default for RouteController {
@@ -218,7 +203,6 @@ impl RouteController {
             video_share: Share::default(),
             dropped_video: 0,
             window_feedback: (0, 0, 0),
-            video_lane_busy: false,
         }
     }
 
@@ -323,7 +307,7 @@ impl RouteController {
     /// The next datagram the pacer releases, framed with its sequence
     /// number and recorded as sent at `now` (str0m `poll_packet`). Call
     /// [`Self::handle_timeout`] before each poll.
-    pub fn poll_datagram(&mut self, now: Instant) -> Option<(Vec<u8>, SendLane)> {
+    pub fn poll_datagram(&mut self, now: Instant) -> Option<Vec<u8>> {
         let (queue, cluster) = self.pacer.poll_queue()?;
         let (tag, payload, media_bytes, is_padding) = if queue == UNPACED_QUEUE {
             let q = self.unpaced.pop(now)?;
@@ -371,12 +355,7 @@ impl RouteController {
             }
             _ => {}
         }
-        let lane = if queue == UNPACED_QUEUE {
-            SendLane::Voice
-        } else {
-            SendLane::Video
-        };
-        Some((datagram, lane))
+        Some(datagram)
     }
 
     /// When [`Self::handle_timeout`] is next due.
@@ -388,11 +367,6 @@ impl RouteController {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
-    }
-
-    /// Whether a video hand-off is in flight (see [`SendLane`]).
-    pub fn set_video_lane_busy(&mut self, busy: bool) {
-        self.video_lane_busy = busy;
     }
 
     /// The datagram numbered `wire_seq` was handed to Veilid at `at`: its
@@ -559,14 +533,6 @@ impl RouteController {
     /// str0m merges a stream's padding into its queue state
     /// (`queue_state_padding`, blank-padding form).
     fn video_state(&mut self, now: Instant) -> QueueState {
-        if self.video_lane_busy {
-            return QueueState {
-                queue_id: VIDEO_QUEUE,
-                unpaced: false,
-                use_for_padding: true,
-                snapshot: QueueSnapshot::default(),
-            };
-        }
         let mut snapshot = self.video.snapshot(now);
         if self.padding > 0 {
             snapshot.merge(&QueueSnapshot {

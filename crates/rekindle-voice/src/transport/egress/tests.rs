@@ -15,7 +15,7 @@ fn drive(c: &mut RouteController, now: Instant) -> Vec<Vec<u8>> {
     loop {
         c.handle_timeout(now);
         match c.poll_datagram(now) {
-            Some((d, _)) => out.push(d),
+            Some(d) => out.push(d),
             None => return out,
         }
     }
@@ -279,37 +279,4 @@ fn the_send_time_is_the_hand_off() {
     let handed = t0 + Duration::from_millis(40);
     c.on_handed_off(seq, handed);
     assert_eq!(c.history.back().unwrap().sent_at, handed);
-}
-
-#[test]
-fn voice_and_video_take_their_own_lanes() {
-    let mut c = with_video();
-    let t0 = Instant::now();
-    c.enqueue_video(&frame(true, 1, 1_000), t0);
-    audio(&mut c, t0);
-    let mut lanes = Vec::new();
-    for _ in 0..4 {
-        c.handle_timeout(t0);
-        if let Some((d, lane)) = c.poll_datagram(t0) {
-            lanes.push((d[0], lane));
-        }
-    }
-    assert!(lanes.contains(&(media_frame::VOICE_TAG, SendLane::Voice)));
-    assert!(lanes.contains(&(media_frame::ENVELOPE_TAG, SendLane::Video)));
-}
-
-#[test]
-fn video_waits_in_the_controller_while_its_lane_is_busy() {
-    let mut c = with_video();
-    let t0 = Instant::now();
-    c.set_video_lane_busy(true);
-    c.enqueue_video(&frame(true, 2, 1_000), t0);
-    audio(&mut c, t0);
-    let sent = drive(&mut c, t0);
-    assert_eq!(sent.len(), 1, "voice goes; video stays queued");
-    assert_eq!(sent[0][0], media_frame::VOICE_TAG);
-    c.set_video_lane_busy(false);
-    assert!(drive(&mut c, t0 + Duration::from_millis(5))
-        .iter()
-        .any(|d| d[0] == media_frame::ENVELOPE_TAG));
 }
