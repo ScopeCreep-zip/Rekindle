@@ -81,7 +81,7 @@ def pct(values, p):
 
 
 def stream_key(rest):
-    m = re.search(r"stream=(\w+)", rest)
+    m = re.search(r"stream=<?(\w+)>?", rest)
     return m.group(1) if m else "?"
 
 
@@ -130,11 +130,12 @@ def score(events, name, start, end):
         )
 
     est = [f["estimate_kbps"] for _, k, _, f in window if k == "route" and "estimate_kbps" in f]
+    # A running total per route: the window's drops are last minus first.
     drops = [f["dropped_video_frames"] for _, k, _, f in window if k == "route" and "dropped_video_frames" in f]
     if est:
         out.append(
             f"  route estimate: p10 {pct(est, 10):.0f} kbps, p50 {pct(est, 50):.0f}, "
-            f"p90 {pct(est, 90):.0f}; video frames dropped at the sender {sum(drops):.0f}"
+            f"p90 {pct(est, 90):.0f}; video frames dropped at the sender {max(drops) - min(drops) if drops else 0:.0f}"
         )
     if len(out) == 1:
         out.append("  (no measurements in this window)")
