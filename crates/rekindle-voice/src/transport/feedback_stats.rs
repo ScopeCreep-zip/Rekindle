@@ -3,10 +3,11 @@
 //!
 //! Call 2 showed each side receiving 0–10 feedback reports per 5 s where
 //! ~20 were due, and nothing said whether the reports were never sent,
-//! held up before sending, or lost on the way. This counts, per peer and
-//! per stats window: reports built, handed to Veilid (with the time spent
-//! waiting to ride a media message and the send time apart) or failed, and
-//! reports received from the peer, accepted or dropped.
+//! held up before sending (each send takes the transport lock across the
+//! Veilid hand-off), or lost on the way. This counts, per peer and per
+//! stats window: reports built, handed to Veilid (with the lock wait and
+//! the send time apart) or failed, and reports received from it, accepted
+//! or dropped.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -18,7 +19,7 @@ struct PeerFeedback {
     built: u64,
     handed: u64,
     failed: u64,
-    queued_ms: Vec<u64>,
+    lock_wait_ms: Vec<u64>,
     send_ms: Vec<u64>,
     accepted: u64,
 }
@@ -33,8 +34,8 @@ pub struct PeerFeedbackWindow {
     pub handed: u64,
     /// Reports Veilid refused.
     pub failed: u64,
-    /// Waiting to ride a media message before the send, p50 / p95 / max ms.
-    pub queued_ms: (u64, u64, u64),
+    /// Waiting for the transport lock before the send, p50 / p95 / max ms.
+    pub lock_wait_ms: (u64, u64, u64),
     /// The `app_message` hand-off itself, p50 / p95 / max ms.
     pub send_ms: (u64, u64, u64),
     /// Reports from this peer about our media, accepted.
@@ -87,9 +88,9 @@ impl FeedbackStats {
             .built += 1;
     }
 
-    /// A report for `peer` waited `queued` to ride a message, then took
+    /// A report for `peer` waited `lock_wait` for the transport, then took
     /// `send` to hand off; `ok` if Veilid took it.
-    pub fn note_handed(&self, peer: &str, queued: Duration, send: Duration, ok: bool) {
+    pub fn note_handed(&self, peer: &str, lock_wait: Duration, send: Duration, ok: bool) {
         let mut counts = self.counts.lock();
         let entry = counts.peers.entry(peer.to_string()).or_default();
         if ok {
@@ -97,7 +98,7 @@ impl FeedbackStats {
         } else {
             entry.failed += 1;
         }
-        entry.queued_ms.push(ms(queued));
+        entry.lock_wait_ms.push(ms(lock_wait));
         entry.send_ms.push(ms(send));
     }
 
@@ -132,7 +133,7 @@ impl FeedbackStats {
                 built: p.built,
                 handed: p.handed,
                 failed: p.failed,
-                queued_ms: spread(p.queued_ms),
+                lock_wait_ms: spread(p.lock_wait_ms),
                 send_ms: spread(p.send_ms),
                 accepted: p.accepted,
             })
@@ -173,7 +174,7 @@ mod tests {
         assert_eq!(w.peers.len(), 1);
         let a = &w.peers[0];
         assert_eq!((a.built, a.handed, a.failed, a.accepted), (2, 1, 1, 1));
-        assert_eq!(a.queued_ms, (40, 40, 900));
+        assert_eq!(a.lock_wait_ms, (40, 40, 900));
         assert_eq!(w.unknown_peer, 1);
         assert_eq!(stats.take_window(), FeedbackWindow::default());
     }
