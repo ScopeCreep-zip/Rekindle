@@ -20,7 +20,7 @@ walkdir = "2"
 ignore = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml_edit = "0.22"
+toml_edit = "0.23"
 # `check-duplicate-constants` parses real Rust rather than pattern-matching
 # it. A line scanner cannot tell the `;` in `const K: [u8; 32] = …;` from
 # the one ending the statement, nor a `#[cfg(test)]` fixture from shipped
