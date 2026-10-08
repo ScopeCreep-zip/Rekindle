@@ -115,7 +115,7 @@ bytes = "1"
 futures = "0.3"
 parking_lot = "0.12"
 capnp = "0.20"
-capnpc = "0.20"
+capnpc = "0.26"
 hex = "0.4"
 rand = "0.8"
 # Formally-verified ML-KEM-768 (HACL*/libcrux line, AVX2/Neon SIMD).

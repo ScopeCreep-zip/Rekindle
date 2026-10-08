@@ -1078,15 +1078,6 @@ dependencies = [
 
 [[package]]
 name = "capnpc"
-version = "0.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aa3d5f01e69ed11656d2c7c47bf34327ea9bfb5c85c7de787fcd7b6c5e45b61"
-dependencies = [
- "capnp 0.20.6",
-]
-
-[[package]]
-name = "capnpc"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13aea06b902f885cb0313b11e900e96cd57fef775e9e601a96e14e1d655f3cd3"
@@ -7347,7 +7338,7 @@ dependencies = [
  "blake2 0.10.6",
  "blake3",
  "capnp 0.20.6",
- "capnpc 0.20.1",
+ "capnpc",
  "hex",
  "rekindle-secrets",
  "rekindle-types",
@@ -10517,7 +10508,7 @@ dependencies = [
  "bosion",
  "bytesize",
  "capnp 0.26.2",
- "capnpc 0.26.0",
+ "capnpc",
  "cfg-if",
  "chacha20 0.10.0",
  "chacha20poly1305 0.11.0",
