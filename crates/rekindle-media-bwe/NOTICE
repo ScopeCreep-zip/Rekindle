@@ -1,0 +1,75 @@
+rekindle-media-bwe
+==================
+
+This crate contains code copied from str0m, a Sans-I/O WebRTC implementation
+in Rust:
+
+  Project:   str0m (https://github.com/algesten/str0m)
+  Revision:  393a3d23 (release 0.24.1; str0m-proto 0.7.0)
+  Licence:   MIT OR Apache-2.0, used here under the MIT licence (below)
+
+Copied paths (str0m repository -> this crate)
+---------------------------------------------
+
+  src/bwe/                           -> src/bwe/
+    mod.rs, acked_bitrate_estimator.rs, link_capacity_estimator.rs,
+    loss_controller.rs, macros.rs, smoother.rs, time.rs,
+    alr_detector/{mod,budget,detector}.rs,
+    delay/{mod,arrival_group,control,rate_control,trendline}.rs,
+    probe/{mod,cluster,control,estimator}.rs
+    (src/bwe/api.rs is not copied: it is the facade over str0m's `Rtc`)
+  src/pacer/                         -> src/pacer/
+    mod.rs, control.rs, leaky.rs, null.rs, queue.rs
+  src/streams/send_queue.rs          -> src/pacer/send_queue.rs
+  crates/proto/src/bandwidth.rs      -> src/bandwidth.rs (Bitrate, DataSize)
+  src/rtp/id.rs                      -> src/twcc.rs (TwccSeq, TwccClusterId, num_id!)
+  src/rtp/rtcp/twcc.rs               -> src/twcc.rs (TwccPacketId, TwccSendRecord,
+                                        TwccRecvReport)
+  src/util/mod.rs                    -> src/util/mod.rs (Soonest)
+  src/util/time_tricks.rs            -> src/util/time_tricks.rs (not_happening,
+                                        already_happened)
+  src/util/average.rs                -> src/util/average.rs (MovingAverage)
+  src/lib.rs                         -> src/reason.rs (Reason, pacer/bwe variants),
+                                        src/lib.rs (log_stat!)
+
+Changes
+-------
+
+The changes are mechanical adaptation only. The algorithms, constants and unit
+tests are str0m's. Specifically:
+
+  - Module paths and visibility (`pub(crate)` -> `pub` where the public API
+    needs it; `pub(super)` where a file was split).
+  - The pacer identifies a queue by `QueueId(u32)` instead of the RTP
+    `MidRid`; `SendQueue` is generic over the packet type instead of holding
+    `RtpPacket`s.
+  - `TwccSendRecord::new` and `TwccRecvReport::new` are public constructors
+    (str0m builds records only inside its RTCP TWCC register, which is not
+    copied); `LeakyBucketPacer::set_queue_limit` sets the existing queue-limit
+    field, which str0m keeps at its 2 s default.
+  - Rust `as` casts are replaced by functions in src/util/num.rs that return
+    the same value as the cast for every input; `#[allow(...)]` attributes are
+    removed by equivalent rewrites (an unused field and an unused parameter
+    dropped, a boxed enum variant, merged identical match arms, `vec![]`
+    literals in tests, a no-op stats macro that type-checks its arguments
+    without evaluating them).
+  - Signature-only lint fixes: `PacerControl::calculate` and the loss
+    controller's `get_loss_probability` are associated functions (str0m takes
+    `&self` and never reads it); `PartialObservation::update` borrows its
+    summary; `Instant`/`Duration` subtraction uses `checked_sub(..).unwrap()`
+    (the same panic on underflow).
+  - Files over 600 lines are split into submodules; test modules moved into
+    their own files.
+  - Renames: str0m's private `bwe::time::Timestamp` is `BweTimestamp`, and a
+    few private fields and test-only fields were renamed for lints.
+
+The str0m MIT licence
+---------------------
+
+Copyright 2022 Martin Algesten
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

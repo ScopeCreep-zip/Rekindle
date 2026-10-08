@@ -1,0 +1,9 @@
+# Rekindle container configuration.
+# This config is COPY'd into the image at /etc/rekindle/config.toml
+# and loaded as the system-level config (lowest priority after defaults).
+
+[network]
+# Allow Veilid to use encrypted file-based key storage instead of the
+# OS Secret Service (dbus org.freedesktop.secrets). Required in containers
+# where gnome-keyring/kwallet is unavailable or unreliable.
+allow_insecure_protected_store = true

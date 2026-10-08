@@ -1,0 +1,73 @@
+# Dependabot configuration — three ecosystems, weekly cadence.
+# Spec: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # ── Cargo (Rust) ──────────────────────────────────────────────────
+  # The workspace root holds the full dependency graph; per-crate
+  # Cargo.toml files inherit from `[workspace.dependencies]`. Single
+  # entry covers the whole workspace.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "deps(rust)"
+      include: "scope"
+    groups:
+      # Group security updates so a CVE patch lands as one PR.
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      # Group minor + patch routine bumps to reduce PR noise.
+      cargo-minor-and-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+
+  # ── npm / pnpm (frontend) ─────────────────────────────────────────
+  # Dependabot reads pnpm-lock.yaml as of the v2 schema. Workspace
+  # packages defined in package.json at the root.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "deps(js)"
+      include: "scope"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+
+  # ── GitHub Actions ────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps(actions)"
+      include: "scope"

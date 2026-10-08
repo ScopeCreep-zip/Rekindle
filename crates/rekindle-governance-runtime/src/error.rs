@@ -1,0 +1,98 @@
+//! Errors for Phase 18 community lifecycle ops.
+//!
+//! Each variant maps to a failure mode in apply / origin / bootstrap /
+//! join / segments. The `Adapter` variant wraps src-tauri adapter
+//! failures (Veilid attach loss, Stronghold I/O, SQL failure) as opaque
+//! strings — the crate never types these directly.
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum GovernanceRuntimeError {
+    /// The community's Lamport clock could not produce a timestamp.
+    #[error(transparent)]
+    Lamport(#[from] rekindle_types::lamport::LamportError),
+
+    #[error("community not found: {0}")]
+    CommunityNotFound(String),
+
+    #[error("governance state not loaded for community {0}")]
+    GovernanceStateMissing(String),
+
+    #[error("identity secret not available")]
+    IdentitySecretUnavailable,
+
+    #[error("not attached to Veilid")]
+    NotAttached,
+
+    #[error("no pseudonym key for community {0}")]
+    PseudonymKeyMissing(String),
+
+    #[error("invalid pseudonym hex: {0}")]
+    InvalidPseudonymHex(String),
+
+    #[error("no governance key for community {0}")]
+    GovernanceKeyMissing(String),
+
+    #[error("no slot index for community {0}")]
+    SlotIndexMissing(String),
+
+    #[error("no slot keypair for community {0}")]
+    SlotKeypairMissing(String),
+
+    #[error("no slot seed for community {0}")]
+    SlotSeedMissing(String),
+
+    #[error("insufficient permission for this governance operation")]
+    PermissionDenied,
+
+    #[error("governance write conflicted with newer network state ({0} bytes)")]
+    WriteConflict(usize),
+
+    #[error("governance verify failed: read-back differs ({read} bytes vs our {written})")]
+    VerifyMismatch { read: usize, written: usize },
+
+    #[error("governance verify read-back returned empty after write")]
+    VerifyEmpty,
+
+    /// Our own primary governance subkey is present on the DHT but its payload
+    /// fails W26 verification (corruption, or a legacy signature from an
+    /// incompatible format). Refuse to write rather than overwrite the slot with
+    /// only the new entry, which would destroy our genesis/governance. Distinct
+    /// from a genuinely empty slot, where a fresh write is safe.
+    #[error(
+        "governance primary subkey {slot} is present but unverifiable — refusing to overwrite"
+    )]
+    PrimarySubkeyUnverifiable { slot: u32 },
+
+    /// Safety net under `GovernanceOverflow` paging: a single governance entry
+    /// too large to fit even a whole overflow page (real entries are < ~500 B).
+    /// Accumulation no longer reaches here — past one page an author's writes
+    /// spill into member-owned overflow records (see `overflow`).
+    #[error("governance entry too large: {bytes} B exceeds the per-page cap of {cap} B")]
+    SubkeyOverflow { bytes: usize, cap: usize },
+
+    #[error("segment cap reached ({0}); raise MAX_SEGMENTS once lazy-fetch lands")]
+    SegmentCapReached(u32),
+
+    #[error("current segment still has open slots — expansion is only allowed when full")]
+    SegmentNotFull,
+
+    #[error("crypto/serialization error: {0}")]
+    Crypto(String),
+
+    #[error("encoding error: {0}")]
+    Encoding(String),
+
+    #[error("adapter error: {0}")]
+    Adapter(String),
+}
+
+impl GovernanceRuntimeError {
+    /// Convenience constructor for src-tauri adapter impls so they can
+    /// surface tauri/veilid/sqlite errors through one variant without
+    /// the crate having to know about those types.
+    pub fn adapter(msg: impl Into<String>) -> Self {
+        Self::Adapter(msg.into())
+    }
+}

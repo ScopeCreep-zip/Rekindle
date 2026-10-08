@@ -4,20 +4,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "../../stores/notification.store";
-import { ICON_BELL, ICON_CHECK } from "../../icons";
-
-function formatTimestamp(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
+import { formatRelativeTime } from "../../utils/formatting";
+import { handleStartDmCall } from "../../actions/calls.actions";
+import { commands } from "../../ipc/commands";
 
 const NotificationCenter: Component = () => {
   const [open, setOpen] = createSignal(false);
@@ -43,8 +33,18 @@ const NotificationCenter: Component = () => {
 
   return (
     <div class="notification-bell-wrapper" ref={panelRef}>
-      <button class="notification-bell" onClick={toggle} title="Notifications">
-        <span class="nf-icon" style={{ "font-size": "14px" }}>{ICON_BELL}</span>
+      <button
+        class="notification-bell"
+        onClick={toggle}
+        title="Notifications"
+        aria-label={
+          notificationState.unreadCount > 0
+            ? `Notifications, ${notificationState.unreadCount} unread`
+            : "Notifications"
+        }
+        aria-expanded={open()}
+      >
+        <span class="nf-icon nf-icon-md" aria-hidden="true">{ICON_BELL}</span>
         <Show when={notificationState.unreadCount > 0}>
           <span class="notification-badge">
             {notificationState.unreadCount > 99
@@ -92,16 +92,55 @@ const NotificationCenter: Component = () => {
                         {notification.body}
                       </span>
                       <span class="notification-time">
-                        {formatTimestamp(notification.timestamp)}
+                        {formatRelativeTime(notification.timestamp)}
                       </span>
+                      {/* Wave 12 W12.8 — missed-call action row. */}
+                      <Show
+                        when={
+                          notification.type === "missed_call" &&
+                          notification.peerKey != null
+                        }
+                      >
+                        <div class="notification-actions">
+                          <button
+                            type="button"
+                            class="form-btn-secondary notification-action-btn"
+                            title="Call back"
+                            onClick={() => {
+                              const peerKey = notification.peerKey!;
+                              const name = notification.body.split(" (")[0];
+                              const kind = notification.callKind ?? "audio";
+                              void handleStartDmCall(peerKey, name, kind === "video");
+                              markNotificationRead(notification.id);
+                            }}
+                          >
+                            <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+                            Call back
+                          </button>
+                          <button
+                            type="button"
+                            class="form-btn-secondary notification-action-btn"
+                            title="Send a message"
+                            onClick={() => {
+                              const peerKey = notification.peerKey!;
+                              void commands.openChatWindow(peerKey);
+                              markNotificationRead(notification.id);
+                            }}
+                          >
+                            <span class="nf-icon" aria-hidden="true">{ICON_SEND}</span>
+                            Message
+                          </button>
+                        </div>
+                      </Show>
                     </div>
                     <Show when={!notification.read}>
                       <button
                         class="notification-mark-read"
                         onClick={() => markNotificationRead(notification.id)}
                         title="Mark as read"
+                        aria-label="Mark notification as read"
                       >
-                        <span class="nf-icon" style={{ "font-size": "12px" }}>{ICON_CHECK}</span>
+                        <span class="nf-icon nf-icon-sm" aria-hidden="true">{ICON_CHECK}</span>
                       </button>
                     </Show>
                   </div>

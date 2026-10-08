@@ -1,130 +1,26 @@
+// Buddy-list voice presence subscription.
+//
+// `initVoiceEventListener` moved to `src/actions/voice.actions.ts`: it is
+// session-scoped, not app-start wiring — `handleJoinVoice` starts it and
+// `handleLeaveVoice` tears it down, and it owns the unlisten handle they
+// both touch. Splitting the handle from its two callers was the only
+// thing standing in the way of an acyclic tier order.
+
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { commands } from "../ipc/commands";
 import { subscribeVoiceEvents } from "../ipc/channels";
-import { voiceState, setVoiceState } from "../stores/voice.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
-
-let voiceEventUnlisten: UnlistenFn | null = null;
-
-/** Subscribe to voice events from the backend and update the store. */
-export async function initVoiceEventListener(): Promise<UnlistenFn> {
-  return subscribeVoiceEvents((event) => {
-    switch (event.type) {
-      case "userJoined":
-        setVoiceState("participants", (prev) => [
-          ...prev.filter((p) => p.publicKey !== event.data.publicKey),
-          {
-            publicKey: event.data.publicKey,
-            displayName: event.data.displayName,
-            isMuted: false,
-            isSpeaking: false,
-          },
-        ]);
-        break;
-      case "userLeft":
-        setVoiceState(
-          "participants",
-          (prev) => prev.filter((p) => p.publicKey !== event.data.publicKey),
-        );
-        break;
-      case "userSpeaking":
-        setVoiceState(
-          "participants",
-          (p) => p.publicKey === event.data.publicKey,
-          "isSpeaking",
-          event.data.speaking,
-        );
-        break;
-      case "userMuted":
-        setVoiceState(
-          "participants",
-          (p) => p.publicKey === event.data.publicKey,
-          "isMuted",
-          event.data.muted,
-        );
-        break;
-      case "connectionQuality":
-        setVoiceState("connectionQuality", event.data.quality);
-        break;
-      case "deviceChanged":
-        setVoiceState("deviceChangeCount", (prev) => prev + 1);
-        break;
-    }
-  });
-}
-
-export async function handleJoinVoice(channelId: string): Promise<void> {
-  try {
-    await commands.joinVoiceChannel(channelId);
-
-    // Subscribe to voice events
-    voiceEventUnlisten = await initVoiceEventListener();
-
-    setVoiceState({
-      isConnected: true,
-      channelId,
-    });
-  } catch (e) {
-    console.error("Failed to join voice:", e);
-  }
-}
-
-export async function handleLeaveVoice(): Promise<void> {
-  try {
-    await commands.leaveVoice();
-
-    // Unsubscribe from voice events
-    if (voiceEventUnlisten) {
-      voiceEventUnlisten();
-      voiceEventUnlisten = null;
-    }
-
-    setVoiceState({
-      isConnected: false,
-      channelId: null,
-      participants: [],
-      connectionQuality: "good",
-      activeCallType: null,
-    });
-  } catch (e) {
-    console.error("Failed to leave voice:", e);
-  }
-}
-
-export async function handleToggleMute(): Promise<void> {
-  try {
-    const newMuted = !voiceState.isMuted;
-    await commands.setMute(newMuted);
-    setVoiceState("isMuted", newMuted);
-  } catch (e) {
-    console.error("Failed to toggle mute:", e);
-  }
-}
-
-export async function handleToggleDeafen(): Promise<void> {
-  try {
-    const newDeafened = !voiceState.isDeafened;
-    await commands.setDeafen(newDeafened);
-    setVoiceState("isDeafened", newDeafened);
-  } catch (e) {
-    console.error("Failed to toggle deafen:", e);
-  }
-}
 
 export function subscribeBuddyListVoiceEvents(): Promise<UnlistenFn> {
   return subscribeVoiceEvents((event) => {
-    switch (event.type) {
-      case "userJoined": {
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState("friends", event.data.publicKey, "voiceChannel", "active");
-        }
-        break;
+    if ("joined" in event) {
+      const { pseudonym } = event.joined;
+      if (friendsState.friends[pseudonym]) {
+        setFriendsState("friends", pseudonym, "voiceChannel", "active");
       }
-      case "userLeft": {
-        if (friendsState.friends[event.data.publicKey]) {
-          setFriendsState("friends", event.data.publicKey, "voiceChannel", null);
-        }
-        break;
+    } else if ("left" in event) {
+      const { pseudonym } = event.left;
+      if (friendsState.friends[pseudonym]) {
+        setFriendsState("friends", pseudonym, "voiceChannel", null);
       }
     }
   });

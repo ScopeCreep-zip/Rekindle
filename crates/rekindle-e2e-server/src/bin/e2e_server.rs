@@ -20,20 +20,28 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::cors::{Any, CorsLayer};
 
-use rekindle_lib::commands::auth::{create_identity_core, login_core, LoginResult, IdentitySummary};
-use rekindle_lib::db::{self, DbPool};
+use rekindle_db::Db;
+use rekindle_lib::commands::auth::{
+    create_identity_core, list_identities_inner, login_core, LoginResult,
+};
 use rekindle_lib::keystore::{self, KeystoreHandle, StrongholdKeystore};
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
 
 /// Shared server state passed to every axum handler.
 struct ServerState {
     state: SharedState,
-    pool: DbPool,
     keystore_handle: KeystoreHandle,
     config_dir: PathBuf,
 }
 
 type SharedServer = Arc<ServerState>;
+
+impl ServerState {
+    /// The open database, as the app's commands reach it (`AppState.db`).
+    fn db(&self) -> Result<Db, String> {
+        Ok(self.state.db.current()?)
+    }
+}
 
 #[derive(Deserialize)]
 struct InvokeRequest {
@@ -44,20 +52,28 @@ struct InvokeRequest {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    rekindle_utils::log_scrub::install_panic_hook();
+    tracing_subscriber::fmt()
+        .with_writer(rekindle_utils::log_scrub::ScrubbingMakeWriter::new(
+            std::io::stdout,
+        ))
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     let config_dir = std::env::temp_dir().join(format!("rekindle-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&config_dir).expect("failed to create temp config dir");
 
     tracing::info!(dir = %config_dir.display(), "E2E server starting");
 
-    let pool = db::create_pool(":memory:").expect("in-memory SQLite").pool;
+    let pool = rekindle_db::open(std::path::Path::new(":memory:"))
+        .expect("in-memory SQLite")
+        .db;
     let shared_state: SharedState = Arc::new(AppState::default());
+    shared_state.db.set(pool);
     let keystore_handle = keystore::new_handle();
 
     let server = Arc::new(ServerState {
         state: shared_state,
-        pool,
         keystore_handle,
         config_dir: config_dir.clone(),
     });
@@ -93,10 +109,7 @@ async fn handle_invoke(
         Ok(result) => (StatusCode::OK, Json(json!({ "result": result }))),
         Err(e) => {
             tracing::warn!(cmd = %req.cmd, error = %e, "command failed");
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e })),
-            )
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": e })))
         }
     }
 }
@@ -112,8 +125,10 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
     *server.keystore_handle.lock() = None;
 
     // Recreate SQLite database (drop all tables and re-run schema)
-    {
-        let conn = server.pool.lock().expect("db lock");
+    let Ok(pool) = server.db() else {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    };
+    pool.call(|conn| -> Result<(), rusqlite::Error> {
         conn.execute_batch(
             "DELETE FROM pending_messages; \
              DELETE FROM prekeys; \
@@ -126,9 +141,11 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
              DELETE FROM friends; \
              DELETE FROM friend_groups; \
              DELETE FROM identity;",
-        )
-        .expect("failed to clear database");
-    }
+        )?;
+        Ok(())
+    })
+    .await
+    .expect("failed to clear database");
 
     // Delete Stronghold snapshot files
     if let Ok(entries) = std::fs::read_dir(&server.config_dir) {
@@ -147,7 +164,6 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
 }
 
 /// Route commands to the appropriate core function.
-#[allow(clippy::too_many_lines)]
 async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value, String> {
     match cmd {
         // ── Auth ─────────────────────────────────────────────────────
@@ -159,8 +175,9 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 &passphrase,
                 display_name,
                 &server.state,
-                &server.pool,
+                &server.db()?,
                 &server.keystore_handle,
+                None,
             )
             .await?;
             Ok(serde_json::to_value(result).unwrap())
@@ -173,46 +190,15 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 &public_key,
                 &passphrase,
                 &server.state,
-                &server.pool,
+                &server.db()?,
                 &server.keystore_handle,
+                None,
             )
             .await?;
             Ok(serde_json::to_value(result).unwrap())
         }
         "list_identities" => {
-            let pool = server.pool.clone();
-            let summaries = tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT public_key, display_name, created_at, avatar_webp \
-                         FROM identity ORDER BY created_at ASC",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let rows = stmt
-                    .query_map([], |row| {
-                        let avatar_base64 = row
-                            .get::<_, Option<Vec<u8>>>("avatar_webp")
-                            .unwrap_or(None)
-                            .map(|bytes| {
-                                use base64::Engine as _;
-                                base64::engine::general_purpose::STANDARD.encode(&bytes)
-                            });
-                        Ok(IdentitySummary {
-                            public_key: row.get::<_, String>(0)?,
-                            display_name: row.get::<_, String>(1).unwrap_or_default(),
-                            created_at: row.get::<_, i64>(2)?,
-                            has_avatar: avatar_base64.is_some(),
-                            avatar_base64,
-                        })
-                    })
-                    .map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?;
-                Ok::<Vec<IdentitySummary>, String>(rows)
-            })
-            .await
-            .map_err(|e| e.to_string())??;
+            let summaries = list_identities_inner(&server.db()?).await?;
             Ok(serde_json::to_value(summaries).unwrap())
         }
         "delete_identity" => {
@@ -220,18 +206,25 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             let passphrase = arg_str(args, "passphrase")?;
 
             // Verify passphrase
-            StrongholdKeystore::initialize_for_identity(&server.config_dir, &public_key, &passphrase)
-                .map_err(|e| {
-                    let msg = e.to_string();
-                    if msg.contains("snapshot") || msg.contains("decrypt") {
-                        "Wrong passphrase".to_string()
-                    } else {
-                        msg
-                    }
-                })?;
+            StrongholdKeystore::initialize_for_identity(
+                &server.config_dir,
+                &public_key,
+                &passphrase,
+            )
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("snapshot") || msg.contains("decrypt") {
+                    "Wrong passphrase".to_string()
+                } else {
+                    msg
+                }
+            })?;
 
             // If deleting active identity, clear state
-            let is_active = server.state.identity.read()
+            let is_active = server
+                .state
+                .identity
+                .read()
                 .as_ref()
                 .is_some_and(|id| id.public_key == public_key);
             if is_active {
@@ -242,16 +235,12 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             }
 
             // Delete from DB
-            let pool = server.pool.clone();
             let pk = public_key.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
-                conn.execute("DELETE FROM identity WHERE public_key = ?1", rusqlite::params![pk])
-                    .map_err(|e| e.to_string())?;
-                Ok::<(), String>(())
-            })
-            .await
-            .map_err(|e| e.to_string())??;
+            server
+                .db()?
+                .call(move |conn| rekindle_db::repo::identity::delete(conn, &pk))
+                .await
+                .map_err(|e| e.to_string())?;
 
             // Delete Stronghold file
             let _ = StrongholdKeystore::delete_snapshot(&server.config_dir, &public_key);
@@ -291,7 +280,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                             UserStatus::Online => "online",
                             UserStatus::Away => "away",
                             UserStatus::Busy => "busy",
-                            UserStatus::Offline => "offline",
+                            UserStatus::Offline | UserStatus::Invisible => "offline",
                         }),
                         "statusMessage": f.status_message,
                         "gameInfo": Value::Null,
@@ -322,15 +311,32 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             "isAttached": false,
             "publicInternetReady": false,
             "hasRoute": false,
+            "mediaRoute": "idle",
             "profileDhtKey": Value::Null,
             "friendListDhtKey": Value::Null,
         })),
 
+        // ── Lifecycle ────────────────────────────────────────────────
+        // The frontend lifecycle store seeds from this on mount and gates
+        // the login button on `canUnlock()` (state == "locked"). The test
+        // double models readiness so the button is enabled in the harness;
+        // keeps "one lifecycle" — no VITE_E2E branch in product code.
+        "lifecycle_current" => Ok(json!("locked")),
+
         // ── No-op commands (window management, status, etc.) ─────────
-        "get_game_status" | "show_buddy_list" | "open_chat_window"
-        | "open_settings_window" | "open_community_window" | "open_profile_window"
-        | "set_status" | "set_nickname" | "set_avatar" | "set_status_message"
-        | "set_mute" | "set_deafen" | "check_for_updates" => Ok(Value::Null),
+        "get_game_status"
+        | "show_buddy_list"
+        | "open_chat_window"
+        | "open_settings_window"
+        | "open_community_window"
+        | "open_profile_window"
+        | "set_status"
+        | "set_nickname"
+        | "set_avatar"
+        | "set_status_message"
+        | "set_mute"
+        | "set_deafen"
+        | "check_for_updates" => Ok(Value::Null),
 
         _ => Err(format!("unknown command: {cmd}")),
     }

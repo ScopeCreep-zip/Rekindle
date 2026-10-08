@@ -1,0 +1,90 @@
+import { invoke } from "../invoke";
+import type {
+  DeepLinkOutcome, DeepLinkRequest, GameStatus, NetworkStatus, Preferences, SettingsTab,
+} from "./types";
+import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
+import type { LifecycleState } from "./dto";
+
+export const systemCommands = {
+  // Status
+  setStatus: (status: string) => invoke<void>("set_status", { status }),
+  setNickname: (nickname: string) =>
+    invoke<void>("set_nickname", { nickname }),
+  setAvatar: (avatarData: number[]) =>
+    invoke<void>("set_avatar", { avatarData }),
+  getAvatar: (publicKey: string) =>
+    invoke<number[] | null>("get_avatar", { publicKey }),
+  setStatusMessage: (message: string) =>
+    invoke<void>("set_status_message", { message }),
+
+  // Game
+  getGameStatus: () => invoke<GameStatus | null>("get_game_status"),
+  getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
+  launchGameToServer: (gameId: number, serverAddress: string) =>
+    invoke<void>("launch_game_to_server", { gameId, serverAddress }),
+
+  // Settings
+  getPreferences: () => invoke<Preferences>("get_preferences"),
+  setPreferences: (prefs: Preferences) =>
+    invoke<void>("set_preferences", { prefs }),
+  checkForUpdates: () => invoke<boolean>("check_for_updates"),
+
+  // Notifications — backend command instead of the plugin's `sendNotification`,
+  // whose Linux `show` path panics (blocks on zbus inside the async runtime).
+
+  // Windows
+  showBuddyList: () => invoke<void>("show_buddy_list"),
+  // Window titles are resolved by the backend from its own state.
+  openChatWindow: (publicKey: string) => invoke<void>("open_chat_window", { publicKey }),
+  openSettingsWindow: (tab?: SettingsTab) =>
+    invoke<void>("open_settings_window", { tab: tab ?? null }),
+  /// `communityId` absent opens the community browser.
+  openCommunityWindow: (communityId?: string) =>
+    invoke<void>("open_community_window", { communityId: communityId ?? null }),
+  openProfileWindow: (publicKey: string) => invoke<void>("open_profile_window", { publicKey }),
+  /// Wave 12 W12.7 — pop the active call into its own webview window.
+  openCallWindow: (callId: string) =>
+    invoke<void>("open_call_window", { callId }),
+  getNetworkStatus: () => invoke<NetworkStatus>("get_network_status"),
+  /// Open an https link after a native confirmation; false if declined.
+  openExternalUrl: (url: string) => invoke<boolean>("open_external_url", { url }),
+  // OS deep links — consent flow (src-tauri/src/deep_links.rs)
+  getPendingDeepLink: () => invoke<DeepLinkRequest | null>("get_pending_deep_link"),
+  confirmDeepLink: (requestId: string) =>
+    invoke<DeepLinkOutcome>("confirm_deep_link", { requestId }),
+  dismissDeepLink: (requestId: string) => invoke<void>("dismiss_deep_link", { requestId }),
+  // Lifecycle — current FSM state, used to seed the derived lifecycle store.
+  lifecycleCurrent: () => invoke<LifecycleState>("lifecycle_current"),
+
+  // Onboarding & Welcome Screen
+  getOnboardingConfig: (communityId: string) =>
+    invoke<OnboardingConfig>("get_onboarding_config", { communityId }),
+  setOnboardingConfig: (communityId: string, config: OnboardingConfig) =>
+    invoke<void>("set_onboarding_config", { communityId, config }),
+  getWelcomeScreen: (communityId: string) =>
+    invoke<WelcomeScreen>("get_welcome_screen", { communityId }),
+  setWelcomeScreen: (communityId: string, screen: WelcomeScreen) =>
+    invoke<void>("set_welcome_screen", { communityId, screen }),
+  /**
+   * Architecture §19.2 step 3 — `acknowledgedRules` must be `true`
+   * when the merged `OnboardingConfig.mode === "gated"`, otherwise the
+   * backend rejects the submission with a clear error. For
+   * `default` / `guided` modes the flag is ignored.
+   */
+  submitOnboardingAnswers: (
+    communityId: string,
+    answers: OnboardingAnswer[],
+    acknowledgedRules?: boolean,
+  ) =>
+    invoke<void>("submit_onboarding_answers", {
+      communityId,
+      answers,
+      acknowledgedRules: acknowledgedRules ?? null,
+    }),
+  /** Plan §Failure 8 — persist `community_members.onboarding_complete = 1` for
+   *  the local user so the wizard does not re-show on next launch. */
+  markOnboardingComplete: (communityId: string) =>
+    invoke<void>("mark_onboarding_complete", { communityId }),
+  debugGossipState: (communityId: string) =>
+    invoke<GossipDiagnostics>("debug_gossip_state", { communityId }),
+};

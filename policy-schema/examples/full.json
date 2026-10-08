@@ -1,0 +1,83 @@
+{
+  "$schema": "../schema.json",
+  "schemaVersion": 1,
+  "metadata": {
+    "organization": "Example Foundation",
+    "contactEmail": "it-support@example.org",
+    "supportUrl": "https://example.org/it/rekindle",
+    "issuedAt": "2026-05-07T00:00:00Z",
+    "expiresAt": "2027-05-07T00:00:00Z"
+  },
+  "policies": {
+    "_comment": "Full policy bundle illustrating every key Rekindle currently supports. Real deployments only set the keys they care about.",
+
+    "_lock": [
+      "Identity.requireKeypairVerification",
+      "Identity.disableMultipleIdentities",
+      "Federation.disableLinkPreview",
+      "Federation.disablePushRelay",
+      "Privacy.disableGameDetection",
+      "Privacy.disableTelemetry",
+      "Update.channel",
+      "Update.minimumVersion",
+      "Audit.localLogRetentionDays",
+      "Audit.logSignInEvents"
+    ],
+
+    "Identity.requireKeypairVerification": true,
+    "Identity.allowedFingerprintList": [],
+    "Identity.maxOfflineHours": 168,
+    "Identity.disableMultipleIdentities": true,
+
+    "Federation.allowedBootstrapNodes": [],
+    "Federation.outboundProxyUrl": "socks5://proxy.example.org:1080",
+    "Federation.disableLinkPreview": true,
+    "Federation.disablePushRelay": true,
+
+    "Communities.allowCreate": false,
+    "Communities.allowedJoinList": [
+      "VLD0:cLqN8f3aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890"
+    ],
+    "Communities.blockedJoinList": [],
+    "Communities.mandatoryList": [
+      "VLD0:cLqN8f3aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890"
+    ],
+
+    "Messaging.allowFileSharing": true,
+    "Messaging.maxFileSizeBytes": 26214400,
+    "Messaging.blockedFileExtensions": ["exe", "scr", "msi", "bat", "cmd", "vbs", "ps1", "jar"],
+    "Messaging.allowVoiceMessage": true,
+    "Messaging.disableMarkdown": false,
+    "Messaging.mandatoryDisclaimer": "This conversation is governed by Example Foundation's communications policy.",
+    "Messaging.localRetentionDays": 365,
+
+    "Voice.allowCalls": true,
+    "Voice.allowScreenShare": false,
+    "Voice.muteOnJoin": true,
+    "Voice.disableRecording": true,
+    "Voice.maxCallDurationMinutes": 0,
+
+    "Privacy.disableGameDetection": true,
+    "Privacy.hidePresence": false,
+    "Privacy.disableTypingIndicator": false,
+    "Privacy.disableTelemetry": true,
+
+    "Update.channel": "stable",
+    "Update.checkIntervalHours": 24,
+    "Update.allowManualCheck": true,
+    "Update.minimumVersion": "0.1.0",
+    "Update.deferralMaxDays": 7,
+
+    "UI.organisationName": "Example Foundation",
+    "UI.organisationLogoUrl": "https://example.org/static/logo-rekindle.png",
+    "UI.loginMotd": "Welcome. By signing in you accept the Example Foundation acceptable-use policy.",
+    "UI.helpUrl": "https://example.org/it/rekindle/help",
+    "UI.disableLaunchToTray": false,
+
+    "Audit.localLogRetentionDays": 90,
+    "Audit.logSignInEvents": true,
+    "Audit.logCommunityEvents": true,
+    "Audit.logCallMetadata": true,
+    "Audit.shipEndpointUrl": ""
+  }
+}

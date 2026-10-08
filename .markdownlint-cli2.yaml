@@ -1,0 +1,63 @@
+# markdownlint-cli2 configuration.
+# Spec: https://github.com/DavidAnson/markdownlint-cli2
+# Rule reference: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+#
+# Run with:  pnpm exec markdownlint-cli2 "**/*.md" "#node_modules" "#dist"
+#
+# Philosophy: catch real defects (broken links, orphaned headings,
+# inconsistent list markers) without fighting the writer's style. We
+# disable rules that overconstrain prose for a docs-heavy project.
+
+config:
+  default: true
+  # MD007 — unordered list indentation. Allow 2 or 4.
+  MD007:
+    indent: 2
+  # MD013 — line length. Off — long URLs, tables, prose cadence.
+  MD013: false
+  # MD024 — duplicate headings allowed when in different sections.
+  MD024:
+    siblings_only: true
+  # MD025 — single H1 per document. We rely on this for navigation.
+  MD025: true
+  # MD026 — trailing punctuation in headings. Allow ?, !, :.
+  MD026:
+    punctuation: ".,;"
+  # MD033 — inline HTML allowed (we use <details>, <kbd>, <sub>).
+  MD033: false
+  # MD034 — bare URLs. Off — autolink-style is fine.
+  MD034: false
+  # MD036 — emphasis used as heading. Off — we use bold for emphasis.
+  MD036: false
+  # MD040 — fenced code language. Required.
+  MD040: true
+  # MD041 — first line H1. Off — some files (like CHANGELOG) have other shapes.
+  MD041: false
+  # MD046 — code block style. Fenced.
+  MD046:
+    style: fenced
+  # MD048 — code fence style. Backticks.
+  MD048:
+    style: backtick
+  # MD049 — emphasis style. Asterisks (matches Prettier / Biome conventions).
+  MD049:
+    style: asterisk
+  # MD050 — strong style. Asterisks.
+  MD050:
+    style: asterisk
+
+globs:
+  - "**/*.md"
+
+ignores:
+  - "node_modules/**"
+  - "target/**"
+  - "dist/**"
+  - "src-tauri/gen/**"
+  - "legacy/**"
+  - "CHANGELOG.md"
+  - "**/CHANGELOG.md"
+
+fix: false
+showFound: true
+noBanner: true

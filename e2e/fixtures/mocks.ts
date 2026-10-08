@@ -4,14 +4,25 @@ import type { Page } from "@playwright/test";
  * Set up Tauri IPC mocks in the browser page context.
  * Must be called after page.goto() since the mock functions are
  * injected by index.html when VITE_PLAYWRIGHT=true.
+ *
+ * `ipcHandler` is JS *source* (not a function) because it is compiled
+ * with `new Function` inside the page — closures cannot cross the
+ * page.evaluate boundary. To vary a few commands on top of a base
+ * handler, pass `overrides`: a plain command → response map, consulted
+ * before the base handler. Values must be JSON-serializable for the
+ * same reason; a thunk would not survive the crossing.
  */
 export async function setupMocks(
   page: Page,
   windowLabel: string,
   ipcHandler: string,
+  overrides?: Record<string, unknown>,
 ) {
+  // index.html installs the mock hooks behind an async import, so they
+  // may not exist yet when `goto` resolves.
+  await page.waitForFunction(() => typeof (window as any).__mockIPC === "function");
   await page.evaluate(
-    ({ label, handler }) => {
+    ({ label, handler, cmdOverrides }) => {
       // Mock window labels so getCurrent() works
       (window as any).__mockWindows(label, "buddy-list", "login");
 
@@ -19,9 +30,60 @@ export async function setupMocks(
       const handlerFn = new Function("cmd", "args", handler);
       (window as any).__mockIPC(
         (cmd: string, args: Record<string, unknown>) => {
+          if (
+            cmdOverrides &&
+            Object.prototype.hasOwnProperty.call(cmdOverrides, cmd)
+          ) {
+            return cmdOverrides[cmd];
+          }
           return handlerFn(cmd, args);
         },
       );
+    },
+    { label: windowLabel, handler: ipcHandler, cmdOverrides: overrides ?? null },
+  );
+}
+
+/**
+ * Install IPC mocks before any app script runs, for windows that call IPC
+ * during their first mount (the login window reads identities and the
+ * lifecycle state, the buddy list hydrates). Installs the same
+ * `__TAURI_INTERNALS__` shim as `mockIPC` + `mockWindows` from
+ * `@tauri-apps/api/mocks`. Call before `page.goto`.
+ *
+ * Every call is recorded in `window.__ipcCalls` as `{ cmd, args }`.
+ * `lifecycle_current` answers `"locked"` (node attached, no identity
+ * unlocked), modelling readiness the same way the E2E server does, so the
+ * login button is enabled.
+ */
+export async function preloadMocks(page: Page, windowLabel: string, ipcHandler: string) {
+  await page.addInitScript(
+    ({ label, handler }) => {
+      const w = window as any;
+      const handlerFn = new Function("cmd", "args", handler);
+      const callbacks = new Map<number, (data: unknown) => void>();
+      w.__TAURI_INTERNALS__ = {
+        metadata: {
+          currentWindow: { label },
+          currentWebview: { windowLabel: label, label },
+        },
+        invoke: async (cmd: string, args: Record<string, unknown>) => {
+          (w.__ipcCalls ??= []).push({ cmd, args });
+          if (cmd === "lifecycle_current") return "locked";
+          return handlerFn(cmd, args);
+        },
+        transformCallback: (cb: (data: unknown) => void) => {
+          const id = window.crypto.getRandomValues(new Uint32Array(1))[0];
+          callbacks.set(id, cb);
+          return id;
+        },
+        unregisterCallback: (id: number) => callbacks.delete(id),
+        runCallback: (id: number, data: unknown) => callbacks.get(id)?.(data),
+        callbacks,
+      };
+      w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: (_event: string, id: number) => callbacks.delete(id),
+      };
     },
     { label: windowLabel, handler: ipcHandler },
   );

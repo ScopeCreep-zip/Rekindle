@@ -1,0 +1,559 @@
+//! Phase 14 — voice session dependency port.
+//!
+//! The `VoiceSessionDeps` trait is what the rekindle-voice session
+//! orchestration (session lifecycle, shutdown, device hot-swap) calls
+//! into for every outside-world operation: voice engine handle access,
+//! voice-packet channel staging (W14.1), community state lookups (MEK,
+//! member names, stage gate), identity, active call media keys
+//! (1:1 calls), Tauri emit, background task registration.
+//!
+//! Network frame IO (Veilid `app_message`) is delegated through the
+//! [`crate::transport::VoiceFrameSender`] port injected into
+//! `VoiceTransport`, so this crate imports no `veilid-core`. The trait
+//! surface here focuses on `AppState` + Tauri integration points.
+//!
+//! Implemented by `src-tauri/services/voice_adapter.rs` (lands in 14.h).
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use crate::error::VoiceError;
+
+/// One peer in a community voice channel. Materialized by the
+/// adapter from `AppState.communities` for handlers / future
+/// crate-side flows that need a roster snapshot (e.g. voice_peers
+/// trait method below).
+#[derive(Debug, Clone)]
+pub struct VoicePeer {
+    /// Pseudonym hex (32-byte Ed25519 pubkey hex-encoded).
+    pub pseudonym: String,
+    /// Display name (member display string for UI surfaces).
+    pub display_name: String,
+    /// Veilid route blob. `None` if we don't yet have a route.
+    pub route_blob: Option<Vec<u8>>,
+}
+
+/// A call's media keying: the call's shared secret (the SFrame scope
+/// secret every participant holds) and our sender state for it, which
+/// lives with the call so a rebuilt transport continues the counter.
+#[derive(Clone)]
+pub struct CallMediaKeys {
+    pub secret: zeroize::Zeroizing<[u8; 32]>,
+    pub sender: Arc<rekindle_secrets::sframe::SframeSender>,
+}
+
+/// Audio preferences pulled from the Tauri store. The adapter
+/// (`voice_adapter.rs`) populates this from `commands::settings::Preferences`
+/// at session start. The crate side stays free of Tauri's store types.
+///
+/// Mirrors the subset of `Preferences` fields that the existing
+/// `init_engine` consumes; jitter_buffer_ms etc. come from
+/// `VoiceConfig::default()` not from user prefs.
+#[derive(Debug, Clone)]
+pub struct AudioPrefs {
+    pub noise_suppression: bool,
+    pub echo_cancellation: bool,
+    pub input_volume: f32,
+    pub output_volume: f32,
+    pub input_device: Option<String>,
+    pub output_device: Option<String>,
+    /// Input-channel choice per input device name (0-based, plan C7.24b).
+    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+}
+
+/// Identity snapshot returned by the adapter for `start_session`
+/// (public key + display name in one struct, so the orchestrator
+/// doesn't make two trait calls).
+#[derive(Debug, Clone)]
+pub struct VoiceIdentity {
+    pub public_key: String,
+    pub display_name: String,
+}
+
+/// Return type of `init_voice_session` — the engine handle + transport
+/// + shared mute/deafen flags all set up and ready for loop spawn.
+pub struct VoiceSessionStartup {
+    pub muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub deafened_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub transport: std::sync::Arc<tokio::sync::Mutex<crate::transport::VoiceTransport>>,
+}
+
+/// Configurable scope for `shutdown_voice`. Three named variants
+/// cover the call sites:
+///   - `FULL`: stop loops + monitor + devices + clear engine.
+///   - `LOOPS_ONLY`: stop send/recv/MCU loops only; keep monitor
+///     + engine alive (used by device hot-swap which is *itself*
+///     running on the monitor loop).
+///   - `KEEP_ENGINE`: stop loops + monitor but keep engine alive
+///     (used by device restart paths that respawn loops without
+///     re-initialising cpal).
+#[derive(Debug, Clone, Copy)]
+pub struct VoiceShutdownOpts {
+    pub stop_loops: bool,
+    pub stop_monitor: bool,
+    pub stop_devices: bool,
+}
+
+impl VoiceShutdownOpts {
+    pub const FULL: Self = Self {
+        stop_loops: true,
+        stop_monitor: true,
+        stop_devices: true,
+    };
+    pub const LOOPS_ONLY: Self = Self {
+        stop_loops: true,
+        stop_monitor: false,
+        stop_devices: false,
+    };
+    pub const KEEP_ENGINE: Self = Self {
+        stop_loops: true,
+        stop_monitor: true,
+        stop_devices: false,
+    };
+}
+
+/// The scopes of a voice session's loops, taken from the engine in one
+/// batch for shutdown. Whichever set was opted out of via
+/// `VoiceShutdownOpts` arrives as `None`.
+pub struct VoiceLoopScopes {
+    /// The send and receive loops (and the video pacer).
+    pub loops: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The device monitor.
+    pub monitor: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The MCU mix loop, while this peer is the voice host.
+    pub mcu: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+}
+
+/// The key sources SFrame needs for a voice session (`media_crypto`):
+/// the call secret and our sender state for a 1:1 call; the channel
+/// session's sender keys for a community channel (plan C7.20).
+pub trait MediaKeySource: Send + Sync {
+    /// The sender keys of our session on `(community, channel)`: our own
+    /// key and the keys the other participants sent us. One per channel
+    /// session, so every transport the session builds continues one
+    /// counter.
+    fn channel_sender_keys(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
+
+    /// The media keys of the active 1:1 call with `peer_pubkey`, or
+    /// `None` when there is no such call or it has no key yet.
+    fn call_media(&self, peer_pubkey: &str) -> Option<CallMediaKeys>;
+}
+
+/// Orchestration port for voice session work.
+#[async_trait]
+pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
+    // --- Identity ---
+
+    /// Current owner key (Ed25519 public key hex). Errors if no
+    /// identity is loaded.
+    fn owner_key(&self) -> Result<String, VoiceError>;
+
+    /// The key we present as *ourselves* on the voice wire: the
+    /// per-community pseudonym hex for community voice (so our
+    /// outbound `sender_key` matches the pseudonym signing key and
+    /// remote peers can verify our Ed25519 signature), or the owner
+    /// key for 1:1 calls. Single source of truth for the send-loop
+    /// identity, the receive/MCU self-skip key, and the `LocalJoined`
+    /// roster entry. Empty string when no identity is loaded.
+    fn voice_self_identity(&self, community_id: Option<&str>) -> String;
+
+    /// Identity Ed25519 secret bytes (32 B). Errors if no identity.
+    fn identity_secret(&self) -> Result<[u8; 32], VoiceError>;
+
+    // --- Voice engine handle (held on AppState) ---
+
+    /// Returns `true` if a voice engine is currently up (`Some` in the
+    /// AppState mutex). Used by call signaling to detect mid-call
+    /// teardowns vs ringing-only teardowns.
+    fn voice_engine_present(&self) -> bool;
+
+    /// Flip the voice engine's muted state. Sets BOTH the engine's
+    /// internal `set_muted()` AND the shared `muted_flag` atomic
+    /// that the send loop reads. Used by the local-mute command and
+    /// by stage-channel audience auto-mute on join.
+    fn set_voice_engine_muted(&self, muted: bool);
+
+    /// Symmetric flip for the deafen state. Sets engine + the
+    /// `deafened_flag` atomic the receive loop reads.
+    fn set_voice_engine_deafened(&self, deafened: bool);
+
+    // --- Voice packet channels (W14.1 pre-stage pattern) ---
+
+    /// Pre-stage the voice receive channel: create a new mpsc, store
+    /// the sender on AppState.voice_packet_tx (so the dispatch path can
+    /// route inbound packets), and stash the receiver on
+    /// voice_packet_rx_staged for the receive loop to pick up. Called
+    /// BEFORE any await points in CallAccept handling so packets
+    /// arriving during session setup buffer rather than drop.
+    fn pre_stage_voice_channel(&self);
+
+    /// Clear the voice packet channels (W15.5 — voice shutdown).
+    fn clear_voice_channels(&self);
+
+    // --- Community state lookups (for community voice channels) ---
+
+    /// Snapshot of peers in a community voice channel (with their
+    /// pseudonym, display name, route blob). Used at session start
+    /// + on roster updates.
+    fn voice_peers(&self, community_id: &str, channel_id: &str) -> Vec<VoicePeer>;
+
+    /// Returns `true` if the given channel is a stage channel (only
+    /// designated speakers may transmit). Used by send_loop's stage
+    /// gate (§10.7).
+    fn channel_is_stage(&self, community_id: &str, channel_id: &str) -> bool;
+
+    /// Ask `sender` (pseudonym hex) for its media key at `index`
+    /// (`VoiceMediaKeyRequest`, plan C7.20): a frame arrived under a key
+    /// it has not sent us, or whose push was lost. The loop debounces
+    /// calls per sender; the adapter sends the request.
+    fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64);
+
+    /// Ship a signed receiver report (`b'R'`-tagged wire bytes, from
+    /// [`crate::receiver_report::VoiceReceiverReport::to_wire`]) back to
+    /// the peer whose stream it describes.
+    ///
+    /// Fire-and-forget, like [`Self::request_media_key`]: the adapter
+    /// owns route resolution and drops the report if the peer's route
+    /// is unknown. A lost report costs the sender one 5 s window of
+    /// blindness, which is never worth blocking the receive path for.
+    fn send_receiver_report(&self, peer_pubkey_hex: &str, wire: Vec<u8>);
+
+    /// Returns `true` if `our_pseudonym` is currently a designated
+    /// speaker in the stage channel. Used by send_loop's stage gate.
+    fn we_are_stage_speaker(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        our_pseudonym: &str,
+    ) -> bool;
+
+    /// Returns `true` if the given sender is a designated stage speaker
+    /// (used by receive_loop to drop packets from non-speakers).
+    fn sender_is_stage_speaker(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        sender_pseudonym: &str,
+    ) -> bool;
+
+    // --- Telemetry ---
+
+    /// Increment the packet-drop counter (W14.4 — exposed via
+    /// VoiceEvent::PacketsDropped).
+    fn record_packet_drop(&self);
+
+    /// Read the current packet-drop counter (for telemetry emit).
+    fn packet_drops(&self) -> u64;
+
+    // --- Frontend emit ---
+
+    /// Push a voice event to the frontend. The adapter maps each
+    /// variant to its concrete Tauri `VoiceEvent` payload and emits.
+    fn emit_voice_event(&self, event: VoiceSessionEvent);
+
+    // --- Background tasks ---
+
+    /// The scope this session's background work runs in; it ends with the
+    /// session (plan C4).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
+    // --- Session orchestration (Phase 14.l) ---
+    //
+    // Wired by the upcoming `rekindle_voice::session::start_session`
+    // port. Adapter implementations delegate to the existing
+    // `services::voice::session::*` helpers; the crate side will
+    // own the orchestration sequencing.
+
+    /// Snapshot of (public_key, display_name) for the current
+    /// identity. Returns `Err(VoiceError::IdentityNotLoaded)` if no
+    /// identity is loaded.
+    fn current_identity(&self) -> Result<VoiceIdentity, VoiceError>;
+
+    /// Reject the session start if we're already in a voice call in
+    /// a different channel. Idempotent: returns `Ok` if we're already
+    /// in `channel_id` (no double-join), Err otherwise.
+    fn check_not_in_call(&self, channel_id: &str) -> Result<(), VoiceError>;
+
+    /// Read audio preferences from the Tauri store.
+    fn audio_prefs(&self) -> AudioPrefs;
+
+    /// Coarse step 1: build the `VoiceEngine` with `prefs`, install
+    /// it on `VoiceEngineHandle` with `channel_id` / `community_id`,
+    /// start the cpal capture + playback devices, build the shared
+    /// `VoiceTransport` (1:1 calls pass `peer_route_blob`), install
+    /// the call_key on the transport if it's a 1:1 call, install the
+    /// transport on the engine handle. Returns the (muted_flag,
+    /// deafened_flag, transport) tuple the orchestrator threads
+    /// through `spawn_voice_loops`.
+    ///
+    /// One coarse method (rather than the 4 fine-grained operations
+    /// it replaces) because the AppState mutation pattern between
+    /// them is invariant — the adapter is the right home for that
+    /// invariance.
+    fn init_voice_session(
+        &self,
+        prefs: &AudioPrefs,
+        channel_id: &str,
+        community_id: Option<&str>,
+        peer_route_blob: Option<&[u8]>,
+    ) -> Result<VoiceSessionStartup, VoiceError>;
+
+    /// W13.12 — resolve a 1:1 peer's route via the fallback chain
+    /// (cache → DHT subkey 6 → mailbox). `None` if all three empty
+    /// (caller must convert to CallDecline / CallEnd).
+    async fn resolve_peer_route(&self, peer_pubkey_hex: &str) -> Option<Vec<u8>>;
+
+    /// Load member display names for a community into a
+    /// `pseudonym_hex → display_name` map. Used by the receive loop
+    /// to surface friendly names on UserJoined events. Empty map for
+    /// 1:1 calls.
+    async fn load_member_names(
+        &self,
+        community_id: Option<&str>,
+    ) -> std::collections::HashMap<String, String>;
+
+    /// §10.6 — broadcast our media decode capabilities to a community
+    /// voice channel so other senders cap their VP9 bitrate at the
+    /// lowest common denominator. Best-effort: errors log but don't
+    /// fail the session start.
+    fn broadcast_media_capabilities(&self, community_id: &str, channel_id: &str);
+
+    /// Emit the local-join voice event (`VoiceEvent::LocalJoined`)
+    /// and any related join-side events. Called at the end of
+    /// `start_session` after loops are spawned.
+    fn emit_local_joined(
+        &self,
+        channel_id: &str,
+        community_id: Option<&str>,
+        public_key: &str,
+        display_name: &str,
+    );
+
+    /// Coarse step 2: take the staged voice packet receiver (or
+    /// create one), pull capture_rx + playback_tx + (noise_supp,
+    /// echo_cancel) off the engine handle, spawn the three loops
+    /// (send / receive / device_monitor) using the deps + transport
+    /// + member_names, store all shutdown senders + JoinHandles
+    /// back on the engine handle.
+    ///
+    /// All AppState mutation lives here. The crate's `start_session`
+    /// just calls this after `init_voice_session` returned the
+    /// transport.
+    fn spawn_voice_loops(
+        &self,
+        public_key: &str,
+        transport: std::sync::Arc<tokio::sync::Mutex<crate::transport::VoiceTransport>>,
+        muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        deafened_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        member_names: std::collections::HashMap<String, String>,
+    ) -> Result<(), VoiceError>;
+
+    // ── Restart-loops (hot-swap path) deps (Phase 14.l-restart) ─────
+
+    /// Re-open cpal capture + playback on the existing engine handle.
+    /// Used by device hot-swap after `shutdown_voice(KEEP_ENGINE)`.
+    fn restart_audio_devices(&self) -> Result<(), VoiceError>;
+
+    /// Shared transport handle on the active voice engine, or `None`
+    /// if no engine is running. Used by `restart_loops` to reuse
+    /// peers already added via VoiceJoin gossip.
+    fn current_shared_transport(
+        &self,
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<crate::transport::VoiceTransport>>>;
+
+    /// Cloned (muted_flag, deafened_flag) atomics from the active
+    /// engine handle, or `Err` if no engine is running.
+    fn current_voice_flags(
+        &self,
+    ) -> Result<
+        (
+            std::sync::Arc<std::sync::atomic::AtomicBool>,
+            std::sync::Arc<std::sync::atomic::AtomicBool>,
+        ),
+        VoiceError,
+    >;
+
+    /// Currently bound community_id (or `None` for 1:1 calls / no
+    /// engine). Used by restart_loops to re-fetch member_names.
+    fn active_community_id(&self) -> Option<String>;
+
+    /// Snapshot of the active engine's (channel_id, community_id).
+    /// Returns `(String::new(), None)` if no engine. Used by the
+    /// leave_voice flow to broadcast the right scope.
+    fn active_channel_info(&self) -> (String, Option<String>);
+
+    /// Send a community gossip envelope (fire-and-forget). Used by
+    /// the leave_voice / join_community_voice flows to fan out
+    /// VoiceLeave / VoiceJoin. Adapter delegates to
+    /// `services::community::send_to_mesh` (Phase 20 will own).
+    fn send_community_envelope(
+        &self,
+        community_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    );
+
+    /// DB analytics: log a voice join / leave event into the
+    /// per-owner SQLite analytics table. Best-effort.
+    /// (Phase 22 sync may consolidate this; for now it stays as a
+    /// dedicated trait method.)
+    fn log_voice_membership(&self, community_id: &str, channel_id: &str, joined: bool);
+
+    /// Our media-class (low-latency, unordered) inbound route: the blob
+    /// peers import to send us voice and video, carried in VoiceJoin.
+    /// `None` while we hold none; the general route is never substituted
+    /// (plan C7.9c).
+    fn our_media_route_blob(&self) -> Option<Vec<u8>>;
+
+    /// Our self-sovereign display name for the join handshake —
+    /// identity rides VoiceJoin so peers' rosters never depend on
+    /// registry-scan timing. `None` when no profile name is set.
+    fn my_display_name(&self) -> Option<String>;
+
+    // ── MCU lifecycle deps (Phase 14.l-mcu) ─────────────────────────
+
+    /// Create a fresh MCU packet mpsc + install the sender on
+    /// `AppState.voice_packet_tx`. Returns the receiver for the MCU
+    /// loop to drain.
+    fn pre_stage_mcu_channel(&self) -> tokio::sync::mpsc::Receiver<crate::transport::VoicePacket>;
+
+    /// A fresh scope for the MCU loop, installed on the engine so
+    /// shutdown can stop it; `None` when no voice engine is running.
+    fn begin_mcu_scope(&self) -> Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>;
+
+    /// Take the MCU scope off the engine and shut it down. No-op if the
+    /// MCU isn't running.
+    async fn stop_active_mcu(&self);
+
+    // ── Shutdown + device-monitor deps (Phase 14.l-shutdown) ────────
+
+    /// Take the requested subset of loop shutdown handles from the
+    /// engine in one atomic operation (under the engine lock).
+    /// Subsets controlled by `opts` — handles for opted-out loops
+    /// stay on the engine, returned as `None` in the bundle.
+    fn take_loop_scopes(&self, opts: VoiceShutdownOpts) -> VoiceLoopScopes;
+
+    /// Stop cpal capture + playback AND clear the voice engine
+    /// handle (set to `None`). Used by `shutdown_voice(FULL)`.
+    fn stop_devices_and_clear_engine(&self);
+
+    /// Stop cpal capture + playback WITHOUT clearing the engine
+    /// handle. Used by device hot-swap before
+    /// `set_voice_engine_devices(None, None)` + restart.
+    fn stop_audio_devices(&self);
+
+    /// Update the engine's (input_device, output_device) config.
+    /// `None` = system default. Takes effect on the next
+    /// `restart_audio_devices()` call.
+    fn set_voice_engine_devices(&self, input: Option<String>, output: Option<String>);
+
+    /// Read the currently selected device names from the engine's
+    /// config. Returns `(None, None)` if no engine or both defaults.
+    fn voice_engine_device_config(&self) -> (Option<String>, Option<String>);
+
+    /// Replace the engine's per-device input-channel choices (plan
+    /// C7.24b); takes effect on the next capture start.
+    fn set_voice_engine_input_channels(
+        &self,
+        input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    );
+
+    /// Emit a `VoiceEvent::DeviceChanged` with the given fields.
+    /// Distinct from `emit_voice_event(VoiceSessionEvent::DeviceChanged)`
+    /// because the existing wire variant carries `device_name` which
+    /// the crate event doesn't surface.
+    fn emit_device_changed(&self, device_type: String, device_name: String, reason: String);
+
+    /// Emit a `NotificationEvent::SystemAlert` (title + body). Used
+    /// by device hot-swap to surface "Audio Device Disconnected".
+    fn emit_system_alert(&self, title: String, body: String);
+
+    // --- DB lookups (member-name resolution) ---
+
+    /// Resolve a member's display name from the local DB (best-effort,
+    /// returns `None` on missing/error). The adapter wraps the SQLite
+    /// query.
+    async fn resolve_member_display_name(
+        &self,
+        community_id: &str,
+        pseudonym: &str,
+    ) -> Option<String>;
+}
+
+/// What the send loop learned about our outbound stream this window,
+/// from the worst-off peer's receiver reports.
+///
+/// Carries the measurement types themselves rather than a flattened
+/// copy, so the send loop and this event cannot disagree about what a
+/// number means. The Tier-1 event projects it to plain scalars at the
+/// adapter boundary, which is where a crossing has to be flat.
+#[derive(Debug, Clone, Copy)]
+pub struct SendLinkStats {
+    /// The far end's reception model — loss and discard kept apart,
+    /// jitter, and the burst/gap split.
+    pub metrics: rekindle_media_stats::ReceptionMetrics,
+    /// G.107 R factor and MOS derived from it, plus the link state.
+    pub score: rekindle_media_stats::QualityScore,
+    /// Round trip, when the report's LSR/DLSR echo yielded a believable
+    /// one.
+    pub rtt_ms: Option<u32>,
+    /// Route one-way delay and mouth-to-ear estimate from the newest
+    /// report with a round trip (plan E4.3.0).
+    pub route: Option<rekindle_media_stats::RouteEstimate>,
+    /// The Opus bitrate this window's measurement led us to set — the
+    /// action taken, recorded alongside the reason for it.
+    pub bitrate_bps: u32,
+}
+
+/// Voice-side events the session/loop modules emit. Mirrors the
+/// existing `VoiceEvent` shape but lives in the crate so the trait
+/// surface is self-contained.
+#[derive(Debug, Clone)]
+pub enum VoiceSessionEvent {
+    /// A new participant joined the voice channel.
+    UserJoined {
+        peer_pubkey: String,
+        display_name: String,
+    },
+    /// A participant left.
+    UserLeft { peer_pubkey: String },
+    /// A participant started/stopped speaking (VAD edge).
+    UserSpeaking { peer_pubkey: String, speaking: bool },
+    /// A participant muted/unmuted themselves.
+    UserMuted { peer_pubkey: String, muted: bool },
+    /// Audio device changed (hot-swap).
+    DeviceChanged { device_type: String, reason: String },
+    /// Packet drops counter (telemetry — W14.4).
+    PacketsDropped { count: u64 },
+    /// Connection quality summary (every 5 s from send_loop). Quality
+    /// is `"good"` / `"fair"` / `"poor"` based on packet loss %.
+    ConnectionQuality {
+        quality: String,
+        /// What the far end measured, from its RFC 3550 receiver
+        /// reports. `None` until a report arrives, in which case
+        /// `quality` fell back to local send-failure counts — which
+        /// cannot see network loss at all.
+        link: Option<SendLinkStats>,
+    },
+    /// Receive-side health (every 5 s from receive_loop): jitter-buffer
+    /// drop counters summed across participants since the last report.
+    /// Complements `ConnectionQuality` (a SEND-side loss signal) so the
+    /// UI can attribute dropouts to the right side of the pipe.
+    ReceiveStats {
+        rx_overflow_drops: u64,
+        rx_late_drops: u64,
+        /// Packets dropped because the sender's media key at the
+        /// packet's index was missing or failed to decrypt — the visible
+        /// signal for a key-distribution race (silence is not an option
+        /// for a security-relevant drop).
+        rx_key_drops: u64,
+    },
+}
+
+/// Used by the deps trait helper to return owned data; placeholder for
+/// any future trait-shared types.
+pub type DepsHandle = Arc<dyn VoiceSessionDeps>;

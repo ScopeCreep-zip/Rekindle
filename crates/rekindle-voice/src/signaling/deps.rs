@@ -1,0 +1,353 @@
+//! Phase 14 — voice signaling dependency port.
+//!
+//! `VoiceSignalingDeps` is the abstraction the rekindle-voice signaling
+//! handlers (voice_join / voice_leave / stage_update / speak_request /
+//! speak_response / voice_mute / voice_deafen / voice_roster /
+//! soundboard_play) talk to for every outside-world operation:
+//! identity, community state lookups, voice engine control, mesh
+//! broadcast, media sender keys, MCU loop lifecycle, persistence, and
+//! frontend emit.
+//!
+//! The src-tauri adapter implements this trait against `AppState` +
+//! `tauri::AppHandle` + `Db` + `services::community::*` (where
+//! `send_to_mesh` and `persist_hand_raise` still live until Phases 19/20
+//! take ownership of the gossip mesh and channel persistence). The trait lets the crate be free of `AppState`,
+//! `tauri::AppHandle`, and `services::community::*` references — exactly
+//! the same shape used for `DmDeps`, `CallSignalingDeps`, and
+//! `VoiceSessionDeps`.
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+
+use crate::transport::VoiceTransport;
+
+/// Stage channel state used by the join/leave/stage_update handlers
+/// to decide stage-host election + whether to apply the mode-switch
+/// auto-elect at the 5+ member threshold.
+#[derive(Debug, Clone)]
+pub struct StageChannelInfo {
+    pub is_stage: bool,
+    pub speakers: Vec<String>,
+    pub moderator: Option<String>,
+}
+
+/// One roster-event participant: pseudonym + handshake-carried name.
+#[derive(Debug, Clone)]
+pub struct VoiceRosterParticipant {
+    pub pseudonym_key: String,
+    pub display_name: Option<String>,
+}
+
+/// Frontend events the signaling handlers emit. The adapter maps each
+/// variant to its concrete src-tauri `CommunityEvent` payload and
+/// calls `app.emit("community-event", _)`.
+#[derive(Debug, Clone)]
+pub enum CommunityVoiceEvent {
+    VoiceJoin {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+        route_blob: Vec<u8>,
+        /// Name carried by the handshake — frontends render it without
+        /// waiting for the registry scan.
+        display_name: Option<String>,
+    },
+    VoiceLeave {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+    },
+    /// Full voice-channel roster sent to a joiner so it sees everyone
+    /// already present, decoupled from MEK-decrypt (§10.1/§10.5).
+    VoiceRoster {
+        community_id: String,
+        channel_id: String,
+        participants: Vec<VoiceRosterParticipant>,
+    },
+    /// The bound transport's roster actually changed (new peer added
+    /// or present peer removed) via SIGNALING — join, join-ack, roster
+    /// receipt, leave, or presence reconcile. Authoritative for
+    /// session membership: media arrival must never gate roster state
+    /// (a VAD-silent peer sends no packets but is fully present).
+    /// `remote_count` is the roster size captured at mutation time so
+    /// consumers don't re-lock the transport.
+    VoiceRosterChanged {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+        present: bool,
+        display_name: Option<String>,
+        remote_count: usize,
+    },
+    /// Local three-way join handshake progressed (announced → seen →
+    /// connected). `peer`/`display_name` identify the member whose
+    /// evidence drove the transition (None for the connected leg).
+    VoiceJoinHandshake {
+        community_id: String,
+        channel_id: String,
+        /// "seen" | "connected" — wire string, backend-owned vocabulary.
+        state: String,
+        peer: Option<String>,
+        display_name: Option<String>,
+    },
+    /// A joiner finished its handshake (VoiceJoinConfirmed received) —
+    /// it is transport-ready and media to it is now worthwhile.
+    VoicePeerConfirmed {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+    },
+    VoiceModeSwitch {
+        community_id: String,
+        channel_id: String,
+        mode: String,
+        host_pseudonym: Option<String>,
+    },
+    StageUpdate {
+        community_id: String,
+        channel_id: String,
+        topic: Option<String>,
+        speakers: Vec<String>,
+        moderator_pseudonym: String,
+    },
+    SpeakRequest {
+        community_id: String,
+        channel_id: String,
+        requester_pseudonym: String,
+    },
+    SpeakResponse {
+        community_id: String,
+        channel_id: String,
+        requester_pseudonym: String,
+        granted: bool,
+        moderator_pseudonym: String,
+    },
+    SoundboardPlay {
+        community_id: String,
+        channel_id: String,
+        expression_id: String,
+        actor_pseudonym: String,
+    },
+    /// Local voice engine state mute event. Distinct from
+    /// `CommunityEvent` — emits to "voice-event" channel.
+    UserMuted {
+        target_pseudonym: String,
+        muted: bool,
+    },
+}
+
+/// Permission bit mask values needed by signaling. Mirrors
+/// `rekindle_types::permissions::*` constants so the trait method
+/// callers don't need to depend on `rekindle-types` directly.
+pub mod perms {
+    pub const MANAGE_MESSAGES: u64 = rekindle_types::permissions::MANAGE_MESSAGES;
+    pub const ADMINISTRATOR: u64 = rekindle_types::permissions::ADMINISTRATOR;
+    pub const USE_SOUNDBOARD: u64 = rekindle_types::permissions::USE_SOUNDBOARD;
+}
+
+#[async_trait]
+pub trait VoiceSignalingDeps: Send + Sync + 'static {
+    // ── Identity / community state lookups ─────────────────────
+
+    /// Our pseudonym in the given community, or `None` if we're not
+    /// a member.
+    fn my_pseudonym(&self, community_id: &str) -> Option<String>;
+
+    /// Our media-class inbound route: the route peers send us media
+    /// over. Same source the send path stamps onto the outbound
+    /// VoiceJoin; used to advertise self in acks and roster broadcasts so
+    /// a later joiner can reach us. `None` while we hold none; the general
+    /// route is never substituted (plan C7.9c).
+    fn our_media_route_blob(&self) -> Option<Vec<u8>>;
+
+    /// Snapshot of stage-channel state. `None` if community/channel
+    /// not found. `is_stage = false` for non-stage channels.
+    fn stage_channel_info(&self, community_id: &str, channel_id: &str) -> Option<StageChannelInfo>;
+
+    /// Write back stage-channel state (topic / speakers / moderator).
+    /// Best-effort; no-ops on missing community/channel.
+    fn update_stage_channel(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        topic: Option<String>,
+        speakers: Vec<String>,
+        moderator: String,
+    );
+
+    /// Snapshot of online-member route blobs for a community (for
+    /// voice roster broadcast). Returns `(pseudonym, route_blob)`.
+    fn online_voice_members(&self, community_id: &str) -> Vec<(String, Vec<u8>)>;
+
+    // ── Permission checks (Phase 18 governance) ────────────────
+
+    /// Decode a 16-byte channel ID from its hex form. Returns `None`
+    /// on malformed input. Used by speak_request permission lookup.
+    fn decode_channel_id(&self, channel_id: &str) -> Option<[u8; 16]>;
+
+    /// Compute our own permission bitmask in the given community,
+    /// optionally scoped to a channel. Returns 0 if not a member.
+    fn my_permissions(&self, community_id: &str, channel_id: Option<[u8; 16]>) -> u64;
+
+    /// Returns `true` if the sender holds ALL bits in `perm_mask`
+    /// at the community level (used by SoundboardPlay's
+    /// USE_SOUNDBOARD gate). Implementation reads
+    /// `community.governance_state` and computes permissions for
+    /// `sender_pseudonym_hex`.
+    fn sender_has_perm(
+        &self,
+        community_id: &str,
+        sender_pseudonym_hex: &str,
+        perm_mask: u64,
+    ) -> bool;
+
+    // ── Voice engine handle (cpal-bound, src-tauri-side) ───────
+
+    /// Get the shared voice transport handle. `None` if no voice
+    /// engine is active. Returned as `Arc<tokio::sync::Mutex<...>>`
+    /// so handlers can `.lock().await` to mutate (add_peer / remove_peer
+    /// / set_mode / peer_keys).
+    fn transport_handle(&self) -> Option<Arc<tokio::sync::Mutex<VoiceTransport>>>;
+
+    /// Currently-active voice channel ID on the voice engine handle.
+    /// `None` if no engine active. Used by the receive-side stage gate
+    /// to validate which channel the active speakers list applies to.
+    fn voice_engine_channel_id(&self) -> Option<String>;
+
+    /// Whether the voice engine is currently bound to `community_id` /
+    /// `channel_id`. Used to gate self-mute updates on stage-speaker
+    /// changes — only mute ourselves if we're actually IN that channel.
+    fn voice_engine_bound_to(&self, community_id: &str, channel_id: &str) -> bool;
+
+    /// Flip the engine's muted state. Sets BOTH the engine's internal
+    /// `set_muted()` AND the shared `muted_flag` atomic that the send
+    /// loop reads.
+    fn set_voice_engine_muted(&self, muted: bool);
+
+    /// Flip the engine's deafened state. Sets engine + `deafened_flag`.
+    fn set_voice_engine_deafened(&self, deafened: bool);
+
+    /// Pseudonym-hex of peers with media-plane evidence — an accepted
+    /// voice packet (receive loop) or a verified receiver report (send
+    /// loop) — within [`crate::liveness::MEDIA_LIVE_WINDOW_MS`]. Read
+    /// from the session's shared [`crate::liveness::MediaLiveness`]
+    /// ledger; empty when no engine/session is active.
+    ///
+    /// In-call liveness is judged on the CALL transport (the
+    /// Mumble/Discord/WebRTC principle), never on the presence
+    /// directory: the roster reconcile uses this set to veto
+    /// presence-based eviction and to admit stale-row peers whose
+    /// media is flowing (their row is stale because their DHT writes
+    /// are failing, not because they left).
+    fn media_live_peers(&self) -> std::collections::HashSet<String>;
+
+    // ── Cross-subsystem ops (deferred to Phase 17 / 19 / 20) ────
+
+    /// The sender keys of our session on `(community, channel)` (plan
+    /// C7.20): the same store the media loops seal and open with.
+    fn channel_sender_keys(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
+
+    /// Seal our media `secret` to `recipient` (pseudonym hex) under our
+    /// community pseudonym (`rekindle_secrets::media_sender_key::seal`),
+    /// or `None` when the pseudonym key or the recipient key is unusable.
+    fn seal_media_key(
+        &self,
+        community_id: &str,
+        recipient: &str,
+        aad: &[u8],
+        secret: &[u8; 32],
+    ) -> Option<Vec<u8>>;
+
+    /// Open a media key `sender` (pseudonym hex) sealed to us, or `None`
+    /// when it was not sealed by that sender to us under this AAD.
+    fn open_media_key(
+        &self,
+        community_id: &str,
+        sender: &str,
+        aad: &[u8],
+        sealed: &[u8],
+    ) -> Option<zeroize::Zeroizing<[u8; 32]>>;
+
+    /// Send `envelope` to the peer at `route_blob` by `app_call` and
+    /// return its decoded reply (plan C7.22: media keys go point to point
+    /// and are acknowledged, never gossiped). `None` when the call or the
+    /// reply's decoding failed.
+    async fn call_peer(
+        &self,
+        route_blob: &[u8],
+        envelope: &CommunityEnvelope,
+    ) -> Option<CommunityEnvelope>;
+
+    /// Send a gossip envelope to the community mesh. Phase 20
+    /// (rekindle-gossip) eventually owns this; today the adapter
+    /// delegates to `services::community::send_to_mesh`. Sync because
+    /// the existing src-tauri function is sync (fire-and-forget).
+    fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope);
+
+    /// Architecture §10.6 — directed re-advertise of our
+    /// `MediaCapabilities` to the current channel roster. Called after
+    /// a bound join-apply / roster-apply so capability exchange
+    /// happens peer-to-peer inside the channel (the mesh never carries
+    /// channel media signaling). Sync fire-and-forget like
+    /// `send_to_mesh`; failures log inside the adapter.
+    fn advertise_media_capabilities(&self, community_id: &str, channel_id: &str);
+
+    /// Architecture §10.6 — directed channel-scoped send (ttl = 0,
+    /// roster only, never relayed). Carries the join-handshake legs
+    /// (VoiceJoinAck / VoiceJoinConfirmed). Adapter delegates to
+    /// `services::community::send_to_channel_peers`. Sync
+    /// fire-and-forget; failures log inside the adapter.
+    fn send_to_channel(&self, community_id: &str, channel_id: &str, envelope: &CommunityEnvelope);
+
+    /// Our self-sovereign display name, carried in VoiceJoinAck so the
+    /// joiner learns who saw them without a registry-scan round trip.
+    fn my_display_name(&self) -> Option<String>;
+
+    /// Persist our own hand-raise state on a SpeakResponse. Phase 19
+    /// (rekindle-channel) eventually owns this; today the adapter
+    /// delegates to `services::community::persist_hand_raise`.
+    /// Fire-and-forget: failures log.
+    async fn persist_hand_raise(&self, community_id: String, channel_id: String, raised: bool);
+
+    /// Next message-clock value. Used to tag gossip envelopes
+    /// (SpeakRequest, SpeakResponse, StageUpdate).
+    fn next_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError>;
+
+    /// Look up a channel's current stage_speakers list. Used by
+    /// `respond_to_speak_request` to compose the StageUpdate that
+    /// adds the newly-granted speaker. Returns empty Vec if the
+    /// channel doesn't exist.
+    fn stage_speakers(&self, community_id: &str, channel_id: &str) -> Vec<String>;
+
+    // ── MCU loop lifecycle ─────────────────────────────────────
+
+    /// Start the MCU mixing loop (we became the elected voice host).
+    /// Currently delegates to `services::voice::session::start_mcu_loop`;
+    /// when 14.g-session lands the orchestration moves into the crate.
+    fn start_mcu_loop(&self);
+
+    /// Stop the MCU mixing loop (we lost host election or left the
+    /// channel). Delegates to `services::voice::session::stop_mcu_loop`.
+    async fn stop_mcu_loop(&self);
+
+    // ── Frontend emit ──────────────────────────────────────────
+
+    /// Push a community / voice signaling event to the frontend. The
+    /// adapter maps to the concrete src-tauri `CommunityEvent` (or
+    /// `VoiceEvent::UserMuted` for the `UserMuted` variant) and emits.
+    fn emit_event(&self, event: CommunityVoiceEvent);
+
+    // ── Background tasks ───────────────────────────────────────
+    /// The scope this session's background work runs in; it ends with the
+    /// session (plan C4).
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+}

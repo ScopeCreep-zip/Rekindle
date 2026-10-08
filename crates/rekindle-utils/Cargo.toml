@@ -1,0 +1,51 @@
+[package]
+name = "rekindle-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Shared utility functions for Rekindle workspace crates"
+
+[features]
+# The retry helper needs an async runtime and logging; the rest of this
+# crate needs neither. Consumers that want `rekindle_utils::retry` opt in
+# so the default build does not pull tokio.
+retry = [ "dep:tokio", "dep:tokio-util", "dep:tracing" ]
+# Sink-level identifier scrubbing for log output (`log_scrub`). Only the
+# binaries that install a tracing subscriber (the Tauri app, the CLI /
+# daemon) enable it.
+log-scrub = [ "dep:regex", "dep:tracing", "dep:tracing-subscriber" ]
+# Layered `config.toml` loading (`config_layers`), for `rekindled` and the
+# frontends that read the same file.
+config = [ "dep:toml", "dep:serde", "paths" ]
+# `DataRoot`: the directories every host and frontend shares.
+paths = [ "dep:dirs", "dep:thiserror" ]
+
+[dependencies]
+rand = { workspace = true }
+# blake3 is NOT optional, deliberately. `blake3_hex` is the single
+# spelling of the content hash that the channel track computes and the
+# sync track verifies; if reaching it required opting into a feature,
+# the next consumer that forgets the flag writes `blake3::hash(..)`
+# inline instead — which is how one hash grows three spellings. The
+# "minimise dependencies" instinct does not get applied to crypto.
+blake3 = "1"
+# Behind the `retry` / `log-scrub` features only.
+regex = { version = "1", optional = true }
+tokio = { workspace = true, optional = true }
+tokio-util = { version = "0.7", optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+# Behind the `config` feature only.
+toml = { version = "0.8", optional = true }
+# The `dirs` release Tauri 2.12.1 resolves its app directories with, so
+# `DataRoot` and `app.path()` agree (`evidence/c5-data-root-research.md` §1).
+dirs = { version = "7", optional = true }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = [ "test-util", "macros" ] }
+
+[lints]
+workspace = true

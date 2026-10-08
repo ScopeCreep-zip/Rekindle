@@ -1,0 +1,16 @@
+# ShellCheck configuration for scripts/.
+#
+# external-sources: scripts/build.sh, setup-linux.sh and setup-macos.sh all
+# `source scripts/lib/common.sh`. Without this, ShellCheck refuses to read
+# the sourced file (SC1091) and then cannot see that `info`, `warn`,
+# `PROJECT_DIR` and friends are defined — so it would also start reporting
+# them as undefined. CI (`.github/workflows/lint.yml`, the `shell` job) runs
+# ShellCheck one file at a time, which is exactly the invocation where the
+# command-line `-x` flag is missing; setting it here covers every caller,
+# local and CI alike.
+external-sources=true
+
+# Resolve `# shellcheck source=...` paths relative to the sourcing script's
+# own directory rather than the working directory, so the directives keep
+# working no matter where ShellCheck is invoked from.
+source-path=SCRIPTDIR

@@ -1,11 +1,8 @@
 import { createStore } from "solid-js/store";
 import type { UserStatus } from "./auth.store";
+import type { GameInfo } from "../ipc/commands/dto";
 
-export interface GameInfo {
-  gameName: string;
-  gameId: number | null;
-  startedAt: number | null;
-}
+export type { GameInfo } from "../ipc/commands/dto";
 
 export type FriendshipState = "pendingOut" | "accepted";
 
@@ -29,16 +26,19 @@ export interface PendingRequest {
   message: string;
 }
 
-export interface ContextMenuState {
-  x: number;
-  y: number;
-  publicKey: string;
+export interface OutgoingInvite {
+  inviteId: string;
+  url: string;
+  createdAt: number;
+  expiresAt: number;
+  status: string;
+  acceptedBy: string | null;
 }
 
 export interface FriendsState {
   friends: Record<string, Friend>;
   pendingRequests: PendingRequest[];
-  contextMenu: ContextMenuState | null;
+  outgoingInvites: OutgoingInvite[];
   showAddFriend: boolean;
   showNewChat: boolean;
 }
@@ -46,7 +46,7 @@ export interface FriendsState {
 const [friendsState, setFriendsState] = createStore<FriendsState>({
   friends: {},
   pendingRequests: [],
-  contextMenu: null,
+  outgoingInvites: [],
   showAddFriend: false,
   showNewChat: false,
 });

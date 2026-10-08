@@ -1,0 +1,31 @@
+[package]
+name = "rekindle-gossip"
+version = "0.1.0"
+edition = "2021"
+description = "Transport-agnostic gossip mesh primitives for Rekindle v2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+blake2 = "0.10"
+blake3 = "1"
+hex = { workspace = true }
+parking_lot = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [ "rt", "macros", "sync" ] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+proptest = "1"
+rand = { workspace = true }
+tokio = { workspace = true, features = [ "rt", "macros", "sync", "time", "test-util" ] }

@@ -1,41 +1,200 @@
 # Rekindle Technical Documentation
 
-Rekindle is a decentralized peer-to-peer chat application built with Tauri 2,
-SolidJS, and the Veilid network. It provides end-to-end encrypted messaging,
-community channels, voice chat, and cross-platform game detection without any
-central server. Rekindle draws visual inspiration from the classic Xfire gaming
-client.
+Rekindle is a decentralised peer-to-peer chat and community platform built
+with Tauri 2, SolidJS, and the Veilid network. It provides end-to-end
+encrypted 1:1 messaging, DMs and group DMs, communities with
+channels/voice/video, cross-device sync, and cross-platform game
+detection — all without any central server. The community layer follows
+the **Communities v2.0** flat-governance model: no coordinator, no
+privileged nodes, every member is a full peer.
 
-## Document Index
+## Reading paths
+
+This documentation is organised by audience. Pick the reading path that
+matches what you're trying to do.
+
+### I want to **use** Rekindle
+
+Start with [`user/`](user/) — install guides, common tasks, and the FAQ.
+
+### I want to **contribute** to Rekindle
+
+Start with [`../CONTRIBUTING.md`](../CONTRIBUTING.md) at the repo root,
+then [`contributor/development.md`](contributor/development.md) for
+hands-on dev environment setup, and the rest of [`contributor/`](contributor/)
+for testing, style, and release process.
+
+### I want to **understand the system**
+
+Start with [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for a one-page
+bird's-eye view, then drill into [`architecture/`](architecture/) and
+[`protocol/`](protocol/) by subsystem.
+
+### I want to **audit the cryptography**
+
+Start with [`security/overview.md`](security/overview.md) for the
+encryption-layer stack, then [`security/threat-model.md`](security/threat-model.md)
+for what we protect against and what we do not, and
+[`decisions/`](decisions/) for the architectural decision records that
+shaped the cryptographic choices.
+
+## Document index
+
+### Architecture (`architecture/`)
 
 | Document | Description |
 |----------|-------------|
-| [architecture.md](architecture.md) | System architecture, layer responsibilities, data flow diagrams |
-| [protocol.md](protocol.md) | Network protocol, Veilid integration, message lifecycle |
-| [security.md](security.md) | Encryption layers, identity model, threat analysis |
-| [data-layer.md](data-layer.md) | SQLite schema, Stronghold vault, DHT record layout |
-| [frontend.md](frontend.md) | SolidJS frontend, routing, stores, IPC layer |
-| [crates.md](crates.md) | Pure Rust crate reference (protocol, crypto, game-detect, voice, server) |
-| [tauri-backend.md](tauri-backend.md) | Tauri application shell, commands, events, services |
-| [development.md](development.md) | Development environment, build commands, testing, conventions |
-| [roadmap.md](roadmap.md) | Implementation phases and completion status |
+| [`overview.md`](architecture/overview.md) | System architecture, layer responsibilities, data-flow diagrams |
+| [`communities.md`](architecture/communities.md) | Index for the three-part Communities spec (overview / channels / governance) |
+| [`communities-overview.md`](architecture/communities-overview.md) | Chiral-network model, three-path delivery, SMPL schema, mutual-aid patterns, permissions, design principles |
+| [`communities-channels.md`](architecture/communities-channels.md) | MEK lifecycle, channel messaging via `rekindle-channel`, voice / video / stage, DMs and group DMs |
+| [`communities-governance.md`](architecture/communities-governance.md) | CRDT governance, the pure / runtime split, self-sovereign join, Plate Gate scaling |
+| [`crates.md`](architecture/crates.md) | Inventory and tier diagram for all 33 workspace crates |
+| [`crates-tier-detail.md`](architecture/crates-tier-detail.md) | Per-crate descriptions for every workspace member |
+| [`data-layer.md`](architecture/data-layer.md) | SQLite schema, Vault (`rekindle-vault`), DHT record layout |
+| [`frontend.md`](architecture/frontend.md) | SolidJS frontend — windows, components, stores, handlers, IPC layer |
+| [`tauri-backend.md`](architecture/tauri-backend.md) | Tauri shell — commands, channels, services, plugin setup |
+| [`tauri-state.md`](architecture/tauri-state.md) | `AppState` reference (~47 fields) + `state_helpers/` accessors |
+| [`tauri-modules.md`](architecture/tauri-modules.md) | Top-level `src-tauri/src/` module catalogue |
+| [`event-dispatch.md`](architecture/event-dispatch.md) | Phase 23.A single-source event router + `EventJournal` |
+| [`services-pattern.md`](architecture/services-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` |
+| [`lifecycle-fsm.md`](architecture/lifecycle-fsm.md) | 9-state app FSM + `TransportGuard` from `rekindle-lifecycle` |
+| [`presence.md`](architecture/presence.md) | Friend / community presence orchestrators from `rekindle-presence` |
+| [`audit-chain.md`](architecture/audit-chain.md) | BLAKE3 keyed hash chain via `rekindle-audit` |
+| [`voice.md`](architecture/voice.md) | Voice pipeline (cpal threading, Opus, RNNoise, AEC3, jitter buffer, mixer, MCU pattern, mutual-aid SFU) |
+| [`game-detect.md`](architecture/game-detect.md) | Cross-platform process scanning, JSON game DB, rich presence |
+| [`files.md`](architecture/files.md) | Lost Cargo file delivery (chunking, BLAKE3, swarm fetch, LRU cache) |
+| [`sync.md`](architecture/sync.md) | Cross-device sync (personal DFLT record, pairing, gap detection) |
+| [`daemon-cli.md`](architecture/daemon-cli.md) | Daemon + frontends (`rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui`, Noise IK IPC bus) |
+| [`ui-skin.md`](architecture/ui-skin.md) | Frameless titlebar, Xfire colour palette, window catalogue, asset usage |
 
-## Repository Structure
+### Protocol (`protocol/`)
+
+| Document | Description |
+|----------|-------------|
+| [`overview.md`](protocol/overview.md) | Network protocol, Veilid integration, message lifecycle, gossip mesh, DHT record layouts |
+| [`relay.md`](protocol/relay.md) | Strand Relay forwarding + Mobile Push Relay (3-tier escalation) |
+
+### Security (`security/`)
+
+| Document | Description |
+|----------|-------------|
+| [`overview.md`](security/overview.md) | Five-layer encryption stack, identity model, threat analysis |
+| [`threat-model.md`](security/threat-model.md) | STRIDE/LINDDUN-structured threat model, vulnerable-user posture |
+| [`crypto-primitives.md`](security/crypto-primitives.md) | Per-primitive selection rationale (Ed25519, X25519, AES-256-GCM, XChaCha20-Poly1305, BLAKE3, HKDF-SHA256, Argon2id, Noise IK) |
+| [`privacy-properties.md`](security/privacy-properties.md) | What Veilid gives, what Rekindle adds, what is not protected |
+
+### Decisions (`decisions/`) — Architectural Decision Records
+
+MADR 4.0 ADRs documenting why the project made each load-bearing choice.
+Append-only — superseded ADRs stay in place with a "Superseded by" link.
+
+| ADR | Title |
+|-----|-------|
+| [0001](decisions/0001-veilid-as-transport.md) | Adopt Veilid as the sole transport substrate |
+| [0002](decisions/0002-signal-protocol-for-1to1.md) | Use the Signal Protocol for 1:1 friend messaging |
+| [0003](decisions/0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model |
+| [0004](decisions/0004-tauri-2-frontend.md) | Use Tauri 2 + SolidJS as the desktop frontend |
+| [0005](decisions/0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app |
+| [0006](decisions/0006-vault-replaces-stronghold.md) | Replace `iota_stronghold` with the SQLCipher-backed `rekindle-vault` |
+| [0007](decisions/0007-event-dispatch-single-source.md) | Single-source event-emission router (Phase 23.A) |
+| [0008](decisions/0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `services/` |
+| [0009](decisions/0009-crate-harvest-tiers.md) | Tier bumps and the 11 harvested crates |
+
+See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
+
+### Contributor (`contributor/`)
+
+| Document | Description |
+|----------|-------------|
+| [`development.md`](contributor/development.md) | Dev environment, build commands, dependency overview |
+| [`testing.md`](contributor/testing.md) | Test strategy (unit / mock IPC / E2E / property tests) |
+| [`style-guide.md`](contributor/style-guide.md) | Rust + TypeScript + Tailwind conventions |
+| [`release-process.md`](contributor/release-process.md) | Tagging, building, distributing, signing |
+
+### User (`user/`)
+
+| Document | Description |
+|----------|-------------|
+| [`getting-started.md`](user/getting-started.md) | Install, create an identity, send your first message |
+| [`install.md`](user/install.md) | Per-platform install instructions and source-build notes |
+| [`how-to.md`](user/how-to.md) | Common-task walkthroughs (add friend, voice call, file send, pair device, …) |
+| [`faq.md`](user/faq.md) | Frequently asked questions |
+
+### Top-level
+
+| Document | Description |
+|----------|-------------|
+| [`roadmap.md`](roadmap.md) | Implementation phases and completion status |
+| [`glossary.md`](glossary.md) | Project-specific vocabulary (DHT, SMPL, MEK, Plate Gate, VICE, Schwarzschild principle, etc.) |
+
+## Repository structure
 
 ```
-src/                           Frontend (SolidJS + Tailwind 4)
-src-tauri/                     Tauri 2 Rust backend
+src/                                Frontend (SolidJS + Tailwind 4)
+src-tauri/                          Tauri 2 Rust backend
   src/
-    lib.rs                     Application entry point
-    commands/                  IPC command handlers
-    channels/                  Event type definitions
-    services/                  Background services
-  migrations/                  SQLite schema
-crates/
-  rekindle-protocol/           Veilid networking, DHT, Cap'n Proto
-  rekindle-crypto/             Ed25519 identity, Signal Protocol, group encryption
-  rekindle-game-detect/        Cross-platform game detection
-  rekindle-voice/              Opus codec, audio capture/playback, VAD
-  rekindle-server/             Community hosting daemon (child process)
-schemas/                       Cap'n Proto schema definitions
+    lib.rs                          Application entry, command registry, plugin setup
+    state.rs                        AppState (40+ fields)
+    db.rs                           SQLite pool, schema versioning
+    commands/                       IPC command handlers (~220 commands)
+      community/                    Community subcommands (30 modules)
+    channels/                       Event type definitions (Rust → Frontend)
+    services/                       Background services
+      community/                    Community gossip, governance, presence, etc.
+      veilid/                       Node lifecycle, dispatch loop
+      voice/                        Voice send/receive/MCU loops
+      cross_device_sync/            Multi-device sync
+      relay/                        Strand Relay forwarding
+      dm/                           Direct messages
+      search/                       Message search
+crates/                             22 workspace members — see architecture/crates.md
+  # Tiered pure-logic crates (zero Tauri, zero veilid-core)
+  rekindle-types/                   Tier 1: shared IDs, enums, error taxonomy
+  rekindle-secrets/                 Tier 2: keys, MEK, signing — sole crypto boundary
+  rekindle-codec/                   Tier 3: signed envelope build/verify, dedup
+  rekindle-records/                 Tier 3: DHT record lifecycle, retry, SMPL schemas
+  rekindle-db/                      Tier 3: SQLite schema, Db handle, repositories, node lock
+  rekindle-vault/                   Tier 2: SQLCipher vault + typed secret helpers
+  rekindle-utils/                   Shared utilities; DataRoot (the shared data root)
+  rekindle-route/                   Tier 4: private route lifecycle, peer cache
+  rekindle-gossip/                  Tier 5: gossip mesh primitives
+  rekindle-governance/              Tier 6: pure CRDT merge, permission resolution
+  rekindle-dm/                      Tier 7: DM/group DM (SMPL records, X25519-derived MEK)
+  rekindle-calls/                   Tier 7: direct call key derivation
+  rekindle-files/                   Tier 7: chunked P2P file transfer (Lost Cargo)
+  rekindle-link-preview/            Tier 7: OpenGraph fetcher (sandboxed)
+  rekindle-video/                   Tier 7: video / screen-share fragmentation
+
+  # Cross-cutting integration crates
+  rekindle-sync/                    Cross-device sync (fetch, gap, history, watching)
+  rekindle-protocol/                Veilid + Cap'n Proto + DHT — used by the desktop app
+  rekindle-crypto/                  Identity, Signal Protocol session manager, dht keys
+  rekindle-game-detect/             Cross-platform game detection
+  rekindle-voice/                   Opus codec, audio I/O, jitter, mixer, transport
+  rekindle-e2e-server/              HTTP IPC bridge for E2E tests
+
+  # Daemon/CLI track (alternate frontend, parallel to the Tauri desktop app)
+  rekindle-transport/               Unified Veilid boundary (broadcast/subscriptions split)
+  rekindle-node/                    Daemon: owns Veilid, serves a Noise-IK encrypted IPC bus
+  rekindle-cli/                     CLI/TUI client of rekindle-node over the IPC bus
+schemas/                            Cap'n Proto schema definitions (8 files)
+e2e/                                Playwright E2E tests
 ```
+
+## Two frontends, one protocol
+
+Rekindle ships two ways to talk to the network:
+
+1. **Desktop app** (`src-tauri/`) — Tauri 2 process that links
+   `rekindle-protocol` directly and runs the Veilid node in-process. This
+   is the primary user-facing build today.
+2. **Daemon + CLI** (`rekindle-node` + `rekindle-cli`) — a long-running
+   daemon that owns the Veilid node and exposes it over an encrypted IPC
+   bus, with a `clap`/`ratatui` CLI/TUI as the first client.
+   `rekindle-transport` is the sole Veilid boundary on this track. Future
+   clients (other frontends, automation, bridges) plug into the same bus.
+
+Both frontends speak the same Veilid protocol, the same SMPL governance,
+and the same Signal/MEK encryption — they differ only in how the local
+process is structured.

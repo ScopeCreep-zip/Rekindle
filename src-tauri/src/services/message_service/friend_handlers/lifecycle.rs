@@ -1,0 +1,369 @@
+//! Friend-lifecycle handlers: profile-key rotation, friend-reject,
+//! unfriend (peer-initiated removal + our ACK), the cleanup helpers
+//! `delete_pending_request_row` / `delete_pending_messages_to_recipient`,
+//! and the cross-request auto-accept path.
+
+use std::sync::Arc;
+
+use rekindle_codec::message::envelope::MessagePayload;
+
+use crate::db_helpers::db_fire;
+use crate::state::AppState;
+use crate::state_helpers;
+use rekindle_db::Db;
+
+use super::IncomingFriendRequest;
+use crate::services::message_service::{push_friend_list_update, send_to_peer};
+
+pub(crate) async fn handle_profile_key_rotated(
+    state: &Arc<AppState>,
+    pool: &Db,
+    sender_hex: &str,
+    new_profile_dht_key: &str,
+) {
+    if !state_helpers::is_friend(state, sender_hex) {
+        return;
+    }
+    // Unregister old DHT key
+    let old_key = state_helpers::friend_dht_key(state, sender_hex);
+    if let Some(ref old_key) = old_key {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.unregister_friend_dht_key(old_key);
+        }
+    }
+    // Update in-memory state
+    {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(sender_hex) {
+            friend.dht_record_key = Some(new_profile_dht_key.to_string());
+        }
+    }
+    // Persist to `SQLite`
+    crate::friend_repo::fire_update_dht_record_key(state, pool, sender_hex, new_profile_dht_key);
+    // Re-watch the new profile DHT record for presence updates
+    if let Err(e) =
+        crate::services::presence_service::watch_friend(state, sender_hex, new_profile_dht_key)
+            .await
+    {
+        tracing::warn!(from = %sender_hex, error = %e, "failed to watch new profile key");
+    }
+    tracing::info!(
+        from = %sender_hex,
+        new_key = %new_profile_dht_key,
+        "friend rotated their profile DHT key"
+    );
+}
+
+/// Delete a `pending_friend_requests` row for a given peer.
+///
+/// Called during cross-request auto-accept, unfriend handling, and friend removal
+/// to ensure stale rows don't block future `INSERT OR REPLACE`.
+pub(super) fn delete_pending_request_row(state: &Arc<AppState>, pool: &Db, peer_key: &str) {
+    let owner_key = state_helpers::owner_key_or_default(state);
+    let pk = peer_key.to_string();
+    db_fire(pool, "delete pending request row", move |conn| {
+        rekindle_db::repo::pending_requests::delete(conn, &owner_key, &pk)
+    });
+}
+
+/// Delete all `pending_messages` rows addressed to a given recipient.
+///
+/// Called when the peer ACKs our `Unfriended` message (no longer need retries)
+/// or when a peer unfriends us (drop any queued messages to them).
+pub(crate) fn delete_pending_messages_to_recipient(
+    state: &Arc<AppState>,
+    pool: &Db,
+    recipient_key: &str,
+) {
+    let owner_key = state_helpers::owner_key_or_default(state);
+    let rk = recipient_key.to_string();
+    db_fire(pool, "delete pending messages to recipient", move |conn| {
+        conn.execute(
+            "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
+            rusqlite::params![owner_key, rk],
+        )?;
+        Ok(())
+    });
+}
+
+/// Handle an incoming `UnfriendedAck`: the peer confirms they processed our
+/// `Unfriended` message. Clear any remaining retry queue entries for them.
+pub(crate) fn handle_unfriended_ack(state: &Arc<AppState>, pool: &Db, sender_hex: &str) {
+    delete_pending_messages_to_recipient(state, pool, sender_hex);
+    tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
+}
+
+/// Handle a `FriendReject` — if the rejected peer is in our `pending_out` list,
+/// remove them. Otherwise, just emit the event.
+pub(crate) fn handle_friend_reject(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &Db,
+    sender_hex: &str,
+) {
+    let is_pending_out = state_helpers::friend_field(state, sender_hex, |f| {
+        Some(f.friendship_state == crate::state::FriendshipState::PendingOut)
+    })
+    .unwrap_or(false);
+
+    if is_pending_out {
+        // Remove pending-out friend from DB and in-memory state
+        crate::friend_repo::fire_delete_friend(state, pool, sender_hex);
+        state.friends.write().remove(sender_hex);
+
+        crate::event_dispatch::emit_subscription(
+            app_handle,
+            &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+                rekindle_types::subscription_events::FriendEvent::Removed {
+                    peer_key: sender_hex.to_string(),
+                },
+            ),
+        );
+    }
+
+    // Always emit the rejection notification
+    crate::event_dispatch::emit_subscription(
+        app_handle,
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Rejected {
+                peer_key: sender_hex.to_string(),
+            },
+        ),
+    );
+}
+
+/// Handle an incoming `Unfriended` message: the peer has removed us as a friend.
+///
+/// Removes the peer from our friends list (DB + in-memory), unregisters their
+/// DHT presence key, updates our DHT friend list, and emits `FriendRemoved`
+/// so the frontend updates.
+pub(crate) async fn handle_unfriended(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &Db,
+    sender_hex: &str,
+) {
+    // Only act if the sender is actually in our friends list
+    let has_friend = state_helpers::friend_field(state, sender_hex, |f| {
+        Some(!matches!(
+            f.friendship_state,
+            crate::state::FriendshipState::Removing
+        ))
+    })
+    .unwrap_or(false);
+    if !has_friend {
+        tracing::debug!(from = %sender_hex, "ignoring Unfriended from non-friend");
+        return;
+    }
+
+    // Remove from DB
+    crate::friend_repo::fire_delete_friend(state, pool, sender_hex);
+
+    // Clean up any pending request from this peer to prevent stale rows blocking future requests
+    delete_pending_request_row(state, pool, sender_hex);
+
+    // Drop any queued messages we were going to send them (they've unfriended us)
+    delete_pending_messages_to_recipient(state, pool, sender_hex);
+
+    // Send ACK back so the peer can clear their retry queue
+    let _ = send_to_peer(state, pool, sender_hex, &MessagePayload::UnfriendedAck).await;
+
+    // Remove from in-memory state and unregister DHT key
+    let dht_key = {
+        let mut friends = state.friends.write();
+        let removed = friends.remove(sender_hex);
+        removed.and_then(|f| f.dht_record_key)
+    };
+    // The session ends with the friendship; a later re-add handshakes anew.
+    {
+        let signal = state.signal_manager.read();
+        if let Some(handle) = signal.as_ref() {
+            if let Err(e) = handle.manager.delete_session(sender_hex) {
+                tracing::error!(from = %sender_hex, error = %e,
+                    "failed to delete Signal session after peer unfriended us");
+            }
+        }
+    }
+    if let Some(ref dht_key) = dht_key {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.unregister_friend_dht_key(dht_key);
+        }
+    }
+
+    // Update our DHT friend list to reflect the removal
+    if let Err(e) = push_friend_list_update(state).await {
+        tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
+    }
+
+    crate::event_dispatch::emit_subscription(
+        app_handle,
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Removed {
+                peer_key: sender_hex.to_string(),
+            },
+        ),
+    );
+
+    tracing::info!(from = %sender_hex, "removed by peer (Unfriended)");
+}
+
+/// Our side of a crossing handshake.
+enum CrossRole {
+    /// We initiated; the session init goes out in our `FriendAccept`.
+    Initiator(rekindle_crypto::signal::SessionInitInfo),
+    /// The peer initiates; we answer their `FriendAccept`.
+    Responder,
+    /// The handshake failed and the user was told; both sides are already
+    /// `Accepted` (each received the other's request), so 'Reset Secure
+    /// Session' recovers it.
+    Failed,
+}
+
+/// Drop any prior session with the peer and, if we are the initiator,
+/// establish a new one from their bundle.
+fn cross_request_session_init(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    req: &IncomingFriendRequest<'_>,
+) -> CrossRole {
+    let result = (|| -> Result<CrossRole, String> {
+        let bundle =
+            serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
+                .map_err(|e| format!("unparseable prekey bundle: {e}"))?;
+        let their_identity = hex::decode(req.sender_hex).map_err(|e| format!("sender key: {e}"))?;
+        let signal = state.signal_manager.read();
+        let handle = signal.as_ref().ok_or("signal manager not initialized")?;
+        let manager = &handle.manager;
+        manager
+            .delete_session(req.sender_hex)
+            .map_err(|e| e.to_string())?;
+        if !manager
+            .initiates_crossing_handshake(&their_identity)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(CrossRole::Responder);
+        }
+        let info = manager
+            .establish_session(req.sender_hex, &bundle)
+            .map_err(|e| e.to_string())?;
+        tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
+        Ok(CrossRole::Initiator(info))
+    })();
+    result.unwrap_or_else(|e| {
+        tracing::error!(peer = %req.sender_hex, error = %e,
+            "cross-request Signal handshake failed");
+        let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
+            .unwrap_or_else(|| format!("{}…", rekindle_utils::text::prefix(req.sender_hex, 16)));
+        crate::event_dispatch::emit_notification(
+            app_handle,
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title: "Couldn't establish secure session".into(),
+                body: format!(
+                    "Cross-request auto-accept with {peer_label} failed at the Signal \
+                     handshake: {e}. Click 'Reset Secure Session' from their friend menu \
+                     after verifying their safety number out-of-band."
+                ),
+            },
+        );
+        CrossRole::Failed
+    })
+}
+
+/// Auto-accept a cross-request: both parties sent friend requests to each other.
+///
+/// Transitions the local friend from `PendingOut` to `Accepted`, runs our
+/// half of the handshake (see [`CrossRole`]), and starts watching their DHT.
+pub(super) async fn auto_accept_cross_request(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &Db,
+    req: &IncomingFriendRequest<'_>,
+) {
+    // 0. Clean up any lingering pending_friend_requests row so future requests start fresh
+    delete_pending_request_row(state, pool, req.sender_hex);
+
+    // 1. Transition local friend to Accepted + update keys
+    {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(req.sender_hex) {
+            friend.friendship_state = crate::state::FriendshipState::Accepted;
+            friend.display_name = req.display_name.to_string();
+            if !req.profile_dht_key.is_empty() {
+                friend.dht_record_key = Some(req.profile_dht_key.to_string());
+            }
+            if !req.mailbox_dht_key.is_empty() {
+                friend.mailbox_dht_key = Some(req.mailbox_dht_key.to_string());
+            }
+        }
+    }
+    crate::friend_repo::fire_update_friendship_state(state, pool, req.sender_hex, "accepted");
+    crate::friend_repo::fire_update_display_name(state, pool, req.sender_hex, req.display_name);
+
+    // Persist profile/mailbox keys
+    if !req.profile_dht_key.is_empty() {
+        crate::friend_repo::fire_update_dht_record_key(
+            state,
+            pool,
+            req.sender_hex,
+            req.profile_dht_key,
+        );
+    }
+    if !req.mailbox_dht_key.is_empty() {
+        crate::friend_repo::fire_update_mailbox_dht_key(
+            state,
+            pool,
+            req.sender_hex,
+            req.mailbox_dht_key,
+        );
+    }
+
+    // 2–3. Exactly one side initiates: the lower identity establishes and
+    // sends `FriendAccept` with the session init; the higher side sends
+    // nothing and answers that init in `handle_friend_accept`.
+    match cross_request_session_init(app_handle, state, req) {
+        CrossRole::Initiator(session_init) => {
+            crate::services::message_service::send_friend_accept(
+                state,
+                pool,
+                req.sender_hex,
+                Some(session_init),
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to send friend accept for cross-request");
+            });
+        }
+        CrossRole::Responder => {
+            tracing::info!(peer = %req.sender_hex,
+                "cross-request: peer initiates — awaiting their FriendAccept");
+        }
+        CrossRole::Failed => {}
+    }
+
+    // 4. Watch their DHT profile for presence
+    if !req.profile_dht_key.is_empty() {
+        if let Err(e) = crate::services::presence_service::watch_friend(
+            state,
+            req.sender_hex,
+            req.profile_dht_key,
+        )
+        .await
+        {
+            tracing::trace!(error = %e, "failed to watch friend DHT after cross-request accept");
+        }
+    }
+
+    // 5. Emit accepted event
+    crate::event_dispatch::emit_subscription(
+        app_handle,
+        &rekindle_types::subscription_events::SubscriptionEvent::Friend(
+            rekindle_types::subscription_events::FriendEvent::Accepted {
+                peer_key: req.sender_hex.to_string(),
+                dm_log_key: None,
+                display_name: Some(req.display_name.to_string()),
+            },
+        ),
+    );
+}

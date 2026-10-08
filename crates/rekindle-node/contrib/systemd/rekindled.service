@@ -1,0 +1,79 @@
+[Unit]
+Description=Rekindle backend host (IPC bus + Veilid transport)
+Documentation=https://github.com/scopecreep-zip/rekindle
+After=network-online.target
+Wants=network-online.target
+# Restart rate limit: at most 5 starts in 5 minutes, so a crash loop stops.
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+# rekindled runs in the foreground and sends READY=1, WATCHDOG=1 and
+# STOPPING=1 itself. With WatchdogSec= set, NotifyAccess defaults to main,
+# so the notifying process must be the one ExecStart runs (systemd.service(5)).
+Type=notify
+ExecStart=/usr/bin/rekindled
+# No ExecStop=: systemd sends SIGTERM (KillSignal= default), which rekindled
+# handles by draining its requests and connections before exiting.
+Restart=on-failure
+RestartSec=5
+# 75 (EX_TEMPFAIL): identity destroyed or data wiped — restart empty, which
+# on-failure alone would not do for a deliberate exit.
+RestartForceExitStatus=75
+# 78 (EX_CONFIG): an unparsable policy or a tampered/incomplete bus key —
+# restarting cannot fix it, so do not loop.
+RestartPreventExitStatus=78
+
+# Startup: Veilid attach can take 30-60 seconds on slow networks.
+TimeoutStartSec=90
+# Shutdown budget: request drain 5 s, bus drain 2 s, workers 2 s, then the
+# transport (daemon/shutdown.rs); SIGKILL after this.
+TimeoutStopSec=15
+# rekindled pings every WATCHDOG_USEC/2 while its bus subscriber is alive.
+WatchdogSec=30
+
+# ── Security Hardening ────────────────────────────────────────────────
+# Defense-in-depth: multiple independent layers, each reduces blast radius.
+
+# Privilege escalation prevention.
+NoNewPrivileges=yes
+
+# Filesystem restrictions.
+ProtectHome=read-only
+ProtectSystem=strict
+
+# XDG directories managed by systemd (creates if needed, correct ownership).
+RuntimeDirectory=rekindle
+StateDirectory=rekindle
+ConfigurationDirectory=rekindle
+
+# Explicit read-write paths (ProtectSystem=strict blocks everything else).
+ReadWritePaths=%h/.local/state/rekindle
+ReadWritePaths=%h/.local/share/rekindle
+
+# Kernel hardening.
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+# W^X enforcement: no memory region may be both writable and executable.
+MemoryDenyWriteExecute=yes
+
+# ── Resource Limits ───────────────────────────────────────────────────
+
+# File descriptors: 10K+ agent connections need headroom.
+LimitNOFILE=65536
+# No core dumps: a dump of the process would contain key material.
+LimitCORE=0
+# Hard memory cap to prevent runaway growth.
+MemoryMax=512M
+
+# ── Environment ───────────────────────────────────────────────────────
+
+Environment=RUST_LOG=info,veilid_core=warn
+# Optional user override file (not required to exist).
+EnvironmentFile=-%h/.config/rekindle/daemon.env
+
+[Install]
+WantedBy=default.target

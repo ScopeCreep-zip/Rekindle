@@ -1,0 +1,247 @@
+//! `MekDistributeDeps` for the daemon.
+//!
+//! Most methods delegate to `DaemonGovernanceAdapter` through
+//! `GovernanceRuntimeDeps` rather than reaching into `DaemonContext`
+//! themselves. Identity, Lamport counter, membership and the online
+//! roster are all questions that adapter already answers, and answering
+//! them a second way here is how two adapters over one context drift
+//! apart — the failure this branch exists to remove. What stays local
+//! is what the governance trait has no notion of: MEK delivery,
+//! rotation events, and the `MEKRotated` broadcast.
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_crypto::group::media_key::MediaEncryptionKey;
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
+use rekindle_mek_rotation::{
+    ChannelMekCache, MekDistributeDeps, MekPersist, MekRotationError, MekRotationEvent,
+    RotationRecipient,
+};
+use rekindle_types::channel_keys::KeyScope;
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
+
+use super::DaemonMekAdapter;
+use crate::daemon::governance_adapter::DaemonGovernanceAdapter;
+
+impl DaemonMekAdapter {
+    /// A short-lived governance adapter borrowed from our own `Arc`.
+    fn governance(&self) -> DaemonGovernanceAdapter<'_> {
+        DaemonGovernanceAdapter::new(&self.ctx)
+    }
+
+    fn transport(&self) -> Option<Arc<rekindle_transport::TransportNode>> {
+        self.ctx.transport.read().as_ref().map(Arc::clone)
+    }
+
+    /// Publish a `SubscriptionEvent` if anyone is listening.
+    fn publish(&self, event: SubscriptionEvent) {
+        self.ctx.publish_event(event);
+    }
+}
+
+#[async_trait]
+impl MekDistributeDeps for DaemonMekAdapter {
+    fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
+        self.ctx.unlock_scope_or_closed()
+    }
+
+    fn cache(&self) -> Arc<dyn ChannelMekCache> {
+        Arc::clone(&self.cache)
+    }
+
+    fn persist(&self) -> Arc<dyn MekPersist> {
+        Arc::clone(&self.persist)
+    }
+
+    fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey> {
+        self.governance()
+            .community_membership(community_id)
+            .and_then(|m| m.my_pseudonym_hex)
+            .map(|hex| PseudonymKey::from_hex_lossy(&hex))
+    }
+
+    fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool {
+        self.ctx
+            .community_runtime
+            .governance_state(community_id)
+            .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
+    }
+
+    fn online_recipients(
+        &self,
+        community_id: &str,
+        exclude_pseudonym: Option<&str>,
+    ) -> Vec<RotationRecipient> {
+        let excluded = exclude_pseudonym.unwrap_or_default();
+        self.governance()
+            .online_members(community_id)
+            .into_iter()
+            // A member with no route blob cannot be app_called, so
+            // keeping them would only add a guaranteed failure to the
+            // delivery loop.
+            .filter(|m| !m.route_blob.is_empty() && m.pseudonym_hex != excluded)
+            .map(|m| RotationRecipient {
+                pseudonym_hex: m.pseudonym_hex,
+                route_blob: m.route_blob,
+            })
+            .collect()
+    }
+
+    async fn broadcast_to_peer(
+        &self,
+        _community_id: &str,
+        peer_pseudonym_hex: &str,
+        route_blob: &[u8],
+        envelope_bytes: Vec<u8>,
+    ) -> Result<Vec<u8>, MekRotationError> {
+        let node = self
+            .transport()
+            .ok_or_else(|| MekRotationError::Transport("transport not started".into()))?;
+        let target = node
+            .import_route(route_blob)
+            .map_err(|e| MekRotationError::Transport(format!("import route: {e}")))?;
+        // Unframed and unsigned — the format the desktop's inbound
+        // handler reads. Safe here and only here because the payload is
+        // sealed to the recipient via ECDH against our pseudonym key,
+        // so the sender is authenticated by whether it decrypts at all.
+        // See `Caller::call_community_envelope`.
+        node.caller()
+            .call_community_envelope(&target, envelope_bytes)
+            .await
+            .map_err(|e| {
+                MekRotationError::Transport(format!("MEK app_call to {peer_pseudonym_hex}: {e}"))
+            })
+    }
+
+    fn emit_event(&self, event: MekRotationEvent) {
+        let mapped = match event {
+            MekRotationEvent::RotationStarted {
+                community_id,
+                scope,
+                new_generation,
+                initiator_pseudonym_hex,
+            } => CryptoEvent::MekRotated {
+                community: community_id,
+                channel: scope.wire_channel(),
+                generation: new_generation,
+                rotator_pseudonym: Some(initiator_pseudonym_hex),
+            },
+            MekRotationEvent::RotationComplete {
+                community_id,
+                scope,
+                generation,
+            } => CryptoEvent::MekRotated {
+                community: community_id,
+                channel: scope.wire_channel(),
+                generation,
+                rotator_pseudonym: None,
+            },
+            MekRotationEvent::MekDelivered {
+                community_id,
+                scope,
+                generation,
+                sender_pseudonym_hex,
+            } => CryptoEvent::MekTransferred {
+                community: community_id,
+                channel: scope.wire_channel(),
+                generation,
+                sender_pseudonym: sender_pseudonym_hex,
+            },
+            // No `CryptoEvent` counterpart. Traced rather than dropped
+            // silently, so a community that has stopped rotating shows
+            // up in the daemon log instead of only in its symptoms.
+            MekRotationEvent::RotationFailed {
+                community_id,
+                scope,
+                reason,
+            } => {
+                tracing::warn!(
+                    community = %community_id,
+                    %scope,
+                    %reason,
+                    "MEK rotation failed"
+                );
+                return;
+            }
+        };
+        self.publish(SubscriptionEvent::Crypto(mapped));
+    }
+
+    fn next_governance_lamport(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_types::lamport::LamportError> {
+        self.governance().next_governance_lamport(community_id)
+    }
+
+    fn identity_secret(&self) -> Option<[u8; 32]> {
+        self.governance().identity_secret()
+    }
+
+    fn apply_received_mek_to_state(
+        &self,
+        community_id: &str,
+        scope: KeyScope,
+        mek: &MediaEncryptionKey,
+    ) -> bool {
+        self.cache.insert(community_id, scope, mek.clone())
+    }
+
+    fn persist_received_mek(&self, community_id: &str, scope: KeyScope, mek: &MediaEncryptionKey) {
+        // `MekPersist` is async and this method is not, so the write runs
+        // on the unlock scope, finishing before a lock completes. Losing it
+        // costs a keyring entry, not the key — the cache above already
+        // holds it for this process.
+        let persist = Arc::clone(&self.persist);
+        let community_id = community_id.to_string();
+        let generation = mek.generation();
+        let bytes = mek.as_bytes().to_vec();
+        self.ctx
+            .unlock_scope_or_closed()
+            .spawn_or_drop("persist MEK", async move {
+                if let Err(e) = persist
+                    .store_mek_for_generation(&community_id, scope, generation, bytes)
+                    .await
+                {
+                    tracing::debug!(error = %e, "persisting received MEK failed");
+                }
+            });
+    }
+
+    fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64) {
+        self.publish(SubscriptionEvent::Crypto(CryptoEvent::MekRotated {
+            community: community_id.to_string(),
+            channel: scope.wire_channel(),
+            generation,
+            rotator_pseudonym: None,
+        }));
+    }
+
+    async fn write_governance_entry(
+        &self,
+        community_id: &str,
+        entry: rekindle_types::governance::GovernanceEntry,
+    ) -> Result<(), MekRotationError> {
+        rekindle_governance_runtime::write_entry(&self.governance(), community_id, entry)
+            .await
+            .map_err(|e| MekRotationError::InvalidInput(e.to_string()))
+    }
+
+    /// Fan a rotation envelope out over the community mesh.
+    ///
+    /// Queued for the gossip worker. This used to accept `MEKRotated`
+    /// and nothing else, because that was the only variant transport had
+    /// a postcard helper for — the third of three partial translations
+    /// this track carried. See `daemon::gossip`.
+    fn send_to_mesh(
+        &self,
+        community_id: &str,
+        envelope: &CommunityEnvelope,
+    ) -> Result<(), MekRotationError> {
+        crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
+        Ok(())
+    }
+}

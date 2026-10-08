@@ -1,6 +1,8 @@
-import { Component, createSignal } from "solid-js";
-import Modal from "../common/Modal";
-import { handleJoinCommunity } from "../../handlers/community.handlers";
+import { Component, createEffect } from "solid-js";
+import SimpleInputModal from "../common/SimpleInputModal";
+import JoinProgressStepper from "./JoinProgressStepper";
+import { handleJoinCommunity } from "../../actions/community.actions";
+import { beginJoinProgress, endJoinProgress, resetJoinProgress } from "../../stores/join.store";
 
 interface JoinCommunityModalProps {
   isOpen: boolean;
@@ -8,41 +10,29 @@ interface JoinCommunityModalProps {
 }
 
 const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => {
-  const [communityId, setCommunityId] = createSignal("");
-  const [name, setName] = createSignal("");
-
-  async function handleSubmit(e: Event): Promise<void> {
-    e.preventDefault();
-    const id = communityId().trim();
-    if (!id) return;
-    await handleJoinCommunity(id, name().trim() || id.slice(0, 12) + "...");
-    setCommunityId("");
-    setName("");
-    props.onClose();
-  }
+  // Clear any prior dial-in steps each time the modal opens so a
+  // previous failed attempt isn't shown before the user retries.
+  createEffect(() => {
+    if (props.isOpen) resetJoinProgress();
+  });
 
   return (
-    <Modal isOpen={props.isOpen} title="Join Community" onClose={props.onClose}>
-      <form class="add-friend-form" onSubmit={handleSubmit}>
-        <input
-          class="add-friend-input"
-          type="text"
-          placeholder="Community ID..."
-          value={communityId()}
-          onInput={(e) => setCommunityId(e.currentTarget.value)}
-        />
-        <input
-          class="add-friend-input"
-          type="text"
-          placeholder="Name (optional)"
-          value={name()}
-          onInput={(e) => setName(e.currentTarget.value)}
-        />
-        <button class="add-friend-btn" type="submit" disabled={!communityId().trim()}>
-          Join
-        </button>
-      </form>
-    </Modal>
+    <SimpleInputModal
+      isOpen={props.isOpen}
+      title="Join Community"
+      onClose={props.onClose}
+      onSubmit={(input) => {
+        // The backend parses the invite link, gates each join phase under
+        // its own timeout and streams `joinProgress` events; there is
+        // intentionally no single frontend timeout. We only reset/settle
+        // the dial-in stepper.
+        beginJoinProgress();
+        return handleJoinCommunity(input).finally(() => endJoinProgress());
+      }}
+      placeholder="rekindle://invite/..."
+      submitLabel="Join"
+      extra={<JoinProgressStepper />}
+    />
   );
 };
 

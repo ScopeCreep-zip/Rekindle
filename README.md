@@ -23,7 +23,8 @@ accounts, and control your social graph. Rekindle takes a different approach:
   receiver IP. No central server logs who talks to whom.
 - **Real encryption** — four layers deep. Signal Protocol (Double Ratchet) for
   1:1 messages, AES-256-GCM group keys for community channels, XChaCha20-Poly1305
-  transport encryption on the wire, and Stronghold vault encryption at rest.
+  transport encryption on the wire, and `rekindle-vault` (SQLCipher, double-encrypted)
+  at rest.
 
 ## Status
 
@@ -66,10 +67,12 @@ accounts, and control your social graph. Rekindle takes a different approach:
 
 ### Identity and Security
 - Ed25519 keypair identity — no central authority, no registration
-- Stronghold vault (AES-256-GCM + Argon2id KDF) protects private keys
+- `rekindle-vault` (SQLCipher page-level AES-256-CBC + per-entry AES-256-GCM,
+  Argon2id passphrase KDF) protects private keys — see
+  [ADR 0006](docs/decisions/0006-vault-replaces-stronghold.md)
 - Signal Protocol sessions established via DHT-published PreKeyBundles
 - Trust-on-first-use (TOFU) with optional out-of-band key verification
-- Four-layer encryption stack (see [docs/security.md](docs/security.md))
+- Four-layer encryption stack (see [docs/security/overview.md](docs/security/overview.md))
 
 ### Desktop Integration
 - Frameless skinned windows with custom titlebar (classic IM aesthetic)
@@ -117,7 +120,7 @@ the desktop shell.
 | Encryption      | Signal Protocol ([libsignal](https://github.com/nicemicro/libsignal)), XChaCha20-Poly1305, AES-256-GCM |
 | Serialization   | [Cap'n Proto](https://capnproto.org/) (wire format)              |
 | Voice           | [Opus](https://opus-codec.org/) codec, [cpal](https://github.com/RustAudio/cpal) audio I/O |
-| Storage         | SQLite (chat history), [Stronghold](https://github.com/nicemicro/stronghold.rs) (encrypted vault), DHT (presence/keys) |
+| Storage         | SQLite (chat history), `rekindle-vault` (SQLCipher-backed, double-encrypted secrets), DHT (presence/keys) |
 | Dev Environment | [Konductor](https://github.com/braincraftio/konductor) (Nix flake) |
 
 ## Project Structure
@@ -248,17 +251,26 @@ online (up to 20 attempts).
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [architecture.md](docs/architecture.md) | System architecture, layer responsibilities, data flow diagrams |
-| [protocol.md](docs/protocol.md) | Veilid integration, message lifecycle, DHT record layouts |
-| [security.md](docs/security.md) | Four-layer encryption stack, identity model, threat analysis |
-| [data-layer.md](docs/data-layer.md) | SQLite schema, Stronghold vault, DHT record layout |
-| [frontend.md](docs/frontend.md) | SolidJS frontend, routing, stores, IPC layer |
-| [crates.md](docs/crates.md) | Pure Rust crate reference (protocol, crypto, game-detect, voice, server) |
-| [tauri-backend.md](docs/tauri-backend.md) | Tauri commands, events, services, state management |
-| [development.md](docs/development.md) | Build commands, testing, code conventions |
-| [roadmap.md](docs/roadmap.md) | Implementation phases and completion status |
+For new contributors, the entry points are:
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — bird's-eye-view of the codebase, points into `/docs`.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to set up dev env, coding standards, PR process.
+- [`SECURITY.md`](SECURITY.md) — vulnerability disclosure policy.
+- [`docs/README.md`](docs/README.md) — full technical documentation index, organised by audience (user / contributor / architecture / protocol / security / decisions).
+
+Headline reads:
+
+| Topic | Document |
+|-------|----------|
+| System architecture | [`docs/architecture/overview.md`](docs/architecture/overview.md) |
+| Chiral-network communities (v2.0) | [`docs/architecture/communities.md`](docs/architecture/communities.md) |
+| Network protocol & wire formats | [`docs/protocol/overview.md`](docs/protocol/overview.md) |
+| Security model & encryption layers | [`docs/security/overview.md`](docs/security/overview.md) |
+| Data storage (SQLite, `rekindle-vault`, DHT) | [`docs/architecture/data-layer.md`](docs/architecture/data-layer.md) |
+| Rust crate reference (38 crates) | [`docs/architecture/crates.md`](docs/architecture/crates.md) |
+| SolidJS frontend | [`docs/architecture/frontend.md`](docs/architecture/frontend.md) |
+| Tauri backend | [`docs/architecture/tauri-backend.md`](docs/architecture/tauri-backend.md) |
+| Implementation roadmap | [`docs/roadmap.md`](docs/roadmap.md) |
 
 ## License
 

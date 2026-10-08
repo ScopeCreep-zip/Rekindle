@@ -1,0 +1,34 @@
+[package]
+name = "rekindle-files"
+version = "0.1.0"
+edition = "2021"
+description = "Lost Cargo file sharing — chunking, Merkle, FEK, local cache for Rekindle v2.0"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+blake3 = "1"
+hex = { workspace = true }
+lru = "0.12"
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [ "fs" ] }
+tracing = { workspace = true }
+uuid = { version = "1", features = [ "v4", "serde" ] }
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+proptest = "1"
+tempfile = "3"
+tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

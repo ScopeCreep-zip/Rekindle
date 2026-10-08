@@ -1,0 +1,30 @@
+[package]
+name = "rekindle-video-capture"
+version = "0.1.0"
+edition = "2021"
+description = "Native camera capture + VP9 realtime CBR encode for Rekindle, cross-platform on GStreamer (v4l2src/avfvideosrc/ksvideosrc)."
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-utils = { path = "../rekindle-utils" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# GStreamer is the capture+encode engine on ALL platforms: automatic
+# MJPEG/YUYV/NV12 negotiation (decodebin + videoconvert), scaling
+# (videoscale/videorate), and a realtime-CBR VP9 encoder
+# (vp9enc deadline=1 end-usage=cbr). The per-OS camera source element is
+# chosen by GStreamer's own device provider (v4l2/pipewire on Linux,
+# applemedia on macOS, mediafoundation/ks on Windows) via GstDeviceMonitor,
+# so there is NO per-OS Rust capture code. This replaced a nokhwa+libvpx
+# stack whose only advantage was a smaller bundle (waived) and whose macOS
+# AVFoundation binding aborted the process on device switch (a
+# non-unwinding FFI-callback panic; nokhwa #247/#100/#192). Requires the
+# GStreamer runtime installed/bundled per platform — Linux system packages;
+# macOS/Windows bundled in the installer.
+gstreamer = "0.25"
+gstreamer-app = "0.25"
+gstreamer-video = "0.25"

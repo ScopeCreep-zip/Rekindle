@@ -1,0 +1,147 @@
+//! Consolidated outbound module — the sole Veilid boundary for all outgoing data.
+//!
+//! Every way data leaves the node to Veilid lives here. No other module
+//! in the workspace imports `veilid_core`. This is the strict outbound boundary.
+//!
+//! # Submodules
+//!
+//! ## Veilid lifecycle & infrastructure
+//! - `node` — VeilidAPI lifecycle (startup, shutdown, attach, detach, RoutingContext)
+//! - `send` — app_message / app_call outbound wrappers
+//! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
+//! - `dht/` — all DHT record CRUD (create, open, close, get, set, watch, inspect)
+//!
+//! ## Application-level broadcast
+//! - `dht_writes` — thin primitive wrappers over dht/ for TransportNode callers
+//! - `gossip` — community mesh broadcast (all 52 GossipPayload + ControlPayload variants)
+//! - `dm` — peer-to-peer DM sends (all 10 DmPayload variants)
+//! - `rpc` — request-response RPC calls (governance, sync, leave)
+//! - `voice` — voice packet send (single peer + mesh)
+//! - `route` — route lifecycle convenience (allocate, refresh, publish)
+
+// Veilid infrastructure (imports veilid_core)
+pub mod dht;
+pub mod node;
+pub mod peer_registry;
+pub mod send;
+
+// Application-level broadcast (calls through infrastructure above)
+pub mod dht_writes;
+pub mod dm;
+pub mod route;
+pub mod rpc;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+
+use rekindle_codec::dedup::DedupCache;
+
+use crate::crypto::mek::MekCache;
+use crate::gossip::GossipMesh;
+use crate::session::Session;
+
+use node::TransportNode;
+
+/// Rate limiter for outbound gossip, keyed by a string identifier.
+#[derive(Debug, Default)]
+pub struct OutboundRateLimiter {
+    last_sent: HashMap<String, std::time::Instant>,
+}
+
+impl OutboundRateLimiter {
+    pub fn check(&mut self, key: &str, min_interval: std::time::Duration) -> bool {
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_sent.get(key) {
+            if now.duration_since(*last) < min_interval {
+                return false;
+            }
+        }
+        self.last_sent.insert(key.to_string(), now);
+        true
+    }
+
+    pub fn remove_community(&mut self, community: &str) {
+        self.last_sent.retain(|k, _| !k.starts_with(community));
+    }
+}
+
+/// Centralized outbound broadcast manager.
+pub struct BroadcastManager {
+    pub(crate) node: Arc<TransportNode>,
+    pub(crate) session: Arc<RwLock<Option<Session>>>,
+    pub(crate) mek_cache: Arc<RwLock<MekCache>>,
+    pub(crate) meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
+    pub(crate) rate_limiter: Arc<RwLock<OutboundRateLimiter>>,
+    /// Outbound mesh dedup, so a broadcast we originate is not
+    /// re-processed when it comes back around the mesh. The desktop
+    /// keeps the equivalent on `AppState.dedup_cache`.
+    pub(crate) mesh_dedup: Arc<RwLock<DedupCache>>,
+}
+
+impl BroadcastManager {
+    pub fn new(
+        node: Arc<TransportNode>,
+        session: Arc<RwLock<Option<Session>>>,
+        mek_cache: Arc<RwLock<MekCache>>,
+    ) -> Self {
+        Self {
+            node,
+            session,
+            mek_cache,
+            meshes: Arc::new(RwLock::new(HashMap::new())),
+            rate_limiter: Arc::new(RwLock::new(OutboundRateLimiter::default())),
+            // 1024 entries — the architecture's stated mesh dedup size
+            // (§3.1, "1024-entry FIFO cache").
+            mesh_dedup: Arc::new(RwLock::new(DedupCache::new(1024))),
+        }
+    }
+
+    pub fn register_mesh(&self, community_id: &str) {
+        tracing::info!(community_id, "broadcast: registering gossip mesh");
+        self.meshes
+            .write()
+            .entry(community_id.to_string())
+            .or_insert_with(|| GossipMesh::new(community_id.to_string()));
+    }
+
+    pub fn deregister_mesh(&self, community_id: &str) {
+        tracing::info!(community_id, "broadcast: deregistering gossip mesh");
+        self.meshes.write().remove(community_id);
+        self.rate_limiter.write().remove_community(community_id);
+    }
+
+    pub fn node(&self) -> &TransportNode {
+        &self.node
+    }
+    pub fn session(&self) -> &Arc<RwLock<Option<Session>>> {
+        &self.session
+    }
+    pub fn mek_cache(&self) -> &Arc<RwLock<MekCache>> {
+        &self.mek_cache
+    }
+    /// Outbound gossip rate limiter.
+    ///
+    /// Exposed because presence is the highest-frequency broadcast in
+    /// the system — a heartbeat per member per tick — and
+    /// `gossip::presence_update` takes the limiter rather than owning
+    /// one, so every caller shares the same budget instead of each
+    /// getting its own.
+    /// `Arc` rather than a borrow, for the same reason `meshes` is:
+    /// sync trait methods that broadcast have to clone their handles out
+    /// and `tokio::spawn`, because blocking on a send inside an async
+    /// runtime stalls a worker thread.
+    pub fn rate_limiter(&self) -> &Arc<RwLock<OutboundRateLimiter>> {
+        &self.rate_limiter
+    }
+
+    /// Outbound mesh dedup cache.
+    pub fn mesh_dedup(&self) -> &Arc<RwLock<DedupCache>> {
+        &self.mesh_dedup
+    }
+
+    pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> {
+        &self.meshes
+    }
+}

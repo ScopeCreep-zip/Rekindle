@@ -1,10 +1,21 @@
 use std::sync::mpsc as std_mpsc;
-use std::thread;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::DeviceTrait;
 use tokio::sync::mpsc;
 
+use crate::audio_thread::{AudioThread, AudioThreadLabels};
+use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
+use crate::stream_config::{adapt_audio, adapt_capture, negotiate_input_config};
+
+const CAPTURE_LABELS: AudioThreadLabels = AudioThreadLabels {
+    audio_thread: "audio-capture",
+    error_bridge: "capture-error-bridge",
+    play_failed: "failed to start input stream",
+    spawn_failed: "failed to spawn capture thread",
+    init_died: "capture thread died during init",
+    direction: "capture",
+};
 
 /// Audio capture from the microphone via cpal.
 ///
@@ -13,211 +24,154 @@ use crate::error::VoiceError;
 /// lives entirely within the spawned thread (it is `!Send` on macOS), so
 /// `AudioCapture` itself is `Send` and can be stored in shared state.
 pub struct AudioCapture {
-    is_active: bool,
-    sample_rate: u32,
-    channels: u16,
-    /// Dropping this sender signals the audio thread to shut down.
-    shutdown_tx: Option<std_mpsc::Sender<()>>,
-    /// Handle to the dedicated audio thread.
-    thread_handle: Option<thread::JoinHandle<()>>,
-    /// Handle to the error bridge thread (forwards cpal errors to async channel).
-    error_bridge_handle: Option<thread::JoinHandle<()>>,
+    thread: AudioThread,
 }
 
 impl AudioCapture {
     /// Create a new audio capture instance.
-    pub fn new(sample_rate: u32, channels: u16) -> Result<Self, VoiceError> {
-        Ok(Self {
-            is_active: false,
-            sample_rate,
-            channels,
-            shutdown_tx: None,
-            thread_handle: None,
-            error_bridge_handle: None,
-        })
+    pub fn new(sample_rate: u32, channels: u16) -> Self {
+        Self {
+            thread: AudioThread::new(sample_rate, channels, CAPTURE_LABELS),
+        }
     }
 
     /// Start capturing audio, sending PCM frames to the provided sender.
     ///
-    /// Spawns a dedicated thread that owns the cpal stream. The thread blocks
-    /// on a shutdown channel until `stop()` is called. Any errors during
-    /// device/stream initialisation are propagated back via a sync channel.
-    ///
-    /// `device_name`: optional device name to use. `None` = system default.
-    /// `device_error_tx`: optional channel to signal device errors (e.g. device unplugged).
+    /// `picked` is the input-channel choice for this device (0-based
+    /// indices, plan C7.24b); `None` averages every channel.
     pub fn start(
         &mut self,
         tx: mpsc::Sender<Vec<f32>>,
         device_name: Option<&str>,
+        picked: Option<Vec<u16>>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
-        let (init_tx, init_rx) = std_mpsc::sync_channel::<Result<(), VoiceError>>(1);
-        let (shutdown_tx, shutdown_rx) = std_mpsc::channel::<()>();
-
-        let sample_rate = self.sample_rate;
-        let channels = self.channels;
-        let device_name_owned = device_name.map(String::from);
-
-        // Bridge sync error callback → async error channel.
-        // cpal's error callback runs on the audio thread (sync), so we use a std
-        // channel to receive the error and a bridging task to forward it.
-        let (sync_err_tx, sync_err_rx) = std_mpsc::channel::<String>();
-        let error_bridge_handle = if let Some(async_err_tx) = device_error_tx {
-            thread::Builder::new()
-                .name("capture-error-bridge".into())
-                .spawn(move || {
-                    if let Ok(err_msg) = sync_err_rx.recv() {
-                        // Best-effort send — if the receiver is dropped the error is discarded
-                        let _ = async_err_tx.blocking_send(err_msg);
-                    }
-                })
-                .ok()
-        } else {
-            None
-        };
-
-        let handle = thread::Builder::new()
-            .name("audio-capture".into())
-            .spawn(move || {
-                let result = build_capture_stream(
+        self.thread.start(
+            device_name,
+            device_error_tx,
+            move |sample_rate, channels, device_name_owned, error_tx| {
+                build_capture_stream(
                     sample_rate,
                     channels,
                     tx,
                     device_name_owned.as_deref(),
-                    sync_err_tx,
-                );
-                match result {
-                    Ok(stream) => {
-                        if let Err(e) = stream.play() {
-                            let _ = init_tx.send(Err(VoiceError::AudioDevice(format!(
-                                "failed to start input stream: {e}"
-                            ))));
-                            return;
-                        }
-                        let _ = init_tx.send(Ok(()));
-                        // Park until shutdown — stream stays alive in this scope
-                        let _ = shutdown_rx.recv();
-                        drop(stream);
-                    }
-                    Err(e) => {
-                        let _ = init_tx.send(Err(e));
-                    }
-                }
-            })
-            .map_err(|e| {
-                VoiceError::AudioDevice(format!("failed to spawn capture thread: {e}"))
-            })?;
-
-        // Wait for the audio thread to report success or failure
-        init_rx
-            .recv()
-            .map_err(|_| VoiceError::AudioDevice("capture thread died during init".into()))??;
-
-        self.shutdown_tx = Some(shutdown_tx);
-        self.thread_handle = Some(handle);
-        self.error_bridge_handle = error_bridge_handle;
-        self.is_active = true;
-        tracing::info!(
-            sample_rate = self.sample_rate,
-            channels = self.channels,
-            "audio capture started"
-        );
-        Ok(())
+                    picked,
+                    error_tx,
+                )
+            },
+        )
     }
 
-    /// Stop capturing audio. Signals the audio thread to shut down and waits
-    /// for it to exit so the device is cleanly released.
+    /// Stop capturing audio.
     pub fn stop(&mut self) {
-        // Dropping the sender causes recv() in the thread to return Err,
-        // which exits the thread and drops the cpal stream.
-        self.shutdown_tx = None;
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
-        }
-        // Join the error bridge thread (it will exit once sync_err_tx is dropped
-        // by the audio thread, causing recv() to return Err).
-        if let Some(handle) = self.error_bridge_handle.take() {
-            let _ = handle.join();
-        }
-        self.is_active = false;
-        tracing::info!("audio capture stopped");
+        self.thread.stop();
     }
 
     pub fn is_active(&self) -> bool {
-        self.is_active
+        self.thread.is_active()
     }
 }
 
-impl Drop for AudioCapture {
-    fn drop(&mut self) {
-        if self.is_active {
-            self.stop();
-        }
-    }
-}
-
-/// Build a cpal input stream on the current thread. The returned `Stream`
-/// must be kept alive for audio to flow — dropping it stops the capture.
+/// Build a cpal input stream on the current thread.
+///
+/// `sample_rate`/`channels` are the pipeline (Opus) format. The device may
+/// refuse that exact `StreamConfig`, so we negotiate a config it supports via
+/// [`negotiate_input_config`] and, when it differs, adapt each captured buffer
+/// back to the pipeline format with [`adapt_audio`] before forwarding.
 fn build_capture_stream(
     sample_rate: u32,
     channels: u16,
     tx: mpsc::Sender<Vec<f32>>,
     device_name: Option<&str>,
+    picked: Option<Vec<u16>>,
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
-    let device = match device_name {
-        Some(name) => find_input_device(&host, name)?,
-        None => host
-            .default_input_device()
-            .ok_or_else(|| VoiceError::AudioDevice("no input device available".into()))?,
+    let device = resolve_device(&host, device_name, &DeviceDirection::Input)?;
+
+    // A channel choice needs every input channel delivered, so open the
+    // device at its full channel count rather than the pipeline's mono.
+    let open_channels = if picked.is_some() {
+        crate::device::max_input_channels(&device)
+    } else {
+        channels
     };
+    let (config, sample_format) = negotiate_input_config(&device, sample_rate, open_channels)?;
+    let dev_channels = config.channels;
+    let dev_rate = config.sample_rate;
+    if let Some(bad) = picked.iter().flatten().find(|&&c| c >= dev_channels) {
+        return Err(VoiceError::AudioDevice(format!(
+            "input channel {} is not on this device ({dev_channels} channels)",
+            bad + 1
+        )));
+    }
+    let needs_adapt = picked.is_some() || dev_channels != channels || dev_rate != sample_rate;
 
-    let supported = device
-        .default_input_config()
-        .map_err(|e| VoiceError::AudioDevice(format!("no input config: {e}")))?;
+    tracing::info!(
+        device = %crate::device::device_label(&device),
+        dev_channels,
+        dev_rate,
+        want_channels = channels,
+        want_rate = sample_rate,
+        ?sample_format,
+        needs_adapt,
+        ?picked,
+        "negotiated capture config"
+    );
 
-    let sample_format = supported.sample_format();
-    let config = cpal::StreamConfig {
-        channels,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
+    // Forward captured f32 PCM to the pipeline, adapting to the codec format
+    // first when the device config differs.
+    let forward = move |samples: Vec<f32>, tx: &mpsc::Sender<Vec<f32>>| {
+        let out = if let Some(picked) = &picked {
+            adapt_capture(
+                &samples,
+                dev_channels,
+                picked,
+                dev_rate,
+                channels,
+                sample_rate,
+            )
+        } else if needs_adapt {
+            adapt_audio(&samples, dev_channels, dev_rate, channels, sample_rate)
+        } else {
+            samples
+        };
+        let _ = tx.try_send(out);
     };
 
     let make_error_callback = |error_tx: std_mpsc::Sender<String>| {
-        move |err: cpal::StreamError| {
-            tracing::error!("input stream error: {err}");
-            let _ = error_tx.send(format!("input: {err}"));
-        }
+        move |err: cpal::Error| crate::device::on_stream_error("input", &err, &error_tx)
     };
 
     match sample_format {
         cpal::SampleFormat::F32 => device.build_input_stream(
-            &config,
+            config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let _ = tx.try_send(data.to_vec());
+                forward(data.to_vec(), &tx);
             },
             make_error_callback(error_tx),
             None,
         ),
         cpal::SampleFormat::I16 => device.build_input_stream(
-            &config,
+            config,
             move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                let samples: Vec<f32> =
-                    data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)).collect();
-                let _ = tx.try_send(samples);
+                let samples: Vec<f32> = data
+                    .iter()
+                    .map(|&s| f32::from(s) / f32::from(i16::MAX))
+                    .collect();
+                forward(samples, &tx);
             },
             make_error_callback(error_tx),
             None,
         ),
         cpal::SampleFormat::U16 => device.build_input_stream(
-            &config,
+            config,
             move |data: &[u16], _: &cpal::InputCallbackInfo| {
                 let samples: Vec<f32> = data
                     .iter()
                     .map(|&s| (f32::from(s) / f32::from(u16::MAX)) * 2.0 - 1.0)
                     .collect();
-                let _ = tx.try_send(samples);
+                forward(samples, &tx);
             },
             make_error_callback(error_tx),
             None,
@@ -229,63 +183,4 @@ fn build_capture_stream(
         }
     }
     .map_err(|e| VoiceError::AudioDevice(format!("failed to build input stream: {e}")))
-}
-
-/// Enumerated audio devices (input and output).
-pub struct EnumeratedDevices {
-    /// Input devices: `(name, is_default)`.
-    pub input_devices: Vec<(String, bool)>,
-    /// Output devices: `(name, is_default)`.
-    pub output_devices: Vec<(String, bool)>,
-}
-
-/// Enumerate all available audio input and output devices.
-pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
-    let host = cpal::default_host();
-    let default_input_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok());
-    let default_output_name = host
-        .default_output_device()
-        .and_then(|d| d.name().ok());
-
-    let mut input_devices = Vec::new();
-    if let Ok(devices) = host.input_devices() {
-        for device in devices {
-            if let Ok(name) = device.name() {
-                let is_default = default_input_name.as_deref() == Some(&name);
-                input_devices.push((name, is_default));
-            }
-        }
-    }
-
-    let mut output_devices = Vec::new();
-    if let Ok(devices) = host.output_devices() {
-        for device in devices {
-            if let Ok(name) = device.name() {
-                let is_default = default_output_name.as_deref() == Some(&name);
-                output_devices.push((name, is_default));
-            }
-        }
-    }
-
-    Ok(EnumeratedDevices {
-        input_devices,
-        output_devices,
-    })
-}
-
-/// Find an input device by name, falling back to the default if not found.
-fn find_input_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, VoiceError> {
-    use cpal::traits::DeviceTrait;
-    if let Ok(devices) = host.input_devices() {
-        for device in devices {
-            if device.name().ok().as_deref() == Some(name) {
-                return Ok(device);
-            }
-        }
-    }
-    tracing::warn!(device = %name, "requested input device not found — falling back to default");
-    host.default_input_device()
-        .ok_or_else(|| VoiceError::AudioDevice("no input device available".into()))
 }

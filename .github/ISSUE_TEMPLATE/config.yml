@@ -1,0 +1,16 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/ScopeCreep-zip/Rekindle/security/advisories/new
+    about: |
+      Please do not file public issues for security vulnerabilities. Use
+      GitHub's private advisory flow or the channels described in
+      SECURITY.md.
+  - name: Code of conduct concern
+    url: https://github.com/ScopeCreep-zip/Rekindle/security/advisories/new
+    about: |
+      Conduct concerns can be reported via the same private channel as
+      security reports. Mark the title with [CONDUCT].
+  - name: Documentation
+    url: https://github.com/ScopeCreep-zip/Rekindle/tree/main/docs
+    about: Browse the technical documentation before filing a question.

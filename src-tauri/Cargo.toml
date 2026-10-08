@@ -1,5 +1,7 @@
 [package]
-name = "rekindle"
+# Not "rekindle": that is the CLI's binary (plan C3.0; two workspace
+# binaries with one name collide, cargo#6313).
+name = "rekindle-desktop"
 version = "0.0.1"
 edition = "2021"
 description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
@@ -9,49 +11,142 @@ workspace = true
 
 [lib]
 name = "rekindle_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = [ "staticlib", "cdylib", "rlib" ]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [  ] }
 
 [dependencies]
-rekindle-protocol = { path = "../crates/rekindle-protocol" }
+# v2.0 crates (flat governance)
+rekindle-analytics = { path = "../crates/rekindle-analytics" }
+rekindle-audit = { path = "../crates/rekindle-audit" }
+rekindle-calls = { path = "../crates/rekindle-calls" }
+rekindle-channel = { path = "../crates/rekindle-channel" }
+rekindle-codec = { path = "../crates/rekindle-codec" }
+rekindle-db = { path = "../crates/rekindle-db" }
+rekindle-dm = { path = "../crates/rekindle-dm" }
+rekindle-events = { path = "../crates/rekindle-events" }
+rekindle-files = { path = "../crates/rekindle-files" }
+rekindle-friendship = { path = "../crates/rekindle-friendship" }
+rekindle-gossip = { path = "../crates/rekindle-gossip" }
+rekindle-governance = { path = "../crates/rekindle-governance" }
+rekindle-governance-runtime = { path = "../crates/rekindle-governance-runtime" }
+rekindle-idempotency = { path = "../crates/rekindle-idempotency" }
+rekindle-lifecycle = { path = "../crates/rekindle-lifecycle" }
+rekindle-link-preview = { path = "../crates/rekindle-link-preview" }
+rekindle-mek-rotation = { path = "../crates/rekindle-mek-rotation" }
+rekindle-presence = { path = "../crates/rekindle-presence" }
+rekindle-records = { path = "../crates/rekindle-records" }
+rekindle-route = { path = "../crates/rekindle-route" }
+rekindle-secrets = { path = "../crates/rekindle-secrets" }
+rekindle-sync = { path = "../crates/rekindle-sync" }
+rekindle-types = { path = "../crates/rekindle-types" }
+rekindle-vault = { path = "../crates/rekindle-vault" }
+rekindle-video = { path = "../crates/rekindle-video" }
+
+# Native camera capture + realtime CBR VP9 encode, cross-platform on
+# GStreamer (v4l2src/avfvideosrc/ksvideosrc). Unconditional — same engine
+# on every OS; requires the GStreamer runtime present/bundled per platform.
+rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
+
+# v1.0 crates (still used during migration)
 rekindle-crypto = { path = "../crates/rekindle-crypto" }
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
+rekindle-idle = { path = "../crates/rekindle-idle" }
+rekindle-protocol = { path = "../crates/rekindle-protocol" }
+rekindle-utils = { path = "../crates/rekindle-utils", features = [ "retry", "log-scrub" ] }
 rekindle-voice = { path = "../crates/rekindle-voice" }
+# W16.9 — adoption of the unified transport boundary. Tauri shell
+# becomes a thin frontend over rekindle-transport (parity with
+# rekindle-cli and rekindle-node). Initially used for the W16
+# reliability primitive (envelope_queue, SeqTracker) and call
+# signaling (operations::calls); subsequent waves migrate more
+# services through transport.
+async-trait = "0.1"
+ed25519-dalek = "2"
+futures.workspace = true
+rekindle-transport = { path = "../crates/rekindle-transport" }
 
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
-tauri-plugin-notification = "2"
+tauri = { version = "2.12", features = [ "macos-private-api", "tray-icon", "image-png" ] }
+# OS notifications (`os_notify.rs`). On Linux its async `show_async()` runs on
+# zbus's own executor; the notification plugin's blocking `show` panicked
+# inside the async runtime, so the plugin is not used.
+notify-rust = "4"
 # tauri-plugin-window-state removed — causes infinite windowDidMove loop on macOS
 # with prevent_exit(), see tauri#11489
 tauri-plugin-store = "2"
 
 # tauri-plugin-sql removed — using rusqlite directly for veilid-core compatibility
-tauri-plugin-single-instance = "2"
-tauri-plugin-process = "2"
-tauri-plugin-deep-link = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-single-instance = { version = "2", features = [ "deep-link" ] }
 
+parking_lot = { workspace = true }
+rusqlite = { version = "0.39", features = [ "bundled" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tokio-util = "0.7"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-parking_lot = { workspace = true }
-rusqlite = { version = "0.37", features = ["bundled"] }
+# Vendored tokio-rusqlite 0.7 (upstream hard-pins rusqlite 0.37, which
+# conflicts with veilid-core 0.5.3's sqlite chain). package-renamed so all
+# `tokio_rusqlite::` references compile unchanged.
 argon2 = "0.5"
-iota_stronghold = "2.1"
-zeroize = "1"
-hex = "0.4"
 base64 = "0.22"
+blake2 = "0.10"
+blake3 = "1"
+hex = "0.4"
+image = { version = "0.25", default-features = false, features = [ "webp", "png", "jpeg", "gif" ] }
+indexmap = "2"
 rand = "0.8"
-veilid-core = { version = "0.5.2", default-features = true }
-image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
+regex = "1"
+tokio_rusqlite = { package = "rekindle-asql", path = "../crates/rekindle-asql" }
+uuid = { version = "1", features = [ "v4" ] }
+veilid-core = { version = "0.5", default-features = true }
+zeroize = "1"
+# Architecture §28.4 device pairing — QR-code rendering for the
+# pairing flow. SVG output keeps the frontend dep-free (it just
+# `innerHTML`s the string into a <div>), per "all business logic in
+# Rust" CLAUDE.md guidance.
+qrcode = { version = "0.14", default-features = false, features = [ "svg" ] }
+# Architecture §17.2 quiet hours — IANA timezone database for DST-aware
+# local-time computation. The previous schema stored a static UTC
+# offset which silently broke twice a year; chrono-tz resolves the
+# correct offset for any (zone, instant) pair so the resolver in
+# `is_quiet_hours_active` honors DST transitions automatically.
+chrono = { version = "0.4", default-features = false, features = [ "clock", "std" ] }
+chrono-tz = "0.9"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Host-app AVCapture authorization (platform.rs) — WKWebView mints its
+# camera/mic sandbox extensions from the HOST app's TCC grant; the app
+# must request it itself (Apple: "Requesting Authorization for Media
+# Capture on macOS"). objc2/block2 are already in the tree via tauri.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "AVCaptureDevice",
+    "AVMediaFormat",
+    # requestAccessForMediaType:completionHandler: is gated behind the
+    # crate's block2 feature (completion handler = ObjC block).
+    "block2",
+    "std",
+] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+# WebKitGTK ships the MediaStream API gated off and denies getUserMedia
+# permission requests by default — the cause of the blank in-app webcam on
+# Linux. We reach the underlying WebView (same version wry/tauri compiles
+# against, so `PlatformWebview::inner()` type-matches) to enable
+# `enable-media-stream` in capture windows and allow device enumeration,
+# which wry's permission handler reports only as `Other`. v2_4 gates
+# `set_enable_media_stream`.
+webkit2gtk = { version = "2.0.2", features = [ "v2_4" ] }
 
 [dev-dependencies]
+proptest = "1"
 tempfile = "3"

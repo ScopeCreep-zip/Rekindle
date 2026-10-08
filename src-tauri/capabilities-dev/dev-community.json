@@ -1,0 +1,11 @@
+{
+  "identifier": "dev-community",
+  "description": "Debug-build-only grant for community windows: the gossip-state inspector. Lives outside `capabilities/` so release builds never load or validate it; `setup::run` adds it at runtime under `cfg(debug_assertions)`, and the command itself is compiled out of release.",
+  "windows": [
+    "community-*"
+  ],
+  "permissions": [
+    "allow-debug-gossip-state"
+  ],
+  "$schema": "../gen/schemas/desktop-schema.json"
+}

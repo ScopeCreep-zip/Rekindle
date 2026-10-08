@@ -1,0 +1,38 @@
+[package]
+name = "rekindle-calls"
+version = "0.1.0"
+edition = "2021"
+description = "Direct calls — X25519 ECDH call_key derivation, ring timer, missed-call state (architecture §10.10 Tier 7)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+hex = { workspace = true }
+hkdf = "0.12"
+rand = { workspace = true }
+rekindle-secrets = { path = "../rekindle-secrets" }               # SFrame sender state on CallState
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+x25519-dalek = { version = "2", features = [ "static_secrets" ] }
+zeroize = { version = "1", features = [ "derive" ] }
+# Wave 12 W12.9 — group call key wrap. The initiator generates a
+# random 32-byte call_key once, then per-recipient: derives a
+# wrap_key via X25519 + HKDF, and seals call_key with AES-256-GCM.
+aes-gcm = "0.10"
+blake3 = "1"
+# Phase 14 additions: async deps trait + tracing + tokio for signaling
+# orchestration and ring-timer spawn helpers.
+async-trait = "0.1"
+tokio = { workspace = true, features = [ "sync", "macros", "rt", "time" ] }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }                           # Identity::to_x25519_secret for group call key unwrap
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "sync", "macros", "time", "rt", "rt-multi-thread", "test-util" ] }

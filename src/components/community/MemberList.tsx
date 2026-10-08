@@ -1,15 +1,18 @@
-import { Component, For, Show, createSignal, createMemo } from "solid-js";
-import { Member, Role } from "../../stores/community.store";
+import { Component, For, Show, createSignal, createMemo, JSX } from "solid-js";
+import { ContextMenu } from "@kobalte/core/context-menu";
+import { Popover } from "@kobalte/core/popover";
+import { Member, Role, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
-import ContextMenu from "../common/ContextMenu";
-import type { ContextMenuItem } from "../common/ContextMenu";
+import MemberProfilePopup from "./MemberProfilePopup";
+import ConfirmDialog from "../common/ConfirmDialog";
 import {
   ICON_SHIELD,
   ICON_TIMEOUT,
   ICON_ACCOUNT_REMOVE,
   ICON_BAN,
-  ICON_CHECK,
+  ICON_MIC_OFF,
+  ICON_HEADPHONES_OFF,
 } from "../../icons";
 import {
   handleRemoveCommunityMember,
@@ -17,7 +20,9 @@ import {
   handleAssignRole,
   handleUnassignRole,
   handleTimeoutMember,
-} from "../../handlers/community.handlers";
+  handleServerMuteMember,
+  handleServerDeafenMember,
+} from "../../actions/community.actions";
 import {
   calculateBasePermissions,
   highestPosition,
@@ -26,6 +31,8 @@ import {
   BAN_MEMBERS,
   MODERATE_MEMBERS,
   MANAGE_ROLES,
+  MUTE_MEMBERS,
+  DEAFEN_MEMBERS,
 } from "../../ipc/permissions";
 
 interface MemberListProps {
@@ -34,26 +41,29 @@ interface MemberListProps {
   myRoleIds: number[];
   roles: Role[];
   myPseudonymKey: string | null;
-  isHosted: boolean;
 }
 
+const TIMEOUT_PRESETS: { label: string; seconds: number }[] = [
+  { label: "5 minutes", seconds: 300 },
+  { label: "10 minutes", seconds: 600 },
+  { label: "30 minutes", seconds: 1800 },
+  { label: "1 hour", seconds: 3600 },
+  { label: "24 hours", seconds: 86400 },
+  { label: "1 week", seconds: 604800 },
+];
+
 const MemberList: Component<MemberListProps> = (props) => {
-  const [contextMenu, setContextMenu] = createSignal<{
-    x: number;
-    y: number;
-    member: Member;
-  } | null>(null);
-
-  const [rolePickerTarget, setRolePickerTarget] = createSignal<{
-    x: number;
-    y: number;
-    member: Member;
-  } | null>(null);
-
   const [searchQuery, setSearchQuery] = createSignal("");
+  const [openProfileFor, setOpenProfileFor] = createSignal<string | null>(null);
 
-  function myPerms(): number {
-    return calculateBasePermissions(props.myRoleIds, props.roles, props.isHosted);
+  const [confirmAction, setConfirmAction] = createSignal<{
+    type: "kick" | "ban";
+    pseudonymKey: string;
+    displayName: string;
+  } | null>(null);
+
+  function myPerms(): bigint {
+    return calculateBasePermissions(props.myRoleIds, props.roles);
   }
 
   function myPosition(): number {
@@ -65,70 +75,17 @@ const MemberList: Component<MemberListProps> = (props) => {
     return myPosition() > memberPos;
   }
 
-  function handleMemberContextMenu(e: MouseEvent, member: Member): void {
-    e.preventDefault();
-    if (member.pseudonymKey === props.myPseudonymKey) return;
-    if (!canManage(member)) return;
-    setContextMenu({ x: e.clientX, y: e.clientY, member });
-    setRolePickerTarget(null);
-  }
-
-  function handleCloseContextMenu(): void {
-    setContextMenu(null);
-    setRolePickerTarget(null);
-  }
-
-  function contextMenuItems(): ContextMenuItem[] {
-    const ctx = contextMenu();
-    if (!ctx) return [];
-    const member = ctx.member;
-    const perms = myPerms();
-    const items: ContextMenuItem[] = [];
-
-    if (hasPermission(perms, MANAGE_ROLES)) {
-      items.push({
-        label: "Manage Roles",
-        icon: ICON_SHIELD,
-        action: () => {
-          setRolePickerTarget({ x: ctx.x, y: ctx.y + 30, member });
-          setContextMenu(null);
-        },
-      });
+  // Architecture §10 — server-mute / server-deafen apply only when the
+  // target is currently sitting in a community voice channel.
+  function memberVoiceChannelId(member: Member): string | null {
+    const channels = communityState.voiceChannels;
+    for (const channelId in channels) {
+      const channel = channels[channelId];
+      if (channel?.participants?.includes(member.pseudonymKey)) {
+        return channelId;
+      }
     }
-
-    if (hasPermission(perms, MODERATE_MEMBERS)) {
-      items.push({
-        label: "Timeout (10min)",
-        icon: ICON_TIMEOUT,
-        action: () => {
-          handleTimeoutMember(props.communityId, member.pseudonymKey, 600, null);
-        },
-      });
-    }
-
-    if (hasPermission(perms, KICK_MEMBERS)) {
-      items.push({
-        label: "Kick Member",
-        icon: ICON_ACCOUNT_REMOVE,
-        action: () => {
-          handleRemoveCommunityMember(props.communityId, member.pseudonymKey);
-        },
-        danger: true,
-      });
-    }
-
-    if (hasPermission(perms, BAN_MEMBERS)) {
-      items.push({
-        label: "Ban Member",
-        icon: ICON_BAN,
-        action: () => {
-          handleBanMember(props.communityId, member.pseudonymKey);
-        },
-        danger: true,
-      });
-    }
-
-    return items;
+    return null;
   }
 
   function memberRoles(member: Member): { name: string; color: number }[] {
@@ -184,6 +141,215 @@ const MemberList: Component<MemberListProps> = (props) => {
     return groups;
   });
 
+  function handleConfirm(): void {
+    const action = confirmAction();
+    if (!action) return;
+    if (action.type === "kick") {
+      handleRemoveCommunityMember(props.communityId, action.pseudonymKey);
+    } else {
+      handleBanMember(props.communityId, action.pseudonymKey);
+    }
+    setConfirmAction(null);
+  }
+
+  function memberMenu(member: Member): JSX.Element {
+    const perms = myPerms();
+    const voiceChannelId = memberVoiceChannelId(member);
+    const assignableRoles = props.roles
+      .filter((r) => r.id !== 0)
+      .sort((a, b) => b.position - a.position);
+
+    return (
+      <ContextMenu.Portal>
+        <ContextMenu.Content class="context-menu">
+          <Show when={hasPermission(perms, MANAGE_ROLES) && assignableRoles.length > 0}>
+            <ContextMenu.Sub>
+              <ContextMenu.SubTrigger class="context-menu-item">
+                <span class="nf-icon context-menu-icon">{ICON_SHIELD}</span>
+                Manage Roles
+              </ContextMenu.SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent class="context-menu">
+                  <For each={assignableRoles}>
+                    {(role) => {
+                      const hasRole = () => member.roleIds.includes(role.id);
+                      return (
+                        <ContextMenu.CheckboxItem
+                          class="context-menu-item"
+                          checked={hasRole()}
+                          onChange={() =>
+                            toggleRole(member.pseudonymKey, role.id, hasRole())
+                          }
+                        >
+                          <ContextMenu.ItemIndicator class="context-menu-indicator">
+                            ✓
+                          </ContextMenu.ItemIndicator>
+                          {role.name}
+                        </ContextMenu.CheckboxItem>
+                      );
+                    }}
+                  </For>
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
+          </Show>
+
+          <Show when={hasPermission(perms, MODERATE_MEMBERS)}>
+            <ContextMenu.Sub>
+              <ContextMenu.SubTrigger class="context-menu-item">
+                <span class="nf-icon context-menu-icon">{ICON_TIMEOUT}</span>
+                Timeout
+              </ContextMenu.SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent class="context-menu">
+                  <For each={TIMEOUT_PRESETS}>
+                    {(t) => (
+                      <ContextMenu.Item
+                        class="context-menu-item"
+                        onSelect={() =>
+                          handleTimeoutMember(
+                            props.communityId,
+                            member.pseudonymKey,
+                            t.seconds,
+                            null,
+                          )
+                        }
+                      >
+                        {t.label}
+                      </ContextMenu.Item>
+                    )}
+                  </For>
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
+          </Show>
+
+          <Show when={voiceChannelId && hasPermission(perms, MUTE_MEMBERS)}>
+            <ContextMenu.Item
+              class="context-menu-item"
+              onSelect={() =>
+                handleServerMuteMember(
+                  props.communityId,
+                  voiceChannelId!,
+                  member.pseudonymKey,
+                  true,
+                )
+              }
+            >
+              <span class="nf-icon context-menu-icon">{ICON_MIC_OFF}</span>
+              Server Mute
+            </ContextMenu.Item>
+          </Show>
+          <Show when={voiceChannelId && hasPermission(perms, DEAFEN_MEMBERS)}>
+            <ContextMenu.Item
+              class="context-menu-item"
+              onSelect={() =>
+                handleServerDeafenMember(
+                  props.communityId,
+                  voiceChannelId!,
+                  member.pseudonymKey,
+                  true,
+                )
+              }
+            >
+              <span class="nf-icon context-menu-icon">{ICON_HEADPHONES_OFF}</span>
+              Server Deafen
+            </ContextMenu.Item>
+          </Show>
+
+          <Show when={hasPermission(perms, KICK_MEMBERS)}>
+            <ContextMenu.Item
+              class="context-menu-item context-menu-item-danger"
+              onSelect={() =>
+                setConfirmAction({
+                  type: "kick",
+                  pseudonymKey: member.pseudonymKey,
+                  displayName: member.displayName,
+                })
+              }
+            >
+              <span class="nf-icon context-menu-icon">{ICON_ACCOUNT_REMOVE}</span>
+              Kick Member
+            </ContextMenu.Item>
+          </Show>
+
+          <Show when={hasPermission(perms, BAN_MEMBERS)}>
+            <ContextMenu.Item
+              class="context-menu-item context-menu-item-danger"
+              onSelect={() =>
+                setConfirmAction({
+                  type: "ban",
+                  pseudonymKey: member.pseudonymKey,
+                  displayName: member.displayName,
+                })
+              }
+            >
+              <span class="nf-icon context-menu-icon">{ICON_BAN}</span>
+              Ban Member
+            </ContextMenu.Item>
+          </Show>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    );
+  }
+
+  function renderMember(member: Member): JSX.Element {
+    const isSelf = member.pseudonymKey === props.myPseudonymKey;
+    const allowMenu = !isSelf && canManage(member);
+    const roles = () => memberRoles(member);
+    const isOpen = () => openProfileFor() === member.pseudonymKey;
+
+    const popover = (
+      <Popover
+        open={isOpen()}
+        onOpenChange={(open) =>
+          setOpenProfileFor(open ? member.pseudonymKey : null)
+        }
+      >
+        <Popover.Trigger as="div" class="member-item">
+          <StatusDot status={member.status || "online"} />
+          <div class="member-name-info">
+            <span class="member-name">{member.displayName}</span>
+            <Show when={member.gameInfo}>
+              {(info) => (
+                <span class="member-game-info">
+                  {info().gameName}
+                  <Show when={info().serverAddress}>
+                    <span class="member-game-server"> on {info().serverAddress}</span>
+                  </Show>
+                </span>
+              )}
+            </Show>
+            <div class="member-roles-row">
+              <For each={roles()}>
+                {(role) => <RoleTag name={role.name} color={role.color} />}
+              </For>
+              <Show when={member.timeoutUntil}>
+                <span class="nf-icon timeout-indicator" title="Timed out">{ICON_TIMEOUT}</span>
+              </Show>
+            </div>
+          </div>
+        </Popover.Trigger>
+        <MemberProfilePopup
+          communityId={props.communityId}
+          member={member}
+          roles={props.roles}
+          onClose={() => setOpenProfileFor(null)}
+          myPseudonymKey={props.myPseudonymKey}
+        />
+      </Popover>
+    );
+
+    if (!allowMenu) return popover;
+
+    return (
+      <ContextMenu>
+        <ContextMenu.Trigger as="div">{popover}</ContextMenu.Trigger>
+        {memberMenu(member)}
+      </ContextMenu>
+    );
+  }
+
   return (
     <div class="member-list">
       <div class="member-list-header">
@@ -203,77 +369,20 @@ const MemberList: Component<MemberListProps> = (props) => {
           <>
             <div class="member-group-header">{group.name}</div>
             <For each={group.members}>
-              {(member) => {
-                const roles = () => memberRoles(member);
-                return (
-                  <div
-                    class="member-item"
-                    onContextMenu={(e) => handleMemberContextMenu(e, member)}
-                  >
-                    <StatusDot status={member.status || "online"} />
-                    <div class="member-name-info">
-                      <span class="member-name">{member.displayName}</span>
-                      <div class="member-roles-row">
-                        <For each={roles()}>
-                          {(role) => <RoleTag name={role.name} color={role.color} />}
-                        </For>
-                        <Show when={member.timeoutUntil}>
-                          <span class="nf-icon timeout-indicator" title="Timed out">{ICON_TIMEOUT}</span>
-                        </Show>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }}
+              {(member) => renderMember(member)}
             </For>
           </>
         )}
       </For>
-      <Show when={contextMenu()}>
-        {(menu) => (
-          <ContextMenu
-            items={contextMenuItems()}
-            x={menu().x}
-            y={menu().y}
-            onClose={handleCloseContextMenu}
-          />
-        )}
-      </Show>
-      <Show when={rolePickerTarget()}>
-        {(target) => (
-          <div
-            class="context-menu"
-            style={{
-              left: `${target().x}px`,
-              top: `${target().y}px`,
-            }}
-          >
-            <div class="context-menu-header">Manage Roles</div>
-            <For each={props.roles.filter((r) => r.id !== 0).sort((a, b) => b.position - a.position)}>
-              {(role) => {
-                const hasRole = () => target().member.roleIds.includes(role.id);
-                return (
-                  <div
-                    class={`role-picker-item ${hasRole() ? "role-picker-item-active" : ""}`}
-                    onClick={() => toggleRole(target().member.pseudonymKey, role.id, hasRole())}
-                  >
-                    <input type="checkbox" class="role-picker-checkbox" checked={hasRole()} readOnly />
-                    {role.name}
-                  </div>
-                );
-              }}
-            </For>
-            <div class="context-menu-separator" />
-            <div
-              class="context-menu-item"
-              onClick={() => setRolePickerTarget(null)}
-            >
-              <span class="nf-icon context-menu-icon">{ICON_CHECK}</span>
-              Done
-            </div>
-          </div>
-        )}
-      </Show>
+      <ConfirmDialog
+        isOpen={confirmAction() !== null}
+        title={confirmAction()?.type === "kick" ? "Kick Member" : "Ban Member"}
+        message={`Are you sure you want to ${confirmAction()?.type ?? "kick"} ${confirmAction()?.displayName ?? "this member"}?${confirmAction()?.type === "ban" ? " They will not be able to rejoin." : ""}`}
+        danger
+        confirmLabel={confirmAction()?.type === "kick" ? "Kick" : "Ban"}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 };

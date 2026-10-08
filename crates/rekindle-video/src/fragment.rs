@@ -1,0 +1,417 @@
+//! Architecture §10.6 video fragmentation. A single encoded video
+//! frame may exceed Veilid's `app_message` 32 KiB cap, so we split it
+//! into chunks sized for the transport's REAL per-hop unit (see
+//! [`FRAGMENT_PAYLOAD_LIMIT`]).
+
+use rekindle_types::video::Codec;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+/// Per-fragment payload limit, sized for loss granularity rather than
+/// the 32 KiB `app_message` ceiling. Veilid segments every envelope on
+/// a UDP hop into 1,272-byte fire-and-forget datagrams with
+/// all-or-nothing reassembly and no retransmit
+/// (veilid-tools `assembly_buffer.rs`: `FRAGMENT_LEN = 1280 - 8`), so
+/// a 28 KiB fragment rode as ~23 datagrams PER HOP — at 0.5%/datagram
+/// loss across ~6 onion hops that's ~50% frame delivery, observed live
+/// as undecodable video. True single-datagram fragments are infeasible
+/// (first-hop onion chrome is ~0.9-1.2 KiB + ~250 B of our own
+/// envelope), so 4 KiB is the knee: 4-5 datagrams/hop, and a 24 KiB
+/// keyframe becomes 6 data + 2 parity shards that Reed-Solomon can
+/// actually recover (P≈0.93 where the 28 KiB monolith delivered 0.50).
+pub const FRAGMENT_PAYLOAD_LIMIT: usize = 4 * 1024;
+
+/// Maximum fragments per frame — `frag_total: u8` caps the WIRE field
+/// at 255. Must never read 256: a frame splitting into exactly 256
+/// chunks passed the bound check but panicked at the `u8` conversion.
+pub const MAX_FRAGMENTS_PER_FRAME: usize = 255;
+
+/// 16-byte stream identifier — derived from `(channel_id || sender_pseudonym)`
+/// so concurrent streams (e.g. two members screen-sharing in the same
+/// channel) don't collide.
+pub const STREAM_ID_LEN: usize = 16;
+
+/// On-the-wire fragment matching architecture §10.6 line 2062.
+/// Carries one chunk of an MEK-encrypted, encoded video frame.
+/// FEC parity packets travel as a separate [`VideoParityFragment`]
+/// variant so this type stays canonical to the spec.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoFragment {
+    pub stream_id: [u8; STREAM_ID_LEN],
+    /// Monotonic frame counter assigned by the sender.
+    pub frame_seq: u32,
+    /// 0-based fragment index within the frame, in `[0, frag_total)`.
+    pub frag_index: u8,
+    /// Total number of source (data) fragments the frame was split
+    /// into. Parity fragments live in a separate stream and don't
+    /// count here.
+    pub frag_total: u8,
+    /// True for keyframes (I-frames). Receivers without one drop
+    /// inter-frames until the next keyframe arrives.
+    pub keyframe: bool,
+    /// Codec the frame was encoded with — the RTP payload-type analog.
+    /// Receivers configure their decoder from this tag (never from the
+    /// negotiated session config, which only constrains the SENDER).
+    /// Covered by the signature (codec-confusion defense).
+    pub codec: Codec,
+    /// Sender wall-clock at frame capture (ms since epoch, truncated
+    /// to u32 — drift across ~50 days is acceptable for a streaming
+    /// protocol where freshness is local-relative).
+    pub timestamp: u32,
+    /// Index of the sender's media key that encrypted the frame (plan
+    /// C7.20): it rides the envelope so receivers know WHICH key, and a
+    /// recovery request names this exact index instead of guessing.
+    /// Covered by the signature.
+    pub key_index: u64,
+    /// MEK-encrypted fragment payload. Per architecture §10.6 line 2057
+    /// the MEK encryption happens before fragmentation.
+    pub payload: Vec<u8>,
+    /// Ed25519 signature over `fragment_signing_bytes(...)`.
+    pub signature: Vec<u8>,
+}
+
+/// Parity (forward-error-correction) fragment for a single video
+/// frame. Architecture §10.6 line 4080 calls for "FEC data" on
+/// `VideoFragment`; we ship it as a sibling variant — modelled on
+/// RFC 5109 / FlexFEC's separate FEC packet stream — so the
+/// canonical `VideoFragment` shape stays per spec and receivers
+/// without FEC support can ignore parity packets harmlessly.
+///
+/// One parity fragment covers `data_count` consecutive source
+/// fragments of a single `frame_seq`. The Reed-Solomon code (n=K+M)
+/// lets the receiver reconstruct the original frame from any
+/// `data_count` of the `data_count + parity_total` fragments.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoParityFragment {
+    pub stream_id: [u8; STREAM_ID_LEN],
+    pub frame_seq: u32,
+    /// 0-based parity index, in `[0, parity_total)`.
+    pub parity_index: u8,
+    /// Total number of parity fragments shipped for this frame.
+    pub parity_total: u8,
+    /// Number of source (data) fragments this parity set covers —
+    /// matches the data fragments' `frag_total`.
+    pub data_count: u8,
+    /// Codec of the frame this parity covers — mirrors
+    /// [`VideoFragment::codec`]; covered by the signature.
+    pub codec: Codec,
+    /// Original encrypted-frame length in bytes. Reed-Solomon shards
+    /// must be equal-size, so the last data shard is null-padded
+    /// during encode; the receiver truncates to `frame_len` after
+    /// reconstruction.
+    pub frame_len: u32,
+    pub timestamp: u32,
+    /// Mirrors [`VideoFragment::key_index`] — FEC-recovered
+    /// frames need the generation too. Covered by the signature.
+    pub key_index: u64,
+    /// MEK-encrypted parity bytes — same shard size as the data
+    /// fragments' payload (i.e. `ceil(frame_len / data_count)`).
+    pub payload: Vec<u8>,
+    /// Ed25519 signature over `parity_signing_bytes(...)`.
+    pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum FragmentError {
+    #[error("frame is empty")]
+    EmptyFrame,
+    #[error("frame would split into {0} fragments — exceeds MAX_FRAGMENTS_PER_FRAME = {MAX_FRAGMENTS_PER_FRAME}")]
+    TooManyFragments(usize),
+    #[error("parity_count must be > 0 for fragment_with_fec; use fragment_frame for non-FEC")]
+    ZeroParity,
+    #[error("Reed-Solomon encode failed: {0}")]
+    Fec(String),
+}
+
+/// Canonical bytes-to-sign for one fragment, extending architecture
+/// §10.6 line 2071 with the codec tag: `(stream_id || frame_seq ||
+/// frag_index || frag_total || keyframe || codec || timestamp ||
+/// payload)`. The codec byte is signed so a relayer cannot re-label a
+/// stream's codec and corrupt every receiver's decoder
+/// (codec-confusion defense). Exposed so the orchestrator in
+/// `src-tauri` (which holds the signing key) can sign before dispatch
+/// without re-implementing the byte layout.
+pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
+    let mut buf =
+        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 8 + fragment.payload.len());
+    buf.extend_from_slice(&fragment.stream_id);
+    buf.extend_from_slice(&fragment.frame_seq.to_le_bytes());
+    buf.push(fragment.frag_index);
+    buf.push(fragment.frag_total);
+    buf.push(u8::from(fragment.keyframe));
+    buf.push(fragment.codec.wire_byte());
+    buf.extend_from_slice(&fragment.timestamp.to_le_bytes());
+    buf.extend_from_slice(&fragment.key_index.to_le_bytes());
+    buf.extend_from_slice(&fragment.payload);
+    buf
+}
+
+/// Canonical bytes-to-sign for one parity fragment. Mirrors
+/// `fragment_signing_bytes` but covers the FEC-specific fields; the
+/// codec byte sits after `data_count`.
+pub fn parity_signing_bytes(fragment: &VideoParityFragment) -> Vec<u8> {
+    let mut buf =
+        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 4 + 8 + fragment.payload.len());
+    buf.extend_from_slice(&fragment.stream_id);
+    buf.extend_from_slice(&fragment.frame_seq.to_le_bytes());
+    buf.push(fragment.parity_index);
+    buf.push(fragment.parity_total);
+    buf.push(fragment.data_count);
+    buf.push(fragment.codec.wire_byte());
+    buf.extend_from_slice(&fragment.frame_len.to_le_bytes());
+    buf.extend_from_slice(&fragment.timestamp.to_le_bytes());
+    buf.extend_from_slice(&fragment.key_index.to_le_bytes());
+    buf.extend_from_slice(&fragment.payload);
+    buf
+}
+
+/// Split an already-encrypted frame into ≤`FRAGMENT_PAYLOAD_LIMIT`
+/// chunks. Caller signs each fragment afterwards using the sender's
+/// pseudonym key — this module is sign-agnostic.
+/// Per-frame metadata shared by every fragment of one frame —
+/// bundles the builder parameters so the arg lists stay flat.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameShape {
+    pub stream_id: [u8; STREAM_ID_LEN],
+    pub frame_seq: u32,
+    pub keyframe: bool,
+    pub codec: Codec,
+    pub timestamp: u32,
+    /// Index of the sender's media key that encrypted the frame.
+    pub key_index: u64,
+}
+
+pub fn fragment_frame(
+    shape: FrameShape,
+    encrypted_frame: &[u8],
+) -> Result<Vec<VideoFragment>, FragmentError> {
+    let FrameShape {
+        stream_id,
+        frame_seq,
+        keyframe,
+        codec,
+        timestamp,
+        key_index,
+    } = shape;
+    if encrypted_frame.is_empty() {
+        return Err(FragmentError::EmptyFrame);
+    }
+    let total = encrypted_frame.len().div_ceil(FRAGMENT_PAYLOAD_LIMIT);
+    if total > MAX_FRAGMENTS_PER_FRAME {
+        return Err(FragmentError::TooManyFragments(total));
+    }
+    let total_u8 = u8::try_from(total).expect("checked above");
+
+    let mut fragments = Vec::with_capacity(total);
+    for (idx, chunk) in encrypted_frame.chunks(FRAGMENT_PAYLOAD_LIMIT).enumerate() {
+        fragments.push(VideoFragment {
+            stream_id,
+            frame_seq,
+            frag_index: u8::try_from(idx).expect("idx <= total_u8 - 1 <= u8::MAX"),
+            frag_total: total_u8,
+            keyframe,
+            codec,
+            timestamp,
+            key_index,
+            payload: chunk.to_vec(),
+            signature: Vec::new(),
+        });
+    }
+    Ok(fragments)
+}
+
+/// Result of `fragment_frame_with_fec`: the spec-shaped data fragments
+/// plus the matching parity fragments. Caller signs both lists with
+/// the sender's pseudonym key before dispatch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FecFragments {
+    pub data: Vec<VideoFragment>,
+    pub parity: Vec<VideoParityFragment>,
+}
+
+/// Fragment a frame into `data + parity` shards using Reed-Solomon
+/// erasure coding. Receivers can reconstruct the frame from any
+/// `data.len()` of the `data.len() + parity.len()` total shards.
+///
+/// All shards must be equal-size for Reed-Solomon, so the encrypted
+/// frame is null-padded to a multiple of the per-shard size before
+/// encoding. The original length travels in each parity fragment's
+/// `frame_len` field for receiver-side truncation.
+pub fn fragment_frame_with_fec(
+    shape: FrameShape,
+    encrypted_frame: &[u8],
+    parity_count: u8,
+) -> Result<FecFragments, FragmentError> {
+    let FrameShape {
+        stream_id,
+        frame_seq,
+        keyframe,
+        codec,
+        timestamp,
+        key_index,
+    } = shape;
+    use reed_solomon_erasure::galois_8::ReedSolomon;
+
+    if encrypted_frame.is_empty() {
+        return Err(FragmentError::EmptyFrame);
+    }
+    if parity_count == 0 {
+        return Err(FragmentError::ZeroParity);
+    }
+
+    let frame_len = u32::try_from(encrypted_frame.len()).unwrap_or(u32::MAX);
+    let data_count = encrypted_frame.len().div_ceil(FRAGMENT_PAYLOAD_LIMIT);
+    if data_count + usize::from(parity_count) > MAX_FRAGMENTS_PER_FRAME {
+        return Err(FragmentError::TooManyFragments(
+            data_count + usize::from(parity_count),
+        ));
+    }
+    let data_count_u8 = u8::try_from(data_count).expect("checked above");
+    let shard_size = encrypted_frame.len().div_ceil(data_count);
+
+    // Build equal-sized data shards, null-padding the last one.
+    let mut shards: Vec<Vec<u8>> = Vec::with_capacity(data_count + usize::from(parity_count));
+    for chunk in encrypted_frame.chunks(shard_size) {
+        let mut shard = chunk.to_vec();
+        shard.resize(shard_size, 0);
+        shards.push(shard);
+    }
+    for _ in 0..parity_count {
+        shards.push(vec![0u8; shard_size]);
+    }
+
+    let rs = ReedSolomon::new(data_count, usize::from(parity_count))
+        .map_err(|e| FragmentError::Fec(format!("rs init: {e}")))?;
+    rs.encode(&mut shards)
+        .map_err(|e| FragmentError::Fec(format!("rs encode: {e}")))?;
+
+    let mut data: Vec<VideoFragment> = Vec::with_capacity(data_count);
+    for idx in 0..data_count {
+        // Systematic-code invariant (RFC 6330 §"need not be included in
+        // the packet", RFC 8627 "source packets transmitted
+        // unmodified"): the DATA fragment carries the REAL object bytes,
+        // never the FEC null-padding. The padded `shards[idx]` is used
+        // only for the Reed-Solomon parity encode above; here we slice
+        // the original `encrypted_frame` so the last shard is short, not
+        // zero-extended. Receivers that get all data concatenate them
+        // into the exact ciphertext with no length metadata needed.
+        let start = idx * shard_size;
+        let end = ((idx + 1) * shard_size).min(encrypted_frame.len());
+        data.push(VideoFragment {
+            stream_id,
+            frame_seq,
+            frag_index: u8::try_from(idx).expect("data_count fits u8"),
+            frag_total: data_count_u8,
+            keyframe,
+            codec,
+            timestamp,
+            key_index,
+            payload: encrypted_frame[start..end].to_vec(),
+            signature: Vec::new(),
+        });
+    }
+    let mut parity: Vec<VideoParityFragment> = Vec::with_capacity(usize::from(parity_count));
+    for (idx, shard) in shards.iter().skip(data_count).enumerate() {
+        parity.push(VideoParityFragment {
+            stream_id,
+            frame_seq,
+            parity_index: u8::try_from(idx).expect("parity_count is u8"),
+            parity_total: parity_count,
+            data_count: data_count_u8,
+            codec,
+            frame_len,
+            timestamp,
+            key_index,
+            payload: shard.clone(),
+            signature: Vec::new(),
+        });
+    }
+    Ok(FecFragments { data, parity })
+}
+
+/// Reconstruct the original encrypted frame from any subset of
+/// `(data_count + parity_total)` fragments containing at least
+/// `data_count` shards. Returns the ciphertext bytes (caller MEK-
+/// decrypts).
+///
+/// `received_data` is `(frag_index, payload)` pairs; `received_parity`
+/// is `(parity_index, payload)`. `data_count`, `parity_total`, `frame_len`
+/// must match what the sender shipped (they're carried on every
+/// parity fragment, so a single received parity is enough to fill them).
+pub fn reconstruct_frame(
+    received_data: &[(u8, Vec<u8>)],
+    received_parity: &[(u8, Vec<u8>)],
+    data_count: u8,
+    parity_total: u8,
+    frame_len: u32,
+) -> Result<Vec<u8>, FragmentError> {
+    use reed_solomon_erasure::galois_8::ReedSolomon;
+
+    if data_count == 0 {
+        return Err(FragmentError::EmptyFrame);
+    }
+    let total = usize::from(data_count) + usize::from(parity_total);
+    let received_total = received_data.len() + received_parity.len();
+    if received_total < usize::from(data_count) {
+        return Err(FragmentError::Fec(format!(
+            "need {data_count} shards, got {received_total}"
+        )));
+    }
+
+    // Shard size = the MAX received payload length. Data fragments now
+    // carry real (unpadded) bytes, so the last data shard is SHORT; only
+    // a full shard (any parity, or any non-last data shard) gives the
+    // true RS shard size. Taking `.first()` could pick the short shard
+    // and mis-size every other shard (notably the only-short-data+parity
+    // case). The full shards are the maximum; the short last shard is ≤.
+    let shard_size = received_data
+        .iter()
+        .chain(received_parity.iter())
+        .map(|(_, p)| p.len())
+        .max()
+        .unwrap_or(0);
+    if shard_size == 0 {
+        return Err(FragmentError::EmptyFrame);
+    }
+
+    let mut shards: Vec<Option<Vec<u8>>> = vec![None; total];
+    for (idx, payload) in received_data {
+        let i = usize::from(*idx);
+        if i >= usize::from(data_count) || payload.len() > shard_size {
+            // Out-of-range index, or a payload longer than a shard —
+            // corrupt; skip rather than mis-place.
+            continue;
+        }
+        // Re-synthesize the FEC zero-padding RS expects: the sender
+        // padded the last data shard before computing parity, then
+        // shipped only the real bytes. Re-pad to shard_size so RS sees
+        // the exact shards it encoded.
+        let mut shard = payload.clone();
+        shard.resize(shard_size, 0);
+        shards[i] = Some(shard);
+    }
+    for (idx, payload) in received_parity {
+        let i = usize::from(data_count) + usize::from(*idx);
+        if i < total && payload.len() == shard_size {
+            shards[i] = Some(payload.clone());
+        }
+    }
+
+    let rs = ReedSolomon::new(usize::from(data_count), usize::from(parity_total))
+        .map_err(|e| FragmentError::Fec(format!("rs init: {e}")))?;
+    rs.reconstruct_data(&mut shards)
+        .map_err(|e| FragmentError::Fec(format!("rs reconstruct: {e}")))?;
+
+    let mut out = Vec::with_capacity(usize::from(data_count) * shard_size);
+    for shard in shards.iter().take(usize::from(data_count)).flatten() {
+        out.extend_from_slice(shard);
+    }
+    out.truncate(frame_len as usize);
+    Ok(out)
+}
+
+#[cfg(test)]
+#[path = "fragment/tests.rs"]
+mod tests;

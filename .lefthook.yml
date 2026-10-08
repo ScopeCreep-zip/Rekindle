@@ -1,0 +1,120 @@
+# Lefthook — fast, parallel git-hook orchestrator (Go-based).
+# Spec: https://lefthook.dev/configuration/
+# Compared to pre-commit (Python): faster, parallel by default, single
+# binary, no per-environment Python install.
+#
+# Install (any of):
+#   brew install lefthook
+#   cargo install lefthook --locked
+#   go install github.com/evilmartians/lefthook@latest
+#
+# Activate the hooks for this clone:
+#   lefthook install
+#
+# Run a hook stage manually (no git commit needed):
+#   lefthook run pre-commit          # only staged files
+#   lefthook run pre-commit --all    # all files (CI also uses --all)
+#   lefthook run pre-push
+#
+# Each command's `glob:` filters files; commands without glob run
+# unconditionally. CI calls `lefthook run pre-commit --all`.
+
+assert_lefthook_installed: true
+min_version: "1.10.0"
+
+# ─── pre-commit ─────────────────────────────────────────────────────────
+# Runs on every git commit against the staged files. Parallel by default.
+pre-commit:
+  parallel: true
+  commands:
+    # ── Rust ──────────────────────────────────────────────────────
+    cargo-fmt:
+      glob: "*.rs"
+      run: cargo fmt --all -- --check {staged_files}
+      stage_fixed: true
+
+    # ── TypeScript / JavaScript / JSON / CSS-via-biome ────────────
+    biome:
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}"
+      run: pnpm exec biome check --no-errors-on-unmatched {staged_files}
+
+    # ── CSS (Tailwind 4 + @theme) ─────────────────────────────────
+    stylelint:
+      glob: "src/styles/**/*.css"
+      run: pnpm exec stylelint {staged_files}
+
+    # ── TOML ──────────────────────────────────────────────────────
+    taplo:
+      glob: "*.toml"
+      run: taplo format --check {staged_files}
+
+    # ── Markdown ──────────────────────────────────────────────────
+    markdownlint:
+      glob: "*.md"
+      run: pnpm exec markdownlint-cli2 {staged_files}
+
+    # ── YAML (workflows + dependabot) ─────────────────────────────
+    actionlint:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: actionlint {staged_files}
+
+    # ── Shell scripts ─────────────────────────────────────────────
+    shellcheck:
+      glob: "scripts/*.sh"
+      run: shellcheck {staged_files}
+
+    shfmt:
+      glob: "scripts/*.sh"
+      run: shfmt -d -i 4 -ci -bn {staged_files}
+
+    # ── Nix ───────────────────────────────────────────────────────
+    nixfmt:
+      glob: "*.nix"
+      run: nixfmt --check {staged_files}
+
+    statix:
+      glob: "*.nix"
+      run: statix check {staged_files}
+
+    deadnix:
+      glob: "*.nix"
+      run: deadnix --fail {staged_files}
+
+    # ── Cap'n Proto ───────────────────────────────────────────────
+    capnp-compile:
+      glob: "schemas/*.capnp"
+      run: capnp compile -o /dev/null --src-prefix=schemas {staged_files}
+
+    # ── SQL ───────────────────────────────────────────────────────
+    sqlfluff:
+      glob: "src-tauri/migrations/*.sql"
+      run: sqlfluff lint {staged_files}
+
+    # ── Repo-wide: typos + secret scan ────────────────────────────
+    typos:
+      run: typos --force-exclude {staged_files}
+
+    gitleaks:
+      run: gitleaks protect --staged --redact --no-banner -v
+
+# ─── pre-push ───────────────────────────────────────────────────────────
+# Runs on git push. Heavier checks that aren't appropriate for every
+# commit but should land before code reaches the remote.
+pre-push:
+  parallel: false
+  commands:
+    cargo-clippy:
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+    cargo-test:
+      run: cargo test --workspace --no-fail-fast
+
+# ─── commit-msg ─────────────────────────────────────────────────────────
+# (No conventional-commit enforcement today; the project's commit
+# style is informal. Add a regex check here if conventions tighten.)
+
+# ─── Skip ───────────────────────────────────────────────────────────────
+# To skip every hook for a single commit (use sparingly):
+#   LEFTHOOK=0 git commit ...
+# To skip a single command:
+#   LEFTHOOK_EXCLUDE=cargo-clippy,cargo-test git commit ...

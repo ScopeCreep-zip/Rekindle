@@ -1,0 +1,352 @@
+// Sync / pairing / video / analytics / search / DM DTOs for the Tauri
+// command layer. Re-exported by ../commands.ts. Used by commands/sync.ts.
+
+export type VideoTrackLabel = "camera" | "screen" | (string & {});
+
+export type VideoTopologyReason =
+  | "initial"
+  | "relay_left"
+  | "relay_overloaded"
+  | "explicit_request"
+  | (string & {});
+
+export interface SendVideoFrameRequest {
+  codec: Codec;
+  streamIdHex: string;
+  frameSeq: number;
+  keyframe: boolean;
+  timestamp: number;
+  encodedPayloadB64: string;
+}
+
+/// Phase A — typed video codec / scalability vocabulary, mirroring
+/// `rekindle_types::video::{Codec, ScalabilityMode}`. The Rust enums
+/// serialize as `#[serde(rename_all = "lowercase")]`, so the wire
+/// shape on the JSON-over-Tauri surface is a string literal union.
+/// No `Other(string)` escape hatch — see `crates/rekindle-types/src/video.rs`.
+export type Codec = "vp9" | "vp8" | "h264";
+export type ScalabilityMode = "flat" | "l1t2";
+
+/// Phase 3 — direction-split `MediaCapabilities` shape (mirrors
+/// `crates/rekindle-video/src/lib.rs::MediaCapabilities`). The
+/// frontend probes its WebView per-codec × per-direction at startup
+/// and reports the result; the backend reconciles against the
+/// gossiped per-peer caps. `encodeCodecs` may be empty (decode-only
+/// platform — the user can watch but not send).
+export interface MediaCapabilities {
+  maxPixelCount: number;
+  maxFps: number;
+  encodeCodecs: Codec[];
+  decodeCodecs: Codec[];
+  supportsOptimizeForLatency: boolean;
+  supportedScalabilityModes: ScalabilityMode[];
+}
+
+/// Phase A — encoder side of the negotiated session config (mirrors
+/// `crates/rekindle-video/src/lib.rs::EncoderConstraints`). Width /
+/// height are in pixels so the WebCodecs `VideoEncoder.configure` call
+/// doesn't need a square-root of `maxPixelCount`.
+export interface EncoderConstraints {
+  codec: Codec;
+  maxWidth: number;
+  maxHeight: number;
+  maxFps: number;
+  scalabilityMode: ScalabilityMode;
+}
+
+/// Phase 3 — decoder tuning side of the negotiated session config
+/// (mirrors `crates/rekindle-video/src/lib.rs::DecoderConstraints`).
+/// Carries NO codec: decoders are created from the per-frame codec
+/// tag, never from session config.
+export interface DecoderConstraints {
+  optimizeForLatency: boolean;
+}
+
+/// Phase A / B — the room-wide encoder + decoder configuration the
+/// backend negotiator emits on `CommunityEvent::VideoSessionConfig`.
+/// Every peer encodes and decodes against the same shape. Mirrors
+/// `crates/rekindle-video/src/lib.rs::SessionVideoConfig`.
+export interface SessionVideoConfig {
+  encoder: EncoderConstraints;
+  decoder: DecoderConstraints;
+}
+
+export interface BackgroundSyncReport {
+  communitiesChecked: number;
+  recordsInspected: number;
+  failedRecords: number;
+  elapsedMs: number;
+}
+
+export interface LinkPreview {
+  messageId: string;
+  url: string;
+  title?: string;
+  description?: string;
+  siteName?: string;
+  fetchedAt: number;
+}
+
+export interface PairingSession {
+  pairingCode: string;
+  pairingSaltHex: string;
+  personalRecordKey: string;
+  expiresAt: number;
+  /**
+   * Architecture §28.4 — the existing device's private-route blob,
+   * hex-encoded. Encoded into the QR code so the new device can
+   * `acceptPairingCode` without out-of-band route delivery. Empty
+   * string when no route is available yet.
+   */
+  existingDeviceRouteBlobHex: string;
+}
+
+/**
+ * Architecture §28.4 / Phase 7 W24 line 4122 — payload returned from
+ * the Rust-side QR generator. The frontend renders {@link svg} via
+ * `<div innerHTML={...} />`; {@link uri} is the same string encoded
+ * inside the QR (offer as a "copy link" affordance for users without a
+ * working camera). {@link session} echoes the underlying pairing-code
+ * fields so the existing-device UI can show TTL countdown without
+ * re-parsing.
+ */
+export interface PairingQrPayload {
+  svg: string;
+  uri: string;
+  session: PairingSession;
+}
+
+export interface PairingAccept {
+  personalRecordKey: string;
+  assignedDeviceId: string;
+}
+
+export interface SyncCommunityRef {
+  communityId: string;
+  joinedAt: number;
+  displayName: string;
+}
+
+export interface SyncManifest {
+  communities: SyncCommunityRef[];
+  lamport: number;
+}
+
+export interface SyncReadStateEntry {
+  communityId: string;
+  channelId: string;
+  lastReadLamport: number;
+}
+
+export interface SyncReadState {
+  entries: SyncReadStateEntry[];
+}
+
+export interface SyncPreferences {
+  notificationDefaultLevel?: number;
+  theme?: string;
+  language?: string;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  lamport: number;
+}
+
+export interface DeviceListEntry {
+  deviceId: string;
+  devicePublicKey: string;
+  displayName: string;
+  pairedAt: number;
+  unpairedAt?: number;
+}
+
+export interface DeviceList {
+  devices: DeviceListEntry[];
+  lamport: number;
+}
+
+export interface DailySample {
+  dayUnixMs: number;
+  value: number;
+}
+
+export interface DailyTimeseries {
+  samples: DailySample[];
+}
+
+export interface MemberMetrics {
+  totalMembers: number;
+  active7d: number;
+  active30d: number;
+  joins7d: number;
+  leaves7d: number;
+  retention7Of30: number;
+  activePerDay: DailyTimeseries;
+  joinsPerDay: DailyTimeseries;
+  leavesPerDay: DailyTimeseries;
+}
+
+export interface ChannelMetrics {
+  channelId: string;
+  messages7d: number;
+  uniquePosters7d: number;
+  peakConcurrentVoice: number;
+  messagesPerDay: DailyTimeseries;
+  uniquePostersPerDay: DailyTimeseries;
+}
+
+export interface GrowthSample {
+  dayUnixMs: number;
+  memberCount: number;
+}
+
+export interface GrowthMetrics {
+  samples: GrowthSample[];
+}
+
+export interface ActivityByHour {
+  /** 24-element array indexed by UTC hour 0..=23. */
+  hourCounts: number[];
+}
+
+export interface CommunityAnalytics {
+  communityId: string;
+  members: MemberMetrics;
+  channels: ChannelMetrics[];
+  growth: GrowthMetrics;
+  activityByHour: ActivityByHour;
+  storageUsage: StorageUsage;
+  computedInMs: number;
+}
+
+export interface StorageUsage {
+  totalBytes: number;
+  messageBytes: number;
+  threadMessageBytes: number;
+  channelPinBytes: number;
+  readStateBytes: number;
+  voiceEventBytes: number;
+  memberLeaveBytes: number;
+  metadataBytes: number;
+}
+
+export type HasFilter =
+  | "link"
+  | "file"
+  | "image"
+  | "video"
+  | "embed"
+  | "poll"
+  | "voice_message";
+
+export type SearchSort = "relevance" | "newest" | "oldest";
+
+export interface SearchFilters {
+  from?: string;
+  /**
+   * Architecture §32 Phase 7 W23 line 4111 — community-scoped search.
+   * Undefined = global (all communities the local member has joined);
+   * a community id restricts matches to that community via the
+   * `channels.community_id` JOIN in the FTS5 query.
+   */
+  inCommunity?: string;
+  inChannel?: string;
+  inThread?: string;
+  has?: HasFilter[];
+  before?: number;
+  after?: number;
+  mentions?: string;
+  isPinned?: boolean;
+}
+
+export interface MessageSearch {
+  query: string;
+  filters?: SearchFilters;
+  sort?: SearchSort;
+  limit?: number;
+  offset?: number;
+}
+
+export type SearchScope = "channel" | "thread" | "dm";
+
+export interface SearchHit {
+  scope: SearchScope;
+  conversationId: string;
+  messageId?: string;
+  senderKey: string;
+  body: string;
+  timestamp: number;
+  rank: number;
+  beforeBody?: string;
+  afterBody?: string;
+}
+
+export interface SearchResult {
+  hits: SearchHit[];
+  totalReturned: number;
+  queryMs: number;
+}
+
+export interface DmConversation {
+  recordKey: string;
+  isGroup: boolean;
+  initiatorPublicKey: string;
+  initiatorPseudonym: string;
+  mySubkey: number;
+  participants: { pseudonym: string; subkey: number; publicKey: string }[];
+  mekGeneration: number;
+  createdAt: number;
+  lastMessageAt: number | null;
+}
+
+export interface DmMessageRecord {
+  id: number;
+  senderPseudonym: string;
+  body: string;
+  timestamp: number;
+  sequence: number;
+  mekGeneration: number;
+}
+
+/**
+ * Phase 11 Tier 1 — payload pushed through the per-peer DM video
+ * `Channel` (replaces the `dm-video-frame` event). Mirrors the Rust
+ * `video_channels::DmVideoFrameMsg`.
+ */
+export interface DmVideoFrameMsg {
+  peerPubkey: string;
+  streamIdHex: string;
+  frameSeq: number;
+  keyframe: boolean;
+  /** Codec wire string — the decoder follows this tag. */
+  codec: Codec;
+  timestamp: number;
+  encodedPayloadB64: string;
+}
+
+/**
+ * Phase 11 Tier 1 — payload pushed through the per-community video
+ * `Channel` (replaces the `community-event` `videoFrame` variant).
+ * Mirrors the Rust `video_channels::CommunityVideoFrameMsg`.
+ */
+export interface CommunityVideoFrameMsg {
+  communityId: string;
+  senderPseudonym: string;
+  streamId: string;
+  frameSeq: number;
+  keyframe: boolean;
+  /** Codec wire string — the decoder follows this tag. */
+  codec: Codec;
+  timestamp: number;
+  payloadB64: string;
+}
+
+/**
+ * JPEG self-view still from the Linux-native capture pipeline's preview
+ * branch, pushed through the native-preview `Channel`. Mirrors the Rust
+ * `video_channels::NativePreviewFrameMsg`. Codec-stateless — painted to
+ * a canvas via `createImageBitmap`, no WebCodecs decoder.
+ */
+export interface NativePreviewFrameMsg {
+  streamIdHex: string;
+  jpegB64: string;
+}

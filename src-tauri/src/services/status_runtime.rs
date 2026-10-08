@@ -1,0 +1,152 @@
+//! Phase 23.C — status-handler Tauri-runtime orchestration lifted from
+//! `commands/status.rs`. Hosts:
+//! * `set_status_inner` — validate + state mutation + DHT publish.
+//! * `set_nickname_inner` — DB write + DHT subkey 0 push.
+//! * `compress_avatar_to_webp` + `set_avatar_inner` — image compress to
+//!   WebP (CPU-bound, on a blocking thread) + DB write + DHT subkey 3
+//!   push.
+//! * `get_avatar_inner` — two-step SQLite lookup (identity → friends).
+//! * `set_status_message_inner` — state mutation + DHT subkey 1 push.
+
+use std::io::Cursor;
+
+use image::ImageReader;
+
+use crate::db_helpers::db_call;
+use crate::services;
+use crate::state::{SharedState, UserStatus};
+use crate::state_helpers;
+use rekindle_db::Db;
+
+pub async fn set_status_inner(state: &SharedState, status: String) -> Result<(), String> {
+    let status_enum = match status.as_str() {
+        "online" => UserStatus::Online,
+        "away" => UserStatus::Away,
+        "busy" => UserStatus::Busy,
+        "offline" => UserStatus::Offline,
+        "invisible" => UserStatus::Invisible,
+        _ => return Err(format!("invalid status: {status}")),
+    };
+
+    if let Some(ref mut identity) = *state.identity.write() {
+        identity.status = status_enum;
+        tracing::info!(
+            status = ?status_enum,
+            status_message = %identity.status_message,
+            "status updated"
+        );
+    }
+
+    *state.pre_away_status.write() = None;
+
+    services::presence_service::request_status_publish(state);
+
+    Ok(())
+}
+
+pub async fn set_nickname_inner(
+    state: &SharedState,
+    pool: &Db,
+    app: &tauri::AppHandle,
+    nickname: String,
+) -> Result<(), String> {
+    let nickname = rekindle_types::presence::limits::display_name(&nickname)
+        .map_err(|e| format!("display name: {e}"))?
+        .to_string();
+    let public_key = {
+        let mut identity = state.identity.write();
+        let id = identity.as_mut().ok_or("not logged in")?;
+        id.display_name.clone_from(&nickname);
+        id.public_key.clone()
+    };
+
+    let nickname_clone = nickname.clone();
+    let pk_clone = public_key.clone();
+    db_call(pool, move |conn| {
+        rekindle_db::repo::identity::set_display_name(conn, &pk_clone, &nickname_clone)
+    })
+    .await?;
+
+    crate::event_dispatch::emit(app, crate::event_dispatch::WebviewEvent::ProfileUpdated);
+
+    services::message_service::push_profile_update(state, 0, nickname.into_bytes()).await
+}
+
+const AVATAR_MAX_DIM: u32 = 128;
+
+fn compress_avatar_to_webp(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let img = ImageReader::new(Cursor::new(&raw))
+        .with_guessed_format()
+        .map_err(|e| format!("failed to guess image format: {e}"))?
+        .decode()
+        .map_err(|e| format!("failed to decode image: {e}"))?;
+
+    let resized = if img.width() > AVATAR_MAX_DIM || img.height() > AVATAR_MAX_DIM {
+        img.resize(
+            AVATAR_MAX_DIM,
+            AVATAR_MAX_DIM,
+            image::imageops::FilterType::Lanczos3,
+        )
+    } else {
+        img
+    };
+
+    let mut webp_buf: Vec<u8> = Vec::new();
+    resized
+        .write_to(&mut Cursor::new(&mut webp_buf), image::ImageFormat::WebP)
+        .map_err(|e| format!("failed to encode WebP: {e}"))?;
+
+    Ok(webp_buf)
+}
+
+pub async fn set_avatar_inner(
+    state: &SharedState,
+    pool: &Db,
+    app: &tauri::AppHandle,
+    avatar_data: Vec<u8>,
+) -> Result<(), String> {
+    let webp_bytes = tokio::task::spawn_blocking(move || compress_avatar_to_webp(&avatar_data))
+        .await
+        .map_err(|e| e.to_string())??;
+
+    let public_key = state_helpers::current_owner_key(state)?;
+
+    let pk_clone = public_key.clone();
+    let webp_for_db = webp_bytes.clone();
+    db_call(pool, move |conn| {
+        rekindle_db::repo::identity::set_avatar(conn, &pk_clone, &webp_for_db)
+    })
+    .await?;
+
+    tracing::info!(
+        public_key = %public_key,
+        webp_size = webp_bytes.len(),
+        "avatar compressed and persisted"
+    );
+
+    crate::event_dispatch::emit(app, crate::event_dispatch::WebviewEvent::ProfileUpdated);
+
+    services::message_service::push_profile_update(state, 3, webp_bytes).await
+}
+
+pub async fn get_avatar_inner(
+    state: &SharedState,
+    pool: &Db,
+    public_key: String,
+) -> Result<Option<Vec<u8>>, String> {
+    let owner_key = state_helpers::owner_key_or_default(state);
+    db_call(pool, move |conn| {
+        if let Some(own) = rekindle_db::repo::identity::avatar(conn, &public_key)? {
+            return Ok(Some(own));
+        }
+        rekindle_db::repo::friends::avatar(conn, &owner_key, &public_key)
+    })
+    .await
+}
+
+pub async fn set_status_message_inner(state: &SharedState, message: String) -> Result<(), String> {
+    if let Some(ref mut identity) = *state.identity.write() {
+        identity.status_message.clone_from(&message);
+    }
+    services::message_service::push_profile_update(state, 1, message.into_bytes()).await
+}

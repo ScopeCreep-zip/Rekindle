@@ -1,0 +1,193 @@
+//! Architecture §32 Phase 7 Week 26 — voice latency benchmark.
+//!
+//! The spec target (line 4147) is "<100ms mouth-to-ear". A true
+//! mouth-to-ear measurement requires physical audio loopback with a
+//! microphone and speaker (NIST's `mouth2ear` MATLAB harness is the
+//! reference) and is impossible to reproduce in `cargo bench`. What we
+//! CAN measure in-process is every component of the pipeline that adds
+//! algorithmic or buffering latency, and assert that their sum plus
+//! the documented network-side budget stays under 100ms.
+//!
+//! ## Measurement strategy (per the implementation plan in
+//! `.claude/plans` discussion):
+//!
+//! - **Per-component criterion benches** measure wall-clock latency
+//!   per call for each pipeline stage (`opus_encode_20ms`,
+//!   `opus_decode_20ms`, `jitter_push_pop`, `mixer_4_sources`).
+//! - **End-to-end loopback** runs an entire encode → packetize →
+//!   jitter → decode → mix cycle in-process and reports total wall
+//!   clock per iteration. This catches interaction costs (cache
+//!   eviction across stages) that per-component benches miss.
+//! - **Budget assertion** is a separate test
+//!   (`tests/latency_budget.rs` — TODO once the bench targets stabilise)
+//!   that reads criterion's `target/criterion/*/estimates.json` and
+//!   asserts the sum of P95s stays under the documented budget.
+//!
+//! Run with: `cargo bench -p rekindle-voice --bench latency`
+//!
+//! Sources:
+//! - Architecture §32 Phase 7 Week 26 (line 4147).
+//! - NIST IR 8206 §6 — mouth-to-ear measurement methodology.
+//! - Mumble #3502 — VoIP latency profile reference.
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use rekindle_voice::codec::OpusCodec;
+use rekindle_voice::jitter::JitterBuffer;
+use rekindle_voice::jitter::JitterFrame;
+use rekindle_voice::mixer::AudioMixer;
+
+#[path = "../testsupport/synth.rs"]
+mod synth;
+use synth::synth_frame;
+
+use rekindle_voice::SAMPLE_RATE_HZ as SAMPLE_RATE;
+const CHANNELS: u16 = 1;
+/// 20ms frame at 48kHz mono = 960 samples (matches the production
+/// configuration in `voice_config_for_group_size`).
+use rekindle_voice::FRAME_SAMPLES_20MS as FRAME_SAMPLES;
+
+fn bench_opus_encode_20ms(c: &mut Criterion) {
+    let mut codec = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");
+    let frame = synth_frame();
+    c.benchmark_group("opus_encode_20ms")
+        .throughput(Throughput::Elements(1))
+        .bench_function("encode", |b| {
+            b.iter(|| {
+                let _ = codec.encode(&frame).expect("encode");
+            });
+        });
+}
+
+fn bench_opus_decode_20ms(c: &mut Criterion) {
+    let mut codec = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");
+    let frame = synth_frame();
+    let encoded = codec.encode(&frame).expect("encode");
+    c.benchmark_group("opus_decode_20ms")
+        .throughput(Throughput::Elements(1))
+        .bench_function("decode", |b| {
+            b.iter(|| {
+                let _ = codec.decode(&encoded).expect("decode");
+            });
+        });
+}
+
+fn bench_jitter_push_pop(c: &mut Criterion) {
+    // Target depth 60ms (3 frames) — middle of the production
+    // dynamic range. Each iteration pushes a fresh ordered packet
+    // and immediately pops, exercising the BTreeMap insert + remove
+    // path that dominates jitter cost.
+    c.benchmark_group("jitter_push_pop_60ms_target")
+        .throughput(Throughput::Elements(1))
+        .bench_function("push_pop", |b| {
+            let mut jb = JitterBuffer::new(60);
+            let mut seq = 0u32;
+            // Pre-fill so pop has something to return on each call.
+            // ms clock = seq * 20 (one 20 ms frame per packet).
+            for _ in 0..3 {
+                jb.push(make_packet(seq), u64::from(seq) * 20);
+                seq += 1;
+            }
+            b.iter(|| {
+                let now_ms = u64::from(seq) * 20;
+                jb.push(make_packet(seq), now_ms);
+                seq = seq.wrapping_add(1);
+                let _ = jb.pop(now_ms);
+            });
+        });
+}
+
+fn bench_mixer(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mixer");
+    let frame = synth_frame();
+    for sources in [1, 2, 4, 8usize] {
+        group.throughput(Throughput::Elements(sources as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(sources), &sources, |b, &n| {
+            let mixer = AudioMixer::new(CHANNELS);
+            let frames: Vec<Vec<f32>> = (0..n).map(|_| frame.clone()).collect();
+            let pseudonyms: Vec<String> = (0..n).map(|i| format!("p{i}")).collect();
+            b.iter(|| {
+                let streams: Vec<(&str, &[f32])> = pseudonyms
+                    .iter()
+                    .zip(frames.iter())
+                    .map(|(p, f)| (p.as_str(), f.as_slice()))
+                    .collect();
+                let _ = mixer.mix(&streams);
+            });
+        });
+    }
+}
+
+/// End-to-end loopback: encode → packetize → jitter buffer
+/// (push+pop) → decode → mixer (single source). Every algorithmic step
+/// the production pipeline performs except network transport. The
+/// result is the per-frame compute cost; mouth-to-ear adds the fixed
+/// algorithmic delay (Opus VoIP at 48kHz: ~6.5ms encode + ~6.5ms
+/// decode lookahead) plus jitter target depth plus capture/playback
+/// buffers plus network RTT.
+fn bench_e2e_loopback(c: &mut Criterion) {
+    let mut encoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("encoder init");
+    let mut decoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("decoder init");
+    let mut jb = JitterBuffer::new(60);
+    let mixer = AudioMixer::new(CHANNELS);
+    let frame = synth_frame();
+
+    // Pre-warm jitter so the first iteration's `pop` returns Some.
+    for seq in 0..3 {
+        let encoded = encoder.encode(&frame).expect("warmup encode");
+        jb.push(
+            JitterFrame {
+                sequence: seq,
+                timestamp: u64::from(seq) * 20,
+                opus: encoded.data,
+            },
+            u64::from(seq) * 20,
+        );
+    }
+    let mut seq = 3u32;
+
+    c.benchmark_group("e2e_loopback_20ms_frame")
+        .throughput(Throughput::Elements(1))
+        .bench_function("loopback", |b| {
+            b.iter(|| {
+                let now_ms = u64::from(seq) * 20;
+                let encoded = encoder.encode(&frame).expect("encode");
+                jb.push(
+                    JitterFrame {
+                        sequence: seq,
+                        timestamp: u64::from(seq) * 20,
+                        opus: encoded.data,
+                    },
+                    now_ms,
+                );
+                seq = seq.wrapping_add(1);
+                if let Some(packet) = jb.pop(now_ms) {
+                    let dec_frame = rekindle_voice::codec::EncodedFrame {
+                        data: packet.opus,
+                        timestamp: packet.timestamp,
+                        sequence: packet.sequence,
+                    };
+                    let decoded = decoder.decode(&dec_frame).expect("decode");
+                    let _ = mixer.mix(&[("p0", &decoded.samples)]);
+                }
+            });
+        });
+}
+
+fn make_packet(seq: u32) -> JitterFrame {
+    JitterFrame {
+        sequence: seq,
+        timestamp: u64::from(seq) * 20,
+        // 80 bytes is a typical 32 kbps 20 ms Opus frame size.
+        opus: vec![0xAB; 80],
+    }
+}
+
+criterion_group!(
+    benches,
+    bench_opus_encode_20ms,
+    bench_opus_decode_20ms,
+    bench_jitter_push_pop,
+    bench_mixer,
+    bench_e2e_loopback,
+);
+criterion_main!(benches);

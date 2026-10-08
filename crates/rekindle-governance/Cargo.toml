@@ -1,0 +1,19 @@
+[package]
+name = "rekindle-governance"
+version = "0.1.0"
+edition = "2021"
+description = "Pure CRDT merge engine for Rekindle v2.0 flat governance — NO I/O, NO async"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+regex = "1"
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

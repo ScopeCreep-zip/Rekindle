@@ -1,0 +1,123 @@
+use std::sync::Arc;
+
+use rekindle_secrets::derive;
+
+use crate::state::AppState;
+
+/// Assemble the durable roster (architecture §13.4) the join orchestrator
+/// persists into `community_members`: the joiner's own freshly-claimed row
+/// plus every member the cold-join registry scan discovered, each tagged with
+/// its registry segment/slot and resolved governance role ids. Pure — the
+/// caller hands it the scan output and the merged governance state and gets
+/// back the exact `DiscoveredMember` batch the creator self-persist path uses.
+pub(super) fn build_discovered_roster(
+    claimed: &rekindle_governance_runtime::ClaimedSlot,
+    initial_presence: &rekindle_governance_runtime::InitialPresence,
+    my_role_ids: Vec<u32>,
+    gov_state: &rekindle_governance::state::GovernanceState,
+) -> Vec<rekindle_governance_runtime::DiscoveredMember> {
+    let mut roster = Vec::with_capacity(initial_presence.discovered.len() + 1);
+    roster.push(rekindle_governance_runtime::DiscoveredMember {
+        segment_index: claimed.segment_index,
+        slot_index: claimed.local_subkey,
+        presence: claimed.self_presence.clone(),
+        role_ids: my_role_ids,
+    });
+    for (slot, presence) in &initial_presence.discovered {
+        let role_ids = gov_state
+            .role_assignments
+            .get(&presence.pseudonym_key)
+            .map_or_else(
+                || vec![0],
+                |rids| {
+                    rids.iter()
+                        .copied()
+                        .map(rekindle_types::id::RoleId::to_legacy_u32)
+                        .collect()
+                },
+            );
+        roster.push(rekindle_governance_runtime::DiscoveredMember {
+            segment_index: claimed.segment_index,
+            slot_index: *slot,
+            presence: presence.clone(),
+            role_ids,
+        });
+    }
+    roster
+}
+
+pub(super) fn spawn_join_announcements(
+    state: Arc<AppState>,
+    community_id: String,
+    pseudonym_key: String,
+    subkey_index: u32,
+) {
+    let display_name = crate::state_helpers::identity_display_name(&state);
+    crate::state_helpers::spawn_in_login_with_token(
+        &state.clone(),
+        "join announcements",
+        |stop| async move {
+            let settle = tokio::time::sleep(std::time::Duration::from_secs(5));
+            if stop.run_until_cancelled(settle).await.is_none() {
+                return;
+            }
+
+            let our_route = crate::state_helpers::our_route_blob(&state);
+            let status = match crate::state_helpers::identity_status(&state)
+                .unwrap_or(crate::state::UserStatus::Online)
+            {
+                crate::state::UserStatus::Online => "online",
+                crate::state::UserStatus::Away => "away",
+                crate::state::UserStatus::Busy => "busy",
+                crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => {
+                    "offline"
+                }
+            };
+
+            let joined_envelope = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+                rekindle_codec::community::envelope::ControlPayload::MemberJoined {
+                    pseudonym_key: pseudonym_key.clone(),
+                    display_name,
+                    role_ids: vec![0],
+                    status: status.to_string(),
+                    route_blob: our_route,
+                },
+            );
+            let _ =
+                crate::services::community::send_to_mesh(&state, &community_id, &joined_envelope);
+
+            tracing::info!(
+                community = %community_id,
+                slot = subkey_index,
+                "broadcasted MemberJoined via gossip"
+            );
+        },
+    );
+}
+
+pub(crate) fn try_derive_slot_keypair(
+    state: &Arc<AppState>,
+    community_id: &str,
+    seed_hex: &str,
+    subkey_idx: u32,
+) -> Option<String> {
+    let seed_bytes = hex::decode(seed_hex).ok()?;
+    let seed_array: [u8; 32] = seed_bytes.as_slice().try_into().ok()?;
+    match derive::derive_slot_keypair(&seed_array, subkey_idx) {
+        Ok(sk) => {
+            let kp = super::super::create::slot_signing_to_veilid(&sk);
+            let kp_str = kp.to_string();
+            {
+                let mut communities = state.communities.write();
+                if let Some(c) = communities.get_mut(community_id) {
+                    c.slot_keypair = Some(kp_str.clone());
+                }
+            }
+            Some(kp_str)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to derive slot keypair from seed");
+            None
+        }
+    }
+}

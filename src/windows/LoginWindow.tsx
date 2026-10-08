@@ -1,16 +1,17 @@
-import { Component, createSignal, onMount, For, Show } from "solid-js";
+import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import Modal from "../components/common/Modal";
-import { handleLogin, handleCreateIdentity } from "../handlers/auth.handlers";
+import LoadingButton from "../components/common/LoadingButton";
+import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
 import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
+import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
+import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
+import { errorMessage } from "../utils/error";
+import { truncateKey } from "../utils/formatting";
+import { startEventStream } from "../ipc/channels";
 
 type Mode = "picker" | "login" | "create";
-
-function truncateKey(key: string): string {
-  if (key.length <= 16) return key;
-  return `${key.slice(0, 8)}...${key.slice(-8)}`;
-}
 
 const LoginWindow: Component = () => {
   const [identities, setIdentities] = createSignal<IdentitySummary[]>([]);
@@ -53,8 +54,20 @@ const LoginWindow: Component = () => {
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadIdentities();
+    // Seed the derived lifecycle view from the single backend authority,
+    // then observe transitions — mirrors Briar's StartupViewModel. The
+    // login button stays "Connecting…" until the node attaches (locked).
+    try {
+      setLifecycleState(await commands.lifecycleCurrent());
+    } catch {
+      // lifecycle_current unavailable (very early boot) — the subscription
+      // below resyncs on the first transition.
+    }
+    const unlisten = await subscribeLifecycleEvents(setLifecycleState);
+    void startEventStream();
+    onCleanup(unlisten);
   });
 
   function selectAccount(id: IdentitySummary): void {
@@ -77,7 +90,7 @@ const LoginWindow: Component = () => {
   async function handleLoginSubmit(e: Event): Promise<void> {
     e.preventDefault();
     const sel = selected();
-    if (!sel || !passphrase().trim() || loading()) return;
+    if (!sel || !passphrase().trim() || loading() || !canUnlock()) return;
 
     setLoading(true);
     setError(null);
@@ -88,7 +101,7 @@ const LoginWindow: Component = () => {
       try {
         await commands.showBuddyList();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         console.error("Failed to open buddy list:", msg);
         setError(msg);
         setLoading(false);
@@ -101,7 +114,7 @@ const LoginWindow: Component = () => {
 
   async function handleCreateSubmit(e: Event): Promise<void> {
     e.preventDefault();
-    if (!passphrase().trim() || loading()) return;
+    if (!passphrase().trim() || loading() || !canUnlock()) return;
 
     setLoading(true);
     setError(null);
@@ -112,7 +125,7 @@ const LoginWindow: Component = () => {
       try {
         await commands.showBuddyList();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         console.error("Failed to open buddy list:", msg);
         setError(msg);
         setLoading(false);
@@ -145,8 +158,7 @@ const LoginWindow: Component = () => {
       cancelDelete();
       await loadIdentities();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setDeleteError(message);
+      setDeleteError(errorMessage(err));
     }
   }
 
@@ -198,7 +210,7 @@ const LoginWindow: Component = () => {
           <div class="lock-name">{selected()!.displayName}</div>
           <div class="account-card-key">{truncateKey(selected()!.publicKey)}</div>
           <input
-            class="login-input"
+            class="form-input"
             type="password"
             placeholder="Passphrase"
             value={passphrase()}
@@ -206,12 +218,17 @@ const LoginWindow: Component = () => {
             autofocus
           />
           <Show when={error() !== null}>
-            <div class="login-error">{error()}</div>
+            <div class="form-error">{error()}</div>
           </Show>
-          <button class="login-btn" type="submit" disabled={loading()}>
-            {loading() ? "..." : "Unlock"}
-          </button>
-          <button type="button" class="account-back-btn" onClick={goBack}>
+          <LoadingButton
+            type="submit"
+            loading={loading()}
+            disabled={!canUnlock()}
+            loadingLabel="Unlocking"
+          >
+            {canUnlock() ? "Unlock" : "Connecting…"}
+          </LoadingButton>
+          <button type="button" class="form-btn-secondary" onClick={goBack}>
             ← Switch Account
           </button>
         </form>
@@ -221,21 +238,21 @@ const LoginWindow: Component = () => {
       <Show when={mode() === "create"}>
         <form class="login-container" onSubmit={handleCreateSubmit}>
           <Show when={identities().length > 0}>
-            <button type="button" class="account-back-btn" onClick={goBack}>
+            <button type="button" class="form-btn-secondary" onClick={goBack}>
               ← Back
             </button>
           </Show>
           <div class="login-title">Rekindle</div>
           <div class="login-subtitle">Create a passphrase for your new identity</div>
           <input
-            class="login-input"
+            class="form-input"
             type="text"
             placeholder="Display Name (optional)"
             value={displayName()}
             onInput={(e: InputEvent) => setDisplayName((e.target as HTMLInputElement).value)}
           />
           <input
-            class="login-input"
+            class="form-input"
             type="password"
             placeholder="Passphrase"
             value={passphrase()}
@@ -243,11 +260,16 @@ const LoginWindow: Component = () => {
             autofocus
           />
           <Show when={error() !== null}>
-            <div class="login-error">{error()}</div>
+            <div class="form-error">{error()}</div>
           </Show>
-          <button class="login-btn" type="submit" disabled={loading()}>
-            {loading() ? "..." : "Create Identity"}
-          </button>
+          <LoadingButton
+            type="submit"
+            loading={loading()}
+            disabled={!canUnlock()}
+            loadingLabel="Creating identity"
+          >
+            {canUnlock() ? "Create Identity" : "Connecting…"}
+          </LoadingButton>
         </form>
       </Show>
 
@@ -261,23 +283,23 @@ const LoginWindow: Component = () => {
           Enter passphrase for "{deleteTarget()?.displayName}" to confirm deletion.
         </div>
         <input
-          class="login-input"
+          class="form-input"
           type="password"
           placeholder="Passphrase"
           value={deletePass()}
           onInput={(e: InputEvent) => setDeletePass((e.target as HTMLInputElement).value)}
         />
         <Show when={deleteError() !== null}>
-          <div class="login-error">{deleteError()}</div>
+          <div class="form-error">{deleteError()}</div>
         </Show>
         <button
-          class="delete-confirm-btn"
+          class="form-btn-danger"
           onClick={executeDelete}
           disabled={!deletePass().trim()}
         >
           Delete Forever
         </button>
-        <button class="delete-confirm-cancel" onClick={cancelDelete}>
+        <button class="form-btn-secondary" onClick={cancelDelete}>
           Cancel
         </button>
       </Modal>

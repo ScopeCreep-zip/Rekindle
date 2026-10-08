@@ -1,11 +1,24 @@
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc as std_mpsc;
-use std::thread;
+use std::sync::Arc;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::DeviceTrait;
 use tokio::sync::mpsc;
 
+use crate::audio_thread::{AudioThread, AudioThreadLabels};
+use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
+use crate::stream_config::{adapt_audio, negotiate_output_config};
+
+const PLAYBACK_LABELS: AudioThreadLabels = AudioThreadLabels {
+    audio_thread: "audio-playback",
+    error_bridge: "playback-error-bridge",
+    play_failed: "failed to start output stream",
+    spawn_failed: "failed to spawn playback thread",
+    init_died: "playback thread died during init",
+    direction: "playback",
+};
 
 /// Audio playback to the speaker via cpal.
 ///
@@ -16,204 +29,187 @@ use crate::error::VoiceError;
 /// The `cpal::Stream` lives entirely within the spawned thread (it is `!Send`
 /// on macOS), so `AudioPlayback` itself is `Send`.
 pub struct AudioPlayback {
-    is_active: bool,
-    sample_rate: u32,
-    channels: u16,
-    /// Dropping this sender signals the audio thread to shut down.
-    shutdown_tx: Option<std_mpsc::Sender<()>>,
-    /// Handle to the dedicated audio thread.
-    thread_handle: Option<thread::JoinHandle<()>>,
-    /// Handle to the error bridge thread (forwards cpal errors to async channel).
-    error_bridge_handle: Option<thread::JoinHandle<()>>,
+    thread: AudioThread,
 }
 
 impl AudioPlayback {
     /// Create a new audio playback instance.
-    pub fn new(sample_rate: u32, channels: u16) -> Result<Self, VoiceError> {
-        Ok(Self {
-            is_active: false,
-            sample_rate,
-            channels,
-            shutdown_tx: None,
-            thread_handle: None,
-            error_bridge_handle: None,
-        })
+    pub fn new(sample_rate: u32, channels: u16) -> Self {
+        Self {
+            thread: AudioThread::new(sample_rate, channels, PLAYBACK_LABELS),
+        }
     }
 
     /// Start playback, reading mixed PCM frames from the provided receiver.
-    ///
-    /// Spawns a dedicated thread that owns the cpal output stream. The receiver
-    /// is moved into the audio callback where `try_recv` drains decoded chunks
-    /// into a `VecDeque`. When no data is available, silence (0.0) is output.
-    ///
-    /// `device_name`: optional device name to use. `None` = system default.
-    /// `device_error_tx`: optional channel to signal device errors (e.g. device unplugged).
     pub fn start(
         &mut self,
         rx: mpsc::Receiver<Vec<f32>>,
         device_name: Option<&str>,
+        depth_ms: Arc<AtomicU32>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
-        let (init_tx, init_rx) = std_mpsc::sync_channel::<Result<(), VoiceError>>(1);
-        let (shutdown_tx, shutdown_rx) = std_mpsc::channel::<()>();
-
-        let sample_rate = self.sample_rate;
-        let channels = self.channels;
-        let device_name_owned = device_name.map(String::from);
-
-        // Bridge sync error callback → async error channel
-        let (sync_err_tx, sync_err_rx) = std_mpsc::channel::<String>();
-        let error_bridge_handle = if let Some(async_err_tx) = device_error_tx {
-            thread::Builder::new()
-                .name("playback-error-bridge".into())
-                .spawn(move || {
-                    if let Ok(err_msg) = sync_err_rx.recv() {
-                        let _ = async_err_tx.blocking_send(err_msg);
-                    }
-                })
-                .ok()
-        } else {
-            None
-        };
-
-        let handle = thread::Builder::new()
-            .name("audio-playback".into())
-            .spawn(move || {
-                let result = build_playback_stream(
+        self.thread.start(
+            device_name,
+            device_error_tx,
+            move |sample_rate, channels, device_name_owned, error_tx| {
+                build_playback_stream(
                     sample_rate,
                     channels,
                     rx,
                     device_name_owned.as_deref(),
-                    sync_err_tx,
-                );
-                match result {
-                    Ok(stream) => {
-                        if let Err(e) = stream.play() {
-                            let _ = init_tx.send(Err(VoiceError::AudioDevice(format!(
-                                "failed to start output stream: {e}"
-                            ))));
-                            return;
-                        }
-                        let _ = init_tx.send(Ok(()));
-                        // Park until shutdown — stream stays alive in this scope
-                        let _ = shutdown_rx.recv();
-                        drop(stream);
-                    }
-                    Err(e) => {
-                        let _ = init_tx.send(Err(e));
-                    }
-                }
-            })
-            .map_err(|e| {
-                VoiceError::AudioDevice(format!("failed to spawn playback thread: {e}"))
-            })?;
-
-        // Wait for the audio thread to report success or failure
-        init_rx
-            .recv()
-            .map_err(|_| VoiceError::AudioDevice("playback thread died during init".into()))??;
-
-        self.shutdown_tx = Some(shutdown_tx);
-        self.thread_handle = Some(handle);
-        self.error_bridge_handle = error_bridge_handle;
-        self.is_active = true;
-        tracing::info!(
-            sample_rate = self.sample_rate,
-            channels = self.channels,
-            "audio playback started"
-        );
-        Ok(())
+                    &depth_ms,
+                    error_tx,
+                )
+            },
+        )
     }
 
-    /// Stop playback. Signals the audio thread to shut down and waits
-    /// for it to exit so the device is cleanly released.
+    /// Stop playback.
     pub fn stop(&mut self) {
-        self.shutdown_tx = None;
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
-        }
-        // Join the error bridge thread (it will exit once sync_err_tx is dropped
-        // by the audio thread, causing recv() to return Err).
-        if let Some(handle) = self.error_bridge_handle.take() {
-            let _ = handle.join();
-        }
-        self.is_active = false;
-        tracing::info!("audio playback stopped");
+        self.thread.stop();
     }
 
     pub fn is_active(&self) -> bool {
-        self.is_active
+        self.thread.is_active()
     }
 }
 
-impl Drop for AudioPlayback {
-    fn drop(&mut self) {
-        if self.is_active {
-            self.stop();
-        }
-    }
-}
-
-/// Build a cpal output stream on the current thread. The `rx` receiver is
-/// moved into the output callback and drained via `try_recv` each tick.
+/// Build a cpal output stream on the current thread.
+///
+/// `sample_rate`/`channels` are the pipeline (mixer) format. The device may
+/// refuse that exact `StreamConfig` and may also want a non-f32 sample format,
+/// so we negotiate a supported config via [`negotiate_output_config`] and adapt
+/// each drained buffer from the pipeline format to the device format before
+/// filling the output, converting to the device's sample type on write.
 fn build_playback_stream(
     sample_rate: u32,
     channels: u16,
-    mut rx: mpsc::Receiver<Vec<f32>>,
+    rx: mpsc::Receiver<Vec<f32>>,
     device_name: Option<&str>,
+    depth_ms: &Arc<AtomicU32>,
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
-    let device = match device_name {
-        Some(name) => find_output_device(&host, name)?,
-        None => host
-            .default_output_device()
-            .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))?,
-    };
+    let device = resolve_device(&host, device_name, &DeviceDirection::Output)?;
 
-    let config = cpal::StreamConfig {
-        channels,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
-    };
+    let (config, sample_format) = negotiate_output_config(&device, sample_rate, channels)?;
+    let dev_channels = config.channels;
+    let dev_rate = config.sample_rate;
+    let needs_adapt = dev_channels != channels || dev_rate != sample_rate;
 
-    // Pre-allocate the ring buffer — one second of audio is a generous ceiling
-    let buffer_capacity = sample_rate as usize * usize::from(channels);
-    let mut sample_buffer: VecDeque<f32> = VecDeque::with_capacity(buffer_capacity);
+    tracing::info!(
+        device = %crate::device::device_label(&device),
+        dev_channels,
+        dev_rate,
+        want_channels = channels,
+        want_rate = sample_rate,
+        ?sample_format,
+        needs_adapt,
+        "negotiated playback config"
+    );
 
-    device
-        .build_output_stream(
-            &config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                // Drain any available decoded audio from the channel
-                while let Ok(samples) = rx.try_recv() {
-                    sample_buffer.extend(samples);
-                }
-                // Fill the output buffer, substituting silence for missing samples
-                for sample in data.iter_mut() {
-                    *sample = sample_buffer.pop_front().unwrap_or(0.0);
-                }
-            },
-            move |err: cpal::StreamError| {
-                tracing::error!("output stream error: {err}");
-                let _ = error_tx.send(format!("output: {err}"));
-            },
+    // Pre-allocate the ring buffer — one second of device audio is a generous
+    // ceiling.
+    let buffer_capacity = dev_rate as usize * usize::from(dev_channels.max(1));
+
+    let error_callback =
+        move |err: cpal::Error| crate::device::on_stream_error("output", &err, &error_tx);
+
+    match sample_format {
+        cpal::SampleFormat::F32 => device.build_output_stream(
+            config,
+            output_callback::<f32>(
+                rx,
+                needs_adapt,
+                channels,
+                sample_rate,
+                dev_channels,
+                dev_rate,
+                buffer_capacity,
+                Arc::clone(depth_ms),
+            ),
+            error_callback,
             None,
-        )
-        .map_err(|e| VoiceError::AudioDevice(format!("failed to build output stream: {e}")))
-}
-
-/// Find an output device by name, falling back to the default if not found.
-fn find_output_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, VoiceError> {
-    use cpal::traits::DeviceTrait;
-    if let Ok(devices) = host.output_devices() {
-        for device in devices {
-            if device.name().ok().as_deref() == Some(name) {
-                return Ok(device);
-            }
+        ),
+        cpal::SampleFormat::I16 => device.build_output_stream(
+            config,
+            output_callback::<i16>(
+                rx,
+                needs_adapt,
+                channels,
+                sample_rate,
+                dev_channels,
+                dev_rate,
+                buffer_capacity,
+                Arc::clone(depth_ms),
+            ),
+            error_callback,
+            None,
+        ),
+        cpal::SampleFormat::U16 => device.build_output_stream(
+            config,
+            output_callback::<u16>(
+                rx,
+                needs_adapt,
+                channels,
+                sample_rate,
+                dev_channels,
+                dev_rate,
+                buffer_capacity,
+                Arc::clone(depth_ms),
+            ),
+            error_callback,
+            None,
+        ),
+        format => {
+            return Err(VoiceError::AudioDevice(format!(
+                "unsupported sample format: {format:?}"
+            )))
         }
     }
-    tracing::warn!(device = %name, "requested output device not found — falling back to default");
-    host.default_output_device()
-        .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))
+    .map_err(|e| VoiceError::AudioDevice(format!("failed to build output stream: {e}")))
+}
+
+/// Build the cpal output data callback for a device sample type `T`.
+///
+/// Drains decoded f32 PCM from `rx` (pipeline format), adapts it to the device
+/// `(channels, rate)` when they differ, buffers it in a ring, and fills each
+/// output slot — converting f32 → `T` on write and substituting silence when
+/// the buffer underruns.
+fn output_callback<T>(
+    mut rx: mpsc::Receiver<Vec<f32>>,
+    needs_adapt: bool,
+    src_channels: u16,
+    src_rate: u32,
+    dst_channels: u16,
+    dst_rate: u32,
+    buffer_capacity: usize,
+    depth_ms: Arc<AtomicU32>,
+) -> impl FnMut(&mut [T], &cpal::OutputCallbackInfo)
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    let mut sample_buffer: VecDeque<f32> = VecDeque::with_capacity(buffer_capacity);
+    move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+        while let Ok(samples) = rx.try_recv() {
+            if needs_adapt {
+                sample_buffer.extend(adapt_audio(
+                    &samples,
+                    src_channels,
+                    src_rate,
+                    dst_channels,
+                    dst_rate,
+                ));
+            } else {
+                sample_buffer.extend(samples);
+            }
+        }
+        for slot in data.iter_mut() {
+            *slot = T::from_sample(sample_buffer.pop_front().unwrap_or(0.0));
+        }
+        // Queued audio left after this callback, ms.
+        let per_ms = u64::from(dst_rate / 1000).max(1) * u64::from(dst_channels.max(1));
+        let queued = u64::try_from(sample_buffer.len()).unwrap_or(u64::MAX) / per_ms;
+        depth_ms.store(u32::try_from(queued).unwrap_or(u32::MAX), Ordering::Relaxed);
+    }
 }

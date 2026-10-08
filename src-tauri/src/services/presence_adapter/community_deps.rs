@@ -1,0 +1,567 @@
+//! Phase 21 REDO — `CommunityPresenceDeps` impl for `PresenceAdapter`.
+//!
+//! Owns the 21-method community-presence surface: per-community
+//! state reads (pseudonym key, route blob, channel list), DHT
+//! orchestration (registry write, channel-log catch-up read), DB
+//! persistence (history range computation, member upsert), MEK
+//! encrypt + W26 signature, and community event emission.
+
+use std::collections::{HashMap, HashSet};
+
+use async_trait::async_trait;
+use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_presence::{
+    CommunityPresenceDeps, DiscoveredMemberRow, GossipOverlayPlan, GossipOverlaySnapshot,
+    OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
+};
+use rekindle_protocol::dht::community::channel_record;
+
+use crate::services::presence_adapter::PresenceAdapter;
+use crate::state_helpers;
+
+#[async_trait]
+impl CommunityPresenceDeps for PresenceAdapter {
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        state_helpers::login_scope_or_closed(&self.state)
+    }
+
+    fn my_pseudonym_for_community(&self, community_id: &str) -> String {
+        super::state_reads::my_pseudonym_for_community(&self.state, community_id)
+    }
+
+    fn our_route_blob(&self) -> Option<Vec<u8>> {
+        state_helpers::our_route_blob(&self.state)
+    }
+
+    fn current_presence_status_str(&self, community_id: &str) -> String {
+        // Delegate to the src-tauri helper so the wire-string
+        // mapping lives in exactly one place. The helper is the
+        // wire-up point for per-community `MemberPresence.custom_status`
+        // (architecture spec line 754); a future commit can resolve
+        // `community.my_custom_status` first inside the helper and
+        // the adapter automatically picks it up.
+        crate::services::community::current_presence_status(&self.state, community_id).to_string()
+    }
+
+    fn channel_ids_for_community(&self, community_id: &str) -> Vec<String> {
+        super::state_reads::channel_ids_for_community(&self.state, community_id)
+    }
+
+    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
+        super::state_reads::channel_log_keys_for_community(&self.state, community_id)
+    }
+
+    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
+        match crate::services::community::writers::writer_slot_list(
+            &self.state,
+            &self.pool,
+            community_id,
+        )
+        .await
+        {
+            Ok(slots) => slots,
+            Err(error) => {
+                tracing::debug!(community = %community_id, %error, "writer index unavailable");
+                Vec::new()
+            }
+        }
+    }
+
+    fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
+        if let Err(error) =
+            crate::services::community::send_to_mesh(&self.state, community_id, &envelope)
+        {
+            tracing::debug!(
+                community = %community_id,
+                %error,
+                "send_to_mesh from community-presence deps failed",
+            );
+        }
+    }
+
+    async fn last_channel_message_timestamp(&self, _community_id: &str, channel_id: &str) -> i64 {
+        let owner_key = state_helpers::current_owner_key(&self.state).unwrap_or_default();
+        let ch = channel_id.to_string();
+        crate::db_helpers::db_call(&self.pool, move |conn| {
+            conn.query_row(
+                "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
+                 WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
+                rusqlite::params![owner_key, ch],
+                |r| r.get(0),
+            )
+        })
+        .await
+        .unwrap_or(0)
+    }
+
+    fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32) {
+        super::state_reads::mark_pending_sync(&self.state, community_id, channel_id, attempt);
+    }
+
+    async fn read_channel_message_items(
+        &self,
+        record_key: &str,
+        member_slots: &[u32],
+    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
+        let pool =
+            state_helpers::record_pool(&self.state).map_err(|_| PresenceError::NotAttached)?;
+        let items = channel_record::read_all_channel_entries(&pool, record_key, member_slots)
+            .await
+            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        Ok(items
+            .into_iter()
+            .filter_map(|item| match item.entry {
+                ChannelRecordEntry::Message(message) => Some((item.subkey_index, message)),
+                _ => None,
+            })
+            .collect())
+    }
+
+    fn persist_channel_catchup(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        record_key: &str,
+        messages: Vec<(u32, ChannelMessage)>,
+    ) {
+        super::persist::insert_channel_catchup_messages(
+            &self.state,
+            &self.pool,
+            community_id,
+            channel_id,
+            record_key,
+            messages,
+        );
+    }
+
+    fn mark_initial_sync_done(&self, community_id: &str) {
+        super::state_reads::mark_initial_sync_done(&self.state, community_id);
+    }
+
+    fn identity_display_name(&self) -> String {
+        state_helpers::identity_display_name(&self.state)
+    }
+
+    fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
+        let communities = self.state.communities.read();
+        let Some(community) = communities.get(community_id) else {
+            return SelfPresenceSnapshot::default();
+        };
+        SelfPresenceSnapshot {
+            bio: community.my_bio.clone(),
+            pronouns: community.my_pronouns.clone(),
+            theme_color: community.my_theme_color,
+            badges: community.my_badges.clone(),
+            avatar_ref: community.my_avatar_ref.clone(),
+            banner_ref: community.my_banner_ref.clone(),
+        }
+    }
+
+    fn encrypt_history_ranges_with_current_mek(
+        &self,
+        community_id: &str,
+        ranges: &[rekindle_types::presence::HistoryRange],
+    ) -> Option<rekindle_types::presence::EncryptedHistoryRanges> {
+        let mek = state_helpers::current_mek(
+            &self.state,
+            community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )?;
+        let plaintext = serde_json::to_vec(ranges).ok()?;
+        let ciphertext = mek.encrypt(&plaintext).ok()?;
+        Some(rekindle_types::presence::EncryptedHistoryRanges {
+            mek_generation: mek.generation(),
+            ciphertext,
+        })
+    }
+
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
+        use rekindle_types::presence::SessionStatus;
+        // Map the identity-level UserStatus onto the typed session
+        // vocabulary so friends + community presence speak one language.
+        let status = match state_helpers::identity_status(&self.state)
+            .unwrap_or(crate::state::UserStatus::Online)
+        {
+            crate::state::UserStatus::Online => SessionStatus::Online,
+            crate::state::UserStatus::Away => SessionStatus::Away,
+            crate::state::UserStatus::Busy => SessionStatus::Busy,
+            crate::state::UserStatus::Offline => SessionStatus::Offline,
+            crate::state::UserStatus::Invisible => SessionStatus::Invisible,
+        };
+        let location = {
+            let communities = self.state.communities.read();
+            communities
+                .get(community_id)
+                .and_then(|c| c.my_session_location.clone())
+        };
+        rekindle_types::presence::MemberSession {
+            status,
+            location,
+            // Activity (game string) is policy-gated and wired in a
+            // follow-up; the session always carries a fresh last_active
+            // so peers can bucket our last-seen.
+            activity: None,
+            last_active: rekindle_utils::timestamp_secs(),
+        }
+    }
+
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        let communities = self.state.communities.read();
+        communities
+            .get(community_id)
+            .map(|c| c.presence_policy.clone())
+            .unwrap_or_default()
+    }
+
+    fn encrypt_session_extras_with_current_mek(
+        &self,
+        community_id: &str,
+        extras: &rekindle_types::presence::SessionExtras,
+    ) -> Option<rekindle_types::presence::EncryptedSessionExtras> {
+        let mek = state_helpers::current_mek(
+            &self.state,
+            community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )?;
+        let plaintext = serde_json::to_vec(extras).ok()?;
+        let ciphertext = mek.encrypt(&plaintext).ok()?;
+        Some(rekindle_types::presence::EncryptedSessionExtras {
+            mek_generation: mek.generation(),
+            ciphertext,
+        })
+    }
+
+    fn decrypt_session_extras(
+        &self,
+        community_id: &str,
+        encrypted: &rekindle_types::presence::EncryptedSessionExtras,
+    ) -> Option<rekindle_types::presence::SessionExtras> {
+        // Generation must match — a rotated-out ex-member's extras are
+        // unreadable, which is the intended MEK-bounded readership.
+        let mek = state_helpers::current_mek(
+            &self.state,
+            community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )
+        .filter(|mek| mek.generation() == encrypted.mek_generation)?;
+        let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
+        serde_json::from_slice(&plaintext).ok()
+    }
+
+    async fn compute_history_ranges(
+        &self,
+        community_id: &str,
+    ) -> Vec<rekindle_types::presence::HistoryRange> {
+        super::persist::compute_history_ranges(&self.state, &self.pool, community_id).await
+    }
+
+    fn sign_presence_row(&self, community_id: &str, signing_bytes: &[u8]) -> Option<Vec<u8>> {
+        let (_, signing_key) =
+            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
+        let sig = rekindle_secrets::derive::sign_with_pseudonym(&signing_key, signing_bytes);
+        Some(sig.to_vec())
+    }
+
+    async fn write_presence_to_registry_subkey(
+        &self,
+        registry_key: &str,
+        subkey_index: u32,
+        presence_json: Vec<u8>,
+        writer_keypair_str: &str,
+    ) -> Result<rekindle_presence::RowWrite, PresenceError> {
+        let writer_kp = writer_keypair_str
+            .parse::<veilid_core::KeyPair>()
+            .map_err(|e| PresenceError::InvalidDhtKey(format!("writer keypair: {e}")))?;
+        let reg_key = registry_key
+            .parse::<veilid_core::RecordKey>()
+            .map_err(|e| PresenceError::InvalidDhtKey(format!("registry key: {e}")))?;
+        let outcome = self
+            .record_pool()?
+            .write_once(&reg_key, subkey_index, presence_json, Some(writer_kp))
+            .await
+            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        // A presence row asserts the present: a miss is an error, never a
+        // write queued to land later. A supersede goes back to the writer,
+        // which decides from whose row it is (plan C7.16).
+        use rekindle_protocol::dht::pool::SetOutcome;
+        match outcome {
+            SetOutcome::Landed | SetOutcome::Unchanged => Ok(rekindle_presence::RowWrite::Stored),
+            SetOutcome::Superseded(newer) => Ok(rekindle_presence::RowWrite::Superseded {
+                seq: newer.seq().to_option(),
+                data: newer.data().to_vec(),
+            }),
+            missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => Err(PresenceError::Dht(
+                format!("presence not stored ({missed:?})"),
+            )),
+        }
+    }
+
+    fn persist_discovered_member_rows(
+        &self,
+        community_id: &str,
+        rows: Vec<DiscoveredMemberRow>,
+        banned_pseudonyms: Vec<String>,
+        joined_at: i64,
+    ) {
+        super::persist::upsert_discovered_member_rows(
+            &self.state,
+            &self.pool,
+            community_id,
+            rows,
+            banned_pseudonyms,
+            joined_at,
+        );
+    }
+
+    fn extend_known_members(&self, community_id: &str, candidates: Vec<String>) -> Vec<String> {
+        let mut communities = self.state.communities.write();
+        let Some(cs) = communities.get_mut(community_id) else {
+            return Vec::new();
+        };
+        candidates
+            .into_iter()
+            .filter(|key| cs.known_members.insert(key.clone()))
+            .collect()
+    }
+
+    fn emit_member_discovered(
+        &self,
+        community_id: &str,
+        pseudonym_key: &str,
+        display_name: &str,
+        subkey_index: u32,
+    ) {
+        crate::event_dispatch::emit_membership(
+            &self.app_handle,
+            rekindle_types::subscription_events::MembershipEvent::MemberDiscovered {
+                community: community_id.to_string(),
+                pseudonym: pseudonym_key.to_string(),
+                display_name: display_name.to_string(),
+                subkey_index,
+            },
+        );
+    }
+
+    async fn run_presence_poll_tick(&self, community_id: &str) -> Result<(), String> {
+        // The cadence loop in `spawn.rs` invokes this from each timer
+        // tick; the tick is left at stop (record-pool work only).
+        crate::services::community::presence_poll_tick_public(&self.state, community_id).await
+    }
+
+    // -- presence_poll_tick surface (21.i-REDO) --
+
+    async fn ensure_registry_open(&self, community_id: &str) -> Result<Option<String>, String> {
+        super::state_reads::ensure_registry_open(&self.state, community_id).await
+    }
+
+    fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials> {
+        super::state_reads::presence_credentials(&self.state, community_id)
+    }
+
+    fn governance_bans(&self, community_id: &str) -> HashSet<String> {
+        super::state_reads::governance_bans(&self.state, community_id)
+    }
+
+    fn segment_descriptors(&self, community_id: &str) -> Vec<SegmentDescriptor> {
+        super::state_reads::segment_descriptors(&self.state, community_id)
+    }
+
+    async fn scan_segment_raw(
+        &self,
+        registry_key: &str,
+        max_subkey: u32,
+        skip_subkey: Option<u32>,
+    ) -> Vec<(u32, Vec<u8>)> {
+        super::scan::scan_segment_raw(&self.state, registry_key, max_subkey, skip_subkey).await
+    }
+
+    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
+        super::member_state::read_existing_member_roles(&self.state, community_id)
+    }
+
+    fn read_governance_role_assignments(
+        &self,
+        community_id: &str,
+    ) -> HashMap<rekindle_types::id::PseudonymKey, HashSet<rekindle_types::id::RoleId>> {
+        super::member_state::read_governance_role_assignments(&self.state, community_id)
+    }
+
+    fn read_my_role_ids(&self, community_id: &str) -> Vec<u32> {
+        super::member_state::read_my_role_ids(&self.state, community_id)
+    }
+
+    fn apply_member_state_update(
+        &self,
+        community_id: &str,
+        merged_member_roles: HashMap<String, Vec<u32>>,
+        known_member_keys: HashSet<String>,
+        banned_members: &HashSet<String>,
+    ) {
+        super::member_state::apply_member_state_update(
+            &self.state,
+            community_id,
+            merged_member_roles,
+            known_member_keys,
+            banned_members,
+        );
+    }
+
+    fn read_member_profile_snapshot(
+        &self,
+        community_id: &str,
+    ) -> HashMap<String, rekindle_presence::MemberProfileSnapshot> {
+        super::member_state::read_member_profile_snapshot(&self.state, community_id)
+    }
+
+    fn apply_member_profile_updates(
+        &self,
+        community_id: &str,
+        updates: HashMap<String, rekindle_presence::MemberProfileSnapshot>,
+        emit_refreshed: bool,
+    ) {
+        super::member_state::apply_member_profile_updates(
+            &self.state,
+            &self.app_handle,
+            community_id,
+            updates,
+            emit_refreshed,
+        );
+    }
+
+    fn extend_online_with_recent_gossip(
+        &self,
+        community_id: &str,
+        online_members: &mut HashMap<String, OnlineMember>,
+        my_pseudonym: &str,
+        eviction_threshold_secs: u64,
+    ) {
+        super::gossip_overlay::extend_online_with_recent_gossip(
+            &self.state,
+            community_id,
+            online_members,
+            my_pseudonym,
+            eviction_threshold_secs,
+        );
+    }
+
+    fn gossip_offline_diff(
+        &self,
+        community_id: &str,
+        online_members: &HashMap<String, OnlineMember>,
+        my_pseudonym: &str,
+    ) -> Vec<String> {
+        super::gossip_overlay::gossip_offline_diff(
+            &self.state,
+            community_id,
+            online_members,
+            my_pseudonym,
+        )
+    }
+
+    fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
+        super::gossip_overlay::read_gossip_snapshot(&self.state, community_id)
+    }
+
+    fn apply_gossip_rebuild_plan(&self, community_id: &str, plan: GossipOverlayPlan) {
+        super::gossip_overlay::apply_gossip_rebuild_plan(&self.state, community_id, plan);
+    }
+
+    fn send_to_mesh_raw(&self, community_id: &str, envelope: SignedEnvelope) {
+        crate::services::community::gossip::send_to_mesh_raw(&self.state, community_id, &envelope);
+    }
+
+    fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {
+        super::gossip_overlay::emit_member_presence_offline(
+            &self.state,
+            community_id,
+            pseudonym_key,
+        );
+    }
+
+    fn active_voice_channel(&self, community_id: &str) -> Option<String> {
+        let ve = self.state.voice_engine.lock();
+        ve.as_ref()
+            .filter(|h| h.community_id.as_deref() == Some(community_id))
+            .map(|h| h.channel_id.clone())
+    }
+
+    fn reconcile_voice_roster(
+        &self,
+        community_id: &str,
+        rows: Vec<rekindle_presence::VoicePresenceRow>,
+    ) {
+        // Cheap pre-gate before building the signaling deps: skip
+        // entirely when no voice session is bound to this community.
+        if self.active_voice_channel(community_id).is_none() {
+            return;
+        }
+        let Some(app) = self.state.app_handle.read().clone() else {
+            return;
+        };
+        let Ok(deps) =
+            crate::services::voice_runtime::build_voice_signaling_deps(&app, &self.state)
+        else {
+            return;
+        };
+        let views: Vec<rekindle_voice::signaling::PresencePeerView> = rows
+            .into_iter()
+            .map(|r| rekindle_voice::signaling::PresencePeerView {
+                pseudonym_hex: r.pseudonym_hex,
+                display_name: r.display_name,
+                voice_channel_id: r.voice_channel_id,
+                fresh: r.fresh,
+            })
+            .collect();
+        let cid = community_id.to_string();
+        crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
+            "voice roster reconcile",
+            async move {
+                rekindle_voice::signaling::reconcile_from_presence(&deps, &cid, views).await;
+            },
+        );
+    }
+
+    fn stale_pending_syncs(
+        &self,
+        community_id: &str,
+        now_secs: u64,
+        stale_window_secs: u64,
+        max_attempts: u32,
+    ) -> Vec<(String, u32)> {
+        super::pending_sync::stale_pending_syncs(
+            &self.state,
+            community_id,
+            now_secs,
+            stale_window_secs,
+            max_attempts,
+        )
+    }
+
+    fn update_pending_sync(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        now_secs: u64,
+        attempt: u32,
+    ) {
+        super::pending_sync::update_pending_sync(
+            &self.state,
+            community_id,
+            channel_id,
+            now_secs,
+            attempt,
+        );
+    }
+
+    fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32) {
+        super::pending_sync::prune_pending_syncs(&self.state, community_id, max_attempts);
+    }
+
+    fn maybe_auto_expand_segment(&self, community_id: &str) {
+        super::auto_expand::maybe_auto_expand_segment(&self.state, community_id);
+    }
+}

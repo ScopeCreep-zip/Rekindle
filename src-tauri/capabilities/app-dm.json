@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-dm",
+  "description": "App-command grants for `dm-*` windows (direct-message conversation, with a call bar that starts a call or opens its call window). No plugin grants.",
+  "windows": [
+    "dm-*"
+  ],
+  "permissions": [
+    "allow-get-dm-messages",
+    "allow-list-dms",
+    "allow-send-dm-message",
+    "allow-start-dm-call",
+    "allow-open-call-window"
+  ]
+}

@@ -2,11 +2,10 @@ import { createStore } from "solid-js/store";
 
 export type UserStatus = "online" | "away" | "busy" | "offline";
 
-export interface GameStatus {
-  gameId: number;
-  gameName: string;
-  elapsedSeconds: number;
-}
+// Declared once in the IPC layer. This copy was missing `serverInfo`,
+// so typed code here could not see a field the backend already sends.
+import type { GameStatus } from "../ipc/commands/types";
+export type { GameStatus };
 
 export interface AuthState {
   isLoggedIn: boolean;

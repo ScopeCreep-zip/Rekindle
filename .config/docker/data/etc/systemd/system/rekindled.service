@@ -1,0 +1,45 @@
+[Unit]
+Description=Rekindle backend host (IPC bus + Veilid transport)
+Documentation=https://github.com/scopecreep-zip/rekindle
+After=network-online.target gnome-keyring.service dbus-user-session.service
+Wants=network-online.target
+Requires=gnome-keyring.service dbus-user-session.service
+Before=rekindle-init.service
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+# rekindled runs in the foreground and notifies systemd itself; SIGTERM
+# (no ExecStop=) drains it. See crates/rekindle-node/contrib/systemd.
+Type=notify
+ExecStart=/usr/local/bin/rekindled
+Restart=on-failure
+RestartSec=5
+# 75: identity destroyed or data wiped — restart empty.
+RestartForceExitStatus=75
+# 78: bad policy or tampered/incomplete bus key — a restart cannot fix it.
+RestartPreventExitStatus=78
+User=rekindle
+Group=rekindle
+
+# Startup: Veilid attach can take 30-60 seconds on slow networks.
+TimeoutStartSec=90
+# Shutdown budget: request drain 5 s, bus drain 2 s, workers 2 s, transport.
+TimeoutStopSec=15
+# rekindled pings every WATCHDOG_USEC/2 while its bus subscriber is alive.
+WatchdogSec=30
+
+# Environment
+Environment=HOME=/home/rekindle
+Environment=RUST_LOG=rekindle=debug,rekindle_transport=debug,rekindle_node=debug,veilid_core=warn
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+# Security hardening
+NoNewPrivileges=yes
+LimitCORE=0
+LimitNOFILE=65536
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

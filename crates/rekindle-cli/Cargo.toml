@@ -1,0 +1,42 @@
+[package]
+name = "rekindle-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command-line frontend for Rekindle, a client of the rekindled daemon"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[[bin]]
+# The command-line frontend is `rekindle`; the desktop app is
+# `rekindle-desktop` and the terminal UI `rekindle-tui` (plan C3).
+name = "rekindle"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { version = "0.4", features = [ "serde", "clock" ], default-features = false }
+clap = { version = "4", features = [ "derive", "env", "std", "help", "usage", "error-context" ] }
+clap_complete = "4"
+comfy-table = "7"
+dialoguer = "0.11"
+owo-colors = "4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+toml = "0.8"
+tracing = { workspace = true }
+zeroize = { version = "1", features = [ "derive" ] }
+
+# A frontend links the bus client and the shared types — never the node.
+rekindle-client = { path = "../rekindle-client" }
+rekindle-ipc = { path = "../rekindle-ipc" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub", "paths" ] }
+
+[dev-dependencies]
+assert_cmd = "2"
+insta = "1"
+predicates = "3"
+tokio-test = "0.4"

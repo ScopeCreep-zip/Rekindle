@@ -1,0 +1,142 @@
+//! Inbound handler trait implemented by the application layer.
+//!
+//! The transport crate handles all framing, authentication, dedup, and
+//! decryption. By the time any method on [`InboundHandler`] is called,
+//! the message has been:
+//!
+//! 1. Frame-decoded (version + type validated)
+//! 2. Signature-verified (Ed25519, no exceptions)
+//! 3. Dedup-checked (gossip only)
+//! 4. Decrypted (if applicable: Signal for DM, MEK for channel/voice)
+//!
+//! The handler receives only authenticated, deserialized, plaintext payloads.
+//!
+//! # Async trait design
+//!
+//! This trait uses native `async fn` in trait (stable since Rust 1.75) with
+//! explicit `+ Send` return bounds. This makes the trait non-object-safe
+//! (`dyn InboundHandler` is not possible) but allows the dispatch loop to
+//! spawn handler calls on the tokio runtime. The application layer must use
+//! generics (`H: InboundHandler`), which is correct — there is exactly one
+//! handler implementation per application.
+
+use std::future::Future;
+
+use crate::payload::dm::DmPayload;
+use crate::payload::rpc::{CallResponse, InboundCall};
+use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::envelope::SignedEnvelope;
+
+/// Identity of a verified inbound message sender.
+#[derive(Debug, Clone)]
+pub struct VerifiedSender {
+    /// Ed25519 public key of the sender (hex-encoded, 64 chars).
+    pub public_key: String,
+    /// Display name if known from prior context (may be empty).
+    pub display_name: String,
+}
+
+/// Notification of a transport-level event (not a user message).
+#[derive(Debug, Clone)]
+pub enum TransportEvent {
+    /// Network attachment state changed.
+    AttachmentChanged {
+        state: String,
+        is_attached: bool,
+        public_internet_ready: bool,
+    },
+    /// One of our own routes changed state (allocated, died, failed): the
+    /// network status a window shows changed though attachment did not.
+    RoutesChanged,
+    /// One or more of our allocated private routes died.
+    LocalRoutesDied { count: usize },
+    /// One or more imported remote peer routes died.
+    RemoteRoutesDied { peer_keys: Vec<String> },
+}
+
+/// Application-layer handler for all inbound transport events.
+///
+/// Implement this trait in the application crate to receive authenticated,
+/// decrypted payloads from the transport layer. The transport guarantees
+/// that every call to these methods has passed full authentication.
+pub trait InboundHandler: Send + Sync + 'static {
+    /// Our identity key while an identity is unlocked. Signed DMs and RPCs
+    /// are verified as addressed to it; with none, they are dropped.
+    fn local_identity(&self) -> Option<[u8; 32]>;
+
+    /// An authenticated DM payload arrived from a verified peer.
+    ///
+    /// W16.4 — `DmPayload` includes call signaling variants
+    /// (`CallInvite`, `CallAccept`, `CallDecline`, `CallEnd`,
+    /// `CallRinging`, `CallMediaState`, `CallReaction`,
+    /// `GroupCallOffer`, `GroupCallAccept`, `GroupCallDecline`) and
+    /// DM invite request/reply variants
+    /// (`DmInviteRequest`, `DmInviteReply`, `GroupDmInviteRequest`,
+    /// `GroupDmInviteReply`).
+    ///
+    /// W16.7 — `seq` and `correlation_id` are envelope-level metadata
+    /// from the [`SignedPayload`](crate::crypto::envelope::SignedPayload)
+    /// wrapper. Implementers MUST dedup via
+    /// [`crate::SeqTracker::check_and_record`] before processing —
+    /// Veilid's `app_message` has no built-in dedup and a duplicate
+    /// CallInvite would mount a second IncomingCallModal, etc.
+    ///
+    /// Implementations are expected to pattern-match on the payload
+    /// variant and route to:
+    /// - **Call signaling** → [`crate::operations::calls::CallRuntime`]
+    ///   via [`crate::operations::calls::CallRuntime::route_dm_payload`].
+    /// - **DM invite reply** → [`crate::EnvelopeQueue::deliver_reply`]
+    ///   (the `correlation_id` parameter wakes the request-side oneshot).
+    /// - **DM body / friend-add / presence / etc.** → existing handler
+    ///   logic (subscription event, persisted history row, etc.).
+    fn on_dm(
+        &self,
+        sender: &VerifiedSender,
+        payload: DmPayload,
+        timestamp: u64,
+        seq: u64,
+        correlation_id: Option<&str>,
+    ) -> impl Future<Output = ()> + Send;
+
+    /// An authenticated gossip broadcast arrived from a community member.
+    fn on_gossip(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        envelope: CommunityEnvelope,
+        lamport_ts: u64,
+    ) -> impl Future<Output = ()> + Send;
+
+    /// A verified gossip envelope should be forwarded to the local mesh peers.
+    ///
+    /// The transport layer calls this BEFORE `on_gossip` so the message
+    /// propagates even if handler processing is slow. The application layer
+    /// should use its `Sender::broadcast_gossip` with its current peer set.
+    /// The envelope's TTL has already been decremented by the transport,
+    /// and directed payloads (`CommunityEnvelope::is_directed`) never
+    /// reach here — §10.6.
+    ///
+    /// Epidemic delivery depends on this hop. A sender fans out to
+    /// `min(N, 6)` peers and relies on receivers re-broadcasting within
+    /// the 5-hop TTL; without it a message reaches six people in a
+    /// forty-member community.
+    fn on_gossip_forward(&self, envelope: &SignedEnvelope) -> impl Future<Output = ()> + Send;
+
+    /// An authenticated RPC request arrived, expecting a response.
+    fn on_call(
+        &self,
+        sender_pseudonym: Option<&str>,
+        request: InboundCall,
+    ) -> impl Future<Output = CallResponse> + Send;
+
+    /// A DHT record subkey changed (watch notification or inspect diff).
+    fn on_value_change(
+        &self,
+        record_key: &str,
+        changed_subkeys: Vec<u32>,
+        first_value: Option<Vec<u8>>,
+    ) -> impl Future<Output = ()> + Send;
+
+    /// A transport-level event occurred (network state, route death).
+    fn on_event(&self, event: TransportEvent) -> impl Future<Output = ()> + Send;
+}

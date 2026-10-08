@@ -1,27 +1,23 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicemicro/tauri-apps/tauri-v2/crates/tauri-utils/schema/capability.json",
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Rekindle windows",
-  "windows": ["login", "buddy-list", "chat-*", "community-*", "settings", "profile-*"],
+  "description": "Window-chrome grants shared by every Rekindle window. Only the exact core commands the frontend uses are granted: titlebar minimize/hide/close/toggle-maximize (`src/actions/titlebar.actions.ts`, `MenuBar.tsx`) and the two commands Tauri's `data-tauri-drag-region` handler invokes (start_dragging, internal_toggle_maximize). No `core:default`, no webview creation (windows are created only by Rust in `src/windows/`), no `core:event` (events arrive on each window's own channel from `subscribe_events`), and no plugin `*:default` bundles; plugin grants live in the per-window `app-*.json` files next to the commands that window may call. Enforced by `tests/capability_policy.rs`.",
+  "windows": [
+    "login",
+    "buddy-list",
+    "chat-*",
+    "dm-*",
+    "community-*",
+    "settings",
+    "profile-*",
+    "call-*"
+  ],
   "permissions": [
-    "core:default",
-    "core:window:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
     "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-set-focus",
-    "core:window:allow-toggle-maximize",
-    "core:webview:allow-create-webview-window",
-    "notification:default",
-    "store:default",
-    "global-shortcut:default",
-    "deep-link:default",
-    "process:default",
-    "autostart:default",
-    "opener:default"
+    "core:window:allow-toggle-maximize"
   ]
 }

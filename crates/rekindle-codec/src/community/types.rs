@@ -1,0 +1,218 @@
+//! V2 community data types for the multi-record DHT architecture.
+//!
+//! These types are used in the manifest (DFLT record), member registry
+//! (SMPL record), and per-channel message records (SMPL records).
+
+use serde::{Deserialize, Serialize};
+
+// ── Manifest + registry subkey layout ──
+//
+// The manifest is the v1.0 coordinator-owned governance record (DFLT,
+// 16 subkeys). v2.0 replaces it with an SMPL `o_cnt:0` governance
+// record — see the architecture doc's v1.0 -> v2.0 table — so this
+// table describes a record on its way out, not the target layout. The
+// indices stay pinned meanwhile because they are wire-visible.
+//
+// Declared once in `rekindle_types::dht_layout` — the daemon track
+// indexes the same records and kept its own copy of this table, which
+// is how the profile and registry layouts drifted apart. Aliased here
+// so existing call sites are unchanged.
+pub use rekindle_types::dht_layout::manifest::{
+    AUDIT_LOG_KEY as MANIFEST_AUDIT_LOG_KEY, AUTOMOD as MANIFEST_AUTOMOD, BANS as MANIFEST_BANS,
+    CATEGORIES as MANIFEST_CATEGORIES, CHANNELS as MANIFEST_CHANNELS,
+    COORDINATOR as MANIFEST_COORDINATOR, INVITES as MANIFEST_INVITES,
+    METADATA as MANIFEST_METADATA, ONBOARDING as MANIFEST_ONBOARDING,
+    POLICIES as MANIFEST_POLICIES, ROLES as MANIFEST_ROLES, SUBKEY_COUNT as MANIFEST_SUBKEY_COUNT,
+    WELCOME as MANIFEST_WELCOME,
+};
+
+// ── Channel types ──
+
+/// All supported channel kinds. Canonical definition moved to Tier 1
+/// (`rekindle_types::channel::ChannelKind`) — this crate's copy and
+/// `src-tauri::state::community::ChannelType` were byte-identical
+/// (same variants, same wire u8 mapping, same lowercase serde form);
+/// both now re-export the one definition instead of maintaining two.
+pub use rekindle_types::channel::ChannelKind;
+
+// ── Manifest types ──
+
+/// Community metadata stored in manifest subkey 0.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityMetadataV2 {
+    pub name: String,
+    pub description: Option<String>,
+    pub icon_hash: Option<String>,
+    pub created_at: u64,
+    pub owner_pseudonym: String,
+    /// Timestamp of the last DHT keepalive refresh (seconds since epoch).
+    #[serde(default)]
+    pub last_refreshed: u64,
+}
+
+/// A channel entry in the manifest channel directory (subkey 1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelEntryV2 {
+    pub id: String,
+    pub name: String,
+    pub kind: ChannelKind,
+    pub sort_order: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default)]
+    pub slowmode_seconds: u32,
+    #[serde(default)]
+    pub nsfw: bool,
+    /// DHT record key for this channel's message record (SMPL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_record_key: Option<String>,
+    /// Current MEK generation for this channel.
+    #[serde(default)]
+    pub mek_generation: u64,
+    #[serde(default)]
+    pub permission_overwrites: Vec<super::PermissionOverwrite>,
+    /// DHTLog spine key for persistent message history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_key: Option<String>,
+}
+
+/// A category entry in the manifest category directory (subkey 2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryEntry {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i32,
+}
+
+/// A role entry in the manifest role list (subkey 3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleEntryV2 {
+    pub id: u32,
+    pub name: String,
+    pub color: u32,
+    pub permissions: u64,
+    /// Role hierarchy position. Higher = more authority.
+    pub position: i32,
+    /// Whether to display this role separately in the member list.
+    #[serde(default)]
+    pub hoist: bool,
+    /// Whether this role can be @mentioned by anyone.
+    #[serde(default)]
+    pub mentionable: bool,
+    /// Whether members can assign this role to themselves.
+    #[serde(default)]
+    pub self_assignable: bool,
+}
+
+/// A member summary in the member index (registry owner subkey 0).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberSummary {
+    pub pseudonym_key: String,
+    pub display_name: String,
+    pub role_ids: Vec<u32>,
+    pub joined_at: u64,
+    /// The member's subkey index in the SMPL registry record.
+    pub subkey_index: u32,
+    #[serde(default)]
+    pub onboarding_complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_until: Option<u64>,
+}
+
+/// A ban entry in the manifest ban list (subkey 4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BanEntry {
+    pub pseudonym_key: String,
+    pub reason: Option<String>,
+    pub banned_by: String,
+    pub banned_at: u64,
+}
+
+/// Community policies stored in manifest subkey 6.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityPolicy {
+    /// Whether the community requires an invite to join.
+    #[serde(default)]
+    pub invite_only: bool,
+    /// Maximum number of members (0 = unlimited).
+    #[serde(default)]
+    pub max_members: u32,
+    /// Default role IDs assigned to new members.
+    #[serde(default)]
+    pub default_role_ids: Vec<u32>,
+    /// Content moderation level.
+    #[serde(default)]
+    pub moderation_level: ModerationLevel,
+}
+
+/// Content moderation strictness level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModerationLevel {
+    #[default]
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+/// Invite entry stored in manifest subkey 7.
+///
+/// The `code_hash` is SHA-256(raw_code) so the raw invite code is never
+/// exposed in the publicly-readable DHT manifest. The `encrypted_secrets`
+/// blob can only be decrypted by someone who has the raw code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteEntry {
+    /// SHA-256 hash of the invite code (hex). Raw code never stored in DHT.
+    pub code_hash: String,
+    pub created_by: String,
+    pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+    #[serde(default)]
+    pub max_uses: u32,
+    #[serde(default)]
+    pub use_count: u32,
+    /// Encrypted `InviteSecrets` blob (base64). Decrypted with
+    /// `HKDF(raw_invite_code) → AES-256-GCM`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypted_secrets: Option<String>,
+}
+
+// `InviteSecrets` lived here and had no user: every site — the invite
+// mint, the join flow, both hosts — uses `rekindle_types::invite::
+// InviteSecrets`, the Tier-1 one that actually carries the slot seed.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `ChannelKind`'s own tests moved to `rekindle_types::channel` with
+    // the type itself; this crate only re-exports it now.
+
+    #[test]
+    fn community_metadata_v2_serde() {
+        let meta = CommunityMetadataV2 {
+            name: "Test".into(),
+            description: Some("desc".into()),
+            icon_hash: None,
+            created_at: 1_234_567_890,
+            owner_pseudonym: "abc".into(),
+            last_refreshed: 0,
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("ownerPseudonym"));
+        let back: CommunityMetadataV2 = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, "Test");
+    }
+}

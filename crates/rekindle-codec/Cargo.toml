@@ -1,0 +1,25 @@
+[package]
+name = "rekindle-codec"
+version = "0.1.0"
+edition = "2021"
+description = "Rekindle wire types and encodings (Cap'n Proto schemas, envelopes, record pages), with no Veilid"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22"
+blake2 = "0.10"
+blake3 = "1"
+capnp = { workspace = true }
+hex = "0.4"
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+capnpc = { workspace = true }

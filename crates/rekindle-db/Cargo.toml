@@ -1,0 +1,32 @@
+[package]
+name = "rekindle-db"
+version = "0.1.0"
+edition = "2021"
+description = "Rekindle's SQLite schema, data root, node lock and shared repositories (Tier 3)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+parking_lot = { workspace = true }
+rekindle-audit = { path = "../rekindle-audit" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Vendored tokio-rusqlite: one background thread per connection.
+rekindle-asql = { path = "../rekindle-asql" }
+
+# SQLCipher, as `rekindle-vault` builds it: feature unification gives the
+# whole process one libsqlite3, and SQLCipher wins (plan G5).
+rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = [ "macros", "rt" ] }
+zeroize = "1"

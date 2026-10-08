@@ -1,0 +1,25 @@
+# Rekindle Multi-Node Test Environment
+#
+# 3 independent Rekindle nodes for testing multi-user features:
+#   - alice: community creator, friend requester
+#   - bob: community joiner, friend acceptor
+#   - carol: third participant for group dynamics
+#
+# Usage:
+#   mise run rekindle:up          # Build + start all 3 nodes
+#   mise run rekindle:status      # Check init status
+#   mise run rekindle:shell alice # Shell into alice's container
+#   mise run rekindle:down        # Stop all nodes
+#
+# Each node runs systemd as PID 1 with:
+#   - Persistent Veilid storage (survives restarts)
+#   - Persistent Rekindle session + config
+#   - Nix daemon for package management
+#   - Kernel keyring for credential storage
+#   - The release binary bind-mounted from the host build
+#   - Internet access for Veilid bootstrap
+
+include:
+  - path: .config/docker/compose.alice.yml
+  - path: .config/docker/compose.bob.yml
+  - path: .config/docker/compose.carol.yml

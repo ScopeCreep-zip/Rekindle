@@ -1,0 +1,17 @@
+[package]
+name = "rekindle-media-stats"
+version = "0.1.0"
+edition = "2021"
+description = "Realtime media quality measurement — RFC 3550 jitter, RFC 3611 burst/gap, ITU-T G.107 MOS"
+
+[lints]
+workspace = true
+
+# Tier 3: pure logic. No I/O, no async, no veilid-core, no tauri — the
+# metrics are computed from values the caller already holds, so this
+# crate is testable without a network.
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

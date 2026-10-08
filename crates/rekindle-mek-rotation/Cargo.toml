@@ -1,0 +1,29 @@
+[package]
+name = "rekindle-mek-rotation"
+version = "0.1.0"
+edition = "2021"
+description = "Phase 17 — cascade MEK rotation protocol (election + distribute + cache + persist)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+blake3 = "1"
+hex = { workspace = true }
+parking_lot = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+zeroize = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

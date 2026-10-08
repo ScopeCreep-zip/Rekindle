@@ -1,14 +1,17 @@
 import { Component, createMemo, createSignal, For, onMount, onCleanup, Show } from "solid-js";
+import { formatDuration } from "../utils/formatting";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import StatusDot from "../components/status/StatusDot";
 import { friendsState } from "../stores/friends.store";
 import { communityState } from "../stores/community.store";
 import { subscribeProfilePresenceEvents } from "../handlers/presence-events.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { hydrateState } from "../stores/hydrate";
 import { commands } from "../ipc/commands";
-import { handleRemoveFriend } from "../handlers/buddy.handlers";
-import { ICON_SEND, ICON_ACCOUNT_REMOVE } from "../icons";
+import { handleRemoveFriend } from "../actions/buddy.actions";
+import { handleStartDmCall } from "../actions/calls.actions";
+import { ICON_SEND, ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_VIDEO } from "../icons";
+import { startEventStream } from "../ipc/channels";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -23,6 +26,7 @@ const ProfileWindow: Component = () => {
   onMount(() => {
     hydrateState();
     unlistenPresence = subscribeProfilePresenceEvents(publicKey);
+    void startEventStream();
   });
 
   onCleanup(() => {
@@ -71,6 +75,9 @@ const ProfileWindow: Component = () => {
           <div class="profile-section">
             <div class="profile-section-label">Currently Playing</div>
             <div class="profile-game-name">{friend()!.gameInfo!.gameName}</div>
+            <Show when={friend()!.gameInfo!.serverAddress}>
+              <div class="profile-game-server">on {friend()!.gameInfo!.serverAddress}</div>
+            </Show>
             <Show when={friend()!.gameInfo!.startedAt}>
               <div class="profile-game-elapsed">
                 {formatElapsed(friend()!.gameInfo!.startedAt!)}
@@ -93,14 +100,29 @@ const ProfileWindow: Component = () => {
         <Show when={friend()}>
           <div class="profile-actions">
             <button
-              class="profile-btn-message"
-              onClick={() => commands.openChatWindow(publicKey, displayName())}
+              class="form-btn-secondary"
+              onClick={() => commands.openChatWindow(publicKey)}
             >
               <span class="nf-icon">{ICON_SEND}</span> Send Message
             </button>
+            {/* Wave 12 W12.8 — call buttons in profile header. */}
+            <button
+              class="form-btn-secondary"
+              title="Start a voice call"
+              onClick={() => void handleStartDmCall(publicKey, displayName(), false)}
+            >
+              <span class="nf-icon">{ICON_PHONE}</span> Voice Call
+            </button>
+            <button
+              class="form-btn-secondary"
+              title="Start a video call"
+              onClick={() => void handleStartDmCall(publicKey, displayName(), true)}
+            >
+              <span class="nf-icon">{ICON_VIDEO}</span> Video Call
+            </button>
             <Show when={!confirmRemove()}>
               <button
-                class="profile-btn-remove"
+                class="form-btn-danger"
                 onClick={() => setConfirmRemove(true)}
               >
                 <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Remove Friend
@@ -108,13 +130,13 @@ const ProfileWindow: Component = () => {
             </Show>
             <Show when={confirmRemove()}>
               <button
-                class="profile-btn-remove profile-btn-confirm"
+                class="form-btn-danger"
                 onClick={() => handleRemoveFriend(publicKey)}
               >
                 Confirm Remove
               </button>
               <button
-                class="profile-btn-message"
+                class="form-btn-secondary"
                 onClick={() => setConfirmRemove(false)}
               >
                 Cancel
@@ -128,12 +150,7 @@ const ProfileWindow: Component = () => {
 };
 
 function formatElapsed(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `Playing for ${hours}h ${mins}m`;
-  }
-  return `Playing for ${mins}m`;
+  return `Playing for ${formatDuration(seconds)}`;
 }
 
 export default ProfileWindow;

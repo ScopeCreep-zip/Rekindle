@@ -1,0 +1,22 @@
+//! Tauri command for local community analytics (architecture §24.1).
+//!
+//! Permission gate is enforced here against the merged governance state
+//! so a non-admin client can't bypass UI gating to fetch insights.
+
+use rekindle_types::analytics::CommunityAnalytics;
+use rekindle_types::permissions;
+use tauri::State;
+
+use crate::commands::community::require_permission;
+use crate::services::community::analytics;
+use crate::state::SharedState;
+
+#[tauri::command]
+pub async fn get_community_analytics(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<CommunityAnalytics, String> {
+    let pool = state.db.current()?;
+    require_permission(state.inner(), &community_id, permissions::VIEW_INSIGHTS)?;
+    analytics::compute_community_analytics(state.inner(), &pool, &community_id).await
+}

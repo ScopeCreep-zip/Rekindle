@@ -1,0 +1,46 @@
+too-many-arguments-threshold = 12
+too-many-lines-threshold = 300
+type-complexity-threshold = 300
+cognitive-complexity-threshold = 30
+future-size-threshold = 32768
+large-error-threshold = 256
+msrv = "1.89"
+avoid-breaking-exported-api = false
+
+# ─── Disallowed methods ─────────────────────────────────────────────────
+# Each entry maps a "do not call" path to a recommended replacement or
+# reason. When clippy fires it, the hint is shown to the contributor.
+# Spec: https://rust-lang.github.io/rust-clippy/master/#disallowed_methods
+
+disallowed-methods = [
+    # ── Concurrency: prefer parking_lot over std::sync ───────────
+    # parking_lot::Mutex is faster, doesn't poison on panic, and
+    # matches the convention already used across the workspace.
+    { path = "std::sync::Mutex::new", reason = "Use parking_lot::Mutex::new — faster, no poison." },
+    { path = "std::sync::RwLock::new", reason = "Use parking_lot::RwLock::new." },
+
+    # ── Time: prefer rekindle-utils helpers ──────────────────────
+    # rekindle-utils::time provides monotonic + clock helpers that
+    # respect the project's testing seam.
+    { path = "std::time::SystemTime::now", reason = "Use rekindle_utils::time::now_ms / now_secs for testability." },
+
+    # ── Tokio footguns (Phase 0, decomposed-harvest plan) ────────
+    # block_in_place silently deadlocks the current_thread runtime
+    # (Tauri's default). Use spawn_blocking + .await instead.
+    { path = "tokio::task::block_in_place", reason = "Use spawn_blocking + .await — block_in_place deadlocks current_thread runtime." },
+]
+
+# ─── Disallowed types ──────────────────────────────────────────────────
+# Same idea, applied to types. We keep this short — most "do not use"
+# cases are better expressed at the dependency-graph level via
+# cargo-deny `[bans]` and the per-crate boundary check in
+# `cargo xtask check-boundaries`.
+
+disallowed-types = [
+    # ── Sync primitives (Phase 0, decomposed-harvest plan) ───────
+    # We pick the lock library at the call site: parking_lot for sync,
+    # tokio::sync for async-aware. std::sync::* mixes poorly with both
+    # (poisoning, no Send across .await) and is banned at the type level.
+    { path = "std::sync::Mutex", reason = "Use parking_lot::Mutex (sync) or tokio::sync::Mutex (async-aware)." },
+    { path = "std::sync::RwLock", reason = "Use parking_lot::RwLock (sync) or tokio::sync::RwLock (async-aware)." },
+]

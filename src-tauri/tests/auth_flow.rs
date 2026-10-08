@@ -5,15 +5,18 @@
 
 use std::sync::Arc;
 
+use rekindle_db::Db;
 use rekindle_lib::commands::auth::{create_identity_core, login_core};
-use rekindle_lib::db::{self, DbPool};
 use rekindle_lib::keystore::{self, KeystoreHandle};
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
 
 /// Create fresh test state with an in-memory `SQLite` database.
-fn test_state() -> (SharedState, DbPool, KeystoreHandle) {
+fn test_state() -> (SharedState, Db, KeystoreHandle) {
     let state: SharedState = Arc::new(AppState::default());
-    let pool = db::create_pool(":memory:").expect("in-memory SQLite").pool;
+    let pool = rekindle_db::open(std::path::Path::new(":memory:"))
+        .expect("in-memory SQLite")
+        .db;
+    state.db.set(pool.clone());
     let keystore_handle = keystore::new_handle();
     (state, pool, keystore_handle)
 }
@@ -32,6 +35,7 @@ async fn create_identity_persists_to_db_and_stronghold() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect("create_identity_core should succeed");
@@ -53,24 +57,17 @@ async fn create_identity_persists_to_db_and_stronghold() {
     }
 
     // Identity persisted in SQLite
-    let db = pool.clone();
     let pk = result.public_key.clone();
-    let row = tokio::task::spawn_blocking(move || {
-        let conn = db.lock().unwrap();
-        conn.query_row(
-            "SELECT public_key, display_name FROM identity WHERE public_key = ?",
-            rusqlite::params![pk],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0).unwrap(),
-                    row.get::<_, String>(1).unwrap(),
-                ))
-            },
-        )
-        .unwrap()
-    })
-    .await
-    .unwrap();
+    let row = pool
+        .call(move |conn| {
+            conn.query_row(
+                "SELECT public_key, display_name FROM identity WHERE public_key = ?",
+                rusqlite::params![pk],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+        })
+        .await
+        .unwrap();
     assert_eq!(row.0, result.public_key);
     assert_eq!(row.1, "Alice");
 
@@ -90,6 +87,7 @@ async fn create_identity_uses_fallback_display_name() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect("create_identity_core should succeed");
@@ -118,6 +116,7 @@ async fn login_succeeds_with_correct_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -134,6 +133,7 @@ async fn login_succeeds_with_correct_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect("login should succeed with correct passphrase");
@@ -168,6 +168,7 @@ async fn login_restores_same_keypair() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -184,6 +185,7 @@ async fn login_restores_same_keypair() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -208,6 +210,7 @@ async fn login_fails_with_wrong_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -224,6 +227,7 @@ async fn login_fails_with_wrong_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect_err("login with wrong passphrase should fail");
@@ -250,6 +254,7 @@ async fn login_fails_with_no_identity() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect_err("login with no identity should fail");
@@ -274,6 +279,7 @@ async fn create_identity_with_empty_display_name_uses_fallback() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -294,6 +300,7 @@ async fn multiple_create_login_cycles_work() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -310,6 +317,7 @@ async fn multiple_create_login_cycles_work() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();

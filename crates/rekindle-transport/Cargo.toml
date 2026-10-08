@@ -1,0 +1,82 @@
+[package]
+name = "rekindle-transport"
+version = "0.1.0"
+edition = "2021"
+description = "Unified network transport layer for Rekindle — sole Veilid boundary"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Workspace
+rekindle-calls = { path = "../rekindle-calls" }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-events = { path = "../rekindle-events" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-route = { path = "../rekindle-route" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }
+# Tier-5 gossip primitives. rekindle-gossip is transport-agnostic pure
+# logic ("does not call app_message itself; the integration layer plumbs
+# the broadcast helpers into Veilid") and this crate is that integration
+# layer for the daemon track — a downward edge, matching the desktop
+# track's use of the same primitives. Without it this crate carried its
+# own fanout/Lamport/rate-limit copies, which had already drifted from
+# the epidemic-broadcast parameters both tracks must agree on.
+rekindle-gossip = { path = "../rekindle-gossip" }
+# Constant-time tag comparison for voice packet HMACs. Never
+# hand-rolled: a manual XOR/OR loop can be optimised back into an
+# early exit, which is the timing oracle it was meant to prevent.
+subtle = "2"
+# Shared VeilidConfig builder (`veilid_config::build_veilid_config`) —
+# one translation of startup tuning into veilid_core::VeilidConfig for
+# both node-startup tracks. Unidirectional edge; rekindle-protocol must
+# never depend on rekindle-transport.
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-records = { path = "../rekindle-records" }
+
+# Veilid — the ONLY crate in the workspace that imports this
+veilid-core = { version = "0.5", default-features = true }
+
+# Async
+async-trait = "0.1"
+backoff = "0.4"
+futures = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+
+# Serialization — postcard for wire, serde for trait bounds
+postcard = { version = "1", features = [ "use-std" ] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Crypto
+aes-gcm = "0.10"
+blake3 = "1"
+ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
+hkdf = "0.12"
+rand = { workspace = true }
+sha2 = "0.10"
+x25519-dalek = { version = "2", features = [ "static_secrets" ] }
+zeroize = { version = "1", features = [ "derive" ] }
+
+# Data structures
+bitflags = { version = "2", features = [ "serde" ] }
+indexmap = "2"
+parking_lot = { workspace = true }
+
+# Identity generation
+uuid = { version = "1", features = [ "v4", "fast-rng" ] }
+
+# Logging
+hex = "0.4"
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+tokio = { workspace = true, features = [ "test-util", "macros" ] }

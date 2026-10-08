@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json.schemastore.org/stylelintrc.json",
+  "//": [
+    "Stylelint config for src/styles/**/*.css.",
+    "Tailwind 4 introduced @theme blocks and CSS-first config; the rules",
+    "below cover that without the legacy tailwindcss config-file setup.",
+    "Run with:  pnpm exec stylelint 'src/styles/**/*.css'"
+  ],
+  "extends": [
+    "stylelint-config-standard"
+  ],
+  "rules": {
+    "at-rule-no-unknown": [
+      true,
+      {
+        "ignoreAtRules": [
+          "tailwind",
+          "apply",
+          "variants",
+          "responsive",
+          "screen",
+          "layer",
+          "theme",
+          "config",
+          "import",
+          "source",
+          "utility",
+          "custom-variant",
+          "plugin"
+        ]
+      }
+    ],
+    "block-no-empty": null,
+    "no-descending-specificity": null,
+    "selector-class-pattern": null,
+    "custom-property-pattern": null,
+    "color-function-notation": null,
+    "alpha-value-notation": null,
+    "declaration-block-no-redundant-longhand-properties": null,
+    "no-empty-source": null,
+    "comment-empty-line-before": null,
+    "rule-empty-line-before": null,
+    "at-rule-empty-line-before": [
+      "always",
+      {
+        "except": ["blockless-after-blockless", "first-nested"],
+        "ignore": ["after-comment"]
+      }
+    ]
+  },
+  "ignoreFiles": [
+    "dist/**",
+    "node_modules/**",
+    "src-tauri/gen/**",
+    "legacy/**",
+    "**/*.min.css"
+  ]
+}

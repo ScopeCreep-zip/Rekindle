@@ -1,13 +1,63 @@
+// Veilid + tokio + tracing nested-future Send bound evaluation can
+// overflow the default recursion limit (256 is the rustc default; the
+// MCU loop's tokio::spawn inside a transport.lock().await triggers
+// the chain). Bump high enough to clear the Send chain for the deepest
+// async future.
+#![recursion_limit = "512"]
+
+/// Audio sample rate for the whole voice pipeline, in Hz.
+///
+/// Opus is defined at 48 kHz and every stage — capture, encode,
+/// jitter buffer, mix, playback — runs at this rate. It was written as
+/// a bare `48000` in seven places across this crate plus once each in
+/// the latency test and the latency bench, so "what rate does voice
+/// run at?" had nine answers that merely happened to agree.
+pub const SAMPLE_RATE_HZ: u32 = 48_000;
+
+/// Samples in one 20 ms frame at [`SAMPLE_RATE_HZ`], mono.
+///
+/// 20 ms is the Opus VoIP frame size the pipeline is built around.
+pub const FRAME_SAMPLES_20MS: usize = 960;
+
+/// Channel count for the voice pipeline. Mono throughout.
+pub const CHANNELS: u16 = 1;
+
+pub mod arrivals; // Receive-side arrival record for transport feedback (plan E4.3.2).
 pub mod audio_processing;
+pub(crate) mod audio_thread;
 pub mod capture;
 pub mod codec;
+pub mod device;
+pub mod election; // Phase 14 — deterministic MCU host election (pure logic).
 pub mod error;
 pub mod jitter;
+pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
+pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
+pub mod media_crypto; // RFC 9605 SFrame sealing/opening of voice frames.
+pub mod media_frame; // Media datagram framing: tag + per-route transport_seq (plan E4.3.1).
+pub mod media_quality; // Render, post-FEC loss and lip sync at this receiver (plan E4.3 Q0).
+pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
 pub mod playback;
+pub mod receive_loop; // Phase 14 — packet receive → decode → mix → playback pipeline.
+pub mod receiver_report; // RFC 3550 receiver reports — the return path voice never had.
+pub mod replay_window;
+pub mod send_loop; // Phase 14 — capture → process → encode → transport send pipeline.
+pub mod session; // Phase 14.l — voice session orchestrator (start_session port).
+pub mod session_deps; // Phase 14 — VoiceSessionDeps trait + VoiceSessionEvent.
+pub mod signaling; // Phase 14.k — community voice signaling handlers (VoiceSignalingDeps).
+pub mod stream_config; // cpal stream-config negotiation + format adaptation.
+pub mod topology; // Phase 14 — pure mode-decision + stage-host election math.
 pub mod transport;
 
+pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
+pub use liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
+pub use session_deps::{
+    AudioPrefs, CallMediaKeys, MediaKeySource, VoiceIdentity, VoiceLoopScopes, VoicePeer,
+    VoiceSessionDeps, VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownOpts,
+};
+pub use transport::{VoiceFrameSender, VoiceMode};
 
 use tokio::sync::mpsc;
 
@@ -37,15 +87,60 @@ pub struct VoiceConfig {
     pub input_volume: f32,
     /// Output volume multiplier (0.0–1.0).
     pub output_volume: f32,
+    /// Input-channel choice per input device name (0-based channel
+    /// indices, plan C7.24b). A device without an entry averages all its
+    /// channels.
+    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+}
+
+/// Returns recommended voice settings based on group size (9E: Adaptive Codec).
+///
+/// Smaller groups get higher bitrate and lower jitter for clarity.
+/// Larger groups grow the jitter target so MCU mixing can absorb
+/// per-source desynchronisation; the latency cost is acceptable
+/// because large-group calls are typically meeting-style rather than
+/// duplex conversation.
+pub fn voice_config_for_group_size(n: usize) -> VoiceConfig {
+    match n {
+        0..=3 => VoiceConfig {
+            // Small groups (1:1 calls and 2-3 person huddles): keep
+            // the default low-latency jitter target so mouth-to-ear
+            // stays under the architecture §32 line 4147 budget.
+            ..VoiceConfig::default()
+        },
+        4..=8 => VoiceConfig {
+            // 80ms jitter — accepts ~40ms more latency to absorb
+            // multi-source MCU desynchronisation.
+            jitter_buffer_ms: 80,
+            ..VoiceConfig::default()
+        },
+        _ => VoiceConfig {
+            // 9+ participants: 120ms target trades latency for
+            // glitch-free mixing at scale. Spec target may not be
+            // met for these sessions; group-call UX is meeting-style
+            // rather than realtime duplex, so the trade is acceptable.
+            jitter_buffer_ms: 120,
+            ..VoiceConfig::default()
+        },
+    }
 }
 
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
-            sample_rate: 48000,
-            channels: 1,
-            frame_size: 960, // 20ms at 48kHz
-            jitter_buffer_ms: 200, // Veilid has 100-500ms jitter
+            sample_rate: SAMPLE_RATE_HZ,
+            channels: CHANNELS,
+            frame_size: FRAME_SAMPLES_20MS,
+            // 40ms jitter buffer matches the industry VoIP defaults
+            // (Mumble 20–50ms, Discord ~40ms, WebRTC ~50ms). The buffer
+            // depth is independent of routing: voice rides a 3-hop
+            // Tor-class `SafetySelection::Safe` route (anonymous), which
+            // raises the *network* leg into the ITU-T G.114 interactive
+            // band (≤400ms one-way "acceptable") rather than the old
+            // 0-hop Unsafe sub-100ms target. Adaptive jitter (start
+            // small, grow on observed loss) is the proper long-term
+            // solution; until then 40ms is the default.
+            jitter_buffer_ms: 40,
             vad_threshold: 0.02,
             vad_hold_ms: 300,
             noise_suppression: true,
@@ -54,6 +149,7 @@ impl Default for VoiceConfig {
             output_device: None,
             input_volume: 1.0,
             output_volume: 1.0,
+            input_channels: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -92,6 +188,10 @@ pub struct VoiceEngine {
     /// A processing loop should decode incoming packets and send mixed audio here.
     playback_tx: Option<mpsc::Sender<Vec<f32>>>,
 
+    /// Audio queued in the playback ring, ms — set by the output callback,
+    /// read by the receive loop's stats. Survives playback restarts.
+    playback_depth_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+
     /// Merged device error receiver — capture and playback errors both funnel here.
     /// Taken by the device monitor loop via `take_device_error_rx()`.
     device_error_rx: Option<mpsc::Receiver<String>>,
@@ -101,6 +201,11 @@ pub struct VoiceEngine {
 
     /// Saved config for creating capture/playback instances.
     config: VoiceConfig,
+
+    /// Origin for the monotonic millisecond arrival clock handed to the
+    /// jitter buffer. Only differences within it matter, so the origin
+    /// is arbitrary — it just has to be stable for the engine's life.
+    origin: std::time::Instant,
 }
 
 impl VoiceEngine {
@@ -119,9 +224,11 @@ impl VoiceEngine {
             is_deafened: false,
             capture_rx: None,
             playback_tx: None,
+            playback_depth_ms: std::sync::Arc::default(),
             device_error_rx: Some(device_error_rx),
             device_error_tx: Some(device_error_tx),
             config,
+            origin: std::time::Instant::now(),
         })
     }
 
@@ -134,11 +241,17 @@ impl VoiceEngine {
         // Channel capacity: ~100 frames ≈ 2 seconds of audio at 20ms per frame.
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut capture =
-            AudioCapture::new(self.config.sample_rate, self.config.channels)?;
+        let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels);
+        let picked = self
+            .config
+            .input_device
+            .as_ref()
+            .and_then(|name| self.config.input_channels.get(name))
+            .cloned();
         capture.start(
             tx,
             self.config.input_device.as_deref(),
+            picked,
             self.device_error_tx.clone(),
         )?;
 
@@ -164,10 +277,11 @@ impl VoiceEngine {
     pub fn start_playback(&mut self) -> Result<(), VoiceError> {
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut pb = AudioPlayback::new(self.config.sample_rate, self.config.channels)?;
+        let mut pb = AudioPlayback::new(self.config.sample_rate, self.config.channels);
         pb.start(
             rx,
             self.config.output_device.as_deref(),
+            std::sync::Arc::clone(&self.playback_depth_ms),
             self.device_error_tx.clone(),
         )?;
 
@@ -175,6 +289,12 @@ impl VoiceEngine {
         self.playback_tx = Some(tx);
         tracing::info!("voice playback pipeline started");
         Ok(())
+    }
+
+    /// The playback ring's depth gauge, ms (see `playback_depth_ms`).
+    #[must_use]
+    pub fn playback_depth(&self) -> std::sync::Arc<std::sync::atomic::AtomicU32> {
+        std::sync::Arc::clone(&self.playback_depth_ms)
     }
 
     /// Stop audio playback.
@@ -196,9 +316,10 @@ impl VoiceEngine {
         self.playback_tx.take()
     }
 
-    /// Process an incoming voice packet from the network.
-    pub fn process_incoming(&mut self, packet: transport::VoicePacket) {
-        self.jitter_buffer.push(packet);
+    /// Queue an opened inbound frame for playout.
+    pub fn process_incoming(&mut self, frame: jitter::JitterFrame) {
+        let arrival_ms = u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.jitter_buffer.push(frame, arrival_ms);
     }
 
     /// Set mute state (flag only — does NOT stop capture device).
@@ -219,13 +340,18 @@ impl VoiceEngine {
     /// Update the audio device names in the config.
     ///
     /// Takes effect on the next `start_capture`/`start_playback` call.
-    pub fn set_devices(
-        &mut self,
-        input_device: Option<String>,
-        output_device: Option<String>,
-    ) {
+    pub fn set_devices(&mut self, input_device: Option<String>, output_device: Option<String>) {
         self.config.input_device = input_device;
         self.config.output_device = output_device;
+    }
+
+    /// Replace the per-device input-channel choices (plan C7.24b). Takes
+    /// effect on the next `start_capture`.
+    pub fn set_input_channels(
+        &mut self,
+        input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    ) {
+        self.config.input_channels = input_channels;
     }
 
     /// Take the device error receiver for use in a device monitor loop.

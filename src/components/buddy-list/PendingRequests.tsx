@@ -4,7 +4,7 @@ import {
   handleAcceptRequest,
   handleRejectRequest,
   handleBlockUser,
-} from "../../handlers/buddy.handlers";
+} from "../../actions/buddy.actions";
 
 const PendingRequests: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
@@ -34,7 +34,7 @@ const PendingRequests: Component = () => {
           Pending Requests ({friendsState.pendingRequests.length})
         </div>
         <Show when={error()}>
-          <div class="login-error">{error()}</div>
+          <div class="form-error">{error()}</div>
         </Show>
         <For each={friendsState.pendingRequests}>
           {(request) => (

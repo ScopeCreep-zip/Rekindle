@@ -1,0 +1,174 @@
+/**
+ * Voice events, as they arrive on the `voice-event` channel.
+ *
+ * These mirror `rekindle_types::subscription_events::VoiceEvent` — the
+ * same vocabulary the CLI subscribes to. They replaced a Tauri-only
+ * `channels::VoiceEvent` that held the *local session's* state (device,
+ * speaking, quality, drops) while Tier 1 held only what gossip said
+ * about a community channel, so neither could describe a whole call.
+ *
+ * Shapes are pinned on the Rust side by
+ * `json_shape_is_what_the_webview_parses`.
+ *
+ * Externally tagged (`{ variantName: {...} }`) rather than
+ * `{ type, data }`: the same values cross the daemon IPC as postcard,
+ * which cannot decode a tagged enum.
+ */
+
+/**
+ * Where a call is happening.
+ *
+ * A DM call previously had no representation at all — every variant
+ * required a community — so it was smuggled through a separate
+ * `activeCallType: "dm"` string. It is now a scope of its own.
+ */
+export type VoiceScope =
+  | { community: { community: string; channel: string } }
+  | { dm: { peerKey: string } };
+
+/** One participant in a voice roster. */
+export interface VoiceParticipant {
+  pseudonymKey: string;
+  displayName: string | null;
+}
+
+export type VoiceEvent =
+  | {
+      joined: {
+        scope: VoiceScope;
+        pseudonym: string;
+        displayName: string | null;
+        /**
+         * The joiner's private-route blob. The desktop ignores it — its
+         * transport resolves the route separately — but a CLI voice
+         * client has no other way to reach the peer.
+         */
+        routeBlob: number[] | null;
+      };
+    }
+  | { left: { scope: VoiceScope; pseudonym: string } }
+  | { modeChanged: { scope: VoiceScope; mode: string; hostPseudonym: string | null } }
+  | { muteChanged: { scope: VoiceScope; targetPseudonym: string; muted: boolean } }
+  | { deafenChanged: { scope: VoiceScope; targetPseudonym: string; deafened: boolean } }
+  /**
+   * A present member's catch-up roster (§10.1/§10.5). Carries the
+   * participants, not a count: its whole purpose is telling a joiner
+   * *who* is already in the channel.
+   */
+  | { rosterUpdated: { scope: VoiceScope; participants: VoiceParticipant[] } }
+  | {
+      joinHandshake: {
+        scope: VoiceScope;
+        /** `"announced"` | `"seen"` | `"connected"`. */
+        state: string;
+        peer: string | null;
+        displayName: string | null;
+      };
+    }
+  | { peerConfirmed: { scope: VoiceScope; pseudonym: string } }
+  | { mediaReady: { scope: VoiceScope; ready: boolean; reason: string } }
+  | {
+      stageUpdated: {
+        scope: VoiceScope;
+        topic: string | null;
+        speakers: string[];
+        moderatorPseudonym: string;
+      };
+    }
+  | { speakRequested: { scope: VoiceScope; requesterPseudonym: string } }
+  /**
+   * Architecture §10.9 — a member fired a soundboard expression. The
+   * audio bytes are not carried; the expression is looked up by id in
+   * the local cache.
+   */
+  | {
+      soundboardPlayed: {
+        scope: VoiceScope;
+        expressionId: string;
+        actorPseudonym: string;
+      };
+    }
+  | {
+      speakResponded: {
+        scope: VoiceScope;
+        requesterPseudonym: string;
+        granted: boolean;
+        moderatorPseudonym: string;
+      };
+    }
+  /** **We** joined a call and the audio pipeline is running. */
+  | { localJoined: { scope: VoiceScope } }
+  | { speakingChanged: { scope: VoiceScope; pseudonym: string; speaking: boolean } }
+  /** Machine-wide — no scope, since a device can change with no call. */
+  | { deviceChanged: { deviceType: string; deviceName: string; reason: string } }
+  | { packetsDropped: { scope: VoiceScope; reason: string; count: number } }
+  | {
+      connectionQuality: {
+        scope: VoiceScope;
+        /** `"good"` | `"fair"` | `"poor"` | `"lost"` | `"recovering"`. */
+        quality: string;
+        rxOverflowDrops: number;
+        rxLateDrops: number;
+        /** Inbound media dropped for MEK reasons (rotation race signal). */
+        rxKeyDrops: number;
+        ingressDrops: number;
+        /**
+         * End-to-end measurement of our OUTBOUND stream as the far end
+         * sees it, from its RFC 3550 receiver reports. `null` until a
+         * peer reports, in which case `quality` came from local
+         * send-failure counts — which cannot see network loss.
+         */
+        link: LinkMeasurement | null;
+      };
+    };
+
+/** Q8 fixed point: `0..=255` maps to `0.0..=1.0`. */
+export interface LinkMeasurement {
+  /** Packets that never arrived. */
+  lossQ8: number;
+  /** Arrived but unusable — too late, or into a full buffer. */
+  discardQ8: number;
+  /** RFC 3550 interarrival jitter, ms. */
+  jitterMs: number;
+  /** Round trip, ms, when the LSR/DLSR echo yielded a believable one. */
+  rttMs: number | null;
+  /** ITU-T G.107 R factor, 0–100. */
+  rFactor: number;
+  /** Listening-quality MOS — "does it sound clean". */
+  mosLq: number;
+  /** Conversational-quality MOS — "can you hold a conversation". */
+  mosCq: number;
+  /** Opus bitrate this measurement led the sender to set. */
+  bitrateBps: number;
+  /** Estimated one-way route delay, median / 95th percentile, ms
+   *  (plan E4.3.0); null until a report yields a round trip. */
+  oneWayP50Ms: number | null;
+  oneWayP95Ms: number | null;
+  /** Estimated mouth-to-ear at the far end, ms. */
+  mouthToEarMs: number | null;
+  /** Mouth-to-ear above ITU-T G.114's 400 ms limit. */
+  outsideG114: boolean;
+}
+
+/** Q8 rate as a whole percent, for display. */
+export function q8ToPercent(q8: number): number {
+  return Math.round((q8 * 100) / 255);
+}
+
+/** The full subscription event as emitted on the channel. */
+export type VoiceSubscriptionEvent = { voice: VoiceEvent };
+
+/** `"community"` or `"dm"` — what the UI switches its call panel on. */
+export function callType(scope: VoiceScope): "community" | "dm" {
+  return "community" in scope ? "community" : "dm";
+}
+
+/** Channel id for a community call, peer key for a DM. */
+export function sessionKey(scope: VoiceScope): string {
+  return "community" in scope ? scope.community.channel : scope.dm.peerKey;
+}
+
+/** The community, or `null` for a DM call. */
+export function scopeCommunity(scope: VoiceScope): string | null {
+  return "community" in scope ? scope.community.community : null;
+}

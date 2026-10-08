@@ -11,21 +11,32 @@ import CommunityListCompact from "../components/buddy-list/CommunityListCompact"
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
-import BuddyCreateCommunityModal from "../components/buddy-list/BuddyCreateCommunityModal";
-import BuddyJoinCommunityModal from "../components/buddy-list/BuddyJoinCommunityModal";
+import DmInviteModal from "../components/buddy-list/DmInviteModal";
+import DeepLinkConsentDialog from "../components/buddy-list/DeepLinkConsentDialog";
+import SessionResetDialog from "../components/buddy-list/SessionResetDialog";
+import CreateCommunityModal from "../components/community/CreateCommunityModal";
+import JoinCommunityModal from "../components/community/JoinCommunityModal";
+import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
 import { authState, setAuthState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
-import { buddyListUI } from "../stores/buddylist-ui.store";
+import { buddyListUI, setBuddyListUI } from "../stores/buddylist-ui.store";
 import { switchTab } from "../stores/buddylist-ui.store";
-import { handleLoadPendingRequests } from "../handlers/buddy.handlers";
-import { handleGetGameStatus } from "../handlers/settings.handlers";
+import { handleLoadPendingRequests } from "../actions/buddy.actions";
+import { handleGetGameStatus } from "../actions/settings.actions";
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
-import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { loadPendingDeepLink, subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
+import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
+import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
+import CallController from "../components/voice/CallController";
+import { startEventStream } from "../ipc/channels";
+import { subscribeDmInbox } from "../handlers/dm.handlers";
+import { handleListDms } from "../actions/dm.actions";
+import { handleHydrateRelayState } from "../actions/relay.actions";
+import { hydrateState } from "../stores/hydrate";
 import {
   subscribeNetworkStatus,
   subscribeProfileUpdates,
@@ -61,18 +72,29 @@ const BuddyListWindow: Component = () => {
   }
 
   onMount(async () => {
-    // Register event listeners FIRST so no events are missed during hydration
+    // Register event listeners FIRST so no events are missed during hydration.
+    // The buddy list owns the device-wide UI: the call shell (ring, modal,
+    // outgoing/group panels), OS notifications and the notification inbox.
+    unlisteners.push(subscribeCallEvents({ owner: true }));
+    unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListChatEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
-    unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListVoiceEvents());
     unlisteners.push(subscribeNetworkStatus((event: NetworkStatusEvent) => {
       setNetworkAttached(event.isAttached);
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
+    unlisteners.push(subscribeDeepLinkHandler());
+    unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
+    void startEventStream();
+    void refreshMissedCalls();
 
     // Await hydration so store is populated before subsequent commands
     await hydrateState();
+    // A deep link that arrived before login waits in the backend for consent.
+    void loadPendingDeepLink();
+    handleListDms();
+    handleHydrateRelayState();
 
     // Re-emit presence for already-online friends (listeners are now active).
     // Awaited because emit_friends_presence now syncs from DHT first.
@@ -99,6 +121,12 @@ const BuddyListWindow: Component = () => {
       setAuthState("gameInfo", game);
     });
 
+    // NOTE: the WebCodecs probe matrix deliberately does NOT run here.
+    // The login path must never be the first media-stack touch — a cold
+    // WebCodecs call aborts the WebKitWebProcess on WebKitGTK 2.52.3 +
+    // GStreamer 1.24 (Ubuntu/Pop!_OS 24.04). The probe runs lazily from
+    // handleJoinVoice; see handlers/video.handlers.ts.
+
     // Keyboard shortcuts
     document.addEventListener("keydown", handleKeyboardShortcuts);
   });
@@ -112,6 +140,8 @@ const BuddyListWindow: Component = () => {
 
   return (
     <div class="app-frame">
+      {/* Architecture §32 a11y — keyboard skip link past menu/identity rail. */}
+      <a href="#main-content" class="skip-link">Skip to buddy list</a>
       <Titlebar title="Rekindle" hideOnClose />
       <MenuBar />
       <Show when={!networkAttached()}>
@@ -120,13 +150,15 @@ const BuddyListWindow: Component = () => {
       <UserIdentityBar />
       <TabBar />
       <SearchBar />
-      <Show when={buddyListUI.activeTab === "friends"}>
-        <PendingRequests />
-        <BuddyList />
-      </Show>
-      <Show when={buddyListUI.activeTab === "communities"}>
-        <CommunityListCompact />
-      </Show>
+      <div id="main-content" tabindex="-1" class="window-main">
+        <Show when={buddyListUI.activeTab === "friends"}>
+          <PendingRequests />
+          <BuddyList />
+        </Show>
+        <Show when={buddyListUI.activeTab === "communities"}>
+          <CommunityListCompact />
+        </Show>
+      </div>
       <BottomActionBar />
       <div class="status-bar">
         <StatusPicker currentStatus={authState.status} />
@@ -134,8 +166,25 @@ const BuddyListWindow: Component = () => {
       </div>
       <AddFriendModal />
       <NewChatModal />
-      <BuddyCreateCommunityModal />
-      <BuddyJoinCommunityModal />
+      <CreateCommunityModal
+        isOpen={buddyListUI.showCreateCommunity}
+        onClose={() => setBuddyListUI("showCreateCommunity", false)}
+      />
+      <JoinCommunityModal
+        isOpen={buddyListUI.showJoinCommunity}
+        onClose={() => setBuddyListUI("showJoinCommunity", false)}
+      />
+      <CallController />
+      <DmInviteModal />
+      <DeepLinkConsentDialog />
+      <SessionResetDialog />
+      <StartGroupCallModal
+        isOpen={buddyListUI.showStartGroupCall}
+        onClose={() => setBuddyListUI("showStartGroupCall", false)}
+      />
+      {/* Wave 12 W12.1 — IncomingCallModal moved to <CallController />
+       *  in main.tsx so it overlays the active window in every webview,
+       *  not only the BuddyList. */}
     </div>
   );
 };

@@ -1,23 +1,23 @@
 import { Component, onMount, onCleanup, createMemo, createSignal, createEffect, Show } from "solid-js";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ChatEvent } from "../ipc/channels";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { startEventStream } from "../ipc/channels";
 import Titlebar from "../components/titlebar/Titlebar";
 import MessageList from "../components/chat/MessageList";
 import MessageInput from "../components/chat/MessageInput";
 import TypingIndicator from "../components/chat/TypingIndicator";
 import StatusDot from "../components/status/StatusDot";
-import VoicePanel from "../components/voice/VoicePanel";
 import { chatState, setChatState, type Message } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
-import { voiceState } from "../stores/voice.store";
-import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "../handlers/chat.handlers";
-import { handleJoinVoice, handleLeaveVoice } from "../handlers/voice.handlers";
+import { callsState } from "../stores/calls.store";
+import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "../actions/chat.actions";
+import { handleStartDmCall, handleEndDmCall } from "../actions/calls.actions";
 import { subscribeDmChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
-import { hydrateState } from "../ipc/hydrate";
+import { subscribeCallEvents } from "../handlers/calls.handlers";
+import { hydrateState } from "../stores/hydrate";
 import { commands } from "../ipc/commands";
-import { ICON_PHONE, ICON_HANGUP } from "../icons";
+import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP } from "../icons";
 
 function getPeerFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -63,16 +63,27 @@ const ChatWindow: Component = () => {
     return authState.displayName ?? "You";
   });
 
-  const isInCallWithPeer = createMemo(() => {
-    return voiceState.isConnected && voiceState.channelId === peerId;
+  // W13-fix.1 — read from the 1:1 call store so the active state matches
+  // the buddy-list right-click flow + the DmWindow flow. Prior code read
+  // voiceState which is the COMMUNITY voice channel state — completely
+  // unrelated to 1:1 calls and bypassed the entire CallInvite handshake
+  // (start_dm_call → CallInvite → ring → accept).
+  const activeCallWithPeer = createMemo(() => {
+    const a = callsState.activeCall;
+    return a && a.peerKey === peerId ? a : null;
+  });
+  const outgoingToThisPeer = createMemo(() => {
+    const o = callsState.outgoingCall;
+    return o && o.peerKey === peerId ? o : null;
   });
 
-  function handleCallToggle(): void {
-    if (isInCallWithPeer()) {
-      handleLeaveVoice();
-    } else {
-      handleJoinVoice(peerId);
-    }
+  function startCall(video: boolean): void {
+    void handleStartDmCall(peerId, peerName(), video);
+  }
+
+  function hangup(): void {
+    const id = activeCallWithPeer()?.callId ?? outgoingToThisPeer()?.callId;
+    if (id) void handleEndDmCall(id);
   }
 
   function handleRetry(messageId: number): void {
@@ -83,22 +94,19 @@ const ChatWindow: Component = () => {
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
-    // Direct event listener — bypasses store reactivity for incoming DMs.
-    // queueMicrotask ensures handleIncomingMessage has already updated the store.
-    const directUnsub = await listen<ChatEvent>("chat-event", (event) => {
-      const p = event.payload;
-      if (p.type === "messageReceived" && p.data.conversationId === peerId) {
-        queueMicrotask(syncMessages);
-      }
-    });
-    unlisteners.push(Promise.resolve(directUnsub));
-
     // Register event listeners FIRST so no events are missed during hydration.
     // subscribeBuddyListPresenceEvents updates the global friendsState store
     // (each Tauri webview has isolated JS context, so we need our own listener).
     // The peerStatus memo reactively reads from that store.
-    unlisteners.push(subscribeDmChatEvents(peerId, () => authState.publicKey ?? ""));
+    unlisteners.push(
+      subscribeDmChatEvents(peerId, () => authState.publicKey ?? "", () =>
+        queueMicrotask(syncMessages),
+      ),
+    );
     unlisteners.push(subscribeBuddyListPresenceEvents());
+    // Keeps the call buttons in step with a call to this peer.
+    unlisteners.push(subscribeCallEvents({ owner: false }));
+    void startEventStream();
 
     // Await hydration so stores are populated before loading history
     await hydrateState();
@@ -137,31 +145,59 @@ const ChatWindow: Component = () => {
 
   return (
     <div class="app-frame">
+      {/* Architecture §32 a11y — keyboard skip link past status header. */}
+      <a href="#main-content" class="skip-link">Skip to messages</a>
       <Titlebar title={`Chat — ${peerName()}`} showMaximize />
       <div class="chat-peer-status">
         <StatusDot status={peerStatus()} />
         <span class="chat-peer-status-label">{peerStatus()}</span>
-        <button
-          class={`chat-call-btn ${isInCallWithPeer() ? "chat-call-btn-active" : ""}`}
-          onClick={handleCallToggle}
-          title={isInCallWithPeer() ? "End Call" : "Voice Call"}
+        {/* W13-fix.1 — voice + video buttons matching the buddy-list
+         *  right-click menu + DmWindow header. Both go through the
+         *  start_dm_call → CallInvite handshake. When a call is active
+         *  with this peer, the voice button collapses into a hangup. */}
+        <Show
+          when={!activeCallWithPeer() && !outgoingToThisPeer()}
+          fallback={
+            <button
+              class="chat-call-btn chat-call-btn-active"
+              onClick={hangup}
+              title="End call"
+              aria-label={`End call with ${peerName()}`}
+            >
+              <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+            </button>
+          }
         >
-          <span class="nf-icon">
-            {isInCallWithPeer() ? ICON_HANGUP : ICON_PHONE}
-          </span>
-        </button>
+          <button
+            class="chat-call-btn"
+            onClick={() => startCall(false)}
+            title="Voice call"
+            aria-label={`Start voice call with ${peerName()}`}
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+          </button>
+          <button
+            class="chat-call-btn"
+            onClick={() => startCall(true)}
+            title="Video call"
+            aria-label={`Start video call with ${peerName()}`}
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_VIDEO}</span>
+          </button>
+        </Show>
       </div>
+      <div id="main-content" tabindex="-1" class="window-main">
       <MessageList
         messages={messages()}
         ownName={ownName()}
         peerName={peerName()}
         onRetry={handleRetry}
       />
-      <Show when={isInCallWithPeer()}>
-        <VoicePanel />
-      </Show>
+      {/* A connected call's controls (timer, mute, hangup, video) live in
+       *  its own call window, which the backend opens on connect. */}
       <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
       <MessageInput peerId={peerId} />
+      </div>
     </div>
   );
 };

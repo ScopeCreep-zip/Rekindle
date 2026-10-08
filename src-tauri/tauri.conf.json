@@ -1,44 +1,32 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicemicro/tauri-apps/tauri-v2/crates/tauri-cli/schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Rekindle",
   "version": "0.0.1",
   "identifier": "com.rekindle.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1430",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
-    "windows": [
-      {
-        "label": "login",
-        "title": "Rekindle",
-        "url": "/login",
-        "width": 380,
-        "height": 480,
-        "minWidth": 340,
-        "minHeight": 440,
-        "decorations": false,
-        "transparent": true,
-        "resizable": true,
-        "shadow": true,
-        "center": true
-      }
-    ],
+    "windows": [],
     "trayIcon": {
       "iconPath": "icons/icon.png",
       "tooltip": "Rekindle"
     },
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; connect-src ipc: http://ipc.localhost; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'none'; worker-src 'self'",
+      "freezePrototype": true
     },
     "macOSPrivateApi": true
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["rekindle"]
+        "schemes": [
+          "rekindle"
+        ]
       }
     }
   },
@@ -51,6 +39,26 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "entitlements": "./Entitlements.plist"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libgstreamer1.0-0 (>= 1.20)",
+          "libgstreamer-plugins-base1.0-0 (>= 1.20)",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good"
+        ],
+        "recommends": [
+          "gstreamer1.0-pipewire"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   }
 }

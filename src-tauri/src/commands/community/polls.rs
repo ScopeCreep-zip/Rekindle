@@ -1,0 +1,94 @@
+use tauri::State;
+
+use crate::state::SharedState;
+use rekindle_types::permissions;
+
+use super::helpers::require_permission;
+
+#[tauri::command]
+pub async fn create_poll(
+    state: State<'_, SharedState>,
+    community_id: String,
+    channel_id: String,
+    message_id: String,
+    question: String,
+    answers: Vec<String>,
+    multi_select: bool,
+    duration_seconds: Option<u64>,
+) -> Result<String, String> {
+    let pool = state.db.current()?;
+    let _ = pool;
+    require_permission(state.inner(), &community_id, permissions::SEND_POLLS)?;
+    crate::services::community::persist_poll_create(
+        state.inner(),
+        &community_id,
+        &channel_id,
+        &message_id,
+        &question,
+        answers,
+        multi_select,
+        duration_seconds,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn vote_poll(
+    state: State<'_, SharedState>,
+    community_id: String,
+    channel_id: String,
+    poll_id: String,
+    selected_answers: Vec<u8>,
+) -> Result<(), String> {
+    let pool = state.db.current()?;
+    let _ = pool;
+    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
+    crate::services::community::persist_poll_vote(
+        state.inner(),
+        &community_id,
+        &channel_id,
+        &poll_id,
+        selected_answers,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn close_poll(
+    state: State<'_, SharedState>,
+    community_id: String,
+    channel_id: String,
+    poll_id: String,
+) -> Result<(), String> {
+    let pool = state.db.current()?;
+    let _ = pool;
+    let moderator_override =
+        require_permission(state.inner(), &community_id, permissions::MANAGE_MESSAGES).is_ok();
+    crate::services::community::persist_poll_close(
+        state.inner(),
+        &community_id,
+        &channel_id,
+        &poll_id,
+        moderator_override,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_poll_results(
+    state: State<'_, SharedState>,
+    community_id: String,
+    channel_id: String,
+    poll_id: String,
+) -> Result<Vec<u32>, String> {
+    let pool = state.db.current()?;
+    let _ = pool;
+    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
+    crate::services::community::channel_polls::get_poll_results(
+        state.inner(),
+        &community_id,
+        &channel_id,
+        &poll_id,
+    )
+    .await
+}

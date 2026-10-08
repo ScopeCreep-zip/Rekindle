@@ -1,8 +1,9 @@
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
+use rekindle_types::domains;
 
 /// A user's cryptographic identity.
 ///
@@ -57,8 +58,8 @@ impl Identity {
         signature: &Signature,
     ) -> Result<(), CryptoError> {
         public_key
-            .verify(message, signature)
-            .map_err(|e| CryptoError::VerificationError(e.to_string()))
+            .verify_strict(message, signature)
+            .map_err(|e| CryptoError::verification(e.to_string()))
     }
 
     /// Derive an X25519 static secret from this Ed25519 key for Diffie-Hellman.
@@ -93,7 +94,7 @@ impl Identity {
         ed25519_public_bytes: &[u8; 32],
     ) -> Result<x25519_dalek::PublicKey, CryptoError> {
         let verifying_key = VerifyingKey::from_bytes(ed25519_public_bytes)
-            .map_err(|e| CryptoError::VerificationError(format!("invalid Ed25519 public key: {e}")))?;
+            .map_err(|e| CryptoError::verification(format!("invalid Ed25519 public key: {e}")))?;
         let montgomery = verifying_key.to_montgomery();
         Ok(x25519_dalek::PublicKey::from(montgomery.to_bytes()))
     }
@@ -105,6 +106,24 @@ impl std::fmt::Debug for Identity {
             .field("public_key", &self.public_key_hex())
             .finish()
     }
+}
+
+/// P3.3 — short safety number for out-of-band session verification.
+///
+/// `BLAKE3(sort([key_a, key_b]) || "rekindle-safety-v1")` → first 8 hex
+/// chars (32 bits — small enough to read aloud, large enough to detect
+/// substitution attacks at a cost a casual user would tolerate). Sorting
+/// the two identity keys makes the value order-independent, so both peers
+/// derive the same number regardless of who computes it.
+pub fn safety_number(key_a: &[u8], key_b: &[u8]) -> String {
+    let mut keys = [key_a, key_b];
+    keys.sort_unstable();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(keys[0]);
+    hasher.update(keys[1]);
+    hasher.update(domains::SAFETY_NUMBER.as_bytes());
+    let hash = hasher.finalize();
+    hex::encode(&hash.as_bytes()[..4])
 }
 
 #[cfg(test)]
@@ -150,8 +169,7 @@ mod tests {
         // the same X25519 public key as to_x25519_public (from secret key).
         let identity = Identity::generate();
         let from_secret = identity.to_x25519_public();
-        let from_public =
-            Identity::peer_ed25519_to_x25519(&identity.public_key_bytes()).unwrap();
+        let from_public = Identity::peer_ed25519_to_x25519(&identity.public_key_bytes()).unwrap();
         assert_eq!(from_secret.as_bytes(), from_public.as_bytes());
     }
 
@@ -164,16 +182,25 @@ mod tests {
         let bob = Identity::generate();
 
         let alice_secret = alice.to_x25519_secret();
-        let bob_x25519_pub =
-            Identity::peer_ed25519_to_x25519(&bob.public_key_bytes()).unwrap();
+        let bob_x25519_pub = Identity::peer_ed25519_to_x25519(&bob.public_key_bytes()).unwrap();
 
         let bob_secret = bob.to_x25519_secret();
-        let alice_x25519_pub =
-            Identity::peer_ed25519_to_x25519(&alice.public_key_bytes()).unwrap();
+        let alice_x25519_pub = Identity::peer_ed25519_to_x25519(&alice.public_key_bytes()).unwrap();
 
         let shared_a = alice_secret.diffie_hellman(&bob_x25519_pub);
         let shared_b = bob_secret.diffie_hellman(&alice_x25519_pub);
 
         assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
+    }
+
+    #[test]
+    fn safety_number_is_order_independent_and_short() {
+        let a = [0x11u8; 32];
+        let b = [0x22u8; 32];
+        let forward = safety_number(&a, &b);
+        let reverse = safety_number(&b, &a);
+        assert_eq!(forward, reverse, "both peers must derive the same number");
+        assert_eq!(forward.len(), 8, "32 bits = 8 hex chars");
+        assert_ne!(forward, safety_number(&a, &[0x33u8; 32]));
     }
 }

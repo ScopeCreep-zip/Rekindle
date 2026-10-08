@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-profile",
+  "description": "App-command grants for `profile-*` windows: opening a chat, starting a call, and removing the viewed friend.",
+  "windows": [
+    "profile-*"
+  ],
+  "permissions": [
+    "allow-open-chat-window",
+    "allow-remove-friend",
+    "allow-start-dm-call"
+  ]
+}

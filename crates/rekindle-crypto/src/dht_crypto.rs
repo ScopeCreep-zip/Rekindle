@@ -4,6 +4,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
+use rekindle_types::domains;
 
 const NONCE_LEN: usize = 24;
 const TAG_LEN: usize = 16;
@@ -27,7 +28,7 @@ impl DhtRecordKey {
     pub fn derive_account_key(ed25519_secret: &[u8; 32]) -> Self {
         let hk = Hkdf::<Sha256>::new(None, ed25519_secret);
         let mut key = [0u8; 32];
-        hk.expand(b"rekindle-account-v1", &mut key)
+        hk.expand(domains::ACCOUNT_KEY.as_bytes(), &mut key)
             .expect("32-byte output is valid for HKDF-SHA256");
         Self { key }
     }
@@ -36,17 +37,14 @@ impl DhtRecordKey {
     ///
     /// Performs X25519 DH, then runs HKDF-SHA256 with info containing both
     /// public keys sorted lexicographically (so both parties derive the same key).
-    pub fn derive_conversation_key(
-        my_secret: &StaticSecret,
-        their_public: &PublicKey,
-    ) -> Self {
+    pub fn derive_conversation_key(my_secret: &StaticSecret, their_public: &PublicKey) -> Self {
         let shared = my_secret.diffie_hellman(their_public);
         let my_public = PublicKey::from(my_secret);
 
         // Sort public keys so both parties produce the same info string
         let my_bytes = my_public.as_bytes();
         let their_bytes = their_public.as_bytes();
-        let mut info = Vec::with_capacity(64 + b"rekindle-conversation-v1".len());
+        let mut info = Vec::with_capacity(64 + domains::CONVERSATION_KEY.len());
         if my_bytes < their_bytes {
             info.extend_from_slice(my_bytes);
             info.extend_from_slice(their_bytes);
@@ -54,7 +52,7 @@ impl DhtRecordKey {
             info.extend_from_slice(their_bytes);
             info.extend_from_slice(my_bytes);
         }
-        info.extend_from_slice(b"rekindle-conversation-v1");
+        info.extend_from_slice(domains::CONVERSATION_KEY.as_bytes());
 
         let hk = Hkdf::<Sha256>::new(None, shared.as_bytes());
         let mut key = [0u8; 32];
@@ -72,7 +70,7 @@ impl DhtRecordKey {
         use chacha20poly1305::XNonce;
 
         let cipher = XChaCha20Poly1305::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut nonce_bytes = [0u8; NONCE_LEN];
         chacha20poly1305::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut nonce_bytes);
@@ -80,7 +78,7 @@ impl DhtRecordKey {
 
         let ciphertext = cipher
             .encrypt(nonce, plaintext)
-            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::encryption(e.to_string()))?;
 
         let mut output = Vec::with_capacity(NONCE_LEN + ciphertext.len());
         output.extend_from_slice(&nonce_bytes);
@@ -88,7 +86,7 @@ impl DhtRecordKey {
         Ok(output)
     }
 
-    /// Decrypt ciphertext produced by [`encrypt`].
+    /// Decrypt ciphertext produced by [`Self::encrypt`].
     ///
     /// Expects `[24-byte nonce || ciphertext || 16-byte tag]`.
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
@@ -97,20 +95,18 @@ impl DhtRecordKey {
         use chacha20poly1305::XNonce;
 
         if data.len() < NONCE_LEN + TAG_LEN {
-            return Err(CryptoError::DecryptionError(
-                "ciphertext too short".to_string(),
-            ));
+            return Err(CryptoError::decryption("ciphertext too short".to_string()));
         }
 
         let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
         let nonce = XNonce::from_slice(nonce_bytes);
 
         let cipher = XChaCha20Poly1305::new_from_slice(&self.key)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
+            .map_err(|e| CryptoError::decryption(e.to_string()))?;
 
         cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| CryptoError::DecryptionError(e.to_string()))
+            .map_err(|e| CryptoError::decryption(e.to_string()))
     }
 }
 

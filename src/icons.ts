@@ -6,6 +6,7 @@ export const ICON_ADD_FRIEND = "\u{F0014}";      // nf-md-account_plus
 export const ICON_COMMUNITIES = "\u{F0849}";     // nf-md-account_group
 export const ICON_SETTINGS = "\u{F0493}";        // nf-md-cog
 export const ICON_LOGOUT = "\u{F0343}";          // nf-md-logout
+export const ICON_SEARCH = "\u{F0349}";          // nf-md-magnify
 
 // Notifications
 export const ICON_BELL = "\u{F009A}";            // nf-md-bell
@@ -19,6 +20,12 @@ export const ICON_HEADPHONES_OFF = "\u{F07CE}";  // nf-md-headphones_off
 export const ICON_HANGUP = "\u{F03F5}";          // nf-md-phone_hangup
 export const ICON_PHONE = "\u{F03F2}";           // nf-md-phone
 export const ICON_VOLUME_HIGH = "\u{F057E}";     // nf-md-volume_high
+export const ICON_VIDEO = "\u{F0567}";            // nf-md-video
+export const ICON_VIDEO_OFF = "\u{F1417}";        // nf-md-video_off
+export const ICON_SCREEN_SHARE = "\u{F0A1A}";     // nf-md-monitor_share
+// Wave 12 W12.7 — pop-out / picture-in-picture controls.
+export const ICON_OPEN_IN_NEW = "\u{F03CC}";       // nf-md-open_in_new
+export const ICON_PIP = "\u{F0DC9}";               // nf-md-picture_in_picture_bottom_right
 
 // Chat
 export const ICON_SEND = "\u{F048A}";            // nf-md-send
@@ -37,8 +44,29 @@ export const ICON_SAVE = "\u{F0193}";             // nf-md-content_save
 export const ICON_CLOSE = "\u{F0156}";            // nf-md-close
 export const ICON_JOIN = "\u{F0499}";             // nf-md-login
 export const ICON_CHANNEL_TEXT = "\u{F0423}";     // nf-md-pound
+export const ICON_MEGAPHONE = "\u{F0B5C}";        // nf-md-bullhorn
+export const ICON_REPLY = "\u{F045A}";            // nf-md-reply
+export const ICON_EMOTICON = "\u{F01F2}";         // nf-md-emoticon
+export const ICON_PIN = "\u{F0403}";              // nf-md-pin
+export const ICON_THREAD = "\u{F0495}";           // nf-md-message_reply
+export const ICON_CHEVRON_DOWN = "\u{F0140}";     // nf-md-chevron_down
+export const ICON_CHEVRON_RIGHT = "\u{F0142}";    // nf-md-chevron_right
+export const ICON_ARCHIVE = "\u{F0024}";          // nf-md-archive
+export const ICON_CALENDAR = "\u{F00ED}";         // nf-md-calendar
+export const ICON_GAMEPAD = "\u{F0296}";          // nf-md-gamepad_variant
+export const ICON_SERVER = "\u{F048B}";           // nf-md-server
 export const ICON_BAN = "\u{F0235}";              // nf-md-gavel
 export const ICON_TIMEOUT = "\u{F0954}";          // nf-md-clock_alert
 export const ICON_SHIELD = "\u{F0B56}";           // nf-md-shield_account
 export const ICON_KEY = "\u{F033E}";              // nf-md-key
 export const ICON_PERMS = "\u{F099C}";            // nf-md-shield_lock
+export const ICON_ARROW_UP = "\u{F005D}";          // nf-md-arrow_up
+export const ICON_ARROW_DOWN = "\u{F0045}";        // nf-md-arrow_down
+export const ICON_ARROW_RIGHT = "\u{F0054}";       // nf-md-arrow_right (forward)
+export const ICON_FORWARD = "\u{F045D}";           // nf-md-share (forward action)
+export const ICON_PAPERCLIP = "\u{F03DD}";         // nf-md-paperclip (attach file)
+export const ICON_DOWNLOAD = "\u{F01DA}";          // nf-md-download
+export const ICON_FILE = "\u{F0214}";              // nf-md-file_outline
+export const ICON_FILE_IMAGE = "\u{F021F}";        // nf-md-file_image
+export const ICON_FOLDER_OPEN = "\u{F0770}";       // nf-md-folder_open
+export const ICON_FOLDER = "\u{F024B}";             // nf-md-folder

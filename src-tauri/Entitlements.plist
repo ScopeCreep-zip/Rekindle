@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Applied at codesign time (tauri.conf.json > bundle.macOS.entitlements).
+  Unsigned dev binaries ignore entitlements entirely — these exist so
+  SIGNED/hardened-runtime/notarized bundles keep camera + microphone
+  capture working: without them a notarized Rekindle fails getUserMedia
+  with the same "Could not create a 'com.apple.webkit.camera' sandbox
+  extension" error the dev-mode TCC gap produces, with no code path to
+  debug. Pairs with the usage strings in Info.plist (TCC prompt text).
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

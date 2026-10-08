@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the app bundle's Info.plist by tauri-build (and embedded
+  into the dev binary via embed-plist, so `tauri dev` gets it too).
+
+  WKWebView routes getUserMedia through the host app's TCC permissions:
+  without NSCameraUsageDescription macOS refuses the capture sandbox
+  extension ("Could not create a 'com.apple.webkit.camera' sandbox
+  extension") and the camera silently yields nothing — the exact
+  black-preview failure observed on the Mac. Microphone is declared for
+  the same reason (voice capture runs natively through cpal today, but
+  any WebView-side getUserMedia({audio}) call needs it).
+
+  NSCameraUseContinuityCameraDeviceType: Apple requires this opt-in for
+  AVCaptureDeviceDiscoverySession — and therefore WebKit's camera device
+  manager — to surface iPhone Continuity Cameras (developer.apple.com
+  "Supporting Continuity Camera in your macOS app"). Relevant on Macs
+  with no built-in camera where an iPhone may be the only device.
+
+  Note these declarations make capture possible only in the bundled
+  .app — WebKit's GPU helper resolves camera access against the host's
+  bundle identity, so `tauri dev`'s bare binary cannot capture video
+  regardless of TCC grants (tauri-apps/tauri#11951). See
+  docs/contributor/development.md.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Rekindle uses your camera for video calls in voice channels and direct calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Rekindle uses your microphone for voice chat in voice channels and direct calls.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
+</dict>
+</plist>

@@ -1,0 +1,62 @@
+{
+  "$schema": "../schema.json",
+  "schemaVersion": 1,
+  "metadata": {
+    "organization": "Example Newsroom",
+    "contactEmail": "security@example-news.org",
+    "issuedAt": "2026-05-07T00:00:00Z"
+  },
+  "policies": {
+    "_comment": "Strict configuration for a newsroom / activist organisation. Every metadata channel that could be used to identify journalists is locked off. File sharing is allowed (it's part of the workflow) but executable types are denied. No recording, no link previews, no push relay, no game detection. Updates are auto-applied within 7 days.",
+
+    "_lock": [
+      "Identity.requireKeypairVerification",
+      "Identity.disableMultipleIdentities",
+      "Federation.disableLinkPreview",
+      "Federation.disablePushRelay",
+      "Communities.allowCreate",
+      "Voice.disableRecording",
+      "Voice.allowScreenShare",
+      "Privacy.disableGameDetection",
+      "Privacy.hidePresence",
+      "Privacy.disableTypingIndicator",
+      "Privacy.disableTelemetry",
+      "Update.minimumVersion",
+      "Update.deferralMaxDays",
+      "Audit.shipEndpointUrl"
+    ],
+
+    "Identity.requireKeypairVerification": true,
+    "Identity.disableMultipleIdentities": false,
+    "Identity.maxOfflineHours": 0,
+
+    "Federation.disableLinkPreview": true,
+    "Federation.disablePushRelay": true,
+
+    "Communities.allowCreate": false,
+
+    "Messaging.blockedFileExtensions": ["exe", "scr", "msi", "bat", "cmd", "vbs", "ps1", "jar", "docm", "xlsm", "pptm"],
+
+    "Voice.disableRecording": true,
+    "Voice.allowScreenShare": false,
+    "Voice.muteOnJoin": true,
+
+    "Privacy.disableGameDetection": true,
+    "Privacy.hidePresence": true,
+    "Privacy.disableTypingIndicator": true,
+    "Privacy.disableTelemetry": true,
+
+    "Update.channel": "stable",
+    "Update.minimumVersion": "0.1.0",
+    "Update.deferralMaxDays": 7,
+
+    "UI.organisationName": "Example Newsroom",
+    "UI.loginMotd": "Use Rekindle for source-confidential conversations only.",
+
+    "Audit.localLogRetentionDays": 0,
+    "Audit.logSignInEvents": false,
+    "Audit.logCommunityEvents": false,
+    "Audit.logCallMetadata": false,
+    "Audit.shipEndpointUrl": ""
+  }
+}

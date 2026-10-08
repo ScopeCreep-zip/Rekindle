@@ -1,0 +1,500 @@
+// Architecture §10.6 — send-side of the interim video pipeline. Owns the
+// WebCodecs VideoEncoder, the canvas-capture pump loop, and the per-track
+// adaptive-bitrate state. Split out of VideoCallPanel so the orchestration
+// hook stays focused on UI lifecycle + the receiver path. Types live in
+// sender_types.ts; the pure negotiation/config helpers in
+// encoder_config.ts — this file is only the (heavily stateful) pump.
+//
+// Encoder lifecycle (Phase 2): the negotiated codec is cross-checked
+// against the local probe before EVERY configure (an unencodable codec
+// must never reach `configure()` — on WKWebView that throw used to kill
+// the camera permanently); a failed/closed VideoEncoder is RECREATED
+// (a closed encoder is unusable forever per WebCodecs); a first-chunk
+// watchdog catches the documented "isConfigSupported says yes but the
+// encoder silently produces nothing" platform bug; capture is gated on
+// the <video> element actually having pixels (WKWebView black-frame
+// hazard); and scheduling prefers requestVideoFrameCallback, which —
+// unlike requestAnimationFrame — keeps firing while the window is
+// occluded on macOS.
+import { commands } from "../../../ipc/commands";
+import type { Codec } from "../../../ipc/commands";
+import { localVideoCapabilities } from "../../../actions/video.actions";
+import {
+  KEYFRAME_INTERVAL_MS,
+  KEYFRAME_MIN_INTERVAL_MS,
+  bytesToBase64,
+  randomStreamIdHex,
+} from "./codec_utils";
+import {
+  buildEncoderConfig,
+  effectiveBitrate,
+  encoderConstraints,
+  pickEncoderCodec,
+  reportEncoderStatus,
+} from "./encoder_config";
+import {
+  FIRST_CHUNK_DEADLINE_MS,
+  RECREATE_COOLDOWN_MS,
+  freshTrack,
+} from "./sender_types";
+import type {
+  SenderRoute,
+  TrackLabel,
+  TrackState,
+  VideoSender,
+  VideoWithRVFC,
+} from "./sender_types";
+
+// Re-exported so existing `from "./video_sender"` imports keep working.
+export { pickEncoderCodec } from "./encoder_config";
+export type { SenderRoute, TrackLabel, VideoSender } from "./sender_types";
+
+export function createVideoSender(
+  route: SenderRoute,
+  onError: (msg: string) => void,
+): VideoSender {
+  const tracks: Record<TrackLabel, TrackState> = {
+    camera: freshTrack(),
+    screen: freshTrack(),
+  };
+
+  async function start(label: TrackLabel, stream: MediaStream): Promise<void> {
+    const ts = tracks[label];
+    // Community streams use the deterministic backend-derived id so
+    // (channel_id || sender_pseudonym || track_label) collisions are
+    // impossible across concurrent senders. DM streams are 1:1 — a local
+    // random 16-byte UUID is sufficient and avoids a backend round-trip.
+    const streamIdHex =
+      route.mode === "community"
+        ? await commands.deriveVideoStreamId(route.communityId, route.channelId, label)
+        : randomStreamIdHex();
+    const track = stream.getVideoTracks()[0];
+    if (!track) throw new Error("no video track");
+
+    // Drive the canvas off a hidden <video> element so the same
+    // MediaStream backs both the local preview tile and the encoder
+    // input. WKWebView / WebKitGTK don't implement
+    // MediaStreamTrackProcessor, so we draw frames to an offscreen
+    // canvas and build VideoFrames from it instead.
+    const captureVideo = document.createElement("video");
+    captureVideo.srcObject = stream;
+    captureVideo.muted = true;
+    captureVideo.playsInline = true;
+    await captureVideo.play().catch((e) => {
+      console.error("capture <video> play failed:", e);
+    });
+
+    let constraints = encoderConstraints(route);
+    if (constraints === null) {
+      // Community mode is media-ready-gated, so this only fires on a
+      // DM pre-caps race or a config torn down mid-toggle. Hard error
+      // — the toggle reverts and the user retries once connected.
+      throw new Error("no negotiated encoder config yet — video session still connecting");
+    }
+    {
+      const check = pickEncoderCodec(localVideoCapabilities(), constraints.codec);
+      if (!check.ok) {
+        reportEncoderStatus(route, constraints.codec, false, `start: ${check.reason}`);
+        throw new Error(`cannot start video: ${check.reason}`);
+      }
+    }
+
+    // The codec the encoder is CURRENTLY configured for — every encoded
+    // chunk is tagged with it (RTP payload-type analog). Updated only
+    // after a codec-changing reconfigure (post-flush) so queued chunks
+    // of the old codec keep their truthful tag.
+    let currentCodec = constraints.codec;
+
+    // Width, height and fps stay at the negotiated constraints for the
+    // stream's whole life: an in-band resolution switch broke both
+    // receiving platforms' WebCodecs decoders. The bitrate follows the
+    // backend allocator (plan E4.3.3); whatever the encoder overshoots,
+    // the route's pacer bounds by queue time and answers with a keyframe.
+    const appliedShape = (): { width: number; height: number; fps: number } => ({
+      width: constraints!.maxWidth,
+      height: constraints!.maxHeight,
+      fps: Math.max(1, Math.round(constraints!.maxFps)),
+    });
+
+    const captureCanvas = document.createElement("canvas");
+    captureCanvas.width = constraints.maxWidth;
+    captureCanvas.height = constraints.maxHeight;
+    const captureCtx = captureCanvas.getContext("2d");
+    if (!captureCtx) throw new Error("2d context unavailable");
+
+    let cancelled = false;
+    let fatal = false;
+    let configuredKbps = ts.lowestReceiverKbps;
+    // Watchdog state: frames fed vs chunks produced since the last
+    // (re)configure. A healthy encoder produces its first chunk within
+    // one frame interval; FIRST_CHUNK_DEADLINE_MS of silence means the
+    // platform encoder is broken despite isConfigSupported's promise.
+    let framesFed = 0;
+    let chunksOut = 0;
+    let firstFedAt = 0;
+    let lastRecreateAt = 0;
+    // Report an unencodable mid-call renegotiation only once per codec.
+    let reportedUnencodable: Codec | null = null;
+
+    const makeEncoder = (): VideoEncoder =>
+      new VideoEncoder({
+        output: (chunk: EncodedVideoChunk) => {
+          chunksOut += 1;
+          const buf = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(buf);
+          const payloadB64 = bytesToBase64(buf);
+          const seq = (ts.frameSeq += 1);
+          const frameRequest = {
+            streamIdHex,
+            frameSeq: seq,
+            keyframe: chunk.type === "key",
+            codec: currentCodec,
+            // Capture time on the sender's wall clock, ms mod 2^32 (the
+            // wire field is u32): `chunk.timestamp` is the capture
+            // `performance.now()` in µs. Receivers measure lip sync
+            // against the audio's wall-clock capture stamps.
+            timestamp: Math.floor(performance.timeOrigin + chunk.timestamp / 1000) % 2 ** 32,
+            encodedPayloadB64: payloadB64,
+          };
+          if (route.mode === "community") {
+            void commands.sendVideoFrame(route.communityId, route.channelId, frameRequest);
+          } else {
+            void commands.sendDmVideoFrame(route.peerId, frameRequest);
+          }
+        },
+        error: (e: Error) => {
+          // A WebCodecs error callback leaves the encoder closed and
+          // permanently unusable — recreate, don't limp.
+          console.error("VideoEncoder error:", e);
+          recreateEncoder(`error-callback: ${e.message}`);
+        },
+      });
+
+    let encoder = makeEncoder();
+
+    /** Tear down + rebuild the encoder after a platform failure. One
+     *  automatic recovery per cooldown window; a second failure inside
+     *  it is fatal (camera stops, error surfaced + reported). */
+    const recreateEncoder = (reason: string): void => {
+      if (cancelled || fatal || constraints === null) return;
+      const now = performance.now();
+      if (lastRecreateAt !== 0 && now - lastRecreateAt < RECREATE_COOLDOWN_MS) {
+        fatal = true;
+        reportEncoderStatus(route, currentCodec, false, `fatal after recreate: ${reason}`);
+        onError("Video encoder repeatedly failing — camera stopped");
+        return;
+      }
+      lastRecreateAt = now;
+      try {
+        encoder.close();
+      } catch {
+        // Already closed — that's why we're here.
+      }
+      encoder = makeEncoder();
+      try {
+        encoder.configure(
+          buildEncoderConfig(
+            constraints,
+            effectiveBitrate(configuredKbps, appliedShape().fps),
+            appliedShape(),
+          ),
+        );
+        currentCodec = constraints.codec;
+        ts.lastKeyframeMs = 0; // force a keyframe so receivers re-sync
+        framesFed = 0;
+        chunksOut = 0;
+        firstFedAt = 0;
+        console.warn(`video encoder recreated (${reason})`);
+        reportEncoderStatus(route, currentCodec, true, `recreated: ${reason}`);
+      } catch (e) {
+        fatal = true;
+        const msg = e instanceof Error ? e.message : String(e);
+        reportEncoderStatus(route, constraints.codec, false, `reconfigure after recreate: ${msg}`);
+        onError(`Encoder unrecoverable: ${msg}`);
+      }
+    };
+
+    // Initial configure — the cross-check above guarantees the codec is
+    // locally encodable, but WebKit can still reject the full config
+    // shape; surface that instead of letting startCamera die opaquely.
+    try {
+      encoder.configure(
+        buildEncoderConfig(
+          constraints,
+          effectiveBitrate(configuredKbps, appliedShape().fps),
+          appliedShape(),
+        ),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      reportEncoderStatus(route, constraints.codec, false, `initial configure: ${msg}`);
+      onError(`Encoder configure failed: ${msg}`);
+      throw e instanceof Error ? e : new Error(msg);
+    }
+    reportEncoderStatus(route, currentCodec, true, "configured");
+
+    let frameIntervalMs = 1000 / appliedShape().fps;
+    let lastEmittedAt = 0;
+    let scheduleHandle: number | null = null;
+    let scheduledVia: "rvfc" | "raf" | "timer" = "raf";
+
+    const cancelScheduled = (): void => {
+      if (scheduleHandle === null) return;
+      const v = captureVideo as VideoWithRVFC;
+      if (scheduledVia === "rvfc" && typeof v.cancelVideoFrameCallback === "function") {
+        v.cancelVideoFrameCallback(scheduleHandle);
+      } else if (scheduledVia === "raf") {
+        cancelAnimationFrame(scheduleHandle);
+      } else {
+        clearTimeout(scheduleHandle);
+      }
+      scheduleHandle = null;
+    };
+
+    /** Prefer requestVideoFrameCallback (fires per camera frame, keeps
+     *  running while the window is occluded on macOS — rAF doesn't);
+     *  rAF when the engine lacks rVFC (WebKitGTK 2.52). Hidden page:
+     *  timer chain — every platform's webview suspends rAF for hidden
+     *  or minimized windows (Page Visibility semantics), so an
+     *  rAF-scheduled pump freezes and outbound video goes static while
+     *  keyframe requests pile up unanswered. Hidden-page timers are
+     *  clamped (~1 s), but 1 fps with serviced keyframe requests beats
+     *  a frozen tile. */
+    const scheduleNext = (): void => {
+      if (cancelled || fatal) return;
+      const v = captureVideo as VideoWithRVFC;
+      if (document.hidden) {
+        scheduledVia = "timer";
+        scheduleHandle = window.setTimeout(pump, Math.max(frameIntervalMs, 250));
+      } else if (typeof v.requestVideoFrameCallback === "function") {
+        scheduledVia = "rvfc";
+        scheduleHandle = v.requestVideoFrameCallback(pump);
+      } else {
+        scheduledVia = "raf";
+        scheduleHandle = requestAnimationFrame(pump);
+      }
+    };
+
+    /** Re-arm across the visibility edge: a pending rAF/rVFC in a
+     *  newly-hidden window may simply never fire — the pump chain dies
+     *  before it can reschedule itself onto the timer path. */
+    const onVisibilityChange = (): void => {
+      if (cancelled || fatal) return;
+      cancelScheduled();
+      scheduleNext();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const pump = (): void => {
+      if (cancelled || fatal) return;
+      // Phase C — pick up any negotiated-config change between frames.
+      // `null` = renegotiation in flight (config torn down) — idle
+      // without touching the running encoder; the next emit restores it.
+      const fresh = encoderConstraints(route);
+      if (fresh === null) {
+        scheduleNext();
+        return;
+      }
+      const constraintsChanged =
+        fresh.codec !== constraints!.codec ||
+        fresh.maxWidth !== constraints!.maxWidth ||
+        fresh.maxHeight !== constraints!.maxHeight ||
+        fresh.maxFps !== constraints!.maxFps ||
+        fresh.scalabilityMode !== constraints!.scalabilityMode;
+      if (constraintsChanged) {
+        // Never reconfigure INTO a codec this platform can't encode —
+        // keep the current (working) encoder and report once.
+        const check = pickEncoderCodec(localVideoCapabilities(), fresh.codec);
+        if (!check.ok) {
+          if (reportedUnencodable !== fresh.codec) {
+            reportedUnencodable = fresh.codec;
+            console.warn(`ignoring renegotiated config: ${check.reason}`);
+            reportEncoderStatus(route, fresh.codec, false, `renegotiation: ${check.reason}`);
+          }
+          scheduleNext();
+          return;
+        }
+        reportedUnencodable = null;
+        const codecChanged = fresh.codec !== currentCodec;
+        constraints = fresh;
+        const shape = appliedShape();
+        captureCanvas.width = shape.width;
+        captureCanvas.height = shape.height;
+        frameIntervalMs = 1000 / shape.fps;
+        const reconfigure = (): void => {
+          try {
+            encoder.configure(
+              buildEncoderConfig(
+                constraints!,
+                effectiveBitrate(configuredKbps, appliedShape().fps),
+                appliedShape(),
+              ),
+            );
+            currentCodec = constraints!.codec;
+            ts.lastKeyframeMs = performance.now();
+            framesFed = 0;
+            chunksOut = 0;
+            firstFedAt = 0;
+          } catch (e) {
+            console.error("encoder reconfigure on policy change failed:", e);
+            recreateEncoder("policy-reconfigure-failed");
+          }
+        };
+        if (codecChanged) {
+          // Drain chunks queued under the old codec so their tag stays
+          // truthful, THEN reconfigure. A missed flush self-heals via
+          // the receiver's decode-error → KeyframeRequest path.
+          void encoder
+            .flush()
+            .catch((e: unknown) => {
+              console.error("encoder flush before codec switch failed:", e);
+            })
+            .finally(reconfigure);
+        } else {
+          reconfigure();
+        }
+      }
+      // A closed encoder silently eats every encode() — recover.
+      if (encoder.state === "closed") {
+        recreateEncoder("closed-state");
+        scheduleNext();
+        return;
+      }
+      const now = performance.now();
+      if (now - lastEmittedAt >= frameIntervalMs) {
+        // Architecture §10.6 line 4081 — adapt to the slowest receiver's
+        // measured kbps (from real frame acks). reconfigure() forces a
+        // keyframe, so only act on a material (>15%) drift to avoid churn.
+        if (Math.abs(ts.lowestReceiverKbps - configuredKbps) / configuredKbps > 0.15) {
+          configuredKbps = ts.lowestReceiverKbps;
+          try {
+            encoder.configure(
+              buildEncoderConfig(
+                constraints!,
+                effectiveBitrate(configuredKbps, appliedShape().fps),
+                appliedShape(),
+              ),
+            );
+            ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
+          } catch (e) {
+            console.error("encoder reconfigure failed:", e);
+            recreateEncoder("bitrate-reconfigure-failed");
+            scheduleNext();
+            return;
+          }
+        }
+        // WKWebView hazard: drawing a not-yet-decodable <video> yields
+        // black pixels (or throws). Skip the tick until the element
+        // actually has current frame data.
+        if (captureVideo.readyState < 2 || captureVideo.videoWidth === 0) {
+          scheduleNext();
+          return;
+        }
+        try {
+          captureCtx.drawImage(captureVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+          const isKeyframe = now - ts.lastKeyframeMs >= KEYFRAME_INTERVAL_MS;
+          if (isKeyframe) ts.lastKeyframeMs = now;
+          // Explicit duration: canvas-sourced frames otherwise carry
+          // WebKitGTK's hardcoded 1-second GstBuffer duration, which
+          // whipsaws libvpx's framerate belief every frame and wrecks
+          // its rate control (one leg of the observed CBR overshoot).
+          const videoFrame = new VideoFrame(captureCanvas, {
+            timestamp: Math.floor(now * 1000),
+            duration: Math.round(frameIntervalMs * 1000),
+          });
+          encoder.encode(videoFrame, { keyFrame: isKeyframe });
+          videoFrame.close();
+          framesFed += 1;
+          if (firstFedAt === 0) firstFedAt = now;
+        } catch (e) {
+          console.error("encode failed:", e);
+        }
+        lastEmittedAt = now;
+      }
+      // First-chunk watchdog: frames going in, nothing coming out.
+      if (
+        chunksOut === 0 &&
+        framesFed > 0 &&
+        firstFedAt !== 0 &&
+        now - firstFedAt > FIRST_CHUNK_DEADLINE_MS
+      ) {
+        // The recreate cooldown makes a second dry window fatal.
+        recreateEncoder("no-output-watchdog");
+      }
+      scheduleNext();
+    };
+    scheduleNext();
+
+    ts.encoder = encoder;
+    ts.streamId = streamIdHex;
+
+    // Architecture §10.6 + Phase 6 W22 — community broadcasts initial
+    // topology so receivers spin up decoders. DM has only one receiver who
+    // spins up their decoder on the first keyframe (in ingestRemoteFrame),
+    // so no topology broadcast is needed.
+    if (route.mode === "community") {
+      void commands.notifyVideoTopologyChange(
+        route.communityId,
+        route.channelId,
+        streamIdHex,
+        null,
+        "initial",
+      );
+    }
+
+    ts.stop = () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      cancelScheduled();
+      try {
+        encoder.close();
+      } catch (e) {
+        console.error("encoder close failed:", e);
+      }
+      captureVideo.srcObject = null;
+    };
+  }
+
+  function stop(label: TrackLabel): void {
+    const ts = tracks[label];
+    ts.stop?.();
+    ts.stop = null;
+    ts.encoder = null;
+    ts.streamId = null;
+  }
+
+  /** Honor a force only when the last keyframe is older than the
+   *  libwebrtc-style send floor — receivers re-request at 1 Hz until
+   *  resynced, so an unthrottled force would emit a keyframe per
+   *  request and starve the pacer with 30-100 KB intras.
+   *  `lastKeyframeMs = 0` is the "emit on next tick" sentinel. */
+  const forceIfDue = (ts: TrackState): void => {
+    if (
+      ts.lastKeyframeMs !== 0 &&
+      performance.now() - ts.lastKeyframeMs < KEYFRAME_MIN_INTERVAL_MS
+    ) {
+      return;
+    }
+    ts.lastKeyframeMs = 0;
+  };
+
+  function forceKeyframe(streamId: string): void {
+    for (const ts of Object.values(tracks)) {
+      if (ts.streamId === streamId) forceIfDue(ts);
+    }
+  }
+
+  function forceKeyframeAll(): void {
+    for (const ts of Object.values(tracks)) {
+      if (ts.streamId !== null) forceIfDue(ts);
+    }
+  }
+
+  function setTargetKbps(kbps: number): void {
+    for (const ts of Object.values(tracks)) {
+      ts.lowestReceiverKbps = kbps;
+    }
+  }
+
+  return { start, stop, forceKeyframe, forceKeyframeAll, setTargetKbps };
+}

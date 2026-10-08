@@ -1,0 +1,371 @@
+import type { CommunityEvent } from "../../ipc/channels";
+import type {
+  CommunitySubscriptionEvent,
+  GovernanceEvent,
+} from "../../ipc/channels/community_subscription_events";
+import type { InviteDto } from "../../ipc/commands/dto";
+import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
+import { transformCommunityDetail } from "../../utils/transformers";
+import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
+import { setCommunityState, communityState } from "../../stores/community.store";
+import { commands } from "../../ipc/commands";
+import { addToast } from "../../stores/toast.store";
+import { transformChannel, transformMember } from "../../utils/transformers";
+import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
+import { handleLoadChannelThreads } from "../../actions/community/events_threads";
+
+/// Membership / governance / moderation-alert slice of the community
+/// event dispatcher. Returns `true` when the event was consumed.
+export function reduceMembership(event: CommunityEvent): boolean {
+  if (event.type === "expressionAssetReady") {
+    // Architecture §18.4 — eager-fetch landed for this expression;
+    // refresh the community's expression list so the picker re-renders
+    // with the resolved inline_data_base64 instead of `:emojiname:`.
+    void handleLoadExpressions(event.data.communityId);
+    return true;
+  }
+  return false;
+}
+
+/// Membership events on the daemon vocabulary. Same store effects as
+/// the `{ type, data }` cases they replaced; only the shape changed.
+export function reduceSubscriptionMembership(
+  event: CommunitySubscriptionEvent,
+): void {
+  if ("system" in event) {
+    const sys = event.system;
+    if ("kicked" in sys) {
+      // We were removed from the community.
+      const communityId = sys.kicked.community;
+      setCommunityState("communities", communityId, undefined!);
+      if (communityState.activeCommunity === communityId) {
+        setCommunityState("activeCommunity", null);
+        setCommunityState("activeChannel", null);
+      }
+    }
+    return;
+  }
+  if ("governance" in event) {
+    applyGovernanceEvent(event.governance);
+    return;
+  }
+  if (!("membership" in event)) return;
+  const m = event.membership;
+
+  if ("joined" in m) {
+    const { community, pseudonym, displayName, roleIds } = m.joined;
+    const c = communityState.communities[community];
+    if (c && !c.members.some((x) => x.pseudonymKey === pseudonym)) {
+      setCommunityState("communities", community, "members", (prev) => [
+        ...prev,
+        transformMember({
+          pseudonymKey: pseudonym,
+          displayName,
+          roleIds,
+          displayRole: "",
+          status: "online",
+          timeoutUntil: null,
+        }),
+      ]);
+    }
+    return;
+  }
+
+  if ("removed" in m) {
+    const { community, pseudonym } = m.removed;
+    setCommunityState("communities", community, "members", (prev) =>
+      prev.filter((x) => x.pseudonymKey !== pseudonym),
+    );
+    return;
+  }
+
+  if ("rolesChanged" in m) {
+    const { community, pseudonym, roleIds } = m.rolesChanged;
+    const c = communityState.communities[community];
+    if (c) {
+      const idx = c.members.findIndex((x) => x.pseudonymKey === pseudonym);
+      if (idx >= 0) {
+        setCommunityState("communities", community, "members", idx, "roleIds", roleIds);
+      }
+      if (pseudonym === c.myPseudonymKey) {
+        setCommunityState("communities", community, "myRoleIds", roleIds);
+      }
+    }
+    return;
+  }
+
+  if ("timeoutStatusChanged" in m) {
+    const { community, pseudonym, timeoutUntil } = m.timeoutStatusChanged;
+    const c = communityState.communities[community];
+    if (c) {
+      const idx = c.members.findIndex((x) => x.pseudonymKey === pseudonym);
+      if (idx >= 0) {
+        setCommunityState("communities", community, "members", idx, "timeoutUntil", timeoutUntil);
+      }
+    }
+    return;
+  }
+
+  if ("membersRefreshed" in m) {
+    const { community } = m.membersRefreshed;
+    commands
+      .getCommunityMembers(community)
+      .then((members) => {
+        setCommunityState("communities", community, "members", members.map(transformMember));
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if ("memberDiscovered" in m) {
+    const { community, pseudonym, displayName } = m.memberDiscovered;
+    const c = communityState.communities[community];
+    if (c && !c.members.some((x) => x.pseudonymKey === pseudonym)) {
+      setCommunityState("communities", community, "members", (prev) => [
+        ...prev,
+        transformMember({
+          pseudonymKey: pseudonym,
+          displayName,
+          roleIds: [0, 1],
+          displayRole: "",
+          status: "online",
+          timeoutUntil: null,
+        }),
+      ]);
+    }
+    return;
+  }
+
+  if ("onboardingCompleted" in m) {
+    const { community, pseudonym, roleIds } = m.onboardingCompleted;
+    const c = communityState.communities[community];
+    const idx = (c?.members ?? []).findIndex((x) => x.pseudonymKey === pseudonym);
+    if (idx >= 0) {
+      setCommunityState("communities", community, "members", idx, "roleIds", roleIds);
+    }
+    if (c?.myPseudonymKey === pseudonym) {
+      setCommunityState("communities", community, "onboardingComplete", true);
+    }
+    return;
+  }
+
+  if ("joinAccepted" in m) {
+    // Architecture §7.4 — peer accepted our join request and the MEK
+    // has landed. Refresh the community detail so the new generation,
+    // registry slot and governance state propagate into the store.
+    const { community } = m.joinAccepted;
+    addToast("Joined community — encryption keys received", "success");
+    void commands.getCommunityDetails().then((details) => {
+      const detail = details.find((d) => d.id === community);
+      if (detail) {
+        setCommunityState("communities", community, transformCommunityDetail(detail));
+        void handleResolveCommunityImageDataUrls(community);
+      }
+    });
+    return;
+  }
+
+  if ("joinProgress" in m) {
+    // Pure display: mirror the phase into the join store so the
+    // stepper re-renders. No timeout logic — the backend gate owns
+    // each phase's budget.
+    const { stage, status } = m.joinProgress;
+    applyJoinProgress(stage, status as JoinStageStatus);
+    return;
+  }
+
+  if ("joinRejected" in m) {
+    addToast(`Join rejected: ${m.joinRejected.reason}`, "error");
+  }
+}
+
+/// Governance events on the daemon vocabulary.
+///
+/// These carry the new state inline rather than telling the client to
+/// re-read it — see the note on Tier 1's `GovernanceEvent`. The one
+/// exception is `governanceRebuilt`, which changes channels, roles,
+/// members and permissions together and so still triggers a re-read.
+function applyGovernanceEvent(g: GovernanceEvent): void {
+  if ("rolesChanged" in g) {
+    const { community, roles } = g.rolesChanged;
+    if (communityState.communities[community]) {
+      // The store keeps `permissions` as a string and
+      // `utils/permissions.ts` parses it with `BigInt(...)`. Tier 1
+      // sends a JSON number, which is exact today but is the shape
+      // that loses low bits once permission bits pass 2^53 — so the
+      // string form is preserved here rather than widening every
+      // permission check to accept a number.
+      setCommunityState(
+        "communities",
+        community,
+        "roles",
+        roles.map((r) => ({
+          ...r,
+          permissions: String(r.permissions),
+          // The store uses `undefined` for absent, Tier 1 uses `null`.
+          exclusionGroup: r.exclusionGroup ?? undefined,
+        })),
+      );
+    }
+    return;
+  }
+
+  if ("segmentsChanged" in g) {
+    const { community, segments } = g.segmentsChanged;
+    if (communityState.communities[community]) {
+      setCommunityState("communities", community, "segments", segments);
+    }
+    return;
+  }
+
+  if ("channelsChanged" in g) {
+    const { community, channels, categories } = g.channelsChanged;
+    const c = communityState.communities[community];
+    if (!c) return;
+    // Preserve unread counts from existing channels
+    const unreadMap: Record<string, number> = {};
+    for (const ch of c.channels) {
+      unreadMap[ch.id] = ch.unreadCount;
+    }
+    setCommunityState(
+      "communities",
+      community,
+      "channels",
+      channels.map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        // Tier 1 calls it `kind`; the store calls it `type`.
+        type: ch.kind as "text" | "voice" | "announcement",
+        unreadCount: unreadMap[ch.id] ?? 0,
+        categoryId: ch.categoryId ?? undefined,
+        topic: ch.topic,
+        slowmodeSeconds: ch.slowmodeSeconds ?? undefined,
+      })),
+    );
+    setCommunityState(
+      "communities",
+      community,
+      "categories",
+      categories.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        sortOrder: cat.sortOrder,
+      })),
+    );
+    return;
+  }
+
+  if ("metadataChanged" in g) {
+    const { community, name, description, iconHash, bannerHash } = g.metadataChanged;
+    if (name !== null) {
+      setCommunityState("communities", community, "name", name);
+    }
+    if (description !== null) {
+      setCommunityState("communities", community, "description", description);
+    }
+    // Architecture §32 Phase 5 W15 — when the icon/banner hash changes
+    // the cached data URL is stale; clear it and re-resolve through the
+    // local cache so the buddy-list icon updates.
+    if (iconHash !== null) {
+      setCommunityState("communities", community, "iconHash", iconHash);
+    }
+    if (bannerHash !== null) {
+      setCommunityState("communities", community, "bannerHash", bannerHash);
+    }
+    if (iconHash !== null || bannerHash !== null) {
+      void handleResolveCommunityImageDataUrls(community);
+    }
+    return;
+  }
+
+  if ("inviteCreated" in g) {
+    const inv = g.inviteCreated;
+    const invite: InviteDto = {
+      codeHash: inv.codeHash,
+      createdBy: inv.createdBy,
+      maxUses: inv.maxUses,
+      uses: inv.uses,
+      expiresAt: inv.expiresAt,
+      createdAt: inv.createdAt,
+    };
+    // Deduplicate: the optimistic insert from handleCreateCommunityInvite
+    // may already be present.
+    setCommunityState("communityInvites", inv.community, (prev) => {
+      const existing = prev ?? [];
+      if (existing.some((x) => x.codeHash === invite.codeHash)) return existing;
+      // Replace the "pending" optimistic entry if present
+      const filtered = existing.filter((x) => x.codeHash !== "pending");
+      return [invite, ...filtered];
+    });
+    return;
+  }
+
+  if ("inviteRevoked" in g) {
+    const { community, codeHash } = g.inviteRevoked;
+    setCommunityState("communityInvites", community, (prev) =>
+      (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
+    );
+    return;
+  }
+
+  if ("inviteUsed" in g) {
+    const { community, codeHash, uses } = g.inviteUsed;
+    setCommunityState("communityInvites", community, (prev) =>
+      (prev ?? []).map((inv) => (inv.codeHash === codeHash ? { ...inv, uses } : inv)),
+    );
+    return;
+  }
+
+  if ("channelPermissionsChanged" in g) {
+    const { community } = g.channelPermissionsChanged;
+    if (!communityState.communities[community]) return;
+    commands
+      .getCommunityDetails()
+      .then((details) => {
+        const detail = details.find((d: { id: string }) => d.id === community);
+        if (detail) {
+          setCommunityState("communities", community, "roles", detail.roles);
+        }
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if ("governanceRebuilt" in g) {
+    // A CRDT rebuild moves everything at once, so this is the one
+    // governance event with no payload and a full re-read.
+    const { community } = g.governanceRebuilt;
+    commands
+      .getCommunityDetails()
+      .then((details) => {
+        const detail = details.find((c: { id: string }) => c.id === community);
+        if (detail) {
+          setCommunityState("communities", community, "name", detail.name);
+          setCommunityState("communities", community, "description", detail.description ?? null);
+          setCommunityState("communities", community, "roles", detail.roles ?? []);
+          setCommunityState(
+            "communities",
+            community,
+            "channels",
+            detail.channels.map(transformChannel),
+          );
+          setCommunityState("communities", community, "categories", detail.categories ?? []);
+          setCommunityState("communities", community, "myRoleIds", detail.myRoleIds ?? [0]);
+          setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
+        }
+      })
+      .catch(() => {});
+    // Also refresh members so the member list shows up
+    commands
+      .getCommunityMembers(community)
+      .then((members) => {
+        setCommunityState("communities", community, "members", members.map(transformMember));
+      })
+      .catch(() => {});
+    void handleLoadExpressions(community);
+    void handleLoadAutoModRules(community);
+    if (communityState.activeCommunity === community && communityState.activeChannel) {
+      void handleLoadChannelThreads(community, communityState.activeChannel);
+    }
+  }
+}

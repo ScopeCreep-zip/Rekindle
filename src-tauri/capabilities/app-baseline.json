@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-baseline",
+  "description": "App-command grants shared by every post-auth window: the event stream (`subscribe_events`) and `hydrateState()` re-reading identity/friends/community data on mount (each Tauri webview is a fresh JS context). Call and notification commands live with the windows that own them: the call shell in `app-buddy-list.json`, the active-call controls in `app-call.json`.",
+  "windows": [
+    "buddy-list",
+    "chat-*",
+    "dm-*",
+    "community-*",
+    "settings",
+    "profile-*",
+    "call-*"
+  ],
+  "permissions": [
+    "allow-subscribe-events",
+    "allow-get-avatar",
+    "allow-get-community-avatar-data-url",
+    "allow-get-community-details",
+    "allow-get-community-members",
+    "allow-get-friends",
+    "allow-get-identity",
+    "allow-list-automod-rules",
+    "allow-list-expressions"
+  ]
+}

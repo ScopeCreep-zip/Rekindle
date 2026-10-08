@@ -1,0 +1,37 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Custom workspace tasks beyond what cargo provides natively. See README at /docs/contributor/architecture-rules.md."
+license = "MIT"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+ignore = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml_edit = "0.22"
+# `check-duplicate-constants` parses real Rust rather than pattern-matching
+# it. A line scanner cannot tell the `;` in `const K: [u8; 32] = …;` from
+# the one ending the statement, nor a `#[cfg(test)]` fixture from shipped
+# code — and getting that wrong in a CI gate means false failures. syn and
+# quote are already in the lockfile (every derive macro pulls them), so
+# this adds a dependency edge, not a crate. `span-locations` is
+# deliberately NOT enabled on proc-macro2: feature unification would turn
+# it on for every proc macro in the workspace build.
+# `visit` + `proc-macro2` serve `check-domain-literals`, which walks every
+# literal including those inside macro token streams. Line numbers come from
+# locating the literal's source text (no `span-locations`, see above).
+syn = { version = "2", features = ["full", "parsing", "printing", "visit"] }
+quote = "1"
+proc-macro2 = "1"

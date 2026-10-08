@@ -1,0 +1,337 @@
+//! Phase 23.C — invite-handler Tauri-runtime orchestration lifted from
+//! `commands/community/invites.rs`. Hosts the three orchestrators
+//! (`create_community_invite_inner`, `revoke_community_invite_inner`,
+//! `list_community_invites_inner`).
+
+use std::sync::Arc;
+
+use rekindle_governance_runtime as gov_rt;
+use rekindle_types::permissions;
+
+use crate::commands::community::helpers::{
+    hex_to_id_16, random_16_bytes, random_nonce, require_permission,
+};
+use crate::state::SharedState;
+use crate::state_helpers;
+use rekindle_db::Db;
+
+/// A freshly minted invite. The webview gets only the canonical link and
+/// the code hash it is listed under.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteCreatedDto {
+    pub code_hash: String,
+    pub url: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteInfoDto {
+    pub code_hash: String,
+    pub created_by: String,
+    pub max_uses: Option<u32>,
+    pub uses: u32,
+    pub expires_at: Option<u64>,
+    pub created_at: u64,
+    /// The invite link, for invites this node created.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// The canonical invite link (`rekindle_types::invite::InviteLink`).
+fn invite_url(
+    governance_key: &str,
+    secrets_record_key: &str,
+    code: &str,
+) -> Result<String, String> {
+    use rekindle_types::key_format;
+    let link = rekindle_types::invite::InviteLink {
+        governance_key: key_format::record_key(governance_key)
+            .map_err(|e| format!("invite governance key: {e}"))?,
+        secrets_record_key: key_format::record_key(secrets_record_key)
+            .map_err(|e| format!("invite secrets key: {e}"))?,
+        invite_code: key_format::hex16_id(code).map_err(|e| format!("invite code: {e}"))?,
+    };
+    Ok(link.to_url())
+}
+
+/// The governance key a community's invites name.
+fn community_governance_key(state: &SharedState, community_id: &str) -> Option<String> {
+    let communities = state.communities.read();
+    let community = communities.get(community_id)?;
+    Some(
+        community
+            .governance_key
+            .clone()
+            .unwrap_or_else(|| community.id.clone()),
+    )
+}
+
+pub async fn create_community_invite_inner(
+    state: &SharedState,
+    pool: &Db,
+    community_id: String,
+    max_uses: Option<u32>,
+    expires_in_seconds: Option<u64>,
+) -> Result<InviteCreatedDto, String> {
+    require_permission(state, &community_id, permissions::CREATE_INVITES)?;
+
+    // Clamp a provided TTL so a programmatic/edited call can't mint a
+    // near-permanent invite that lingers in governance. `None` stays permanent.
+    const MAX_INVITE_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+    let expires_in_seconds = expires_in_seconds.map(|s| s.min(MAX_INVITE_TTL_SECS));
+
+    let code = hex::encode(random_nonce(16));
+    let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
+
+    let (governance_key, slot_seed, registry_key, community_name, inviter_route_blob) = {
+        let communities = state.communities.read();
+        let community = communities
+            .get(&community_id)
+            .ok_or("community not found")?;
+        let governance_key = community
+            .governance_key
+            .clone()
+            .or_else(|| Some(community.id.clone()))
+            .ok_or("no governance key")?;
+        let slot_seed = community
+            .slot_seed
+            .clone()
+            .ok_or("no slot_seed available")?;
+        let registry_key = community
+            .member_registry_key
+            .clone()
+            .ok_or("no registry key for community")?;
+        (
+            governance_key,
+            slot_seed,
+            registry_key,
+            community.name.clone(),
+            state_helpers::our_route_blob(state).unwrap_or_default(),
+        )
+    };
+
+    // Guard (architecture §6.2): an invite must bootstrap the joiner into the
+    // PRIMARY (segment-0) registry — the joiner treats the invite registry as
+    // `slot_range_start 0` and derives slot keypairs from it. `member_registry_key`
+    // is the primary registry, propagated from the creator through the invite
+    // chain; segment 0 is implicit and never listed in `gov_state.segments`, so a
+    // collision with a segment-≥1 registry means the value is corrupt and the
+    // invite would mis-route joiners. Refuse to mint it rather than ship a break.
+    if let Some(gov) = state_helpers::governance_state(state, &community_id) {
+        if let Some(seg) = gov
+            .segments
+            .iter()
+            .find(|s| s.segment_index != 0 && s.registry_key == registry_key)
+        {
+            tracing::error!(
+                community = %community_id,
+                segment = seg.segment_index,
+                "invite registry key matches a segment-{} registry, not the primary — refusing to mint a mis-routing invite",
+                seg.segment_index,
+            );
+            return Err("invite registry key is a segment registry, not the primary".into());
+        }
+    }
+
+    let mek_wire_b64 = {
+        let mek = state_helpers::current_mek(
+            state,
+            &community_id,
+            rekindle_types::channel_keys::KeyScope::Community,
+        )
+        .ok_or("no MEK available")?;
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(mek.to_wire_bytes())
+    };
+
+    let channel_keys: Vec<rekindle_types::invite::ChannelKeyInfo> = {
+        state_helpers::governance_state(state, &community_id)
+            .map(|gov| {
+                gov.channels
+                    .iter()
+                    .map(
+                        |(channel_id, channel)| rekindle_types::invite::ChannelKeyInfo {
+                            channel_id: hex::encode(channel_id.0),
+                            record_key: channel.record_key.clone(),
+                            name: channel.name.clone(),
+                        },
+                    )
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let secrets = rekindle_types::invite::InviteSecrets {
+        governance_key: governance_key.clone(),
+        registry_key,
+        inviter_route_blob,
+        slot_seed,
+        mek_wire_bytes: mek_wire_b64,
+        channel_keys,
+        community_name,
+    };
+
+    let secrets_json =
+        serde_json::to_vec(&secrets).map_err(|e| format!("serialize invite secrets: {e}"))?;
+    let encrypted = rekindle_secrets::invite::encrypt_invite_secrets(&code, &secrets_json)
+        .map_err(|e| format!("encrypt invite secrets: {e}"))?;
+    let encrypted_b64 = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(&encrypted)
+    };
+
+    // Store the encrypted secrets in a dedicated single-owner DFLT record
+    // and carry only the pointer in governance — the blob is multi-KB and
+    // would overflow the per-subkey SMPL cap if co-located with genesis
+    // entries (architecture: modular pointer records, not inline blobs).
+    let app_handle = state_helpers::app_handle(state).ok_or("app handle unavailable")?;
+    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
+        Arc::clone(state),
+        app_handle,
+        pool.clone(),
+    );
+    let secrets_record_key = gov_rt::publish_invite_secrets(&adapter, &encrypted_b64)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let expires_at = expires_in_seconds.map(|seconds| rekindle_utils::timestamp_secs() + seconds);
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
+    crate::services::community::write_entry(
+        state,
+        &community_id,
+        rekindle_types::governance::GovernanceEntry::InviteCreated {
+            invite_id: random_16_bytes(),
+            code_hash: code_hash.clone(),
+            max_uses: max_uses.unwrap_or(0),
+            expires_at,
+            secrets_record_key: secrets_record_key.clone(),
+            lamport,
+        },
+    )
+    .await?;
+
+    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+    let cid = community_id.clone();
+    let raw_code = code.clone();
+    let ch = code_hash.clone();
+    let now = i64::try_from(rekindle_utils::timestamp_secs()).unwrap_or(0);
+    let mu = max_uses.map_or(0, i64::from);
+    let exp = expires_in_seconds.map(|seconds| now + i64::try_from(seconds).unwrap_or(0));
+    let cid_for_db = cid.clone();
+    let srk_for_db = secrets_record_key.clone();
+    crate::db_helpers::db_fire(pool, "persist invite locally", move |conn| {
+        conn.execute(
+            "INSERT OR REPLACE INTO community_invites (owner_key, community_id, code, code_hash, secrets_record_key, max_uses, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![owner_key, cid_for_db, raw_code, ch, srk_for_db, mu, exp, now],
+        )?;
+        Ok(())
+    });
+
+    if let Some(app) = state_helpers::app_handle(state) {
+        let created_by = state_helpers::current_owner_key(state).unwrap_or_default();
+        crate::event_dispatch::emit_subscription(
+            &app,
+            &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::InviteCreated {
+                    community: cid.clone(),
+                    code_hash: code_hash.clone(),
+                    created_by,
+                    max_uses,
+                    uses: 0,
+                    expires_at,
+                    created_at: rekindle_utils::timestamp_secs(),
+                },
+            ),
+        );
+    }
+
+    Ok(InviteCreatedDto {
+        url: invite_url(&governance_key, &secrets_record_key, &code)?,
+        code_hash,
+    })
+}
+
+pub async fn revoke_community_invite_inner(
+    state: &SharedState,
+    community_id: String,
+    code_hash: String,
+) -> Result<(), String> {
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
+    let lamport =
+        state_helpers::next_governance_lamport(state, &community_id).map_err(|e| e.to_string())?;
+    crate::services::community::write_entry(
+        state,
+        &community_id,
+        rekindle_types::governance::GovernanceEntry::InviteRevoked {
+            invite_id: hex_to_id_16(&code_hash),
+            lamport,
+        },
+    )
+    .await?;
+
+    if let Some(app) = state_helpers::app_handle(state) {
+        crate::event_dispatch::emit_subscription(
+            &app,
+            &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::InviteRevoked {
+                    community: community_id.clone(),
+                    code_hash: code_hash.clone(),
+                },
+            ),
+        );
+    }
+    Ok(())
+}
+
+pub async fn list_community_invites_inner(
+    state: &SharedState,
+    pool: &Db,
+    community_id: String,
+) -> Result<Vec<InviteInfoDto>, String> {
+    let governance_key =
+        community_governance_key(state, &community_id).ok_or("community not found")?;
+    let cid = community_id.clone();
+    let local_invites: Vec<(String, String, String, i64, Option<i64>, i64, i64)> =
+        crate::db_helpers::db_call_or_default(pool, move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT code_hash, code, secrets_record_key, max_uses, expires_at, created_at, uses \
+                 FROM community_invites WHERE community_id = ?",
+            )?;
+            let rows = stmt.query_map([&cid], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+        .await;
+
+    Ok(local_invites
+        .into_iter()
+        .map(
+            |(code_hash, code, secrets_record_key, max_uses, expires_at, created_at, uses)| {
+                InviteInfoDto {
+                    code_hash,
+                    created_by: String::new(),
+                    max_uses: if max_uses == 0 {
+                        None
+                    } else {
+                        Some(max_uses.try_into().unwrap_or(0))
+                    },
+                    uses: u32::try_from(uses).unwrap_or(0),
+                    expires_at: expires_at.map(|expires| expires.try_into().unwrap_or(0)),
+                    created_at: created_at.try_into().unwrap_or(0),
+                    url: invite_url(&governance_key, &secrets_record_key, &code).ok(),
+                }
+            },
+        )
+        .collect())
+}

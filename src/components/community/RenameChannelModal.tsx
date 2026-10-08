@@ -1,6 +1,6 @@
-import { Component, createSignal, createEffect } from "solid-js";
-import Modal from "../common/Modal";
-import { handleRenameChannel } from "../../handlers/community.handlers";
+import { Component } from "solid-js";
+import SimpleInputModal from "../common/SimpleInputModal";
+import { handleRenameChannel } from "../../actions/community.actions";
 
 interface RenameChannelModalProps {
   isOpen: boolean;
@@ -10,43 +10,17 @@ interface RenameChannelModalProps {
   onClose: () => void;
 }
 
-const RenameChannelModal: Component<RenameChannelModalProps> = (props) => {
-  const [name, setName] = createSignal("");
-
-  createEffect(() => {
-    if (props.isOpen) {
-      setName(props.currentName);
-    }
-  });
-
-  async function handleSubmit(e: Event): Promise<void> {
-    e.preventDefault();
-    const n = name().trim();
-    if (!n || n === props.currentName) return;
-    await handleRenameChannel(props.communityId, props.channelId, n);
-    props.onClose();
-  }
-
-  return (
-    <Modal isOpen={props.isOpen} title="Rename Channel" onClose={props.onClose}>
-      <form class="add-friend-form" onSubmit={handleSubmit}>
-        <input
-          class="add-friend-input"
-          type="text"
-          placeholder="Channel name..."
-          value={name()}
-          onInput={(e) => setName(e.currentTarget.value)}
-        />
-        <button
-          class="add-friend-btn"
-          type="submit"
-          disabled={!name().trim() || name().trim() === props.currentName}
-        >
-          Rename
-        </button>
-      </form>
-    </Modal>
-  );
-};
+const RenameChannelModal: Component<RenameChannelModalProps> = (props) => (
+  <SimpleInputModal
+    isOpen={props.isOpen}
+    title="Rename Channel"
+    onClose={props.onClose}
+    onSubmit={(name) => handleRenameChannel(props.communityId, props.channelId, name)}
+    placeholder="Channel name..."
+    submitLabel="Rename"
+    initialValue={props.currentName}
+    validate={(name) => name === props.currentName ? "Name is unchanged" : null}
+  />
+);
 
 export default RenameChannelModal;

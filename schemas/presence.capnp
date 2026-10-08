@@ -11,4 +11,5 @@ struct GameStatus {
     gameName @1 :Text;
     serverInfo @2 :Text;         # "map_name @ server_ip:port"
     elapsedSeconds @3 :UInt32;
+    serverAddress @4 :Text;      # "ip:port" for join-game functionality
 }

@@ -1,35 +1,18 @@
 @0xd30521ff511c9ab5;
 
+# The owner-encrypted header in subkey 0 of the account DHT record.
+#
+# This used to also carry pointers and owner keypairs for three child
+# DHTShortArrays — a contact list, a chat list and an invitation list,
+# the classic-Xfire account model. Nothing ever wrote to or read from
+# them: friends live in their own friend-list record, conversations in
+# ConversationRecord, and friend requests in the friend inbox. Creating
+# an account allocated three DHT records that stayed empty for the
+# account's whole life, and every login reopened all three.
 struct AccountHeader {
-    contactListKey @0 :Text;
-    chatListKey @1 :Text;
-    invitationListKey @2 :Text;
-    displayName @3 :Text;
-    statusMessage @4 :Text;
-    avatarHash @5 :Data;
-    createdAt @6 :UInt64;
-    updatedAt @7 :UInt64;
-    contactListKeypair @8 :Text;
-    chatListKeypair @9 :Text;
-    invitationListKeypair @10 :Text;
-}
-
-struct ContactEntry {
-    publicKey @0 :Data;
-    displayName @1 :Text;
-    nickname @2 :Text;
-    group @3 :Text;
-    localConversationKey @4 :Text;
-    remoteConversationKey @5 :Text;
-    addedAt @6 :UInt64;
-    updatedAt @7 :UInt64;
-}
-
-struct ChatEntry {
-    contactPublicKey @0 :Data;
-    localConversationKey @1 :Text;
-    lastMessageTimestamp @2 :UInt64;
-    unreadCount @3 :UInt32;
-    isPinned @4 :Bool;
-    isMuted @5 :Bool;
+    displayName @0 :Text;
+    statusMessage @1 :Text;
+    avatarHash @2 :Data;
+    createdAt @3 :UInt64;
+    updatedAt @4 :UInt64;
 }

@@ -1,0 +1,49 @@
+# CodeQL static analysis for JavaScript and TypeScript.
+#
+# Rust support in CodeQL is still beta and produces meaningful noise on
+# Rust idioms; we cover Rust via clippy + cargo-audit + cargo-deny in
+# audit.yml. This workflow focuses on the SolidJS frontend and any
+# stray JavaScript build tooling.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, "codex/**"]
+  schedule:
+    # Weekly — Sunday 03:30 UTC.
+    - cron: "30 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["javascript-typescript"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Use the security-extended query suite for higher coverage.
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

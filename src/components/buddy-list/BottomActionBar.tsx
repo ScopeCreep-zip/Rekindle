@@ -1,6 +1,6 @@
-import { Component, Show } from "solid-js";
-import { handleToggleAddFriend } from "../../handlers/buddy.handlers";
-import { handleLogout } from "../../handlers/auth.handlers";
+import { Component, Show, createSignal } from "solid-js";
+import { handleToggleAddFriend } from "../../actions/buddy.actions";
+import { handleLogout } from "../../actions/auth.actions";
 import { setFriendsState } from "../../stores/friends.store";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 import { ICON_NEW_CHAT, ICON_ADD_FRIEND, ICON_PLUS, ICON_COMMUNITIES, ICON_LOGOUT } from "../../icons";
@@ -18,27 +18,38 @@ function handleToggleJoinCommunity(): void {
 }
 
 const BottomActionBar: Component = () => {
+  // The backend refuses a second concurrent logout; the button reflects
+  // the one in flight.
+  const [loggingOut, setLoggingOut] = createSignal(false);
+  const logout = async (): Promise<void> => {
+    setLoggingOut(true);
+    try {
+      await handleLogout();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
   return (
     <div class="action-bar">
       <Show when={buddyListUI.activeTab === "friends"}>
-        <button class="action-bar-icon-btn" onClick={handleToggleNewChat} title="New Chat">
-          <span class="nf-icon">{ICON_NEW_CHAT}</span>
+        <button class="action-bar-icon-btn" onClick={handleToggleNewChat} title="New Chat" aria-label="New Chat">
+          <span class="nf-icon" aria-hidden="true">{ICON_NEW_CHAT}</span>
         </button>
-        <button class="action-bar-icon-btn" onClick={handleToggleAddFriend} title="Add Friend">
-          <span class="nf-icon">{ICON_ADD_FRIEND}</span>
+        <button class="action-bar-icon-btn" onClick={handleToggleAddFriend} title="Add Friend" aria-label="Add Friend">
+          <span class="nf-icon" aria-hidden="true">{ICON_ADD_FRIEND}</span>
         </button>
       </Show>
       <Show when={buddyListUI.activeTab === "communities"}>
-        <button class="action-bar-icon-btn" onClick={handleToggleCreateCommunity} title="Create Community">
-          <span class="nf-icon">{ICON_PLUS}</span>
+        <button class="action-bar-icon-btn" onClick={handleToggleCreateCommunity} title="Create Community" aria-label="Create Community">
+          <span class="nf-icon" aria-hidden="true">{ICON_PLUS}</span>
         </button>
-        <button class="action-bar-icon-btn" onClick={handleToggleJoinCommunity} title="Join Community">
-          <span class="nf-icon">{ICON_COMMUNITIES}</span>
+        <button class="action-bar-icon-btn" onClick={handleToggleJoinCommunity} title="Join Community" aria-label="Join Community">
+          <span class="nf-icon" aria-hidden="true">{ICON_COMMUNITIES}</span>
         </button>
       </Show>
       <div class="action-bar-spacer" />
-      <button class="logout-icon-btn" onClick={handleLogout} title="Logout">
-        <span class="nf-icon">{ICON_LOGOUT}</span>
+      <button class="logout-icon-btn" onClick={logout} disabled={loggingOut()} title="Logout" aria-label="Logout">
+        <span class="nf-icon" aria-hidden="true">{ICON_LOGOUT}</span>
       </button>
     </div>
   );

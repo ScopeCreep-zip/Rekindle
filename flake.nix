@@ -18,7 +18,19 @@
           libsodium.dev
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           alsa-lib.dev
+          # cpal's native PipeWire host (crates/rekindle-voice): pipewire-sys
+          # finds libpipewire-0.3 through pkg-config and generates its
+          # bindings with bindgen, which loads libclang at build time.
+          pipewire.dev
+          llvmPackages.libclang
           libopus.dev
+          dbus.dev
+          # Native video capture (crates/rekindle-video-capture):
+          # gstreamer-rs needs the dev headers; the plugins provide
+          # v4l2src/jpegdec/vp8enc at dev-shell runtime.
+          gst_all_1.gstreamer.dev
+          gst_all_1.gst-plugins-base.dev
+          gst_all_1.gst-plugins-good
         ];
 
         # Runtime library path for Nix-provided shared libs on Linux.
@@ -27,6 +39,20 @@
             libsodium
             libopus
             alsa-lib
+            pipewire
+            dbus
+            gst_all_1.gstreamer
+            gst_all_1.gst-plugins-base
+            gst_all_1.gst-plugins-good
+          ]));
+
+        # GStreamer plugin search path for the dev shell — the system
+        # plugin dirs are invisible from Nix-provided libgstreamer.
+        rekindleGstPluginPath = pkgs.lib.optionalString pkgs.stdenv.isLinux
+          (pkgs.lib.makeSearchPath "lib/gstreamer-1.0" (with pkgs; [
+            gst_all_1.gstreamer
+            gst_all_1.gst-plugins-base
+            gst_all_1.gst-plugins-good
           ]));
 
       in {
@@ -40,7 +66,12 @@
           env = {
             KONDUCTOR_SHELL = "rekindle";
             SODIUM_USE_PKG_CONFIG = "1";
+          } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          } // {
             REKINDLE_LIB_PATH = rekindleLibPath;
+            LD_LIBRARY_PATH = rekindleLibPath;
+            GST_PLUGIN_SYSTEM_PATH_1_0 = rekindleGstPluginPath;
           };
         };
       }

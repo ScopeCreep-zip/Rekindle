@@ -1,11 +1,61 @@
 import { test, expect } from "@playwright/test";
 import {
-  setupMocks,
+  preloadMocks,
   clearMocks,
   LOGIN_SUCCESS_HANDLER,
   LOGIN_FAIL_HANDLER,
   LOGIN_NO_IDENTITY_HANDLER,
 } from "./fixtures/mocks";
+
+// Mocks are installed before the page loads (`preloadMocks`): the login
+// window reads identities and the lifecycle state while it mounts.
+
+/// The login/create form's submit button (`LoadingButton`).
+const SUBMIT = '.login-container button[type="submit"]';
+/// "← Switch Account" (login mode) or "← Back" (create mode).
+const BACK = /Switch Account|Back/;
+
+const ONE_IDENTITY = `[{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000, hasAvatar: false, avatarBase64: null }]`;
+
+const TRACKED_LOGIN_HANDLER = `
+  switch (cmd) {
+    case "list_identities": return ${ONE_IDENTITY};
+    case "login": return { publicKey: "abc123def456", displayName: "TestUser" };
+    default: return null;
+  }
+`;
+
+const EMPTY_PASSPHRASE_HANDLER = `
+  return cmd === "list_identities" ? ${ONE_IDENTITY} : null;
+`;
+
+const SLOW_LOGIN_HANDLER = `
+  switch (cmd) {
+    case "list_identities": return ${ONE_IDENTITY};
+    case "login":
+      return new Promise((resolve) =>
+        setTimeout(() => resolve({ publicKey: "abc123def456", displayName: "TestUser" }), 2000),
+      );
+    default: return null;
+  }
+`;
+
+const CREATE_FRESH_HANDLER = `
+  switch (cmd) {
+    case "list_identities": return [];
+    case "create_identity": return { publicKey: "new-key-789", displayName: args.displayName || "Anonymous" };
+    default: return null;
+  }
+`;
+
+const CREATE_FROM_PICKER_HANDLER = `
+  switch (cmd) {
+    case "list_identities":
+      return [{ publicKey: "abc123def456", displayName: "ExistingUser", createdAt: 1000, hasAvatar: false, avatarBase64: null }];
+    case "create_identity": return { publicKey: "new-key-789", displayName: args.displayName || "Anonymous" };
+    default: return null;
+  }
+`;
 
 // ── Account Picker ──────────────────────────────────────────────────
 
@@ -15,8 +65,8 @@ test.describe("Account Picker", () => {
   });
 
   test("shows picker with existing identity", async ({ page }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
     await page.goto("/login");
-    await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER);
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -40,8 +90,8 @@ test.describe("Account Picker", () => {
   test("clicking account card transitions to login mode", async ({
     page,
   }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
     await page.goto("/login");
-    await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER);
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -56,17 +106,17 @@ test.describe("Account Picker", () => {
     await expect(passphraseInput).toBeVisible();
 
     // Unlock button
-    await expect(page.locator(".login-btn")).toHaveText("Unlock");
+    await expect(page.locator(SUBMIT)).toHaveText("Unlock");
 
     // Back button visible
-    await expect(page.locator(".account-back-btn")).toBeVisible();
+    await expect(page.getByRole("button", { name: BACK })).toBeVisible();
   });
 
   test("clicking Create New Identity transitions to create mode", async ({
     page,
   }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
     await page.goto("/login");
-    await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER);
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -87,15 +137,15 @@ test.describe("Account Picker", () => {
     );
 
     // Button text
-    await expect(page.locator(".login-btn")).toHaveText("Create Identity");
+    await expect(page.locator(SUBMIT)).toHaveText("Create Identity");
 
     // Back button visible (since identities exist)
-    await expect(page.locator(".account-back-btn")).toBeVisible();
+    await expect(page.getByRole("button", { name: BACK })).toBeVisible();
   });
 
   test("back button returns to picker from login mode", async ({ page }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
     await page.goto("/login");
-    await setupMocks(page, "login", LOGIN_SUCCESS_HANDLER);
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -104,7 +154,7 @@ test.describe("Account Picker", () => {
     await expect(page.locator(".lock-name")).toBeVisible();
 
     // Go back
-    await page.locator(".account-back-btn").click();
+    await page.getByRole("button", { name: BACK }).click();
 
     // Should be back at picker
     await expect(page.locator(".account-picker-subtitle")).toContainText(
@@ -123,35 +173,8 @@ test.describe("Login Flow", () => {
   test("successful login via picker calls login and show_buddy_list", async ({
     page,
   }) => {
+    await preloadMocks(page, "login", TRACKED_LOGIN_HANDLER);
     await page.goto("/login");
-
-    // Track IPC calls
-    await page.evaluate(() => {
-      (window as any).__ipcCalls = [] as string[];
-      (window as any).__mockWindows("login", "buddy-list");
-      (window as any).__mockIPC(
-        (cmd: string, args: Record<string, unknown>) => {
-          (window as any).__ipcCalls.push(cmd);
-          switch (cmd) {
-            case "list_identities":
-              return [
-                {
-                  publicKey: "abc123def456",
-                  displayName: "TestUser",
-                  createdAt: 1000,
-                  hasAvatar: false, avatarBase64: null,
-                },
-              ];
-            case "login":
-              return { publicKey: "abc123def456", displayName: "TestUser" };
-            case "show_buddy_list":
-              return null;
-            default:
-              return null;
-          }
-        },
-      );
-    });
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -160,20 +183,21 @@ test.describe("Login Flow", () => {
 
     // Type passphrase and submit
     await page.locator('input[type="password"]').fill("my-secret-passphrase");
-    await page.locator(".login-btn").click();
+    await page.locator(SUBMIT).click();
 
     // Wait for the IPC calls to complete
     await page.waitForFunction(
-      () =>
-        (window as any).__ipcCalls?.includes("login") &&
-        (window as any).__ipcCalls?.includes("show_buddy_list"),
+      () => {
+        const cmds = ((window as any).__ipcCalls ?? []).map((c: { cmd: string }) => c.cmd);
+        return cmds.includes("login") && cmds.includes("show_buddy_list");
+      },
       null,
       { timeout: 5000 },
     );
 
     // Verify the commands were called in order
-    const calls: string[] = await page.evaluate(
-      () => (window as any).__ipcCalls,
+    const calls: string[] = await page.evaluate(() =>
+      (window as any).__ipcCalls.map((c: { cmd: string }) => c.cmd),
     );
     expect(calls).toContain("login");
     expect(calls).toContain("show_buddy_list");
@@ -183,8 +207,8 @@ test.describe("Login Flow", () => {
   });
 
   test("failed login shows error message", async ({ page }) => {
+    await preloadMocks(page, "login", LOGIN_FAIL_HANDLER);
     await page.goto("/login");
-    await setupMocks(page, "login", LOGIN_FAIL_HANDLER);
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -193,42 +217,22 @@ test.describe("Login Flow", () => {
 
     // Type passphrase and submit
     await page.locator('input[type="password"]').fill("wrong-passphrase");
-    await page.locator(".login-btn").click();
+    await page.locator(SUBMIT).click();
 
     // Error message should appear
-    await expect(page.locator(".login-error")).toBeVisible({ timeout: 5000 });
-    await expect(page.locator(".login-error")).toContainText(
+    await expect(page.locator(".form-error")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".form-error")).toContainText(
       "Wrong passphrase",
     );
 
     // Button should return to normal (not loading)
-    await expect(page.locator(".login-btn")).toHaveText("Unlock");
-    await expect(page.locator(".login-btn")).not.toBeDisabled();
+    await expect(page.locator(SUBMIT)).toHaveText("Unlock");
+    await expect(page.locator(SUBMIT)).not.toBeDisabled();
   });
 
   test("empty passphrase does not submit", async ({ page }) => {
+    await preloadMocks(page, "login", EMPTY_PASSPHRASE_HANDLER);
     await page.goto("/login");
-
-    await page.evaluate(() => {
-      (window as any).__ipcCalls = [] as string[];
-      (window as any).__mockWindows("login", "buddy-list");
-      (window as any).__mockIPC((cmd: string) => {
-        (window as any).__ipcCalls.push(cmd);
-        switch (cmd) {
-          case "list_identities":
-            return [
-              {
-                publicKey: "abc123def456",
-                displayName: "TestUser",
-                createdAt: 1000,
-                hasAvatar: false, avatarBase64: null,
-              },
-            ];
-          default:
-            return null;
-        }
-      });
-    });
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -236,51 +240,21 @@ test.describe("Login Flow", () => {
     await page.locator(".account-bubble").click();
 
     // Click submit with empty passphrase
-    await page.locator(".login-btn").click();
+    await page.locator(SUBMIT).click();
 
     // Small delay to ensure nothing fires
     await page.waitForTimeout(500);
 
     // No login IPC call should have been made
-    const calls: string[] = await page.evaluate(
-      () => (window as any).__ipcCalls,
+    const calls: string[] = await page.evaluate(() =>
+      (window as any).__ipcCalls.map((c: { cmd: string }) => c.cmd),
     );
     expect(calls).not.toContain("login");
   });
 
   test("loading state disables button during login", async ({ page }) => {
+    await preloadMocks(page, "login", SLOW_LOGIN_HANDLER);
     await page.goto("/login");
-
-    // Mock with a slow login response
-    await page.evaluate(() => {
-      (window as any).__mockWindows("login", "buddy-list");
-      (window as any).__mockIPC((cmd: string) => {
-        switch (cmd) {
-          case "list_identities":
-            return [
-              {
-                publicKey: "abc123def456",
-                displayName: "TestUser",
-                createdAt: 1000,
-                hasAvatar: false, avatarBase64: null,
-              },
-            ];
-          case "login":
-            return new Promise((resolve) =>
-              setTimeout(
-                () =>
-                  resolve({
-                    publicKey: "abc123def456",
-                    displayName: "TestUser",
-                  }),
-                2000,
-              ),
-            );
-          default:
-            return null;
-        }
-      });
-    });
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -288,11 +262,11 @@ test.describe("Login Flow", () => {
     await page.locator(".account-bubble").click();
 
     await page.locator('input[type="password"]').fill("test-passphrase");
-    await page.locator(".login-btn").click();
+    await page.locator(SUBMIT).click();
 
     // Button should show loading state
-    await expect(page.locator(".login-btn")).toHaveText("...");
-    await expect(page.locator(".login-btn")).toBeDisabled();
+    await expect(page.locator(SUBMIT)).toContainText("Unlocking");
+    await expect(page.locator(SUBMIT)).toBeDisabled();
   });
 });
 
@@ -306,8 +280,8 @@ test.describe("Create Identity Flow", () => {
   test("fresh install shows create mode directly (no picker)", async ({
     page,
   }) => {
+    await preloadMocks(page, "login", LOGIN_NO_IDENTITY_HANDLER);
     await page.goto("/login");
-    await setupMocks(page, "login", LOGIN_NO_IDENTITY_HANDLER);
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -318,43 +292,17 @@ test.describe("Create Identity Flow", () => {
     );
 
     // No back button when no identities exist
-    await expect(page.locator(".account-back-btn")).not.toBeVisible();
+    await expect(page.getByRole("button", { name: BACK })).not.toBeVisible();
 
     // Create button
-    await expect(page.locator(".login-btn")).toHaveText("Create Identity");
+    await expect(page.locator(SUBMIT)).toHaveText("Create Identity");
   });
 
   test("create identity submits with display name and passphrase", async ({
     page,
   }) => {
+    await preloadMocks(page, "login", CREATE_FRESH_HANDLER);
     await page.goto("/login");
-
-    // Track IPC calls
-    await page.evaluate(() => {
-      (window as any).__ipcCalls = [] as Array<{
-        cmd: string;
-        args: Record<string, unknown>;
-      }>;
-      (window as any).__mockWindows("login", "buddy-list");
-      (window as any).__mockIPC(
-        (cmd: string, args: Record<string, unknown>) => {
-          (window as any).__ipcCalls.push({ cmd, args });
-          switch (cmd) {
-            case "list_identities":
-              return [];
-            case "create_identity":
-              return {
-                publicKey: "new-key-789",
-                displayName: args.displayName || "Anonymous",
-              };
-            case "show_buddy_list":
-              return null;
-            default:
-              return null;
-          }
-        },
-      );
-    });
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -366,7 +314,7 @@ test.describe("Create Identity Flow", () => {
     // Fill in display name and passphrase
     await page.locator('input[type="text"]').fill("CoolUser");
     await page.locator('input[type="password"]').fill("my-new-passphrase");
-    await page.locator(".login-btn").click();
+    await page.locator(SUBMIT).click();
 
     // Wait for IPC calls
     await page.waitForFunction(
@@ -393,40 +341,8 @@ test.describe("Create Identity Flow", () => {
   test("create from picker via Create New Identity button", async ({
     page,
   }) => {
+    await preloadMocks(page, "login", CREATE_FROM_PICKER_HANDLER);
     await page.goto("/login");
-
-    await page.evaluate(() => {
-      (window as any).__ipcCalls = [] as Array<{
-        cmd: string;
-        args: Record<string, unknown>;
-      }>;
-      (window as any).__mockWindows("login", "buddy-list");
-      (window as any).__mockIPC(
-        (cmd: string, args: Record<string, unknown>) => {
-          (window as any).__ipcCalls.push({ cmd, args });
-          switch (cmd) {
-            case "list_identities":
-              return [
-                {
-                  publicKey: "abc123def456",
-                  displayName: "ExistingUser",
-                  createdAt: 1000,
-                  hasAvatar: false, avatarBase64: null,
-                },
-              ];
-            case "create_identity":
-              return {
-                publicKey: "new-key-789",
-                displayName: args.displayName || "Anonymous",
-              };
-            case "show_buddy_list":
-              return null;
-            default:
-              return null;
-          }
-        },
-      );
-    });
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -442,12 +358,12 @@ test.describe("Create Identity Flow", () => {
     await expect(page.locator(".login-subtitle")).toContainText(
       "Create a passphrase",
     );
-    await expect(page.locator(".account-back-btn")).toBeVisible();
+    await expect(page.getByRole("button", { name: BACK })).toBeVisible();
 
     // Fill and submit
     await page.locator('input[type="text"]').fill("SecondUser");
     await page.locator('input[type="password"]').fill("second-pass");
-    await page.locator(".login-btn").click();
+    await page.locator(SUBMIT).click();
 
     // Wait for create
     await page.waitForFunction(

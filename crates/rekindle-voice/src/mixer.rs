@@ -80,6 +80,6 @@ mod tests {
         let a = [0.9f32];
         let b = [0.9f32];
         let result = mixer.mix(&[("a", &a), ("b", &b)]);
-        assert_eq!(result[0], 1.0); // clamped
+        assert!((result[0] - 1.0).abs() < f32::EPSILON); // clamped
     }
 }

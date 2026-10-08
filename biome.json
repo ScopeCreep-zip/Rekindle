@@ -1,0 +1,131 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.0/schema.json",
+  "//": [
+    "Biome v2.x — single-binary formatter + linter + import organiser for",
+    "JavaScript / TypeScript / JSX / JSON / CSS. Replaces the eslint +",
+    "prettier + import-sort stack. SolidJS-aware lints are enabled below.",
+    "Run with:  pnpm biome check src/   (or  pnpm exec biome check  if no",
+    "biome script in package.json yet).",
+    "See docs/contributor/linting.md for the full lint stack."
+  ],
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!**/dist/**",
+      "!**/target/**",
+      "!**/node_modules/**",
+      "!**/src-tauri/gen/**",
+      "!**/legacy/**",
+      "!**/*.min.*",
+      "!**/coverage/**",
+      "!**/playwright-report/**",
+      "!**/test-results/**"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "formatWithErrors": false,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUnusedVariables": "warn",
+        "noUnusedImports": "warn",
+        "useExhaustiveDependencies": "off"
+      },
+      "style": {
+        "useConst": "warn",
+        "useTemplate": "warn",
+        "noNonNullAssertion": "warn",
+        "noRestrictedImports": {
+          "level": "warn",
+          "options": {
+            "paths": {
+              "@tauri-apps/api": "Use the typed wrappers in src/ipc/ instead. Importing @tauri-apps/api directly bypasses the IPC contract layer.",
+              "@tauri-apps/api/core": "Use src/ipc/invoke.ts (or commands.ts) instead.",
+              "@tauri-apps/api/event": "Use src/ipc/channels.ts (or safeListen) instead."
+            }
+          }
+        }
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsole": {
+          "level": "warn",
+          "options": { "allow": ["warn", "error"] }
+        }
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 30 }
+        }
+      },
+      "performance": {
+        "noBarrelFile": "off"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "error"
+      },
+      "a11y": {
+        "recommended": true
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "es5",
+      "semicolons": "always",
+      "arrowParentheses": "always",
+      "bracketSameLine": false,
+      "bracketSpacing": true
+    },
+    "globals": ["__TAURI_IPC__", "__TAURI__"]
+  },
+  "json": {
+    "formatter": {
+      "enabled": true,
+      "indentWidth": 2,
+      "trailingCommas": "none"
+    },
+    "parser": {
+      "allowComments": true,
+      "allowTrailingCommas": false
+    }
+  },
+  "css": {
+    "formatter": {
+      "enabled": false,
+      "//": "Stylelint owns CSS — see .stylelintrc.json for Tailwind 4 + @theme support."
+    },
+    "linter": {
+      "enabled": false,
+      "//": "Same reason."
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "e2e/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -2,11 +2,10 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::info;
-use veilid_core::{
-    RoutingContext, VeilidAPI, VeilidConfig, VeilidUpdate,
-};
+use veilid_core::{RoutingContext, VeilidAPI, VeilidUpdate};
 
 use crate::error::ProtocolError;
+use crate::veilid_config::{build_veilid_config, VeilidStartupOptions};
 
 /// Configuration for starting a Rekindle node.
 #[derive(Debug, Clone)]
@@ -15,6 +14,11 @@ pub struct NodeConfig {
     pub storage_dir: String,
     /// Namespace for this application on the Veilid network.
     pub app_namespace: String,
+    /// Qualifier passed to `VeilidConfig::new()` (e.g. "rekindle" or "rekindle-server").
+    pub qualifier: String,
+    /// Veilid startup tuning (UPnP, DHT concurrency, route hops,
+    /// protected-store mode).
+    pub veilid: VeilidStartupOptions,
 }
 
 impl Default for NodeConfig {
@@ -22,6 +26,8 @@ impl Default for NodeConfig {
         Self {
             storage_dir: "~/.rekindle".into(),
             app_namespace: "rekindle".into(),
+            qualifier: "rekindle".into(),
+            veilid: VeilidStartupOptions::default(),
         }
     }
 }
@@ -55,13 +61,16 @@ impl RekindleNode {
             "starting rekindle node"
         );
 
-        // 1. Build VeilidConfig from our NodeConfig
-        let veilid_config = VeilidConfig::new(
-            &config.app_namespace,   // program_name
-            "com",                   // organization
-            "rekindle",              // qualifier
-            Some(&config.storage_dir), // storage_directory override
-            None,                    // config_directory (use default)
+        // 1. Build VeilidConfig via the shared builder — the single
+        // translation of tuning knobs into `VeilidConfig` for both
+        // node-startup tracks. Knob rationale (UPnP history, route-hop
+        // policy, ProtectedStore workaround) lives on
+        // `VeilidStartupOptions` and in `crate::veilid_config`.
+        let veilid_config = build_veilid_config(
+            &config.app_namespace,
+            &config.qualifier,
+            &config.storage_dir,
+            &config.veilid,
         );
 
         // 2. Create an mpsc channel for VeilidUpdate events
@@ -73,8 +82,7 @@ impl RekindleNode {
             // rather than blocking the Veilid core thread.
             if let Err(e) = update_tx.try_send(update) {
                 let dropped = match &e {
-                    mpsc::error::TrySendError::Full(u)
-                    | mpsc::error::TrySendError::Closed(u) => u,
+                    mpsc::error::TrySendError::Full(u) | mpsc::error::TrySendError::Closed(u) => u,
                 };
                 // During shutdown Veilid emits many "Other" events which are
                 // safe to drop — log those at debug, everything else at warn.
@@ -132,33 +140,30 @@ impl RekindleNode {
 
     /// Get a reference to the Veilid API handle.
     ///
-    /// Used by `RoutingManager` for private route allocation/import.
+    /// Used by `OwnRoutes` for private route allocation and by the importer.
     pub fn api(&self) -> &VeilidAPI {
         &self.api
     }
 
-    /// Get a reference to the routing context.
-    ///
-    /// Used by `DHTManager` for record CRUD operations.
+    /// Get a reference to the routing context (the record pool builds its
+    /// own from it, with the DHT safety selection).
     pub fn routing_context(&self) -> &RoutingContext {
         &self.routing_context
     }
 
     /// Take ownership of the `VeilidUpdate` event receiver.
     ///
-    /// The caller is expected to drive this in its own dispatch loop. This can
-    /// only be called once; subsequent calls will receive `None`.
-    pub fn take_update_receiver(&mut self) -> Option<mpsc::Receiver<VeilidUpdate>> {
-        // We use Option trickery via std::mem::take — once taken, the field is
-        // replaced with a dummy closed receiver.
+    /// The caller is expected to drive this in its own dispatch loop. The
+    /// receiver is replaced with a dummy closed channel on each call, so only
+    /// the first caller gets the real event stream.
+    pub fn take_update_receiver(&mut self) -> mpsc::Receiver<VeilidUpdate> {
         let (_, dummy_rx) = mpsc::channel(1);
-        let rx = std::mem::replace(&mut self.update_rx, dummy_rx);
-        Some(rx)
+        std::mem::replace(&mut self.update_rx, dummy_rx)
     }
 }
 
 /// Return a human-readable name for a `VeilidUpdate` variant (for logging).
-fn veilid_update_name(update: &VeilidUpdate) -> &'static str {
+pub fn veilid_update_name(update: &VeilidUpdate) -> &'static str {
     match update {
         VeilidUpdate::AppCall(_) => "AppCall",
         VeilidUpdate::AppMessage(_) => "AppMessage",

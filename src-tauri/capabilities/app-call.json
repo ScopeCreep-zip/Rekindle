@@ -1,0 +1,31 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-call",
+  "description": "App-command grants for `call-*` windows, the only place a connected 1:1 call's controls and media run: call snapshot, hangup, mute/deafen, voice mode, device pick, reactions, media state, and the DM video pipeline (capture capability reports, encoder status, frame send, decode-codec negotiation).",
+  "windows": [
+    "call-*"
+  ],
+  "permissions": [
+    "allow-get-preferences",
+    "allow-native-video-capture-available",
+    "allow-open-chat-window",
+    "allow-report-local-video-capabilities",
+    "allow-report-media-capture-error",
+    "allow-report-video-render-facts",
+    "allow-report-video-encoder-status",
+    "allow-send-call-reaction",
+    "allow-set-deafen",
+    "allow-set-mute",
+    "allow-get-active-call",
+    "allow-end-dm-call",
+    "allow-send-call-media-state",
+    "allow-set-audio-devices",
+    "allow-set-input-channels",
+    "allow-set-voice-mode",
+    "allow-open-call-window",
+    "allow-dm-peer-video-decode-codecs",
+    "allow-register-dm-video-channel",
+    "allow-unregister-dm-video-channel",
+    "allow-send-dm-video-frame"
+  ]
+}

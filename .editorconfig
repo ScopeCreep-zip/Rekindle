@@ -1,0 +1,31 @@
+# EditorConfig — https://editorconfig.org
+# Mirrors the formatter expectations in `cargo fmt`, `prettier`, and the
+# Konductor Nix dev shell.
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+max_line_length = 100
+
+[*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,html,css,scss,vue,svelte}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{toml,rs}]
+indent_size = 4
+
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = off
+
+[Makefile]
+indent_style = tab

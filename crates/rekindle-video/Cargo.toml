@@ -1,0 +1,33 @@
+[package]
+name = "rekindle-video"
+version = "0.1.0"
+edition = "2021"
+description = "Video & screen-share fragmentation/reassembly (architecture §10.6)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+hex = { workspace = true }
+parking_lot = { workspace = true }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+blake3 = "1"
+# Architecture §10.6 line 4080 — FEC data on VideoFragment so a small
+# number of dropped fragments doesn't force a keyframe re-request.
+reed-solomon-erasure = "6"
+
+[dev-dependencies]
+# Phase F — smoke-test harness needs an installed subscriber to confirm
+# `tracing::debug!(target: "rekindle_video::send", …)` events land on
+# stderr with the expected structured fields.
+tracing-subscriber = { workspace = true }
+# Tests install pushed sender keys (`ChannelSenderKeys::install` takes
+# a `Zeroizing` secret, plan C7.20).
+zeroize = "1"

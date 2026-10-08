@@ -1,0 +1,203 @@
+//! The 5-second window cadence: key-drop accounting and the quality /
+//! receiver-report pass.
+//!
+//! Split from the loop body because it is the only part that runs on a
+//! cadence rather than per packet, and because it is where the loop
+//! talks *back* — the RFC 3550 receiver reports that let each sender
+//! see what its stream looks like from here.
+//!
+//! ## On the report bandwidth
+//!
+//! RFC 3550 §6.2 caps control traffic at 5 % of session bandwidth and
+//! scales its interval with participant count to hold that. We use a
+//! fixed 5 s instead, and it fits: one ~150-byte report per peer per
+//! 5 s is 30 B/s against a 32 kbps (4 kB/s) per-peer audio stream —
+//! about 0.75 %. The N² shape is the mesh's, not the reports': the
+//! audio itself already goes to every peer, and above four
+//! participants the topology switches to an SFU. So the interval does
+//! not need to scale, and shortening it would be the change that
+//! needed justifying, not lengthening it.
+
+use std::time::{Duration, Instant};
+
+use super::VoiceReceiveLoop;
+
+/// The least time between two requests for one sender's key: its push is
+/// on the way or was lost, and one request per window recovers either.
+const KEY_REQUEST_INTERVAL: Duration = Duration::from_secs(10);
+use crate::receiver_report::VoiceReceiverReport;
+use crate::session_deps::VoiceSessionEvent;
+
+impl VoiceReceiveLoop {
+    /// Count a packet under a sender key we lack and (debounced per
+    /// sender, 10 s) ask that sender for it (plan C7.20). Drops are
+    /// surfaced in ReceiveStats — a security-relevant drop must never be
+    /// silent.
+    pub(super) fn note_missing_key(
+        &mut self,
+        community_id: &str,
+        channel_id: &str,
+        sender: &str,
+        index: u64,
+    ) {
+        self.key_drops += 1;
+        self.deps.record_packet_drop();
+        let due = self
+            .last_key_request
+            .get(sender)
+            .is_none_or(|t| t.elapsed() >= KEY_REQUEST_INTERVAL);
+        if due {
+            tracing::info!(community = %community_id, channel = %channel_id, sender, index,
+                "requesting a sender's media key");
+            self.deps
+                .request_media_key(community_id, channel_id, sender, index);
+            self.last_key_request
+                .insert(sender.to_string(), Instant::now());
+        }
+    }
+
+    pub(super) fn log_quality_if_due(&mut self) {
+        if self.last_quality_check.elapsed() < Duration::from_secs(5) {
+            return;
+        }
+        // Phase 5 — surface receive-side jitter drops (overflow trims +
+        // late arrivals) so Linux dropouts are attributable from the UI
+        // instead of trace-level logs.
+        let now_local_ms = self.local_ms();
+        let reporter_key = self.our_key_bytes.clone();
+        let signing_key = self.report_signing_key.clone();
+
+        let (mut overflow, mut late) = (0u64, 0u64);
+        let mut reports: Vec<(String, Vec<u8>)> = Vec::new();
+        for (peer_key, participant) in &mut self.participants {
+            let (o, l) = participant.jitter_buffer.take_drops();
+            // Late drops in this window mean the adaptive target was too
+            // low — grow it; a clean window advances toward the shrink
+            // gate. (Per-push EWMA handles fast jitter; this is the
+            // slow safety net + controlled shrink.)
+            participant.jitter_buffer.note_window_health(l);
+            overflow += o;
+            late += l;
+
+            // RFC 3550 receiver report — the return path voice never
+            // had. Without it a sender sees only its own successful
+            // `send()` calls and cannot tell a clean link from one
+            // dropping a fifth of its packets.
+            if let Some(sk) = signing_key.as_ref() {
+                let wire = VoiceReceiverReport::build_signed(
+                    sk,
+                    reporter_key.clone(),
+                    &participant.echo,
+                    participant.jitter_buffer.reception_metrics(),
+                    participant.jitter_buffer.target_delay_ms(),
+                    now_local_ms,
+                )
+                .and_then(|r| r.to_wire().ok());
+                if let Some(wire) = wire {
+                    reports.push((hex::encode(peer_key), wire));
+                }
+            }
+        }
+        // Sent outside the loop: `send_receiver_report` is the adapter's
+        // I/O port, and the participant map is mutably borrowed above.
+        //
+        // Logged at `info` because "no reports arrived" is ambiguous
+        // between the two ends — this line is how you tell a receiver
+        // that never sent from a sender that never received, which
+        // otherwise needs both machines' logs side by side to diagnose.
+        if !reports.is_empty() {
+            tracing::info!(
+                count = reports.len(),
+                participants = self.participants.len(),
+                "voice link: dispatching receiver reports"
+            );
+        } else if !self.participants.is_empty() && signing_key.is_none() {
+            tracing::warn!(
+                participants = self.participants.len(),
+                "voice link: no signing identity — sending no receiver reports, so our peers \
+                 cannot measure the stream we send them"
+            );
+        }
+        for (peer_hex, wire) in reports {
+            self.deps.send_receiver_report(&peer_hex, wire);
+        }
+        if overflow > 0 || late > 0 {
+            tracing::warn!(
+                rx_overflow_drops = overflow,
+                rx_late_drops = late,
+                "voice receive-side drops in the last 5s"
+            );
+        }
+        let key_drops = std::mem::take(&mut self.key_drops);
+        if key_drops > 0 {
+            tracing::warn!(
+                rx_key_drops = key_drops,
+                "voice packets dropped for MEK reasons in the last 5s"
+            );
+        }
+        self.deps.emit_voice_event(VoiceSessionEvent::ReceiveStats {
+            rx_overflow_drops: overflow,
+            rx_late_drops: late,
+            rx_key_drops: key_drops,
+        });
+        let max_delay_ms = self
+            .participants
+            .values()
+            .map(|p| p.jitter_buffer.playout_delay_ms())
+            .max()
+            .unwrap_or(0);
+        tracing::debug!(
+            participants = self.participants.len(),
+            self.packets_received,
+            max_delay_ms,
+            late_ticks = self.late_ticks,
+            decoded = self.playout.decoded,
+            decode_failures = self.playout.decode_failures,
+            mixed = self.playout.mixed,
+            deafened = self.playout.deafened,
+            handoff_failures = self.playout.handoff_failures,
+            mixed_peak = self.playout.peak,
+            playback_queue_ms = self
+                .playback_depth_ms
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "voice receive loop stats"
+        );
+        self.quality.log(false);
+        log_feedback_window(&self.feedback_stats.take_window());
+        self.playout = super::PlayoutCounters::default();
+        self.packets_received = 0;
+        self.late_ticks = 0;
+        self.last_quality_check = Instant::now();
+    }
+}
+
+/// One line per peer: the feedback we built and handed to it, how long
+/// each hand-off waited for the transport and took, and the feedback it
+/// sent us that was accepted (plan E4.3 T2 diagnostics).
+fn log_feedback_window(window: &crate::transport::feedback_stats::FeedbackWindow) {
+    for p in &window.peers {
+        tracing::info!(
+            target: "rekindle_media::feedback",
+            peer = %p.peer,
+            built = p.built,
+            handed = p.handed,
+            failed = p.failed,
+            lock_wait_p50_ms = p.lock_wait_ms.0,
+            lock_wait_p95_ms = p.lock_wait_ms.1,
+            lock_wait_max_ms = p.lock_wait_ms.2,
+            send_p50_ms = p.send_ms.0,
+            send_p95_ms = p.send_ms.1,
+            send_max_ms = p.send_ms.2,
+            accepted_from_peer = p.accepted,
+            "transport feedback window"
+        );
+    }
+    if window.unknown_peer > 0 || window.rejected > 0 {
+        tracing::info!(
+            target: "rekindle_media::feedback",
+            unknown_peer = window.unknown_peer,
+            rejected = window.rejected,
+            "transport feedback dropped on arrival"
+        );
+    }
+}

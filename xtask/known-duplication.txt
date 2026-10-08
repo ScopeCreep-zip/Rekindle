@@ -1,0 +1,10 @@
+# Accepted duplications — a burn-down, not an excuse.
+#
+# Every line is a real duplicate that CI would otherwise fail on.
+# No gate's severity was lowered to produce this file. A duplicate
+# NOT listed here fails the build. Shrink the list by fixing
+# duplicates, then run `cargo xtask baseline-duplication`.
+#
+# Prefer a written exception in xtask/src/duplication.rs (or
+# DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
+# deliberate and permanent — those carry a reason; this file does not.

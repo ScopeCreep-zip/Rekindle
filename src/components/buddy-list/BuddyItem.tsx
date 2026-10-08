@@ -1,8 +1,10 @@
 import { Component, Show } from "solid-js";
+import { formatDuration } from "../../utils/formatting";
 import StatusDot from "../status/StatusDot";
 import Tooltip from "../common/Tooltip";
 import type { UserStatus } from "../../stores/auth.store";
 import { ICON_VOLUME_HIGH } from "../../icons";
+import { formatRelativeTime } from "../../utils/time";
 
 interface BuddyItemProps {
   publicKey: string;
@@ -12,42 +14,14 @@ interface BuddyItemProps {
   statusMessage: string | null;
   gameInfo: string | null;
   gameElapsed: number | null;
+  serverAddress: string | null;
   lastSeenAt: number | null;
   unreadCount: number;
   voiceChannel: string | null;
   friendshipState?: string;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
-  onContextMenu: (e: MouseEvent, publicKey: string) => void;
-}
-
-function formatElapsed(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${mins}m`;
-  }
-  return `${mins}m`;
-}
-
-function formatRelativeTime(timestampMs: number): string {
-  const now = Date.now();
-  const diffMs = now - timestampMs;
-  const diffSec = Math.floor(diffMs / 1000);
-
-  if (diffSec < 60) return "just now";
-
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-
-  const diffMonths = Math.floor(diffDays / 30);
-  return `${diffMonths}mo ago`;
+  onSelect: (publicKey: string) => void;
 }
 
 const BuddyItem: Component<BuddyItemProps> = (props) => {
@@ -55,8 +29,8 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     props.onDoubleClick(props.publicKey, props.displayName);
   }
 
-  function handleCtxMenu(e: MouseEvent): void {
-    props.onContextMenu(e, props.publicKey);
+  function handleClick(): void {
+    props.onSelect(props.publicKey);
   }
 
   const isOffline = () => props.status === "offline";
@@ -68,10 +42,14 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
 
   const gameDisplay = () => {
     if (!props.gameInfo) return null;
-    if (props.gameElapsed && props.gameElapsed > 0) {
-      return `${props.gameInfo} (${formatElapsed(props.gameElapsed)})`;
+    let text = props.gameInfo;
+    if (props.serverAddress) {
+      text += ` on ${props.serverAddress}`;
     }
-    return props.gameInfo;
+    if (props.gameElapsed && props.gameElapsed > 0) {
+      text += ` (${formatDuration(props.gameElapsed)})`;
+    }
+    return text;
   };
 
   const tooltipText = () =>
@@ -80,8 +58,8 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
   return (
     <div
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
+      onClick={handleClick}
       onDblClick={handleDblClick}
-      onContextMenu={handleCtxMenu}
     >
       <Show when={(props.friendshipState ?? "accepted") !== "pendingOut"}>
         <StatusDot status={props.status} />
