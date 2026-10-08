@@ -70,6 +70,8 @@ pub struct VoiceReceiveParams {
     pub allocator: Arc<crate::transport::allocation::Allocator>,
     /// Render, post-FEC loss and lip-sync measurement (`MediaRoster::quality`).
     pub quality: Arc<crate::media_quality::MediaQuality>,
+    /// Transport feedback counts (`MediaRoster::feedback_stats`).
+    pub feedback_stats: Arc<crate::transport::feedback_stats::FeedbackStats>,
 }
 
 struct ParticipantDecoder {
@@ -131,6 +133,7 @@ struct VoiceReceiveLoop {
     allocator: Arc<crate::transport::allocation::Allocator>,
     /// Lip sync and video quality at this receiver (plan E4.3 Q0).
     quality: Arc<crate::media_quality::MediaQuality>,
+    feedback_stats: Arc<crate::transport::feedback_stats::FeedbackStats>,
     /// Opus frame length, ms: the audio stamp is taken when a frame is
     /// sent, a frame after its first sample was captured.
     frame_ms: u64,
@@ -214,6 +217,7 @@ impl VoiceReceiveLoop {
             feedback_sent: std::collections::HashMap::new(),
             allocator: params.allocator,
             quality: params.quality,
+            feedback_stats: params.feedback_stats,
             frame_ms: u64::try_from(frame_size).unwrap_or(960) * 1_000 / u64::from(sample_rate),
             origin: Instant::now(),
         })

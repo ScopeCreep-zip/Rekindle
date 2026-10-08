@@ -145,21 +145,6 @@ pub struct MediaShare {
     pub video_share: Option<f64>,
 }
 
-/// A route's state, for the log line.
-#[derive(Debug, Clone, Copy)]
-pub struct RouteStats {
-    pub estimate_bps: u64,
-    pub overusing: bool,
-    pub video_queue_ms: u64,
-    pub dropped_video: u64,
-    pub sent: u64,
-    /// Since the last stats: feedback reports applied, and the datagrams
-    /// they reported received and lost (what the loss controller sees).
-    pub feedback_reports: u64,
-    pub reported_received: u64,
-    pub reported_lost: u64,
-}
-
 /// The bandwidth owner of one peer route.
 pub struct RouteController {
     bwe: Bwe,
@@ -496,25 +481,6 @@ impl RouteController {
         }
     }
 
-    /// For the periodic log line.
-    pub fn stats(&mut self, now: Instant) -> RouteStats {
-        let first = self.video.snapshot(now).first_unsent;
-        let (feedback_reports, reported_received, reported_lost) =
-            std::mem::take(&mut self.window_feedback);
-        RouteStats {
-            feedback_reports,
-            reported_received,
-            reported_lost,
-            estimate_bps: self.estimate().as_u64(),
-            overusing: self.bwe.is_overusing(),
-            video_queue_ms: first.map_or(0, |t| {
-                u64::try_from(now.saturating_duration_since(t).as_millis()).unwrap_or(u64::MAX)
-            }),
-            dropped_video: self.dropped_video,
-            sent: self.next_seq,
-        }
-    }
-
     fn configure_pacer(&mut self, now: Instant) {
         let Some(estimate) = self.bwe.last_estimate() else {
             // No estimate yet, no padding (str0m).
@@ -589,5 +555,7 @@ impl RouteController {
 }
 
 mod share;
+mod stats;
+pub use stats::RouteStats;
 #[cfg(test)]
 mod tests;

@@ -174,12 +174,19 @@ fn handle_media_envelope(
 
 /// Transport feedback about our outbound stream to one peer: verified,
 /// then matched against that route's send history (plan E4.3.2).
+fn note_feedback_rejected(state: &Arc<AppState>) {
+    if let Some(media) = crate::state_helpers::voice_media(state) {
+        media.feedback_stats().note_rejected();
+    }
+}
+
 fn handle_transport_feedback(state: &Arc<AppState>, data: &[u8], arrived: std::time::Instant) {
     let feedback =
         match rekindle_codec::capnp_codec::transport_feedback::TransportFeedback::decode(data) {
             Ok(f) => f,
             Err(e) => {
                 tracing::debug!(error = %e, "transport feedback did not decode — dropping");
+                note_feedback_rejected(state);
                 return;
             }
         };
@@ -187,6 +194,7 @@ fn handle_transport_feedback(state: &Arc<AppState>, data: &[u8], arrived: std::t
         // Feedback steers our send rate: an unauthenticated report is a
         // rate lever for anyone holding our route.
         tracing::info!(error = %e, "transport feedback rejected (signature)");
+        note_feedback_rejected(state);
         return;
     }
     crate::services::voice_adapter::media_feedback::on_transport_feedback(

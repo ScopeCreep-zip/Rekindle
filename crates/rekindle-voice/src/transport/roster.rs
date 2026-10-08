@@ -32,6 +32,8 @@ pub struct MediaRoster {
     arrivals: Arc<ArrivalLedger>,
     /// What the call looks and sounds like here (plan E4.3 Q0).
     quality: Arc<MediaQuality>,
+    /// Transport feedback counts on both ends (plan E4.3 T2 diagnostics).
+    feedback: Arc<super::feedback_stats::FeedbackStats>,
     padding_key: PaddingKey,
 }
 
@@ -40,6 +42,12 @@ impl MediaRoster {
     #[must_use]
     pub fn arrivals(&self) -> &Arc<ArrivalLedger> {
         &self.arrivals
+    }
+
+    /// Transport feedback counts on both ends of each route.
+    #[must_use]
+    pub fn feedback_stats(&self) -> &Arc<super::feedback_stats::FeedbackStats> {
+        &self.feedback
     }
 
     /// Render, post-FEC loss and lip-sync measurement (plan E4.3 Q0).

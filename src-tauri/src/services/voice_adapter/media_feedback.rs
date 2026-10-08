@@ -24,10 +24,12 @@ pub(crate) fn on_transport_feedback(
     };
     let reporter = hex::encode(&feedback.reporter_key);
     let Some(split) = media.on_transport_feedback(&reporter, feedback) else {
+        media.feedback_stats().note_unknown_peer();
         tracing::debug!(peer = %reporter,
             "transport feedback from a peer not on our roster — dropped");
         return;
     };
+    media.feedback_stats().note_accepted(&reporter);
     // A roster peer reporting on our media is alive even when silent.
     crate::state_helpers::note_media_live(state, &reporter);
     tracing::debug!(

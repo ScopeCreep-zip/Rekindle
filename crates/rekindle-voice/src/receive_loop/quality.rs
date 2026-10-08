@@ -163,9 +163,41 @@ impl VoiceReceiveLoop {
             "voice receive loop stats"
         );
         self.quality.log(false);
+        log_feedback_window(&self.feedback_stats.take_window());
         self.playout = super::PlayoutCounters::default();
         self.packets_received = 0;
         self.late_ticks = 0;
         self.last_quality_check = Instant::now();
+    }
+}
+
+/// One line per peer: the feedback we built and handed to it, how long
+/// each hand-off waited for the transport and took, and the feedback it
+/// sent us that was accepted (plan E4.3 T2 diagnostics).
+fn log_feedback_window(window: &crate::transport::feedback_stats::FeedbackWindow) {
+    for p in &window.peers {
+        tracing::info!(
+            target: "rekindle_media::feedback",
+            peer = %p.peer,
+            built = p.built,
+            handed = p.handed,
+            failed = p.failed,
+            lock_wait_p50_ms = p.lock_wait_ms.0,
+            lock_wait_p95_ms = p.lock_wait_ms.1,
+            lock_wait_max_ms = p.lock_wait_ms.2,
+            send_p50_ms = p.send_ms.0,
+            send_p95_ms = p.send_ms.1,
+            send_max_ms = p.send_ms.2,
+            accepted_from_peer = p.accepted,
+            "transport feedback window"
+        );
+    }
+    if window.unknown_peer > 0 || window.rejected > 0 {
+        tracing::info!(
+            target: "rekindle_media::feedback",
+            unknown_peer = window.unknown_peer,
+            rejected = window.rejected,
+            "transport feedback dropped on arrival"
+        );
     }
 }

@@ -24,10 +24,13 @@ use crate::{Bitrate, DataSize, TwccClusterId, TwccSendRecord, TwccSeq};
 mod acked_bitrate_estimator;
 mod alr_detector;
 mod delay;
+mod diagnostics;
+pub use diagnostics::BweDiagnostics;
 mod link_capacity_estimator;
 mod loss_controller;
 mod macros;
 mod probe;
+mod probe_floor;
 mod rtt_backoff;
 mod smoother;
 mod time;
@@ -154,37 +157,10 @@ struct SendSideBandwidthEstimator {
     link_capacity_estimator: LinkCapacityEstimator,
     last_updated_estimate: Option<Bitrate>,
     rtt_backoff: rtt_backoff::RttBackoff,
-}
-
-/// The report's propagation RTT: each packet's feedback RTT less the time it
-/// waited at the receiver for the report, the smallest of them
-/// (libwebrtc `goog_cc_network_control.cc` `min_propagation_rtt`).
-fn min_propagation_rtt(acked: &[AckedPacket]) -> Option<Duration> {
-    let max_recv = acked.iter().map(|p| p.remote_recv_time).max()?;
-    acked
-        .iter()
-        .map(|p| {
-            p.rtt()
-                .saturating_sub(max_recv.saturating_duration_since(p.remote_recv_time))
-        })
-        .min()
-}
-
-/// How far below the acknowledged rate a probe may pull the estimate:
-/// "slightly below", to drain a queue we are actually overusing into
-/// (libwebrtc `goog_cc_network_control.cc` `kProbeDropThroughputFraction`).
-const PROBE_DROP_THROUGHPUT_FRACTION: f64 = 0.85;
-
-/// libwebrtc's probe limit (`goog_cc_network_control.cc`,
-/// `limit_probes_lower_than_throughput_estimate_`, on by default): a probe
-/// result is raised to at least min(last delay estimate, 0.85 × acked), so
-/// a probe that measured a stall cannot drop the estimate below what is
-/// being delivered, and one below the current estimate never raises it.
-fn floor_probe(probe: Bitrate, last_estimate: Option<Bitrate>, acked: Option<Bitrate>) -> Bitrate {
-    match (last_estimate, acked) {
-        (Some(last), Some(acked)) => probe.max(last.min(acked * PROBE_DROP_THROUGHPUT_FRACTION)),
-        _ => probe,
-    }
+    /// Cuts made by the RTT backoff, for diagnostics.
+    backoff_cuts: u64,
+    /// Probe results applied, for diagnostics.
+    probes_applied: u64,
 }
 
 impl SendSideBandwidthEstimator {
@@ -209,6 +185,8 @@ impl SendSideBandwidthEstimator {
             link_capacity_estimator: LinkCapacityEstimator::new(),
             last_updated_estimate: None,
             rtt_backoff: rtt_backoff::RttBackoff::default(),
+            backoff_cuts: 0,
+            probes_applied: 0,
         }
     }
 
@@ -263,7 +241,7 @@ impl SendSideBandwidthEstimator {
             max_rtt = max_rtt.max(record.rtt());
         }
         acked_packets.sort_by(AckedPacket::order_by_receive_time);
-        if let Some(rtt) = min_propagation_rtt(&acked_packets) {
+        if let Some(rtt) = rtt_backoff::min_propagation_rtt(&acked_packets) {
             self.rtt_backoff.update_propagation_rtt(now, rtt);
         }
 
@@ -276,10 +254,14 @@ impl SendSideBandwidthEstimator {
 
         // The latest probe result from this update, if any, floored at what
         // is being delivered (libwebrtc `kProbeDropThroughputFraction`).
-        let probe_result = latest_probe_result
-            .map(|probe| floor_probe(probe, self.delay_controller.last_estimate(), acked_bitrate));
+        let probe_result = latest_probe_result.map(|probe| {
+            probe_floor::floor_probe(probe, self.delay_controller.last_estimate(), acked_bitrate)
+        });
 
         let is_probe_result = probe_result.is_some();
+        if is_probe_result {
+            self.probes_applied += 1;
+        }
 
         // Update delay controller with the latest probe result
         let maybe_estimate =
@@ -380,6 +362,7 @@ impl SendSideBandwidthEstimator {
         // `RttBasedBackoff`).
         if let Some(current) = self.last_estimate() {
             if let Some(cut) = self.rtt_backoff.backoff(now, current) {
+                self.backoff_cuts += 1;
                 self.delay_controller.set_estimate(cut, now);
                 self.loss_controller.set_bandwidth_estimate(cut);
             }
@@ -551,42 +534,5 @@ impl fmt::Display for BandwidthUsage {
             BandwidthUsage::Normal => write!(f, "normal"),
             BandwidthUsage::Underuse => write!(f, "underuse"),
         }
-    }
-}
-
-#[cfg(test)]
-mod probe_floor_tests {
-    use super::*;
-
-    #[test]
-    fn a_stalled_probe_cannot_drop_below_delivery() {
-        // Call 1 on Mac: a probe read ~0.4 Mbps of burst while ~0.9 Mbps
-        // was acknowledged and the estimate stood at 1 Mbps.
-        let floored = floor_probe(
-            Bitrate::kbps(400),
-            Some(Bitrate::kbps(1_000)),
-            Some(Bitrate::kbps(900)),
-        );
-        assert_eq!(floored, Bitrate::kbps(765), "0.85 × acked");
-    }
-
-    #[test]
-    fn a_low_probe_never_raises_the_estimate() {
-        let floored = floor_probe(
-            Bitrate::kbps(300),
-            Some(Bitrate::kbps(500)),
-            Some(Bitrate::kbps(900)),
-        );
-        assert_eq!(floored, Bitrate::kbps(500), "capped at the last estimate");
-    }
-
-    #[test]
-    fn a_high_probe_passes() {
-        let floored = floor_probe(
-            Bitrate::kbps(2_000),
-            Some(Bitrate::kbps(500)),
-            Some(Bitrate::kbps(400)),
-        );
-        assert_eq!(floored, Bitrate::kbps(2_000));
     }
 }

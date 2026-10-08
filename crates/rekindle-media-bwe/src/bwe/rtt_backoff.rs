@@ -15,6 +15,7 @@
 
 use std::time::{Duration, Instant};
 
+use super::AckedPacket;
 use crate::Bitrate;
 
 /// libwebrtc `configured_limit_` (`WebRTC-Bwe-MaxRttLimit` "limit").
@@ -76,6 +77,20 @@ impl RttBackoff {
         self.time_last_decrease = Some(now);
         Some((current * DROP_FRACTION).max(BANDWIDTH_FLOOR))
     }
+}
+
+/// The report's propagation RTT: each packet's feedback RTT less the time it
+/// waited at the receiver for the report, the smallest of them
+/// (libwebrtc `goog_cc_network_control.cc` `min_propagation_rtt`).
+pub(super) fn min_propagation_rtt(acked: &[AckedPacket]) -> Option<Duration> {
+    let max_recv = acked.iter().map(|p| p.remote_recv_time).max()?;
+    acked
+        .iter()
+        .map(|p| {
+            p.rtt()
+                .saturating_sub(max_recv.saturating_duration_since(p.remote_recv_time))
+        })
+        .min()
 }
 
 #[cfg(test)]

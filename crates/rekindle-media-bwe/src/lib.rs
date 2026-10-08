@@ -77,7 +77,7 @@ mod twcc;
 mod util;
 
 pub use bandwidth::{Bitrate, DataSize};
-pub use bwe::{Bwe, ProbeClusterConfig, ProbeKind};
+pub use bwe::{Bwe, BweDiagnostics, ProbeClusterConfig, ProbeKind};
 pub use pacer::{
     LeakyBucketPacer, NullPacer, Pacer, PacerControl, PacerImpl, PacerReason, PacingResult,
     PaddingRequest, QueueId, QueuePriority, QueueSnapshot, QueueState, SendQueue,

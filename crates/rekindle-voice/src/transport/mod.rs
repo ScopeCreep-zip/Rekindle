@@ -9,6 +9,7 @@ use rekindle_codec::capnp_codec::SignedWire;
 
 pub mod allocation;
 pub mod egress;
+pub mod feedback_stats;
 pub mod link;
 mod packet;
 pub mod roster;

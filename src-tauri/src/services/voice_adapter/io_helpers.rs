@@ -142,8 +142,17 @@ pub(super) fn send_receiver_report_impl(
     crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
         "voice receiver report",
         async move {
+            let is_feedback = wire.first() == Some(&rekindle_voice::media_frame::FEEDBACK_TAG);
+            let queued = std::time::Instant::now();
             let guard = transport.lock().await;
-            if let Err(e) = guard.send_bytes_to_peer(&peer, wire).await {
+            let lock_wait = queued.elapsed();
+            let stats = Arc::clone(guard.media().feedback_stats());
+            let sending = std::time::Instant::now();
+            let result = guard.send_bytes_to_peer(&peer, wire).await;
+            if is_feedback {
+                stats.note_handed(&peer, lock_wait, sending.elapsed(), result.is_ok());
+            }
+            if let Err(e) = result {
                 // Debug, not warn: a peer whose route is not yet resolved
                 // is ordinary early in a call, and a lost report costs the
                 // sender one 5 s window of blindness, not the call.

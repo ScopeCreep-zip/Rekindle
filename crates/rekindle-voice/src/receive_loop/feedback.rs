@@ -62,6 +62,7 @@ impl VoiceReceiveLoop {
             let Some(body) = self.arrivals.take_report(&peer, now) else {
                 continue;
             };
+            self.feedback_stats.note_built(&peer);
             let mut feedback = TransportFeedback {
                 reporter_key: self.our_key_bytes.clone(),
                 begin_seq: body.begin_seq,
