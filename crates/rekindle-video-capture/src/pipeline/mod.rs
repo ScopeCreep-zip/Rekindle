@@ -52,13 +52,16 @@ pub struct CaptureConfig {
     pub keyframe_max_dist: u32,
 }
 
-/// One encoded VP9 chunk for the peer egress branch. Wire timestamps
-/// are stamped by the consumer (the native pump uses wall-clock ms) —
-/// pipeline running time stays internal.
+/// One encoded VP9 chunk for the peer egress branch.
 #[derive(Debug)]
 pub struct EncodedFrame {
     pub payload: Vec<u8>,
     pub keyframe: bool,
+    /// When the camera captured the frame, on the wall clock (Unix ms):
+    /// the buffer's running time, as the live source stamped it, carried
+    /// back from the sink's current running time. Receivers measure lip
+    /// sync against the audio's wall-clock capture stamps.
+    pub capture_wall_ms: u64,
 }
 
 /// One JPEG still from the preview branch — the LOCAL self-view. Small

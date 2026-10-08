@@ -98,6 +98,7 @@
     "allow-report-local-video-capabilities",
     "allow-report-media-capture-error",
     "allow-report-video-decoder-status",
+    "allow-report-video-render-facts",
     "allow-report-video-encoder-status",
     "allow-request-to-speak",
     "allow-respond-to-speak-request",

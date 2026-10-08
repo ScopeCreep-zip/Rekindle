@@ -35,6 +35,7 @@ pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
 pub mod media_crypto; // RFC 9605 SFrame sealing/opening of voice frames.
 pub mod media_frame; // Media datagram framing: tag + per-route transport_seq (plan E4.3.1).
+pub mod media_quality; // Render, post-FEC loss and lip sync at this receiver (plan E4.3 Q0).
 pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
 pub mod playback;

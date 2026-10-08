@@ -76,7 +76,22 @@ export interface RemoteStream {
    *  fresh decoder a delta is itself a fatal error, so the pump skips
    *  deltas while this is set. */
   awaitKeyframe: boolean;
+  /** Frames painted since the last render report (plan E4.3 Q0): the
+   *  backend measures freezes, pauses and lip sync from them. */
+  renderFacts: RenderedFrame[];
+  /** performance.now() of the last render report. */
+  lastRenderReportAt: number;
 }
+
+/** One painted frame: its wire timestamp (sender capture wall clock, ms
+ *  mod 2^32) and the local wall-clock ms it was painted at. */
+export interface RenderedFrame {
+  timestamp: number;
+  renderedAtMs: number;
+}
+
+/** How often render facts go to the backend, ms. */
+export const RENDER_REPORT_INTERVAL_MS = 1000;
 
 // Declared once in utils/base64 — the voice recorder needs the same
 // encoder. Re-exported so this module's existing importers are unchanged.

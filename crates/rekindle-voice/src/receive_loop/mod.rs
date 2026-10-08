@@ -68,6 +68,8 @@ pub struct VoiceReceiveParams {
     pub arrivals: Arc<crate::arrivals::ArrivalLedger>,
     /// The session's allocator (`VoiceTransport::allocator`).
     pub allocator: Arc<crate::transport::allocation::Allocator>,
+    /// Render, post-FEC loss and lip-sync measurement (`MediaRoster::quality`).
+    pub quality: Arc<crate::media_quality::MediaQuality>,
 }
 
 struct ParticipantDecoder {
@@ -127,6 +129,11 @@ struct VoiceReceiveLoop {
     feedback_sent: std::collections::HashMap<String, (Option<Instant>, usize)>,
     /// Our send estimate toward each peer paces its feedback.
     allocator: Arc<crate::transport::allocation::Allocator>,
+    /// Lip sync and video quality at this receiver (plan E4.3 Q0).
+    quality: Arc<crate::media_quality::MediaQuality>,
+    /// Opus frame length, ms: the audio stamp is taken when a frame is
+    /// sent, a frame after its first sample was captured.
+    frame_ms: u64,
     last_quality_check: Instant,
     /// Packets dropped this stats window because they could not be
     /// opened (no key from their sender yet, wrong sender, or rejected).
@@ -206,6 +213,8 @@ impl VoiceReceiveLoop {
             arrivals: params.arrivals,
             feedback_sent: std::collections::HashMap::new(),
             allocator: params.allocator,
+            quality: params.quality,
+            frame_ms: u64::try_from(frame_size).unwrap_or(960) * 1_000 / u64::from(sample_rate),
             origin: Instant::now(),
         })
     }
@@ -253,6 +262,7 @@ impl VoiceReceiveLoop {
         }
 
         self.emit_departures();
+        self.quality.log(true);
         tracing::info!("voice receive loop exited");
     }
 
@@ -412,9 +422,23 @@ impl VoiceReceiveLoop {
             }
         };
 
+        // When a frame popped now reaches the speaker: after the playback
+        // ring's depth.
+        let played_wall_ms = rekindle_utils::timestamp_ms().saturating_add(u64::from(
+            self.playback_depth_ms
+                .load(std::sync::atomic::Ordering::Relaxed),
+        ));
+        let (quality, frame_ms) = (&self.quality, self.frame_ms);
         for (key, participant) in &mut self.participants {
             let decoded = match participant.jitter_buffer.pop(now_ms) {
-                Some(packet) => decode_packet(participant, packet),
+                Some(packet) => {
+                    quality.note_audio_playout(
+                        &hex::encode(key),
+                        played_wall_ms,
+                        packet.timestamp.saturating_sub(frame_ms),
+                    );
+                    decode_packet(participant, packet)
+                }
                 None => {
                     if participant.last_packet_time.elapsed() < Duration::from_secs(2) {
                         // Expected packet missing. Once the gap outlives the

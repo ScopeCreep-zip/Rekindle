@@ -19,6 +19,8 @@ pub struct MockCalls {
     pub lamport_calls: u64,
     /// `(community_id, channel_id, sender, index)` per key request.
     pub key_requests: Vec<(String, String, String, u64)>,
+    /// `note_frame_completed` calls: (stream, frame_seq, recovered_via_fec).
+    pub completed_frames: Vec<([u8; 16], u32, bool)>,
 }
 
 pub struct MockDeps {
@@ -102,6 +104,19 @@ impl VideoDeps for MockDeps {
 
     fn emit_event(&self, event: VideoEvent) {
         self.calls.lock().events.push(event);
+    }
+
+    fn note_frame_completed(
+        &self,
+        stream_id: [u8; 16],
+        _sender: &str,
+        frame_seq: u32,
+        recovered_via_fec: bool,
+    ) {
+        self.calls
+            .lock()
+            .completed_frames
+            .push((stream_id, frame_seq, recovered_via_fec));
     }
 }
 

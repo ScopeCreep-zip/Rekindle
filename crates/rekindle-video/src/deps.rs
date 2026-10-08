@@ -133,6 +133,17 @@ pub trait VideoDeps: Send + Sync + 'static {
 
     /// Emit a UI-facing event from a receive-side handler.
     fn emit_event(&self, event: VideoEvent);
+
+    /// Reassembly completed frame `frame_seq` of `stream_id` from `sender`
+    /// (pseudonym hex), with parity if `recovered_via_fec`: the post-FEC
+    /// loss measurement (plan E4.3 Q0).
+    fn note_frame_completed(
+        &self,
+        stream_id: [u8; 16],
+        sender: &str,
+        frame_seq: u32,
+        recovered_via_fec: bool,
+    );
 }
 
 #[cfg(test)]

@@ -176,6 +176,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::unregister_native_preview_channel,
         commands::community::report_local_video_capabilities,
         commands::community::report_video_decoder_status,
+        commands::community::report_video_render_facts,
         commands::community::report_media_capture_error,
         commands::community::report_video_encoder_status,
         commands::community::delete_emoji,

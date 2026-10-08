@@ -212,6 +212,13 @@ export const syncCommands = {
       ok,
       detail: detail ?? null,
     }),
+  /** Frames the webview painted for one remote stream (plan E4.3 Q0):
+   *  the backend measures freezes, pauses and lip sync from them. */
+  reportVideoRenderFacts: (
+    streamId: string,
+    sender: string,
+    frames: { timestamp: number; renderedAtMs: number }[],
+  ) => invoke<void>("report_video_render_facts", { streamId, sender, frames }),
   reportVideoDecoderStatus: (
     communityId: string,
     senderPseudonym: string,

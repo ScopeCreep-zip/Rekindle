@@ -45,10 +45,14 @@
 
 pub mod quality;
 mod reception;
+pub mod render;
 pub mod route;
+pub mod sync;
 
 pub use quality::{mos_from_r, r_factor, score, LinkState, LinkTracker, QualityScore};
 pub use reception::{ReceptionMetrics, ReceptionTracker, DEFAULT_GMIN, DELAY_WINDOW_PACKETS};
+pub use render::{ReceiveCounters, RenderSummary, RenderTracker};
 pub use route::{
     route_estimate, RouteEstimate, RouteHistory, RouteSummary, G114_LIMIT_MS, IN_PROCESS_DELAY_MS,
 };
+pub use sync::{SyncSummary, SyncTracker};

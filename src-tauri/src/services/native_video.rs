@@ -427,13 +427,14 @@ pub async fn start(
                             break;
                         };
                         frame_seq = frame_seq.wrapping_add(1);
-                        // Wire timestamp = unix ms (u32-wrapped, same
-                        // modulus as the receive path's now_ms) — only
-                        // DIFFERENCES matter to receivers' jitter math.
-                        let wire_ts = u32::try_from(
-                            rekindle_utils::timestamp_ms() % u64::from(u32::MAX),
-                        )
-                        .unwrap_or(0);
+                        // Wire timestamp = capture time on the wall clock, ms mod
+                        // 2^32 (the field is u32), as the webview sender
+                        // stamps it: receivers difference it for jitter and
+                        // compare it with the audio's capture stamps for
+                        // lip sync.
+                        let wire_ts =
+                            u32::try_from(frame.capture_wall_ms & u64::from(u32::MAX))
+                                .unwrap_or(0);
                         // Egress to PEERS only — gate + MEK + fragment +
                         // pacer. No loopback: the local self-view is a
                         // direct getUserMedia preview in the webview

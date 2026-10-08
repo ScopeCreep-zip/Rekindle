@@ -162,6 +162,7 @@ impl VoiceReceiveLoop {
                 .load(std::sync::atomic::Ordering::Relaxed),
             "voice receive loop stats"
         );
+        self.quality.log(false);
         self.playout = super::PlayoutCounters::default();
         self.packets_received = 0;
         self.late_ticks = 0;

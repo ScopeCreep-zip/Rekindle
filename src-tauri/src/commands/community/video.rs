@@ -286,6 +286,42 @@ pub async fn report_media_capture_error(stage: String, message: String) -> Resul
     Ok(())
 }
 
+/// One frame the webview rendered: its wire timestamp (sender capture wall
+/// clock, ms mod 2^32) and when it was painted (local wall clock, ms).
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderedFrame {
+    pub timestamp: u32,
+    pub rendered_at_ms: u64,
+}
+
+/// Frames one report may carry: a second of 30 fps with room to spare.
+const MAX_RENDER_FACTS: usize = 256;
+
+/// Facts from the webview's renderer for one remote video stream (plan
+/// E4.3 Q0, WS5.8: the frontend reports facts, the backend measures). The
+/// render times feed freeze and pause detection; against the sender's
+/// capture stamps they give the video side of lip sync. `sender` is the
+/// pseudonym (channel) or identity key (DM), as the stream's frames carry.
+#[tauri::command]
+pub async fn report_video_render_facts(
+    stream_id: String,
+    sender: String,
+    frames: Vec<RenderedFrame>,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let Some(media) = crate::state_helpers::voice_media(state.inner()) else {
+        return Ok(());
+    };
+    let quality = media.quality();
+    for frame in frames.iter().take(MAX_RENDER_FACTS) {
+        let captured =
+            rekindle_voice::media_quality::unwrap_wall_ms(frame.timestamp, frame.rendered_at_ms);
+        quality.note_video_rendered(&stream_id, &sender, frame.rendered_at_ms, captured);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn report_video_decoder_status(
     community_id: String,

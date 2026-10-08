@@ -9,6 +9,7 @@ import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
   DEBUG_VIDEO_LATENCY,
   KEYFRAME_REQUEST_MIN_INTERVAL_MS,
+  RENDER_REPORT_INTERVAL_MS,
   type RemoteStream,
   decodeBase64ToBytes,
   wireCodecToWebCodecsString,
@@ -85,6 +86,10 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
           if (t0 !== undefined) target.lastDecodeMs = performance.now() - t0;
         }
         target.ctx.drawImage(frame, 0, 0, target.canvas.width, target.canvas.height);
+        target.renderFacts.push({
+          timestamp: frame.timestamp,
+          renderedAtMs: Math.round(performance.timeOrigin + performance.now()),
+        });
         frame.close();
       },
       error: (e: Error) => {
@@ -255,6 +260,8 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
         lastDebugAt: 0,
         lastDecoderRebuildAt: 0,
         awaitKeyframe: false,
+        renderFacts: [],
+        lastRenderReportAt: performance.now(),
       };
       installDecoder(remote, webCodecsString, decoderOptimizeForLatency);
       ctx.setRemotes((prev) => [...prev, remote!]);
@@ -309,6 +316,14 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
         }
       }
       if (requestKeyframe) requestKeyframeFor(r.streamId);
+      if (now - r.lastRenderReportAt >= RENDER_REPORT_INTERVAL_MS) {
+        r.lastRenderReportAt = now;
+        if (r.renderFacts.length > 0) {
+          const frames = r.renderFacts;
+          r.renderFacts = [];
+          void commands.reportVideoRenderFacts(r.streamId, r.senderPseudonym, frames);
+        }
+      }
       if (DEBUG_VIDEO_LATENCY && now - r.lastDebugAt >= 1000) {
         r.lastDebugAt = now;
         const s = r.buffer.debugStats();

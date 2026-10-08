@@ -91,6 +91,11 @@ fn valid_fragment_signature_reaches_frame_ready() {
             .any(|e| matches!(e, VideoEvent::FrameReady { .. })),
         "signed + decryptable single-fragment frame must emit FrameReady"
     );
+    assert_eq!(
+        calls.completed_frames.len(),
+        1,
+        "a reassembled frame is counted for post-FEC loss"
+    );
 }
 
 #[test]

@@ -319,6 +319,7 @@ pub(super) fn spawn_voice_loops_impl(
         .map(|c| (c, voice_channel_id.clone()));
     let recv_allocator = Arc::clone(media.allocator());
     let recv_arrivals = Arc::clone(media.arrivals());
+    let recv_quality = Arc::clone(media.quality());
 
     // Build a per-loop adapter Arc for the crate-side loop deps.
     let adapter_for_send: Arc<dyn VoiceSessionDeps> =
@@ -412,6 +413,7 @@ pub(super) fn spawn_voice_loops_impl(
         playback_depth_ms,
         arrivals: recv_arrivals,
         allocator: recv_allocator,
+        quality: recv_quality,
     };
     loops
         .spawn_with_token("voice receive loop", |stop| {

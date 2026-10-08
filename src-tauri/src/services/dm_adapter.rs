@@ -308,6 +308,16 @@ impl DmDeps for DmAdapter {
                 timestamp,
                 data,
             } => {
+                // DM video carries no parity: a completed frame is never
+                // FEC-recovered (plan E4.3 Q0 post-FEC loss).
+                if let Some(media) = crate::state_helpers::voice_media(&self.state) {
+                    media.quality().note_frame_completed(
+                        &hex::encode(stream_id),
+                        &sender_public_key_hex,
+                        frame_seq,
+                        false,
+                    );
+                }
                 use base64::Engine as _;
                 // Phase 11 Tier 1 — high-throughput frames bypass the
                 // event bus and go to the per-peer `ipc::Channel` the DM

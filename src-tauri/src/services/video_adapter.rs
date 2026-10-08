@@ -184,6 +184,23 @@ impl VideoDeps for VideoAdapter {
             crate::event_dispatch::emit_community(&self.app_handle, mapped);
         }
     }
+
+    fn note_frame_completed(
+        &self,
+        stream_id: [u8; 16],
+        sender: &str,
+        frame_seq: u32,
+        recovered_via_fec: bool,
+    ) {
+        if let Some(media) = crate::state_helpers::voice_media(&self.state) {
+            media.quality().note_frame_completed(
+                &hex::encode(stream_id),
+                sender,
+                frame_seq,
+                recovered_via_fec,
+            );
+        }
+    }
 }
 
 /// Translate a `VideoEvent` into the frontend payload, or `None` when

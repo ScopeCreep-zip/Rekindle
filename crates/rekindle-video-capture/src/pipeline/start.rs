@@ -213,6 +213,7 @@ impl NativeCaptureSession {
                         return Ok(gst::FlowSuccess::Ok);
                     };
                     let keyframe = !buffer.flags().contains(gst::BufferFlags::DELTA_UNIT);
+                    let capture_wall_ms = capture_wall_ms(sink, buffer);
                     let Ok(map) = buffer.map_readable() else {
                         return Ok(gst::FlowSuccess::Ok);
                     };
@@ -225,6 +226,7 @@ impl NativeCaptureSession {
                     let _ = frame_tx.try_send(EncodedFrame {
                         payload: map.as_slice().to_vec(),
                         keyframe,
+                        capture_wall_ms,
                     });
                     Ok(gst::FlowSuccess::Ok)
                 })
@@ -421,4 +423,18 @@ pub(super) fn guard_frame_geometry(src_caps: &gst::Element) {
         }
         gst::PadProbeReturn::Drop
     });
+}
+
+/// The wall-clock time `buffer` was captured: now, less how long ago its
+/// timestamp was in the pipeline's running time. A live source stamps each
+/// buffer with its capture running time, and the encoder keeps it, so the
+/// difference is capture-to-here latency. Falls back to now when the
+/// buffer or sink has no running time.
+fn capture_wall_ms(sink: &gst_app::AppSink, buffer: &gst::BufferRef) -> u64 {
+    let now = rekindle_utils::timestamp_ms();
+    let since_capture = buffer
+        .pts()
+        .zip(sink.current_running_time())
+        .map_or(0, |(pts, running)| running.saturating_sub(pts).mseconds());
+    now.saturating_sub(since_capture)
 }

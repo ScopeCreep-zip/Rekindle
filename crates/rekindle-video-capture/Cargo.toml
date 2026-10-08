@@ -8,6 +8,7 @@ description = "Native camera capture + VP9 realtime CBR encode for Rekindle, cro
 workspace = true
 
 [dependencies]
+rekindle-utils = { path = "../rekindle-utils" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

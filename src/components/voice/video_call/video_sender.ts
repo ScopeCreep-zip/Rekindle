@@ -149,7 +149,11 @@ export function createVideoSender(
             frameSeq: seq,
             keyframe: chunk.type === "key",
             codec: currentCodec,
-            timestamp: Math.floor(performance.now()),
+            // Capture time on the sender's wall clock, ms mod 2^32 (the
+            // wire field is u32): `chunk.timestamp` is the capture
+            // `performance.now()` in µs. Receivers measure lip sync
+            // against the audio's wall-clock capture stamps.
+            timestamp: Math.floor(performance.timeOrigin + chunk.timestamp / 1000) % 2 ** 32,
             encodedPayloadB64: payloadB64,
           };
           if (route.mode === "community") {

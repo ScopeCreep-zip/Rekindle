@@ -18,6 +18,7 @@ use super::egress::VideoFrame;
 use super::link::PeerLink;
 use crate::arrivals::ArrivalLedger;
 use crate::media_frame;
+use crate::media_quality::MediaQuality;
 
 /// The key padding datagrams are signed with: the transport's signing
 /// key, installed after the roster may already hold peers.
@@ -29,6 +30,8 @@ pub struct MediaRoster {
     allocator: Arc<Allocator>,
     /// What arrived from each peer, for the feedback we send it.
     arrivals: Arc<ArrivalLedger>,
+    /// What the call looks and sounds like here (plan E4.3 Q0).
+    quality: Arc<MediaQuality>,
     padding_key: PaddingKey,
 }
 
@@ -37,6 +40,12 @@ impl MediaRoster {
     #[must_use]
     pub fn arrivals(&self) -> &Arc<ArrivalLedger> {
         &self.arrivals
+    }
+
+    /// Render, post-FEC loss and lip-sync measurement (plan E4.3 Q0).
+    #[must_use]
+    pub fn quality(&self) -> &Arc<MediaQuality> {
+        &self.quality
     }
 
     pub(super) fn padding_key(&self) -> PaddingKey {

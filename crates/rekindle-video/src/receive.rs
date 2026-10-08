@@ -322,6 +322,12 @@ fn emit_frame_ready<D: VideoDeps>(
     frame: &ReassembledFrame,
     now_ms: u32,
 ) {
+    deps.note_frame_completed(
+        frame.stream_id,
+        sender_pseudonym,
+        frame.frame_seq,
+        frame.recovered_via_fec,
+    );
     let secret = match deps
         .channel_sender_keys(community_id, channel_id)
         .secret_at(sender_pseudonym, frame.key_index)

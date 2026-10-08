@@ -11,6 +11,7 @@
     "allow-open-chat-window",
     "allow-report-local-video-capabilities",
     "allow-report-media-capture-error",
+    "allow-report-video-render-facts",
     "allow-report-video-encoder-status",
     "allow-send-call-reaction",
     "allow-set-deafen",
