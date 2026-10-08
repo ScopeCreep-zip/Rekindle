@@ -35,7 +35,7 @@ jobs:
         # alongside any per-crate SBOMs.
 
       - name: Upload as workflow artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rekindle-cargo-sbom
           path: |
@@ -71,7 +71,7 @@ jobs:
             .
 
       - name: Upload as workflow artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rekindle-pnpm-sbom
           path: rekindle-pnpm-sbom.cdx.json
