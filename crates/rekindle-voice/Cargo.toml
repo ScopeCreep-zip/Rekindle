@@ -13,7 +13,7 @@ bincode = "1"
 bytes = { workspace = true }
 cpal = { version = "0.18.2", features = ["pipewire", "pulseaudio"] }
 dasp_sample = "0.11"
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 nnnoiseless = "0.5"
 opus = "0.3"
 serde = { workspace = true }
