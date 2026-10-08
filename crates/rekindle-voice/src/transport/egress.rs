@@ -37,8 +37,9 @@ use std::time::{Duration, Instant};
 
 use rekindle_codec::capnp_codec::transport_feedback::{TransportFeedback, NOT_RECEIVED};
 use rekindle_media_bwe::{
-    Bitrate, Bwe, DataSize, LeakyBucketPacer, Pacer, PacerControl, QueueId, SendQueue,
-    TwccClusterId, TwccPacketId, TwccRecvReport, TwccSendRecord,
+    Bitrate, Bwe, DataSize, LeakyBucketPacer, Pacer, PacerControl, QueueId, QueuePriority,
+    QueueSnapshot, QueueState, SendQueue, TwccClusterId, TwccPacketId, TwccRecvReport,
+    TwccSendRecord,
 };
 
 use crate::media_frame;
@@ -81,13 +82,6 @@ const MEDIA_ACTIVE: Duration = Duration::from_secs(1);
 
 /// Video offered this recently lets the estimator probe for more.
 const VIDEO_ACTIVE: Duration = Duration::from_secs(2);
-
-/// Longest video waits for a voice batch due soon, so both ride one
-/// message: one Opus frame.
-const COALESCE_WAIT: Duration = Duration::from_millis(20);
-/// What one message costs beyond its datagrams: the route, plus our
-/// sequence header (`bundle` framing is 2 bytes a datagram on top).
-const PER_MESSAGE_OVERHEAD_BYTES: usize = ROUTE_OVERHEAD_BYTES + media_frame::SEQUENCED_HEADER_LEN;
 
 const UNPACED_QUEUE: QueueId = QueueId(0);
 const VIDEO_QUEUE: QueueId = QueueId(1);
@@ -176,8 +170,6 @@ pub struct RouteController {
     dropped_video: u64,
     /// Feedback seen since the last stats: reports, received, lost.
     window_feedback: (u64, u64, u64),
-    /// Voice held so several frames ride one message (plan E4.3 T3).
-    voice: voice_batch::VoiceBatcher,
 }
 
 impl Default for RouteController {
@@ -211,7 +203,6 @@ impl RouteController {
             video_share: Share::default(),
             dropped_video: 0,
             window_feedback: (0, 0, 0),
-            voice: voice_batch::VoiceBatcher::default(),
         }
     }
 
@@ -225,16 +216,14 @@ impl RouteController {
         now: Instant,
     ) {
         let size = wire_size(media_frame::SEQUENCED_HEADER_LEN + payload.len());
-        let queued = Queued {
-            tag,
-            payload,
-            media_bytes,
-        };
-        if tag == media_frame::VOICE_TAG {
-            self.voice.push(queued, size, now);
-        } else {
-            self.unpaced.push(queued, size);
-        }
+        self.unpaced.push(
+            Queued {
+                tag,
+                payload,
+                media_bytes,
+            },
+            size,
+        );
         self.last_media = Some(now);
     }
 
@@ -288,9 +277,6 @@ impl RouteController {
     /// the pacer's padding request (str0m `handle_timeout_bwe` then
     /// `update_queue_state`).
     pub fn handle_timeout(&mut self, now: Instant) {
-        for (queued, size) in self.voice.release(now) {
-            self.unpaced.push(queued, size);
-        }
         // str0m probes whenever a sending stream can carry probes, audio
         // included; here every queue can, so any recent media allows it.
         // Voice alone costs more on a Veilid route than the start estimate.
@@ -320,10 +306,8 @@ impl RouteController {
 
     /// The next datagram the pacer releases, framed with its sequence
     /// number and recorded as sent at `now` (str0m `poll_packet`). Call
-    /// [`Self::handle_timeout`] before each poll. `first_in_message`: the
-    /// datagram opens a Veilid message and carries its route overhead; a
-    /// later datagram in the same bundle costs only its bundle framing.
-    pub fn poll_datagram(&mut self, now: Instant, first_in_message: bool) -> Option<Vec<u8>> {
+    /// [`Self::handle_timeout`] before each poll.
+    pub fn poll_datagram(&mut self, now: Instant) -> Option<Vec<u8>> {
         let (queue, cluster) = self.pacer.poll_queue()?;
         let (tag, payload, media_bytes, is_padding) = if queue == UNPACED_QUEUE {
             let q = self.unpaced.pop(now)?;
@@ -345,11 +329,7 @@ impl RouteController {
         let seq = self.next_seq;
         self.next_seq += 1;
         let datagram = media_frame::sequenced(tag, wire_seq(seq), &payload);
-        let size = if first_in_message {
-            wire_size(datagram.len())
-        } else {
-            datagram.len() + 2
-        };
+        let size = wire_size(datagram.len());
         self.pacer.register_send(now, DataSize::from(size), queue);
         self.bwe
             .on_media_sent(DataSize::from(size), is_padding, now);
@@ -383,43 +363,10 @@ impl RouteController {
     pub fn poll_timeout(&self) -> Option<Instant> {
         let (pacer_at, _) = self.pacer.poll_timeout();
         let (bwe_at, _) = self.bwe.poll_timeout();
-        [pacer_at, bwe_at, self.voice.deadline()]
-            .into_iter()
-            .flatten()
-            .min()
-    }
-
-    /// Whether video should wait for the voice batch due within
-    /// [`COALESCE_WAIT`], so both go in one message.
-    pub(super) fn video_waits_for_voice(&self, now: Instant) -> bool {
-        self.voice
-            .deadline()
-            .is_some_and(|d| d > now && d <= now + COALESCE_WAIT)
-    }
-
-    /// Voice frames per message on this route.
-    #[must_use]
-    pub fn voice_frames(&self) -> usize {
-        self.voice.frames()
-    }
-
-    /// The datagram numbered `wire_seq_sent`, polled as part of a bundle,
-    /// did not fit and opens the next message: charge it the route
-    /// overhead it was not charged.
-    pub fn charge_message_overhead(&mut self, wire_seq_sent: u32, now: Instant) {
-        let extra = ROUTE_OVERHEAD_BYTES - 2;
-        if let Some(record) = self
-            .history
-            .iter_mut()
-            .rev()
-            .take(64)
-            .find(|r| wire_seq(r.seq) == wire_seq_sent)
-        {
-            record.size += extra;
+        match (pacer_at, bwe_at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
         }
-        self.pacer
-            .register_send(now, DataSize::from(extra), UNPACED_QUEUE);
-        self.bwe.on_media_sent(DataSize::from(extra), false, now);
     }
 
     /// The datagram numbered `wire_seq` was handed to Veilid at `at`: its
@@ -453,12 +400,6 @@ impl RouteController {
             self.bwe.update(records.iter(), now);
         }
         self.configure_pacer(now);
-        let frames = super::allocation::voice_frames_per_message(
-            self.estimate(),
-            self.media_share().video_share,
-            crate::transport::egress::share::as_f64(PER_MESSAGE_OVERHEAD_BYTES),
-        );
-        self.voice.set_frames(frames);
         self.estimate()
     }
 
@@ -578,12 +519,43 @@ impl RouteController {
         }
         self.awaiting_keyframe = true;
     }
+
+    fn unpaced_state(&mut self, now: Instant) -> QueueState {
+        QueueState {
+            queue_id: UNPACED_QUEUE,
+            unpaced: true,
+            use_for_padding: false,
+            snapshot: self.unpaced.snapshot(now),
+        }
+    }
+
+    /// The video queue's state with the outstanding padding merged in, as
+    /// str0m merges a stream's padding into its queue state
+    /// (`queue_state_padding`, blank-padding form).
+    fn video_state(&mut self, now: Instant) -> QueueState {
+        let mut snapshot = self.video.snapshot(now);
+        if self.padding > 0 {
+            snapshot.merge(&QueueSnapshot {
+                created_at: now,
+                byte_size: self.padding,
+                packet_count: u32::try_from(self.padding.div_ceil(MAX_PADDING_BYTES))
+                    .unwrap_or(u32::MAX),
+                first_unsent: Some(now),
+                priority: QueuePriority::Padding,
+                ..QueueSnapshot::default()
+            });
+        }
+        QueueState {
+            queue_id: VIDEO_QUEUE,
+            unpaced: false,
+            use_for_padding: true,
+            snapshot,
+        }
+    }
 }
 
-mod queue_state;
 mod share;
 mod stats;
-mod voice_batch;
 pub use stats::RouteStats;
 #[cfg(test)]
 mod tests;

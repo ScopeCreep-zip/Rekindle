@@ -14,7 +14,7 @@ fn drive(c: &mut RouteController, now: Instant) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     loop {
         c.handle_timeout(now);
-        match c.poll_datagram(now, true) {
+        match c.poll_datagram(now) {
             Some(d) => out.push(d),
             None => return out,
         }
@@ -279,37 +279,4 @@ fn the_send_time_is_the_hand_off() {
     let handed = t0 + Duration::from_millis(40);
     c.on_handed_off(seq, handed);
     assert_eq!(c.history.back().unwrap().sent_at, handed);
-}
-
-#[test]
-fn only_the_first_datagram_of_a_message_pays_the_route() {
-    let mut c = RouteController::new();
-    let t0 = Instant::now();
-    audio(&mut c, t0);
-    audio(&mut c, t0);
-    c.handle_timeout(t0);
-    let first = c.poll_datagram(t0, true).unwrap();
-    c.handle_timeout(t0);
-    let second = c.poll_datagram(t0, false).unwrap();
-    let sizes: Vec<usize> = c.history.iter().map(|r| r.size).collect();
-    assert_eq!(sizes, vec![wire_size(first.len()), second.len() + 2]);
-    // The second did not fit and opens the next message: charged then.
-    let (_, seq, _) = media_frame::split_sequenced(&second).unwrap();
-    c.charge_message_overhead(seq, t0);
-    assert_eq!(c.history.back().unwrap().size, wire_size(second.len()));
-}
-
-#[test]
-fn voice_waits_for_its_batch_then_goes_together() {
-    let mut c = RouteController::new();
-    c.voice.set_frames(3);
-    let t0 = Instant::now();
-    let frame = Duration::from_millis(20);
-    audio(&mut c, t0);
-    assert!(drive(&mut c, t0).is_empty(), "held for its batch");
-    audio(&mut c, t0 + frame);
-    assert!(drive(&mut c, t0 + frame).is_empty());
-    assert_eq!(c.poll_timeout().map(|t| t <= t0 + frame * 2), Some(true));
-    audio(&mut c, t0 + frame * 2);
-    assert_eq!(drive(&mut c, t0 + frame * 2).len(), 3, "the batch together");
 }

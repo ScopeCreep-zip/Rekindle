@@ -122,18 +122,42 @@ pub(super) async fn load_community_member_names_impl(
     .unwrap_or_default()
 }
 
-/// Ship a signed receiver report or transport feedback report back to the
-/// peer whose stream it describes, on that peer's media link (plan E4.3
-/// T3): it rides the next media message to the peer, or goes alone after a
-/// frame's wait, over the same route as the media it measures. A peer with
-/// no link (not on the roster) gets no report.
-pub(super) fn send_receiver_report_impl(state: &AppState, peer_pubkey_hex: &str, wire: Vec<u8>) {
-    let link =
-        crate::state_helpers::voice_media(state).and_then(|media| media.link(peer_pubkey_hex));
-    match link {
-        Some(link) => link.enqueue_control(wire),
-        None => {
-            tracing::debug!(peer = %peer_pubkey_hex, "report for a peer with no media link — dropped");
-        }
-    }
+/// Ship a signed receiver report back to the peer whose stream it
+/// describes, over the transport's cached route for that peer.
+///
+/// Reusing the cached route is the point: a report costs no DHT lookup
+/// and travels the same 3-hop media route as the audio it measures, so
+/// the round trip it reports is the round trip the audio actually
+/// takes.
+pub(super) fn send_receiver_report_impl(
+    state: &AppState,
+    transport: Option<Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>>,
+    peer_pubkey_hex: &str,
+    wire: Vec<u8>,
+) {
+    let Some(transport) = transport else {
+        return;
+    };
+    let peer = peer_pubkey_hex.to_string();
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "voice receiver report",
+        async move {
+            let is_feedback = wire.first() == Some(&rekindle_voice::media_frame::FEEDBACK_TAG);
+            let queued = std::time::Instant::now();
+            let guard = transport.lock().await;
+            let lock_wait = queued.elapsed();
+            let stats = Arc::clone(guard.media().feedback_stats());
+            let sending = std::time::Instant::now();
+            let result = guard.send_bytes_to_peer(&peer, wire).await;
+            if is_feedback {
+                stats.note_handed(&peer, lock_wait, sending.elapsed(), result.is_ok());
+            }
+            if let Err(e) = result {
+                // Debug, not warn: a peer whose route is not yet resolved
+                // is ordinary early in a call, and a lost report costs the
+                // sender one 5 s window of blindness, not the call.
+                tracing::debug!(peer = %peer, error = %e, "receiver report not delivered");
+            }
+        },
+    );
 }

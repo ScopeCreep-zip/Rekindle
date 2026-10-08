@@ -25,7 +25,6 @@ pub const CHANNELS: u16 = 1;
 pub mod arrivals; // Receive-side arrival record for transport feedback (plan E4.3.2).
 pub mod audio_processing;
 pub(crate) mod audio_thread;
-pub mod bundle; // Several media datagrams per Veilid message (plan E4.3 T3).
 pub mod capture;
 pub mod codec;
 pub mod device;
