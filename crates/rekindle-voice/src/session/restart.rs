@@ -15,8 +15,6 @@ use crate::session_deps::VoiceSessionDeps;
 /// respawn the three voice loops against the unchanged shared
 /// transport.
 pub async fn restart_loops<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Result<(), VoiceError> {
-    let identity = deps.current_identity()?;
-
     deps.restart_audio_devices()?;
 
     let shared_transport = deps
@@ -26,9 +24,15 @@ pub async fn restart_loops<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Resul
 
     let community_id = deps.active_community_id();
     let member_names = deps.load_member_names(community_id.as_deref()).await;
+    // The key we are on the voice wire, as `start_voice` spawns with: the
+    // community pseudonym in a channel, the account key in a 1:1 call.
+    // Receiver reports and transport feedback name it as their signer and
+    // are signed with its key; the account key here made every report after
+    // a device change fail verification at the peer.
+    let self_voice_id = deps.voice_self_identity(community_id.as_deref());
 
     deps.spawn_voice_loops(
-        &identity.public_key,
+        &self_voice_id,
         shared_transport,
         muted_flag,
         deafened_flag,
