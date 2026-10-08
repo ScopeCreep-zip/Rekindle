@@ -36,7 +36,7 @@ impl NativeCaptureSession {
     ) -> Result<Self, CaptureError> {
         gst::init().map_err(|e| CaptureError::Unavailable(e.to_string()))?;
 
-        let (source, source_desc, device_modes) = match &config.source_override {
+        let (source, source_desc) = match &config.source_override {
             // Tests pass element descriptions ("videotestsrc
             // num-buffers=10") — parse_bin handles properties; a bare
             // factory name builds directly.
@@ -45,19 +45,14 @@ impl NativeCaptureSession {
                     .map_err(|e| CaptureError::Unavailable(format!("{desc}: {e}")))?
                     .upcast::<gst::Element>(),
                 desc.clone(),
-                None,
             ),
             Some(name) => (
                 gst::ElementFactory::make(name)
                     .build()
                     .map_err(|e| CaptureError::Unavailable(format!("{name}: {e}")))?,
                 name.clone(),
-                None,
             ),
-            None => {
-                let resolved = create_source(config.device_label.as_deref())?;
-                (resolved.element, resolved.desc, resolved.modes)
-            }
+            None => create_source(config.device_label.as_deref())?,
         };
 
         let pipeline = gst::Pipeline::new();
@@ -108,37 +103,13 @@ impl NativeCaptureSession {
         // head_caps (I420) + the per-branch videoscale/videorate normalize.
         // `image/jpeg` lets MJPEG-only cameras negotiate + decode via
         // decodebin→jpegdec.
-        // Pin the camera mode chosen from the device's own list
-        // (capability.rs), as libwebrtc, Chromium and Firefox choose and
-        // set it. Left open, each source fixates on its own: avfvideosrc
-        // and v4l2src both head for the largest mode (a 4K webcam
-        // captured 4K, converted and shrunk in software). With no list
-        // (test sources), any raw or MJPEG mode.
-        let fps_req = i32::try_from(config.fps).unwrap_or(15);
-        let chosen = device_modes.as_ref().and_then(|caps| {
-            super::capability::best_matched(
-                &super::capability::modes(caps),
-                i32::try_from(config.width).unwrap_or(854),
-                i32::try_from(config.height).unwrap_or(480),
-                fps_req,
-            )
-        });
-        let source_caps = chosen.as_ref().map_or_else(
-            || {
-                gst::Caps::builder_full()
-                    .structure(gst::Structure::builder("video/x-raw").build())
-                    .structure(gst::Structure::builder("image/jpeg").build())
-                    .build()
-            },
-            |mode| mode.caps(fps_req),
+        src_caps.set_property(
+            "caps",
+            gst::Caps::builder_full()
+                .structure(gst::Structure::builder("video/x-raw").build())
+                .structure(gst::Structure::builder("image/jpeg").build())
+                .build(),
         );
-        tracing::info!(
-            target: "rekindle_video_capture",
-            source = %source_desc,
-            mode = %chosen.as_ref().map_or_else(|| "any".to_string(), |m| m.describe(fps_req)),
-            "camera capture mode"
-        );
-        src_caps.set_property("caps", source_caps);
         head_caps.set_property(
             "caps",
             gst::Caps::builder("video/x-raw")
@@ -168,14 +139,6 @@ impl NativeCaptureSession {
         // under load, never encoded ones (an encoded drop is a
         // reference-chain break). The post-tee queue also gives each
         // branch its own streaming thread so one can't stall the other.
-        // Multi-tap scaling: the default `bilinear` caps the filter at two
-        // taps (`video-resampler.c` `n_taps = MIN(n_taps, max_taps)`), so a
-        // large downscale skips source pixels and aliases; `bilinear2`
-        // widens the filter with the scale factor.
-        for scale in [&enc_scale, &pv_scale] {
-            scale.set_property_from_str("method", "bilinear2");
-        }
-
         for q in [&enc_queue, &pv_queue] {
             q.set_property_from_str("leaky", "downstream");
             q.set_property("max-size-buffers", 2u32);
