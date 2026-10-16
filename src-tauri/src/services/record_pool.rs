@@ -9,7 +9,6 @@
 
 use std::sync::Arc;
 
-use rekindle_db::repo::dht_outbox::OutboxWrite;
 use rekindle_lifecycle::SessionScope;
 use rekindle_protocol::dht::pool::{RecordPool, UnsentWrite};
 
@@ -54,71 +53,28 @@ pub fn start(state: &Arc<AppState>) -> Result<Arc<RecordPool>, String> {
 }
 
 /// Hold the writes this identity's previous logout left unsent (plan
-/// C7.6h). Runs right after [`start`], before the session writes anything,
-/// so its own newer durable writes replace them slot by slot. The rows are
-/// taken (read and deleted), so each is re-pushed once.
+/// C7.6h): `host::dht_outbox::restore_unsent`, right after [`start`].
 pub async fn restore_unsent(state: &Arc<AppState>, pool: &RecordPool) {
     let (Ok(db), Ok(owner)) = (state.db.current(), state_helpers::current_owner_key(state)) else {
         return;
     };
-    let taken = crate::db_helpers::db_call(&db, move |conn| {
-        rekindle_db::repo::dht_outbox::take(conn, &owner)
-    })
-    .await;
-    match taken {
-        Ok(rows) if rows.is_empty() => {}
-        Ok(rows) => {
-            tracing::info!(
-                count = rows.len(),
-                "restoring DHT writes the last logout left unsent"
-            );
-            pool.restore_held(
-                rows.into_iter()
-                    .map(|row| UnsentWrite {
-                        record_key: row.record_key,
-                        subkey: row.subkey,
-                        data: row.data,
-                    })
-                    .collect(),
-            );
-        }
-        Err(error) => tracing::warn!(%error, "reading the unsent DHT writes failed"),
-    }
+    rekindle_node::host::dht_outbox::restore_unsent(&db, &owner, pool).await;
 }
 
 /// Save the drained pool's held writes for this identity's next login, and
 /// return how many there were.
 async fn persist_unsent(state: &Arc<AppState>, unsent: Vec<UnsentWrite>) -> usize {
-    let count = unsent.len();
-    if count == 0 {
+    if unsent.is_empty() {
         return 0;
     }
     let (Ok(db), Ok(owner)) = (state.db.current(), state_helpers::current_owner_key(state)) else {
         tracing::warn!(
-            count,
+            count = unsent.len(),
             "unsent DHT writes lost: no identity database at logout"
         );
         return 0;
     };
-    let rows: Vec<OutboxWrite> = unsent
-        .into_iter()
-        .map(|write| OutboxWrite {
-            record_key: write.record_key,
-            subkey: write.subkey,
-            data: write.data,
-        })
-        .collect();
-    match crate::db_helpers::db_call(&db, move |conn| {
-        rekindle_db::repo::dht_outbox::save(conn, &owner, &rows)
-    })
-    .await
-    {
-        Ok(()) => count,
-        Err(error) => {
-            tracing::warn!(count, %error, "saving the unsent DHT writes failed");
-            0
-        }
-    }
+    rekindle_node::host::dht_outbox::persist_unsent(&db, &owner, unsent).await
 }
 
 /// Begin logout (plan C7.6g): release every task waiting on the pool and

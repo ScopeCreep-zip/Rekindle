@@ -88,8 +88,13 @@ pub(crate) async fn handle_unlock(
     let transport_clone = ctx.transport.read().clone();
     let session_clone = ctx.session.read().clone();
     if let (Some(transport), Some(session)) = (&transport_clone, &session_clone) {
-        // The session's record pool, before resume opens anything (C7.3).
-        if let Err(e) = transport.start_records() {
+        // The session's record pool, before resume opens anything (C7.3),
+        // holding the writes the last lock left unsent (C7.6h).
+        let records = transport.start_records();
+        if let (Ok(pool), Ok(db)) = (&records, ctx.db.current()) {
+            crate::host::dht_outbox::restore_unsent(&db, identity, pool).await;
+        }
+        if let Err(e) = records {
             tracing::warn!(error = %e, "record pool not started — staying locked");
             teardown_unlocked(ctx).await;
             if let Err(refused) = transition(ctx, DaemonState::Locked) {
@@ -326,10 +331,25 @@ pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
         transport.admit_records_teardown();
     }
     crate::daemon::status::publish_offline(ctx).await;
-    // The record pool, after everything that still reads or writes records;
+    // The writes still held, saved for the next unlock (plan C7.6h); then
+    // the record pool, after everything that still reads or writes records;
     // then this unlock's routes, so none outlives it and nothing is
     // allocated while locked (plan C7.9d).
     if let Some(transport) = transport {
+        let unsent = transport.take_unsent();
+        if !unsent.is_empty() {
+            let owner = ctx
+                .session
+                .read()
+                .as_ref()
+                .map(|s| s.identity.public_key_hex.clone());
+            if let (Ok(db), Some(owner)) = (ctx.db.current(), owner) {
+                let saved = crate::host::dht_outbox::persist_unsent(&db, &owner, unsent).await;
+                tracing::info!(saved, "unsent DHT writes kept for the next unlock");
+            } else {
+                tracing::warn!(count = unsent.len(), "unsent DHT writes lost: no identity");
+            }
+        }
         transport.end_records();
         transport.release_routes();
     }

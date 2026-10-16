@@ -8,6 +8,7 @@
 
 pub mod adapters;
 pub mod bus_key;
+pub mod dht_outbox;
 pub mod identity;
 pub mod policy;
 pub mod session;

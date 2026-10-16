@@ -188,6 +188,17 @@ impl TransportNode {
         }
     }
 
+    /// The writes the drained pool still holds, taken for the next unlock
+    /// (lock, after the teardown's own writes): drained again first, so
+    /// nothing is held after the take (plan C7.6h).
+    #[must_use]
+    pub fn take_unsent(&self) -> Vec<rekindle_protocol::dht::pool::UnsentWrite> {
+        self.shared_state.records().map_or_else(Vec::new, |pool| {
+            pool.drain();
+            pool.take_held()
+        })
+    }
+
     /// End the session's records (lock): the node's closer closes them once
     /// the pool's calls in flight have finished, off the lock's path; no
     /// call is aborted (plan C7.6i, C7.6j).
