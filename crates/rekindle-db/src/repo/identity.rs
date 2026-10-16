@@ -5,17 +5,14 @@
 
 use rusqlite::{params, Connection, OptionalExtension as _};
 
-/// The DHT records an identity owns, as stored: each key, and the owner
-/// keypair for the records that have one.
+/// The keys of the DHT records an identity owns. Their owner keypairs are
+/// in the vault (`rekindle_vault::typed::owner_keys`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IdentityDhtColumns {
-    pub existing_dht_key: Option<String>,
-    pub existing_friend_list_key: Option<String>,
-    pub dht_owner_keypair: Option<String>,
-    pub friend_list_owner_keypair: Option<String>,
-    pub account_dht_key: Option<String>,
-    pub account_owner_keypair: Option<String>,
-    pub mailbox_dht_key: Option<String>,
+    pub profile: Option<String>,
+    pub friend_list: Option<String>,
+    pub account: Option<String>,
+    pub mailbox: Option<String>,
 }
 
 /// A DHT record the identity owns with a keypair of its own.
@@ -27,11 +24,11 @@ pub enum OwnedRecord {
 }
 
 impl OwnedRecord {
-    fn columns(self) -> (&'static str, &'static str) {
+    fn key_column(self) -> &'static str {
         match self {
-            Self::Profile => ("dht_record_key", "dht_owner_keypair"),
-            Self::FriendList => ("friend_list_dht_key", "friend_list_owner_keypair"),
-            Self::Account => ("account_dht_key", "account_owner_keypair"),
+            Self::Profile => "dht_record_key",
+            Self::FriendList => "friend_list_dht_key",
+            Self::Account => "account_dht_key",
         }
     }
 }
@@ -63,21 +60,17 @@ pub fn login_row(
     public_key: &str,
 ) -> rusqlite::Result<Option<(String, IdentityDhtColumns)>> {
     conn.query_row(
-        "SELECT display_name, dht_record_key, friend_list_dht_key, dht_owner_keypair, \
-         friend_list_owner_keypair, account_dht_key, account_owner_keypair, mailbox_dht_key \
-         FROM identity WHERE public_key = ?1",
+        "SELECT display_name, dht_record_key, friend_list_dht_key, account_dht_key, \
+         mailbox_dht_key FROM identity WHERE public_key = ?1",
         params![public_key],
         |row| {
             Ok((
                 row.get::<_, Option<String>>(0)?.unwrap_or_default(),
                 IdentityDhtColumns {
-                    existing_dht_key: row.get(1)?,
-                    existing_friend_list_key: row.get(2)?,
-                    dht_owner_keypair: row.get(3)?,
-                    friend_list_owner_keypair: row.get(4)?,
-                    account_dht_key: row.get(5)?,
-                    account_owner_keypair: row.get(6)?,
-                    mailbox_dht_key: row.get(7)?,
+                    profile: row.get(1)?,
+                    friend_list: row.get(2)?,
+                    account: row.get(3)?,
+                    mailbox: row.get(4)?,
                 },
             ))
         },
@@ -128,8 +121,7 @@ pub fn avatar(conn: &Connection, public_key: &str) -> rusqlite::Result<Option<Ve
         .flatten())
 }
 
-/// Set an owned record's key, and its keypair when one is given (a
-/// reopened record keeps the stored keypair).
+/// Set an owned record's key (its keypair is stored in the vault first).
 ///
 /// # Errors
 /// The write failed.
@@ -138,15 +130,11 @@ pub fn set_owned_record(
     public_key: &str,
     record: OwnedRecord,
     key: &str,
-    keypair: Option<&str>,
 ) -> rusqlite::Result<()> {
-    let (key_col, keypair_col) = record.columns();
+    let key_col = record.key_column();
     conn.execute(
-        &format!(
-            "UPDATE identity SET {key_col} = ?1, {keypair_col} = COALESCE(?2, {keypair_col}) \
-             WHERE public_key = ?3"
-        ),
-        params![key, keypair, public_key],
+        &format!("UPDATE identity SET {key_col} = ?1 WHERE public_key = ?2"),
+        params![key, public_key],
     )?;
     Ok(())
 }
@@ -164,38 +152,34 @@ pub fn set_mailbox_key(conn: &Connection, public_key: &str, key: &str) -> rusqli
     Ok(())
 }
 
-/// The personal sync record: `(record key, owner keypair, device id)`,
-/// when all three are set.
+/// The personal sync record: `(record key, device id)`, when both are set
+/// (its owner keypair is in the vault).
 ///
 /// # Errors
 /// The query failed.
 pub fn personal_sync(
     conn: &Connection,
     public_key: &str,
-) -> rusqlite::Result<Option<(String, String, String)>> {
+) -> rusqlite::Result<Option<(String, String)>> {
     let row = conn
         .query_row(
-            "SELECT personal_sync_record_key, personal_sync_owner_keypair, device_id \
-             FROM identity WHERE public_key = ?1",
+            "SELECT personal_sync_record_key, device_id FROM identity WHERE public_key = ?1",
             params![public_key],
             |row| {
                 Ok((
                     row.get::<_, Option<String>>(0)?,
                     row.get::<_, Option<String>>(1)?,
-                    row.get::<_, Option<String>>(2)?,
                 ))
             },
         )
         .optional()?;
     Ok(match row {
-        Some((Some(k), Some(p), Some(d))) if !k.is_empty() && !p.is_empty() && !d.is_empty() => {
-            Some((k, p, d))
-        }
+        Some((Some(k), Some(d))) if !k.is_empty() && !d.is_empty() => Some((k, d)),
         _ => None,
     })
 }
 
-/// Set the personal sync record.
+/// Set the personal sync record (its keypair is stored in the vault first).
 ///
 /// # Errors
 /// The write failed.
@@ -203,13 +187,11 @@ pub fn set_personal_sync(
     conn: &Connection,
     public_key: &str,
     record_key: &str,
-    owner_keypair: &str,
     device_id: &str,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "UPDATE identity SET personal_sync_record_key = ?1, personal_sync_owner_keypair = ?2, \
-         device_id = ?3 WHERE public_key = ?4",
-        params![record_key, owner_keypair, device_id, public_key],
+        "UPDATE identity SET personal_sync_record_key = ?1, device_id = ?2 WHERE public_key = ?3",
+        params![record_key, device_id, public_key],
     )?;
     Ok(())
 }
@@ -220,17 +202,16 @@ mod tests {
     use crate::repo::fixture::{self, OWNER};
 
     #[test]
-    fn a_reopened_record_keeps_its_stored_keypair() {
+    fn an_owned_record_key_is_replaced() {
         let conn = fixture::conn();
-        set_owned_record(&conn, OWNER, OwnedRecord::Profile, "k1", Some("kp1")).unwrap();
-        set_owned_record(&conn, OWNER, OwnedRecord::Profile, "k2", None).unwrap();
+        set_owned_record(&conn, OWNER, OwnedRecord::Profile, "k1").unwrap();
+        set_owned_record(&conn, OWNER, OwnedRecord::Profile, "k2").unwrap();
         set_mailbox_key(&conn, OWNER, "mb").unwrap();
         let (name, cols) = login_row(&conn, OWNER).unwrap().unwrap();
         assert_eq!(name, "me");
-        assert_eq!(cols.existing_dht_key.as_deref(), Some("k2"));
-        assert_eq!(cols.dht_owner_keypair.as_deref(), Some("kp1"));
-        assert_eq!(cols.mailbox_dht_key.as_deref(), Some("mb"));
-        assert_eq!(cols.account_dht_key, None);
+        assert_eq!(cols.profile.as_deref(), Some("k2"));
+        assert_eq!(cols.mailbox.as_deref(), Some("mb"));
+        assert_eq!(cols.account, None);
         assert_eq!(login_row(&conn, "ghost").unwrap(), None);
     }
 
@@ -243,15 +224,15 @@ mod tests {
     }
 
     #[test]
-    fn personal_sync_needs_all_three_fields() {
+    fn personal_sync_needs_both_fields() {
         let conn = fixture::conn();
         assert_eq!(personal_sync(&conn, OWNER).unwrap(), None);
-        set_personal_sync(&conn, OWNER, "rk", "kp", "dev").unwrap();
+        set_personal_sync(&conn, OWNER, "rk", "dev").unwrap();
         assert_eq!(
             personal_sync(&conn, OWNER).unwrap(),
-            Some(("rk".into(), "kp".into(), "dev".into()))
+            Some(("rk".into(), "dev".into()))
         );
-        set_personal_sync(&conn, OWNER, "rk", "", "dev").unwrap();
+        set_personal_sync(&conn, OWNER, "rk", "").unwrap();
         assert_eq!(personal_sync(&conn, OWNER).unwrap(), None);
     }
 }

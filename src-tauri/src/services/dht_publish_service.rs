@@ -11,26 +11,34 @@ use crate::state_helpers;
 use crate::state_helpers::DhtRecordType;
 use rekindle_db::Db;
 
-// ── Column mapping for generic persist ──────────────────────────────────────
-
 use rekindle_db::repo::identity::OwnedRecord;
+use rekindle_vault::typed::owner_keys::OwnerKey;
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
-/// Persist an owned DHT record's key, and its owner keypair when the
-/// record was just created (a reopened record keeps the stored one).
-async fn persist_dht_key_to_db(
+/// Persist an owned DHT record: its owner keypair into the vault when the
+/// record was just created (a reopened record keeps the stored one), then
+/// its key into the database, so a stored key always has its keypair.
+async fn persist_owned_record(
+    state: &SharedState,
     pool: &Db,
     public_key: &str,
     dht_key: &str,
     new_keypair: Option<veilid_core::KeyPair>,
     record: OwnedRecord,
 ) -> Result<(), String> {
+    if let Some(keypair) = new_keypair {
+        let owner = match record {
+            OwnedRecord::Profile => OwnerKey::Profile,
+            OwnedRecord::FriendList => OwnerKey::FriendList,
+            OwnedRecord::Account => OwnerKey::Account,
+        };
+        state_helpers::persist_owner_keypair(state, owner, &keypair.to_string())?;
+    }
     let pk = public_key.to_string();
     let dk = dht_key.to_string();
-    let keypair = new_keypair.map(|kp| kp.to_string());
     db_call(pool, move |conn| {
-        rekindle_db::repo::identity::set_owned_record(conn, &pk, record, &dk, keypair.as_deref())
+        rekindle_db::repo::identity::set_owned_record(conn, &pk, record, &dk)
     })
     .await
 }
@@ -196,7 +204,8 @@ pub async fn publish_profile(
     // The profile is open: the STATUS publisher writes the current status
     // (login's field publish no longer writes one, plan C7.8c).
     crate::services::presence_service::request_status_publish(state);
-    persist_dht_key_to_db(
+    persist_owned_record(
+        state,
         pool,
         &public_key,
         &profile_key,
@@ -253,7 +262,8 @@ pub async fn publish_friend_list(
 
     let is_new = new_keypair.is_some();
     state_helpers::store_dht_record(state, &friend_list_key, &DhtRecordType::FriendList(keypair));
-    persist_dht_key_to_db(
+    persist_owned_record(
+        state,
         pool,
         &public_key,
         &friend_list_key,
@@ -337,7 +347,8 @@ pub async fn publish_account(
 
     state_helpers::store_dht_record(state, &account_key, &DhtRecordType::Account);
 
-    persist_dht_key_to_db(
+    persist_owned_record(
+        state,
         pool,
         &public_key,
         &account_key,

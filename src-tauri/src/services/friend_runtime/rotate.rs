@@ -67,9 +67,14 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
     // profile key at write time).
     services::presence_service::request_status_publish(state);
 
-    // Update SQLite (both dht_record_key and dht_owner_keypair)
+    // The new keypair into the vault first, then the key into the
+    // database, so a stored key always has its keypair.
+    state_helpers::persist_owner_keypair(
+        state,
+        rekindle_vault::typed::owner_keys::OwnerKey::Profile,
+        &new_keypair.to_string(),
+    )?;
     let nk = new_key.clone();
-    let keypair_str = Some(new_keypair.to_string());
     let owner_key = state_helpers::owner_key_or_default(state);
     db_call(pool, move |conn| {
         rekindle_db::repo::identity::set_owned_record(
@@ -77,7 +82,6 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
             &owner_key,
             rekindle_db::repo::identity::OwnedRecord::Profile,
             &nk,
-            keypair_str.as_deref(),
         )
     })
     .await?;

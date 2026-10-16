@@ -18,6 +18,7 @@
 //! - [`governance`] — v2.0 CRDT governance state read/write.
 //! - [`governance_persist`] — SQLite snapshot of merged governance.
 //! - [`meks`] — live community/channel keys and the `ChannelKeyProvider`.
+//! - [`owner_keys`] — the identity's record owner keypairs in the vault.
 //! - [`voice`] — running voice-engine accessors.
 
 mod circuit_breaker;
@@ -29,6 +30,7 @@ mod governance_persist;
 mod identity;
 mod meks;
 mod node;
+mod owner_keys;
 mod routes;
 mod voice;
 
@@ -63,6 +65,7 @@ pub use node::{
     profile_dht_info, record_pool, require_safe_routing_context, safe_api_and_routing_context,
     safe_routing_context, spawn_in_login, spawn_in_login_with_token, veilid_api,
 };
+pub use owner_keys::{load_owner_keypair, persist_owner_keypair};
 pub use routes::{
     cache_peer_route, cached_route_blob, call_route_blob, evict_stale_peer_routes,
     friend_for_dht_key, import_route_blob, invalidate_cached_peer_route, message_route_blob,

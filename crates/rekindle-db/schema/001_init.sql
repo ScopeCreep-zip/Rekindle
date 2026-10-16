@@ -6,18 +6,16 @@ CREATE TABLE IF NOT EXISTS identity (
     public_key TEXT NOT NULL UNIQUE,
     display_name TEXT,
     created_at INTEGER NOT NULL,
+    -- The owned records' keys. Their owner keypairs are in the vault
+    -- (`rekindle_vault::typed::owner_keys`, plan D1).
     dht_record_key TEXT,
-    dht_owner_keypair TEXT,
     friend_list_dht_key TEXT,
-    friend_list_owner_keypair TEXT,
     avatar_webp BLOB,
     account_dht_key TEXT,
-    account_owner_keypair TEXT,
     mailbox_dht_key TEXT,
     -- Architecture §28.4: personal DFLT record key for cross-device sync.
     -- Created lazily on first launch when the user opts into multi-device.
     personal_sync_record_key TEXT,
-    personal_sync_owner_keypair TEXT,
     -- Stable per-device id (random 16-byte UUID hex). Identifies *this*
     -- physical device in the DeviceList without exposing more PII.
     device_id TEXT
@@ -42,7 +40,6 @@ CREATE TABLE IF NOT EXISTS friends (
     last_seen_at INTEGER,
     avatar_webp BLOB,
     local_conversation_key TEXT,
-    local_conversation_keypair TEXT,
     remote_conversation_key TEXT,
     mailbox_dht_key TEXT,
     friendship_state TEXT NOT NULL DEFAULT 'accepted',

@@ -10,7 +10,7 @@ use crate::state::SharedState;
 /// at a time.
 pub use services::auth_cores::{
     create_identity_core, delete_identity_core, login_core, verify_identity_passphrase_core,
-    IdentityDhtColumns,
+    DhtKeysConfig,
 };
 /// Take the unlocked identity out of the session (logout's last step).
 pub use services::session::lock_identity;

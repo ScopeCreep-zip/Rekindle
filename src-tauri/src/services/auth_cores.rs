@@ -9,10 +9,13 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::services;
+pub use crate::services::login_runtime::DhtKeysConfig;
 use crate::state::{AppState, IdentityState, SharedState, SignalManagerHandle, UserStatus};
+use crate::state_helpers;
 use rekindle_db::paths::DataRoot;
 use rekindle_db::Db;
 use rekindle_node::host::identity::{self, IdentityError, Stores, Unlocked};
+use rekindle_vault::typed::owner_keys::OwnerKey;
 use rekindle_vault::VaultHandle;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,8 +24,6 @@ pub struct LoginResult {
     pub public_key: String,
     pub display_name: String,
 }
-
-pub use rekindle_db::repo::identity::IdentityDhtColumns;
 
 /// The host's identity slots in `state`.
 pub fn stores(state: &AppState) -> Stores<'_> {
@@ -160,7 +161,7 @@ pub async fn login_core(
     passphrase: &str,
     state: &SharedState,
     app_handle: Option<&tauri::AppHandle>,
-) -> Result<(LoginResult, [u8; 32], IdentityDhtColumns), String> {
+) -> Result<(LoginResult, [u8; 32], DhtKeysConfig), String> {
     clear_session_state(state);
     let unlocked = identity::unlock(
         root,
@@ -177,13 +178,7 @@ pub async fn login_core(
     let (pool, result, key_array) = adopt(state, unlocked)?;
     let keystore_handle = &state.keystore;
 
-    let pk_query = public_key.to_string();
-    let dht_cols = crate::db_helpers::db_call(&pool, move |conn| {
-        rekindle_db::repo::identity::login_row(conn, &pk_query)
-    })
-    .await?
-    .map(|(_, cols)| cols)
-    .ok_or_else(|| "the identity database has no identity row".to_string())?;
+    let dht_keys = owned_records(state, &pool, public_key).await?;
 
     crate::community_loader::load_friends_from_db(&pool, state, public_key).await?;
     crate::community_loader::load_communities_from_db(&pool, state, public_key).await?;
@@ -219,7 +214,32 @@ pub async fn login_core(
     )
     .await;
 
-    Ok((result, key_array, dht_cols))
+    Ok((result, key_array, dht_keys))
+}
+
+/// The records the identity owns: their keys from the identity row, their
+/// owner keypairs from the vault.
+async fn owned_records(
+    state: &SharedState,
+    pool: &Db,
+    public_key: &str,
+) -> Result<DhtKeysConfig, String> {
+    let pk = public_key.to_string();
+    let cols = crate::db_helpers::db_call(pool, move |conn| {
+        rekindle_db::repo::identity::login_row(conn, &pk)
+    })
+    .await?
+    .map(|(_, cols)| cols)
+    .ok_or_else(|| "the identity database has no identity row".to_string())?;
+    Ok(DhtKeysConfig {
+        existing_dht_key: cols.profile,
+        existing_friend_list_key: cols.friend_list,
+        dht_owner_keypair: state_helpers::load_owner_keypair(state, OwnerKey::Profile)?,
+        friend_list_owner_keypair: state_helpers::load_owner_keypair(state, OwnerKey::FriendList)?,
+        account_dht_key: cols.account,
+        account_owner_keypair: state_helpers::load_owner_keypair(state, OwnerKey::Account)?,
+        mailbox_dht_key: cols.mailbox,
+    })
 }
 
 /// Check `passphrase` against `public_key`'s vault on a blocking thread

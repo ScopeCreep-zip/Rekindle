@@ -160,7 +160,8 @@ async fn login_fails_with_wrong_passphrase_and_installs_nothing() {
 
     let err = login_core(&root, &created.public_key, "wrong-pass", &state, None)
         .await
-        .expect_err("login with wrong passphrase should fail");
+        .err()
+        .expect("login with wrong passphrase should fail");
 
     assert!(
         err.contains("Wrong passphrase"),
@@ -179,7 +180,8 @@ async fn login_fails_with_no_identity() {
 
     let err = login_core(&root, "nonexistent-key", "any-pass", &state, None)
         .await
-        .expect_err("login with no identity should fail");
+        .err()
+        .expect("login with no identity should fail");
 
     assert!(
         err.contains("no identity found"),
@@ -213,7 +215,8 @@ async fn two_identities_coexist_and_unlock_one_at_a_time() {
 
     let err = login_core(&root, &second.public_key, "pass-one", &state, None)
         .await
-        .expect_err("each identity has its own passphrase");
+        .err()
+        .expect("each identity has its own passphrase");
     assert!(err.contains("Wrong passphrase"), "{err}");
     let (login, _, _) = login_core(&root, &second.public_key, "pass-two", &state, None)
         .await

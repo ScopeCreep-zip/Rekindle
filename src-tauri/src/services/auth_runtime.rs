@@ -223,35 +223,19 @@ pub async fn login_inner(
     state: Arc<AppState>,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::login_core;
-    use crate::services::login_runtime::{start_background_services, DhtKeysConfig};
+    use crate::services::login_runtime::start_background_services;
 
     let root = app.state::<DataRoot>().inner().clone();
     let login_scope = begin_unlock(&app, &state).await?;
 
-    let (result, _, dht_cols) =
+    let (result, _, dht_keys) =
         match login_core(&root, &public_key, &passphrase, &state, Some(&app)).await {
             Ok(v) => v,
             Err(e) => return Err(fail_unlock(&state, e).await),
         };
     let pool = state.db.current()?;
 
-    if let Err(e) = start_background_services(
-        &app,
-        &state,
-        &login_scope,
-        &pool,
-        DhtKeysConfig {
-            existing_dht_key: dht_cols.existing_dht_key,
-            existing_friend_list_key: dht_cols.existing_friend_list_key,
-            dht_owner_keypair: dht_cols.dht_owner_keypair,
-            friend_list_owner_keypair: dht_cols.friend_list_owner_keypair,
-            account_dht_key: dht_cols.account_dht_key,
-            account_owner_keypair: dht_cols.account_owner_keypair,
-            mailbox_dht_key: dht_cols.mailbox_dht_key,
-        },
-    )
-    .await
-    {
+    if let Err(e) = start_background_services(&app, &state, &login_scope, &pool, dht_keys).await {
         return Err(abort_unlock(&app, &state, e).await);
     }
 
