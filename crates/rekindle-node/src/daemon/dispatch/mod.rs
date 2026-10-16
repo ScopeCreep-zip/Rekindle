@@ -131,8 +131,9 @@ pub struct DaemonContext {
     pub policy: RwLock<PolicyConfig>,
     /// Path to the policy config directory (for reload).
     pub config_dir: std::path::PathBuf,
-    /// BLAKE3 hash-chained audit logger for all dispatched IPC requests.
-    pub audit: parking_lot::Mutex<Option<crate::state::audit::AuditLogger>>,
+    /// The unlocked identity's tamper-evident audit chain
+    /// (`host::audit`); `None` while locked, when nothing is written.
+    pub audit_chain: crate::host::audit::ChainSlot,
     /// Consolidated inbound event manager (watch + gossip + poll → dedup → emit).
     /// None before unlock/resume. Created during Resuming transition.
     pub subscriptions: RwLock<Option<rekindle_transport::SubscriptionManager>>,

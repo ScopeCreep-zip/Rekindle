@@ -28,6 +28,7 @@ rekindle-governance = { path = "../rekindle-governance" }
 rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # CommunityEnvelope only — the gossip payload type crossing the Deps
 # boundary. No veilid_core types are named from this crate.
+rekindle-audit = { path = "../rekindle-audit" }
 rekindle-db = { path = "../rekindle-db" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-codec = { path = "../rekindle-codec" }

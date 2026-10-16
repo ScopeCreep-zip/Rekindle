@@ -25,7 +25,7 @@ pub fn export(
         .get(public_key)
         .cloned()
         .ok_or(IdentityError::NotFound)?;
-    let (opened, _) = open_vault(root, stores.attempts, public_key, passphrase, now_ms)?;
+    let opened = open_vault(root, stores.attempts, public_key, passphrase, now_ms)?.vault;
     let live = stores.vault.lock();
     let (vault, header) = match live.as_ref() {
         Some(unlocked) if unlocked.path() == opened.path() => unlocked.export_files()?,
@@ -88,7 +88,9 @@ async fn install_imported(
     now_ms: u64,
 ) -> Result<(), IdentityError> {
     let public_key = &entry.public_key;
-    let (vault, app_db_key) = open_vault(root, attempts, public_key, passphrase, now_ms)?;
+    let super::Opened {
+        vault, app_db_key, ..
+    } = open_vault(root, attempts, public_key, passphrase, now_ms)?;
     let stored = vault
         .get(&VaultKey::IdentityEd25519)?
         .ok_or_else(|| IdentityError::Corrupt("no private key in the vault".into()))?;

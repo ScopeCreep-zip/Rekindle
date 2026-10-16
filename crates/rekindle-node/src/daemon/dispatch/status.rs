@@ -143,11 +143,11 @@ fn build_checks(
         ));
     }
 
-    checks.push(if ctx.audit.lock().is_some() {
-        Check::pass("node.audit_logger", "node", "active")
+    checks.push(if ctx.audit_chain.lock().is_some() {
+        Check::pass("node.audit_chain", "node", "open")
     } else {
-        Check::warn("node.audit_logger", "node", "inactive")
-            .with_description("audit logging disabled — destructive operations not recorded")
+        Check::warn("node.audit_chain", "node", "closed")
+            .with_description("no identity is unlocked: nothing is recorded")
     });
 
     // ── TRANSPORT — Veilid network health ───────────────────────────

@@ -93,7 +93,7 @@ pub async fn add_friend_inner(
 
     // Phase 4 — audit chain entry. Best-effort: failures log but don't
     // block the user-visible operation.
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         &state,
         &pool,
         &owner_key,
@@ -103,8 +103,7 @@ pub async fn add_friend_inner(
             "display_name": display_name,
             "direction": "outbound",
         }),
-    )
-    .await;
+    );
 
     Ok(())
 }

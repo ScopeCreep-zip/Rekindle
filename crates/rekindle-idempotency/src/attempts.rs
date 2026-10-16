@@ -64,9 +64,10 @@ impl<K: Eq + Hash + Clone> AttemptLimiter<K> {
         wait
     }
 
-    /// A successful attempt clears the key.
-    pub fn succeed(&self, key: &K) {
-        self.records.lock().remove(key);
+    /// A successful attempt clears the key; returns how many consecutive
+    /// failures it cleared (the next unlock records them, plan D1).
+    pub fn succeed(&self, key: &K) -> u32 {
+        self.records.lock().remove(key).map_or(0, |r| r.failures)
     }
 }
 
@@ -88,7 +89,7 @@ mod tests {
         assert_eq!(delay_after(8), 15 * MINUTE_MS);
         assert_eq!(delay_after(9), 60 * MINUTE_MS);
         assert!(limiter.check(&"other", 0).is_ok(), "per key");
-        limiter.succeed(&"me");
+        assert!(limiter.succeed(&"me") > 0);
         assert!(limiter.check(&"me", MINUTE_MS).is_ok());
     }
 }

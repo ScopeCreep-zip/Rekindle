@@ -1,6 +1,7 @@
 // Phase 14.p — `calls`, `voice`, `group_calls` modules deleted.
 // All voice / call protocol logic lives in `rekindle-voice` /
 // `rekindle-calls` crates; the adapters below bridge AppState ↔ crate.
+pub mod audit; // Plan D1 — the desktop over host::audit.
 pub mod auth_cores; // Phase 23.C — create_identity_core + login_core helpers lifted from commands/auth.rs.
 pub mod auth_runtime; // Phase 23.C — logout + delete_identity orchestration lifted from commands/auth.rs.
 pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted from commands/calls.rs.

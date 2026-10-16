@@ -216,7 +216,7 @@ one device, each with a separate passphrase.
 ## Layer 5: Audit Chain (`rekindle-audit`)
 
 **Algorithm:** BLAKE3-keyed MAC chain.
-**Managed by:** `rekindle-audit` + `src-tauri/src/audit_repo/`.
+**Managed by:** `rekindle-audit` + `rekindle_node::host::audit` (both hosts).
 
 Every administrative action (community / channel / role / member
 mutations, MEK rotations, vault passphrase changes, device pairings) is

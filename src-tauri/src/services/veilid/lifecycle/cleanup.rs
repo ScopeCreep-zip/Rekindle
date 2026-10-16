@@ -68,7 +68,7 @@ pub async fn logout_cleanup(end: crate::services::session::SessionEnd<'_>, state
     state.communities.write().clear();
     // Phase 4 — drop the audit chain so a subsequent login under a
     // different identity doesn't append against the prior chain's MAC.
-    *state.audit_chain.lock() = None;
+    rekindle_node::host::audit::close(&state.audit_chain);
     // The friendship coordinator stopped with the login scope; drop its
     // trigger senders so the next login installs fresh ones.
     state.friendship_handle.clear();

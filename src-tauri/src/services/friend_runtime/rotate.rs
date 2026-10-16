@@ -114,7 +114,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
     // new key is in DHT subkey 8 anyway, but the audit trail is meant to
     // record actions, not credentials.
     let owner = state_helpers::owner_key_or_default(state);
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         state,
         pool,
         &owner,
@@ -122,7 +122,6 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
         serde_json::json!({
             "friend_notify_count": friend_keys.len(),
         }),
-    )
-    .await;
+    );
     Ok(())
 }

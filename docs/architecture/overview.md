@@ -170,7 +170,6 @@ src-tauri/
 │   ├── event_dispatch.rs             Phase 23.A — single-source emit router
 │   ├── keystore/                     The per-identity VaultStore handle;
 │   │                                 typed helpers are rekindle_vault::typed
-│   ├── audit_repo/                   Audit chain append / verify / restore
 │   ├── audit_view.rs                 Audit log query / export
 │   ├── channel_materialize.rs        Channel state materialisation
 │   ├── community_loader/             Community state restore on startup

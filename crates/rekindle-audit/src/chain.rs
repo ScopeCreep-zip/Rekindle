@@ -23,6 +23,12 @@ pub enum AuditKind {
     ChannelLeft,
     IdentityRotated,
     VaultUnlocked,
+    /// Wrong passphrases before this unlock (payload `{"count": n}`),
+    /// written once at the next successful unlock (plan D1).
+    UnlockFailures,
+    /// A daemon request handled while unlocked (payload `{"request":
+    /// name}`): the variant name only, never a field (plan D1).
+    Request,
 }
 
 /// Logical contents of one audit event. The `payload_json` field of an

@@ -7757,6 +7757,7 @@ dependencies = [
  "hex",
  "parking_lot 0.12.5",
  "rand 0.8.5",
+ "rekindle-audit",
  "rekindle-codec",
  "rekindle-crypto",
  "rekindle-db",

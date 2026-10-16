@@ -58,34 +58,46 @@ impl AuditChain {
 
 pub struct AuditRecord { pub at_ms: i64, pub actor_pub: String, pub kind: AuditKind, pub payload: serde_json::Value }
 pub struct AuditEntry { pub cursor: u64, pub prev_mac: [u8; MAC_LEN], pub mac: [u8; MAC_LEN], pub record: AuditRecord }
-pub enum AuditKind { FriendAdded, FriendRemoved, ChannelJoined, ChannelLeft, IdentityRotated, VaultUnlocked }
+pub enum AuditKind { FriendAdded, FriendRemoved, ChannelJoined, ChannelLeft, IdentityRotated, VaultUnlocked, UnlockFailures, Request }
+
+pub enum Restored { Intact, Truncated { anchor_cursor: u64 } }       // outcome::restore(key, anchor, stored)
+pub enum Verified { Intact { length }, Broken { length, at, detail } } // outcome::verify(&chain, &entries)
 
 pub enum TailCheck { Unanchored, Clean, CatchUp, Tampered { anchor: Tail } } // tail::TailCheck::of(anchor, stored)
 pub const MAC_LEN: usize = 32;
 ```
 
-Modules `chain` and `tail`. Dependencies: `blake3`, `hex`, `serde`,
+Modules `chain`, `tail` and `outcome` (restore and verify as functions over values with typed outcomes). Dependencies: `blake3`, `hex`, `serde`,
 `serde_json`, `thiserror`, `tracing`, `zeroize` (the key zeroises on drop).
 
-## Tauri-side persistence (`src-tauri/src/audit_repo/`)
+## Host persistence (`rekindle_node::host::audit`, plan D1)
 
-The audit chain object is held on `AppState.audit_chain:
-Mutex<Option<AuditChain>>`. The repo wraps SQLite persistence and
-the vault round-trip:
+Both hosts hold the unlocked identity's chain in a
+`host::audit::ChainSlot` (`Mutex<Option<AuditChain>>`: the desktop's
+`AppState.audit_chain`, the daemon's `DaemonContext.audit_chain`), and
+both call one I/O layer:
 
 | Module | Responsibility |
 |---|---|
-| `src-tauri/src/audit_repo/chain.rs` | `append_async`, `verify_async`, `restore_chain`: the desktop's chain state, events and toasts |
+| `rekindle_node::host::audit` | `restore` (unlock), `append`, `verify`, `export`, `record_unlock_failures`, `close` (lock) |
 | `rekindle_db::repo::audit` | SQLite reads / writes against `audit_entries`, with tests against the real schema (tamper, truncation, owner isolation) |
-| `rekindle_audit::TailCheck` | The vault tail-anchor rule `restore_chain` applies (clean, catch-up, tampered) |
+| `rekindle_audit::{restore, verify}` | The tail-anchor rule and the end-to-end check, with typed outcomes |
 | `rekindle_vault::typed::audit` | The MAC key and tail anchor in the vault |
+| `src-tauri/src/services/audit.rs` | The desktop's tamper signal: `SystemEvent::AuditChainBroken` and a system alert |
 
-On every append, the repo:
+Nothing is written while locked: no identity database is open, and an
+unauthenticated caller must not write into one. The wrong passphrases an
+unlock cleared are recorded as one `UnlockFailures` entry; the daemon
+records each request it handles while unlocked as a `Request` entry (the
+variant name only). A truncated or broken chain is `AuditChainBroken` on
+both hosts.
+
+On every append, `host::audit::append`:
 
 1. Acquires the chain mutex.
 2. Calls `chain.append(cursor, payload)`.
-3. Writes the resulting `AuditEntry` to `audit_entries` via
-   `db_helpers::db_call`.
+3. Queues the resulting `AuditEntry` into `audit_entries`, in order on
+   the database thread.
 4. Persists the new tail `(cursor, mac)` to the vault under
    `("audit", "tail")` so a process restart can resume
    without re-walking the chain.
@@ -137,8 +149,8 @@ fits because:
 
 - It owns key material (the MAC key).
 - It owns the chain state and the tail-anchor rule.
-- Its consumer (`audit_repo`) only calls `append` / `verify` and
-  `TailCheck`; it never computes a MAC itself.
+- Its consumer (`rekindle_node::host::audit`) only calls `append`,
+  `restore` and `verify`; it never computes a MAC itself.
 
 The Tier-2 placement is enforced by the CI tier-violation lint
 (`grep` for `blake3` in higher tiers — only Tier 2 may import it).

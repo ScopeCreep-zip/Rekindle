@@ -117,13 +117,14 @@ pub async fn pqxdh_bundle_info(
 
 /// Phase 4 — verify the local audit hash chain end-to-end.
 ///
-/// Returns `{ ok, length, brokenAt }`. On failure, also emits
-/// `notification-event::SystemAlert` so the user sees the tamper signal.
+/// Returns `rekindle_audit::Verified` (`{ state: "intact", length }` or
+/// `{ state: "broken", length, at, detail }`). A broken chain also emits
+/// `SystemEvent::AuditChainBroken` and a system alert.
 #[tauri::command]
 pub async fn audit_verify(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<crate::audit_repo::AuditVerifyResult, String> {
+) -> Result<rekindle_audit::Verified, String> {
     let pool = state.db.current()?;
     services::auth_runtime::audit_verify_inner(app, state.inner(), &pool).await
 }

@@ -95,8 +95,8 @@ pub struct AppState {
     /// Ed25519 secret key bytes for signing `MessageEnvelope`s. Stored
     /// after identity unlock so `message_service` can sign outgoing messages.
     pub identity_secret: Mutex<Option<[u8; 32]>>,
-    /// Phase 4 — tamper-evident audit chain. `None` until vault unlock
-    /// runs `audit_repo::restore_chain`.
+    /// The unlocked identity's tamper-evident audit chain
+    /// (`rekindle_node::host::audit`). `None` while locked.
     pub audit_chain: Mutex<Option<rekindle_audit::AuditChain>>,
     /// Phase 4 — shared keystore handle so background services that
     /// only have `&AppState` can reach the vault.

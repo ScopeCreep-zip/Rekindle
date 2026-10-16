@@ -6,7 +6,7 @@
 //! community/friend DAO logic doesn't belong there either — it
 //! belongs in a dedicated SQLite-loader module sibling to the
 //! existing `friend_repo`, `message_repo`,
-//! `audit_repo` single-file modules. The module-dir split here is
+//! single-file modules. The module-dir split here is
 //! by responsibility:
 //!
 //! - `friends` — `load_friends_from_db` (`friends` table → AppState).

@@ -41,6 +41,9 @@ pub struct Unlocked {
     pub signal: SignalSessionManager,
     /// The receive path's friend authority over the installed database.
     pub friend_store: Arc<SqliteFriendStore>,
+    /// Wrong passphrases this unlock cleared (the host records them in
+    /// the identity's audit chain).
+    pub failed_attempts: u32,
 }
 
 /// An identity operation failed.
@@ -88,6 +91,14 @@ fn map_open(e: rekindle_vault::VaultError) -> IdentityError {
     }
 }
 
+/// An opened vault, its database key, and the wrong passphrases the open
+/// cleared.
+struct Opened {
+    vault: VaultStore,
+    app_db_key: rekindle_vault::AppDbKey,
+    cleared_failures: u32,
+}
+
 /// Open `public_key`'s vault, counting a wrong passphrase.
 fn open_vault(
     root: &DataRoot,
@@ -95,16 +106,17 @@ fn open_vault(
     public_key: &str,
     passphrase: &str,
     now_ms: u64,
-) -> Result<(VaultStore, rekindle_vault::AppDbKey), IdentityError> {
+) -> Result<Opened, IdentityError> {
     let key = public_key.to_string();
     if let Err(retry_after_ms) = attempts.check(&key, now_ms) {
         return Err(IdentityError::Locked { retry_after_ms });
     }
     match VaultStore::open(&root.identity_vault(public_key), passphrase) {
-        Ok(opened) => {
-            attempts.succeed(&key);
-            Ok(opened)
-        }
+        Ok((vault, app_db_key)) => Ok(Opened {
+            vault,
+            app_db_key,
+            cleared_failures: attempts.succeed(&key),
+        }),
         Err(rekindle_vault::VaultError::WrongPassphrase) => {
             attempts.fail(&key, now_ms);
             Err(IdentityError::WrongPassphrase)
@@ -167,6 +179,7 @@ async fn install(
     public_key: String,
     display_name: String,
     secret: Zeroizing<[u8; 32]>,
+    failed_attempts: u32,
 ) -> Result<Unlocked, IdentityError> {
     *stores.vault.lock() = Some(vault);
     stores.db.set(db);
@@ -183,6 +196,7 @@ async fn install(
         secret,
         signal,
         friend_store: Arc::new(SqliteFriendStore::new(Arc::clone(stores.db))),
+        failed_attempts,
     })
 }
 
@@ -239,7 +253,7 @@ pub async fn create(
             return Err(e);
         }
     };
-    install(stores, vault, db, public_key, display_name, secret).await
+    install(stores, vault, db, public_key, display_name, secret, 0).await
 }
 
 async fn create_files(
@@ -283,7 +297,11 @@ pub async fn unlock(
         .get(public_key)
         .cloned()
         .ok_or(IdentityError::NotFound)?;
-    let (vault, app_db_key) = open_vault(root, stores.attempts, public_key, passphrase, now_ms)?;
+    let Opened {
+        vault,
+        app_db_key,
+        cleared_failures,
+    } = open_vault(root, stores.attempts, public_key, passphrase, now_ms)?;
     let stored = vault
         .get(&VaultKey::IdentityEd25519)?
         .ok_or_else(|| IdentityError::Corrupt("no private key in the vault".into()))?;
@@ -311,6 +329,7 @@ pub async fn unlock(
         public_key.to_string(),
         display_name,
         secret,
+        cleared_failures,
     )
     .await
 }

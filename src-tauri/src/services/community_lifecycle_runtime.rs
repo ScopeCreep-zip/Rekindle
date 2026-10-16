@@ -105,14 +105,13 @@ pub async fn leave_community_inner(
     })
     .await?;
 
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         state,
         pool,
         &owner_key,
         rekindle_audit::AuditKind::ChannelLeft,
         serde_json::json!({ "community_id": community_id }),
-    )
-    .await;
+    );
 
     tracing::info!(community = %community_id, "left community");
     Ok(())
@@ -352,7 +351,7 @@ pub async fn join_community_inner(
     })
     .await?;
 
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         state,
         pool,
         &owner_key,
@@ -362,8 +361,7 @@ pub async fn join_community_inner(
             "community_name": name,
             "channel_count": channels.len(),
         }),
-    )
-    .await;
+    );
 
     Ok(())
 }

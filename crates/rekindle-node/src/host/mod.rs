@@ -7,6 +7,7 @@
 //! client of this binary like every other frontend.
 
 pub mod adapters;
+pub mod audit;
 pub mod bus_key;
 pub mod dht_outbox;
 pub mod identity;
@@ -223,15 +224,6 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
     // The subscriber beats twice per watchdog ping, so each ping sees a
     // beat no older than one ping interval.
     let keepalive = watchdog::keepalive_interval();
-    // No unaudited operation: a daemon that cannot open its audit log
-    // does not start.
-    let audit_logger = crate::state::audit::AuditLogger::open(&root.state.join("audit.jsonl"))
-        .map_err(|e| anyhow::anyhow!("audit log did not open: {e}"))?;
-    tracing::info!(
-        sequence = audit_logger.sequence(),
-        "audit logger initialized"
-    );
-
     // Watch channel for event source notification.
     // handle_unlock sends the broadcast::Sender through this when SubscriptionManager
     // is created. The IPC server receives it and starts its internal delivery task.
@@ -255,7 +247,7 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         // `PolicyReload` merges against reality rather than defaults.
         policy: RwLock::new(policy),
         config_dir: rekindle_utils::config_layers::user_dir().map_err(|e| ConfigFault(e.into()))?,
-        audit: parking_lot::Mutex::new(Some(audit_logger)),
+        audit_chain: crate::host::audit::ChainSlot::new(None),
         subscriptions: RwLock::new(None),
         broadcast_mgr: RwLock::new(None),
         write_lane: tokio::sync::RwLock::new(()),

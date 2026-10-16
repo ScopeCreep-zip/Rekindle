@@ -32,14 +32,13 @@ pub async fn remove_friend_inner(
     })
     .await?;
 
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         &state,
         &pool,
         &owner_key,
         rekindle_audit::AuditKind::FriendRemoved,
         serde_json::json!({ "peer_public_key": public_key }),
-    )
-    .await;
+    );
 
     {
         let mut friends = state.friends.write();

@@ -2,7 +2,7 @@
 //!
 //! Maps `GovernanceEntry` enum variants → `AuditLogEntryInfoDto`. Pure
 //! functions — no AppState, no Veilid, no SQLite, no Stronghold. Lives
-//! at `src-tauri/` root (sibling of `audit_repo.rs`) so the Tauri
+//! at `src-tauri/` root so the Tauri
 //! command handler in `commands/community/audit.rs` can stay focused
 //! on the Veilid IO + sig-verify + pagination orchestration.
 //!

@@ -8,7 +8,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::Manager as _;
 
-use crate::db_helpers::db_call;
 use crate::services;
 use crate::services::auth_cores::identity_error_message;
 use crate::state::{AppState, SharedState};
@@ -325,9 +324,9 @@ pub async fn audit_verify_inner(
     app: tauri::AppHandle,
     state: &SharedState,
     pool: &Db,
-) -> Result<crate::audit_repo::AuditVerifyResult, String> {
+) -> Result<rekindle_audit::Verified, String> {
     let owner = state_helpers::current_owner_key(state)?;
-    Ok(crate::audit_repo::verify_async(&app, state, pool, &owner).await)
+    Ok(services::audit::verify(&app, state, pool, &owner).await)
 }
 
 pub async fn audit_export_inner(
@@ -336,10 +335,5 @@ pub async fn audit_export_inner(
     since: u64,
 ) -> Result<Vec<rekindle_audit::AuditEntry>, String> {
     let owner = state_helpers::current_owner_key(state)?;
-    let owner_clone = owner.clone();
-    db_call(pool, move |conn| {
-        rekindle_db::repo::audit::load_since(conn, &owner_clone, since)
-    })
-    .await
-    .map_err(|e| format!("audit export: {e}"))
+    rekindle_node::host::audit::export(pool, &owner, since).await
 }

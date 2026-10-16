@@ -33,7 +33,7 @@ same folders:
 | Field | Location | Holds |
 |---|---|---|
 | `data` | `dirs::data_dir()/com.rekindle.app` | the file cache (`file_cache/`), the node lock (`node.lock`) |
-| `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`; the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`); `rekindled`'s `audit.jsonl` |
+| `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`; the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`) |
 | `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer) |
 | `logs` | `~/Library/Logs/com.rekindle.app` (macOS), `dirs::data_local_dir()/com.rekindle.app/logs` elsewhere | `rekindled.log`, `rekindle.log`, `rekindle-tui.log` (the desktop logs to stdout) |
 

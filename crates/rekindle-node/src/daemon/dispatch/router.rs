@@ -359,24 +359,29 @@ async fn route(
     }
 }
 
-/// Log an IPC request to the BLAKE3 hash-chained audit log.
-///
-/// Best-effort: audit failures are logged but never block the request.
-/// The entry is the request's variant name only — never a field, so no
-/// key, name or message content reaches the audit trail.
+/// Record a request in the unlocked identity's audit chain (`host::audit`):
+/// the variant name only, never a field, so no key, name or message content
+/// reaches the trail. Best-effort, and nothing is recorded while locked —
+/// no identity database is open, and an unauthenticated caller must not
+/// write into one (plan D1).
 fn audit_request(ctx: &DaemonContext, request: &IpcRequest) {
-    let event_name = request.name();
-
-    let mut guard = ctx.audit.lock();
-    if let Some(ref mut logger) = *guard {
-        if let Err(e) = logger.append(
-            event_name.as_bytes(),
-            None, // sender name filled by server layer
-            rekindle_ipc::message::SecurityLevel::Open,
-            event_name.to_string(),
-            None,
-        ) {
-            tracing::debug!(error = %e, event = event_name, "audit log write failed (non-fatal)");
-        }
-    }
+    let Ok(db) = ctx.db.current() else {
+        return;
+    };
+    let Some(owner) = ctx
+        .session
+        .read()
+        .as_ref()
+        .map(|s| s.identity.public_key_hex.clone())
+    else {
+        return;
+    };
+    crate::host::audit::append(
+        &ctx.audit_chain,
+        &db,
+        &ctx.vault,
+        &owner,
+        rekindle_audit::AuditKind::Request,
+        serde_json::json!({ "request": request.name() }),
+    );
 }

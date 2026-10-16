@@ -211,7 +211,7 @@ pub async fn accept_request_inner(
         ),
     );
 
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         &state,
         &pool,
         &owner_key,
@@ -221,8 +221,7 @@ pub async fn accept_request_inner(
             "display_name": display_name,
             "direction": "inbound",
         }),
-    )
-    .await;
+    );
 
     Ok(())
 }

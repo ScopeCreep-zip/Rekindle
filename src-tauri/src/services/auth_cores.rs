@@ -16,7 +16,6 @@ use rekindle_db::paths::DataRoot;
 use rekindle_db::Db;
 use rekindle_node::host::identity::{self, IdentityError, Stores, Unlocked};
 use rekindle_vault::typed::owner_keys::OwnerKey;
-use rekindle_vault::VaultHandle;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,13 +56,19 @@ fn clear_session_state(state: &SharedState) {
 
 /// Hand the unlock's keys and friend authority to the session and return
 /// the database the unlock installed.
-fn adopt(state: &SharedState, unlocked: Unlocked) -> Result<(Db, LoginResult, [u8; 32]), String> {
+/// Also returns the wrong passphrases the unlock cleared, for the audit
+/// chain.
+fn adopt(
+    state: &SharedState,
+    unlocked: Unlocked,
+) -> Result<(Db, LoginResult, [u8; 32], u32), String> {
     let Unlocked {
         public_key,
         display_name,
         secret,
         signal,
         friend_store,
+        failed_attempts,
     } = unlocked;
     *state.friend_store.write() = Some(friend_store);
     *state.signal_manager.write() = Some(Arc::new(SignalManagerHandle { manager: signal }));
@@ -82,6 +87,7 @@ fn adopt(state: &SharedState, unlocked: Unlocked) -> Result<(Db, LoginResult, [u
             display_name,
         },
         *secret,
+        failed_attempts,
     ))
 }
 
@@ -102,58 +108,29 @@ pub async fn create_identity_core(
     )
     .await
     .map_err(|e| identity_error_message(&e))?;
-    let (pool, result, secret_bytes) = adopt(state, unlocked)?;
+    let (pool, result, secret_bytes, failed_attempts) = adopt(state, unlocked)?;
     services::preferences::load(state, &pool, &result.public_key).await?;
 
-    initialize_audit_chain(
+    services::audit::restore(
         app_handle,
         state,
         &pool,
-        &state.keystore,
         &result.public_key,
+        failed_attempts,
     )
     .await;
     if let Some(app) = app_handle {
-        let _ = crate::audit_repo::verify_async(app, state, &pool, &result.public_key).await;
+        services::audit::verify(app, state, &pool, &result.public_key).await;
     }
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         state,
         &pool,
         &result.public_key,
         rekindle_audit::AuditKind::VaultUnlocked,
         serde_json::json!({ "first_time": true }),
-    )
-    .await;
+    );
 
     Ok((result, secret_bytes))
-}
-
-async fn initialize_audit_chain(
-    app_handle: Option<&tauri::AppHandle>,
-    state: &SharedState,
-    pool: &Db,
-    keystore: &VaultHandle,
-    owner_key: &str,
-) {
-    let mac_key = {
-        let ks = keystore.lock();
-        let Some(ks_ref) = ks.as_ref() else {
-            tracing::warn!("audit chain init skipped — keystore not initialized");
-            return;
-        };
-        match crate::keystore::load_or_create_audit_mac_key(ks_ref) {
-            Ok(k) => k,
-            Err(e) => {
-                tracing::warn!(error = %e, "audit MAC key load failed — chain stays disabled");
-                return;
-            }
-        }
-    };
-    if let Err(e) =
-        crate::audit_repo::restore_chain(app_handle, state, pool, owner_key, mac_key).await
-    {
-        tracing::warn!(error = %e, owner = %owner_key, "audit chain restore failed");
-    }
 }
 
 pub async fn login_core(
@@ -176,7 +153,7 @@ pub async fn login_core(
         tracing::warn!(public_key = %public_key, error = %e, "identity unlock failed");
         identity_error_message(&e)
     })?;
-    let (pool, result, key_array) = adopt(state, unlocked)?;
+    let (pool, result, key_array, failed_attempts) = adopt(state, unlocked)?;
     services::preferences::load(state, &pool, public_key).await?;
     let keystore_handle = &state.keystore;
 
@@ -203,18 +180,17 @@ pub async fn login_core(
         tracing::warn!(%error, "failed to restore governance from local cache");
     }
 
-    initialize_audit_chain(app_handle, state, &pool, keystore_handle, public_key).await;
+    services::audit::restore(app_handle, state, &pool, public_key, failed_attempts).await;
     if let Some(app) = app_handle {
-        let _ = crate::audit_repo::verify_async(app, state, &pool, public_key).await;
+        services::audit::verify(app, state, &pool, public_key).await;
     }
-    crate::audit_repo::append_async(
+    crate::services::audit::append(
         state,
         &pool,
         public_key,
         rekindle_audit::AuditKind::VaultUnlocked,
         serde_json::json!({ "first_time": false }),
-    )
-    .await;
+    );
 
     Ok((result, key_array, dht_keys))
 }

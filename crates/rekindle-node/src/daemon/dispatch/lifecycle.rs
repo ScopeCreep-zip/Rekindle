@@ -50,6 +50,8 @@ pub(crate) async fn handle_unlock(
         *unlocked.secret,
     ));
     let signing_bytes = zeroize::Zeroizing::new(*unlocked.secret);
+    let unlocked_failures = unlocked.failed_attempts;
+    let audit_restored;
     *ctx.signal.write() = Some(Arc::new(unlocked.signal));
 
     // The session is projected from the identity's stores (plan D1). Resume
@@ -65,6 +67,7 @@ pub(crate) async fn handle_unlock(
         Ok(session) => {
             *ctx.session.write() = Some(session);
             crate::daemon::mek_rotation::restore_from_vault(ctx);
+            audit_restored = restore_audit(ctx, identity, unlocked_failures).await;
             // The identity's trusted clients, and this one: the passphrase
             // proved it (plan D1).
             crate::daemon::clients::load(ctx).await;
@@ -231,6 +234,17 @@ pub(crate) async fn handle_unlock(
         }
     }
 
+    // A chain truncated between sessions, now that the event stream is up.
+    if let Some(rekindle_audit::Restored::Truncated { anchor_cursor }) = audit_restored {
+        ctx.publish_event(
+            rekindle_types::subscription_events::SubscriptionEvent::System(
+                rekindle_types::subscription_events::SystemEvent::AuditChainBroken {
+                    cursor: anchor_cursor,
+                },
+            ),
+        );
+    }
+
     if let Err(refused) = transition(ctx, DaemonState::Operational) {
         return refused;
     }
@@ -364,7 +378,37 @@ pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
     // The identity itself, last: its clients' clearance, its session, Signal
     // manager, database and vault (plan D1).
     crate::daemon::clients::unload(ctx).await;
+    crate::host::audit::close(&ctx.audit_chain);
     *ctx.session.write() = None;
     *ctx.signal.write() = None;
     crate::host::identity::lock(&ctx.identity_stores()).await;
+}
+
+/// Open the identity's audit chain and record the wrong passphrases the
+/// unlock cleared; what the restore found, when it ran.
+async fn restore_audit(
+    ctx: &DaemonContext,
+    owner: &str,
+    failures: u32,
+) -> Option<rekindle_audit::Restored> {
+    let db = ctx.db.current().ok()?;
+    match crate::host::audit::restore(&ctx.audit_chain, &db, &ctx.vault, owner).await {
+        Ok(restored) => {
+            if let rekindle_audit::Restored::Truncated { anchor_cursor } = restored {
+                tracing::error!(anchor_cursor, "audit chain truncated between sessions");
+            }
+            crate::host::audit::record_unlock_failures(
+                &ctx.audit_chain,
+                &db,
+                &ctx.vault,
+                owner,
+                failures,
+            );
+            Some(restored)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "audit chain not restored");
+            None
+        }
+    }
 }

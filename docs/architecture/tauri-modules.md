@@ -95,12 +95,11 @@ The `rekindle_crypto` Signal store traits over the vault: an in-memory
 cache written through to `rekindle_vault::typed::signal`. Layers above
 go through `rekindle_crypto::signal::SignalSessionManager`.
 
-### `audit_repo/`
+### `services/audit.rs`
 
-Audit chain append, verify and restore over `rekindle_db::repo::audit`
-(the `audit_entries` SQL) and `rekindle_audit::TailCheck` (the vault
-tail-anchor rule). The MAC key
-lives in the vault. See [`audit-chain.md`](audit-chain.md).
+The desktop over `rekindle_node::host::audit` (both hosts' audit chain
+I/O): append, restore at unlock, verify, and the tamper signal. See
+[`audit-chain.md`](audit-chain.md).
 
 ### `audit_view.rs`
 
