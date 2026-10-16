@@ -1,5 +1,5 @@
 //! The daemon's [`Session`], projected from the unlocked identity's stores
-//! (plan D1: `session.json` is retired).
+//! (plan D1: the daemon's session file is retired).
 //!
 //! [`load`] builds it at unlock from the identity's database and vault:
 //! the identity row and its friend inbox, one membership per `communities`
