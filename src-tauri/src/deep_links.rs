@@ -31,10 +31,13 @@ pub struct PendingDeepLink {
 }
 
 enum PendingAction {
-    JoinCommunity(InviteLink),
+    JoinCommunity {
+        link: InviteLink,
+        fingerprint: String,
+    },
     AddFriend {
         invite_url: String,
-        public_key: String,
+        fingerprint: String,
     },
     PairingRefused,
 }
@@ -73,16 +76,6 @@ pub enum DeepLinkOutcome {
     Dismissed,
 }
 
-/// 64 bits of `blake3(key)`, as four groups of four hex digits.
-fn key_fingerprint(key: &str) -> String {
-    let hex = rekindle_utils::hash::blake3_hex(key.as_bytes());
-    hex.as_bytes()[..16]
-        .chunks(4)
-        .map(|c| std::str::from_utf8(c).unwrap_or_default())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 fn new_request_id() -> String {
     hex::encode(rekindle_utils::random::id_bytes_16())
 }
@@ -91,21 +84,23 @@ impl PendingDeepLink {
     fn request(&self) -> DeepLinkRequest {
         let request_id = self.request_id.clone();
         match &self.action {
-            PendingAction::JoinCommunity(link) => DeepLinkRequest::JoinCommunity {
+            PendingAction::JoinCommunity { fingerprint, .. } => DeepLinkRequest::JoinCommunity {
                 request_id,
-                key_fingerprint: key_fingerprint(link.governance_key.as_str()),
+                key_fingerprint: fingerprint.clone(),
             },
-            PendingAction::AddFriend { public_key, .. } => DeepLinkRequest::AddFriend {
+            PendingAction::AddFriend { fingerprint, .. } => DeepLinkRequest::AddFriend {
                 request_id,
-                key_fingerprint: key_fingerprint(public_key),
+                key_fingerprint: fingerprint.clone(),
             },
             PendingAction::PairingRefused => DeepLinkRequest::PairingRefused { request_id },
         }
     }
 }
 
-/// Validate a friend invite locally: decode, signature, recency.
-fn friend_invite_key(invite_url: &str) -> Result<String, String> {
+/// Validate a friend invite locally (decode, signature, recency) and
+/// return the inviter's key fingerprint (U1.9: the one fingerprint form,
+/// `rekindle_crypto::identity::key_fingerprint`).
+fn friend_invite_fingerprint(invite_url: &str) -> Result<String, String> {
     let blob = rekindle_codec::message::decode_invite_url(invite_url)?;
     rekindle_codec::message::verify_invite_blob(&blob)?;
     rekindle_codec::message::check_invite_recency(
@@ -113,7 +108,8 @@ fn friend_invite_key(invite_url: &str) -> Result<String, String> {
         rekindle_utils::timestamp_ms(),
         crate::services::friend_runtime::MAX_INVITE_AGE_SECS,
     )?;
-    Ok(blob.public_key)
+    let key = hex::decode(&blob.public_key).map_err(|e| format!("invite key: {e}"))?;
+    Ok(rekindle_crypto::identity::key_fingerprint(&key))
 }
 
 /// Classify and validate an OS deep link, hold it for consent, and tell the
@@ -123,11 +119,19 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
         return;
     };
     let action = match DeepLink::parse(url) {
-        Ok(DeepLink::CommunityInvite(link)) => PendingAction::JoinCommunity(link),
-        Ok(DeepLink::FriendInvite(invite_url)) => match friend_invite_key(&invite_url) {
-            Ok(public_key) => PendingAction::AddFriend {
+        Ok(DeepLink::CommunityInvite(link)) => {
+            let Some(fingerprint) =
+                rekindle_crypto::identity::record_key_fingerprint(link.governance_key.as_str())
+            else {
+                tracing::warn!("deep link: community invite key is not a record key");
+                return;
+            };
+            PendingAction::JoinCommunity { link, fingerprint }
+        }
+        Ok(DeepLink::FriendInvite(invite_url)) => match friend_invite_fingerprint(&invite_url) {
+            Ok(fingerprint) => PendingAction::AddFriend {
                 invite_url,
-                public_key,
+                fingerprint,
             },
             Err(e) => {
                 tracing::warn!(error = %e, "deep link: friend invite rejected");
@@ -185,7 +189,7 @@ pub async fn confirm(
     request_id: &str,
 ) -> Result<DeepLinkOutcome, String> {
     match take_matching(state, request_id)? {
-        PendingAction::JoinCommunity(link) => {
+        PendingAction::JoinCommunity { link, .. } => {
             let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
                 .map_err(|e| e.to_string())?;
             crate::services::community_lifecycle_runtime::join_community_inner(
@@ -213,19 +217,4 @@ pub async fn confirm(
 /// Drop the pending deep link the user declined.
 pub fn dismiss(state: &AppState, request_id: &str) -> Result<(), String> {
     take_matching(state, request_id).map(drop)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fingerprint_is_four_groups_of_four_hex() {
-        let fp = key_fingerprint("VLD0:abc");
-        assert_eq!(fp.len(), 19);
-        assert!(fp
-            .split(' ')
-            .all(|g| g.len() == 4 && g.bytes().all(|b| b.is_ascii_hexdigit())));
-        assert_ne!(fp, key_fingerprint("VLD0:abd"));
-    }
 }

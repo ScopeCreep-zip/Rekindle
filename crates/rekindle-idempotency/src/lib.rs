@@ -14,6 +14,7 @@
 //!
 //! Plan reference: `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 8.
 
+pub mod attempts;
 pub mod cache;
 pub mod intent_gate;
 

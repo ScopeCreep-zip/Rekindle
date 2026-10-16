@@ -16,6 +16,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+uuid = { version = "1", features = [ "v7", "serde" ] }
 zeroize = { version = "1", features = [ "serde" ] }
 
 [dev-dependencies]

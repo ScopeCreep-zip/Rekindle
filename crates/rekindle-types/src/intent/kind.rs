@@ -414,32 +414,4 @@ impl IntentKind {
             | Self::ArmQuickWipe => IntentClass::Protected,
         }
     }
-
-    /// Lowers the user's exposure, so no escalation raises it past
-    /// Consequential: a survivor can always block in three quick moves
-    /// (r9 F8).
-    #[must_use]
-    pub const fn is_protective(self) -> bool {
-        matches!(
-            self,
-            Self::BlockUser
-                | Self::DeclineDmInvite
-                | Self::DeclineSessionReset
-                | Self::DismissDeepLink
-                | Self::MuteCallerTemp
-                | Self::RejectJoinRequest
-                | Self::RejectRequest
-                | Self::RevokeAgent
-                | Self::RevokeCommunityInvite
-                | Self::RevokeRelay
-                | Self::UnregisterWithPushRelay
-        )
-    }
-
-    /// The request is itself the proof (the passphrase entry of unlock and
-    /// identity creation), so the gate adds no step.
-    #[must_use]
-    pub const fn proves_itself(self) -> bool {
-        matches!(self, Self::CreateIdentity | Self::Login)
-    }
 }

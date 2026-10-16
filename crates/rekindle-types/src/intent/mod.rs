@@ -13,6 +13,7 @@
 
 mod all;
 mod kind;
+mod predicates;
 mod table;
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,40 @@ use zeroize::Zeroizing;
 
 pub use kind::IntentKind;
 pub use table::{kind_of, Classified, COMMAND_TABLE};
+
+/// A held action's id: UUID v7, minted by the gate, and the key a repeated
+/// commit of it is answered from (plan U1.9). Serializes as the UUID string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct IntentId(pub uuid::Uuid);
+
+impl IntentId {
+    /// A fresh time-ordered id.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(uuid::Uuid::now_v7())
+    }
+}
+
+impl Default for IntentId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for IntentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::str::FromStr for IntentId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        uuid::Uuid::parse_str(s).map(Self)
+    }
+}
 
 /// How deliberate an action must be, in increasing order (r9 §7.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -265,8 +300,8 @@ pub enum Notifies {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IntentReview {
-    /// UUID v7; the commit's idempotency key.
-    pub intent_id: String,
+    /// The commit's idempotency key.
+    pub intent_id: IntentId,
     pub kind: IntentKind,
     pub class: IntentClass,
     pub subject: Subject,

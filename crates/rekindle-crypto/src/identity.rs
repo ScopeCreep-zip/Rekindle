@@ -139,9 +139,37 @@ pub fn key_fingerprint(public_key: &[u8]) -> String {
         .join(" ")
 }
 
+/// A DHT record key as a person compares it: [`key_fingerprint`] over the
+/// record's opaque key bytes, from the key's text form
+/// `KIND:base64url(opaque key)[:base64url(encryption key)]` (Veilid
+/// `crypto/types/record_key.rs`). The encryption key, a secret, is never
+/// part of it. `None` when the text is not a record key.
+#[must_use]
+pub fn record_key_fingerprint(record_key: &str) -> Option<String> {
+    use base64::Engine;
+    let (_kind, rest) = record_key.split_once(':')?;
+    let opaque = rest.split(':').next()?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(opaque)
+        .ok()?;
+    (bytes.len() == 32).then(|| key_fingerprint(&bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_record_key_fingerprint_ignores_the_encryption_key() {
+        let opaque = "A".repeat(43);
+        let plain = record_key_fingerprint(&format!("VLD0:{opaque}")).unwrap();
+        let with_secret =
+            record_key_fingerprint(&format!("VLD0:{opaque}:{}", "B".repeat(43))).unwrap();
+        assert_eq!(plain, with_secret);
+        assert_eq!(plain, key_fingerprint(&[0u8; 32]));
+        assert!(record_key_fingerprint("not a key").is_none());
+        assert!(record_key_fingerprint("VLD0:short").is_none());
+    }
 
     #[test]
     fn a_fingerprint_groups_the_key_hex_in_fours() {

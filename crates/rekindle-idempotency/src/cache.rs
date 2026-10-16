@@ -90,6 +90,22 @@ impl<T: Clone + Send + Sync + 'static> IdempotencyCache<T> {
             .await
     }
 
+    /// Like [`Self::wrap`], but only an `Ok` value is cached. Concurrent
+    /// callers with the same key share one run of `f` and all see its
+    /// outcome; an `Err` is handed to them and then forgotten, so a later
+    /// call runs `f` again.
+    ///
+    /// # Errors
+    /// `f`'s error, shared among the concurrent callers.
+    pub async fn try_wrap<F, Fut, E>(&self, key: Uuid, f: F) -> Result<T, Arc<E>>
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: Future<Output = Result<T, E>> + Send,
+        E: Send + Sync + 'static,
+    {
+        self.inner.try_get_with(key, async { f().await }).await
+    }
+
     /// Diagnostic: number of entries currently cached.
     #[must_use]
     pub fn entry_count(&self) -> u64 {

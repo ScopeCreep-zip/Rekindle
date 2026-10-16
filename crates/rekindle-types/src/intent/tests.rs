@@ -102,6 +102,18 @@ fn each_class_demands_its_proof() {
 }
 
 #[test]
+fn intent_ids_are_v7_and_round_trip_as_strings() {
+    let id = IntentId::new();
+    assert_eq!(id.0.get_version_num(), 7);
+    let back: IntentId = id.to_string().parse().unwrap();
+    assert_eq!(back, id);
+    assert_eq!(
+        serde_json::to_value(id).unwrap(),
+        serde_json::json!(id.to_string())
+    );
+}
+
+#[test]
 fn a_person_is_typed_by_local_nickname_then_fingerprint() {
     let person = |nick: Option<&str>| Subject::Person {
         local_nickname: nick.map(Into::into),
@@ -142,7 +154,7 @@ fn the_table_names_each_command_once_and_classifies_the_self_proving() {
 #[test]
 fn the_review_serializes_in_camel_case() {
     let review = IntentReview {
-        intent_id: "0190".into(),
+        intent_id: "01900000-0000-7000-8000-000000000000".parse().unwrap(),
         kind: IntentKind::DeleteChannel,
         class: IntentClass::Destructive,
         subject: Subject::Channel {
@@ -164,7 +176,7 @@ fn the_review_serializes_in_camel_case() {
     assert_eq!(
         json,
         serde_json::json!({
-            "intentId": "0190",
+            "intentId": "01900000-0000-7000-8000-000000000000",
             "kind": "deleteChannel",
             "class": "destructive",
             "subject": {"type": "channel", "data": {"communityName": "c", "id": "1", "name": "general"}},

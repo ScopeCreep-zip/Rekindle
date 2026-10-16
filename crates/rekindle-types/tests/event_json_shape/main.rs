@@ -20,6 +20,7 @@ mod channel;
 mod crypto;
 mod friend;
 mod governance;
+mod intent;
 mod membership;
 mod network;
 mod notification;
@@ -348,6 +349,11 @@ fn serialized_samples() -> Map<String, Value> {
             let value = serde_json::to_value(&event).expect("serialize sample");
             (id, sorted(value))
         })
+        .chain(
+            intent::samples()
+                .into_iter()
+                .map(|(id, value)| (id, sorted(value))),
+        )
         .collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = Map::new();

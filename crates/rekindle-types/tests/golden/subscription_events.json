@@ -475,6 +475,245 @@
       }
     }
   },
+  "intent.escalation.attachment": {
+    "data": {
+      "fileName": "photo.jpg",
+      "metadataRemoved": false,
+      "sizeBytes": 2048
+    },
+    "type": "attachment"
+  },
+  "intent.escalation.containerNotEmpty": {
+    "data": {
+      "members": 57,
+      "messages": 1204
+    },
+    "type": "containerNotEmpty"
+  },
+  "intent.escalation.crossAudience": {
+    "data": {
+      "fromMembers": 12,
+      "toMembers": 340
+    },
+    "type": "crossAudience"
+  },
+  "intent.escalation.firstMediaInCall": {
+    "type": "firstMediaInCall"
+  },
+  "intent.escalation.lastAdmin": {
+    "type": "lastAdmin"
+  },
+  "intent.escalation.massMention": {
+    "data": {
+      "notified": 214
+    },
+    "type": "massMention"
+  },
+  "intent.escalation.pendingWork": {
+    "data": {
+      "inCall": true,
+      "unsent": 3,
+      "uploading": false
+    },
+    "type": "pendingWork"
+  },
+  "intent.escalation.soleMember": {
+    "type": "soleMember"
+  },
+  "intent.escalation.startsMekBallot": {
+    "type": "startsMekBallot"
+  },
+  "intent.escalation.verifiedKeyChanged": {
+    "data": {
+      "newSafetyNumber": "5e6f7a8b",
+      "oldSafetyNumber": "1a2b3c4d"
+    },
+    "type": "verifiedKeyChanged"
+  },
+  "intent.fact.fingerprint": {
+    "data": {
+      "fingerprint": "abcd 0123"
+    },
+    "type": "fingerprint"
+  },
+  "intent.fact.ipAddressLeaves": {
+    "type": "ipAddressLeaves"
+  },
+  "intent.fact.membersAffected": {
+    "data": {
+      "count": 41
+    },
+    "type": "membersAffected"
+  },
+  "intent.fact.messagesDeleted": {
+    "data": {
+      "count": 1204
+    },
+    "type": "messagesDeleted"
+  },
+  "intent.fact.pendingMessagesDropped": {
+    "type": "pendingMessagesDropped"
+  },
+  "intent.fact.presenceVisible": {
+    "type": "presenceVisible"
+  },
+  "intent.fact.rejoinNeedsInvite": {
+    "type": "rejoinNeedsInvite"
+  },
+  "intent.fact.safetyNumber": {
+    "data": {
+      "safetyNumber": "1a2b3c4d"
+    },
+    "type": "safetyNumber"
+  },
+  "intent.fact.sessionDeleted": {
+    "type": "sessionDeleted"
+  },
+  "intent.fact.subjectNotTold": {
+    "type": "subjectNotTold"
+  },
+  "intent.intentClass.consequential": "consequential",
+  "intent.intentClass.destructive": "destructive",
+  "intent.intentClass.protected": "protected",
+  "intent.intentClass.routine": "routine",
+  "intent.intentClass.trustChanging": "trustChanging",
+  "intent.intentId": "01900000-0000-7000-8000-000000000001",
+  "intent.intentKind.deleteChannel": "deleteChannel",
+  "intent.intentProof.acknowledged": {
+    "type": "acknowledged"
+  },
+  "intent.intentProof.commit": {
+    "type": "commit"
+  },
+  "intent.intentProof.passphrase": {
+    "data": "correct horse",
+    "type": "passphrase"
+  },
+  "intent.intentProof.typed": {
+    "data": "general",
+    "type": "typed"
+  },
+  "intent.intentReview": {
+    "class": "destructive",
+    "escalations": [
+      {
+        "data": {
+          "members": 57,
+          "messages": 1204
+        },
+        "type": "containerNotEmpty"
+      }
+    ],
+    "expiresAtMs": 1700000300000,
+    "facts": [
+      {
+        "data": {
+          "count": 1204
+        },
+        "type": "messagesDeleted"
+      }
+    ],
+    "intentId": "01900000-0000-7000-8000-000000000001",
+    "kind": "deleteChannel",
+    "notifies": {
+      "data": 57,
+      "type": "members"
+    },
+    "proof": "typeSubject",
+    "reversibility": {
+      "type": "never"
+    },
+    "subject": {
+      "data": {
+        "communityName": "Raiders",
+        "id": "ch_cccccccccccccccccccccccccccccccc",
+        "name": "general"
+      },
+      "type": "channel"
+    }
+  },
+  "intent.notifies.members": {
+    "data": 57,
+    "type": "members"
+  },
+  "intent.notifies.nobody": {
+    "type": "nobody"
+  },
+  "intent.notifies.subject": {
+    "type": "subject"
+  },
+  "intent.proofRequired.acknowledge": "acknowledge",
+  "intent.proofRequired.commit": "commit",
+  "intent.proofRequired.none": "none",
+  "intent.proofRequired.passphrase": "passphrase",
+  "intent.proofRequired.typeSubject": "typeSubject",
+  "intent.reversibility.needsOthers": {
+    "type": "needsOthers"
+  },
+  "intent.reversibility.never": {
+    "type": "never"
+  },
+  "intent.reversibility.reversibleByInverse": {
+    "data": "unblockUser",
+    "type": "reversibleByInverse"
+  },
+  "intent.reversibility.undoable": {
+    "type": "undoable"
+  },
+  "intent.subject.channel": {
+    "data": {
+      "communityName": "Raiders",
+      "id": "ch_cccccccccccccccccccccccccccccccc",
+      "name": "general"
+    },
+    "type": "channel"
+  },
+  "intent.subject.community": {
+    "data": {
+      "id": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+      "name": "Raiders"
+    },
+    "type": "community"
+  },
+  "intent.subject.file": {
+    "data": {
+      "name": "photo.jpg"
+    },
+    "type": "file"
+  },
+  "intent.subject.link": {
+    "data": {
+      "host": "example.org"
+    },
+    "type": "link"
+  },
+  "intent.subject.named": {
+    "data": {
+      "name": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "type": "named"
+  },
+  "intent.subject.ownIdentity": {
+    "data": {
+      "name": "Me"
+    },
+    "type": "ownIdentity"
+  },
+  "intent.subject.person": {
+    "data": {
+      "displayName": "alice_g",
+      "fingerprint": "abcd 0123",
+      "localNickname": "Alice"
+    },
+    "type": "person"
+  },
+  "intent.subject.role": {
+    "data": {
+      "id": "role_1",
+      "name": "officer"
+    },
+    "type": "role"
+  },
   "membership.banned": {
     "membership": {
       "banned": {

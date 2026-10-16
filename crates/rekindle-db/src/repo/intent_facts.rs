@@ -42,8 +42,9 @@ pub fn community_members(
     )
 }
 
-/// Messages and envelopes queued for a retry, and record writes a logout
-/// left for the next login: what a logout or lock leaves undelivered.
+/// Messages queued for a retry, and record writes a logout left for the
+/// next login: what a logout or lock leaves undelivered. (`pending_envelopes`
+/// is not counted: nothing writes it in production, plan U1.9.)
 ///
 /// # Errors
 /// The query failed.
@@ -51,7 +52,6 @@ pub fn unsent(conn: &Connection, owner_key: &str) -> rusqlite::Result<u32> {
     count(
         conn,
         "SELECT (SELECT COUNT(*) FROM pending_messages WHERE owner_key = ?1) \
-              + (SELECT COUNT(*) FROM pending_envelopes WHERE owner_key = ?1) \
               + (SELECT COUNT(*) FROM dht_outbox WHERE owner_key = ?1)",
         params![owner_key],
     )
