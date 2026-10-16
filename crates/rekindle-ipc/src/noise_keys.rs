@@ -4,9 +4,9 @@
 //! checksums. Adapted from open-sesame `core-ipc/src/noise_keys.rs`.
 //!
 //! Key storage layout under `$XDG_RUNTIME_DIR/rekindle/`:
-//! - `bus.pub` (0644) — bus server public key, read by connecting clients
-//! - `bus.key` (0600) — bus server private key (atomic write)
-//! - `bus.checksum` — BLAKE3 integrity checksum
+//! - `bus.pub` (0644) — bus server public key, read by connecting clients.
+//!   The bus private key never reaches the disk: the daemon generates it at
+//!   each start and holds it in memory (plan D1).
 //! - `keys/<agent>.pub` (0644) — per-agent public key
 //! - `keys/<agent>.key` (0600) — per-agent private key (atomic write)
 //! - `keys/<agent>.checksum` — per-agent integrity checksum
@@ -167,8 +167,9 @@ pub async fn create_keys_dir() -> Result<()> {
     Ok(())
 }
 
-/// Write the bus server's static keypair to the runtime directory.
-pub async fn write_bus_keypair(keypair: &snow::Keypair) -> Result<()> {
+/// Publish the bus server's public key as `bus.pub` (0644), written
+/// atomically so a connecting client never reads half of it.
+pub async fn write_bus_public_key(public: &[u8; 32]) -> Result<()> {
     let dir = runtime_dir()?;
     tokio::fs::create_dir_all(&dir)
         .await
@@ -176,41 +177,22 @@ pub async fn write_bus_keypair(keypair: &snow::Keypair) -> Result<()> {
             path: dir.display().to_string(),
             source: e,
         })?;
-
     let pub_path = dir.join("bus.pub");
-    let key_path = dir.join("bus.key");
-
-    // Public key: world-readable.
-    tokio::fs::write(&pub_path, &keypair.public)
+    let tmp_path = dir.join("bus.pub.tmp");
+    tokio::fs::write(&tmp_path, public)
         .await
         .map_err(IpcError::Io)?;
-
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&pub_path, std::fs::Permissions::from_mode(0o644))
+        tokio::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o644))
             .await
             .map_err(IpcError::Io)?;
     }
-
-    // [RC-4] Private key: atomic write with 0600 from creation.
-    write_private_key_atomic(&key_path, &keypair.private).await?;
-
-    // BLAKE3 tamper-detection checksum.
-    let pub_array: [u8; 32] =
-        keypair
-            .public
-            .clone()
-            .try_into()
-            .map_err(|_| IpcError::HandshakeFailed {
-                reason: "bus public key is not 32 bytes".into(),
-            })?;
-    let checksum = keypair_checksum(&pub_array, &keypair.private);
-    tokio::fs::write(dir.join("bus.checksum"), checksum)
+    tokio::fs::rename(&tmp_path, &pub_path)
         .await
         .map_err(IpcError::Io)?;
-
-    tracing::info!(pub_path = %pub_path.display(), "bus keypair written");
+    tracing::info!(pub_path = %pub_path.display(), "bus public key published");
     Ok(())
 }
 
@@ -272,16 +254,6 @@ pub async fn read_agent_keypair(
 ) -> Result<(zeroize::Zeroizing<Vec<u8>>, [u8; 32])> {
     validate_agent_name(agent_name)?;
     read_checked_keypair(&keys_dir()?, agent_name).await
-}
-
-/// Read the bus server's keypair from the runtime directory with tamper
-/// detection.
-pub async fn read_bus_keypair() -> Result<ZeroizingKeypair> {
-    let (private, public) = read_checked_keypair(&runtime_dir()?, "bus").await?;
-    Ok(ZeroizingKeypair::new(snow::Keypair {
-        private: private.to_vec(),
-        public: public.to_vec(),
-    }))
 }
 
 /// Read `<stem>.key`, `<stem>.pub` and `<stem>.checksum` from `dir` and
@@ -386,8 +358,8 @@ mod tests {
     #[tokio::test]
     async fn checked_keypair_reads_an_intact_keypair() {
         let dir = tempfile::tempdir().unwrap();
-        let public = write_keypair(dir.path(), "bus");
-        let (private, read_public) = read_checked_keypair(dir.path(), "bus").await.unwrap();
+        let public = write_keypair(dir.path(), "agent");
+        let (private, read_public) = read_checked_keypair(dir.path(), "agent").await.unwrap();
         assert_eq!(read_public, public);
         assert_eq!(private.as_slice(), &[9u8; 32]);
     }
@@ -395,24 +367,24 @@ mod tests {
     #[tokio::test]
     async fn checked_keypair_fails_closed() {
         let dir = tempfile::tempdir().unwrap();
-        write_keypair(dir.path(), "bus");
-        std::fs::remove_file(dir.path().join("bus.checksum")).unwrap();
+        write_keypair(dir.path(), "agent");
+        std::fs::remove_file(dir.path().join("agent.checksum")).unwrap();
         assert!(matches!(
-            read_checked_keypair(dir.path(), "bus").await,
+            read_checked_keypair(dir.path(), "agent").await,
             Err(IpcError::KeyIncomplete { .. })
         ));
 
-        write_keypair(dir.path(), "bus");
-        std::fs::write(dir.path().join("bus.key"), b"short").unwrap();
+        write_keypair(dir.path(), "agent");
+        std::fs::write(dir.path().join("agent.key"), b"short").unwrap();
         assert!(matches!(
-            read_checked_keypair(dir.path(), "bus").await,
+            read_checked_keypair(dir.path(), "agent").await,
             Err(IpcError::KeyMalformed { got: 5, .. })
         ));
 
-        write_keypair(dir.path(), "bus");
-        std::fs::write(dir.path().join("bus.key"), [8u8; 32]).unwrap();
+        write_keypair(dir.path(), "agent");
+        std::fs::write(dir.path().join("agent.key"), [8u8; 32]).unwrap();
         assert!(matches!(
-            read_checked_keypair(dir.path(), "bus").await,
+            read_checked_keypair(dir.path(), "agent").await,
             Err(IpcError::KeyTamperDetected { .. })
         ));
     }

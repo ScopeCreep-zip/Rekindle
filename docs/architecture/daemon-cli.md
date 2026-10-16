@@ -109,7 +109,7 @@ crates/rekindle-ipc/src/
 ├── transport.rs         platform listener/stream, peer credentials, socket path
 ├── framing.rs           u16 BE per Noise message; reader task per connection
 ├── noise.rs             Noise IK handshake (Noise_IK_25519_ChaChaPoly_BLAKE2s)
-├── noise_keys.rs        bus key files, agent-name validation
+├── noise_keys.rs        bus.pub, agent key files, agent-name validation
 ├── protocol/            IpcRequest / IpcResponse enums (exhaustive match)
 ├── registry.rs          ClearanceRegistry (shared with the host's dispatch)
 ├── event_router.rs      push events to subscribed clients
@@ -142,7 +142,7 @@ crates/rekindle-node/src/
 │   ├── mod.rs           run(): lock, policy, bus key, transport, context, bus
 │   ├── lock.rs          NodeLock — one rekindled per data root
 │   ├── policy.rs        admin policy: one fail-closed loader (startup + PolicyReload)
-│   ├── bus_key.rs       bus Noise keypair with tamper detection
+│   ├── bus_key.rs       per-run bus Noise keypair; publishes bus.pub
 │   └── watchdog.rs      sd_notify READY=1 + watchdog
 ├── validation.rs        input validation
 ├── daemon/              lifecycle + RPC handlers
@@ -344,7 +344,7 @@ this order, within systemd's `TimeoutStopSec=15`:
 | 1 | startup failed: transport, audit log, node lock | restarted (`on-failure`) |
 | 70 `EX_SOFTWARE` | a handler panicked | restarted from fresh state |
 | 75 `EX_TEMPFAIL` | identity destroyed or data wiped | restarted empty (`RestartForceExitStatus=75`) |
-| 78 `EX_CONFIG` | unparsable policy; incomplete, malformed or tampered bus key | not restarted (`RestartPreventExitStatus=78`) |
+| 78 `EX_CONFIG` | unparsable policy; a bus key that cannot be generated or published | not restarted (`RestartPreventExitStatus=78`) |
 
 ## The frontends: `rekindle-client`, `rekindle` and `rekindle-tui`
 

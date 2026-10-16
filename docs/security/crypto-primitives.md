@@ -352,8 +352,9 @@ opt-level = 3
 **Why.**
 
 - IK pattern matches the threat model perfectly: the daemon
-  (responder) has a long-term Ed25519 / X25519 key in the OS keyring
-  that the client knows in advance; the client (initiator) is
+  (responder) has a static X25519 key, generated at each start and held
+  only in memory, whose public half (`bus.pub`) the client reads in
+  advance; the client (initiator) is
   ephemeral and freshly generated.
 - 1-RTT handshake — minimal latency.
 - Forward secrecy (transport-phase ephemerals).

@@ -275,7 +275,7 @@ pub fn socket_path() -> Result<PathBuf> {
     }
 }
 
-/// Resolve the runtime directory for IPC key files (`bus.pub`, `bus.key`).
+/// Resolve the runtime directory for the bus socket and `bus.pub`.
 ///
 /// On Unix it is the socket's directory (`$XDG_RUNTIME_DIR/rekindle/` on
 /// Linux). A Windows pipe has no directory, so there it is

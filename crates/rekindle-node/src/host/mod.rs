@@ -100,7 +100,7 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
     }
     rekindle_ipc::noise_keys::create_keys_dir().await?;
 
-    let bus_keypair = bus_key::load_or_generate(&runtime_dir)
+    let bus_keypair = bus_key::generate_and_publish(&runtime_dir)
         .await
         .map_err(ConfigFault)?;
 

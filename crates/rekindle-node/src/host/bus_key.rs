@@ -1,34 +1,35 @@
-//! The bus server's Noise static keypair: loaded with tamper detection, or
-//! generated on first start.
+//! The bus server's Noise static keypair: generated at each start and held
+//! in memory; only its public half is published (`bus.pub`), for clients
+//! to connect with (plan D1). A restart therefore rotates it.
 
 use rekindle_ipc::ZeroizingKeypair;
 
-/// The files that make up the bus keypair.
-const BUS_KEY_FILES: [&str; 3] = ["bus.pub", "bus.key", "bus.checksum"];
+/// Files an earlier daemon kept the bus private key in. A secret left on
+/// disk is removed at start.
+const STALE_SECRET_FILES: [&str; 2] = ["bus.key", "bus.checksum"];
 
-/// Load the bus server keypair from `runtime_dir`, or generate and persist
-/// one on first start.
-///
-/// First start means none of the keypair's files exist. Any other state —
-/// a file missing, a bad length, a checksum mismatch — is an error: the
-/// daemon refuses to start rather than silently replace a key that may have
-/// been tampered with.
+/// Generate this run's bus keypair and publish its public key in
+/// `runtime_dir`.
 ///
 /// # Errors
-/// An incomplete, malformed or tampered keypair, or a generation or
-/// persistence failure.
-pub async fn load_or_generate(runtime_dir: &std::path::Path) -> anyhow::Result<ZeroizingKeypair> {
-    let first_start = BUS_KEY_FILES
-        .iter()
-        .all(|name| !runtime_dir.join(name).exists());
-    if !first_start {
-        let kp = rekindle_ipc::noise_keys::read_bus_keypair().await?;
-        tracing::info!("loaded existing bus keypair");
-        return Ok(kp);
+/// Generation fails, a stale secret cannot be removed, or `bus.pub`
+/// cannot be written.
+pub async fn generate_and_publish(
+    runtime_dir: &std::path::Path,
+) -> anyhow::Result<ZeroizingKeypair> {
+    for name in STALE_SECRET_FILES {
+        match tokio::fs::remove_file(runtime_dir.join(name)).await {
+            Ok(()) => tracing::info!(file = name, "removed a bus key file an earlier daemon left"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(anyhow::anyhow!("cannot remove stale {name}: {e}")),
+        }
     }
-
     let kp = rekindle_ipc::generate_keypair()?;
-    rekindle_ipc::noise_keys::write_bus_keypair(kp.as_inner()).await?;
-    tracing::info!("bus keypair generated");
+    let public: [u8; 32] = kp
+        .public()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("the bus public key is not 32 bytes"))?;
+    rekindle_ipc::noise_keys::write_bus_public_key(&public).await?;
+    tracing::info!("bus keypair generated for this run");
     Ok(kp)
 }
