@@ -7521,12 +7521,9 @@ name = "rekindle-e2e-server"
 version = "0.0.1"
 dependencies = [
  "axum",
- "base64 0.22.1",
  "rekindle-db",
  "rekindle-desktop",
  "rekindle-utils",
- "rekindle-vault",
- "rusqlite",
  "serde",
  "serde_json",
  "tokio",
@@ -7801,6 +7798,7 @@ dependencies = [
  "rekindle-gossip",
  "rekindle-governance",
  "rekindle-governance-runtime",
+ "rekindle-idempotency",
  "rekindle-ipc",
  "rekindle-lifecycle",
  "rekindle-mek-rotation",

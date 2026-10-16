@@ -1,18 +1,18 @@
-//! Phase 23.C — auth `_core` helpers lifted from `commands/auth.rs`.
-//! Hosts `create_identity_core`, `login_core`, and the shared
-//! `initialize_audit_chain` helper. The `_core` naming pattern is
-//! preserved so existing E2E test imports continue to work via the
-//! `pub use` re-export from `commands::auth`.
+//! The desktop's identity create and unlock (plan D1): both call
+//! `rekindle_node::host::identity`, the one implementation every host
+//! uses, and then load the session's in-memory state from the database
+//! the unlock opened. `_core` functions take no `AppHandle` requirement so
+//! the E2E server and tests drive them directly.
 
-use rekindle_vault::VaultKey;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db;
-use crate::db_helpers::db_call;
 use crate::services;
-use crate::state::{IdentityState, SharedState, UserStatus};
+use crate::state::{AppState, IdentityState, SharedState, SignalManagerHandle, UserStatus};
+use rekindle_db::paths::DataRoot;
 use rekindle_db::Db;
+use rekindle_node::host::identity::{self, IdentityError, Stores, Unlocked};
 use rekindle_vault::VaultHandle;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,73 +24,105 @@ pub struct LoginResult {
 
 pub use rekindle_db::repo::identity::IdentityDhtColumns;
 
-pub async fn create_identity_core(
-    config_dir: &std::path::Path,
-    passphrase: &str,
-    display_name: Option<String>,
-    state: &SharedState,
-    pool: &Db,
-    keystore_handle: &VaultHandle,
-    app_handle: Option<&tauri::AppHandle>,
-) -> Result<(LoginResult, [u8; 32]), String> {
+/// The host's identity slots in `state`.
+pub fn stores(state: &AppState) -> Stores<'_> {
+    Stores {
+        db: &state.db,
+        vault: &state.keystore,
+        attempts: &state.identity_attempts,
+    }
+}
+
+/// The message the login window shows for an identity error.
+#[must_use]
+pub fn identity_error_message(e: &IdentityError) -> String {
+    match e {
+        IdentityError::NotFound => "no identity found — please create one first".into(),
+        IdentityError::WrongPassphrase => "Wrong passphrase".into(),
+        IdentityError::Locked { retry_after_ms } => format!(
+            "Too many wrong passphrases. Try again in {} s.",
+            retry_after_ms.div_ceil(1000)
+        ),
+        other => other.to_string(),
+    }
+}
+
+/// Clear the previous session's in-memory state.
+fn clear_session_state(state: &SharedState) {
     *state.identity.write() = None;
     state.friends.write().clear();
     state.communities.write().clear();
+}
 
-    std::fs::create_dir_all(config_dir).map_err(|e| format!("failed to create config dir: {e}"))?;
-
-    let identity = rekindle_crypto::Identity::generate();
-    let public_key = identity.public_key_hex();
-    let secret_bytes = *identity.secret_key_bytes();
-    let display_name = match display_name.filter(|s| !s.trim().is_empty()) {
-        Some(name) => rekindle_types::presence::limits::display_name(&name)
-            .map_err(|e| format!("display name: {e}"))?
-            .to_string(),
-        None => format!("User_{}", rekindle_utils::text::prefix(&public_key, 8)),
-    };
-    let now = db::timestamp_now();
-
-    let keystore = crate::keystore::create_identity_vault(config_dir, &public_key, passphrase)
-        .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
-    keystore
-        .put(&VaultKey::IdentityEd25519, &secret_bytes)
-        .map_err(|e| e.to_string())?;
-
-    *keystore_handle.lock() = Some(keystore);
-
-    let pk = public_key.clone();
-    let dn = display_name.clone();
-    db_call(pool, move |conn| {
-        rekindle_db::repo::identity::insert(conn, &pk, &dn, now)
-    })
-    .await?;
-
-    let identity_state = IdentityState {
+/// Hand the unlock's keys and friend authority to the session and return
+/// the database the unlock installed.
+fn adopt(state: &SharedState, unlocked: Unlocked) -> Result<(Db, LoginResult, [u8; 32]), String> {
+    let Unlocked {
+        public_key,
+        display_name,
+        secret,
+        signal,
+        friend_store,
+    } = unlocked;
+    *state.friend_store.write() = Some(friend_store);
+    *state.signal_manager.write() = Some(Arc::new(SignalManagerHandle { manager: signal }));
+    *state.identity_secret.lock() = Some(*secret);
+    *state.identity.write() = Some(IdentityState {
         public_key: public_key.clone(),
         display_name: display_name.clone(),
         status: UserStatus::Online,
         status_message: String::new(),
-    };
+    });
+    let pool = state.db.current()?;
+    Ok((
+        pool,
+        LoginResult {
+            public_key,
+            display_name,
+        },
+        *secret,
+    ))
+}
 
-    *state.identity.write() = Some(identity_state);
+pub async fn create_identity_core(
+    root: &DataRoot,
+    passphrase: &str,
+    display_name: Option<String>,
+    state: &SharedState,
+    app_handle: Option<&tauri::AppHandle>,
+) -> Result<(LoginResult, [u8; 32]), String> {
+    clear_session_state(state);
+    let unlocked = identity::create(
+        root,
+        &stores(state),
+        display_name.as_deref(),
+        passphrase,
+        rekindle_utils::timestamp_ms_i64(),
+    )
+    .await
+    .map_err(|e| identity_error_message(&e))?;
+    let (pool, result, secret_bytes) = adopt(state, unlocked)?;
 
-    initialize_audit_chain(app_handle, state, pool, keystore_handle, &public_key).await;
+    initialize_audit_chain(
+        app_handle,
+        state,
+        &pool,
+        &state.keystore,
+        &result.public_key,
+    )
+    .await;
     if let Some(app) = app_handle {
-        let _ = crate::audit_repo::verify_async(app, state, pool, &public_key).await;
+        let _ = crate::audit_repo::verify_async(app, state, &pool, &result.public_key).await;
     }
     crate::audit_repo::append_async(
         state,
-        pool,
-        &public_key,
+        &pool,
+        &result.public_key,
         rekindle_audit::AuditKind::VaultUnlocked,
         serde_json::json!({ "first_time": true }),
     )
     .await;
 
-    let result = LoginResult {
-        public_key,
-        display_name,
-    };
     Ok((result, secret_bytes))
 }
 
@@ -123,67 +155,39 @@ async fn initialize_audit_chain(
 }
 
 pub async fn login_core(
-    config_dir: &std::path::Path,
+    root: &DataRoot,
     public_key: &str,
     passphrase: &str,
     state: &SharedState,
-    pool: &Db,
-    keystore_handle: &VaultHandle,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(LoginResult, [u8; 32], IdentityDhtColumns), String> {
-    *state.identity.write() = None;
-    state.friends.write().clear();
-    state.communities.write().clear();
+    clear_session_state(state);
+    let unlocked = identity::unlock(
+        root,
+        &stores(state),
+        public_key,
+        passphrase,
+        rekindle_utils::timestamp_ms(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(public_key = %public_key, error = %e, "identity unlock failed");
+        identity_error_message(&e)
+    })?;
+    let (pool, result, key_array) = adopt(state, unlocked)?;
+    let keystore_handle = &state.keystore;
 
     let pk_query = public_key.to_string();
-    let (display_name, dht_cols) = db_call(pool, move |conn| {
+    let dht_cols = crate::db_helpers::db_call(&pool, move |conn| {
         rekindle_db::repo::identity::login_row(conn, &pk_query)
     })
     .await?
-    .ok_or_else(|| "no identity found — please create one first".to_string())?;
+    .map(|(_, cols)| cols)
+    .ok_or_else(|| "the identity database has no identity row".to_string())?;
 
-    let keystore = crate::keystore::open_identity_vault(config_dir, public_key, passphrase)
-        .map_err(|e| {
-            tracing::warn!(
-                public_key = %public_key,
-                error = %e,
-                "Stronghold unlock failed"
-            );
-            crate::keystore::map_stronghold_error(&e)
-        })?;
-
-    let secret_bytes = keystore
-        .get(&VaultKey::IdentityEd25519)
-        .map_err(|e| e.to_string())?;
-
-    let secret = secret_bytes.ok_or_else(|| {
-        "No private key found in keystore — identity may be corrupted. \
-         Please create a new identity."
-            .to_string()
-    })?;
-    let key_array: [u8; 32] = secret
-        .as_slice()
-        .try_into()
-        .map_err(|_| "invalid secret key length in Stronghold")?;
-    let restored = rekindle_crypto::Identity::from_secret_bytes(&key_array);
-    let restored_pub = restored.public_key_hex();
-    if restored_pub != public_key {
-        return Err("Wrong passphrase — decrypted key does not match stored identity".to_string());
-    }
-
-    *keystore_handle.lock() = Some(keystore);
-
-    let identity_state = IdentityState {
-        public_key: public_key.to_string(),
-        display_name: display_name.clone(),
-        status: UserStatus::Online,
-        status_message: String::new(),
-    };
-    *state.identity.write() = Some(identity_state);
-
-    crate::community_loader::load_friends_from_db(pool, state, public_key).await?;
-    crate::community_loader::load_communities_from_db(pool, state, public_key).await?;
-    services::community::hydrate_peer_reliability(state, pool).await;
+    crate::community_loader::load_friends_from_db(&pool, state, public_key).await?;
+    crate::community_loader::load_communities_from_db(&pool, state, public_key).await?;
+    services::community::hydrate_peer_reliability(state, &pool).await;
 
     crate::community_loader::restore_community_pseudonyms_and_meks(
         state,
@@ -197,27 +201,86 @@ pub async fn login_core(
     // my_pseudonym_key). The background DHT rebuild later overwrites
     // this with anything newer.
     if let Err(error) =
-        crate::community_loader::restore_governance_from_cache(pool, state, public_key).await
+        crate::community_loader::restore_governance_from_cache(&pool, state, public_key).await
     {
         tracing::warn!(%error, "failed to restore governance from local cache");
     }
 
-    initialize_audit_chain(app_handle, state, pool, keystore_handle, public_key).await;
+    initialize_audit_chain(app_handle, state, &pool, keystore_handle, public_key).await;
     if let Some(app) = app_handle {
-        let _ = crate::audit_repo::verify_async(app, state, pool, public_key).await;
+        let _ = crate::audit_repo::verify_async(app, state, &pool, public_key).await;
     }
     crate::audit_repo::append_async(
         state,
-        pool,
+        &pool,
         public_key,
         rekindle_audit::AuditKind::VaultUnlocked,
         serde_json::json!({ "first_time": false }),
     )
     .await;
 
-    let result = LoginResult {
-        public_key: public_key.to_string(),
-        display_name,
-    };
     Ok((result, key_array, dht_cols))
+}
+
+/// Check `passphrase` against `public_key`'s vault on a blocking thread
+/// (Argon2id). A wrong one counts against the identity.
+///
+/// # Errors
+/// Not found, wrong or locked out.
+pub async fn verify_identity_passphrase_core(
+    root: &DataRoot,
+    state: &SharedState,
+    public_key: &str,
+    passphrase: &str,
+) -> Result<(), String> {
+    let (root, state, pk, pass) = (
+        root.clone(),
+        Arc::clone(state),
+        public_key.to_string(),
+        passphrase.to_string(),
+    );
+    tokio::task::spawn_blocking(move || {
+        identity::verify_passphrase(
+            &root,
+            &state.identity_attempts,
+            &pk,
+            &pass,
+            rekindle_utils::timestamp_ms(),
+        )
+    })
+    .await
+    .map_err(|e| format!("passphrase check: {e}"))?
+    .map_err(|e| identity_error_message(&e))
+}
+
+/// Delete `public_key`'s vault, database and registry entry (the passphrase
+/// is checked again by `host::identity::delete`). The caller has ended the
+/// identity's session if it was active.
+///
+/// # Errors
+/// Not found, wrong or locked out, or a file that cannot be removed.
+pub async fn delete_identity_core(
+    root: &DataRoot,
+    state: &SharedState,
+    public_key: &str,
+    passphrase: &str,
+) -> Result<(), String> {
+    let (root, state, pk, pass) = (
+        root.clone(),
+        Arc::clone(state),
+        public_key.to_string(),
+        passphrase.to_string(),
+    );
+    tokio::task::spawn_blocking(move || {
+        identity::delete(
+            &root,
+            &state.identity_attempts,
+            &pk,
+            &pass,
+            rekindle_utils::timestamp_ms(),
+        )
+    })
+    .await
+    .map_err(|e| format!("identity delete: {e}"))?
+    .map_err(|e| identity_error_message(&e))
 }

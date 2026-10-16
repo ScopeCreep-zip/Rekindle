@@ -6,7 +6,8 @@
 //! teardown for logout, deleting the active identity and app exit, in the
 //! plan's order: the scope (every session task) first, then the work that
 //! needs the session's keys and records (offline status, record close,
-//! flushes), then the in-memory state, and the keystore last.
+//! flushes), then the in-memory state, and the identity's vault and
+//! database last (`lock_identity`).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +19,6 @@ use crate::commands::voice::{shutdown_voice, VoiceShutdownOpts};
 use crate::services;
 use crate::state::{AppState, SharedState, UserStatus};
 use crate::state_helpers;
-use rekindle_vault::VaultHandle;
 
 /// How long the login scope's tasks get to stop at logout or exit: one
 /// in-flight Veilid call plus margin, then they are aborted.
@@ -58,10 +58,7 @@ pub fn begin(app: &tauri::AppHandle, state: &SharedState) -> Arc<SessionScope> {
                     },
                 );
                 let state = app.state::<SharedState>().inner().clone();
-                let keystore = app.state::<VaultHandle>().inner().clone();
-                if let Err(e) =
-                    services::auth_runtime::logout_inner(app.clone(), state, keystore).await
-                {
+                if let Err(e) = services::auth_runtime::logout_inner(app.clone(), state).await {
                     tracing::error!(error = %e, "ending the session after a task panic failed");
                 }
             });
@@ -91,7 +88,7 @@ impl<'a> SessionEnd<'a> {
 }
 
 /// End the login session.
-pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &VaultHandle) {
+pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>) {
     let app = end.app();
     // 0. Leave calls and voice while the session can still send: the
     //    scope cancel and pool drain below would refuse it (plan C7.27).
@@ -149,7 +146,19 @@ pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &
     // 5. Routes, flushes and in-memory state.
     services::veilid::logout_cleanup(end, state).await;
     // 6. The keys, last: everything above may still sign or decrypt.
-    keystore.lock().take();
+    lock_identity(state).await;
+}
+
+/// Take the unlocked identity out of the session: what the unlock handed it
+/// (identity, keys, Signal manager, friend authority), then the vault and
+/// database through `host::identity::lock`. Also the cleanup for a login
+/// that failed after its unlock.
+pub async fn lock_identity(state: &AppState) {
+    *state.identity.write() = None;
+    *state.friend_store.write() = None;
+    *state.signal_manager.write() = None;
+    *state.identity_secret.lock() = None;
+    rekindle_node::host::identity::lock(&services::auth_cores::stores(state)).await;
 }
 
 /// End every call and leave the voice channel before the session closes:

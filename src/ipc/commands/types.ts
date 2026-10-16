@@ -13,8 +13,6 @@ export interface IdentitySummary {
   publicKey: string;
   displayName: string;
   createdAt: number;
-  hasAvatar: boolean;
-  avatarBase64: string | null;
 }
 
 export interface Message {

@@ -1,5 +1,5 @@
-//! Opening the database: pragmas, the schema-version check, and the reset
-//! when the schema changed.
+//! Opening an identity's database: the key, pragmas and the schema-version
+//! check (plan D1).
 
 use std::path::Path;
 
@@ -12,10 +12,10 @@ use crate::Db;
 pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 
 /// Bump this every time `schema/001_init.sql` changes, or when a DHT record
-/// layout is renumbered: the reset also wipes Veilid storage, so stale
-/// records written under the old layout cannot be read back with the new
-/// indices. On mismatch the database is dropped and recreated; the app is
-/// not live yet.
+/// layout is renumbered. It is also the data root's layout version
+/// (`crate::reset`): a root stamped with another value is reset at startup,
+/// Veilid storage included, so stale records written under the old layout
+/// cannot be read back with the new indices. The app is not live yet.
 ///
 /// 83: `dht_outbox`, the durable record writes a logout left unsent
 /// (plan C7.6h); the next login of the same identity re-pushes them.
@@ -123,54 +123,6 @@ fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
     move |source| DbError::Sqlite { context, source }
 }
 
-/// The opened database, and whether its schema was recreated.
-pub struct DbOpenResult {
-    pub db: Db,
-    /// `true` when the stored schema version differed and every table was
-    /// dropped and recreated. The caller wipes the storage that has to
-    /// stay in step with it (vault files, Veilid storage).
-    pub schema_reset: bool,
-}
-
-/// Open (or create) the plaintext database at `path`: WAL, foreign keys,
-/// and the schema recreated when its version is not [`SCHEMA_VERSION`].
-/// `":memory:"` opens an in-memory database.
-///
-/// # Errors
-/// [`DbError`] naming the step that failed, including an unreadable
-/// `user_version` (which used to be read as 0 and silently reset the
-/// database).
-pub fn open(path: &Path) -> Result<DbOpenResult, DbError> {
-    let conn = Connection::open(path).map_err(sqlite("open database"))?;
-    conn.execute_batch("PRAGMA journal_mode=WAL;")
-        .map_err(sqlite("set WAL mode"))?;
-    conn.execute_batch("PRAGMA foreign_keys=ON;")
-        .map_err(sqlite("enable foreign keys"))?;
-
-    let current: i64 = conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(sqlite("read schema version"))?;
-    let schema_reset = current != SCHEMA_VERSION;
-    if schema_reset {
-        if current != 0 {
-            tracing::info!(
-                old = current,
-                new = SCHEMA_VERSION,
-                "schema version mismatch — recreating database"
-            );
-        }
-        drop_all_tables(&conn)?;
-        conn.execute_batch(SCHEMA).map_err(sqlite("apply schema"))?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
-            .map_err(sqlite("set schema version"))?;
-    }
-
-    Ok(DbOpenResult {
-        db: Db::from(rekindle_asql::Connection::from(conn)),
-        schema_reset,
-    })
-}
-
 /// Open an identity's encrypted database (plan D1): keyed with the
 /// vault-derived `key` (SQLCipher), verified, WAL, foreign keys and
 /// `secure_delete` on. A new database gets the schema; a database at
@@ -181,7 +133,7 @@ pub fn open(path: &Path) -> Result<DbOpenResult, DbError> {
 /// # Errors
 /// [`DbError::WrongKey`] when `key` does not decrypt it,
 /// [`DbError::VersionMismatch`], or the SQLite step that failed.
-pub fn open_identity(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
+pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
     let conn = Connection::open(path).map_err(sqlite("open database"))?;
     conn.pragma_update(None, "key", format!("x'{}'", hex_lower(key)))
         .map_err(sqlite("key database"))?;
@@ -227,75 +179,23 @@ fn hex_lower(bytes: &[u8]) -> String {
         })
 }
 
-/// Drop every user table so the schema can be re-applied.
-///
-/// Virtual tables (FTS5) go first: they own shadow tables (`<name>_data`,
-/// `<name>_idx`, …) that SQLite refuses to drop directly. They are the rows
-/// whose `sql` starts `CREATE VIRTUAL`; shadow tables have a NULL `sql`.
-fn drop_all_tables(conn: &Connection) -> Result<(), DbError> {
-    conn.execute_batch("PRAGMA foreign_keys=OFF;")
-        .map_err(sqlite("disable foreign keys"))?;
-    for kind in ["CREATE VIRTUAL%", "CREATE TABLE%"] {
-        for table in tables_whose_sql_is_like(conn, kind)? {
-            conn.execute_batch(&format!("DROP TABLE IF EXISTS \"{table}\";"))
-                .map_err(sqlite("drop table"))?;
-        }
-    }
-    conn.execute_batch("PRAGMA foreign_keys=ON;")
-        .map_err(sqlite("re-enable foreign keys"))
-}
-
-fn tables_whose_sql_is_like(conn: &Connection, pattern: &str) -> Result<Vec<String>, DbError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT name FROM sqlite_master \
-             WHERE type = 'table' AND sql LIKE ?1 AND name NOT LIKE 'sqlite_%'",
-        )
-        .map_err(sqlite("list tables"))?;
-    let names = stmt
-        .query_map([pattern], |row| row.get(0))
-        .map_err(sqlite("list tables"))?
-        .collect::<Result<Vec<String>, _>>()
-        .map_err(sqlite("list tables"))?;
-    Ok(names)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn a_new_database_gets_the_schema_and_its_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rekindle.db");
-        let first = open(&path).unwrap();
-        assert!(first.schema_reset, "a new file has no schema yet");
-        let version: i64 = first
-            .db
-            .call(|c| c.pragma_query_value(None, "user_version", |r| r.get(0)))
-            .await
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        drop(first);
-        assert!(!open(&path).unwrap().schema_reset, "reopening keeps it");
-    }
-
-    #[tokio::test]
     async fn an_identity_database_opens_only_with_its_key_and_version() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pk.db");
-        let db = open_identity(&path, &[7; 32]).unwrap();
+        let db = open(&path, &[7; 32]).unwrap();
         let version: i64 = db
             .call(|c| c.pragma_query_value(None, "user_version", |r| r.get(0)))
             .await
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
         drop(db);
-        assert!(matches!(
-            open_identity(&path, &[8; 32]),
-            Err(DbError::WrongKey)
-        ));
-        assert!(open_identity(&path, &[7; 32]).is_ok());
+        assert!(matches!(open(&path, &[8; 32]), Err(DbError::WrongKey)));
+        assert!(open(&path, &[7; 32]).is_ok());
         let plain = std::fs::read(&path).unwrap();
         assert!(
             !plain.starts_with(b"SQLite format 3"),
@@ -307,7 +207,7 @@ mod tests {
     fn an_identity_database_at_another_version_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pk.db");
-        drop(open_identity(&path, &[7; 32]).unwrap());
+        drop(open(&path, &[7; 32]).unwrap());
         let conn = Connection::open(&path).unwrap();
         conn.pragma_update(None, "key", format!("x'{}'", hex_lower(&[7; 32])))
             .unwrap();
@@ -315,20 +215,8 @@ mod tests {
             .unwrap();
         drop(conn);
         assert!(matches!(
-            open_identity(&path, &[7; 32]),
+            open(&path, &[7; 32]),
             Err(DbError::VersionMismatch { found }) if found == SCHEMA_VERSION - 1
         ));
-    }
-
-    #[test]
-    fn a_stale_version_recreates_every_table() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rekindle.db");
-        drop(open(&path).unwrap());
-        let conn = Connection::open(&path).unwrap();
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
-            .unwrap();
-        drop(conn);
-        assert!(open(&path).unwrap().schema_reset);
     }
 }

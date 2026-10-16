@@ -22,4 +22,4 @@ pub mod reset;
 pub use db::Db;
 pub use friend_store::SqliteFriendStore;
 pub use handle::{DbHandle, DbStillHeld, NotLoggedIn};
-pub use open::{open, open_identity, DbError, DbOpenResult, SCHEMA, SCHEMA_VERSION};
+pub use open::{open, DbError, SCHEMA, SCHEMA_VERSION};

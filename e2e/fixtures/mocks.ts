@@ -103,7 +103,7 @@ export async function clearMocks(page: Page) {
 export const LOGIN_SUCCESS_HANDLER = `
   switch (cmd) {
     case "list_identities":
-      return [{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000, hasAvatar: false, avatarBase64: null }];
+      return [{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000 }];
     case "login":
       return { publicKey: "abc123def456", displayName: "TestUser" };
     case "create_identity":
@@ -132,7 +132,7 @@ export const LOGIN_SUCCESS_HANDLER = `
 export const LOGIN_FAIL_HANDLER = `
   switch (cmd) {
     case "list_identities":
-      return [{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000, hasAvatar: false, avatarBase64: null }];
+      return [{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000 }];
     case "login":
       throw new Error("Wrong passphrase \\u2014 unable to unlock keystore");
     case "create_identity":

@@ -66,8 +66,6 @@ pub async fn logout_cleanup(end: crate::services::session::SessionEnd<'_>, state
     state.channel_pending_deliveries.lock().clear();
     state.friends.write().clear();
     state.communities.write().clear();
-    *state.signal_manager.write() = None;
-    *state.identity_secret.lock() = None;
     // Phase 4 — drop the audit chain so a subsequent login under a
     // different identity doesn't append against the prior chain's MAC.
     *state.audit_chain.lock() = None;

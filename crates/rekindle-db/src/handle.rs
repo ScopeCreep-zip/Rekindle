@@ -53,7 +53,8 @@ impl DbHandle {
         *slot = Some(db);
     }
 
-    /// Empty the handle and close the database. Nothing set is not an error.
+    /// Empty the handle, checkpoint the WAL into the database file (Windows
+    /// holds file locks on it) and close it. Nothing set is not an error.
     ///
     /// # Errors
     /// [`DbStillHeld`] when other handles are alive.
@@ -64,6 +65,12 @@ impl DbHandle {
         let others = db.handles() - 1;
         if others > 0 {
             return Err(DbStillHeld { others });
+        }
+        if let Err(e) = db
+            .call(|conn| conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)"))
+            .await
+        {
+            tracing::warn!(error = %e, "WAL checkpoint at close failed");
         }
         if let Err(e) = db.close().await {
             tracing::warn!(error = %e, "closing the identity database failed");

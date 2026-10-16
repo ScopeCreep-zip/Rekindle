@@ -10,8 +10,11 @@ pub async fn initialize_node(
     app_handle: &tauri::AppHandle,
     state: &AppState,
 ) -> Result<mpsc::Receiver<VeilidUpdate>, String> {
-    // Created with the rest of the data root at boot (`setup.rs`).
-    let storage_dir = app_handle.state::<rekindle_db::paths::DataRoot>().veilid();
+    // Created here, after the layout check at boot (`setup.rs`).
+    let storage_dir = app_handle
+        .state::<rekindle_db::paths::DataRoot>()
+        .create_veilid_dir()
+        .map_err(|e| format!("failed to create Veilid's storage directory: {e}"))?;
 
     let config = rekindle_protocol::node::NodeConfig {
         storage_dir: storage_dir.to_string_lossy().into_owned(),

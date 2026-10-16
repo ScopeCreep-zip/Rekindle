@@ -83,8 +83,6 @@ test.describe("XSS — display names and profile fields", () => {
             publicKey: "test-pk",
             displayName: payload,
             createdAt: 1000,
-            hasAvatar: false,
-            avatarBase64: null,
           },
         ],
       });

@@ -206,8 +206,7 @@ pub async fn restore_chain(
     // and an `AuditChainBroken` event surfaces the tamper.
     let anchor = {
         let ks = state.keystore.lock();
-        ks.as_ref()
-            .and_then(crate::keystore::load_audit_tail)
+        ks.as_ref().and_then(crate::keystore::load_audit_tail)
     };
     // The vault anchor is behind when an append's vault write was lost
     // (logout or a crash between the two writes): a catch-up, and the

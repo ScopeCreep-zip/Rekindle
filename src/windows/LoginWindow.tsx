@@ -4,7 +4,7 @@ import Avatar from "../components/common/Avatar";
 import Modal from "../components/common/Modal";
 import LoadingButton from "../components/common/LoadingButton";
 import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
-import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
+import { commands, IdentitySummary } from "../ipc/commands";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
@@ -175,11 +175,7 @@ const LoginWindow: Component = () => {
             <For each={identities()}>
               {(id) => (
                 <div class="account-bubble" onClick={() => selectAccount(id)}>
-                  <Avatar
-                    displayName={id.displayName}
-                    size={64}
-                    avatarUrl={avatarDataUrl(id.avatarBase64)}
-                  />
+                  <Avatar displayName={id.displayName} size={64} />
                   <div class="account-bubble-name">{id.displayName}</div>
                   <button
                     class="account-bubble-delete"
@@ -201,11 +197,7 @@ const LoginWindow: Component = () => {
       <Show when={mode() === "login" && selected() !== null}>
         <form class="login-container" onSubmit={handleLoginSubmit}>
           <div class="lock-avatar">
-            <Avatar
-              displayName={selected()!.displayName}
-              size={96}
-              avatarUrl={avatarDataUrl(selected()!.avatarBase64)}
-            />
+            <Avatar displayName={selected()!.displayName} size={96} />
           </div>
           <div class="lock-name">{selected()!.displayName}</div>
           <div class="account-card-key">{truncateKey(selected()!.publicKey)}</div>

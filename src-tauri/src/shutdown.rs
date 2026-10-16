@@ -4,10 +4,9 @@ use tauri::Manager;
 
 use crate::state::SharedState;
 use crate::{services, state_helpers};
-use rekindle_vault::VaultHandle;
 
 /// Handle the `RunEvent::Exit` event: run [`graceful_shutdown`] to the end
-/// and checkpoint the SQLite WAL before the process exits.
+/// (the session's end checkpoints and closes the identity database).
 ///
 /// Not under a timeout. The session teardown is bounded by its own
 /// deadlines (`SESSION_STOP_DEADLINE`, the Offline write wait). Veilid's
@@ -24,40 +23,25 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
     tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
     let state: tauri::State<'_, SharedState> = app_handle.state();
     let state = state.inner().clone();
-    let keystore: tauri::State<'_, VaultHandle> = app_handle.state();
-    let keystore = keystore.inner().clone();
     tauri::async_runtime::block_on(async move {
         let started = std::time::Instant::now();
-        graceful_shutdown(&state, &keystore).await;
+        graceful_shutdown(&state).await;
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis(),
             "graceful shutdown finished"
         );
-        // Checkpoint the WAL (Windows NTFS holds file locks on it), then
-        // close the database.
-        if let Ok(pool) = state.db.current() {
-            if let Err(e) = pool
-                .call(|conn| conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)"))
-                .await
-            {
-                tracing::warn!(error = %e, "WAL checkpoint at exit failed");
-            }
-        }
-        if let Err(e) = state.db.clear().await {
-            tracing::warn!(error = %e, "database still held at exit");
-        }
     });
 }
 
 /// Shut down all background services before the process exits: end the
 /// login session (`services::session::end_session`), then stop the
 /// app-lifetime dispatch loop and the Veilid node.
-pub async fn graceful_shutdown(state: &SharedState, keystore: &VaultHandle) {
+pub async fn graceful_shutdown(state: &SharedState) {
     tracing::info!("graceful shutdown: stopping background services");
 
     // 1. The login session: its tasks, devices, offline status, records,
     //    state and keys. No app handle — the app is exiting.
-    services::session::end_session(services::session::SessionEnd::Exit, state, keystore).await;
+    services::session::end_session(services::session::SessionEnd::Exit, state).await;
     state_helpers::clear_meks(state);
 
     // 2. The app-lifetime dispatch loop.

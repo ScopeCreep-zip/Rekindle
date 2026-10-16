@@ -23,6 +23,23 @@ fn add_dev_capabilities(app: &tauri::App) -> tauri::Result<()> {
 pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::error::Error>> {
     // Store app handle in AppState so background services can emit events
     *state.app_handle.write() = Some(app.handle().clone());
+
+    // The data root every host shares (plan C5): the same folders Tauri's
+    // `app_{data,config}_dir` name, created owner-only. The node lock makes
+    // the desktop and `rekindled` refuse to run one node twice on a root
+    // (F3); it is held for the process's lifetime. The layout check runs
+    // under it, before anything opens a store (plan D1): a root laid out
+    // for another version is reset.
+    let root = rekindle_db::paths::DataRoot::resolve()?;
+    root.create_dirs()
+        .map_err(|e| format!("failed to create the data directories: {e}"))?;
+    app.manage(rekindle_db::lock::NodeLock::acquire(&root.data)?);
+    if let Err(e) = rekindle_db::reset::apply(&root) {
+        tracing::error!(error = %e, "data root layout check failed");
+        show_startup_error(app, &e.to_string());
+        return Ok(());
+    }
+
     #[cfg(debug_assertions)]
     add_dev_capabilities(app)?;
     // The first window. It is built here rather than declared in
@@ -68,64 +85,6 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // Register global keyboard shortcuts (plugin registered here for state access)
     shortcuts::register(app, state)?;
 
-    // The data root every host shares (plan C5): the same folders Tauri's
-    // `app_{data,config}_dir` name, created owner-only. The node lock makes
-    // the desktop and `rekindled` refuse to run one node twice on a root
-    // (F3); it is held for the process's lifetime.
-    let root = rekindle_db::paths::DataRoot::resolve()?;
-    root.create_dirs()
-        .map_err(|e| format!("failed to create the data directories: {e}"))?;
-    app.manage(rekindle_db::lock::NodeLock::acquire(&root.data)?);
-    let config_dir = root.config.clone();
-
-    // Phase 2 — detect leftover Stronghold-era identity files. We DO
-    // NOT auto-delete (the user can remove them manually once they've
-    // confirmed nothing else needs them); we just surface a one-shot
-    // toast on this boot so the user knows their old identities are
-    // gone and must be recreated. Plan reference:
-    // `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 2.
-    let legacy_strongholds: Vec<std::path::PathBuf> = std::fs::read_dir(&config_dir)
-        .ok()
-        .map(|entries| {
-            entries
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| {
-                    p.file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.ends_with(".stronghold"))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    if !legacy_strongholds.is_empty() {
-        tracing::warn!(
-            count = legacy_strongholds.len(),
-            "legacy .stronghold files detected — identity format upgraded in Phase 2"
-        );
-        let body = format!(
-            "Found {} identity file{} from a previous Rekindle version. \
-             Please recreate your identity. Old files were not deleted — \
-             you can remove them manually from {}.",
-            legacy_strongholds.len(),
-            if legacy_strongholds.len() == 1 {
-                ""
-            } else {
-                "s"
-            },
-            config_dir.display(),
-        );
-        // Queued until the buddy list subscribes; the router holds no
-        // backlog, so it reaches only a buddy list that is already open.
-        event_dispatch::emit_notification(
-            app.handle(),
-            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-                title: "Identity format upgraded".to_string(),
-                body,
-            },
-        );
-    }
-
     // Resolve the Lost Cargo cache root (per-community sub-dirs are
     // created on first use). Stays None if the platform doesn't expose
     // an app data dir — file uploads will fail clearly in that case.
@@ -136,37 +95,12 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
         *state.file_cache_root.write() = Some(cache_root);
     }
 
-    // Initialize SQLite database pool
-    let db_path = root.database();
-    let rekindle_db::DbOpenResult {
-        db: pool,
-        schema_reset,
-    } = rekindle_db::open(&db_path).map_err(|e| e.to_string())?;
-
-    // When the schema version changes, all SQLite tables are dropped and
-    // recreated.  Stronghold files and Veilid's local storage must also
-    // be wiped so there's no orphaned state (stale DHT records, old
-    // private keys whose identity rows no longer exist).
-    if schema_reset {
-        wipe_dependent_storage(&root);
-    }
-
-    // Phase 2 Track A — wire SqliteFriendStore into AppState BEFORE
-    // the Veilid dispatch loop spawns. This eliminates the
-    // dispatch-before-hydration race that caused
-    // "not friends even though we are" AEAD failures.
-    let friend_store: Arc<dyn rekindle_types::friend_store::FriendStore> =
-        Arc::new(rekindle_db::SqliteFriendStore::new(Arc::clone(&state.db)));
-    *state.friend_store.write() = Some(friend_store);
-
-    state.db.set(pool);
     app.manage(root);
 
-    // Manage the Stronghold keystore handle (unlocked on login/create_identity).
-    // AppState owns the same `Arc<Mutex<Option<StrongholdKeystore>>>` so
-    // services with `&AppState` (audit tail-anchor persistence in
-    // particular) can reach the vault without threading Tauri State
-    // through every callsite.
+    // The identity's vault handle, filled at unlock and emptied at lock
+    // (`host::identity`). AppState owns the same handle so services with
+    // `&AppState` reach the vault without threading Tauri State through
+    // every callsite.
     app.manage(state.keystore.clone());
 
     // Phase 5 — drive the lifecycle FSM through boot. Stopped → Starting
@@ -256,55 +190,16 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-/// Whether `name` is a `rekindle-vault` file or its salt sidecar —
-/// `{name}.vault` or `{name}.vault.salt` (see
-/// `crates/rekindle-vault/src/store.rs`), case-insensitively.
-fn is_vault_file(name: &std::path::Path) -> bool {
-    let Some(ext) = name.extension().and_then(std::ffi::OsStr::to_str) else {
-        return false;
-    };
-    if ext.eq_ignore_ascii_case("vault") {
-        return true;
-    }
-    ext.eq_ignore_ascii_case("salt")
-        && name
-            .file_stem()
-            .map(std::path::Path::new)
-            .and_then(|stem| stem.extension())
-            .and_then(std::ffi::OsStr::to_str)
-            .is_some_and(|e| e.eq_ignore_ascii_case("vault"))
-}
-
-/// Wipe `rekindle-vault` files and Veilid local storage that are now
-/// orphaned after a schema reset. Without this, old `.vault` files and
-/// cached DHT records would cause "wrong password" and "record already
-/// exists" errors on re-login.
-fn wipe_dependent_storage(root: &rekindle_db::paths::DataRoot) {
-    // 1. Remove all vault files and their salt sidecars in config dir.
-    if let Ok(entries) = std::fs::read_dir(&root.config) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if is_vault_file(&path) {
-                if let Err(e) = std::fs::remove_file(&path) {
-                    tracing::warn!(path = %path.display(), error = %e, "failed to remove orphaned vault file");
-                } else {
-                    tracing::info!(path = %path.display(), "removed orphaned vault file");
-                }
-            }
-        }
-    }
-
-    // 2. Remove Veilid local storage directory (DHT record cache, table store, etc.)
-    let veilid_dir = root.veilid();
-    if veilid_dir.exists() {
-        if let Err(e) = std::fs::remove_dir_all(&veilid_dir) {
-            tracing::warn!(path = %veilid_dir.display(), error = %e, "failed to remove veilid storage");
-        } else {
-            tracing::info!(path = %veilid_dir.display(), "removed orphaned veilid storage");
-        }
-    }
-
-    // NOTE: Veilid's protected_store (macOS Keychain) is NOT wiped here.
-    // The device encryption key is the node's persistent identity on the
-    // Veilid network and must survive schema resets.
+/// Show a startup failure in a native dialog and exit when it closes. No
+/// window is open yet, so the dialog has no parent.
+fn show_startup_error(app: &tauri::App, detail: &str) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    let handle = app.handle().clone();
+    app.dialog()
+        .message(format!(
+            "Rekindle could not prepare its data folder and has to close.\n\n{detail}"
+        ))
+        .title("Rekindle could not start")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| handle.exit(1));
 }

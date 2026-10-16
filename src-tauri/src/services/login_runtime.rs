@@ -20,10 +20,8 @@
 
 use std::sync::Arc;
 
-use tauri::Manager as _;
-
 use crate::services;
-use crate::state::{SharedState, SignalManagerHandle};
+use crate::state::SharedState;
 use rekindle_db::Db;
 
 /// Stored DHT keys and owner keypairs loaded from `SQLite` during login.
@@ -40,7 +38,7 @@ pub struct DhtKeysConfig {
     pub mailbox_dht_key: Option<String>,
 }
 
-/// Initialize Signal encryption and spawn all background services (non-blocking).
+/// Spawn all background services (non-blocking).
 ///
 /// Returns immediately after setting up in-memory state. Uses the already-running
 /// Veilid node (started at app launch) for DHT publishing, sync, and messaging.
@@ -51,11 +49,9 @@ pub async fn start_background_services(
     state: &SharedState,
     scope: &Arc<rekindle_lifecycle::SessionScope>,
     pool: &Db,
-    secret_key: &[u8; 32],
     dht_keys: DhtKeysConfig,
 ) -> Result<(), String> {
-    // Initialize Signal Protocol session manager (returns serialized PreKeyBundle)
-    let prekey_bundle_bytes = initialize_signal_manager(app, state, secret_key)?;
+    let prekey_bundle_bytes = current_prekey_bundle(state)?;
 
     // The session's record pool, before anything opens a record (C7.3), with
     // the writes the last logout left unsent (C7.6h) held before anything
@@ -282,78 +278,22 @@ fn publish_step_failed(
     }
 }
 
-/// Initialize the Signal Protocol session manager with the identity key.
-///
-/// Builds the vault-backed identity, prekey and session stores, then
-/// returns the serialized current `PreKeyBundle` for DHT profile subkey 5.
-/// Any failure aborts login: without its prekeys the account cannot
+/// The serialized current `PreKeyBundle` for DHT profile subkey 5, from the
+/// unlock's Signal manager (`host::identity` built it over the vault-backed
+/// stores). Mints the signed prekey and PQ last-resort key on first login
+/// only; afterwards the same keys come back, so peers' cached bundles stay
+/// valid. A failure aborts login: without its prekeys the account cannot
 /// establish or answer a session.
-fn initialize_signal_manager(
-    app: &tauri::AppHandle,
-    state: &SharedState,
-    secret_key: &[u8; 32],
-) -> Result<Vec<u8>, String> {
-    use rekindle_crypto::signal::SignalSessionManager;
-
-    // Phase 3b — Signal identity store holds the Ed25519 keypair bytes.
-    // PQXDH derives X25519 from these internally via `to_scalar_bytes`
-    // matching `Identity::to_x25519_secret`. Storing X25519 bytes would
-    // double-derive and produce mismatched DH outputs; it would also
-    // break bundle signature verification because the published
-    // `identity_key` is what the peer feeds into `VerifyingKey::from_bytes`
-    // for SPK/PQ signature checks.
-    let identity = rekindle_crypto::Identity::from_secret_bytes(secret_key);
-    let identity_private = identity.secret_key_bytes().to_vec();
-    let identity_public = identity.public_key_bytes().to_vec();
-
-    // Registration ID — derive deterministically from the public key so it's stable
-    let pub_bytes = identity.public_key_bytes();
-    let registration_id =
-        u32::from_le_bytes([pub_bytes[0], pub_bytes[1], pub_bytes[2], pub_bytes[3]]);
-
-    // B7/D4 (P0.1+P0.5+P1.2) — Stronghold-backed Signal stores. Without
-    // this, every restart wiped Memory*Stores and friends had to re-handshake
-    // — a social-engineering opportunity for vulnerable users (an attacker
-    // who can prompt a re-handshake can substitute their own key). The
-    // Stronghold-backed wrappers prime their in-memory cache from disk on
-    // construction and write-through to Stronghold on every store, so the
-    // session graph survives restart and corruption is recoverable rather
-    // than the default state.
-    let keystore_handle: tauri::State<'_, rekindle_vault::VaultHandle> = app.state();
-    let identity_store = rekindle_node::host::adapters::signal::VaultIdentityStore::new(
-        keystore_handle.inner().clone(),
-        identity_private,
-        identity_public,
-        registration_id,
-    );
-    let prekey_store = rekindle_node::host::adapters::signal::VaultPreKeyStore::new(
-        keystore_handle.inner().clone(),
-    )
-    .map_err(|e| format!("load Signal prekeys: {e}"))?;
-    let session_store = rekindle_node::host::adapters::signal::VaultSessionStore::new(
-        keystore_handle.inner().clone(),
-    )
-    .map_err(|e| format!("load Signal sessions: {e}"))?;
-
-    let manager = SignalSessionManager::new(
-        Box::new(identity_store),
-        Box::new(prekey_store),
-        Box::new(session_store),
-    );
-
-    // Mints the signed prekey and PQ last-resort key on first login only;
-    // afterwards the same keys come back, so peers' cached bundles stay valid.
-    let bundle = manager
+fn current_prekey_bundle(state: &SharedState) -> Result<Vec<u8>, String> {
+    let handle = state
+        .signal_manager
+        .read()
+        .as_ref()
+        .map(Arc::clone)
+        .ok_or("signal manager not initialized")?;
+    let bundle = handle
+        .manager
         .current_bundle()
         .map_err(|e| format!("Signal prekey bundle: {e}"))?;
-    let bundle_bytes = bundle.to_wire();
-
-    *state.signal_manager.write() = Some(std::sync::Arc::new(SignalManagerHandle {
-        manager: manager.with_session_cache(256),
-    }));
-
-    // Store the Ed25519 secret key bytes so message_service can sign envelopes
-    *state.identity_secret.lock() = Some(*secret_key);
-
-    Ok(bundle_bytes)
+    Ok(bundle.to_wire())
 }

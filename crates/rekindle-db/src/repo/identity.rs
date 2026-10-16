@@ -1,16 +1,9 @@
-//! `identity`: one row per local identity, with the keys of the DHT
-//! records it owns.
+//! `identity`: the database's one identity row (each identity has its own
+//! database, plan D1), with the keys of the DHT records it owns. The
+//! identities a root holds are listed by the registry
+//! (`crate::registry`), not by this table.
 
 use rusqlite::{params, Connection, OptionalExtension as _};
-
-/// An identity as the login screen lists it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentityRow {
-    pub public_key: String,
-    pub display_name: String,
-    pub created_at: i64,
-    pub avatar_webp: Option<Vec<u8>>,
-}
 
 /// The DHT records an identity owns, as stored: each key, and the owner
 /// keypair for the records that have one.
@@ -58,41 +51,6 @@ pub fn insert(
         params![public_key, display_name, created_at],
     )?;
     Ok(())
-}
-
-/// Delete the identity; every per-owner row goes with it (`ON DELETE
-/// CASCADE`).
-///
-/// # Errors
-/// The write failed.
-pub fn delete(conn: &Connection, public_key: &str) -> rusqlite::Result<()> {
-    conn.execute(
-        "DELETE FROM identity WHERE public_key = ?1",
-        params![public_key],
-    )?;
-    Ok(())
-}
-
-/// Every identity, oldest first.
-///
-/// # Errors
-/// The query failed.
-pub fn list(conn: &Connection) -> rusqlite::Result<Vec<IdentityRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT public_key, display_name, created_at, avatar_webp \
-         FROM identity ORDER BY created_at ASC",
-    )?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(IdentityRow {
-                public_key: row.get(0)?,
-                display_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                created_at: row.get(2)?,
-                avatar_webp: row.get(3)?,
-            })
-        })?
-        .collect();
-    rows
 }
 
 /// The identity's display name and DHT records; `None` when there is no
@@ -277,21 +235,11 @@ mod tests {
     }
 
     #[test]
-    fn identities_list_oldest_first_and_delete_cascades() {
+    fn the_avatar_round_trips() {
         let conn = fixture::conn();
-        insert(&conn, "second", "Two", 5).unwrap();
-        set_avatar(&conn, "second", &[9]).unwrap();
-        let listed = list(&conn).unwrap();
-        assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].public_key, OWNER);
-        assert_eq!(listed[1].avatar_webp.as_deref(), Some(&[9][..]));
-        assert_eq!(avatar(&conn, "second").unwrap(), Some(vec![9]));
         assert_eq!(avatar(&conn, OWNER).unwrap(), None);
-        crate::repo::friends::insert_accepted(&conn, "second", "bob", "Bob", 1).unwrap();
-        delete(&conn, "second").unwrap();
-        assert!(crate::repo::friends::load_all(&conn, "second")
-            .unwrap()
-            .is_empty());
+        set_avatar(&conn, OWNER, &[9]).unwrap();
+        assert_eq!(avatar(&conn, OWNER).unwrap(), Some(vec![9]));
     }
 
     #[test]

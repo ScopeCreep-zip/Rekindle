@@ -1,10 +1,7 @@
-//! Phase 23.C — auth Tauri-runtime orchestration lifted from
-//! `commands/auth.rs`. Hosts `logout_inner` and `delete_identity_inner`
-//! — the long teardown sequences (zeroize keystore, signal every
-//! background-service shutdown channel, publish Offline, close DHT
-//! state, destroy non-login windows) that the Tauri handlers used to
-//! inline. Per Invariant 7 these are legitimate Tauri-runtime glue
-//! (multi-step orchestration over AppState + AppHandle + VaultHandle).
+//! The auth commands' Tauri-runtime orchestration: create and unlock (the
+//! lifecycle gate, the session scope, background services), logout and
+//! delete (the session teardown, then `host::identity`), and the login
+//! picker's list (the registry, plan D1).
 
 use std::sync::Arc;
 
@@ -13,10 +10,12 @@ use tauri::Manager as _;
 
 use crate::db_helpers::db_call;
 use crate::services;
+use crate::services::auth_cores::identity_error_message;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
+use rekindle_db::paths::DataRoot;
 use rekindle_db::Db;
-use rekindle_vault::VaultHandle;
+use rekindle_node::host::identity;
 
 /// Summary of a persisted identity, used by the account picker.
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,8 +24,6 @@ pub struct IdentitySummary {
     pub public_key: String,
     pub display_name: String,
     pub created_at: i64,
-    pub has_avatar: bool,
-    pub avatar_base64: Option<String>,
 }
 
 /// Phase 3b debug diagnostic — inspect the local PQXDH PreKeyBundle.
@@ -51,11 +48,7 @@ pub struct PqxdhBundleInfo {
     pub pqpk_ot_signature_len: Option<usize>,
 }
 
-pub async fn logout_inner(
-    app: tauri::AppHandle,
-    state: Arc<AppState>,
-    keystore_handle: VaultHandle,
-) -> Result<(), String> {
+pub async fn logout_inner(app: tauri::AppHandle, state: Arc<AppState>) -> Result<(), String> {
     // The lifecycle is the single-flight gate: a logout already under way
     // (or no session) refuses the transition, and a second concurrent
     // teardown is never started (plan C4.L2).
@@ -70,12 +63,7 @@ pub async fn logout_inner(
         .as_ref()
         .map(|id| id.public_key.clone());
 
-    services::session::end_session(
-        services::session::SessionEnd::Logout(&app),
-        &state,
-        &keystore_handle,
-    )
-    .await;
+    services::session::end_session(services::session::SessionEnd::Logout(&app), &state).await;
 
     let preselect = active_key
         .as_deref()
@@ -102,13 +90,13 @@ pub async fn delete_identity_inner(
     passphrase: String,
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    pool: Db,
-    keystore_handle: VaultHandle,
 ) -> Result<(), String> {
-    let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
+    use crate::services::auth_cores::{delete_identity_core, verify_identity_passphrase_core};
 
-    crate::keystore::open_identity_vault(&config_dir, &public_key, &passphrase)
-        .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
+    let root = app.state::<DataRoot>().inner().clone();
+    // The passphrase is checked first (and counted when wrong); only then
+    // is the active identity's session ended.
+    verify_identity_passphrase_core(&root, &state, &public_key, &passphrase).await?;
 
     let is_active = state
         .identity
@@ -116,29 +104,13 @@ pub async fn delete_identity_inner(
         .as_ref()
         .is_some_and(|id| id.public_key == public_key);
 
+    // The active identity is logged out first, the same teardown as the
+    // logout command (lifecycle, session, windows, the login window).
     if is_active {
-        services::session::end_session(
-            services::session::SessionEnd::Logout(&app),
-            &state,
-            &keystore_handle,
-        )
-        .await;
-        for (label, window) in app.webview_windows() {
-            if label != crate::window_labels::LOGIN {
-                let _ = window.destroy();
-            }
-        }
+        logout_inner(app.clone(), Arc::clone(&state)).await?;
     }
 
-    let pk = public_key.clone();
-    db_call(&pool, move |conn| {
-        rekindle_db::repo::identity::delete(conn, &pk)
-    })
-    .await?;
-
-    crate::keystore::delete_identity_vault(&config_dir, &public_key)
-        .map_err(|e| format!("failed to delete keystore: {e}"))?;
-
+    delete_identity_core(&root, &state, &public_key, &passphrase).await?;
     tracing::info!(public_key = %public_key, "identity deleted");
     Ok(())
 }
@@ -148,59 +120,25 @@ pub async fn create_identity_inner(
     display_name: Option<String>,
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    pool: Db,
-    keystore_handle: VaultHandle,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::create_identity_core;
     use crate::services::login_runtime::{start_background_services, DhtKeysConfig};
 
-    let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
+    let root = app.state::<DataRoot>().inner().clone();
+    let login_scope = begin_unlock(&app, &state).await?;
 
-    // Wait for Starting → Locked (async Veilid attach) before unlocking —
-    // mirrors Briar's waitForStartup() / the daemon's can_unlock() gate. The
-    // timeout only bounds the wait; the real gate is the checked transition
-    // below, which validates the actual current state and fails loud instead
-    // of silently stranding the FSM in Locked.
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(20),
-        state.lifecycle.wait_until_unlockable(),
-    )
-    .await;
-    state
-        .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Resuming)
-        .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
-    // The session begins before the identity loads: loading it already
-    // spawns session work (governance re-merge, reliability flush).
-    let login_scope = services::session::begin(&app, &state);
-
-    let (result, secret_bytes) = match create_identity_core(
-        &config_dir,
-        &passphrase,
-        display_name,
-        &state,
-        &pool,
-        &keystore_handle,
-        Some(&app),
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            services::session::stop_scope(&state).await;
-            let _ = state
-                .lifecycle
-                .transition(rekindle_lifecycle::LifecycleState::Locked);
-            return Err(e);
-        }
-    };
+    let (result, _) =
+        match create_identity_core(&root, &passphrase, display_name, &state, Some(&app)).await {
+            Ok(v) => v,
+            Err(e) => return Err(fail_unlock(&state, e).await),
+        };
+    let pool = state.db.current()?;
 
     if let Err(e) = start_background_services(
         &app,
         &state,
         &login_scope,
         &pool,
-        &secret_bytes,
         DhtKeysConfig {
             existing_dht_key: None,
             existing_friend_list_key: None,
@@ -213,13 +151,13 @@ pub async fn create_identity_inner(
     )
     .await
     {
-        return Err(abort_unlock(&app, &state, &keystore_handle, e).await);
+        return Err(abort_unlock(&app, &state, e).await);
     }
 
     if let Err(closed) =
         crate::services::friendship::spawn_coordinator(&state, app.clone(), &login_scope)
     {
-        return Err(abort_unlock(&app, &state, &keystore_handle, closed.to_string()).await);
+        return Err(abort_unlock(&app, &state, closed.to_string()).await);
     }
 
     if let Err(e) = state
@@ -232,21 +170,46 @@ pub async fn create_identity_inner(
     Ok(result)
 }
 
-/// Undo an unlock whose post-unlock setup failed: lock the vault, drop
-/// every piece of per-user state, return to `Locked`, and hand back `error`.
-async fn abort_unlock(
+/// Wait for Starting → Locked (async Veilid attach), move to Resuming and
+/// begin the login session. Mirrors Briar's waitForStartup() / the daemon's
+/// can_unlock() gate: the timeout only bounds the wait; the checked
+/// transition validates the actual state and fails loud instead of
+/// stranding the FSM in Locked. The session begins before the identity
+/// loads: loading it already spawns session work (governance re-merge,
+/// reliability flush).
+async fn begin_unlock(
     app: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    keystore_handle: &VaultHandle,
-    error: String,
-) -> String {
-    tracing::error!(error = %error, "post-unlock setup failed — locking again");
-    services::session::end_session(
-        services::session::SessionEnd::Logout(app),
-        state,
-        keystore_handle,
+    state: &SharedState,
+) -> Result<Arc<rekindle_lifecycle::SessionScope>, String> {
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        state.lifecycle.wait_until_unlockable(),
     )
     .await;
+    state
+        .lifecycle
+        .transition(rekindle_lifecycle::LifecycleState::Resuming)
+        .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
+    Ok(services::session::begin(app, state))
+}
+
+/// Undo a create or unlock that failed before its session started: stop
+/// what the attempt spawned, take out anything it installed, and return to
+/// `Locked`.
+async fn fail_unlock(state: &SharedState, error: String) -> String {
+    services::session::stop_scope(state).await;
+    services::session::lock_identity(state).await;
+    let _ = state
+        .lifecycle
+        .transition(rekindle_lifecycle::LifecycleState::Locked);
+    error
+}
+
+/// Undo an unlock whose post-unlock setup failed: lock the vault, drop
+/// every piece of per-user state, return to `Locked`, and hand back `error`.
+async fn abort_unlock(app: &tauri::AppHandle, state: &Arc<AppState>, error: String) -> String {
+    tracing::error!(error = %error, "post-unlock setup failed — locking again");
+    services::session::end_session(services::session::SessionEnd::Logout(app), state).await;
     let _ = state
         .lifecycle
         .transition(rekindle_lifecycle::LifecycleState::Locked);
@@ -258,59 +221,25 @@ pub async fn login_inner(
     passphrase: String,
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    pool: Db,
-    keystore_handle: VaultHandle,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::login_core;
     use crate::services::login_runtime::{start_background_services, DhtKeysConfig};
 
-    let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
+    let root = app.state::<DataRoot>().inner().clone();
+    let login_scope = begin_unlock(&app, &state).await?;
 
-    // Wait for Starting → Locked (async Veilid attach) before unlocking —
-    // mirrors Briar's waitForStartup() / the daemon's can_unlock() gate. The
-    // timeout only bounds the wait; the real gate is the checked transition
-    // below, which validates the actual current state and fails loud instead
-    // of silently stranding the FSM in Locked.
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(20),
-        state.lifecycle.wait_until_unlockable(),
-    )
-    .await;
-    state
-        .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Resuming)
-        .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
-    // The session begins before the identity loads: loading it already
-    // spawns session work (governance re-merge, reliability flush).
-    let login_scope = services::session::begin(&app, &state);
-
-    let (result, secret_key, dht_cols) = match login_core(
-        &config_dir,
-        &public_key,
-        &passphrase,
-        &state,
-        &pool,
-        &keystore_handle,
-        Some(&app),
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            services::session::stop_scope(&state).await;
-            let _ = state
-                .lifecycle
-                .transition(rekindle_lifecycle::LifecycleState::Locked);
-            return Err(e);
-        }
-    };
+    let (result, _, dht_cols) =
+        match login_core(&root, &public_key, &passphrase, &state, Some(&app)).await {
+            Ok(v) => v,
+            Err(e) => return Err(fail_unlock(&state, e).await),
+        };
+    let pool = state.db.current()?;
 
     if let Err(e) = start_background_services(
         &app,
         &state,
         &login_scope,
         &pool,
-        &secret_key,
         DhtKeysConfig {
             existing_dht_key: dht_cols.existing_dht_key,
             existing_friend_list_key: dht_cols.existing_friend_list_key,
@@ -323,7 +252,7 @@ pub async fn login_inner(
     )
     .await
     {
-        return Err(abort_unlock(&app, &state, &keystore_handle, e).await);
+        return Err(abort_unlock(&app, &state, e).await);
     }
 
     {
@@ -353,7 +282,7 @@ pub async fn login_inner(
     if let Err(closed) =
         crate::services::friendship::spawn_coordinator(&state, app.clone(), &login_scope)
     {
-        return Err(abort_unlock(&app, &state, &keystore_handle, closed.to_string()).await);
+        return Err(abort_unlock(&app, &state, closed.to_string()).await);
     }
 
     if let Err(e) = state
@@ -366,22 +295,19 @@ pub async fn login_inner(
     Ok(result)
 }
 
-pub async fn list_identities_inner(pool: &Db) -> Result<Vec<IdentitySummary>, String> {
-    use base64::Engine as _;
-    let rows = db_call(pool, |conn| rekindle_db::repo::identity::list(conn)).await?;
-    Ok(rows
+/// The identities in the registry, for the login picker (readable while
+/// locked: it holds no secret).
+///
+/// # Errors
+/// The registry cannot be read.
+pub fn list_identities_inner(root: &DataRoot) -> Result<Vec<IdentitySummary>, String> {
+    Ok(identity::list(root)
+        .map_err(|e| identity_error_message(&e))?
         .into_iter()
-        .map(|row| {
-            let avatar_base64 = row
-                .avatar_webp
-                .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
-            IdentitySummary {
-                public_key: row.public_key,
-                display_name: row.display_name,
-                created_at: row.created_at,
-                has_avatar: avatar_base64.is_some(),
-                avatar_base64,
-            }
+        .map(|entry| IdentitySummary {
+            public_key: entry.public_key,
+            display_name: entry.display_name,
+            created_at: entry.created_at,
         })
         .collect())
 }

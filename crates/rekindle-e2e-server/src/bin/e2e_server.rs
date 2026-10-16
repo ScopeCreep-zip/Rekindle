@@ -1,13 +1,13 @@
 //! E2E test server — HTTP bridge to the real Rust backend.
 //!
 //! Exposes Tauri IPC commands over HTTP so Playwright can test the real
-//! `SolidJS` frontend against real `SQLite` + Stronghold + Ed25519 backend.
+//! `SolidJS` frontend against the real identity store (vault, SQLCipher
+//! database, registry) and Ed25519, in a temp data root.
 //!
 //! ```bash
 //! cargo run -p rekindle --bin e2e-server --features e2e-server
 //! ```
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::State as AxumState;
@@ -20,29 +20,20 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::cors::{Any, CorsLayer};
 
-use rekindle_db::Db;
+use rekindle_db::paths::DataRoot;
 use rekindle_lib::commands::auth::{
-    create_identity_core, list_identities_inner, login_core, LoginResult,
+    create_identity_core, delete_identity_core, list_identities_inner, lock_identity, login_core,
+    verify_identity_passphrase_core, LoginResult,
 };
-use rekindle_lib::keystore;
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
-use rekindle_vault::VaultHandle;
 
 /// Shared server state passed to every axum handler.
 struct ServerState {
     state: SharedState,
-    keystore_handle: VaultHandle,
-    config_dir: PathBuf,
+    root: DataRoot,
 }
 
 type SharedServer = Arc<ServerState>;
-
-impl ServerState {
-    /// The open database, as the app's commands reach it (`AppState.db`).
-    fn db(&self) -> Result<Db, String> {
-        Ok(self.state.db.current()?)
-    }
-}
 
 #[derive(Deserialize)]
 struct InvokeRequest {
@@ -61,22 +52,23 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let config_dir = std::env::temp_dir().join(format!("rekindle-e2e-{}", std::process::id()));
-    std::fs::create_dir_all(&config_dir).expect("failed to create temp config dir");
+    let dir = std::env::temp_dir().join(format!("rekindle-e2e-{}", std::process::id()));
+    let data = dir.join("data");
+    let root = DataRoot {
+        config: dir.join("config"),
+        logs: dir.join("logs"),
+        state: data.join("state"),
+        data,
+    };
+    root.create_dirs()
+        .expect("failed to create the temp data root");
+    rekindle_db::reset::apply(&root).expect("layout check of the temp data root");
 
-    tracing::info!(dir = %config_dir.display(), "E2E server starting");
-
-    let pool = rekindle_db::open(std::path::Path::new(":memory:"))
-        .expect("in-memory SQLite")
-        .db;
-    let shared_state: SharedState = Arc::new(AppState::default());
-    shared_state.db.set(pool);
-    let keystore_handle = rekindle_vault::new_handle();
+    tracing::info!(dir = %dir.display(), "E2E server starting");
 
     let server = Arc::new(ServerState {
-        state: shared_state,
-        keystore_handle,
-        config_dir: config_dir.clone(),
+        state: Arc::new(AppState::default()),
+        root,
     });
 
     let cors = CorsLayer::new()
@@ -119,46 +111,18 @@ async fn handle_invoke(
 async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoResponse {
     tracing::info!("resetting server state");
 
-    // Clear in-memory state
-    *server.state.identity.write() = None;
+    lock_identity(&server.state).await;
     server.state.friends.write().clear();
     server.state.communities.write().clear();
-    *server.keystore_handle.lock() = None;
 
-    // Recreate SQLite database (drop all tables and re-run schema)
-    let Ok(pool) = server.db() else {
+    // Every identity's files and the registry.
+    if rekindle_db::reset::run(&[rekindle_db::reset::ResetDir {
+        path: server.root.state.clone(),
+        keep: &["layout-version"],
+    }])
+    .is_err()
+    {
         return StatusCode::INTERNAL_SERVER_ERROR;
-    };
-    pool.call(|conn| -> Result<(), rusqlite::Error> {
-        conn.execute_batch(
-            "DELETE FROM pending_messages; \
-             DELETE FROM prekeys; \
-             DELETE FROM signal_sessions; \
-             DELETE FROM trusted_identities; \
-             DELETE FROM messages; \
-             DELETE FROM community_members; \
-             DELETE FROM channels; \
-             DELETE FROM communities; \
-             DELETE FROM friends; \
-             DELETE FROM friend_groups; \
-             DELETE FROM identity;",
-        )?;
-        Ok(())
-    })
-    .await
-    .expect("failed to clear database");
-
-    // Delete Stronghold snapshot files
-    if let Ok(entries) = std::fs::read_dir(&server.config_dir) {
-        for entry in entries.flatten() {
-            if entry
-                .path()
-                .extension()
-                .is_some_and(|ext| ext == "stronghold")
-            {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
     }
 
     StatusCode::OK
@@ -171,54 +135,28 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
         "create_identity" => {
             let passphrase = arg_str(args, "passphrase")?;
             let display_name = arg_str_opt(args, "displayName");
-            let (result, _) = create_identity_core(
-                &server.config_dir,
-                &passphrase,
-                display_name,
-                &server.state,
-                &server.db()?,
-                &server.keystore_handle,
-                None,
-            )
-            .await?;
+            let (result, _) =
+                create_identity_core(&server.root, &passphrase, display_name, &server.state, None)
+                    .await?;
             Ok(serde_json::to_value(result).unwrap())
         }
         "login" => {
             let public_key = arg_str(args, "publicKey")?;
             let passphrase = arg_str(args, "passphrase")?;
-            let (result, _, _) = login_core(
-                &server.config_dir,
-                &public_key,
-                &passphrase,
-                &server.state,
-                &server.db()?,
-                &server.keystore_handle,
-                None,
-            )
-            .await?;
+            let (result, _, _) =
+                login_core(&server.root, &public_key, &passphrase, &server.state, None).await?;
             Ok(serde_json::to_value(result).unwrap())
         }
         "list_identities" => {
-            let summaries = list_identities_inner(&server.db()?).await?;
+            let summaries = list_identities_inner(&server.root)?;
             Ok(serde_json::to_value(summaries).unwrap())
         }
         "delete_identity" => {
             let public_key = arg_str(args, "publicKey")?;
             let passphrase = arg_str(args, "passphrase")?;
 
-            // Verify passphrase
-            keystore::open_identity_vault(&server.config_dir, &public_key, &passphrase).map_err(
-                |e| {
-                    let msg = e.to_string();
-                    if msg.contains("snapshot") || msg.contains("decrypt") {
-                        "Wrong passphrase".to_string()
-                    } else {
-                        msg
-                    }
-                },
-            )?;
-
-            // If deleting active identity, clear state
+            verify_identity_passphrase_core(&server.root, &server.state, &public_key, &passphrase)
+                .await?;
             let is_active = server
                 .state
                 .identity
@@ -226,23 +164,11 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 .as_ref()
                 .is_some_and(|id| id.public_key == public_key);
             if is_active {
-                *server.state.identity.write() = None;
+                lock_identity(&server.state).await;
                 server.state.friends.write().clear();
                 server.state.communities.write().clear();
-                *server.keystore_handle.lock() = None;
             }
-
-            // Delete from DB
-            let pk = public_key.clone();
-            server
-                .db()?
-                .call(move |conn| rekindle_db::repo::identity::delete(conn, &pk))
-                .await
-                .map_err(|e| e.to_string())?;
-
-            // Delete Stronghold file
-            let _ = keystore::delete_identity_vault(&server.config_dir, &public_key);
-
+            delete_identity_core(&server.root, &server.state, &public_key, &passphrase).await?;
             Ok(Value::Null)
         }
         "get_identity" => {
@@ -257,10 +183,9 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             })
         }
         "logout" => {
-            *server.state.identity.write() = None;
+            lock_identity(&server.state).await;
             server.state.friends.write().clear();
             server.state.communities.write().clear();
-            *server.keystore_handle.lock() = None;
             Ok(Value::Null)
         }
 

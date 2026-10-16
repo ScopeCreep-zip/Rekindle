@@ -15,7 +15,7 @@ const SUBMIT = '.login-container button[type="submit"]';
 /// "← Switch Account" (login mode) or "← Back" (create mode).
 const BACK = /Switch Account|Back/;
 
-const ONE_IDENTITY = `[{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000, hasAvatar: false, avatarBase64: null }]`;
+const ONE_IDENTITY = `[{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000 }]`;
 
 const TRACKED_LOGIN_HANDLER = `
   switch (cmd) {
@@ -51,7 +51,7 @@ const CREATE_FRESH_HANDLER = `
 const CREATE_FROM_PICKER_HANDLER = `
   switch (cmd) {
     case "list_identities":
-      return [{ publicKey: "abc123def456", displayName: "ExistingUser", createdAt: 1000, hasAvatar: false, avatarBase64: null }];
+      return [{ publicKey: "abc123def456", displayName: "ExistingUser", createdAt: 1000 }];
     case "create_identity": return { publicKey: "new-key-789", displayName: args.displayName || "Anonymous" };
     default: return null;
   }

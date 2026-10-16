@@ -4,65 +4,49 @@ use crate::services;
 pub use crate::services::auth_cores::LoginResult;
 pub use crate::services::auth_runtime::{list_identities_inner, IdentitySummary};
 use crate::state::SharedState;
-use rekindle_vault::VaultHandle;
 
-/// Core identity creation logic, separated from `AppHandle` for testability.
-///
-/// Generates keypair, stores in Stronghold + `SQLite`, sets `AppState`.
-/// Returns `(LoginResult, secret_key_bytes)` so the caller can decide
-/// whether to spawn background services.
-///
-/// Multiple identities can coexist — each gets its own Stronghold file
-/// and `owner_key`-scoped rows. Only one is active at a time.
-pub use services::auth_cores::{create_identity_core, login_core, IdentityDhtColumns};
+/// Create and unlock, separated from `AppHandle` for testability. Multiple
+/// identities coexist, each with its own vault and database; one is active
+/// at a time.
+pub use services::auth_cores::{
+    create_identity_core, delete_identity_core, login_core, verify_identity_passphrase_core,
+    IdentityDhtColumns,
+};
+/// Take the unlocked identity out of the session (logout's last step).
+pub use services::session::lock_identity;
 
 /// Create a new identity (first-time setup).
 ///
-/// Generates an Ed25519 keypair, stores the private key in Stronghold
-/// (encrypted with passphrase via `Argon2id`), and persists public identity to `SQLite`.
+/// Generates an Ed25519 keypair and creates the identity's vault and
+/// database (`host::identity::create`).
 #[tauri::command]
 pub async fn create_identity(
     passphrase: String,
     display_name: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<LoginResult, String> {
-    let pool = state.db.current()?;
     services::auth_runtime::create_identity_inner(
         passphrase,
         display_name,
         app,
         state.inner().clone(),
-        pool.clone(),
-        keystore_handle.inner().clone(),
     )
     .await
 }
 
 /// Unlock existing identity with passphrase.
 ///
-/// Opens the per-identity Stronghold snapshot with the passphrase, loads the
-/// Ed25519 private key, verifies it matches the `SQLite` public key, and
-/// restores friends + communities.
+/// Opens the identity's vault and database (`host::identity::unlock`) and
+/// restores friends and communities.
 #[tauri::command]
 pub async fn login(
     public_key: String,
     passphrase: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<LoginResult, String> {
-    let pool = state.db.current()?;
-    services::auth_runtime::login_inner(
-        public_key,
-        passphrase,
-        app,
-        state.inner().clone(),
-        pool.clone(),
-        keystore_handle.inner().clone(),
-    )
-    .await
+    services::auth_runtime::login_inner(public_key, passphrase, app, state.inner().clone()).await
 }
 
 /// Get the current identity state.
@@ -78,56 +62,40 @@ pub async fn get_identity(state: State<'_, SharedState>) -> Result<Option<LoginR
     }))
 }
 
-/// Log out: save and lock Stronghold, clean up user state, keep node alive.
+/// Log out: end the session and lock the identity; the node stays up.
 #[tauri::command]
-pub async fn logout(
-    app: tauri::AppHandle,
-    state: State<'_, SharedState>,
-    keystore_handle: State<'_, VaultHandle>,
-) -> Result<(), String> {
-    services::auth_runtime::logout_inner(
-        app,
-        state.inner().clone(),
-        keystore_handle.inner().clone(),
-    )
-    .await
+pub async fn logout(app: tauri::AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
+    services::auth_runtime::logout_inner(app, state.inner().clone()).await
 }
 
 /// List all persisted identities (for the account picker).
 ///
-/// Returns summaries of every identity in `SQLite`, ordered by creation date.
-/// No authentication needed — this is called by the login window on mount.
+/// Reads the identity registry, oldest first. No unlock needed: the login
+/// window calls it on mount.
 #[tauri::command]
 pub async fn list_identities(
-    state: State<'_, SharedState>,
+    root: State<'_, rekindle_db::paths::DataRoot>,
 ) -> Result<Vec<IdentitySummary>, String> {
-    let pool = state.db.current()?;
-    services::auth_runtime::list_identities_inner(&pool).await
+    services::auth_runtime::list_identities_inner(root.inner())
 }
 
 /// Delete a specific identity after verifying the passphrase.
 ///
-/// Opens the identity's Stronghold to verify the passphrase, then deletes:
-/// - The identity row (CASCADE deletes all scoped data)
-/// - The Stronghold snapshot file
-///
-/// If deleting the currently active identity, performs logout first.
+/// The passphrase is checked first (a wrong one counts against the
+/// identity); an active identity is logged out; then its vault, database
+/// and registry entry go (`host::identity::delete`).
 #[tauri::command]
 pub async fn delete_identity(
     public_key: String,
     passphrase: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
     services::auth_runtime::delete_identity_inner(
         public_key,
         passphrase,
         app,
         state.inner().clone(),
-        pool.clone(),
-        keystore_handle.inner().clone(),
     )
     .await
 }

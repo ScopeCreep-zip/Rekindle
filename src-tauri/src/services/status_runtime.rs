@@ -11,6 +11,7 @@
 use std::io::Cursor;
 
 use image::ImageReader;
+use tauri::Manager as _;
 
 use crate::db_helpers::db_call;
 use crate::services;
@@ -66,6 +67,9 @@ pub async fn set_nickname_inner(
         rekindle_db::repo::identity::set_display_name(conn, &pk_clone, &nickname_clone)
     })
     .await?;
+    let root = app.state::<rekindle_db::paths::DataRoot>();
+    rekindle_node::host::identity::rename(&root, &public_key, &nickname)
+        .map_err(|e| format!("identity registry: {e}"))?;
 
     crate::event_dispatch::emit(app, crate::event_dispatch::WebviewEvent::ProfileUpdated);
 

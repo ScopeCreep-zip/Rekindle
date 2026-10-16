@@ -8,6 +8,7 @@
 
 pub mod adapters;
 pub mod bus_key;
+pub mod identity;
 pub mod policy;
 mod signals;
 pub mod watchdog;
@@ -71,8 +72,11 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
     // bus socket: the desktop takes the same lock (plan C5). Held for the
     // life of the process.
     let _node_lock = NodeLock::acquire(&root.data)?;
+    // The layout check, under the lock and before any store opens (plan
+    // D1): a root laid out for another version is reset.
+    rekindle_db::reset::apply(&root)?;
     let session_file = root.state.join("session.json");
-    let veilid_dir = root.veilid();
+    let veilid_dir = root.create_veilid_dir()?;
     tracing::info!(
         data = %root.data.display(),
         state = %root.state.display(),

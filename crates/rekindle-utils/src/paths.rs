@@ -69,10 +69,23 @@ impl DataRoot {
         })
     }
 
-    /// Veilid's storage directory.
+    /// Veilid's storage directory, `state/veilid` (plan D1): it resets with
+    /// the identities.
     #[must_use]
     pub fn veilid(&self) -> PathBuf {
-        self.data.join("veilid")
+        self.state.join("veilid")
+    }
+
+    /// Create Veilid's storage directory, owner-only, and return it. Called
+    /// when the node starts, after the layout check, so a fresh `state/`
+    /// is still empty when the check reads it.
+    ///
+    /// # Errors
+    /// The directory cannot be created or its permissions set.
+    pub fn create_veilid_dir(&self) -> std::io::Result<PathBuf> {
+        let dir = self.veilid();
+        create_private_dir(&dir)?;
+        Ok(dir)
     }
 
     /// The content-addressed file cache (per-community sub-directories).
@@ -81,31 +94,15 @@ impl DataRoot {
         self.data.join("file_cache")
     }
 
-    /// The SQLite database. In `config` until plan D1 moves it per identity.
-    #[must_use]
-    pub fn database(&self) -> PathBuf {
-        self.config.join("rekindle.db")
-    }
-
     /// Create every directory, owner-only (`0700`) on Unix: the root holds
-    /// keys, the database and Veilid's node identity (RC-6).
+    /// keys, the databases and Veilid's node identity (RC-6). Veilid's own
+    /// directory is created when the node starts (`create_veilid_dir`).
     ///
     /// # Errors
     /// A directory cannot be created or its permissions set.
     pub fn create_dirs(&self) -> std::io::Result<()> {
-        for dir in [
-            &self.data,
-            &self.config,
-            &self.state,
-            &self.logs,
-            &self.veilid(),
-        ] {
-            std::fs::create_dir_all(dir)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-            }
+        for dir in [&self.data, &self.config, &self.state, &self.logs] {
+            create_private_dir(dir)?;
         }
         Ok(())
     }
@@ -141,6 +138,17 @@ impl DataRoot {
     pub fn user_config(&self) -> PathBuf {
         self.config.join("config.toml")
     }
+}
+
+/// Create `dir` and set it owner-only (`0700`) on Unix.
+fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
