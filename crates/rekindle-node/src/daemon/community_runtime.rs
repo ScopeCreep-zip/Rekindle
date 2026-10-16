@@ -22,8 +22,8 @@
 //!   holds open. That is per-process by definition.
 //!
 //! The persisted half — segment index, governance Lamport counter, MEK
-//! generation — lives on `rekindle_transport::session::CommunityMembership`
-//! in `session.json`, beside the rest of the membership.
+//! generation — lives on `rekindle_transport::session::CommunityMembership`,
+//! projected from the identity's `communities` row (`host::session`).
 
 use std::collections::{BTreeSet, HashMap};
 

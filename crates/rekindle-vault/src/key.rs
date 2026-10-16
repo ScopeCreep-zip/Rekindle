@@ -120,6 +120,12 @@ pub enum VaultKey {
     ClientKey {
         public_key: String,
     },
+
+    /// The owner keypair of the DM log shared with a friend (the daemon's
+    /// friend-inbox protocol, until E2.1) — `("dms", "dm_log_keypair:…")`.
+    DmLogKeypair {
+        peer: String,
+    },
 }
 
 impl VaultKey {
@@ -152,6 +158,7 @@ impl VaultKey {
             | Self::SlotSeed { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
             Self::ClientKey { .. } => "clients",
+            Self::DmLogKeypair { .. } => "dms",
         }
     }
 
@@ -205,6 +212,7 @@ impl VaultKey {
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
+            Self::DmLogKeypair { peer } => ("dm_log_keypair", vec![s(peer)]),
         }
     }
 
@@ -291,6 +299,7 @@ impl VaultKey {
             ("client", [k]) => Self::ClientKey {
                 public_key: k.clone(),
             },
+            ("dm_log_keypair", [peer]) => Self::DmLogKeypair { peer: peer.clone() },
             _ => return None,
         };
         (parsed.namespace() == namespace).then_some(parsed)
@@ -363,6 +372,9 @@ mod tests {
             VaultKey::AuditTail,
             VaultKey::ClientKey {
                 public_key: "ab".repeat(32),
+            },
+            VaultKey::DmLogKeypair {
+                peer: "cd".repeat(32),
             },
         ]
     }

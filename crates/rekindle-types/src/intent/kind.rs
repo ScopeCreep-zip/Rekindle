@@ -215,6 +215,7 @@ pub enum IntentKind {
     TransferCommunityOwnership,
     // Protected: Identity and key material (daemon)
     ExportIdentity,
+    ImportIdentity,
     RotateIdentity,
     WipeAllData,
     RegisterAgent,
@@ -406,6 +407,7 @@ impl IntentKind {
             | Self::CreateIdentity
             | Self::Login
             | Self::ExportIdentity
+            | Self::ImportIdentity
             | Self::RotateIdentity
             | Self::WipeAllData
             | Self::RegisterAgent

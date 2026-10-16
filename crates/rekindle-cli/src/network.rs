@@ -152,12 +152,14 @@ pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
             rekindle_client::fmt::format_bytes(size)
         )
     });
-    let session_exists = helpers::session_path().map(|p| p.exists()).unwrap_or(false);
+    let registry_exists = helpers::registry_path()
+        .map(|p| p.exists())
+        .unwrap_or(false);
 
     if mode.is_structured() {
         let value = serde_json::json!({
             "daemon": "not running",
-            "session_exists": session_exists,
+            "identities_exist": registry_exists,
             "storage": storage_info,
         });
         return format::print_structured(&value, mode);
@@ -166,8 +168,8 @@ pub fn cmd_status_offline(mode: OutputMode) -> anyhow::Result<()> {
     let pairs = vec![
         ("Daemon", "not running".to_string()),
         (
-            "Session file",
-            if session_exists {
+            "Identities",
+            if registry_exists {
                 "exists".into()
             } else {
                 concat!("not found — run: ", crate::error::cmd!("init")).into()

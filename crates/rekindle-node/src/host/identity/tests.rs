@@ -1,41 +1,6 @@
 use super::*;
 
-struct Fixture {
-    _dir: tempfile::TempDir,
-    root: DataRoot,
-    db: Arc<DbHandle>,
-    vault: VaultHandle,
-    attempts: AttemptLimiter<String>,
-}
-
-impl Fixture {
-    fn new() -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let data = dir.path().join("data");
-        let root = DataRoot {
-            config: dir.path().join("config"),
-            logs: dir.path().join("logs"),
-            state: data.join("state"),
-            data,
-        };
-        std::fs::create_dir_all(&root.state).unwrap();
-        Self {
-            _dir: dir,
-            root,
-            db: Arc::new(DbHandle::default()),
-            vault: rekindle_vault::new_handle(),
-            attempts: AttemptLimiter::default(),
-        }
-    }
-
-    fn stores(&self) -> Stores<'_> {
-        Stores {
-            db: &self.db,
-            vault: &self.vault,
-            attempts: &self.attempts,
-        }
-    }
-}
+use crate::host::fixture::Fixture;
 
 #[tokio::test]
 async fn create_lock_unlock_round_trips_and_lists() {

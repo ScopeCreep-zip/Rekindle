@@ -90,6 +90,15 @@ impl SignalSessionManager {
         Ok(bundle)
     }
 
+    /// How many one-time keys the store holds unclaimed: `(X25519,
+    /// ML-KEM-768)`. Each is at most [`MAX_UNCLAIMED_ONE_TIME`].
+    pub fn unclaimed_one_time(&self) -> Result<(usize, usize), CryptoError> {
+        Ok((
+            self.prekeys.list_prekey_ids()?.len(),
+            self.prekeys.list_pq_one_time_ids()?.len(),
+        ))
+    }
+
     fn signing_key(&self) -> Result<SigningKey, CryptoError> {
         let (identity_private, _) = self.identity.get_identity_key_pair()?;
         let bytes =

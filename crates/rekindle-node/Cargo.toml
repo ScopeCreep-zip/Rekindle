@@ -95,9 +95,8 @@ tracing-appender = "0.2"
 # systemd integration (sd_notify READY=1, watchdog keepalive)
 sd-notify = "0.4"
 
-# OS keyring for signing key storage
+base64 = "0.22"
 hex = "0.4"
-keyring = { version = "3", default-features = false, features = [ "apple-native", "windows-native", "linux-native" ] }
 
 
 [dev-dependencies]

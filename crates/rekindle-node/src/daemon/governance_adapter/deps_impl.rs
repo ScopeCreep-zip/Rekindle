@@ -292,9 +292,10 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
     }
 
     fn list_missing_registry_keypairs(&self) -> Vec<String> {
-        // The daemon never persists a registry owner keypair: under
-        // `o_cnt: 0` there is no owner writer, and member slots use the
-        // derived slot keypair. So none can be missing.
+        // The daemon holds no registry owner keypair in memory to go
+        // missing: a creator's is in the vault (`RegistryKeypair`), and
+        // under `o_cnt: 0` it grants no write — member slots use the
+        // derived slot keypair. So there is nothing to recover into.
         Vec::new()
     }
 

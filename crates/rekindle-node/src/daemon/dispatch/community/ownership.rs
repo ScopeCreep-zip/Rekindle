@@ -50,31 +50,3 @@ pub(crate) async fn handle_transfer_ownership(
         Err(e) => IpcResponse::error(500, format!("grant administration failed: {e}")),
     }
 }
-
-pub(crate) fn write_encrypted_backup(
-    path: &std::path::Path,
-    data: &[u8],
-    key: &[u8; 32],
-) -> anyhow::Result<()> {
-    use aes_gcm::{
-        aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
-    };
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| anyhow::anyhow!("AES init: {e}"))?;
-    let mut nonce_bytes = [0u8; 12];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let ciphertext = cipher
-        .encrypt(nonce, data)
-        .map_err(|e| anyhow::anyhow!("encrypt: {e}"))?;
-    let mut output = Vec::with_capacity(12 + ciphertext.len());
-    output.extend_from_slice(&nonce_bytes);
-    output.extend_from_slice(&ciphertext);
-    std::fs::write(path, &output)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
-}

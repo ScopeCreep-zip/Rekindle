@@ -25,27 +25,51 @@ pub async fn dispatch(
     if let Err(rejection) = crate::validation::validate_request(&request) {
         return rejection;
     }
+    route(ctx, state, request, caller).await
+}
 
+/// Route an audited, validated request to its domain handler: one arm per
+/// `IpcRequest` variant.
+async fn route(
+    ctx: &DaemonContext,
+    state: crate::daemon::DaemonState,
+    request: IpcRequest,
+    caller: &CallerContext,
+) -> IpcResponse {
     match request {
         // ── Lifecycle (any state) ────────────────────────────────
         IpcRequest::Status => status::handle_status(ctx, state),
-        IpcRequest::Unlock { passphrase } => {
-            lifecycle::handle_unlock(ctx, state, &passphrase).await
-        }
-        IpcRequest::Lock => lifecycle::handle_lock(ctx, state).await,
+        IpcRequest::Unlock {
+            identity,
+            passphrase,
+        } => lifecycle::handle_unlock(ctx, state, &identity, &passphrase).await,
+        // The daemon keeps no selected identity across a lock, so a
+        // logout is a lock (its teardown announces offline first).
+        IpcRequest::Lock | IpcRequest::Logout => lifecycle::handle_lock(ctx, state).await,
         IpcRequest::Shutdown => lifecycle::handle_shutdown(ctx),
 
         // ── Identity ─────────────────────────────────────────────
-        IpcRequest::IdentityCreate { display_name } => {
-            identity::handle_create(ctx, state, &display_name).await
-        }
+        IpcRequest::IdentityCreate {
+            display_name,
+            passphrase,
+        } => identity::handle_create(ctx, state, &display_name, &passphrase).await,
+        IpcRequest::IdentityList => identity::handle_list(ctx),
         IpcRequest::IdentityShow => identity::handle_show(ctx, state),
-        IpcRequest::IdentityExport => identity::handle_export(ctx, state),
-        IpcRequest::IdentityRotate => identity::handle_rotate(ctx, state).await,
-        // `validate_request` checked the typed confirmation.
-        IpcRequest::IdentityDestroy { confirmation: _ } => {
-            identity::handle_destroy(ctx, state).await
+        IpcRequest::IdentityExport { passphrase } => {
+            identity::handle_export(ctx, state, &passphrase)
         }
+        IpcRequest::IdentityImport {
+            archive,
+            passphrase,
+        } => identity::handle_import(ctx, &archive, &passphrase).await,
+        IpcRequest::IdentityRotate { passphrase } => {
+            identity::handle_rotate(ctx, state, &passphrase).await
+        }
+        // `validate_request` checked the key and the typed confirmation.
+        IpcRequest::IdentityDelete {
+            identity,
+            confirmation: _,
+        } => identity::handle_delete(ctx, state, &identity).await,
         // `validate_request` checked the typed confirmation.
         IpcRequest::IdentityWipe { confirmation: _ } => identity::handle_wipe(ctx, state).await,
 
@@ -319,13 +343,9 @@ pub async fn dispatch(
         // They never reach daemon dispatch — the server intercepts them to
         // register filters in the EventRouter before routing to daemon.
         // If they arrive here, something bypassed the server layer.
-        IpcRequest::Subscribe { .. } => IpcResponse::error(
+        IpcRequest::Subscribe { .. } | IpcRequest::Unsubscribe { .. } => IpcResponse::error(
             400,
-            "subscribe must be handled by the IPC bus server, not daemon dispatch",
-        ),
-        IpcRequest::Unsubscribe { .. } => IpcResponse::error(
-            400,
-            "unsubscribe must be handled by the IPC bus server, not daemon dispatch",
+            "subscriptions are handled by the IPC bus server, not daemon dispatch",
         ),
         IpcRequest::NetworkStatus => admin::handle_network_status(ctx, state),
         IpcRequest::NetworkPeers => admin::handle_network_peers(ctx, state),

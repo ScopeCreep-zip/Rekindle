@@ -14,6 +14,11 @@ use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
 use super::in_flight::{shutting_down, Correlation, Finished, InFlight};
 use super::{CallerContext, DaemonContext};
 
+/// A store write or read failed: 500, naming what.
+pub(crate) fn store_error(what: &str, e: impl std::fmt::Display) -> IpcResponse {
+    IpcResponse::error(500, format!("{what}: {e}"))
+}
+
 // ── Shared helpers used across dispatch submodules ───────────────────────
 
 impl DaemonContext {
@@ -28,7 +33,8 @@ impl DaemonContext {
         })
     }
 
-    /// Briefly hold the session lock, apply a closure, or return 404.
+    /// Briefly hold the session lock, apply a closure, or return 423
+    /// (the session exists only while an identity is unlocked).
     pub(crate) fn require_session<F, T>(&self, f: F) -> Result<T, IpcResponse>
     where
         F: FnOnce(&Session) -> T,
@@ -36,9 +42,9 @@ impl DaemonContext {
         let guard = self.session.read();
         guard.as_ref().map(f).ok_or_else(|| {
             IpcResponse::error_with_remediation(
-                404,
-                "no identity loaded",
-                "initialize an identity first",
+                423,
+                "no identity is unlocked",
+                "unlock an identity first (rekindle identity list, then rekindle unlock)",
             )
         })
     }
@@ -55,15 +61,42 @@ impl DaemonContext {
         })
     }
 
-    /// Save session to disk, returning an IPC error on failure.
-    pub(crate) fn save_session(&self) -> Result<(), IpcResponse> {
-        let guard = self.session.read();
-        if let Some(ref session) = *guard {
-            crate::state::save_session(session, &self.session_path)
-                .map_err(|e| IpcResponse::error(500, format!("session persistence failed: {e}")))
-        } else {
-            Ok(())
+    /// The unlocked identity's database, or 423 while locked.
+    pub(crate) fn require_db(&self) -> Result<rekindle_db::Db, IpcResponse> {
+        self.db.current().map_err(|_| {
+            IpcResponse::error_with_remediation(
+                423,
+                "no identity is unlocked",
+                "unlock the daemon first",
+            )
+        })
+    }
+
+    /// The unlocked identity's public key, or 423 while locked.
+    pub(crate) fn require_owner(&self) -> Result<String, IpcResponse> {
+        self.require_session(|s| s.identity.public_key_hex.clone())
+    }
+
+    /// The host's identity slots, for `host::identity`.
+    pub(crate) fn identity_stores(&self) -> crate::host::identity::Stores<'_> {
+        crate::host::identity::Stores {
+            db: &self.db,
+            vault: &self.vault,
+            attempts: &self.identity_attempts,
         }
+    }
+
+    /// The unlock's Signal manager, or 423 while locked.
+    pub(crate) fn require_signal(
+        &self,
+    ) -> Result<Arc<rekindle_crypto::signal::SignalSessionManager>, IpcResponse> {
+        self.signal.read().clone().ok_or_else(|| {
+            IpcResponse::error_with_remediation(
+                423,
+                "no identity is unlocked",
+                "unlock the daemon first",
+            )
+        })
     }
 
     /// Resolve a community by governance key or name from session.
@@ -74,7 +107,7 @@ impl DaemonContext {
         let guard = self.session.read();
         let session = guard
             .as_ref()
-            .ok_or_else(|| IpcResponse::error(404, "no identity loaded"))?;
+            .ok_or_else(|| IpcResponse::error(423, "no identity is unlocked"))?;
         // Exact governance key match
         if let Some(m) = session.community(target) {
             return Ok(m.clone());

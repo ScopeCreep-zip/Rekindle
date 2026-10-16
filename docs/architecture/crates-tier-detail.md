@@ -520,13 +520,16 @@ state, and serves CLI/TUI/Tauri frontends plus automation bots over a
 Noise-IK encrypted IPC bus (`rekindle-ipc`). It ships as the `rekindled`
 binary (`src/bin/rekindled.rs`). Modules: `host/` (composition root:
 `lock` — one daemon per data root, `policy` — the fail-closed admin-policy
-loader, `bus_key`, `watchdog`), `validation` (request validation),
+loader, `bus_key`, `watchdog`, `identity` — the identity store both hosts
+use, `session` — the daemon's session projected from it, `adapters` — the
+Signal and MEK stores over the vault), `validation` (request validation),
 `daemon/` (`handler`, `community_rpc`, `governance_rpc`, `friend_inbox`,
-`dispatch/`), `state/` (session, config, path).
+`dispatch/`), `state/` (the audit log, the unlocked signing key).
 
 `rekindle-node` depends on `rekindle-ipc`, `rekindle-transport`,
 `rekindle-types`, `rekindle-lifecycle`, `snow` (the bus keypair),
-`keyring`, `rustix`, and `sd-notify` (systemd `READY=1` + watchdog). It
+`rekindle-vault` and `rekindle-db` (the identity store, `host::identity`),
+`rustix`, and `sd-notify` (systemd `READY=1` + watchdog). It
 never imports `veilid-core` directly.
 
 ### rekindle-ipc

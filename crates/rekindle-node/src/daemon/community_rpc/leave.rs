@@ -100,8 +100,8 @@ mod tests {
             friend_list_dht_key: String::new(),
             friend_inbox_key: String::new(),
             friend_inbox_keypair_hex: String::new(),
-            profile_keypair_bytes: None,
-            friend_list_keypair_bytes: None,
+            profile_owner_keypair: None,
+            friend_list_owner_keypair: None,
         }
     }
 
@@ -112,14 +112,12 @@ mod tests {
         CommunityMembership {
             governance_key: GOV.into(),
             pseudonym_key: "cd".repeat(32),
-            display_name: "tester".into(),
             role_ids: Vec::new(),
             registry_key: "VLD0:reg:key".into(),
             slot_index: 3,
             community_name: "test".into(),
             slot_seed: None,
             channel_record_keys: std::collections::HashMap::new(),
-            governance_keypair_label: None,
             segment_index: Some(0),
             lamport_counter: 0,
             mek_generation: 1,

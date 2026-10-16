@@ -227,16 +227,6 @@ pub fn step_done(msg: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Print a step skip message.
-pub fn step_skip(msg: &str) -> anyhow::Result<()> {
-    if is_quiet() {
-        return Ok(());
-    }
-    let mut stdout = std::io::stdout().lock();
-    writeln!(stdout, "        {msg} ... (already done)")?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     #[test]

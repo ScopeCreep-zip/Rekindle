@@ -176,6 +176,7 @@ impl IntentKind {
             | Self::ApproveJoinRequest
             | Self::TransferCommunityOwnership
             | Self::ExportIdentity
+            | Self::ImportIdentity
             | Self::RotateIdentity
             | Self::WipeAllData
             | Self::RegisterAgent
@@ -189,12 +190,12 @@ impl IntentKind {
         }
     }
 
-    /// The request is itself the proof (the passphrase entry of unlock and
-    /// identity creation), so the gate adds no step.
+    /// The request is itself the proof (the passphrase entry of unlock,
+    /// identity creation and import), so the gate adds no step.
     #[must_use]
     pub const fn proves_itself(self) -> bool {
         match self {
-            Self::CreateIdentity | Self::Login => true,
+            Self::CreateIdentity | Self::Login | Self::ImportIdentity => true,
             Self::SendChannelMessage
             | Self::SendDmMessage
             | Self::SendMessage

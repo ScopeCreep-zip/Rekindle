@@ -11,5 +11,3 @@ pub mod prekeys;
 /// by both tracks. The transport-local copy was a wire-compatible fork
 /// kept in sync by hand; deleted in favor of this re-export.
 pub use rekindle_crypto::group::pseudonym;
-pub mod signal_session;
-pub mod signal_store;

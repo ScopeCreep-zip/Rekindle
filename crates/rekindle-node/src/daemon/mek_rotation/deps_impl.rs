@@ -193,7 +193,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
     fn persist_received_mek(&self, community_id: &str, scope: KeyScope, mek: &MediaEncryptionKey) {
         // `MekPersist` is async and this method is not, so the write runs
         // on the unlock scope, finishing before a lock completes. Losing it
-        // costs a keyring entry, not the key — the cache above already
+        // costs the vault's copy, not the key — the cache above already
         // holds it for this process.
         let persist = Arc::clone(&self.persist);
         let community_id = community_id.to_string();

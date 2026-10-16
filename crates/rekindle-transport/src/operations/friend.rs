@@ -17,23 +17,17 @@ use crate::session::Session;
 use rekindle_protocol::dht::mailbox::read_peer_mailbox_route;
 use rekindle_protocol::dht::profile::read_profile_subkey;
 
-/// Result of sending a friend request — carries prekey private material
-/// for the caller to persist to the OS keyring.
-pub struct FriendRequestSent {
-    /// Signed prekey private bytes (for X3DH completion across restarts).
-    pub signed_prekey_private: Vec<u8>,
-    /// One-time prekey private bytes (optional).
-    pub one_time_prekey_private: Option<Vec<u8>>,
-}
-
-/// Send a friend request via DHT inbox write.
+/// Send a friend request via DHT inbox write. `prekey_bundle` is a bundle
+/// the unlock's Signal manager handed out (its private halves are in the
+/// identity's vault).
 pub async fn send_friend_request(
     node: &TransportNode,
     session: &Session,
     target_mailbox_key: &str,
     message: &str,
     signing_key_bytes: &[u8; 32],
-) -> Result<FriendRequestSent> {
+    prekey_bundle: Vec<u8>,
+) -> Result<()> {
     info!(
         target = %target_mailbox_key,
         "sending friend request via DHT"
@@ -85,29 +79,6 @@ pub async fn send_friend_request(
         })?;
     let inbox_kp = crate::broadcast::node::deserialize_keypair(&inbox_kp_bytes)?;
 
-    // Generate prekey bundle — Ed25519 identity layout for PQXDH.
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
-    let verifying_key = signing_key.verifying_key();
-    let signal = crate::crypto::signal_session::SignalSessionManager::new(
-        Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
-            signing_key.to_bytes().to_vec(),
-            verifying_key.as_bytes().to_vec(),
-            1,
-        )),
-        Box::new(crate::crypto::signal_store::MemoryPreKeyStore::new()),
-        Box::new(crate::crypto::signal_store::MemorySessionStore::new()),
-    );
-    let prekey_bundle = signal
-        .generate_prekey_bundle(1, Some(1), Some(1))
-        .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(),
-            reason: format!("prekey: {e}"),
-        })?;
-    // Extract prekey private material for persistence across restarts
-    let signed_prekey_private = signal.load_signed_prekey(1).unwrap_or_default();
-    let one_time_prekey_private = signal.load_prekey(1).ok().flatten();
-    let prekey_bytes = prekey_bundle.to_wire();
-
     let request = FriendRequestEntry {
         sender_public_key: session.identity.public_key_hex.clone(),
         display_name: session.identity.display_name.clone(),
@@ -116,7 +87,7 @@ pub async fn send_friend_request(
         mailbox_dht_key: session.identity.mailbox_dht_key.clone(),
         sender_friend_inbox_key: session.identity.friend_inbox_key.clone(),
         sender_friend_inbox_keypair_hex: session.identity.friend_inbox_keypair_hex.clone(),
-        prekey_bundle: prekey_bytes,
+        prekey_bundle,
         sent_at: rekindle_utils::timestamp_ms(),
         status: FriendRequestStatus::Pending,
     };
@@ -186,10 +157,7 @@ pub async fn send_friend_request(
         }
     }
 
-    Ok(FriendRequestSent {
-        signed_prekey_private,
-        one_time_prekey_private,
-    })
+    Ok(())
 }
 
 pub struct FriendAccepted {

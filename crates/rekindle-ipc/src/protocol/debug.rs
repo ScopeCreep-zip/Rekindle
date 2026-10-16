@@ -2,16 +2,37 @@
 
 use super::IpcRequest;
 
-/// [RC-16] Custom Debug that redacts secrets in Unlock and IdentityCreate.
+const REDACTED: &str = "***REDACTED***";
+
+/// [RC-16] Custom Debug that redacts every passphrase and archive.
 /// All other variants display their fields normally. Body content is shown
 /// as length only to avoid logging message text.
 impl std::fmt::Debug for IpcRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // Secret-bearing variants — redact
-            Self::Unlock { .. } => f
+            Self::Unlock { identity, .. } => f
                 .debug_struct("Unlock")
-                .field("passphrase", &"***REDACTED***")
+                .field("identity", identity)
+                .field("passphrase", &REDACTED)
+                .finish(),
+            Self::IdentityCreate { display_name, .. } => f
+                .debug_struct("IdentityCreate")
+                .field("display_name", display_name)
+                .field("passphrase", &REDACTED)
+                .finish(),
+            Self::IdentityExport { .. } => f
+                .debug_struct("IdentityExport")
+                .field("passphrase", &REDACTED)
+                .finish(),
+            Self::IdentityImport { archive, .. } => f
+                .debug_struct("IdentityImport")
+                .field("archive_len", &archive.len())
+                .field("passphrase", &REDACTED)
+                .finish(),
+            Self::IdentityRotate { .. } => f
+                .debug_struct("IdentityRotate")
+                .field("passphrase", &REDACTED)
                 .finish(),
 
             // Variants with message bodies — show length only
@@ -35,16 +56,16 @@ impl std::fmt::Debug for IpcRequest {
 
             // Everything else — derive-style display
             Self::Lock => write!(f, "Lock"),
+            Self::Logout => write!(f, "Logout"),
             Self::Status => write!(f, "Status"),
-            Self::IdentityCreate { display_name } => f
-                .debug_struct("IdentityCreate")
-                .field("display_name", display_name)
-                .finish(),
+            Self::IdentityList => write!(f, "IdentityList"),
             Self::IdentityShow => write!(f, "IdentityShow"),
-            Self::IdentityExport => write!(f, "IdentityExport"),
-            Self::IdentityRotate => write!(f, "IdentityRotate"),
-            Self::IdentityDestroy { confirmation } => f
-                .debug_struct("IdentityDestroy")
+            Self::IdentityDelete {
+                identity,
+                confirmation,
+            } => f
+                .debug_struct("IdentityDelete")
+                .field("identity", identity)
                 .field("confirmation", confirmation)
                 .finish(),
             Self::IdentityWipe { confirmation } => f
@@ -424,6 +445,40 @@ impl IpcRequest {
             // `fmt`, whose match is exhaustive — a new `IpcRequest` variant is
             // a compile error there, not a silent fall-through to this arm.
             _ => unreachable!("fmt_rest received a variant owned by the Debug impl"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_passphrase_or_archive_reaches_debug_output() {
+        let secret = "correct horse battery staple";
+        for request in [
+            IpcRequest::Unlock {
+                identity: "pk".into(),
+                passphrase: secret.into(),
+            },
+            IpcRequest::IdentityCreate {
+                display_name: "Name".into(),
+                passphrase: secret.into(),
+            },
+            IpcRequest::IdentityExport {
+                passphrase: secret.into(),
+            },
+            IpcRequest::IdentityImport {
+                archive: secret.into(),
+                passphrase: secret.into(),
+            },
+            IpcRequest::IdentityRotate {
+                passphrase: secret.into(),
+            },
+        ] {
+            let shown = format!("{request:?}");
+            assert!(!shown.contains(secret), "{shown}");
+            assert!(shown.contains(REDACTED), "{shown}");
         }
     }
 }

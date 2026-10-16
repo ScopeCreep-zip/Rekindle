@@ -149,9 +149,12 @@ impl DaemonClient {
 fn request_timeout(request: &IpcRequest) -> Duration {
     match request {
         IpcRequest::IdentityCreate { .. }
-        | IpcRequest::IdentityRotate
-        | IpcRequest::IdentityDestroy { .. }
+        | IpcRequest::IdentityRotate { .. }
+        | IpcRequest::IdentityExport { .. }
+        | IpcRequest::IdentityImport { .. }
+        | IpcRequest::IdentityDelete { .. }
         | IpcRequest::IdentityWipe { .. }
+        | IpcRequest::Logout
         | IpcRequest::CommunityCreate { .. }
         | IpcRequest::CommunityJoin { .. }
         | IpcRequest::FriendAdd { .. }

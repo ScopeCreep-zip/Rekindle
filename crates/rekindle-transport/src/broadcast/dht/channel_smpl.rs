@@ -7,7 +7,7 @@
 //! | | per-member `DhtLog` | SMPL segment record |
 //! |---|---|---|
 //! | record per channel | one per *member* | one per *segment* |
-//! | writer credential | a fresh owner keypair, kept in the OS keyring | the slot keypair already derived from the shared seed |
+//! | writer credential | a fresh owner keypair, kept in a key store | the slot keypair already derived from the shared seed |
 //! | discovery | announce the spine key into the registry member index | `ChannelCreated.record_key` and `ChannelSegmentLinked`, straight out of the merged CRDT |
 //!
 //! The third row is the one that mattered. Announcing into the member

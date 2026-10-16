@@ -116,8 +116,8 @@ pub(crate) async fn handle_prekey_replenish(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let signing_key = match ctx.require_signing_key() {
-        Ok(k) => k,
+    let signal = match ctx.require_signal() {
+        Ok(s) => s,
         Err(e) => return e,
     };
     let profile_key = match ctx.require_session(|s| s.identity.profile_dht_key.clone()) {
@@ -125,29 +125,26 @@ pub(crate) async fn handle_prekey_replenish(
         Err(e) => return e,
     };
 
-    // Generate, keep every private half, and only then publish: a bundle
-    // published without its secrets answers no handshake (plan C7.25).
-    let (bundle, material) =
-        match rekindle_transport::operations::identity::generate_replenish_bundle(&signing_key) {
-            Ok(generated) => generated,
-            Err(e) => return IpcResponse::error(500, format!("prekey replenish: {e}")),
-        };
-    if let Err(e) = crate::state::keystore::store_prekey_material(&material).await {
-        return IpcResponse::error(
-            500,
-            format!("prekey replenish: storing secrets failed: {e}"),
-        );
-    }
-    match rekindle_transport::operations::mek::publish_prekey_bundle(
+    // The manager's long-lived bundle (its private halves are in the
+    // vault); one-time keys go to single peers in handout bundles.
+    let bundle = match signal.current_bundle() {
+        Ok(b) => b,
+        Err(e) => return IpcResponse::error(500, format!("prekey replenish: {e}")),
+    };
+    if let Err(e) = rekindle_transport::operations::mek::publish_prekey_bundle(
         &transport,
         &profile_key,
         &bundle,
     )
     .await
     {
-        Ok(count) => IpcResponse::ok(&serde_json::json!({
+        return IpcResponse::error(500, format!("prekey replenish: {e}"));
+    }
+    match signal.unclaimed_one_time() {
+        Ok((one_time, pq_one_time)) => IpcResponse::ok(&serde_json::json!({
             "replenished": true,
-            "bytes_written": count,
+            "one_time_prekeys": one_time,
+            "pq_one_time_prekeys": pq_one_time,
         })),
         Err(e) => IpcResponse::error(500, format!("prekey replenish: {e}")),
     }

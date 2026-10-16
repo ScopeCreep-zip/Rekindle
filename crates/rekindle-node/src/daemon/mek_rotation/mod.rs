@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use crate::daemon::dispatch::DaemonContext;
 
-pub use cache::{key_provider, DaemonMekPersist, MekCacheAdapter};
+pub use cache::{key_provider, restore_from_vault, MekCacheAdapter};
 
 /// Why a MEK needs replacing.
 #[derive(Debug, Clone)]
@@ -146,7 +146,9 @@ impl DaemonMekAdapter {
     pub fn new(ctx: Arc<DaemonContext>) -> Self {
         let cache: Arc<dyn rekindle_mek_rotation::ChannelMekCache> =
             Arc::new(MekCacheAdapter::new(Arc::clone(&ctx.mek_cache)));
-        let persist: Arc<dyn rekindle_mek_rotation::MekPersist> = Arc::new(DaemonMekPersist);
+        let persist: Arc<dyn rekindle_mek_rotation::MekPersist> = Arc::new(
+            crate::host::adapters::mek::VaultMekPersist::new(ctx.vault.clone()),
+        );
         Self {
             ctx,
             cache,

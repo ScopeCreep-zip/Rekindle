@@ -113,8 +113,8 @@ update the relevant docs in
 
 **Signal:** A release is published that nobody in the maintainer
 team authored. A signed commit appears on `main` from a key the
-maintainer did not approve. The OS keyring entry holding the daemon's
-long-term identity is missing or mutated.
+maintainer did not approve. An identity's vault (`state/{pk}.vault`)
+or the registry is missing or mutated.
 
 **Response:**
 

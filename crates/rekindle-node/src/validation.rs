@@ -17,6 +17,10 @@ use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 use rekindle_ipc::noise_keys::validate_agent_name;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, DESTROY_CONFIRMATION, WIPE_CONFIRMATION};
 
+/// Largest identity archive (base64) an import takes: the bus's whole
+/// application frame (`framing::MAX_APP_FRAME`, 16 MiB).
+const MAX_ARCHIVE_LEN: usize = rekindle_ipc::framing::MAX_APP_FRAME as usize;
+
 /// Largest page a history or inbox query returns: Discord's message-list
 /// `limit` (1-100).
 const MAX_PAGE: u32 = 100;
@@ -177,18 +181,41 @@ fn capabilities(capabilities: &[String]) -> Checked {
     Ok(())
 }
 
+/// A new identity's display name, and a passphrase that is not empty.
+fn new_identity(display_name: &str, passphrase: &str) -> Checked {
+    rekindle_types::presence::limits::display_name(display_name)
+        .map_err(|e| reject("display name", &e))?;
+    if passphrase.is_empty() {
+        return Err(IpcResponse::error(400, "invalid passphrase: empty"));
+    }
+    Ok(())
+}
+
+/// An identity archive (base64) within the bus's frame.
+fn identity_archive(archive: &str) -> Checked {
+    if archive.is_empty() || archive.len() > MAX_ARCHIVE_LEN {
+        return Err(IpcResponse::error(
+            400,
+            format!("invalid archive: 1 to {MAX_ARCHIVE_LEN} base64 characters"),
+        ));
+    }
+    Ok(())
+}
+
 /// Validate every field of `request`. The first malformed field answers
 /// 400; nothing past this point sees malformed input.
 pub fn validate_request(request: &IpcRequest) -> Checked {
     match request {
-        // The passphrase is opaque: any bytes may be one.
-        IpcRequest::Unlock { passphrase: _ }
-        | IpcRequest::Lock
+        // A passphrase is opaque: any bytes may be one (a new identity's
+        // may not be empty, below).
+        IpcRequest::Lock
+        | IpcRequest::Logout
+        | IpcRequest::IdentityList
+        | IpcRequest::IdentityExport { passphrase: _ }
+        | IpcRequest::IdentityRotate { passphrase: _ }
         | IpcRequest::Status
         | IpcRequest::Shutdown
         | IpcRequest::IdentityShow
-        | IpcRequest::IdentityExport
-        | IpcRequest::IdentityRotate
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
         | IpcRequest::CommunityList
@@ -202,12 +229,19 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. } => Ok(()),
 
-        IpcRequest::IdentityCreate { display_name } => rekindle_types::presence::limits::display_name(display_name)
-            .map(drop)
-            .map_err(|e| reject("display name", &e)),
-        IpcRequest::IdentityDestroy { confirmation: given } => {
-            confirmation(given, DESTROY_CONFIRMATION)
-        }
+        IpcRequest::Unlock {
+            identity,
+            passphrase: _,
+        } => public_key(identity, "identity"),
+        IpcRequest::IdentityCreate {
+            display_name,
+            passphrase,
+        } => new_identity(display_name, passphrase),
+        IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
+        IpcRequest::IdentityDelete {
+            identity,
+            confirmation: given,
+        } => public_key(identity, "identity").and_then(|()| confirmation(given, DESTROY_CONFIRMATION)),
         IpcRequest::IdentityWipe { confirmation: given } => confirmation(given, WIPE_CONFIRMATION),
 
         IpcRequest::FriendAdd { target, message } => {

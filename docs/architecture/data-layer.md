@@ -32,9 +32,9 @@ same folders:
 
 | Field | Location | Holds |
 |---|---|---|
-| `data` | `dirs::data_dir()/com.rekindle.app` | Veilid storage (`veilid/`), the file cache (`file_cache/`), the node lock (`node.lock`) |
-| `state` | `data/state` | `rekindled`'s `session.json` and `audit.jsonl` |
-| `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer), `rekindle.db` and the `{pk}.vault` files (until plan D1 moves them per identity) |
+| `data` | `dirs::data_dir()/com.rekindle.app` | the file cache (`file_cache/`), the node lock (`node.lock`) |
+| `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`; the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`); `rekindled`'s `audit.jsonl` |
+| `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer) |
 | `logs` | `~/Library/Logs/com.rekindle.app` (macOS), `dirs::data_local_dir()/com.rekindle.app/logs` elsewhere | `rekindled.log`, `rekindle.log`, `rekindle-tui.log` (the desktop logs to stdout) |
 
 On macOS `data` and `config` are the same folder. `create_dirs` makes
@@ -42,10 +42,35 @@ every directory owner-only (`0700`). `rekindle_db::lock::NodeLock` holds
 `data/node.lock` for the life of the process, so the desktop and
 `rekindled` refuse to run on the same root at once.
 
+### Identities (plan D1)
+
+Each identity has its own files under `state/`, and both hosts reach them
+through one implementation, `rekindle_node::host::identity`
+(`list`, `create`, `unlock`, `lock`, `delete`, `remove`, `rename`,
+`rotate`, `export`, `import`, `verify_passphrase`):
+
+- `{pk}.vault` and its 64-byte header `{pk}.vault.hdr` (Argon2id
+  parameters and salt): the identity's secrets, sealed by its passphrase
+  (`rekindle-vault`).
+- `{pk}.db`: its SQLCipher database, keyed by the vault-derived
+  `AppDbKey`; it opens only after an unlock.
+- `identities.json`: the registry the login picker and `IdentityList` read
+  while locked (public key, display name, creation time; no secret).
+
+`layout-version` holds the `SCHEMA_VERSION` the root was laid out for.
+Both hosts run `rekindle_db::reset::apply` at startup, under the node
+lock and before any store opens: a root laid out for another version is
+reset. A wrong passphrase counts on the host's one per-identity limiter;
+the fifth consecutive failure locks the identity out, escalating.
+
+The daemon's session (`rekindle_transport::Session`) is a projection of
+the unlocked identity's database and vault (`rekindle_node::host::session`);
+`session.json` and the OS keyring are gone.
+
 ## SQLite Schema
 
-The database file is `DataRoot::database()` (`{config}/rekindle.db`; see
-[Data Root](#data-root)). All tables are defined in
+Each identity's database is `DataRoot::identity_db(pk)` (`state/{pk}.db`;
+see [Data Root](#data-root)). All tables are defined in
 `crates/rekindle-db/schema/001_init.sql`; `SCHEMA_VERSION` in
 `crates/rekindle-db/src/open.rs` is bumped whenever that file changes.
 The SQL for the tables more than one host uses is in

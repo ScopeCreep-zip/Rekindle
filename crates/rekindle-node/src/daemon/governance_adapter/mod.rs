@@ -23,9 +23,9 @@
 //!
 //! | Concern | Tauri host | Daemon |
 //! |---|---|---|
-//! | Persisted membership | `CommunityState` in SQLite | `Session.communities` in `session.json` |
+//! | Persisted membership | `CommunityState` in SQLite | the same `communities` rows, projected into `Session.communities` (`host::session`) |
 //! | Runtime governance cache | `CommunityState.governance_state` | [`crate::daemon::community_runtime`] |
-//! | Secrets at rest | Stronghold | `rekindle-vault` / OS keyring |
+//! | Secrets at rest | the identity's vault | the identity's vault |
 //! | UI events | `app.emit` → SolidJS | `event_router` → IPC subscribers |
 //!
 //! File split follows the documented adapter shape: this module holds

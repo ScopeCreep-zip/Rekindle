@@ -1,4 +1,4 @@
-//! Lifecycle dispatch handlers: Unlock, Lock, Shutdown, and the teardown
+//! Lifecycle dispatch handlers: Unlock, Lock (and Logout), Shutdown, and the teardown
 //! of an unlock. Status is in `status.rs`.
 //!
 //! These are always-available or state-gated commands that manage the
@@ -13,51 +13,64 @@ use crate::daemon::shutdown::ExitReason;
 
 use super::{transition, DaemonContext};
 
-/// Handle Unlock — transition from Locked → Resuming → Operational.
+/// Handle Unlock — open `identity` (`host::identity::unlock`: its vault,
+/// database and Signal manager), project its session from them, then
+/// Locked → Resuming → Operational.
 pub(crate) async fn handle_unlock(
     ctx: &DaemonContext,
     state: DaemonState,
-    _passphrase: &str,
+    identity: &str,
+    passphrase: &str,
 ) -> IpcResponse {
     if !state.can_unlock() {
         return IpcResponse::error(409, format!("cannot unlock in state '{}'", state.as_str()));
     }
-    if let Err(missing) = ctx.require_session(|_| ()) {
-        return missing;
-    }
     if let Err(refused) = transition(ctx, DaemonState::Resuming) {
         return refused;
     }
-
-    // Load signing key from OS keyring into memory.
-    let signing_key = match crate::state::keystore::load_signing_key().await {
-        Ok(handle) => handle,
+    let unlocked = match crate::host::identity::unlock(
+        &ctx.root,
+        &ctx.identity_stores(),
+        identity,
+        passphrase,
+        rekindle_utils::timestamp_ms(),
+    )
+    .await
+    {
+        Ok(u) => u,
         Err(e) => {
             if let Err(refused) = transition(ctx, DaemonState::Locked) {
                 return refused;
             }
-            return IpcResponse::error_with_remediation(
-                500,
-                format!("failed to load signing key: {e}"),
-                "initialize an identity first",
-            );
+            return super::identity::identity_error(&e);
         }
     };
-    let signing_bytes = *signing_key.as_bytes();
-    *ctx.signing_key.write() = Some(signing_key);
+    *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(
+        *unlocked.secret,
+    ));
+    let signing_bytes = zeroize::Zeroizing::new(*unlocked.secret);
+    *ctx.signal.write() = Some(Arc::new(unlocked.signal));
 
-    // Load the profile and friend-list owner keypairs (stored at identity
-    // creation as "profile" and "friend_list") into the session. Resume opens
-    // both records writable with them, and fails without them. Unlock used
-    // to load only the friend list's, so the profile was never writable and
-    // the daemon's route blob never reached it (C7.4 finding 2).
-    let profile_kp = load_owner_keypair("profile").await;
-    let friend_list_kp = load_owner_keypair("friend_list").await;
-    {
-        let mut guard = ctx.session.write();
-        if let Some(ref mut s) = *guard {
-            s.identity.profile_keypair_bytes = profile_kp;
-            s.identity.friend_list_keypair_bytes = friend_list_kp;
+    // The session is projected from the identity's stores (plan D1). Resume
+    // opens the profile and friend list writable with the owner keypairs it
+    // carries from the vault, and fails without them (C7.4 finding 2).
+    let loaded = match ctx.require_db() {
+        Ok(db) => crate::host::session::load(&db, &ctx.vault, identity)
+            .await
+            .map_err(|e| IpcResponse::error(500, format!("session: {e}"))),
+        Err(e) => Err(e),
+    };
+    match loaded {
+        Ok(session) => {
+            *ctx.session.write() = Some(session);
+            crate::daemon::mek_rotation::restore_from_vault(ctx);
+        }
+        Err(failed) => {
+            teardown_unlocked(ctx).await;
+            if let Err(refused) = transition(ctx, DaemonState::Locked) {
+                return refused;
+            }
+            return failed;
         }
     }
 
@@ -273,8 +286,9 @@ fn begin_unlock_scope(ctx: &DaemonContext) -> Arc<rekindle_lifecycle::SessionSco
 /// subscription loops and every other unlock task), the subscription
 /// state, the broadcast mesh, the cached channel keys, the event source
 /// the bus server delivers from, and finally the signing key, which
-/// zeroizes on drop. Shared by Lock, a failed Unlock, Destroy, Wipe and
-/// process exit, so no path leaves part of an unlock behind.
+/// zeroizes on drop, and the identity's session and stores. Shared by Lock,
+/// Logout, a failed Unlock, Delete, Rotate, Wipe and process exit, so no
+/// path leaves part of an unlock behind.
 pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
     // The stop token first, so a task sees stop before any refused call;
     // then draining the record pool releases every unlock task waiting on
@@ -318,20 +332,9 @@ pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
     ctx.mek_cache.write().clear();
     ctx.event_watch_tx.send_replace(None);
     *ctx.signing_key.write() = None;
-}
-
-/// An owner keypair from the keyring, or `None` (logged) when it is missing
-/// or unreadable; resume then reports the record it cannot open writable.
-async fn load_owner_keypair(label: &str) -> Option<Vec<u8>> {
-    match crate::state::keystore::load_keypair_bytes(label).await {
-        Ok(Some(bytes)) => Some(bytes),
-        Ok(None) => {
-            tracing::warn!(label, "owner keypair missing from the keyring");
-            None
-        }
-        Err(e) => {
-            tracing::warn!(label, error = %e, "owner keypair unreadable");
-            None
-        }
-    }
+    // The identity itself, last: its session, Signal manager, database and
+    // vault (plan D1).
+    *ctx.session.write() = None;
+    *ctx.signal.write() = None;
+    crate::host::identity::lock(&ctx.identity_stores()).await;
 }

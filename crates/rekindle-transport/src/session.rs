@@ -1,62 +1,33 @@
 //! Application-level session state.
 //!
-//! [`Session`] holds the local identity, community memberships, and DM
-//! log key. It is owned by the application layer (CLI/TUI), not by the
-//! transport node. The transport provides operations; the session holds
-//! the context those operations need.
-//!
-//! Session state is persisted to `${XDG_STATE_HOME}/rekindle/session.json`
-//! via atomic writes (tmp + fsync + rename). On startup the CLI loads it;
-//! on every mutation the CLI writes it back. This gives crash-safe
-//! persistence without a database.
+//! [`Session`] holds the local identity, community memberships, DM log keys
+//! and pending friend requests. It is an in-memory projection of the
+//! unlocked identity's stores (plan D1): the daemon builds it at unlock
+//! from the identity's database and vault (`rekindle_node::host::session`)
+//! and writes every change to those stores, not to this struct alone. It
+//! is `None` while locked.
 
 use std::collections::HashMap;
-use std::io::Write;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-
-use crate::error::{Result, TransportError};
-use rekindle_types::domains;
 
 // ── Session ─────────────────────────────────────────────────────────────
 
 /// Root session state for the local user.
-///
-/// Serialized as JSON for human-inspectable persistence. Secret material
-/// (keypair bytes) is excluded from serialization via `#[serde(skip)]` —
-/// those are stored in the OS keyring, not on disk.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Session {
     /// The local user's identity.
     pub identity: SessionIdentity,
 
     /// Communities the user has joined, keyed by governance DHT key.
-    #[serde(default)]
     pub communities: HashMap<String, CommunityMembership>,
-
-    /// Legacy single DM log key (deprecated — use per-peer dm_log_keys).
-    #[serde(default)]
-    pub dm_log_key: Option<String>,
 
     /// Per-peer DM DhtLog spine keys. Maps peer_public_key → DhtLog spine key.
     /// Created during friend accept. Both peers read/write their shared log.
-    #[serde(default)]
     pub dm_log_keys: HashMap<String, String>,
 
     /// Pending inbound friend requests awaiting user action.
-    /// Populated by the InboundHandler when a `DmPayload::FriendRequest`
-    /// arrives. Drained when the user accepts or rejects.
-    #[serde(default)]
     pub pending_friend_requests: Vec<PendingFriendRequest>,
-
-    /// Schema version for forward compatibility.
-    #[serde(default = "default_session_version")]
-    pub version: u32,
-}
-
-fn default_session_version() -> u32 {
-    1
 }
 
 impl Session {
@@ -65,10 +36,8 @@ impl Session {
         Self {
             identity,
             communities: HashMap::new(),
-            dm_log_key: None,
             dm_log_keys: HashMap::new(),
             pending_friend_requests: Vec::new(),
-            version: default_session_version(),
         }
     }
 
@@ -106,72 +75,12 @@ impl Session {
             None
         }
     }
-
-    /// Persist session to a JSON file via atomic write.
-    ///
-    /// Uses tmp + fsync + rename to prevent corruption on crash.
-    pub fn save(&self, path: &Path) -> Result<()> {
-        let json = serde_json::to_string_pretty(self).map_err(|e| {
-            TransportError::SerializationFailed {
-                reason: format!("session: {e}"),
-            }
-        })?;
-        // Append BLAKE3 MAC for integrity verification on load
-        let mac = blake3::keyed_hash(session_mac_key(), json.as_bytes());
-        let wrapper = format!("{json}\n---MAC---\n{}", hex::encode(mac.as_bytes()));
-        atomic_write(path, wrapper.as_bytes()).map_err(|e| {
-            TransportError::Internal(format!("session write to {}: {e}", path.display()))
-        })
-    }
-
-    /// Load session from a JSON file.
-    ///
-    /// Returns `None` if the file does not exist. Returns `Err` if the
-    /// file exists but cannot be parsed.
-    pub fn load(path: &Path) -> Result<Option<Self>> {
-        match std::fs::read(path) {
-            Ok(bytes) => {
-                let content = String::from_utf8_lossy(&bytes);
-                // Split MAC from session JSON
-                let (json_str, verified) =
-                    if let Some((json_part, mac)) = content.rsplit_once("\n---MAC---\n") {
-                        let mac_hex = mac.trim();
-                        let expected = blake3::keyed_hash(session_mac_key(), json_part.as_bytes());
-                        let stored = hex::decode(mac_hex).unwrap_or_default();
-                        if stored.len() == 32 && stored == expected.as_bytes() {
-                            (json_part.to_string(), true)
-                        } else {
-                            return Err(TransportError::Internal(
-                                "session.json integrity check FAILED — file may be tampered".into(),
-                            ));
-                        }
-                    } else {
-                        // No MAC separator — treat entire content as JSON (should not happen in normal flow)
-                        tracing::warn!("session.json has no integrity MAC — will add on next save");
-                        (content.into_owned(), false)
-                    };
-                let _ = verified;
-                let session: Self = serde_json::from_str(&json_str).map_err(|e| {
-                    TransportError::DeserializationFailed {
-                        type_id: 0,
-                        reason: format!("session file {}: {e}", path.display()),
-                    }
-                })?;
-                Ok(Some(session))
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(TransportError::Internal(format!(
-                "session read from {}: {e}",
-                path.display()
-            ))),
-        }
-    }
 }
 
 // ── Identity ────────────────────────────────────────────────────────────
 
 /// The local user's cryptographic and network identity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SessionIdentity {
     /// Ed25519 public key (hex-encoded, 64 chars).
     pub public_key_hex: String,
@@ -190,29 +99,24 @@ pub struct SessionIdentity {
 
     /// Friend inbox DHT record key (DFLT(32), published keypair).
     /// Other users write friend requests here. Our daemon polls it.
-    #[serde(default)]
     pub friend_inbox_key: String,
 
     /// Hex-encoded keypair for the friend inbox. Published in our
     /// profile so anyone can open the inbox for writing.
-    #[serde(default)]
     pub friend_inbox_keypair_hex: String,
 
-    /// Profile DHT record keypair bytes (for re-opening writable).
-    /// Excluded from JSON — stored in OS keyring.
-    #[serde(skip)]
-    pub profile_keypair_bytes: Option<Vec<u8>>,
+    /// The profile record's owner keypair, in its string form (as the
+    /// vault stores it), for re-opening the record writable.
+    pub profile_owner_keypair: Option<String>,
 
-    /// Friend list DHT record keypair bytes.
-    /// Excluded from JSON — stored in OS keyring.
-    #[serde(skip)]
-    pub friend_list_keypair_bytes: Option<Vec<u8>>,
+    /// The friend list record's owner keypair, in its string form.
+    pub friend_list_owner_keypair: Option<String>,
 }
 
 // ── Community membership ────────────────────────────────────────────────
 
 /// Per-community membership state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CommunityMembership {
     /// Community governance DHT key.
     pub governance_key: String,
@@ -220,11 +124,7 @@ pub struct CommunityMembership {
     /// Our pseudonym public key for this community (hex).
     pub pseudonym_key: String,
 
-    /// Our display name within this community.
-    pub display_name: String,
-
     /// Our role IDs in this community.
-    #[serde(default)]
     pub role_ids: Vec<u32>,
 
     /// Member registry DHT key for this community.
@@ -236,37 +136,23 @@ pub struct CommunityMembership {
     /// Cached community name (from governance metadata).
     pub community_name: String,
 
-    /// Slot seed bytes for deriving our SMPL writer keypair.
-    /// Excluded from JSON — stored in OS keyring.
-    #[serde(skip)]
+    /// Slot seed bytes for deriving our SMPL writer keypair (the vault's
+    /// `SlotSeed`).
     pub slot_seed: Option<[u8; 32]>,
 
     /// Per-channel message record keys owned by this member.
-    /// Maps channel_id → DHT record key (DFLT(1), member-owned).
-    /// Each member creates and owns their own record per channel.
-    /// Persisted in session.json so records survive restart.
-    #[serde(default)]
+    /// Maps channel_id → DHT record key (DFLT(1), member-owned): the
+    /// `channels.message_record_key` column.
     pub channel_record_keys: HashMap<String, String>,
-
-    /// OS keyring label for the genesis governance keypair, if this
-    /// member created the community.
-    /// Format: "community-governance-{short_key}"
-    #[serde(skip)]
-    pub governance_keypair_label: Option<String>,
 
     // ── v2.0 governance-runtime fields ──
     //
     // The daemon's `GovernanceRuntimeDeps` adapter reports these across
     // the Schwarzschild boundary as `governance_runtime::CommunityMembership`.
-    // They are `#[serde(default)]` so a session.json written before this
-    // existed still loads — an absent segment means "genesis segment",
-    // and absent counters start at zero, which is what a pre-v2.0
-    // membership effectively had.
     /// Plate Gate segment hosting our slot (architecture §15).
     /// `None` = unknown/legacy; `0` = genesis segment. The global slot
     /// used for keypair derivation is `segment * SLOTS_PER_SEGMENT +
     /// slot_index`, so for segment 0 the two are equal.
-    #[serde(default)]
     pub segment_index: Option<u32>,
 
     /// Governance CRDT Lamport counter for this community.
@@ -274,11 +160,9 @@ pub struct CommunityMembership {
     /// NOT the gossip mesh clock (`GossipMesh::clock`) — that one orders
     /// epidemic broadcast, this one orders governance entries for the
     /// CRDT merge. Two clocks, deliberately separate.
-    #[serde(default)]
     pub lamport_counter: u64,
 
     /// Highest community-level MEK generation we have seen.
-    #[serde(default)]
     pub mek_generation: u64,
 }
 
@@ -343,53 +227,9 @@ impl Session {
     }
 }
 
-// ── Session MAC key ─────────────────────────────────────────────────────
-
-/// Application-scoped MAC key for session integrity.
-///
-/// TODO: This is a static key derived from a hardcoded salt. It protects
-/// against accidental corruption and casual tampering, but NOT against a
-/// sophisticated attacker who reads the source. For signing-key-based MAC,
-/// we'd need to verify after unlock — which changes the startup flow.
-fn session_mac_key() -> &'static [u8; 32] {
-    static KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
-    KEY.get_or_init(|| *blake3::hash(domains::SESSION_INTEGRITY.as_bytes()).as_bytes())
-}
-
-// ── Atomic file write ───────────────────────────────────────────────────
-
-/// Write data to a file atomically: write to `.tmp`, fsync, rename.
-///
-/// This ensures the file is never in a partially-written state, even
-/// if the process crashes or power is lost during the write.
-fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-
-    // Ensure parent directory exists
-    if let Some(parent) = tmp.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    let mut file = std::fs::File::create(&tmp)?;
-    file.write_all(data)?;
-    file.sync_all()?;
-
-    // Set restrictive permissions before rename — session contains
-    // DHT keys and community membership data.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
-    }
-
-    std::fs::rename(&tmp, path)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     fn test_identity() -> SessionIdentity {
         SessionIdentity {
@@ -400,8 +240,8 @@ mod tests {
             friend_list_dht_key: "VLD0:friends:key".into(),
             friend_inbox_key: "VLD0:friend-inbox:key".into(),
             friend_inbox_keypair_hex: String::new(),
-            profile_keypair_bytes: None,
-            friend_list_keypair_bytes: None,
+            profile_owner_keypair: None,
+            friend_list_owner_keypair: None,
         }
     }
 
@@ -409,65 +249,16 @@ mod tests {
         CommunityMembership {
             governance_key: "VLD0:gov:key".into(),
             pseudonym_key: "pseudonym_hex".into(),
-            display_name: "alice_in_devteam".into(),
             role_ids: vec![1, 2],
             registry_key: "VLD0:reg:key".into(),
             slot_index: 3,
             community_name: "dev-team".into(),
             slot_seed: None,
             channel_record_keys: HashMap::new(),
-            governance_keypair_label: None,
             segment_index: Some(0),
             lamport_counter: 7,
             mek_generation: 2,
         }
-    }
-
-    #[test]
-    fn session_round_trip_json() {
-        let mut session = Session::new(test_identity());
-        session.join_community(test_membership());
-
-        let json = serde_json::to_string_pretty(&session).unwrap();
-        let restored: Session = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(
-            restored.identity.public_key_hex,
-            session.identity.public_key_hex
-        );
-        assert_eq!(restored.identity.display_name, "alice");
-        assert_eq!(restored.communities.len(), 1);
-        assert!(restored.communities.contains_key("VLD0:gov:key"));
-    }
-
-    #[test]
-    fn session_save_and_load() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.json");
-
-        let mut session = Session::new(test_identity());
-        session.join_community(test_membership());
-        session.save(&path).unwrap();
-
-        let loaded = Session::load(&path).unwrap().unwrap();
-        assert_eq!(loaded.identity.display_name, "alice");
-        assert_eq!(loaded.communities.len(), 1);
-    }
-
-    #[test]
-    fn session_load_nonexistent_returns_none() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("does_not_exist.json");
-        let result = Session::load(&path).unwrap();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn session_load_corrupt_returns_err() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("corrupt.json");
-        std::fs::write(&path, b"not valid json {{{").unwrap();
-        assert!(Session::load(&path).is_err());
     }
 
     #[test]
@@ -507,17 +298,5 @@ mod tests {
 
         session.leave_community("VLD0:gov:key");
         assert_eq!(session.communities.len(), 0);
-    }
-
-    #[test]
-    fn skip_fields_not_serialized() {
-        let mut identity = test_identity();
-        identity.profile_keypair_bytes = Some(vec![1, 2, 3]);
-        let session = Session::new(identity);
-
-        let json = serde_json::to_string(&session).unwrap();
-        // Skip fields should not appear in JSON
-        assert!(!json.contains("profile_keypair_bytes"));
-        assert!(!json.contains("friend_list_keypair_bytes"));
     }
 }

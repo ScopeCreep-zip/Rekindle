@@ -10,6 +10,10 @@ pub mod adapters;
 pub mod bus_key;
 pub mod identity;
 pub mod policy;
+pub mod session;
+
+#[cfg(test)]
+pub(crate) mod fixture;
 mod signals;
 pub mod watchdog;
 
@@ -75,7 +79,6 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
     // The layout check, under the lock and before any store opens (plan
     // D1): a root laid out for another version is reset.
     rekindle_db::reset::apply(&root)?;
-    let session_file = root.state.join("session.json");
     let veilid_dir = root.create_veilid_dir()?;
     tracing::info!(
         data = %root.data.display(),
@@ -101,10 +104,9 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         .await
         .map_err(ConfigFault)?;
 
-    // ── 4. Load session from disk ─────────────────────────────────
-    let session = crate::state::load_session(&session_file)?;
-    let has_identity = session.is_some();
-    tracing::info!(has_identity, "session loaded");
+    // ── 4. The identities on this root (none is unlocked yet) ─────
+    let identities = crate::host::identity::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    tracing::info!(count = identities.len(), "identity registry read");
 
     // ── 5. Build transport config and start Veilid node ───────────
     //
@@ -148,10 +150,12 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         );
     }
 
-    let session_arc = Arc::new(parking_lot::RwLock::new(session));
+    // The session exists only while an identity is unlocked (plan D1).
+    let session_arc = Arc::new(parking_lot::RwLock::new(None));
+    let db = Arc::new(rekindle_db::DbHandle::default());
     let mek_cache = Arc::new(parking_lot::RwLock::new(MekCache::new()));
     let signing_key_arc: Arc<
-        parking_lot::RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
+        parking_lot::RwLock<Option<crate::state::signing_key::SigningKeyHandle>>,
     > = Arc::new(parking_lot::RwLock::new(None));
     // The one clearance registry: dispatch registers agents into it and the
     // bus server authenticates against it.
@@ -192,7 +196,7 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
     let handler = Arc::new(DaemonHandler::new(
         Arc::clone(&transport_subscriptions),
         Arc::clone(&session_arc),
-        session_file.clone(),
+        Arc::clone(&db),
         Arc::clone(&mek_cache),
         Arc::clone(&signing_key_arc),
         Arc::clone(&transport_for_handler),
@@ -237,10 +241,14 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         community_runtime: Arc::new(crate::daemon::community_runtime::CommunityRuntimeMap::new()),
         transport: RwLock::new(Some(transport)),
         session: session_arc,
+        root: root.clone(),
+        db,
+        vault: rekindle_vault::new_handle(),
+        identity_attempts: rekindle_idempotency::attempts::AttemptLimiter::default(),
+        signal: RwLock::new(None),
         mek_cache,
         signing_key: signing_key_arc,
         lifecycle: Arc::clone(&lifecycle),
-        session_path: session_file.clone(),
         registry: Arc::clone(&registry),
         // The policy the daemon actually started under, so
         // `PolicyReload` merges against reality rather than defaults.
@@ -565,7 +573,7 @@ async fn handle_value_changed(daemon_ctx: &Arc<DaemonContext>, record_key: &str)
         crate::daemon::friend_inbox::scan_friend_inbox(
             &daemon_ctx.session,
             &daemon_ctx.transport,
-            &daemon_ctx.session_path,
+            &daemon_ctx.db,
             &inbox_key,
         )
         .await;

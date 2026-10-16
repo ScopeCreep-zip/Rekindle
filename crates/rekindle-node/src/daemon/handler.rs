@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, SignedEnvelope};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use rekindle_transport::{
     payload::dm::DmPayload,
@@ -27,12 +27,13 @@ pub struct DaemonHandler {
     pub(crate) subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
     /// Session state (shared with DaemonContext).
     pub(crate) session: Arc<RwLock<Option<Session>>>,
-    /// Session file path for friend request persistence.
-    pub(crate) session_path: std::path::PathBuf,
+    /// The unlocked identity's database (shared with DaemonContext), for
+    /// friend request persistence.
+    pub(crate) db: Arc<rekindle_db::DbHandle>,
     /// MEK cache (shared with DaemonContext, passed to RPC handlers).
     pub(crate) mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
     /// Signing key (shared with DaemonContext, passed to RPC handlers).
-    pub(crate) signing_key: Arc<RwLock<Option<crate::state::keystore::SigningKeyHandle>>>,
+    pub(crate) signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
     /// Transport node (shared with DaemonContext, passed to RPC handlers).
     pub(crate) transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
     /// Pending community join completions (shared with DaemonContext).
@@ -58,9 +59,9 @@ impl DaemonHandler {
     pub fn new(
         subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
         session: Arc<RwLock<Option<Session>>>,
-        session_path: std::path::PathBuf,
+        db: Arc<rekindle_db::DbHandle>,
         mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
-        signing_key: Arc<RwLock<Option<crate::state::keystore::SigningKeyHandle>>>,
+        signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
         transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
         pending_joins: Arc<
             parking_lot::Mutex<
@@ -76,7 +77,7 @@ impl DaemonHandler {
         Self {
             subscriptions,
             session,
-            session_path,
+            db,
             mek_cache,
             signing_key,
             transport,
@@ -102,9 +103,9 @@ impl DaemonHandler {
         (routes.blob(RouteClass::General).is_some(), media)
     }
 
-    /// Persist a friend request to session before forwarding to SubscriptionManager.
-    /// This must happen synchronously before the event pipeline because the session
-    /// state is read by the subscription manager's state_effects.
+    /// Record a friend request before forwarding to SubscriptionManager: the
+    /// projection is updated synchronously because the subscription
+    /// manager's state_effects read it next; the database write is queued.
     fn persist_friend_request(
         &self,
         sender_key: &str,
@@ -128,19 +129,12 @@ impl DaemonHandler {
             invite_id: invite_id.cloned(),
             received_at: timestamp,
         };
-        let mut guard = self.session.write();
-        if let Some(ref mut session) = *guard {
-            session.add_pending_friend_request(pending);
-            if let Err(e) = session.save(&self.session_path) {
-                warn!(error = %e, "failed to persist pending friend request");
-            } else {
-                info!(
-                    from = sender_key,
-                    name = display_name,
-                    "friend request persisted"
-                );
-            }
-        }
+        crate::host::session::record_pending_request(&self.session, &self.db, pending);
+        info!(
+            from = sender_key,
+            name = display_name,
+            "friend request recorded"
+        );
     }
 }
 
@@ -199,7 +193,7 @@ impl InboundHandler for DaemonHandler {
 
         let session = Arc::clone(&self.session);
         let transport = Arc::clone(&self.transport);
-        let session_path = self.session_path.clone();
+        let db = Arc::clone(&self.db);
 
         if !should_scan_inbox {
             return;
@@ -217,8 +211,7 @@ impl InboundHandler for DaemonHandler {
         }
 
         debug!("FriendRequestAck received — scanning friend inbox");
-        super::friend_inbox::scan_friend_inbox(&session, &transport, &session_path, &inbox_key)
-            .await;
+        super::friend_inbox::scan_friend_inbox(&session, &transport, &db, &inbox_key).await;
     }
 
     async fn on_gossip(
@@ -405,19 +398,14 @@ impl InboundHandler for DaemonHandler {
 
         let session = Arc::clone(&self.session);
         let transport = Arc::clone(&self.transport);
-        let session_path = self.session_path.clone();
+        let db = Arc::clone(&self.db);
         let record_key_owned = record_key.to_string();
 
         // Process friend inbox — scan for new requests and persist to session
         if is_friend_inbox {
             debug!("friend inbox changed — scanning for new requests");
-            super::friend_inbox::scan_friend_inbox(
-                &session,
-                &transport,
-                &session_path,
-                &record_key_owned,
-            )
-            .await;
+            super::friend_inbox::scan_friend_inbox(&session, &transport, &db, &record_key_owned)
+                .await;
         }
     }
 

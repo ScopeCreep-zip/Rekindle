@@ -38,10 +38,10 @@ use parking_lot::RwLock;
 
 use rekindle_transport::{crypto::mek::MekCache, Session, TransportNode};
 
-use crate::state::keystore::SigningKeyHandle;
+use crate::state::signing_key::SigningKeyHandle;
 use rekindle_ipc::registry::ClearanceRegistry;
 
-pub(crate) use context::{state_error, transition};
+pub(crate) use context::{state_error, store_error, transition};
 pub(crate) use lifecycle::teardown_unlocked;
 pub use router::dispatch;
 
@@ -98,8 +98,22 @@ pub(crate) fn adapter(
 pub struct DaemonContext {
     /// The transport node (Veilid bridge). None before Veilid is started.
     pub transport: RwLock<Option<Arc<TransportNode>>>,
-    /// The user's session (loaded from session.json). None if no identity.
+    /// The unlocked identity's session, projected from its stores at
+    /// unlock (`host::session`). None while locked.
     pub session: Arc<RwLock<Option<Session>>>,
+    /// The data root: the identity registry and every identity's files.
+    pub root: rekindle_db::paths::DataRoot,
+    /// The unlocked identity's database (plan D1), shared with the
+    /// handler and the inbox scan. Empty while locked.
+    pub db: Arc<rekindle_db::DbHandle>,
+    /// The unlocked identity's vault. Empty while locked.
+    pub vault: rekindle_vault::VaultHandle,
+    /// The one wrong-passphrase counter per identity (U1.9): unlock,
+    /// import, rotate and export count on it.
+    pub identity_attempts: rekindle_idempotency::attempts::AttemptLimiter<String>,
+    /// The unlock's one Signal manager (`host::identity::unlock`). None
+    /// while locked.
+    pub signal: RwLock<Option<Arc<rekindle_crypto::signal::SignalSessionManager>>>,
     /// MEK cache shared with transport operations.
     pub mek_cache: Arc<RwLock<MekCache>>,
     /// Ed25519 signing key, held in memory after unlock. None when locked.
@@ -108,8 +122,6 @@ pub struct DaemonContext {
     pub signing_key: Arc<RwLock<Option<SigningKeyHandle>>>,
     /// Current daemon lifecycle state.
     pub lifecycle: Arc<crate::daemon::DaemonLifecycle>,
-    /// Path to session.json for persistence.
-    pub session_path: std::path::PathBuf,
     /// Agent identity and clearance registry (shared with server).
     pub registry: Arc<tokio::sync::RwLock<ClearanceRegistry>>,
     /// Active authorization policy.

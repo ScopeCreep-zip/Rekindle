@@ -11,7 +11,7 @@
 //! The `apply_role_*` methods are consequently narrow: the real change
 //! is the governance entry `rekindle-governance-runtime` has already
 //! written and merged. All that remains locally is our *own* role list
-//! in `session.json`, which the daemon needs to answer permission checks
+//! (`communities.my_role_ids`), which the daemon needs to answer permission checks
 //! without re-merging.
 
 use rekindle_governance_runtime::roles::RoleSnapshotInsert;
@@ -105,22 +105,8 @@ impl DaemonGovernanceAdapter<'_> {
         self.mutate_my_roles(community_id, |roles| roles.retain(|r| *r != role_id));
     }
 
-    /// Apply `f` to our persisted role list and save if it changed.
+    /// Apply `f` to our stored role list.
     fn mutate_my_roles(&self, community_id: &str, f: impl FnOnce(&mut Vec<u32>)) {
-        let changed = {
-            let mut guard = self.ctx.session.write();
-            let Some(session) = guard.as_mut() else {
-                return;
-            };
-            let Some(membership) = session.communities.get_mut(community_id) else {
-                return;
-            };
-            let before = membership.role_ids.clone();
-            f(&mut membership.role_ids);
-            membership.role_ids != before
-        };
-        if changed {
-            self.persist_session();
-        }
+        crate::host::session::update_roles(&self.ctx.session, &self.ctx.db, community_id, f);
     }
 }

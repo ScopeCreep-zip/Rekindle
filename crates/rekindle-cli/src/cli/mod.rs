@@ -90,6 +90,10 @@ pub enum Command {
     /// Lock the daemon: go offline and drop the identity's keys from memory.
     Lock,
 
+    /// Log out: go offline and close the identity (the daemon keeps no
+    /// selection, so the next `unlock` names one).
+    Logout,
+
     /// Identity management.
     #[command(subcommand)]
     Identity(IdentityCmd),
@@ -223,18 +227,36 @@ mod tests {
     }
 
     #[test]
-    fn parse_destroy_confirm() {
+    fn parse_delete_confirm() {
         let cli = Cli::try_parse_from([
             "rekindle",
             "identity",
-            "destroy",
+            "delete",
+            "abcd",
             "--confirm=DESTROY MY IDENTITY",
         ])
         .unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Identity(IdentityCmd::Destroy { confirm: Some(_) }))
+            Some(Command::Identity(IdentityCmd::Delete {
+                confirm: Some(_),
+                ..
+            }))
         ));
+    }
+
+    #[test]
+    fn parse_unlock_identity_and_logout() {
+        let cli = Cli::try_parse_from(["rekindle", "unlock", "--identity", "abcd"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Unlock(UnlockArgs {
+                identity: Some(_),
+                ..
+            }))
+        ));
+        let cli = Cli::try_parse_from(["rekindle", "logout"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Logout)));
     }
 
     #[test]

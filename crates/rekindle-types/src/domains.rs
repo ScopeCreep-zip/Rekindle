@@ -117,10 +117,6 @@ labels! {
     SYNC_SALT = "rekindle-sync-v1";
     /// HKDF info: device-pairing key.
     PAIRING = "rekindle-pairing-v1";
-    /// BLAKE3 input: daemon session-file integrity key.
-    SESSION_INTEGRITY = "rekindle-session-integrity-v1";
-    /// BLAKE3 keyed-hash input: daemon keyring disk-fallback key.
-    DISK_FALLBACK_KEY = "rekindle-disk-fallback-v1";
 
     /// BLAKE3 `derive_key` context: the vault's SQLCipher key (plan D1).
     VAULT_SQLCIPHER_KEY = "rekindle-vault-sqlcipher-v1";

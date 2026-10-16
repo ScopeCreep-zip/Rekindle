@@ -32,7 +32,7 @@ use rekindle_transport::session::{PendingFriendRequest, Session};
 pub async fn scan_friend_inbox(
     session: &RwLock<Option<Session>>,
     transport: &RwLock<Option<Arc<TransportNode>>>,
-    session_path: &std::path::Path,
+    db: &rekindle_db::DbHandle,
     inbox_key: &str,
 ) {
     let start = Instant::now();
@@ -61,7 +61,7 @@ pub async fn scan_friend_inbox(
             return;
         }
     };
-    scan_leased(&transport_node, lease, session, session_path, start).await;
+    scan_leased(&transport_node, lease, session, db, start).await;
     rekindle_transport::broadcast::dht_writes::release(&transport_node, lease).await;
 }
 
@@ -70,7 +70,7 @@ async fn scan_leased(
     transport_node: &TransportNode,
     lease: LeaseId,
     session: &RwLock<Option<Session>>,
-    session_path: &std::path::Path,
+    db: &rekindle_db::DbHandle,
     start: Instant,
 ) {
     // Step 1: Inspect — one network call to get all subkey sequence numbers.
@@ -96,15 +96,7 @@ async fn scan_leased(
                 elapsed_ms = inspect_start.elapsed().as_millis(),
                 "friend inbox scan: inspect failed, falling back to full scan (SLOW)"
             );
-            scan_subkeys_direct(
-                transport_node,
-                session,
-                session_path,
-                lease,
-                &all_subkeys,
-                start,
-            )
-            .await;
+            scan_subkeys_direct(transport_node, session, db, lease, &all_subkeys, start).await;
             return;
         }
     };
@@ -127,22 +119,14 @@ async fn scan_leased(
     );
 
     // Step 3: Read only populated subkeys
-    scan_subkeys_direct(
-        transport_node,
-        session,
-        session_path,
-        lease,
-        &populated,
-        start,
-    )
-    .await;
+    scan_subkeys_direct(transport_node, session, db, lease, &populated, start).await;
 }
 
 /// Read specific subkeys, parse friend requests, persist new ones.
 async fn scan_subkeys_direct(
     transport_node: &TransportNode,
     session: &RwLock<Option<Session>>,
-    session_path: &std::path::Path,
+    db: &rekindle_db::DbHandle,
     lease: LeaseId,
     subkeys: &[u32],
     scan_start: Instant,
@@ -218,12 +202,7 @@ async fn scan_subkeys_direct(
                 invite_id: None,
                 received_at: entry.sent_at,
             };
-            {
-                let mut guard = session.write();
-                if let Some(ref mut s) = *guard {
-                    s.add_pending_friend_request(pending);
-                }
-            }
+            crate::host::session::record_pending_request(session, db, pending);
             found_new += 1;
             info!(
                 from = %entry.display_name,
@@ -232,15 +211,6 @@ async fn scan_subkeys_direct(
                 "friend inbox scan: NEW request discovered"
             );
         } // end for entry in entries
-    }
-
-    if found_new > 0 {
-        let guard = session.read();
-        if let Some(ref s) = *guard {
-            if let Err(e) = s.save(session_path) {
-                error!(error = %e, "friend inbox scan: session save FAILED after discovering requests");
-            }
-        }
     }
 
     info!(

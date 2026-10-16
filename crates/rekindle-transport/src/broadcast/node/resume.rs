@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use rekindle_records::lease::CommunityLeases;
 use tracing::{info, warn};
 
-use super::deserialize_keypair;
 use super::TransportNode;
 use crate::error::{Result, TransportError};
 
@@ -53,10 +52,14 @@ impl TransportNode {
         // resume: there is no readonly fallback, since a session that cannot
         // write its profile or mailbox is unreachable (plan C7.4).
         let pool = self.require_records()?;
-        let owner_keypair = |bytes: Option<&Vec<u8>>, record: &str| {
-            bytes
+        let owner_keypair = |stored: Option<&String>, record: &str| {
+            stored
                 .ok_or_else(|| TransportError::Internal(format!("no {record} owner keypair")))
-                .and_then(|b| deserialize_keypair(b))
+                .and_then(|text| {
+                    text.parse::<veilid_core::KeyPair>().map_err(|e| {
+                        TransportError::Internal(format!("{record} owner keypair: {e}"))
+                    })
+                })
         };
         let identity_keypair = {
             let sk = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
@@ -67,7 +70,7 @@ impl TransportNode {
         rekindle_protocol::dht::profile::open_profile(
             &pool,
             &id.profile_dht_key,
-            owner_keypair(id.profile_keypair_bytes.as_ref(), "profile")?,
+            owner_keypair(id.profile_owner_keypair.as_ref(), "profile")?,
         )
         .await?;
         rekindle_protocol::dht::mailbox::open_mailbox_writable(
@@ -79,7 +82,7 @@ impl TransportNode {
         rekindle_protocol::dht::friends::open_friend_list(
             &pool,
             &id.friend_list_dht_key,
-            owner_keypair(id.friend_list_keypair_bytes.as_ref(), "friend list")?,
+            owner_keypair(id.friend_list_owner_keypair.as_ref(), "friend list")?,
         )
         .await?;
         info!("profile, mailbox and friend list reopened writable");

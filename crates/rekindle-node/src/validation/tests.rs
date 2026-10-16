@@ -209,8 +209,18 @@ fn confirmations_are_exact() {
     assert!(rejected(&IpcRequest::IdentityWipe {
         confirmation: "wipe all data".into()
     }));
-    assert!(rejected(&IpcRequest::IdentityDestroy {
+    let pk = "ab".repeat(32);
+    assert!(rejected(&IpcRequest::IdentityDelete {
+        identity: pk.clone(),
         confirmation: WIPE_CONFIRMATION.into()
+    }));
+    assert!(!rejected(&IpcRequest::IdentityDelete {
+        identity: pk,
+        confirmation: DESTROY_CONFIRMATION.into()
+    }));
+    assert!(rejected(&IpcRequest::IdentityDelete {
+        identity: "../x".into(),
+        confirmation: DESTROY_CONFIRMATION.into()
     }));
 }
 
@@ -218,6 +228,7 @@ fn confirmations_are_exact() {
 fn display_names() {
     let create = |name: &str| IpcRequest::IdentityCreate {
         display_name: name.into(),
+        passphrase: "pass".into(),
     };
     assert!(!rejected(&create("  alice  ")));
     assert!(!rejected(&create(&"日".repeat(
@@ -228,6 +239,26 @@ fn display_names() {
     ))));
     assert!(rejected(&create("")));
     assert!(rejected(&create("hello\x00world")));
+}
+
+#[test]
+fn identity_requests_name_a_key_and_a_new_passphrase_is_not_empty() {
+    assert!(rejected(&IpcRequest::Unlock {
+        identity: "not a key".into(),
+        passphrase: "p".into(),
+    }));
+    assert!(!rejected(&IpcRequest::Unlock {
+        identity: "ab".repeat(32),
+        passphrase: String::new(),
+    }));
+    assert!(rejected(&IpcRequest::IdentityCreate {
+        display_name: "Alice".into(),
+        passphrase: String::new(),
+    }));
+    assert!(rejected(&IpcRequest::IdentityImport {
+        archive: String::new(),
+        passphrase: "p".into(),
+    }));
 }
 
 #[test]

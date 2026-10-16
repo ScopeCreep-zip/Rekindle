@@ -49,7 +49,7 @@ impl DaemonGovernanceAdapter<'_> {
     /// snapshot the runtime crate consumes.
     ///
     /// The two `CommunityMembership` types are deliberately distinct:
-    /// this one is `session.json`'s record with non-optional fields, the
+    /// this one is the session projection's record with non-optional fields, the
     /// other is the all-`Option` runtime view. Converting here is the
     /// adapter doing its job, not duplication to collapse.
     pub(super) fn community_membership_impl(
@@ -61,7 +61,7 @@ impl DaemonGovernanceAdapter<'_> {
 
         // The slot keypair is derived, not stored: the seed plus our
         // global slot index reproduce it, and the seed is what lives in
-        // the keyring. Global slot = segment * SLOTS_PER_SEGMENT + local
+        // the vault. Global slot = segment * SLOTS_PER_SEGMENT + local
         // index (architecture §15.2/§8.3); for the genesis segment the
         // two are equal, which is what `None` falls back to.
         //
@@ -83,10 +83,9 @@ impl DaemonGovernanceAdapter<'_> {
             my_segment_index: membership.segment_index,
             slot_keypair,
             slot_seed_hex: membership.slot_seed.as_ref().map(hex::encode),
-            // Operators hold the governance keypair in the OS keyring
-            // under `governance_keypair_label`; it is not carried in
-            // session.json, so it is fetched by the DHT paths that
-            // actually need a writer rather than eagerly here.
+            // The governance keypair is in the community's row
+            // (`communities.dht_owner_keypair`, creator only); under
+            // `o_cnt: 0` it grants no write, so it is not carried here.
             dht_owner_keypair: None,
             governance_clock: membership.lamport_counter,
             channel_log_keys: self.channel_record_keys_impl(community_id, membership),

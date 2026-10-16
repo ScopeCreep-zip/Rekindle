@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::daemon::DaemonState;
 use rekindle_ipc::protocol::IpcResponse;
 
-use super::{state_error, DaemonContext};
+use super::{state_error, store_error, DaemonContext};
 
 pub(crate) async fn handle_friend_add(
     ctx: &DaemonContext,
@@ -28,6 +28,16 @@ pub(crate) async fn handle_friend_add(
         Ok(s) => s,
         Err(e) => return e,
     };
+    // A bundle for this one peer, from the unlock's manager: its one-time
+    // keys' private halves are in the vault before it is sent.
+    let bundle = match ctx.require_signal().and_then(|signal| {
+        signal
+            .handout_bundle()
+            .map_err(|e| store_error("prekey bundle", e))
+    }) {
+        Ok(b) => b.to_wire(),
+        Err(e) => return e,
+    };
 
     match rekindle_transport::operations::friend::send_friend_request(
         &transport,
@@ -35,30 +45,11 @@ pub(crate) async fn handle_friend_add(
         target,
         message,
         &signing_key,
+        bundle,
     )
     .await
     {
-        Ok(sent) => {
-            // Persist prekey private material for X3DH completion across restarts
-            let target_short = rekindle_utils::text::prefix(target, 12);
-            if !sent.signed_prekey_private.is_empty() {
-                let _ = crate::state::keystore::store_keypair_bytes(
-                    &format!("friend-spk-{target_short}"),
-                    &sent.signed_prekey_private,
-                )
-                .await;
-            }
-            if let Some(ref otpk) = sent.one_time_prekey_private {
-                if !otpk.is_empty() {
-                    let _ = crate::state::keystore::store_keypair_bytes(
-                        &format!("friend-otpk-{target_short}"),
-                        otpk,
-                    )
-                    .await;
-                }
-            }
-            IpcResponse::ok(&serde_json::json!({ "status": "sent", "target": target }))
-        }
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "status": "sent", "target": target })),
         Err(e) => IpcResponse::error(500, format!("friend request failed: {e}")),
     }
 }
@@ -113,7 +104,7 @@ pub(crate) async fn handle_friend_accept(
                     crate::daemon::friend_inbox::scan_friend_inbox(
                         &ctx.session,
                         &ctx.transport,
-                        &ctx.session_path,
+                        &ctx.db,
                         key,
                     )
                     .await;
@@ -167,23 +158,7 @@ pub(crate) async fn handle_friend_accept(
     .await
     {
         Ok(accepted) => {
-            // Store DM log keypair in OS keyring so it survives restart
-            let log_short = rekindle_utils::text::prefix(&accepted.dm_log_key, 12);
-            let label = format!("dm-log-{log_short}");
-            let _ =
-                crate::state::keystore::store_keypair_bytes(&label, &accepted.dm_log_keypair_bytes)
-                    .await;
-
-            // Update session: remove pending request, add dm_log_key mapping
-            {
-                let mut guard = ctx.session.write();
-                if let Some(ref mut s) = *guard {
-                    s.remove_pending_friend_request(public_key);
-                    s.dm_log_keys
-                        .insert(public_key.to_string(), accepted.dm_log_key.clone());
-                }
-            }
-            if let Err(e) = ctx.save_session() {
+            if let Err(e) = record_accept(ctx, &request, &accepted).await {
                 return e;
             }
             IpcResponse::ok(&serde_json::json!({
@@ -219,14 +194,22 @@ pub(crate) async fn handle_friend_reject(
     .await
     {
         Ok(()) => {
-            {
-                let mut guard = ctx.session.write();
-                if let Some(ref mut s) = *guard {
-                    s.remove_pending_friend_request(public_key);
-                }
-            }
-            if let Err(e) = ctx.save_session() {
+            let owner = session.identity.public_key_hex.clone();
+            let peer = public_key.to_string();
+            let forgotten = match ctx.require_db() {
+                Ok(db) => db
+                    .call(move |conn| {
+                        rekindle_db::repo::pending_requests::delete(conn, &owner, &peer)
+                    })
+                    .await
+                    .map_err(|e| store_error("pending request", e)),
+                Err(e) => Err(e),
+            };
+            if let Err(e) = forgotten {
                 return e;
+            }
+            if let Some(s) = ctx.session.write().as_mut() {
+                s.remove_pending_friend_request(public_key);
             }
             IpcResponse::ok(&serde_json::json!({ "rejected": public_key }))
         }
@@ -354,13 +337,16 @@ pub(crate) async fn handle_dm_send(
         );
     };
 
-    // Load DM log keypair bytes from keyring if we have a shared DhtLog with this peer
-    let dm_log_keypair_bytes = if let Some(log_key) = session.dm_log_keys.get(peer_key) {
-        let short = rekindle_utils::text::prefix(log_key, 12);
-        let label = format!("dm-log-{short}");
-        match crate::state::keystore::load_keypair_bytes(&label).await {
-            Ok(Some(bytes)) => Some(bytes),
-            _ => None,
+    // The shared DhtLog's keypair, from the vault, when we have one with
+    // this peer.
+    let dm_log_keypair_bytes = if session.dm_log_keys.contains_key(peer_key) {
+        let guard = ctx.vault.lock();
+        let Some(vault) = guard.as_ref() else {
+            return IpcResponse::error(423, "no identity is unlocked");
+        };
+        match rekindle_vault::typed::dm_log::load_dm_log_keypair(vault, peer_key) {
+            Ok(found) => found.map(|bytes| bytes.to_vec()),
+            Err(e) => return store_error("DM log keypair", e),
         }
     } else {
         None
@@ -470,4 +456,55 @@ pub(crate) async fn handle_dm_inbox(
     });
 
     IpcResponse::ok(&all_threads)
+}
+
+/// An accepted request, recorded: the DM log keypair into the vault, then
+/// in one transaction the friend's row with its DM log key and the pending
+/// request removed; then the projection.
+async fn record_accept(
+    ctx: &DaemonContext,
+    request: &rekindle_transport::PendingFriendRequest,
+    accepted: &rekindle_transport::operations::friend::FriendAccepted,
+) -> Result<(), IpcResponse> {
+    {
+        let guard = ctx.vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or_else(|| IpcResponse::error(423, "no identity is unlocked"))?;
+        rekindle_vault::typed::dm_log::persist_dm_log_keypair(
+            vault,
+            &request.public_key,
+            &accepted.dm_log_keypair_bytes,
+        )
+        .map_err(|e| store_error("DM log keypair", e))?;
+    }
+    let owner = ctx.require_owner()?;
+    let (peer, name, log_key) = (
+        request.public_key.clone(),
+        request.display_name.clone(),
+        accepted.dm_log_key.clone(),
+    );
+    let now = rekindle_utils::timestamp_ms_i64();
+    ctx.require_db()?
+        .call(move |conn| {
+            let tx = conn.transaction()?;
+            rekindle_db::repo::friends::insert_accepted(&tx, &owner, &peer, &name, now)?;
+            rekindle_db::repo::friends::set(
+                &tx,
+                &owner,
+                &peer,
+                rekindle_db::repo::friends::Column::DmLogKey,
+                &log_key,
+            )?;
+            rekindle_db::repo::pending_requests::delete(&tx, &owner, &peer)?;
+            tx.commit()
+        })
+        .await
+        .map_err(|e| store_error("accepted friend", e))?;
+    if let Some(s) = ctx.session.write().as_mut() {
+        s.remove_pending_friend_request(&request.public_key);
+        s.dm_log_keys
+            .insert(request.public_key.clone(), accepted.dm_log_key.clone());
+    }
+    Ok(())
 }

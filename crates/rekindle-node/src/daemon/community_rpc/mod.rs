@@ -19,29 +19,8 @@ mod mek_transfer;
 pub(crate) use leave::handle_leave;
 pub(crate) use mek_transfer::handle_mek_transfer;
 
-/// Keyring label for a community's governance record owner keypair.
-pub(crate) fn governance_keypair_label(governance_key: &str) -> String {
-    format!(
-        "community-governance-{}",
-        rekindle_utils::text::prefix(governance_key, 12)
-    )
-}
-
-/// Keyring label for a community's registry record owner keypair.
-///
-/// Both labels name credentials that `o_cnt: 0` grants no writer slot —
-/// they are the record *owner* keypairs the origin flow produces, kept
-/// because they are the only thing that can ever re-create a record, not
-/// because they authorize a write.
-pub(crate) fn registry_keypair_label(registry_key: &str) -> String {
-    format!(
-        "registry-{}",
-        rekindle_utils::text::prefix(registry_key, 12)
-    )
-}
-
 pub(crate) fn get_signing_key(
-    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
+    signing_key: &RwLock<Option<crate::state::signing_key::SigningKeyHandle>>,
 ) -> Option<[u8; 32]> {
     signing_key.read().as_ref().map(|h| *h.as_bytes())
 }

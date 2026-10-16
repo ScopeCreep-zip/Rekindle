@@ -37,6 +37,11 @@ pub struct InitArgs {
 /// Arguments for `rekindle unlock`.
 #[derive(Args)]
 pub struct UnlockArgs {
+    /// The identity to unlock (a public key from `rekindle identity list`);
+    /// optional when the device holds one identity.
+    #[arg(long)]
+    pub identity: Option<String>,
+
     /// Read the passphrase from this file (`-` for stdin) instead of a
     /// prompt. Never pass a passphrase as a flag value.
     #[arg(long)]
@@ -77,33 +82,43 @@ pub enum IdentityCmd {
         json: bool,
     },
 
-    /// Export encrypted identity bundle.
+    /// The identities on this device.
+    List,
+
+    /// Export the unlocked identity as an archive sealed by its
+    /// passphrase (its vault), for another device.
     Export {
-        /// Output file path.
+        /// Output file path (written owner-only).
         path: PathBuf,
-        /// Protect with passphrase (prompted or stdin).
+        /// Read the passphrase from this file (`-` for stdin).
         #[arg(long)]
-        passphrase: bool,
+        passphrase_file: Option<PathBuf>,
     },
 
-    /// Import identity bundle (device migration).
+    /// Import an identity archive (device migration); it stays locked.
     Import {
         /// Input file path.
         path: PathBuf,
-        /// Decrypt with passphrase.
+        /// Read the passphrase from this file (`-` for stdin).
         #[arg(long)]
-        passphrase: bool,
+        passphrase_file: Option<PathBuf>,
     },
 
-    /// Rotate Ed25519 identity keypair.
+    /// Rotate the unlocked identity's Ed25519 keypair; the daemon is left
+    /// locked, and the identity unlocks under its new key.
     Rotate {
         /// Skip confirmation.
         #[arg(long)]
         force: bool,
+        /// Read the passphrase from this file (`-` for stdin).
+        #[arg(long)]
+        passphrase_file: Option<PathBuf>,
     },
 
-    /// Destroy local identity (requires typed confirmation).
-    Destroy {
+    /// Delete an identity from this device (requires typed confirmation).
+    Delete {
+        /// The identity's public key (`rekindle identity list`).
+        identity: String,
         /// The confirmation phrase, for scripts.
         #[arg(long)]
         confirm: Option<String>,

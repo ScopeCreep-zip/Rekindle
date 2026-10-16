@@ -85,35 +85,6 @@ pub async fn typing(
     send_dm_payload(node, session, peer_key, &dm, signing_key).await
 }
 
-/// Send a friend request via DHT inbox write.
-///
-/// This is a DHT write, not an app_message — the request persists on
-/// the DHT until the target reads it. Works when target is offline.
-///
-/// Delegates to `operations::friend::send_friend_request` which handles
-/// the full inbox discovery and write flow.
-pub async fn friend_request(
-    node: &TransportNode,
-    session: &Session,
-    target_profile_key: &str,
-    message: &str,
-    signing_key: &[u8; 32],
-) -> Result<()> {
-    info!(
-        target = %target_profile_key,
-        "dm: friend_request"
-    );
-    let _ = crate::operations::friend::send_friend_request(
-        node,
-        session,
-        target_profile_key,
-        message,
-        signing_key,
-    )
-    .await?;
-    Ok(())
-}
-
 /// Send a friend accept response via DHT inbox write.
 ///
 /// Creates a shared DM DhtLog and writes the acceptance to the

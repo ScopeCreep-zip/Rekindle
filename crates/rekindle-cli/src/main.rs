@@ -175,6 +175,7 @@ async fn dispatch_command(
         Command::Init(args) => identity::cmd_init(&args, client, mode).await,
         Command::Unlock(args) => identity::cmd_unlock(&args, client, mode).await,
         Command::Lock => identity::cmd_lock(client, mode).await,
+        Command::Logout => identity::cmd_logout(client, mode).await,
         Command::Identity(cmd) => identity::dispatch(&cmd, client, mode).await,
         Command::Node(cmd) => dispatch_node(cmd, client, mode).await,
         Command::Network(cmd) => network::dispatch(&cmd, client, mode).await,
@@ -188,6 +189,6 @@ async fn dispatch_command(
         Command::Key(cmd) => keys::dispatch(&cmd, client, mode).await,
         Command::Presence(cmd) => presence::dispatch(&cmd, client, mode).await,
         Command::Export(cmd) => identity::dispatch_export(&cmd, client, mode).await,
-        Command::Import(_) => Err(identity::unimplemented("import")),
+        Command::Import(cmd) => identity::dispatch_import(&cmd, client, mode).await,
     }
 }

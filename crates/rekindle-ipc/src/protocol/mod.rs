@@ -7,7 +7,8 @@
 //! function or a `QueryEngine` method. There are no catch-all variants — the
 //! match in `daemon::dispatch` is exhaustive without a wildcard arm.
 //!
-//! [RC-16] `IpcRequest::Unlock` and `IdentityCreate` contain secrets — their
+//! [RC-16] `Unlock`, `IdentityCreate`, `IdentityExport`, `IdentityImport` and
+//! `IdentityRotate` contain secrets — their
 //! `Debug` impls redact sensitive fields.
 
 use serde::{Deserialize, Serialize};
@@ -44,10 +45,17 @@ pub const WIPE_CONFIRMATION: &str = "WIPE ALL DATA";
 #[derive(Clone, Serialize, Deserialize)]
 pub enum IpcRequest {
     // ── Lifecycle ──────────────────────────────────────────────────
-    /// Unlock the daemon (load signing key, resume session, transition to Operational).
-    Unlock { passphrase: String },
+    /// Unlock `identity` (a public key from `IdentityList`) with its
+    /// passphrase: open its vault and database, resume its session,
+    /// transition to Operational.
+    Unlock {
+        identity: String,
+        passphrase: String,
+    },
     /// Lock the daemon (zeroize signing key, transition to Locked).
     Lock,
+    /// Log out: announce offline, then lock and deselect the identity.
+    Logout,
     /// Query daemon status (always available, any state).
     /// Returns `StatusSnapshot` with compact status, subscription health,
     /// and full diagnostic checks. Renderers decide display depth.
@@ -57,18 +65,33 @@ pub enum IpcRequest {
     Shutdown,
 
     // ── Identity ──────────────────────────────────────────────────
-    /// Create a new identity (init ceremony). The daemon generates the keypair,
-    /// creates DHT records, stores secrets in the OS keyring, and persists the session.
-    IdentityCreate { display_name: String },
-    /// Show local identity (pubkey, display name, DHT keys).
+    /// Create a new identity (init ceremony): its vault and database
+    /// under `passphrase`, then its DHT records. The daemon stays locked;
+    /// `Unlock` opens it.
+    IdentityCreate {
+        display_name: String,
+        passphrase: String,
+    },
+    /// The identities on this device (the registry; no unlock needed).
+    IdentityList,
+    /// Show the unlocked identity (pubkey, display name, DHT keys).
     IdentityShow,
-    /// Export identity metadata (daemon returns data, CLI writes file).
-    IdentityExport,
-    /// Rotate the Ed25519 identity keypair. Notifies all friends.
-    IdentityRotate,
-    /// Destroy local identity (requires typed confirmation).
-    IdentityDestroy { confirmation: String },
-    /// Factory reset: delete identity, session, keyring, Veilid storage, config.
+    /// Export the unlocked identity as an archive (base64): its registry
+    /// entry, vault and header, sealed by the vault's passphrase.
+    IdentityExport { passphrase: String },
+    /// Install an identity from an exported archive (base64); it is
+    /// opened with `passphrase` to verify it, and stays locked.
+    IdentityImport { archive: String, passphrase: String },
+    /// Rotate the unlocked identity's Ed25519 keypair: friends are told,
+    /// then the identity is locked and moved to its new key.
+    IdentityRotate { passphrase: String },
+    /// Delete `identity` (requires typed confirmation until D3 makes the
+    /// passphrase its proof).
+    IdentityDelete {
+        identity: String,
+        confirmation: String,
+    },
+    /// Factory reset: delete every identity and Veilid storage.
     IdentityWipe { confirmation: String },
 
     // ── Friends ───────────────────────────────────────────────────

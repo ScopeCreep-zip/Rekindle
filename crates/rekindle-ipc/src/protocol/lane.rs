@@ -35,14 +35,17 @@ impl IpcRequest {
         match self {
             Self::Unlock { .. } => ("Unlock", Exclusive),
             Self::Lock => ("Lock", Exclusive),
+            Self::Logout => ("Logout", Exclusive),
             Self::Status => ("Status", Query),
             Self::Shutdown => ("Shutdown", Exclusive),
 
             Self::IdentityCreate { .. } => ("IdentityCreate", Exclusive),
+            Self::IdentityList => ("IdentityList", Query),
             Self::IdentityShow => ("IdentityShow", Query),
-            Self::IdentityExport => ("IdentityExport", Query),
-            Self::IdentityRotate => ("IdentityRotate", Exclusive),
-            Self::IdentityDestroy { .. } => ("IdentityDestroy", Exclusive),
+            Self::IdentityExport { .. } => ("IdentityExport", Query),
+            Self::IdentityImport { .. } => ("IdentityImport", Exclusive),
+            Self::IdentityRotate { .. } => ("IdentityRotate", Exclusive),
+            Self::IdentityDelete { .. } => ("IdentityDelete", Exclusive),
             Self::IdentityWipe { .. } => ("IdentityWipe", Exclusive),
 
             Self::FriendAdd { .. } => ("FriendAdd", Write),
@@ -124,10 +127,18 @@ mod tests {
         for request in [
             IpcRequest::Lock,
             IpcRequest::Unlock {
+                identity: String::new(),
                 passphrase: String::new(),
             },
+            IpcRequest::Logout,
             IpcRequest::Shutdown,
-            IpcRequest::IdentityRotate,
+            IpcRequest::IdentityRotate {
+                passphrase: String::new(),
+            },
+            IpcRequest::IdentityImport {
+                archive: String::new(),
+                passphrase: String::new(),
+            },
             IpcRequest::IdentityWipe {
                 confirmation: String::new(),
             },
@@ -135,6 +146,7 @@ mod tests {
             assert_eq!(request.lane(), Lane::Exclusive, "{}", request.name());
         }
         assert_eq!(IpcRequest::Status.lane(), Lane::Query);
+        assert_eq!(IpcRequest::IdentityList.lane(), Lane::Query);
         assert_eq!(
             IpcRequest::DmTyping {
                 peer_key: String::new(),
@@ -148,6 +160,7 @@ mod tests {
     #[test]
     fn name_omits_fields() {
         let request = IpcRequest::Unlock {
+            identity: "pk".into(),
             passphrase: "secret".into(),
         };
         assert_eq!(request.name(), "Unlock");

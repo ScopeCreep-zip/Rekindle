@@ -21,7 +21,8 @@ pub fn deserialize_keypair(bytes: &[u8]) -> Result<veilid_core::KeyPair> {
     ))
 }
 
-/// Serialize a Veilid `KeyPair` to bytes for keyring storage.
+/// Serialize a Veilid `KeyPair` to bytes (the DM log keypair the vault
+/// keeps, the friend inbox keypair the profile publishes).
 /// Format: public key bytes (32) + secret key bytes (32) = 64 bytes.
 pub fn serialize_keypair(kp: &veilid_core::KeyPair) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(64);

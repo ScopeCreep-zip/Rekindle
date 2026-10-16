@@ -21,10 +21,9 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use parking_lot::RwLock;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_mek_rotation::{ChannelMekCache, MekPersist, MekRotationError};
+use rekindle_mek_rotation::ChannelMekCache;
 use rekindle_transport::crypto::mek::MekCache;
 use rekindle_types::channel_keys::KeyScope;
 
@@ -127,55 +126,44 @@ impl rekindle_mek_rotation::MekHistory for MekCacheAdapter {
     }
 }
 
-/// Durable MEK storage for the daemon.
-///
-/// The desktop writes MEKs into Stronghold; the daemon has no
-/// Stronghold, so this uses the OS keyring through the same
-/// `state::keystore` helpers that already hold the signing key and the
-/// registry keypairs. Labels are a hash of the
-/// `(community, channel, generation)` triple so a long channel id
-/// cannot produce an unbounded keyring entry name, and so the label
-/// reveals nothing about which communities this daemon belongs to.
-///
-/// Note that `rekindle-mek-rotation` does not yet call `persist()` on
-/// any path — the trait is declared and the desktop implements it, but
-/// no orchestrator invokes it. This is a real implementation rather
-/// than a stub so that wiring it up is the only remaining step.
-pub struct DaemonMekPersist;
-
-fn label_for(community_id: &str, scope: KeyScope, generation: u64) -> String {
-    let composite = format!("{community_id}\u{1f}{scope}\u{1f}{generation}");
-    let digest = rekindle_utils::blake3_hex(composite.as_bytes());
-    format!("mek-{}", rekindle_utils::text::prefix(&digest, 32))
-}
-
-#[async_trait]
-impl MekPersist for DaemonMekPersist {
-    async fn store_mek_for_generation(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-        key_bytes: Vec<u8>,
-    ) -> Result<(), MekRotationError> {
-        crate::state::keystore::store_keypair_bytes(
-            &label_for(community_id, scope, generation),
-            &key_bytes,
-        )
-        .await
-        .map_err(|e| MekRotationError::Persist(format!("store MEK: {e}")))
+/// Reload the vault's latest MEK of every scope the unlocked session knows
+/// (each community, and each of its channels with a record) into the
+/// cache, through the convergence rule (plan D1: the keys outlive a
+/// restart).
+pub fn restore_from_vault(ctx: &crate::daemon::dispatch::DaemonContext) {
+    let scopes: Vec<(String, KeyScope)> = ctx
+        .session
+        .read()
+        .as_ref()
+        .map(|session| {
+            session
+                .communities
+                .values()
+                .flat_map(|m| {
+                    std::iter::once((m.governance_key.clone(), KeyScope::Community)).chain(
+                        m.channel_record_keys.keys().filter_map(|channel| {
+                            rekindle_types::id::ChannelId::from_hex(channel)
+                                .map(|id| (m.governance_key.clone(), KeyScope::Channel(id)))
+                        }),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let guard = ctx.vault.lock();
+    let Some(vault) = guard.as_ref() else {
+        return;
+    };
+    let cache = MekCacheAdapter::new(Arc::clone(&ctx.mek_cache));
+    let mut restored = 0usize;
+    for (community, scope) in scopes {
+        if let Some(mek) = rekindle_vault::typed::mek::load_latest_mek(vault, &community, scope) {
+            if cache.insert(&community, scope, mek) {
+                restored += 1;
+            }
+        }
     }
-
-    async fn load_mek_for_generation(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-    ) -> Result<Option<Vec<u8>>, MekRotationError> {
-        crate::state::keystore::load_keypair_bytes(&label_for(community_id, scope, generation))
-            .await
-            .map_err(|e| MekRotationError::Persist(format!("load MEK: {e}")))
-    }
+    tracing::info!(restored, "MEKs reloaded from the vault");
 }
 
 /// The key provider every daemon key consumer reads through (plan D6).
@@ -191,7 +179,7 @@ pub fn key_provider(
 
 #[cfg(test)]
 mod tests {
-    use super::{label_for, MekCacheAdapter};
+    use super::MekCacheAdapter;
     use parking_lot::RwLock;
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
     use rekindle_mek_rotation::ChannelMekCache;
@@ -201,7 +189,6 @@ mod tests {
     use std::sync::Arc;
 
     const CH: KeyScope = KeyScope::Channel(ChannelId([0x33; 16]));
-    const OTHER: KeyScope = KeyScope::Channel(ChannelId([0x44; 16]));
 
     const LOW_RANK: [u8; 32] = [0x10; 32];
     const HIGH_RANK: [u8; 32] = [0x20; 32];
@@ -278,37 +265,5 @@ mod tests {
         a.insert("c", CH, key(1, 4));
         a.insert("c", CH, ranked(2, 4, HIGH_RANK));
         assert_eq!(cached_bytes(&a, 4), Some([2u8; 32]));
-    }
-
-    #[test]
-    fn label_is_bounded_and_distinct_per_triple() {
-        let a = label_for("gov", CH, 1);
-        let b = label_for("gov", CH, 2);
-        let c = label_for("gov", OTHER, 1);
-        let d = label_for("gov", KeyScope::Community, 1);
-        assert_ne!(a, d, "the community key must not share a channel's label");
-        assert_ne!(a, b, "generation must change the label");
-        assert_ne!(a, c, "channel must change the label");
-        assert_eq!(a.len(), 36, "mek- prefix plus 32 hex chars");
-    }
-
-    /// The separator matters: without it two communities whose ids share
-    /// a prefix could hash identically and share one keyring entry.
-    #[test]
-    fn field_boundaries_are_unambiguous() {
-        assert_ne!(
-            label_for("ab", KeyScope::Community, 11),
-            label_for("abc", KeyScope::Community, 1)
-        );
-    }
-
-    /// The label must not leak the governance key it belongs to — a
-    /// keyring listing is readable by anything running as this user.
-    #[test]
-    fn label_does_not_embed_the_community_id() {
-        let community = "0123456789abcdef0123456789abcdef";
-        let label = label_for(community, CH, 3);
-        assert!(!label.contains(community));
-        assert!(!label.contains(rekindle_utils::text::prefix(community, 8)));
     }
 }

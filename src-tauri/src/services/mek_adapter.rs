@@ -14,7 +14,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_mek_rotation::{
     ChannelMekCache, MekDistributeDeps, MekPersist, MekRotationError, MekRotationEvent,
     RotationRecipient,
@@ -25,52 +24,6 @@ use rekindle_types::id::PseudonymKey;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
-
-/// Persists MEKs into the vault, per scope and generation
-/// (`keystore::persist_mek` / `load_mek_generation`). `MekPersist`
-/// takes/returns the raw 32-byte key material; we reconstruct
-/// `MediaEncryptionKey` on either side.
-pub struct KeystoreMekPersist {
-    state: Arc<AppState>,
-}
-
-#[async_trait]
-impl MekPersist for KeystoreMekPersist {
-    async fn store_mek_for_generation(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-        key_bytes: Vec<u8>,
-    ) -> Result<(), MekRotationError> {
-        let key_bytes: [u8; 32] = key_bytes
-            .try_into()
-            .map_err(|_| MekRotationError::Persist("MEK bytes must be 32 long".into()))?;
-        let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
-        let guard = self.state.keystore.lock();
-        let ks = guard
-            .as_ref()
-            .ok_or_else(|| MekRotationError::Persist("keystore locked".into()))?;
-        crate::keystore::persist_mek(ks, community_id, scope, &mek)
-            .map_err(MekRotationError::Persist)
-    }
-
-    async fn load_mek_for_generation(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-    ) -> Result<Option<Vec<u8>>, MekRotationError> {
-        let guard = self.state.keystore.lock();
-        let ks = guard
-            .as_ref()
-            .ok_or_else(|| MekRotationError::Persist("keystore locked".into()))?;
-        Ok(
-            crate::keystore::load_mek_generation(ks, community_id, scope, generation)
-                .map(|m| m.as_bytes().to_vec()),
-        )
-    }
-}
 
 /// MEK rotation domain adapter — produced once per command/dispatch.
 pub struct MekAdapter {
@@ -86,9 +39,9 @@ impl MekAdapter {
     pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
         let cache: Arc<dyn ChannelMekCache> =
             Arc::new(state_helpers::LiveMekCache::new(Arc::clone(&state)));
-        let persist: Arc<dyn MekPersist> = Arc::new(KeystoreMekPersist {
-            state: Arc::clone(&state),
-        });
+        let persist: Arc<dyn MekPersist> = Arc::new(
+            rekindle_node::host::adapters::mek::VaultMekPersist::new(state.keystore.clone()),
+        );
         Arc::new(Self {
             state,
             app_handle,

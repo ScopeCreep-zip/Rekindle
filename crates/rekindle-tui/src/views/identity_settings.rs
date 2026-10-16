@@ -173,7 +173,10 @@ impl IdentitySettingsView {
                 "not loaded (locked)"
             };
             items.push(Self::kv_item("    Signing Key", key_status));
-            items.push(Self::kv_item("    Keyring", "OS keyring + disk fallback"));
+            items.push(Self::kv_item(
+                "    Key store",
+                "vault (passphrase-sealed, this device)",
+            ));
         }
 
         // ── Network section ──────────────────────────────────
@@ -220,7 +223,7 @@ impl IdentitySettingsView {
             ])));
             items.push(ListItem::new(Line::from(vec![
                 Span::styled("    [D] ", Style::new().dim()),
-                Span::raw("Destroy identity"),
+                Span::raw("Delete identity"),
                 Span::styled("  (irreversible)", Style::new().dim()),
             ])));
         }

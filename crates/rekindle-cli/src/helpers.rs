@@ -9,12 +9,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-/// The daemon's session state file, in the data root's `state` directory
-/// (`rekindle_utils::paths::DataRoot`). Resolved only; the daemon creates it.
-pub fn session_path() -> anyhow::Result<PathBuf> {
-    Ok(rekindle_utils::paths::DataRoot::resolve()?
-        .state
-        .join("session.json"))
+/// The identity registry, in the data root's `state` directory
+/// (`rekindle_utils::paths::DataRoot`). Resolved only; the daemon writes it.
+pub fn registry_path() -> anyhow::Result<PathBuf> {
+    Ok(rekindle_utils::paths::DataRoot::resolve()?.registry())
 }
 
 /// The daemon's Veilid storage directory in the data root, or

@@ -241,14 +241,17 @@ Pattern: **`Noise_IK_25519_ChaChaPoly_BLAKE2s`** via `snow`.
 | Rate limit | 100 requests/sec per connection, refill bucket |
 | Handshake DoS protection | 5-second handshake timeout |
 
-The daemon's long-term Ed25519 key lives in the OS keyring (`keyring`
-crate) until plan D1 moves it into the vault.
+Each identity's Ed25519 key lives in its vault (`state/{pk}.vault`, plan
+D1); `Unlock { identity, passphrase }` opens it through
+`host::identity::unlock`, and the session is projected from the
+identity's database. There is no OS keyring use.
 
 ### IpcRequest dispatch
 
 `IpcRequest` is a single Rust enum with one variant per supported
 operation: `Unlock`, `Lock`, `Status`, `Shutdown`, `IdentityCreate`,
-`IdentityShow`, `IdentityRotate`, `FriendAdd`, `FriendAccept`,
+`IdentityList`, `IdentityShow`, `IdentityExport`, `IdentityImport`,
+`IdentityRotate`, `IdentityDelete`, `Logout`, `FriendAdd`, `FriendAccept`,
 `FriendRemove`, `FriendList`, `CommunityCreate`, `CommunityJoin`,
 `CommunityLeave`, `ChannelCreate`, `ChannelMessage`, `MEKRotate`,
 `VoiceJoin`, `VoiceLeave`, …
@@ -416,8 +419,8 @@ default, and a key it leaves out is untouched. An invalid config stops
 dirs.
 
 Every frontend command builds an `IpcRequest`, sends it, and renders the
-response. No frontend touches `TransportNode`, `Session` or the OS
-keyring.
+response. No frontend touches `TransportNode`, `Session` or an
+identity's vault.
 
 Input follows clig.dev:
 

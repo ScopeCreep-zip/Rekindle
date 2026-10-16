@@ -65,15 +65,15 @@ pub fn unwrap_mek_transfer_payload(
 // peer to do the wrapping — the same reason `node/daemon/mek_wrap.rs`
 // went earlier in this migration.
 
-/// Publish a prekey bundle to our profile's prekey subkey. The caller
-/// generated it with `operations::identity::generate_replenish_bundle` and
-/// has already stored every private half: publishing first would hand out
-/// keys whose secrets may be lost (plan C7.25).
+/// Publish a prekey bundle to our profile's prekey subkey. The bundle is
+/// the unlock's Signal manager's `current_bundle`: the profile is read by
+/// everyone, so it carries no one-time keys (PQXDH §3.3), and its private
+/// halves are already in the identity's vault.
 pub async fn publish_prekey_bundle(
     node: &TransportNode,
     profile_dht_key: &str,
     bundle: &crate::crypto::prekeys::PreKeyBundle,
-) -> Result<u32> {
+) -> Result<()> {
     let bundle_bytes = bundle.to_wire();
     let byte_count = bundle_bytes.len();
     crate::broadcast::dht_writes::set_own_profile_subkey(
@@ -83,11 +83,10 @@ pub async fn publish_prekey_bundle(
         bundle_bytes,
     )
     .await?;
-    let count = u32::try_from(byte_count).unwrap_or(u32::MAX);
     info!(
         bytes = byte_count,
         subkey = crate::payload::dht_types::PROFILE_SUBKEY_PREKEY_BUNDLE,
-        "pqxdh_bundle_published kind=LastResort+OneTimeBatch (replenish)",
+        "pqxdh_bundle_published kind=LastResort (replenish)",
     );
-    Ok(count)
+    Ok(())
 }

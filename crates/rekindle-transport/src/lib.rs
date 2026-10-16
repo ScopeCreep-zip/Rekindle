@@ -63,14 +63,10 @@ pub use error::TransportError;
 pub use crypto::mek::MekCacheEntrySnapshot;
 pub use shared::{AttachmentState, SharedState, TransportNotification, TransportSnapshot};
 
-// Crypto — pseudonym, Signal, prekeys
+// Crypto — pseudonym, prekeys (the Signal manager is the unlock's one,
+// `rekindle_crypto::signal::SignalSessionManager`, plan D1)
 pub use crypto::prekeys::PreKeyBundle;
 pub use crypto::pseudonym::derive_community_pseudonym;
-pub use crypto::signal_session::{SessionInitInfo, SignalSessionManager};
-pub use crypto::signal_store::{
-    IdentityKeyStore, MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore, PreKeyStore,
-    SessionStore,
-};
 
 // Session state
 pub use session::{CommunityMembership, PendingFriendRequest, Session, SessionIdentity};

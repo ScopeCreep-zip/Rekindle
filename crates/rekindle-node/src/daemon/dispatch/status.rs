@@ -75,7 +75,7 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
 
     let snapshot = StatusSnapshot {
         state: state.as_str().to_string(),
-        has_identity: session.is_some(),
+        has_identity: crate::host::identity::list(&ctx.root).is_ok_and(|e| !e.is_empty()),
         identity_public_key: session.map(|s| s.identity.public_key_hex.clone()),
         identity_display_name: session.map(|s| s.identity.display_name.clone()),
         attachment: snap
@@ -217,17 +217,23 @@ fn build_checks(
     ));
 
     // ── STORAGE — persistence health ────────────────────────────────
-    checks.push(if ctx.session_path.exists() {
-        Check::pass("storage.session_file", "storage", "exists")
-    } else {
-        Check::warn("storage.session_file", "storage", "missing")
-            .with_description("no session file — identity not initialized")
+    checks.push(match crate::host::identity::list(&ctx.root) {
+        Ok(entries) if !entries.is_empty() => Check::pass(
+            "storage.identities",
+            "storage",
+            format!("{} on this device", entries.len()),
+        ),
+        Ok(_) => Check::warn("storage.identities", "storage", "none")
+            .with_description("no identity yet — create one with `rekindle init`"),
+        Err(e) => Check::fail("storage.identities", "storage", e.to_string())
+            .with_description("the identity registry cannot be read"),
     });
 
-    checks.push(if ctx.session.read().is_some() {
-        Check::pass("storage.session_loaded", "storage", "yes")
+    checks.push(if ctx.db.current().is_ok() {
+        Check::pass("storage.identity_db", "storage", "open")
     } else {
-        Check::warn("storage.session_loaded", "storage", "no")
+        Check::warn("storage.identity_db", "storage", "closed")
+            .with_description("no identity is unlocked")
     });
 
     let config_path = ctx.config_dir.display().to_string();

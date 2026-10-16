@@ -165,73 +165,43 @@ impl DaemonGovernanceAdapter<'_> {
         gov_state: GovernanceState,
         accepted_clock: u64,
     ) {
-        let changed = {
-            let mut guard = self.ctx.session.write();
-            match guard
-                .as_mut()
-                .and_then(|s| s.communities.get_mut(community_id))
-            {
-                Some(m) if m.lamport_counter < accepted_clock => {
-                    // max(), never overwrite: our own unsent entries may
-                    // already have advanced past what the DHT shows.
-                    m.lamport_counter = accepted_clock;
-                    true
-                }
-                _ => false,
-            }
-        };
-        if changed {
-            self.persist_session();
-        }
+        // max(), never overwrite: our own unsent entries may already have
+        // advanced past what the DHT shows.
+        crate::host::session::raise_clock(
+            &self.ctx.session,
+            &self.ctx.db,
+            community_id,
+            accepted_clock,
+        );
         self.set_governance_state_impl(community_id, gov_state);
     }
 
-    /// Warm cache of the raw per-author entry sets, so the next start
-    /// can re-merge losslessly without waiting on the DHT rebuild.
-    ///
-    /// A JSON sidecar beside `session.json` — the daemon's equivalent of
-    /// the desktop's `governance_entries_cache` SQLite table. The full
-    /// per-author grouping is preserved, not a flattened snapshot, so
-    /// merge's genesis and reader-validation rules reproduce an
-    /// identical state. Fire-and-forget: the DHT stays authoritative.
+    /// Warm cache of the raw per-author entry sets, so the next start can
+    /// re-merge losslessly without waiting on the DHT rebuild: the same
+    /// `governance_entries_cache` rows the desktop keeps. Queued; the DHT
+    /// stays authoritative.
     pub(super) fn persist_governance_entries_cache_impl(
         &self,
         community_id: &str,
         entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
     ) {
-        let by_author: Vec<(String, &Vec<GovernanceEntry>)> = entries
-            .iter()
-            .map(|(pseudonym, list)| (hex::encode(pseudonym.0), list))
-            .collect();
-        let Ok(json) = serde_json::to_vec(&by_author) else {
+        let Some(owner) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone())
+        else {
             return;
         };
-        let path = self.governance_cache_path(community_id);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Err(e) = std::fs::write(&path, json) {
-            tracing::warn!(
-                community_id,
-                path = %path.display(),
-                error = %e,
-                "governance adapter: entries-cache persist failed"
-            );
-        }
-    }
-
-    /// Sidecar path for one community's governance entry cache.
-    ///
-    /// Named by a hash of the governance key rather than the key itself:
-    /// record keys contain characters that are awkward in filenames, and
-    /// a fixed-width name keeps the directory predictable.
-    fn governance_cache_path(&self, community_id: &str) -> std::path::PathBuf {
-        let digest = rekindle_utils::blake3_hex(community_id.as_bytes());
-        let dir = self.ctx.session_path.parent().map_or_else(
-            || std::path::PathBuf::from("."),
-            std::path::Path::to_path_buf,
-        );
-        dir.join("governance-cache").join(format!("{digest}.json"))
+        let Ok(db) = self.ctx.db.current() else {
+            return;
+        };
+        let (community, entries) = (community_id.to_string(), entries.to_vec());
+        let now = rekindle_utils::timestamp_ms_i64();
+        db.fire("governance entries cache", move |conn| {
+            rekindle_db::repo::governance_cache::save(conn, &owner, &community, &entries, now)
+        });
     }
 
     pub(super) fn persist_discovered_registry_members_impl(

@@ -171,6 +171,7 @@ impl IntentKind {
         Self::ApproveJoinRequest,
         Self::TransferCommunityOwnership,
         Self::ExportIdentity,
+        Self::ImportIdentity,
         Self::RotateIdentity,
         Self::WipeAllData,
         Self::RegisterAgent,

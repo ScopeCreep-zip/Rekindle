@@ -141,10 +141,9 @@ pub(crate) async fn handle_join(
         }
     };
 
-    let session_display_name = match ctx.require_session(|s| s.identity.display_name.clone()) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
+    if let Err(e) = ctx.require_session(|_| ()) {
+        return e;
+    }
 
     let adapter = adapter(ctx);
     let outcome =
@@ -161,28 +160,29 @@ pub(crate) async fn handle_join(
     let membership = rekindle_transport::session::CommunityMembership {
         governance_key: link.governance_key.as_str().to_owned(),
         pseudonym_key: outcome.identity.pseudo_hex.clone(),
-        display_name: session_display_name,
         role_ids: Vec::new(),
         slot_index: outcome.claimed.local_subkey,
         registry_key: outcome.claimed.registry_key.clone(),
         community_name: outcome.invite.community_name.clone(),
         slot_seed,
         channel_record_keys: std::collections::HashMap::new(),
-        // v2.0 join needs neither: admission is self-sovereign, so there
-        // is no mailbox to petition and no inbox to be approved from.
-        governance_keypair_label: None,
         segment_index: Some(outcome.claimed.segment_index),
         lamport_counter: 0,
         mek_generation: 0,
     };
-    {
-        let mut guard = ctx.session.write();
-        if let Some(ref mut sess) = *guard {
-            sess.join_community(membership);
-        }
-    }
-    if let Err(e) = ctx.save_session() {
-        return e;
+    // A joined community has no owner keypairs of ours: admission is
+    // self-sovereign, so there is nothing to petition or be approved from.
+    if let Err(e) = crate::host::session::record_membership(
+        &ctx.session,
+        &ctx.db,
+        &ctx.vault,
+        crate::host::session::NewMembership {
+            membership,
+            dht_owner_keypair: None,
+            registry_keypair: None,
+        },
+    ) {
+        return IpcResponse::error(500, format!("community joined but not recorded: {e}"));
     }
 
     // Seed the runtime cache with the state the join already merged, so
@@ -270,14 +270,15 @@ pub(crate) async fn handle_leave(
             // The community's runtime state goes with it (its keepalive
             // stopped with the community scope above).
             ctx.community_runtime.remove(&membership.governance_key);
+            if let Err(e) = crate::host::session::forget_membership(
+                &ctx.session,
+                &ctx.db,
+                &ctx.vault,
+                &membership.governance_key,
+            )
+            .await
             {
-                let mut guard = ctx.session.write();
-                if let Some(ref mut s) = *guard {
-                    s.leave_community(&membership.governance_key);
-                }
-            }
-            if let Err(e) = ctx.save_session() {
-                return e;
+                return IpcResponse::error(500, format!("community left but not forgotten: {e}"));
             }
             IpcResponse::ok(&serde_json::json!({ "left": membership.governance_key }))
         }

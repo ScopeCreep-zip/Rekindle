@@ -37,8 +37,6 @@ pub enum ExitReason {
     /// The daemon's own bus subscriber could not connect, so nothing
     /// would ever be answered.
     SubscriberFailed,
-    /// The identity was destroyed; the daemon restarts with none.
-    IdentityDestroyed,
     /// Everything was wiped; the host deletes the Veilid storage once the
     /// transport has stopped, and the daemon restarts empty.
     DataWiped,
@@ -58,7 +56,7 @@ impl ExitReason {
             // sysexits(3) EX_TEMPFAIL. The unit lists it in
             // `RestartForceExitStatus=`: systemd's `on-failure` would not
             // restart a clean exit (`systemd.service(5)`, Restart= table).
-            Self::IdentityDestroyed | Self::DataWiped => 75,
+            Self::DataWiped => 75,
         }
     }
 }

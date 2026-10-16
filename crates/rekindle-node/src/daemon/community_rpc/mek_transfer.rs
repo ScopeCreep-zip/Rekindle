@@ -35,7 +35,7 @@ use rekindle_types::channel_keys::KeyScope;
 pub(crate) fn handle_mek_transfer(
     transfer: &MekTransferPayload,
     session: &RwLock<Option<rekindle_transport::Session>>,
-    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
+    signing_key: &RwLock<Option<crate::state::signing_key::SigningKeyHandle>>,
     mek_cache: &Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
 ) -> CallResponse {
     let governance_key = &transfer.community_id;
