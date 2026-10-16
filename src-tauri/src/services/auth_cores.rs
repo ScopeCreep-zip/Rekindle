@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::db;
 use crate::db_helpers::db_call;
-use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
 use crate::state::{IdentityState, SharedState, UserStatus};
 use rekindle_db::Db;
+use rekindle_vault::VaultHandle;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +30,7 @@ pub async fn create_identity_core(
     display_name: Option<String>,
     state: &SharedState,
     pool: &Db,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(LoginResult, [u8; 32]), String> {
     *state.identity.write() = None;
@@ -50,10 +50,10 @@ pub async fn create_identity_core(
     };
     let now = db::timestamp_now();
 
-    let keystore = StrongholdKeystore::create_for_identity(config_dir, &public_key, passphrase)
+    let keystore = crate::keystore::create_identity_vault(config_dir, &public_key, passphrase)
         .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
     keystore
-        .vault_put(&VaultKey::IdentityEd25519, &secret_bytes)
+        .put(&VaultKey::IdentityEd25519, &secret_bytes)
         .map_err(|e| e.to_string())?;
 
     *keystore_handle.lock() = Some(keystore);
@@ -98,7 +98,7 @@ async fn initialize_audit_chain(
     app_handle: Option<&tauri::AppHandle>,
     state: &SharedState,
     pool: &Db,
-    keystore: &KeystoreHandle,
+    keystore: &VaultHandle,
     owner_key: &str,
 ) {
     let mac_key = {
@@ -128,7 +128,7 @@ pub async fn login_core(
     passphrase: &str,
     state: &SharedState,
     pool: &Db,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(LoginResult, [u8; 32], IdentityDhtColumns), String> {
     *state.identity.write() = None;
@@ -142,7 +142,7 @@ pub async fn login_core(
     .await?
     .ok_or_else(|| "no identity found — please create one first".to_string())?;
 
-    let keystore = StrongholdKeystore::initialize_for_identity(config_dir, public_key, passphrase)
+    let keystore = crate::keystore::open_identity_vault(config_dir, public_key, passphrase)
         .map_err(|e| {
             tracing::warn!(
                 public_key = %public_key,
@@ -153,7 +153,7 @@ pub async fn login_core(
         })?;
 
     let secret_bytes = keystore
-        .vault_get(&VaultKey::IdentityEd25519)
+        .get(&VaultKey::IdentityEd25519)
         .map_err(|e| e.to_string())?;
 
     let secret = secret_bytes.ok_or_else(|| {

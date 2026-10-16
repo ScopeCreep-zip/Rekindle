@@ -172,7 +172,7 @@ impl MembershipEventDeps for GovernanceAdapter {
     }
 
     fn persist_community_mek_to_keystore(&self, community_id: &str) {
-        let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = self.app_handle.state();
+        let ks_handle: tauri::State<'_, rekindle_vault::VaultHandle> = self.app_handle.state();
         let ks = ks_handle.lock();
         if let Some(ref keystore) = *ks {
             if let Some(mek) = crate::state_helpers::current_mek(
@@ -316,8 +316,7 @@ impl MembershipEventDeps for GovernanceAdapter {
         }
 
         {
-            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> =
-                self.app_handle.state();
+            let ks_handle: tauri::State<'_, rekindle_vault::VaultHandle> = self.app_handle.state();
             let ks = ks_handle.lock();
             if let Some(ref keystore) = *ks {
                 if let Some(ref seed) = update.slot_seed_hex {

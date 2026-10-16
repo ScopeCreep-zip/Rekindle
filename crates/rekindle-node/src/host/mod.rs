@@ -6,6 +6,7 @@
 //! bus and serves until shutdown. Moved out of the CLI, which is now a
 //! client of this binary like every other frontend.
 
+pub mod adapters;
 pub mod bus_key;
 pub mod policy;
 mod signals;

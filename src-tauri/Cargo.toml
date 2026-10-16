@@ -51,6 +51,7 @@ rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 
 # v1.0 crates (still used during migration)
 rekindle-crypto = { path = "../crates/rekindle-crypto" }
+rekindle-node = { path = "../crates/rekindle-node" }
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
 rekindle-idle = { path = "../crates/rekindle-idle" }
 rekindle-protocol = { path = "../crates/rekindle-protocol" }

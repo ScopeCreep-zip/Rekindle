@@ -7,17 +7,17 @@ use std::sync::Arc;
 
 use rekindle_db::Db;
 use rekindle_lib::commands::auth::{create_identity_core, login_core};
-use rekindle_lib::keystore::{self, KeystoreHandle};
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
+use rekindle_vault::VaultHandle;
 
 /// Create fresh test state with an in-memory `SQLite` database.
-fn test_state() -> (SharedState, Db, KeystoreHandle) {
+fn test_state() -> (SharedState, Db, VaultHandle) {
     let state: SharedState = Arc::new(AppState::default());
     let pool = rekindle_db::open(std::path::Path::new(":memory:"))
         .expect("in-memory SQLite")
         .db;
     state.db.set(pool.clone());
-    let keystore_handle = keystore::new_handle();
+    let keystore_handle = rekindle_vault::new_handle();
     (state, pool, keystore_handle)
 }
 

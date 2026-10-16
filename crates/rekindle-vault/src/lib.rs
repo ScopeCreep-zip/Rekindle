@@ -47,3 +47,14 @@ pub mod typed;
 pub use error::VaultError;
 pub use key::VaultKey;
 pub use store::{AppDbKey, VaultStore};
+
+/// The unlocked identity's vault, shared by everything that reads or
+/// writes secrets for it; `None` while no identity is unlocked (plan D1:
+/// one handle type for both hosts).
+pub type VaultHandle = std::sync::Arc<parking_lot::Mutex<Option<VaultStore>>>;
+
+/// A handle with no vault open.
+#[must_use]
+pub fn new_handle() -> VaultHandle {
+    std::sync::Arc::new(parking_lot::Mutex::new(None))
+}

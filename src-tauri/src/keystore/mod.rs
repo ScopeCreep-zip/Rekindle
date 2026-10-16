@@ -1,6 +1,6 @@
-//! The desktop's vault handle: one `VaultStore` per identity, opened at
-//! login. The typed helpers for each kind of secret are
-//! `rekindle_vault::typed` (plan C5.4); they take the store this wraps.
+//! The desktop's identity vaults: one `VaultStore` per identity, opened at
+//! login into the shared `rekindle_vault::VaultHandle`. The typed helpers
+//! for each kind of secret are `rekindle_vault::typed` (plan C5.4).
 
 pub use rekindle_vault::typed::audit::{
     load_audit_tail, load_or_create_audit_mac_key, persist_audit_tail,
@@ -22,118 +22,52 @@ pub use rekindle_vault::typed::signal::{
 };
 
 use std::path::Path;
-use std::sync::Arc;
-
-use parking_lot::Mutex;
 
 use rekindle_crypto::CryptoError;
-use rekindle_vault::{VaultKey, VaultStore};
+use rekindle_vault::VaultStore;
 
-/// VaultStore-backed keystore.
-///
-/// On disk: each identity has `{vault_dir}/{public_key_hex}.vault`
-/// (SQLCipher AES-256-CBC at page level) plus a sidecar
-/// `{public_key_hex}.vault.salt` (32-byte plaintext random salt — needs
-/// to be readable before SQLCipher decryption). Each row in the entries
-/// table is additionally sealed with AES-256-GCM under a per-entry key
-/// derived from the same passphrase.
-pub struct StrongholdKeystore {
-    vault: VaultStore,
+/// Create the vault `{vault_dir}/{public_key_hex}.vault` (and its `.hdr`)
+/// for a new identity.
+pub fn create_identity_vault(
+    vault_dir: &Path,
+    public_key_hex: &str,
+    passphrase: &str,
+) -> Result<VaultStore, CryptoError> {
+    let path = vault_dir.join(format!("{public_key_hex}.vault"));
+    VaultStore::create(&path, passphrase)
+        .map(|(vault, _app_db_key)| vault)
+        .map_err(map_vault_error)
 }
 
-/// The typed helpers in `rekindle_vault::typed` take the store itself.
-impl std::ops::Deref for StrongholdKeystore {
-    type Target = VaultStore;
-
-    fn deref(&self) -> &VaultStore {
-        &self.vault
-    }
+/// Open an existing identity's vault. Nothing is created.
+pub fn open_identity_vault(
+    vault_dir: &Path,
+    public_key_hex: &str,
+    passphrase: &str,
+) -> Result<VaultStore, CryptoError> {
+    let path = vault_dir.join(format!("{public_key_hex}.vault"));
+    VaultStore::open(&path, passphrase)
+        .map(|(vault, _app_db_key)| vault)
+        .map_err(map_vault_error)
 }
 
-/// Thread-safe handle to the keystore, stored in Tauri managed state.
-pub type KeystoreHandle = Arc<Mutex<Option<StrongholdKeystore>>>;
-
-/// Create a new empty keystore handle (unlocked later with passphrase).
-pub fn new_handle() -> KeystoreHandle {
-    Arc::new(Mutex::new(None))
-}
-
-impl StrongholdKeystore {
-    /// Create the per-identity vault `{vault_dir}/{public_key_hex}.vault`
-    /// (and its `.hdr`) for a new identity.
-    pub fn create_for_identity(
-        vault_dir: &Path,
-        public_key_hex: &str,
-        passphrase: &str,
-    ) -> Result<Self, CryptoError> {
-        let path = vault_dir.join(format!("{public_key_hex}.vault"));
-        VaultStore::create(&path, passphrase)
-            .map(|(vault, _app_db_key)| Self { vault })
-            .map_err(map_vault_error)
-    }
-
-    /// Open an existing identity's vault. Nothing is created.
-    pub fn initialize_for_identity(
-        vault_dir: &Path,
-        public_key_hex: &str,
-        passphrase: &str,
-    ) -> Result<Self, CryptoError> {
-        let path = vault_dir.join(format!("{public_key_hex}.vault"));
-        VaultStore::open(&path, passphrase)
-            .map(|(vault, _app_db_key)| Self { vault })
-            .map_err(map_vault_error)
-    }
-
-    /// Delete the on-disk vault for a specific identity (`{pk}.vault` and
-    /// its `.hdr`). Missing files are tolerated.
-    pub fn delete_snapshot(vault_dir: &Path, public_key_hex: &str) -> Result<(), std::io::Error> {
-        let path = vault_dir.join(format!("{public_key_hex}.vault"));
-        VaultStore::delete_files(&path).map_err(|e| match e {
-            rekindle_vault::VaultError::Io(io) => io,
-            other => std::io::Error::other(other.to_string()),
-        })
-    }
-
-    /// Number of entries in the vault — exposed for the dev-only
-    /// `vault_diagnostics` Tauri command.
-    pub fn entry_count(&self) -> Result<usize, CryptoError> {
-        self.vault
-            .entry_count()
-            .map_err(|e| CryptoError::storage(format!("vault count: {e}")))
-    }
-
-    /// On-disk path of this vault — exposed for diagnostics. Used to read
-    /// the file's mtime for the `last_write_ms` field of vault_diagnostics.
-    pub fn vault_path(&self) -> &std::path::Path {
-        self.vault.path()
-    }
-
-    /// Seal and store `data` under the typed `vault_key` (the typed
-    /// [`VaultKey`] is the storage security boundary: there is no stringly
-    /// `(namespace, key)` entry point to misuse).
-    pub(crate) fn vault_put(&self, vault_key: &VaultKey, data: &[u8]) -> Result<(), CryptoError> {
-        self.vault
-            .put(vault_key, data)
-            .map_err(|e| CryptoError::storage(format!("vault put: {e}")))
-    }
-
-    /// Load and decrypt the entry addressed by `vault_key`, or `None`.
-    pub(crate) fn vault_get(&self, vault_key: &VaultKey) -> Result<Option<Vec<u8>>, CryptoError> {
-        self.vault
-            .get(vault_key)
-            .map(|opt| opt.map(|z| z.to_vec()))
-            .map_err(|e| CryptoError::storage(format!("vault get: {e}")))
-    }
+/// Delete an identity's vault and its header. Missing files are tolerated.
+pub fn delete_identity_vault(vault_dir: &Path, public_key_hex: &str) -> Result<(), std::io::Error> {
+    let path = vault_dir.join(format!("{public_key_hex}.vault"));
+    VaultStore::delete_files(&path).map_err(|e| match e {
+        rekindle_vault::VaultError::Io(io) => io,
+        other => std::io::Error::other(other.to_string()),
+    })
 }
 
 /// The test vault for identity "t" in `dir`: created on first use and
 /// reopened after, as the tests reopen a vault to simulate a restart.
 #[cfg(test)]
-pub(crate) fn test_keystore(dir: &Path, pass: &str) -> Result<StrongholdKeystore, CryptoError> {
+pub(crate) fn test_keystore(dir: &Path, pass: &str) -> Result<VaultStore, CryptoError> {
     if dir.join("t.vault").exists() {
-        StrongholdKeystore::initialize_for_identity(dir, "t", pass)
+        open_identity_vault(dir, "t", pass)
     } else {
-        StrongholdKeystore::create_for_identity(dir, "t", pass)
+        create_identity_vault(dir, "t", pass)
     }
 }
 
@@ -160,78 +94,27 @@ pub fn map_stronghold_error(e: &rekindle_crypto::CryptoError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rekindle_vault::VaultKey;
     use tempfile::TempDir;
 
-    fn keystore(dir: &TempDir, pass: &str) -> Result<StrongholdKeystore, CryptoError> {
-        test_keystore(dir.path(), pass)
-    }
-
     #[test]
-    fn roundtrip_store_and_load() {
+    fn a_vault_persists_across_reopen_and_refuses_a_wrong_passphrase() {
         let dir = TempDir::new().unwrap();
-        let ks = keystore(&dir, "testpass").unwrap();
-
-        let secret = [42u8; 32];
-        ks.vault_put(&VaultKey::IdentityEd25519, &secret).unwrap();
-
-        let loaded = ks
-            .vault_get(&VaultKey::IdentityEd25519)
-            .unwrap()
-            .expect("key should exist");
-        assert_eq!(loaded, secret);
-    }
-
-    #[test]
-    fn persistence_across_reopen() {
-        let dir = TempDir::new().unwrap();
-        let secret = [7u8; 32];
-
-        // Write and save
         {
-            let ks = keystore(&dir, "pass123").unwrap();
-            ks.vault_put(&VaultKey::IdentityEd25519, &secret).unwrap();
+            let ks = test_keystore(dir.path(), "pass123").unwrap();
+            ks.put(&VaultKey::IdentityEd25519, &[7u8; 32]).unwrap();
         }
-
-        // Reopen and read
-        {
-            let ks = keystore(&dir, "pass123").unwrap();
-            let loaded = ks
-                .vault_get(&VaultKey::IdentityEd25519)
-                .unwrap()
-                .expect("key should persist");
-            assert_eq!(loaded, secret);
-        }
-    }
-
-    #[test]
-    fn wrong_passphrase_rejects_snapshot() {
-        let dir = TempDir::new().unwrap();
-        let secret = [99u8; 32];
-
-        // Create keystore with correct passphrase and save
-        {
-            let ks = keystore(&dir, "correct-pass").unwrap();
-            ks.vault_put(&VaultKey::IdentityEd25519, &secret).unwrap();
-        }
-
-        // Attempt to open with wrong passphrase — should fail
-        let result = keystore(&dir, "wrong-pass");
-        assert!(
-            result.is_err(),
-            "wrong passphrase should fail to load snapshot"
+        let ks = test_keystore(dir.path(), "pass123").unwrap();
+        assert_eq!(
+            &*ks.get(&VaultKey::IdentityEd25519).unwrap().unwrap(),
+            &[7u8; 32]
         );
-    }
-
-    #[test]
-    fn key_exists_and_delete() {
-        let dir = TempDir::new().unwrap();
-        let ks = keystore(&dir, "testpass").unwrap();
-
-        assert!(ks.vault_get(&VaultKey::IdentityEd25519).unwrap().is_none());
-        ks.vault_put(&VaultKey::IdentityEd25519, &[1u8; 32])
-            .unwrap();
-        assert!(ks.vault_get(&VaultKey::IdentityEd25519).unwrap().is_some());
-        ks.delete(&VaultKey::IdentityEd25519).unwrap();
-        assert!(ks.vault_get(&VaultKey::IdentityEd25519).unwrap().is_none());
+        drop(ks);
+        assert!(matches!(
+            test_keystore(dir.path(), "wrong"),
+            Err(CryptoError::WrongPassphrase)
+        ));
+        delete_identity_vault(dir.path(), "t").unwrap();
+        assert!(!dir.path().join("t.vault").exists());
     }
 }

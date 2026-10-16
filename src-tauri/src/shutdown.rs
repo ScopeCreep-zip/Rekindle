@@ -2,9 +2,9 @@
 
 use tauri::Manager;
 
-use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
 use crate::{services, state_helpers};
+use rekindle_vault::VaultHandle;
 
 /// Handle the `RunEvent::Exit` event: run [`graceful_shutdown`] to the end
 /// and checkpoint the SQLite WAL before the process exits.
@@ -24,7 +24,7 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
     tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
     let state: tauri::State<'_, SharedState> = app_handle.state();
     let state = state.inner().clone();
-    let keystore: tauri::State<'_, KeystoreHandle> = app_handle.state();
+    let keystore: tauri::State<'_, VaultHandle> = app_handle.state();
     let keystore = keystore.inner().clone();
     tauri::async_runtime::block_on(async move {
         let started = std::time::Instant::now();
@@ -52,7 +52,7 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
 /// Shut down all background services before the process exits: end the
 /// login session (`services::session::end_session`), then stop the
 /// app-lifetime dispatch loop and the Veilid node.
-pub async fn graceful_shutdown(state: &SharedState, keystore: &KeystoreHandle) {
+pub async fn graceful_shutdown(state: &SharedState, keystore: &VaultHandle) {
     tracing::info!("graceful shutdown: stopping background services");
 
     // 1. The login session: its tasks, devices, offline status, records,

@@ -24,13 +24,14 @@ use rekindle_db::Db;
 use rekindle_lib::commands::auth::{
     create_identity_core, list_identities_inner, login_core, LoginResult,
 };
-use rekindle_lib::keystore::{self, KeystoreHandle, StrongholdKeystore};
+use rekindle_lib::keystore;
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
+use rekindle_vault::VaultHandle;
 
 /// Shared server state passed to every axum handler.
 struct ServerState {
     state: SharedState,
-    keystore_handle: KeystoreHandle,
+    keystore_handle: VaultHandle,
     config_dir: PathBuf,
 }
 
@@ -70,7 +71,7 @@ async fn main() {
         .db;
     let shared_state: SharedState = Arc::new(AppState::default());
     shared_state.db.set(pool);
-    let keystore_handle = keystore::new_handle();
+    let keystore_handle = rekindle_vault::new_handle();
 
     let server = Arc::new(ServerState {
         state: shared_state,
@@ -206,19 +207,16 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             let passphrase = arg_str(args, "passphrase")?;
 
             // Verify passphrase
-            StrongholdKeystore::initialize_for_identity(
-                &server.config_dir,
-                &public_key,
-                &passphrase,
-            )
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("snapshot") || msg.contains("decrypt") {
-                    "Wrong passphrase".to_string()
-                } else {
-                    msg
-                }
-            })?;
+            keystore::open_identity_vault(&server.config_dir, &public_key, &passphrase).map_err(
+                |e| {
+                    let msg = e.to_string();
+                    if msg.contains("snapshot") || msg.contains("decrypt") {
+                        "Wrong passphrase".to_string()
+                    } else {
+                        msg
+                    }
+                },
+            )?;
 
             // If deleting active identity, clear state
             let is_active = server
@@ -243,7 +241,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 .map_err(|e| e.to_string())?;
 
             // Delete Stronghold file
-            let _ = StrongholdKeystore::delete_snapshot(&server.config_dir, &public_key);
+            let _ = keystore::delete_identity_vault(&server.config_dir, &public_key);
 
             Ok(Value::Null)
         }

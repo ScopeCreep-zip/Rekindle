@@ -11,11 +11,11 @@
 //! `leave_community` Tauri command.
 
 use crate::db_helpers::db_call;
-use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
 use crate::state_helpers;
 use rekindle_db::Db;
 use rekindle_types::channel_keys::KeyScope;
+use rekindle_vault::VaultHandle;
 
 /// How long a left community's tasks get to stop.
 const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
@@ -23,7 +23,7 @@ const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SES
 pub async fn leave_community_inner(
     state: &SharedState,
     pool: &Db,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     community_id: &str,
 ) -> Result<(), String> {
     use crate::services::community_registry_slot::write_departure_tombstone;
@@ -121,7 +121,7 @@ pub async fn leave_community_inner(
 pub async fn create_community_inner(
     state: &SharedState,
     pool: &Db,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     name: String,
     admission: rekindle_types::governance::AdmissionMode,
 ) -> Result<String, String> {
@@ -238,7 +238,7 @@ pub async fn create_community_inner(
 pub async fn join_community_inner(
     state: &SharedState,
     pool: &Db,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     link: &rekindle_types::invite::InviteLink,
 ) -> Result<(), String> {
     use crate::db;

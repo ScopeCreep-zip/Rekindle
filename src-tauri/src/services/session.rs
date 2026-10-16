@@ -15,10 +15,10 @@ use rekindle_lifecycle::SessionScope;
 use tauri::Manager as _;
 
 use crate::commands::voice::{shutdown_voice, VoiceShutdownOpts};
-use crate::keystore::KeystoreHandle;
 use crate::services;
 use crate::state::{AppState, SharedState, UserStatus};
 use crate::state_helpers;
+use rekindle_vault::VaultHandle;
 
 /// How long the login scope's tasks get to stop at logout or exit: one
 /// in-flight Veilid call plus margin, then they are aborted.
@@ -58,7 +58,7 @@ pub fn begin(app: &tauri::AppHandle, state: &SharedState) -> Arc<SessionScope> {
                     },
                 );
                 let state = app.state::<SharedState>().inner().clone();
-                let keystore = app.state::<KeystoreHandle>().inner().clone();
+                let keystore = app.state::<VaultHandle>().inner().clone();
                 if let Err(e) =
                     services::auth_runtime::logout_inner(app.clone(), state, keystore).await
                 {
@@ -91,7 +91,7 @@ impl<'a> SessionEnd<'a> {
 }
 
 /// End the login session.
-pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &KeystoreHandle) {
+pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &VaultHandle) {
     let app = end.app();
     // 0. Leave calls and voice while the session can still send: the
     //    scope cancel and pool drain below would refuse it (plan C7.27).

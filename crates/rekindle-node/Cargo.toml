@@ -49,6 +49,7 @@ rekindle-presence = { path = "../rekindle-presence" }
 rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
 # MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-vault = { path = "../rekindle-vault" }
 
 # Async runtime
 futures = { workspace = true }

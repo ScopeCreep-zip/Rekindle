@@ -15,12 +15,12 @@
 
 use rekindle_types::channel_keys::KeyScope;
 
-use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
+use rekindle_vault::VaultHandle;
 
 pub fn restore_community_pseudonyms_and_meks(
     state: &SharedState,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     secret_key: &[u8; 32],
 ) {
     use rekindle_crypto::group::media_key::MediaEncryptionKey;

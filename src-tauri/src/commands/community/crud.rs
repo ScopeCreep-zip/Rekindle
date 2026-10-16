@@ -1,10 +1,10 @@
 use tauri::State;
 
-use crate::keystore::KeystoreHandle;
 use crate::services::community_views_runtime::{
     list_communities_inner, list_community_details_inner,
 };
 use crate::state::SharedState;
+use rekindle_vault::VaultHandle;
 
 use super::types::CommunityDetail;
 use crate::services::community_views_runtime::CommunityInfo;
@@ -34,7 +34,7 @@ pub async fn create_community(
     name: String,
     approval_required: Option<bool>,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<String, String> {
     let pool = state.db.current()?;
     let _g =
@@ -58,7 +58,7 @@ pub async fn create_community(
 pub async fn join_community(
     invite_url: String,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<String, String> {
     let pool = state.db.current()?;
     let link = rekindle_types::invite::InviteLink::parse(&invite_url).map_err(|e| e.to_string())?;
@@ -78,7 +78,7 @@ pub async fn join_community(
 pub async fn leave_community(
     community_id: String,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<(), String> {
     let pool = state.db.current()?;
     // Phase 5 — gate writes on lifecycle.

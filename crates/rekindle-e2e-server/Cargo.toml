@@ -15,6 +15,7 @@ workspace = true
 axum = "0.8"
 base64 = "0.22"
 rekindle-db = { path = "../rekindle-db" }
+rekindle-vault = { path = "../rekindle-vault" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
 rekindle_lib = { package = "rekindle-desktop", path = "../../src-tauri" }
 rusqlite = { version = "0.39", features = [ "bundled" ] }

@@ -1,10 +1,10 @@
 use tauri::State;
 
-use crate::keystore::KeystoreHandle;
 use crate::services;
 pub use crate::services::auth_cores::LoginResult;
 pub use crate::services::auth_runtime::{list_identities_inner, IdentitySummary};
 use crate::state::SharedState;
+use rekindle_vault::VaultHandle;
 
 /// Core identity creation logic, separated from `AppHandle` for testability.
 ///
@@ -26,7 +26,7 @@ pub async fn create_identity(
     display_name: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<LoginResult, String> {
     let pool = state.db.current()?;
     services::auth_runtime::create_identity_inner(
@@ -51,7 +51,7 @@ pub async fn login(
     passphrase: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<LoginResult, String> {
     let pool = state.db.current()?;
     services::auth_runtime::login_inner(
@@ -83,7 +83,7 @@ pub async fn get_identity(state: State<'_, SharedState>) -> Result<Option<LoginR
 pub async fn logout(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<(), String> {
     services::auth_runtime::logout_inner(
         app,
@@ -118,7 +118,7 @@ pub async fn delete_identity(
     passphrase: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<(), String> {
     let pool = state.db.current()?;
     services::auth_runtime::delete_identity_inner(

@@ -3,8 +3,8 @@
 use tauri::State;
 
 use crate::deep_links::{self, DeepLinkOutcome, DeepLinkRequest};
-use crate::keystore::KeystoreHandle;
 use crate::state::SharedState;
+use rekindle_vault::VaultHandle;
 
 /// The deep link awaiting consent, if any. The buddy list calls this on
 /// mount and when `deep-link-action` fires.
@@ -21,7 +21,7 @@ pub async fn confirm_deep_link(
     request_id: String,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, KeystoreHandle>,
+    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<DeepLinkOutcome, String> {
     let pool = state.db.current()?;
     deep_links::confirm(

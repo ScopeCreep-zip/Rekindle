@@ -94,7 +94,7 @@ pub struct AppState {
     pub audit_chain: Mutex<Option<rekindle_audit::AuditChain>>,
     /// Phase 4 — shared keystore handle so background services that
     /// only have `&AppState` can reach the vault.
-    pub keystore: crate::keystore::KeystoreHandle,
+    pub keystore: rekindle_vault::VaultHandle,
     /// Phase 5 — 9-state lifecycle FSM.
     pub lifecycle: std::sync::Arc<rekindle_lifecycle::AppLifecycle>,
     /// Phase 7 — friendship inbox-scan handle (direct_tx + shutdown_tx +
@@ -320,7 +320,7 @@ impl Default for AppState {
             network_ready_rx,
             identity_secret: Mutex::new(None),
             audit_chain: Mutex::new(None),
-            keystore: crate::keystore::new_handle(),
+            keystore: rekindle_vault::new_handle(),
             lifecycle: std::sync::Arc::new(rekindle_lifecycle::AppLifecycle::new()),
             friendship_handle: crate::services::friendship::FriendshipHandle::new(),
             idempotency: std::sync::Arc::new(

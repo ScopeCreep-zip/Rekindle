@@ -30,7 +30,7 @@ pub async fn rotate_mek_local(
         crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
 
     // The adapter persists the new key to the keystore, so the caller no
-    // longer threads a `KeystoreHandle` in just for that.
+    // longer threads a `VaultHandle` in just for that.
     rekindle_mek_rotation::rotate_mek_on_request(
         adapter.as_ref(),
         community_id,

@@ -185,7 +185,7 @@ pub async fn confirm(
     app: AppHandle,
     state: &Arc<AppState>,
     pool: &rekindle_db::Db,
-    keystore: &crate::keystore::KeystoreHandle,
+    keystore: &rekindle_vault::VaultHandle,
     request_id: &str,
 ) -> Result<DeepLinkOutcome, String> {
     match take_matching(state, request_id)? {

@@ -4,7 +4,7 @@
 //! background-service shutdown channel, publish Offline, close DHT
 //! state, destroy non-login windows) that the Tauri handlers used to
 //! inline. Per Invariant 7 these are legitimate Tauri-runtime glue
-//! (multi-step orchestration over AppState + AppHandle + KeystoreHandle).
+//! (multi-step orchestration over AppState + AppHandle + VaultHandle).
 
 use std::sync::Arc;
 
@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager as _;
 
 use crate::db_helpers::db_call;
-use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
 use rekindle_db::Db;
+use rekindle_vault::VaultHandle;
 
 /// Summary of a persisted identity, used by the account picker.
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,7 +54,7 @@ pub struct PqxdhBundleInfo {
 pub async fn logout_inner(
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    keystore_handle: KeystoreHandle,
+    keystore_handle: VaultHandle,
 ) -> Result<(), String> {
     // The lifecycle is the single-flight gate: a logout already under way
     // (or no session) refuses the transition, and a second concurrent
@@ -103,11 +103,11 @@ pub async fn delete_identity_inner(
     app: tauri::AppHandle,
     state: Arc<AppState>,
     pool: Db,
-    keystore_handle: KeystoreHandle,
+    keystore_handle: VaultHandle,
 ) -> Result<(), String> {
     let config_dir = app.state::<rekindle_db::paths::DataRoot>().config.clone();
 
-    StrongholdKeystore::initialize_for_identity(&config_dir, &public_key, &passphrase)
+    crate::keystore::open_identity_vault(&config_dir, &public_key, &passphrase)
         .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
 
     let is_active = state
@@ -136,7 +136,7 @@ pub async fn delete_identity_inner(
     })
     .await?;
 
-    StrongholdKeystore::delete_snapshot(&config_dir, &public_key)
+    crate::keystore::delete_identity_vault(&config_dir, &public_key)
         .map_err(|e| format!("failed to delete keystore: {e}"))?;
 
     tracing::info!(public_key = %public_key, "identity deleted");
@@ -149,7 +149,7 @@ pub async fn create_identity_inner(
     app: tauri::AppHandle,
     state: Arc<AppState>,
     pool: Db,
-    keystore_handle: KeystoreHandle,
+    keystore_handle: VaultHandle,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::create_identity_core;
     use crate::services::login_runtime::{start_background_services, DhtKeysConfig};
@@ -237,7 +237,7 @@ pub async fn create_identity_inner(
 async fn abort_unlock(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
-    keystore_handle: &KeystoreHandle,
+    keystore_handle: &VaultHandle,
     error: String,
 ) -> String {
     tracing::error!(error = %error, "post-unlock setup failed — locking again");
@@ -259,7 +259,7 @@ pub async fn login_inner(
     app: tauri::AppHandle,
     state: Arc<AppState>,
     pool: Db,
-    keystore_handle: KeystoreHandle,
+    keystore_handle: VaultHandle,
 ) -> Result<crate::services::auth_cores::LoginResult, String> {
     use crate::commands::auth::login_core;
     use crate::services::login_runtime::{start_background_services, DhtKeysConfig};

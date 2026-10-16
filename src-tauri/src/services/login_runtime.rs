@@ -319,19 +319,21 @@ fn initialize_signal_manager(
     // construction and write-through to Stronghold on every store, so the
     // session graph survives restart and corruption is recoverable rather
     // than the default state.
-    let keystore_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app.state();
-    let identity_store = crate::signal_stores::StrongholdIdentityStore::new(
+    let keystore_handle: tauri::State<'_, rekindle_vault::VaultHandle> = app.state();
+    let identity_store = rekindle_node::host::adapters::signal::VaultIdentityStore::new(
         keystore_handle.inner().clone(),
         identity_private,
         identity_public,
         registration_id,
     );
-    let prekey_store =
-        crate::signal_stores::StrongholdPreKeyStore::new(keystore_handle.inner().clone())
-            .map_err(|e| format!("load Signal prekeys: {e}"))?;
-    let session_store =
-        crate::signal_stores::StrongholdSessionStore::new(keystore_handle.inner().clone())
-            .map_err(|e| format!("load Signal sessions: {e}"))?;
+    let prekey_store = rekindle_node::host::adapters::signal::VaultPreKeyStore::new(
+        keystore_handle.inner().clone(),
+    )
+    .map_err(|e| format!("load Signal prekeys: {e}"))?;
+    let session_store = rekindle_node::host::adapters::signal::VaultSessionStore::new(
+        keystore_handle.inner().clone(),
+    )
+    .map_err(|e| format!("load Signal sessions: {e}"))?;
 
     let manager = SignalSessionManager::new(
         Box::new(identity_store),
