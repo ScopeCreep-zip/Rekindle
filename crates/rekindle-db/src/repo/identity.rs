@@ -152,6 +152,39 @@ pub fn set_mailbox_key(conn: &Connection, public_key: &str, key: &str) -> rusqli
     Ok(())
 }
 
+/// Re-key the database to a rotated identity: the identity row and every
+/// row owned by it (each table's `owner_key`). Foreign keys are checked
+/// at commit, so the identity row and its dependants move together.
+///
+/// # Errors
+/// A write failed; the transaction rolls back.
+pub fn rekey(conn: &mut Connection, old_key: &str, new_key: &str) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
+    let owned: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c \
+             WHERE m.type = 'table' AND m.sql NOT LIKE 'CREATE VIRTUAL%' \
+             AND c.name = 'owner_key' ORDER BY m.name",
+        )?;
+        let names = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        names
+    };
+    for table in owned {
+        tx.execute(
+            &format!("UPDATE \"{table}\" SET owner_key = ?1 WHERE owner_key = ?2"),
+            params![new_key, old_key],
+        )?;
+    }
+    tx.execute(
+        "UPDATE identity SET public_key = ?1 WHERE public_key = ?2",
+        params![new_key, old_key],
+    )?;
+    tx.commit()
+}
+
 /// Set the friend inbox and its (published) keypair.
 ///
 /// # Errors
@@ -265,6 +298,30 @@ mod tests {
         assert_eq!(avatar(&conn, OWNER).unwrap(), None);
         set_avatar(&conn, OWNER, &[9]).unwrap();
         assert_eq!(avatar(&conn, OWNER).unwrap(), Some(vec![9]));
+    }
+
+    #[test]
+    fn rekey_moves_the_identity_and_everything_it_owns() {
+        let mut conn = fixture::conn();
+        crate::repo::friends::insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        rekey(&mut conn, OWNER, "new-pk").unwrap();
+        assert_eq!(login_row(&conn, OWNER).unwrap(), None);
+        assert!(login_row(&conn, "new-pk").unwrap().is_some());
+        assert_eq!(
+            crate::repo::friends::load_all(&conn, "new-pk")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(crate::repo::friends::load_all(&conn, OWNER)
+            .unwrap()
+            .is_empty());
+        let violations: i64 = conn
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(violations, 0);
     }
 
     #[test]

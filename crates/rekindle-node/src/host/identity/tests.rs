@@ -191,3 +191,52 @@ async fn an_archive_naming_a_path_is_refused() {
         Err(IdentityError::Corrupt(_))
     ));
 }
+
+#[tokio::test]
+async fn a_rotated_identity_unlocks_under_its_new_key_only() {
+    let f = Fixture::new();
+    let made = create(&f.root, &f.stores(), Some("Turner"), "pass", 1)
+        .await
+        .unwrap();
+    let old = made.public_key.clone();
+    drop(made);
+    lock(&f.stores()).await;
+
+    let next = rekindle_crypto::Identity::generate();
+    let secret = *next.secret_key_bytes();
+    assert!(matches!(
+        rotate(&f.root, &f.stores(), &old, &secret, "wrong", 2).await,
+        Err(IdentityError::WrongPassphrase)
+    ));
+    assert!(!f.root.identity_vault(&next.public_key_hex()).exists());
+
+    let entry = rotate(&f.root, &f.stores(), &old, &secret, "pass", 3)
+        .await
+        .unwrap();
+    assert_eq!(entry.public_key, next.public_key_hex());
+    assert_eq!(entry.display_name, "Turner");
+    assert!(!f.root.identity_vault(&old).exists());
+    assert!(!f.root.identity_db(&old).exists());
+    assert!(matches!(
+        unlock(&f.root, &f.stores(), &old, "pass", 4).await,
+        Err(IdentityError::NotFound)
+    ));
+    let unlocked = unlock(&f.root, &f.stores(), &entry.public_key, "pass", 5)
+        .await
+        .unwrap();
+    assert_eq!(unlocked.display_name, "Turner");
+    assert_eq!(*unlocked.secret, secret);
+}
+
+#[tokio::test]
+async fn remove_needs_no_passphrase_and_a_missing_identity_is_not_found() {
+    let f = Fixture::new();
+    let made = create(&f.root, &f.stores(), None, "pass", 1).await.unwrap();
+    let pk = made.public_key.clone();
+    drop(made);
+    lock(&f.stores()).await;
+    remove(&f.root, &pk).unwrap();
+    assert!(list(&f.root).unwrap().is_empty());
+    assert!(!f.root.identity_vault(&pk).exists());
+    assert!(matches!(remove(&f.root, &pk), Err(IdentityError::NotFound)));
+}
