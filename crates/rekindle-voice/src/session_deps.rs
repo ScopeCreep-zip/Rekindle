@@ -147,6 +147,16 @@ pub trait MediaKeySource: Send + Sync {
 /// Orchestration port for voice session work.
 #[async_trait]
 pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
+    /// Our community pseudonym's signature over our session key for
+    /// `(community, channel)`, announced in our `VoiceJoin` (plan C7.29),
+    /// or `None` without a pseudonym key.
+    fn sign_media_session_key(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        session_key: &[u8],
+    ) -> Option<Vec<u8>>;
+
     // --- Identity ---
 
     /// Current owner key (Ed25519 public key hex). Errors if no

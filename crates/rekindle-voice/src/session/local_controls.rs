@@ -30,6 +30,19 @@ pub fn set_local_deafen<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, deafened: b
     deps.set_voice_engine_deafened(deafened);
 }
 
+/// Our signed session key for the channel, announced in our `VoiceJoin`
+/// (plan C7.29).
+fn our_session_key<D: VoiceSessionDeps + ?Sized>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+) -> rekindle_codec::community::envelope::MediaSessionKey {
+    crate::signaling::media_keys::announced_session_key(
+        &deps.channel_sender_keys(community_id, channel_id),
+        |key| deps.sign_media_session_key(community_id, channel_id, key),
+    )
+}
+
 /// User clicked Join on a voice channel. Brings up the voice session
 /// then (for community channels) broadcasts VoiceJoin so other
 /// participants add us as a peer + records analytics. Wraps
@@ -56,6 +69,7 @@ pub async fn join_voice_channel<D: VoiceSessionDeps + ?Sized>(
             channel_id: channel_id.to_string(),
             route_blob,
             display_name: deps.my_display_name(),
+            session_key: our_session_key(&**deps, cid, channel_id),
         });
         deps.send_community_envelope(cid, &envelope);
     }
@@ -90,6 +104,7 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
         channel_id: channel_id.clone(),
         route_blob,
         display_name: deps.my_display_name(),
+        session_key: our_session_key(&**deps, &cid, &channel_id),
     });
     deps.send_community_envelope(&cid, &envelope);
     tracing::info!(

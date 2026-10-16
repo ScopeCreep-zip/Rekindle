@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::payloads::{
     MekTransferAckPayload, MekTransferPayload, VideoFragmentPayload, VideoParityFragmentPayload,
 };
-use super::{OnboardingAnswer, VoiceRosterEntry};
+use super::{MediaSessionKey, OnboardingAnswer, VoiceRosterEntry};
 
 /// Control payload covering all non-chat operations actually used by the
 /// forward communities mesh.
@@ -346,6 +346,9 @@ pub enum ControlPayload {
         /// Joiner's self-sovereign display name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         display_name: Option<String>,
+        /// Joiner's session key, which media keys are sealed to.
+        #[serde(default)]
+        session_key: MediaSessionKey,
     },
     /// Handshake leg 2 — "seen": a present member acks the joiner's
     /// VoiceJoin, carrying its own identity + route so the ack alone
@@ -360,15 +363,19 @@ pub enum ControlPayload {
         display_name: Option<String>,
         /// Acker's private route blob.
         route_blob: Vec<u8>,
+        /// Acker's session key, which media keys are sealed to.
+        #[serde(default)]
+        session_key: MediaSessionKey,
     },
     /// Handshake leg 3 — "confirmed": the joiner is transport-ready
     /// (routes ingested) and asks members to start media. Receivers
     /// force a video keyframe (RFC 5104 FIR semantics — a new member
     /// needs a full intra to start decoding). Directed, ttl = 0.
     VoiceJoinConfirmed { channel_id: String },
-    /// A sender's call-media key, sealed to one participant (plan C7.20,
-    /// RFC 9605 §5.1 sender keys). HPKE Auth from the envelope's signer to
-    /// `recipient`, bound to the channel, recipient and index. Directed to
+    /// A sender's call-media key, sealed to one participant (plans C7.20,
+    /// C7.29; RFC 9605 §5.1 sender keys). HPKE Base to `recipient`'s
+    /// session key, bound to the channel, recipient and index, and signed
+    /// by `sender`. Directed to
     /// the channel roster (ttl = 0); others ignore it.
     VoiceMediaKey {
         community_id: String,
@@ -379,6 +386,10 @@ pub enum ControlPayload {
         recipient: String,
         key_index: u64,
         sealed: Vec<u8>,
+        /// `sender`'s pseudonym signature over channel, recipient, index
+        /// and `sealed` (plan C7.29).
+        #[serde(default)]
+        signature: Vec<u8>,
     },
     /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
     /// installed `sender`'s key at `key_index` (plan C7.22).

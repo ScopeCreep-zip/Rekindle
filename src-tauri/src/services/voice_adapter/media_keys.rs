@@ -1,11 +1,13 @@
 //! `impl MediaKeySource for VoiceAdapter`: where the voice session's
-//! SFrame keys come from (`rekindle_voice::media_crypto`), and the request
-//! a media path sends for a sender key it lacks (plan C7.20).
+//! SFrame keys come from (`rekindle_voice::media_crypto`), the request a
+//! media path sends for a sender key it lacks (plan C7.20), and our
+//! pseudonym's signatures over session and sealed media keys (plan C7.29).
 
 use std::sync::Arc;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys;
+use rekindle_secrets::media_sender_key::session;
 use rekindle_voice::{CallMediaKeys, MediaKeySource};
 
 use super::VoiceAdapter;
@@ -28,6 +30,42 @@ impl MediaKeySource for VoiceAdapter {
             sender: call.media_sender,
         })
     }
+}
+
+/// Our community pseudonym's signature over `message`, one of the
+/// `rekindle_secrets::media_sender_key::session` messages (plan C7.29).
+fn sign_media_message(
+    state: &Arc<AppState>,
+    community_id: &str,
+    message: &[u8],
+) -> Option<Vec<u8>> {
+    use ed25519_dalek::Signer;
+    let (_, signing_key) = crate::state_helpers::pseudonym_credentials(state, community_id).ok()?;
+    Some(signing_key.sign(message).to_bytes().to_vec())
+}
+
+/// Our signature over our session key for `(community, channel)`.
+pub(crate) fn sign_media_session_key(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    session_key: &[u8],
+) -> Option<Vec<u8>> {
+    let message = session::session_key_message(community_id, channel_id, session_key);
+    sign_media_message(state, community_id, &message)
+}
+
+/// Our signature over a media key we sealed to `recipient`.
+pub(crate) fn sign_sealed_media_key(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    recipient: &str,
+    key_index: u64,
+    sealed: &[u8],
+) -> Option<Vec<u8>> {
+    let message = session::sealed_key_message(channel_id, recipient, key_index, sealed);
+    sign_media_message(state, community_id, &message)
 }
 
 /// Ask `sender` for its media key at `index`: a voice or video frame

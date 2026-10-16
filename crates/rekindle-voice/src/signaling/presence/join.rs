@@ -132,8 +132,8 @@ async fn voice_join_apply(
             remote_count,
         });
         // Plan C7.20 — a genuine membership change (this peer was not on
-        // the roster) gets it our media key: the current one, or a
-        // rotated one to everyone. A re-announce is a route upsert and
+        // the roster) gets it our media key, ratcheted past what it
+        // must not read (plan C7.29). A re-announce is a route upsert and
         // shares nothing; a peer missing our key asks for it.
         crate::signaling::media_keys::on_peer_added(
             deps,
@@ -141,7 +141,6 @@ async fn voice_join_apply(
             channel_id,
             &transport,
             &sender_key,
-            is_stage,
         )
         .await;
     }
@@ -157,6 +156,11 @@ async fn voice_join_apply(
             joiner_pseudonym: sender_key.clone(),
             display_name: deps.my_display_name(),
             route_blob,
+            session_key: crate::signaling::media_keys::our_session_key(
+                &**deps,
+                community_id,
+                channel_id,
+            ),
         });
         deps.send_to_channel(community_id, channel_id, &ack);
     } else {
@@ -191,7 +195,7 @@ async fn voice_join_apply(
 
     maybe_switch_to_mcu(&**deps, community_id, channel_id, &transport, &my_pk).await;
 
-    let participants = roster_entries(&**deps, &my_pk, &transport).await;
+    let participants = roster_entries(&**deps, community_id, channel_id, &my_pk, &transport).await;
     if !participants.is_empty() {
         let envelope = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
             channel_id: channel_id.to_string(),

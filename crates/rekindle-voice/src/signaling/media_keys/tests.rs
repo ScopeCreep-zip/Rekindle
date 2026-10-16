@@ -9,10 +9,13 @@ use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use async_trait::async_trait;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use parking_lot::Mutex;
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_secrets::media_sender_key::keyring::{ChannelSenderKeyStore, ChannelSenderKeys};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MediaSessionKey};
+use rekindle_secrets::media_sender_key::keyring::{
+    generation, ChannelSenderKeyStore, ChannelSenderKeys, SignedSessionKey,
+};
+use rekindle_secrets::sframe;
 use rekindle_types::lamport::LamportError;
 use zeroize::Zeroizing;
 
@@ -68,10 +71,20 @@ impl Peer {
         Arc::clone(self) as Arc<dyn VoiceSignalingDeps>
     }
 
+    /// Add `peers` to our roster with the session keys their joins
+    /// announce (plan C7.29).
     async fn roster(&self, peers: &[&Arc<Peer>]) {
         let mut t = self.transport.lock().await;
         for peer in peers {
             t.add_peer(&peer.id(), &peer.route, None);
+            let announced = our_session_key(&***peer, COMMUNITY, CHANNEL);
+            let signed = SignedSessionKey {
+                key: announced.key,
+                signature: announced.signature,
+            };
+            assert!(self
+                .sender_keys()
+                .learn_session_key(COMMUNITY, CHANNEL, &peer.id(), &signed));
         }
     }
 
@@ -99,10 +112,6 @@ impl Peer {
             tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
     }
-}
-
-fn verifying(hex_key: &str) -> Option<[u8; 32]> {
-    hex::decode(hex_key).ok()?.try_into().ok()
 }
 
 #[async_trait]
@@ -151,25 +160,25 @@ impl VoiceSignalingDeps for Peer {
     fn channel_sender_keys(&self, community_id: &str, channel_id: &str) -> Arc<ChannelSenderKeys> {
         self.keys.keys(community_id, channel_id)
     }
-    fn seal_media_key(
+    fn sign_media_session_key(
         &self,
-        _: &str,
-        recipient: &str,
-        aad: &[u8],
-        secret: &[u8; 32],
+        community_id: &str,
+        channel_id: &str,
+        session_key: &[u8],
     ) -> Option<Vec<u8>> {
-        rekindle_secrets::media_sender_key::seal(&self.signing, &verifying(recipient)?, aad, secret)
-            .ok()
+        let message = session::session_key_message(community_id, channel_id, session_key);
+        Some(self.signing.sign(&message).to_bytes().to_vec())
     }
-    fn open_media_key(
+    fn sign_sealed_media_key(
         &self,
         _: &str,
-        sender: &str,
-        aad: &[u8],
+        channel_id: &str,
+        recipient: &str,
+        key_index: u64,
         sealed: &[u8],
-    ) -> Option<Zeroizing<[u8; 32]>> {
-        rekindle_secrets::media_sender_key::open(&self.signing, &verifying(sender)?, aad, sealed)
-            .ok()
+    ) -> Option<Vec<u8>> {
+        let message = session::sealed_key_message(channel_id, recipient, key_index, sealed);
+        Some(self.signing.sign(&message).to_bytes().to_vec())
     }
     async fn call_peer(
         &self,
@@ -231,15 +240,16 @@ fn net() -> Net {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-/// A joiner is called with our current key, opens it and acknowledges;
-/// one call is enough.
+/// A joiner is called with our key ratcheted one step past what we sealed
+/// before it joined, opens it and acknowledges; one call is enough, and
+/// it cannot reach the step before (plan C7.29).
 #[tokio::test]
-async fn joiner_receives_and_acknowledges_our_key() {
+async fn joiner_receives_and_acknowledges_the_ratcheted_key() {
     let net = net();
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
-    let ours = alice.sender_keys().send_key(Instant::now());
+    let before = alice.sender_keys().send_key(Instant::now());
 
     on_peer_added(
         &alice.deps(),
@@ -247,13 +257,16 @@ async fn joiner_receives_and_acknowledges_our_key() {
         CHANNEL,
         &alice.transport,
         &bob.id(),
-        false,
     )
     .await;
     alice.settle().await;
 
+    let ours = alice.sender_keys().send_key(Instant::now());
+    assert_eq!(ours.index, before.index + 1);
+    assert_eq!(*ours.secret, *sframe::ratchet(&before.secret));
     assert_eq!(alice.take_calls(), vec![(bob.id(), ours.index)]);
     assert_eq!(alice.held_by(&bob, ours.index), Some(*ours.secret));
+    assert_eq!(alice.held_by(&bob, before.index), None);
 }
 
 /// An unacknowledged delivery is retried until it lands.
@@ -264,7 +277,6 @@ async fn lost_deliveries_are_retried_until_acknowledged() {
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
     alice.drop_calls.store(3, Ordering::SeqCst);
-    let ours = alice.sender_keys().send_key(Instant::now());
 
     on_peer_added(
         &alice.deps(),
@@ -272,7 +284,6 @@ async fn lost_deliveries_are_retried_until_acknowledged() {
         CHANNEL,
         &alice.transport,
         &bob.id(),
-        false,
     )
     .await;
     alice.settle().await;
@@ -282,6 +293,7 @@ async fn lost_deliveries_are_retried_until_acknowledged() {
         4,
         "three lost, the fourth acknowledged"
     );
+    let ours = alice.sender_keys().send_key(Instant::now());
     assert_eq!(alice.held_by(&bob, ours.index), Some(*ours.secret));
 }
 
@@ -300,7 +312,6 @@ async fn retries_stop_when_the_recipient_leaves() {
         CHANNEL,
         &alice.transport,
         &bob.id(),
-        false,
     )
     .await;
     tokio::task::yield_now().await;
@@ -331,6 +342,7 @@ async fn departure_rotates_to_the_rest() {
         &alice.transport,
         &bob.id(),
         false,
+        Departure::LeftChannel,
     )
     .await;
     alice.settle().await;
@@ -343,27 +355,71 @@ async fn departure_rotates_to_the_rest() {
     assert!(alice.sender_keys().secret_at(&bob.id(), 7).is_err());
 }
 
-/// A stage listener's departure does not rotate the speakers' keys.
+/// A stage listener leaving on its own does not rotate the speakers'
+/// keys; one kicked from the community does (plan C7.29 G4).
 #[tokio::test]
-async fn stage_departure_does_not_rotate() {
+async fn stage_departure_rotates_only_when_the_member_left_the_community() {
     let net = net();
     let alice = Peer::new(&net, 1, true);
     let bob = Peer::new(&net, 2, true);
     alice.roster(&[&bob]).await;
-    on_peer_removed(
-        &alice.deps(),
-        COMMUNITY,
-        CHANNEL,
-        &alice.transport,
-        "gone",
-        true,
-    )
-    .await;
+    let deps = alice.deps();
+    let remove = |departure| {
+        on_peer_removed(
+            &deps,
+            COMMUNITY,
+            CHANNEL,
+            &alice.transport,
+            "gone",
+            true,
+            departure,
+        )
+    };
+    remove(Departure::LeftChannel).await;
     alice.settle().await;
     assert!(alice.take_calls().is_empty());
+
+    remove(Departure::LeftCommunity).await;
+    alice.settle().await;
+    assert_eq!(alice.take_calls().len(), 1, "a new generation to Bob");
+}
+
+/// A second leave while a rotation is pending is not dropped: the next
+/// rotation starts when the pending one is applied, and goes to everyone
+/// still on the roster then (plan C7.29 G3).
+#[tokio::test(start_paused = true)]
+async fn a_leave_during_a_pending_rotation_rotates_again_after_it() {
+    let net = net();
+    let alice = Peer::new(&net, 1, false);
+    let carol = Peer::new(&net, 3, false);
+    alice.roster(&[&carol]).await;
+    for gone in ["bob", "dave"] {
+        on_peer_removed(
+            &alice.deps(),
+            COMMUNITY,
+            CHANNEL,
+            &alice.transport,
+            gone,
+            false,
+            Departure::LeftChannel,
+        )
+        .await;
+    }
+    alice.settle().await;
+    let calls = alice.take_calls();
+    assert_eq!(
+        calls.len(),
+        2,
+        "one rotation now, its follow-up after the delay"
+    );
+    assert_eq!(generation(calls[1].1), generation(calls[0].1) + 1);
+    assert!(alice.held_by(&carol, calls[1].1).is_some());
 }
 
 fn key_payload(sender: &Peer, recipient: &str, index: u64, sealed: Vec<u8>) -> ControlPayload {
+    let signature = sender
+        .sign_sealed_media_key(COMMUNITY, CHANNEL, recipient, index, &sealed)
+        .unwrap();
     ControlPayload::VoiceMediaKey {
         community_id: COMMUNITY.into(),
         channel_id: CHANNEL.into(),
@@ -371,41 +427,8 @@ fn key_payload(sender: &Peer, recipient: &str, index: u64, sealed: Vec<u8>) -> C
         recipient: recipient.into(),
         key_index: index,
         sealed,
+        signature,
     }
-}
-
-/// A key sealed to someone else, relabelled with another index, or
-/// claimed by another sender is neither installed nor acknowledged.
-#[tokio::test]
-async fn misdirected_or_rebound_keys_are_refused() {
-    let net = net();
-    let alice = Peer::new(&net, 1, false);
-    let bob = Peer::new(&net, 2, false);
-    let carol = Peer::new(&net, 3, false);
-    let aad = seal_aad(CHANNEL, &bob.id(), 5);
-    let sealed = alice
-        .seal_media_key(COMMUNITY, &bob.id(), &aad, &[4; 32])
-        .unwrap();
-
-    // Sealed to Bob, addressed to Carol.
-    let to_carol = key_payload(&alice, &carol.id(), 5, sealed.clone());
-    assert!(handle_voice_media_key(&carol.deps(), &to_carol).is_none());
-    // Relabelled index: the AAD no longer opens.
-    let rebound = key_payload(&alice, &bob.id(), 6, sealed.clone());
-    assert!(handle_voice_media_key(&bob.deps(), &rebound).is_none());
-    // Claimed to be from Carol: the HPKE Auth sender fails.
-    let forged = key_payload(&carol, &bob.id(), 5, sealed.clone());
-    assert!(handle_voice_media_key(&bob.deps(), &forged).is_none());
-    assert!(bob.sender_keys().secret_at(&carol.id(), 5).is_err());
-
-    // The genuine one installs and is acknowledged for exactly that key.
-    let genuine = key_payload(&alice, &bob.id(), 5, sealed);
-    let ack = handle_voice_media_key(&bob.deps(), &genuine).unwrap();
-    assert!(acknowledges(
-        &CommunityEnvelope::Control(genuine),
-        Some(&CommunityEnvelope::Control(ack))
-    ));
-    assert_eq!(alice.held_by(&bob, 5), Some([4; 32]));
 }
 
 fn request(requester: &Peer, sender: &str) -> ControlPayload {
@@ -419,7 +442,7 @@ fn request(requester: &Peer, sender: &str) -> ControlPayload {
 }
 
 /// A request is answered only for a requester on our roster, and only
-/// when it asks for our key.
+/// when it asks for our key, with nothing older than its admission.
 #[tokio::test]
 async fn key_requests_are_answered_only_for_the_roster() {
     let net = net();
@@ -427,6 +450,16 @@ async fn key_requests_are_answered_only_for_the_roster() {
     let bob = Peer::new(&net, 2, false);
     let mallory = Peer::new(&net, 4, false);
     alice.roster(&[&bob]).await;
+    on_peer_added(
+        &alice.deps(),
+        COMMUNITY,
+        CHANNEL,
+        &alice.transport,
+        &bob.id(),
+    )
+    .await;
+    alice.settle().await;
+    alice.take_calls();
 
     handle_voice_media_key_request(&alice.deps(), &request(&mallory, &alice.id()));
     handle_voice_media_key_request(&alice.deps(), &request(&bob, &alice.id()));
@@ -472,6 +505,7 @@ fn hosts_route_the_handshake_and_not_the_keys() {
             joiner_pseudonym: "j".into(),
             display_name: None,
             route_blob: vec![1],
+            session_key: MediaSessionKey::default(),
         },
         ControlPayload::VoiceJoinConfirmed {
             channel_id: CHANNEL.into(),
@@ -495,3 +529,5 @@ fn hosts_route_the_handshake_and_not_the_keys() {
         );
     }
 }
+
+mod sealing;

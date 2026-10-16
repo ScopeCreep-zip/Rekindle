@@ -117,12 +117,17 @@ impl MediaKeys {
         }
     }
 
-    /// The scope secret for a frame from `sender_key` under `kid`.
-    fn receive_secret(
+    /// The SFrame key a frame from `sender_key` under `kid` opens with. In
+    /// a channel the KID names only the ratchet step, so each candidate
+    /// secret is tried against the frame and the one that opens it is kept
+    /// (`ChannelSenderKeys::confirm`).
+    fn receive_key(
         &self,
         sender_key: &[u8],
         kid: Kid,
-    ) -> Result<Zeroizing<[u8; 32]>, OpenError> {
+        frame: &[u8],
+        metadata: &[u8],
+    ) -> Result<SframeKey, OpenError> {
         match &self.scope {
             MediaScope::Call { peer } => {
                 if hex::encode(sender_key) != *peer {
@@ -133,19 +138,29 @@ impl MediaKeys {
                 }
                 self.deps
                     .call_media(peer)
-                    .map(|m| m.secret)
+                    .map(|m| sframe::media_key(&m.secret, sender_key, kid))
                     .ok_or(OpenError::NoKey { needed_index: None })
             }
             MediaScope::Channel {
                 community_id,
                 channel_id,
-            } => self
-                .deps
-                .channel_sender_keys(community_id, channel_id)
-                .receive_secret(&hex::encode(sender_key), sframe::kid_generation_low(kid))
-                .map_err(|missing| OpenError::NoKey {
-                    needed_index: Some(missing.index),
-                }),
+            } => {
+                let keys = self.deps.channel_sender_keys(community_id, channel_id);
+                let sender = hex::encode(sender_key);
+                let candidates = keys
+                    .receive_candidates(&sender, sframe::kid_generation_low(kid))
+                    .map_err(|missing| OpenError::NoKey {
+                        needed_index: Some(missing.index),
+                    })?;
+                for candidate in candidates {
+                    let key = sframe::media_key(&candidate.secret, sender_key, kid);
+                    if sframe::open(&key, frame, metadata).is_ok() {
+                        keys.confirm(&sender, candidate);
+                        return Ok(key);
+                    }
+                }
+                Err(OpenError::Rejected)
+            }
         }
     }
 }
@@ -245,24 +260,34 @@ impl FrameOpener {
     pub fn open(&mut self, packet: &VoicePacket) -> Result<Vec<u8>, OpenError> {
         let (kid, ctr, _) =
             sframe::parse_header(&packet.sframe).map_err(|_| OpenError::Rejected)?;
-        let states = self.senders.entry(packet.sender_key.clone()).or_default();
-        let index = if let Some(i) = states.iter().position(|s| s.kid == kid) {
-            i
+        let metadata =
+            VoicePacket::sframe_metadata(&packet.sender_key, packet.sequence, packet.timestamp);
+        let known = self
+            .senders
+            .get(&packet.sender_key)
+            .is_some_and(|states| states.iter().any(|s| s.kid == kid));
+        let new_key = if known {
+            None
         } else {
-            let secret = self.keys.receive_secret(&packet.sender_key, kid)?;
+            Some(
+                self.keys
+                    .receive_key(&packet.sender_key, kid, &packet.sframe, &metadata)?,
+            )
+        };
+        let states = self.senders.entry(packet.sender_key.clone()).or_default();
+        if let Some(key) = new_key {
             if states.len() == KIDS_PER_SENDER {
                 states.remove(0);
             }
             states.push(OpenState {
                 kid,
-                key: sframe::media_key(&secret, &packet.sender_key, kid),
+                key,
                 window: CtrWindow::new(),
             });
-            states.len() - 1
+        }
+        let Some(state) = states.iter_mut().find(|s| s.kid == kid) else {
+            return Err(OpenError::Rejected);
         };
-        let state = &mut states[index];
-        let metadata =
-            VoicePacket::sframe_metadata(&packet.sender_key, packet.sequence, packet.timestamp);
         let plaintext =
             sframe::open(&state.key, &packet.sframe, &metadata).map_err(|_| OpenError::Rejected)?;
         // Replay is checked after authentication, so forged frames can't
@@ -418,6 +443,39 @@ mod tests {
         } else {
             assert!(matches!(result, Err(OpenError::NoKey { .. })));
         }
+    }
+
+    /// A join ratchets the sender's key (plan C7.29): a receiver holding
+    /// the old step derives the new one, while the joiner, given only the
+    /// new step, opens nothing sealed before it joined.
+    #[test]
+    fn a_joiner_opens_only_frames_sealed_after_its_join() {
+        let alice = SigningKey::from_bytes(&[1u8; 32]);
+        let alice_hex = hex::encode(alice.verifying_key().to_bytes());
+        let alice_side = Keys::new("unused");
+        let bob_side = Keys::new("unused");
+        let carol_side = Keys::new("unused");
+        let mut sealer = FrameSealer::new(keys(&alice_side, channel()));
+        share(&alice_side, &alice_hex, &bob_side);
+        let before = packet(&alice, &mut sealer, 1, b"before");
+
+        let join = alice_side
+            .channel
+            .on_join("carol", std::time::Instant::now());
+        for key in join.joiner {
+            carol_side
+                .channel
+                .install(&alice_hex, key.index, key.secret);
+        }
+        let after = packet(&alice, &mut sealer, 2, b"after");
+
+        let mut bob = FrameOpener::new(keys(&bob_side, channel()));
+        assert_eq!(bob.open(&before).unwrap(), b"before");
+        assert_eq!(bob.open(&after).unwrap(), b"after", "derived forward");
+
+        let mut carol = FrameOpener::new(keys(&carol_side, channel()));
+        assert!(carol.open(&before).is_err());
+        assert_eq!(carol.open(&after).unwrap(), b"after");
     }
 
     #[test]

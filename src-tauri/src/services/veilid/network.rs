@@ -155,8 +155,8 @@ pub async fn handle_app_call(
             | ControlPayload::VoiceMediaKeyRequest { .. }),
         ))) => {
             // Plan C7.22 — call-media keys arrive point to point and are
-            // acknowledged. The sender is authenticated by the HPKE Auth
-            // seal (as a MEK transfer is by its ECDH wrap), not by an
+            // acknowledged. The sender is authenticated by its pseudonym
+            // signature inside the payload (plan C7.29), not by an
             // envelope signature.
             crate::services::voice_signaling_adapter::answer_media_key_call(
                 app_handle, state, &payload,

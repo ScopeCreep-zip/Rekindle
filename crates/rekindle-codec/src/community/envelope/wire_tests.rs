@@ -181,6 +181,7 @@ fn media_key_payloads_round_trip() {
             recipient: "r".into(),
             key_index: 0x1234_5678_9abc,
             sealed: vec![7; 80],
+            signature: vec![8; 64],
         },
         ControlPayload::VoiceMediaKeyAck {
             community_id: "c".into(),

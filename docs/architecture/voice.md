@@ -336,38 +336,50 @@ its roster (`rekindle_secrets::media_sender_key`; RFC 9605 §5.1 sender
 keys, the MatrixRTC per-member model). No rotator is elected: every
 sender owns its own key, so there is nothing to agree on.
 
-- **Key.** A random 32-byte secret per channel session, with a random
-  starting index. Video derives its frame key from it
-  (`video_frame_key`).
+- **Key.** A random 32-byte secret per channel session. The key index
+  is RFC 9605 §5.1's two-part KID, `generation = index >> 8`,
+  `step = index & 0xff`, starting at a random 32-bit generation. Video
+  derives its frame key from the secret (`video_frame_key`).
+- **Session key (C7.29 G2).** Each participant makes an X25519 key per
+  channel session (`media_sender_key::session::SessionKey`, held by the
+  keyring) and announces its public half on `VoiceJoin`, `VoiceJoinAck`
+  and each `VoiceRosterEntry` (`sessionKey`, `sessionKeySig`), signed by
+  its pseudonym over `rekindle-media-session-key-v1 ‖ community ‖
+  channel ‖ key`. A key is learned only under that signature
+  (`learn_session_key`). The secret is dropped (zeroized) with the
+  keyring at `ChannelSenderKeyStore::end`/`clear`, so a recorded
+  `VoiceMediaKey` stays closed after the session even if the pseudonym
+  is later seized (RFC 9180 §9.1).
 - **Distribution.** `ControlPayload::VoiceMediaKey` (@71; request @72,
-  ack @73), HPKE Auth-sealed from our channel pseudonym to the
-  recipient's, with AAD binding channel ‖ recipient ‖ index. It is sent
-  pairwise to the channel roster, acknowledged and retried, and opened
-  only by its recipient. *Gap (C7.29 G2):* the pseudonym is long-lived,
-  and HPKE gives no forward secrecy against recipient compromise
-  (RFC 9180 §9.1), so a later seizure of a participant's master secret
-  opens recorded calls. C7.29 seals instead (HPKE Base) to an X25519
-  key each participant makes per channel session, carried signed on the
-  join handshake and zeroized when the session ends.
-- **Join (as built).** A joiner gets our current key if it is under
-  10 s old; otherwise we rotate and send the new key to everyone
-  (MatrixRTC's share-or-rotate rule). A `VoiceMediaKeyRequest` is
-  answered with current + pending keys. *Gap (C7.29 G1):* a joiner can
-  therefore read media from before it joined. C7.29 replaces this with
-  RFC 9605 §5.1's ratchet: the KID becomes `generation ‖ ratchet step`;
-  on a join the sender steps its key forward
-  (`HKDF-Expand(HKDF-Extract("", key), "SFrame 1.0 Ratchet", Nh)`),
-  sends the new state only to the joiner, and erases the previous step;
-  existing receivers derive it themselves. A request is answered with
-  the current state only. `SHARE_GRACE` and `JoinShare` are deleted.
-- **Leave.** When a participant leaves the channel, is expired from
-  the roster, or leaves the community (kicked, banned, departed), we
-  rotate and send the new key to everyone left. The new key is used
-  after 5 s. *As built,* a leave within that delay replaces the pending
-  key at the same index and restarts the delay (C7.29 G3). C7.29
-  follows RingRTC: one pending rotation applied on schedule, then
-  another, each with a new generation, so a leaver hears at most
-  ~10 s after leaving.
+  ack @73): HPKE Base to the recipient's session key, AAD channel ‖
+  recipient ‖ index, plus the sender's pseudonym signature over
+  `rekindle-media-key-sig-v1 ‖ channel ‖ recipient ‖ index ‖ sealed`
+  (`signature`). It is sent pairwise to the channel roster, acknowledged
+  and retried, and opened only by its recipient. Nothing is sealed to a
+  participant whose session key we do not hold; its join or ack brings
+  one, and it asks with `VoiceMediaKeyRequest` meanwhile.
+- **Join (C7.29 G1).** On a join a sender whose key sealed a frame steps
+  it forward (`sframe::ratchet`: `HKDF-Expand(HKDF-Extract("", key),
+  "SFrame 1.0 Ratchet", 32)`), erases the previous step and sends the
+  new step to the joiner only; existing receivers derive it, at most
+  `MAX_RATCHET_AHEAD` = 5 steps (RingRTC `MAX_OOO_RATCHETS`). Joins while
+  the key is unused coalesce into one step. A join at step 255 starts a
+  new generation instead, sent to everyone, and the joiner waits for it.
+  The keyring records each participant's admission index, and a
+  `VoiceMediaKeyRequest` is answered with keys from that index on
+  (`shareable_for`), so a joiner never gets a key that sealed frames
+  before it joined. A voice frame's KID carries only the step, so the
+  receiver tries each held generation's candidate at that step and keeps
+  the one that opens (`receive_candidates`, `confirm`).
+- **Leave (C7.29 G3, G4).** When a participant leaves the channel or is
+  expired from the roster, we start a new generation with a fresh secret,
+  sent to everyone left and used after 5 s. At most one rotation is
+  pending (RingRTC): a leave during the delay marks another, started
+  when the pending one is applied (`follow_up`), so no index is ever
+  bound to two secrets and a leaver hears at most ~10 s after leaving.
+  A member leaving the community (kicked, banned, departed;
+  `member_departed`, `Departure::LeftCommunity`) always rotates, in a
+  stage channel too; only a stage listener leaving on its own does not.
 - **Missing key.** A frame under an index we lack sends a
   `VoiceMediaKeyRequest` to its sender (at most once per sender every
   10 s). The sender answers only a requester on its roster.

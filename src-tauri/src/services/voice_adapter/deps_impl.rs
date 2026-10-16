@@ -22,6 +22,20 @@ use crate::state_helpers;
 
 #[async_trait]
 impl VoiceSessionDeps for VoiceAdapter {
+    fn sign_media_session_key(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        session_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        super::media_keys::sign_media_session_key(
+            &self.state,
+            community_id,
+            channel_id,
+            session_key,
+        )
+    }
+
     fn owner_key(&self) -> Result<String, VoiceError> {
         state_helpers::current_owner_key(&self.state).map_err(|_| VoiceError::IdentityNotLoaded)
     }

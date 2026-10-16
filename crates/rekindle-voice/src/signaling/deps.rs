@@ -253,26 +253,27 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
         channel_id: &str,
     ) -> Arc<rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys>;
 
-    /// Seal our media `secret` to `recipient` (pseudonym hex) under our
-    /// community pseudonym (`rekindle_secrets::media_sender_key::seal`),
-    /// or `None` when the pseudonym key or the recipient key is unusable.
-    fn seal_media_key(
+    /// Our community pseudonym's signature over our session key for
+    /// `(community, channel)` (`rekindle_secrets::media_sender_key::session::
+    /// session_key_message`; plan C7.29), or `None` without a pseudonym key.
+    fn sign_media_session_key(
         &self,
         community_id: &str,
-        recipient: &str,
-        aad: &[u8],
-        secret: &[u8; 32],
+        channel_id: &str,
+        session_key: &[u8],
     ) -> Option<Vec<u8>>;
 
-    /// Open a media key `sender` (pseudonym hex) sealed to us, or `None`
-    /// when it was not sealed by that sender to us under this AAD.
-    fn open_media_key(
+    /// Our community pseudonym's signature over a media key we sealed
+    /// (`session::sealed_key_message`; plan C7.29), or `None` without a
+    /// pseudonym key.
+    fn sign_sealed_media_key(
         &self,
         community_id: &str,
-        sender: &str,
-        aad: &[u8],
+        channel_id: &str,
+        recipient: &str,
+        key_index: u64,
         sealed: &[u8],
-    ) -> Option<zeroize::Zeroizing<[u8; 32]>>;
+    ) -> Option<Vec<u8>>;
 
     /// Send `envelope` to the peer at `route_blob` by `app_call` and
     /// return its decoded reply (plan C7.22: media keys go point to point

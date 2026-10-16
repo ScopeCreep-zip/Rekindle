@@ -124,6 +124,10 @@ struct VoiceRosterEntry @0xe8d4eb16e9bf1c2e {
     deafened         @3 :Bool;
     # Display name as known to the roster broadcaster. Empty = unknown.
     displayName      @4 :Text;
+    # Plan C7.29: the participant's per-session media key (X25519) and its
+    # pseudonym signature over it, relayed as the participant announced it.
+    sessionKey       @5 :Data;
+    sessionKeySig    @6 :Data;
 }
 
 struct OnboardingAnswer @0xe9d4eb16e9bf1c2e {
@@ -443,6 +447,10 @@ struct VoiceJoinPayload @0xea002e000000a000 {
     # handshake (SimpleX x.grp.mem.info pattern) so the roster UI
     # never depends on registry-scan timing. Empty = not set.
     displayName          @2 :Text;
+    # Plan C7.29: the joiner's per-session media key (X25519) and its
+    # pseudonym signature over `domain ‖ community ‖ channel ‖ key`.
+    sessionKey           @3 :Data;
+    sessionKeySig        @4 :Data;
 }
 
 # Seen leg of the three-way join handshake: a present member tells the
@@ -455,6 +463,9 @@ struct VoiceJoinAckPayload @0xea0045000000a000 {
     # joiner to add the acker to its media roster.
     displayName          @2 :Text;
     routeBlob            @3 :Data;
+    # Plan C7.29: the acker's per-session media key and its signature.
+    sessionKey           @4 :Data;
+    sessionKeySig        @5 :Data;
 }
 
 # Confirmed leg: the joiner tells channel members "transport-ready —
@@ -464,10 +475,12 @@ struct VoiceJoinConfirmedPayload @0xea0046000000a000 {
     channelId            @0 :Text;
 }
 
-# Plan C7.20/C7.22: `sender`'s call-media key sealed to `recipient`
-# (HPKE Auth from sender to recipient, bound to channel, recipient and
-# index). Delivered by app_call to the recipient's route and answered
-# with VoiceMediaKeyAck; never gossiped.
+# Plans C7.20/C7.22/C7.29: `sender`'s call-media key sealed to
+# `recipient`'s per-session key (HPKE Base, bound to channel, recipient
+# and index), signed by the sender's pseudonym over
+# `domain ‖ channel ‖ recipient ‖ keyIndex ‖ sealed`. Delivered by
+# app_call to the recipient's route and answered with VoiceMediaKeyAck;
+# never gossiped.
 struct VoiceMediaKeyPayload @0xf0582658caa27994 {
     channelId            @0 :Text;
     recipient            @1 :Text;
@@ -475,6 +488,7 @@ struct VoiceMediaKeyPayload @0xf0582658caa27994 {
     sealed               @3 :Data;
     communityId          @4 :Text;
     sender               @5 :Text;
+    signature            @6 :Data;
 }
 
 # Plan C7.20/C7.22: `requester` asks `sender` for its call-media key at

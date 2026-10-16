@@ -157,6 +157,19 @@ pub struct VoiceRosterEntry {
     /// roster UI never depends on registry-scan timing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// The participant's session key, as it announced it.
+    #[serde(default)]
+    pub session_key: MediaSessionKey,
+}
+
+/// A participant's per-session media key (X25519) and its community
+/// pseudonym's signature over it (plan C7.29): call-media keys are sealed
+/// to it, so they stop opening when the session ends.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaSessionKey {
+    pub key: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 /// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519

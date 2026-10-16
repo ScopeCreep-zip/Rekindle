@@ -3,7 +3,7 @@
 use super::super::len_u32;
 use super::super::sub_types::{read_voice_roster_entry, write_voice_roster_entry};
 use crate::capnp_codec::{capnp_err, text_to_string};
-use crate::community::envelope::ControlPayload;
+use crate::community::envelope::{ControlPayload, MediaSessionKey};
 use crate::community_envelope_capnp as cap;
 use crate::error::CodecError;
 
@@ -15,6 +15,7 @@ pub(super) fn write_voice_join(
         channel_id,
         route_blob,
         display_name,
+        session_key,
     } = payload
     else {
         unreachable!("write_voice_join: variant mismatch")
@@ -22,6 +23,8 @@ pub(super) fn write_voice_join(
     p.set_channel_id(channel_id);
     p.set_route_blob(route_blob);
     p.set_display_name(display_name.as_deref().unwrap_or_default());
+    p.set_session_key(&session_key.key);
+    p.set_session_key_sig(&session_key.signature);
 }
 
 pub(super) fn write_voice_join_ack(
@@ -33,6 +36,7 @@ pub(super) fn write_voice_join_ack(
         joiner_pseudonym,
         display_name,
         route_blob,
+        session_key,
     } = payload
     else {
         unreachable!("write_voice_join_ack: variant mismatch")
@@ -41,6 +45,8 @@ pub(super) fn write_voice_join_ack(
     p.set_joiner_pseudonym(joiner_pseudonym);
     p.set_display_name(display_name.as_deref().unwrap_or_default());
     p.set_route_blob(route_blob);
+    p.set_session_key(&session_key.key);
+    p.set_session_key_sig(&session_key.signature);
 }
 
 pub(super) fn write_voice_join_confirmed(
@@ -64,10 +70,12 @@ pub(super) fn write_voice_media_key(
         recipient,
         key_index,
         sealed,
+        signature,
     } = payload
     else {
         unreachable!("write_voice_media_key: variant mismatch")
     };
+    p.set_signature(signature);
     p.set_community_id(community_id);
     p.set_channel_id(channel_id);
     p.set_sender(sender);
@@ -290,6 +298,10 @@ pub(super) fn read_voice_join(
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         route_blob: p.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec(),
         display_name: (!display_name.is_empty()).then_some(display_name),
+        session_key: MediaSessionKey {
+            key: p.get_session_key().map_err(|e| capnp_err(&e))?.to_vec(),
+            signature: p.get_session_key_sig().map_err(|e| capnp_err(&e))?.to_vec(),
+        },
     })
 }
 
@@ -302,6 +314,10 @@ pub(super) fn read_voice_join_ack(
         joiner_pseudonym: text_to_string(p.get_joiner_pseudonym().map_err(|e| capnp_err(&e))?)?,
         display_name: (!display_name.is_empty()).then_some(display_name),
         route_blob: p.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec(),
+        session_key: MediaSessionKey {
+            key: p.get_session_key().map_err(|e| capnp_err(&e))?.to_vec(),
+            signature: p.get_session_key_sig().map_err(|e| capnp_err(&e))?.to_vec(),
+        },
     })
 }
 
@@ -323,6 +339,7 @@ pub(super) fn read_voice_media_key(
         recipient: text_to_string(p.get_recipient().map_err(|e| capnp_err(&e))?)?,
         key_index: p.get_key_index(),
         sealed: p.get_sealed().map_err(|e| capnp_err(&e))?.to_vec(),
+        signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
     })
 }
 

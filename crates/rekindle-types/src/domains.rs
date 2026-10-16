@@ -83,9 +83,18 @@ labels! {
     /// sender keys) from the scope secret, the sender's key and the
     /// sender's session tag.
     VOICE_SENDER_KEY = "rekindle-voice-sender-key-v1";
-    /// HPKE info: a call-media sender key sealed to one participant
-    /// (RFC 9605 §5.1 sender keys, sent pairwise; plan C7.20).
-    MEDIA_KEY_SEAL = "rekindle-media-key-seal-v1";
+    /// HPKE info: a call-media sender key sealed to one participant's
+    /// per-session key (RFC 9605 §5.1 sender keys, sent pairwise; plans
+    /// C7.20, C7.29). v2: HPKE Base to the session key, not Auth between
+    /// pseudonyms.
+    MEDIA_KEY_SEAL = "rekindle-media-key-seal-v2";
+    /// Signature prefix: a participant's per-session media key, signed by
+    /// its community pseudonym so a roster can relay it (plan C7.29).
+    MEDIA_SESSION_KEY = "rekindle-media-session-key-v1";
+    /// Signature prefix: a sealed call-media key, signed by its sender's
+    /// pseudonym over channel, recipient, index and the sealed bytes
+    /// (plan C7.29).
+    MEDIA_KEY_SIG = "rekindle-media-key-sig-v1";
     /// HKDF info prefix: a video sender's frame key from its media sender
     /// key and its own key, so the secret never keys two constructions.
     VIDEO_SENDER_KEY = "rekindle-video-sender-key-v1";

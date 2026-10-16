@@ -5,15 +5,23 @@
 //! sealed, to each other participant it holds on its roster:
 //!
 //! - when it adds a participant (join apply, the joiner's ack, a roster):
-//!   our current key to them, or a rotated one to everyone
-//!   ([`ChannelSenderKeys::on_join`]);
-//! - when a participant leaves a voice channel: a fresh key to everyone
-//!   left ([`ChannelSenderKeys::on_leave`]);
-//! - when asked (`VoiceMediaKeyRequest`): the current and pending keys to
-//!   the asker.
+//!   our key ratchets a step and the joiner gets the new step, so it opens
+//!   nothing sealed before it joined ([`ChannelSenderKeys::on_join`],
+//!   plan C7.29);
+//! - when a participant leaves a voice channel: a new generation to
+//!   everyone left ([`ChannelSenderKeys::on_leave`]); a leave while one is
+//!   pending starts the next when the pending one is applied;
+//! - when asked (`VoiceMediaKeyRequest`): our keys from the asker's
+//!   admission on, never an older one.
 //!
-//! Stage channels (§10.7: anyone may listen) do not rotate on a listener's
-//! join or leave; a joiner still gets every speaker's current key.
+//! Stage channels (§10.7: anyone may listen) do not rotate when a listener
+//! leaves on its own; a member leaving the community (kicked, banned or
+//! gone) always rotates ([`Departure::LeftCommunity`]).
+//!
+//! **Sealed to a session key** (plan C7.29): each participant announces an
+//! X25519 key per channel session in its join or ack, signed by its
+//! pseudonym; our keys are sealed to it (HPKE Base) and signed, and stop
+//! opening once that session ends.
 //!
 //! **Delivery is acknowledged, never gossiped.** Every comparable system
 //! sends media keys over its reliable messaging channel, not the media
@@ -35,9 +43,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_secrets::media_sender_key::keyring::{JoinShare, OwnKey};
-use rekindle_secrets::media_sender_key::seal_aad;
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MediaSessionKey};
+use rekindle_secrets::media_sender_key::keyring::{
+    ChannelSenderKeys, LeaveRotation, OwnKey, SignedSessionKey,
+};
+use rekindle_secrets::media_sender_key::{seal_aad, session};
 
 use crate::signaling::deps::VoiceSignalingDeps;
 use crate::transport::VoiceTransport;
@@ -112,6 +122,35 @@ fn acknowledges(envelope: &CommunityEnvelope, reply: Option<&CommunityEnvelope>)
         && acked_index == key_index
 }
 
+/// The `VoiceMediaKey` envelope for `d`: our key sealed to the
+/// recipient's session key and signed, or `None` while we hold no session
+/// key for the recipient (its join or ack brings one).
+fn sealed_envelope(
+    deps: &Arc<dyn VoiceSignalingDeps>,
+    keys: &ChannelSenderKeys,
+    d: &Delivery,
+    sender: &str,
+) -> Option<CommunityEnvelope> {
+    let aad = seal_aad(&d.channel_id, &d.recipient, d.key.index);
+    let sealed = keys.seal_for(&d.recipient, &aad, &d.key.secret)?;
+    let signature = deps.sign_sealed_media_key(
+        &d.community_id,
+        &d.channel_id,
+        &d.recipient,
+        d.key.index,
+        &sealed,
+    )?;
+    Some(CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
+        community_id: d.community_id.clone(),
+        channel_id: d.channel_id.clone(),
+        sender: sender.to_string(),
+        recipient: d.recipient.clone(),
+        key_index: d.key.index,
+        sealed,
+        signature,
+    }))
+}
+
 async fn deliver(
     deps: &Arc<dyn VoiceSignalingDeps>,
     transport: &tokio::sync::Mutex<VoiceTransport>,
@@ -120,22 +159,8 @@ async fn deliver(
     let Some(sender) = deps.my_pseudonym(&d.community_id) else {
         return;
     };
-    let aad = seal_aad(&d.channel_id, &d.recipient, d.key.index);
-    let Some(sealed) = deps.seal_media_key(&d.community_id, &d.recipient, &aad, &d.key.secret)
-    else {
-        tracing::warn!(community = %d.community_id, channel = %d.channel_id,
-            recipient = %d.recipient, "media key not sealed: pseudonym or recipient key unusable");
-        return;
-    };
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
-        community_id: d.community_id.clone(),
-        channel_id: d.channel_id.clone(),
-        sender,
-        recipient: d.recipient.clone(),
-        key_index: d.key.index,
-        sealed,
-    });
     let keys = deps.channel_sender_keys(&d.community_id, &d.channel_id);
+    let mut envelope = None;
     let mut waits = DELIVERY_BACKOFF.iter();
     loop {
         let route = {
@@ -147,22 +172,95 @@ async fn deliver(
         // Off our roster: it left, and a departure rotates past this key.
         let Some(route) = route else { return };
         // Superseded by a later rotation, which has its own deliveries.
-        if !keys.shareable().iter().any(|k| k.index == d.key.index) {
+        if !keys.still_current(d.key.index) {
             return;
         }
-        let reply = deps.call_peer(&route, &envelope).await;
-        if acknowledges(&envelope, reply.as_ref()) {
-            tracing::debug!(community = %d.community_id, channel = %d.channel_id,
-                recipient = %d.recipient, key_index = d.key.index, "media key delivered");
-            return;
+        if envelope.is_none() {
+            envelope = sealed_envelope(deps, &keys, d, &sender);
+        }
+        if let Some(envelope) = &envelope {
+            let reply = deps.call_peer(&route, envelope).await;
+            if acknowledges(envelope, reply.as_ref()) {
+                tracing::debug!(community = %d.community_id, channel = %d.channel_id,
+                    recipient = %d.recipient, key_index = d.key.index, "media key delivered");
+                return;
+            }
         }
         let Some(wait) = waits.next() else {
             tracing::warn!(community = %d.community_id, channel = %d.channel_id,
-                recipient = %d.recipient, key_index = d.key.index,
-                "media key not acknowledged; the recipient will ask for it");
+                recipient = %d.recipient, key_index = d.key.index, sealed = envelope.is_some(),
+                "media key not delivered; the recipient will ask for it");
             return;
         };
         tokio::time::sleep(*wait).await;
+    }
+}
+
+/// Our session key for `(community, channel)` as the join handshake
+/// announces it, signed by our pseudonym (plan C7.29). Unsigned (no
+/// pseudonym key), receivers refuse it and seal nothing to us.
+pub(crate) fn announced_session_key(
+    keys: &ChannelSenderKeys,
+    sign: impl FnOnce(&[u8]) -> Option<Vec<u8>>,
+) -> MediaSessionKey {
+    let key = keys.session_public().to_vec();
+    MediaSessionKey {
+        signature: sign(&key).unwrap_or_default(),
+        key,
+    }
+}
+
+/// Our signed session key for the channel, from the signaling side.
+pub(in crate::signaling) fn our_session_key(
+    deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    channel_id: &str,
+) -> MediaSessionKey {
+    announced_session_key(&deps.channel_sender_keys(community_id, channel_id), |key| {
+        deps.sign_media_session_key(community_id, channel_id, key)
+    })
+}
+
+/// `participant`'s session key as a roster relays it.
+pub(in crate::signaling) fn relayed_session_key(
+    deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    channel_id: &str,
+    participant: &str,
+) -> MediaSessionKey {
+    deps.channel_sender_keys(community_id, channel_id)
+        .session_key_of(participant)
+        .map(|k| MediaSessionKey {
+            key: k.key,
+            signature: k.signature,
+        })
+        .unwrap_or_default()
+}
+
+/// Learn `participant`'s session key from its join, ack or a roster, if
+/// we are in that channel and its pseudonym signed the key.
+pub(in crate::signaling) fn learn_session_key(
+    deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    channel_id: &str,
+    participant: &str,
+    key: &MediaSessionKey,
+) {
+    if !deps.voice_engine_bound_to(community_id, channel_id)
+        || deps.my_pseudonym(community_id).as_deref() == Some(participant)
+    {
+        return;
+    }
+    let signed = SignedSessionKey {
+        key: key.key.clone(),
+        signature: key.signature.clone(),
+    };
+    if !deps
+        .channel_sender_keys(community_id, channel_id)
+        .learn_session_key(community_id, channel_id, participant, &signed)
+    {
+        tracing::warn!(community = %community_id, channel = %channel_id, participant,
+            "media session key refused: not signed by the participant");
     }
 }
 
@@ -187,40 +285,38 @@ async fn deliver_to_roster(
     }
 }
 
-/// We added `joiner` to our roster: it gets our key.
+/// We added `joiner` to our roster: our key ratchets and it gets the new
+/// step (and a new generation goes to everyone when the join exhausted
+/// one).
 pub(in crate::signaling) async fn on_peer_added(
     deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
     channel_id: &str,
     transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
     joiner: &str,
-    is_stage: bool,
 ) {
     let keys = deps.channel_sender_keys(community_id, channel_id);
-    let now = Instant::now();
-    if is_stage {
-        spawn_delivery(
-            deps,
-            community_id,
-            channel_id,
-            transport,
-            joiner,
-            keys.send_key(now),
-        );
-        return;
+    let join = keys.on_join(joiner, Instant::now());
+    for key in join.joiner {
+        spawn_delivery(deps, community_id, channel_id, transport, joiner, key);
     }
-    match keys.on_join(now) {
-        JoinShare::Current(key) => {
-            spawn_delivery(deps, community_id, channel_id, transport, joiner, key);
-        }
-        JoinShare::Rotated(key) => {
-            deliver_to_roster(deps, community_id, channel_id, transport, &key).await;
-        }
+    if let Some(key) = join.everyone {
+        deliver_to_roster(deps, community_id, channel_id, transport, &key).await;
     }
 }
 
-/// `departed` left the channel (already off our roster): rotate so it
-/// cannot read what follows, and forget its keys.
+/// How a participant came off our roster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Departure {
+    /// It left the channel, or its presence expired.
+    LeftChannel,
+    /// It left the community: kicked, banned or gone.
+    LeftCommunity,
+}
+
+/// `departed` came off our roster: rotate so it cannot read what follows,
+/// and forget its keys. Only a stage listener leaving on its own keeps our
+/// key (anyone may listen to a stage, §10.7).
 pub(in crate::signaling) async fn on_peer_removed(
     deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
@@ -228,14 +324,43 @@ pub(in crate::signaling) async fn on_peer_removed(
     transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
     departed: &str,
     is_stage: bool,
+    departure: Departure,
 ) {
     let keys = deps.channel_sender_keys(community_id, channel_id);
     keys.forget(departed);
-    if is_stage {
+    if is_stage && departure == Departure::LeftChannel {
         return;
     }
-    let key = keys.on_leave(Instant::now());
-    deliver_to_roster(deps, community_id, channel_id, transport, &key).await;
+    match keys.on_leave(Instant::now()) {
+        LeaveRotation::Rotated(key) => {
+            deliver_to_roster(deps, community_id, channel_id, transport, &key).await;
+        }
+        LeaveRotation::Deferred(at) => {
+            spawn_follow_up(deps, community_id, channel_id, transport, at);
+        }
+    }
+}
+
+/// At `at`, when the pending rotation is applied, start the one a leave
+/// during its delay asked for, and send it to everyone then on the roster.
+fn spawn_follow_up(
+    deps: &Arc<dyn VoiceSignalingDeps>,
+    community_id: &str,
+    channel_id: &str,
+    transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
+    at: Instant,
+) {
+    let deps_task = Arc::clone(deps);
+    let transport = Arc::clone(transport);
+    let (cid, ch) = (community_id.to_string(), channel_id.to_string());
+    deps.scope()
+        .spawn_or_drop("voice media key follow-up rotation", async move {
+            tokio::time::sleep_until(at.into()).await;
+            let keys = deps_task.channel_sender_keys(&cid, &ch);
+            if let Some(key) = keys.follow_up(at) {
+                deliver_to_roster(&deps_task, &cid, &ch, &transport, &key).await;
+            }
+        });
 }
 
 /// A `VoiceMediaKey` call: install the key if it is sealed to us by its
@@ -252,6 +377,7 @@ pub fn handle_voice_media_key(
         recipient,
         key_index,
         sealed,
+        signature,
     } = payload
     else {
         return None;
@@ -260,14 +386,20 @@ pub fn handle_voice_media_key(
     if *recipient != me || !deps.voice_engine_bound_to(community_id, channel_id) {
         return None;
     }
-    let aad = seal_aad(channel_id, recipient, *key_index);
-    let Some(secret) = deps.open_media_key(community_id, sender, &aad, sealed) else {
+    let signed = session::sealed_key_message(channel_id, recipient, *key_index, sealed);
+    if !session::verify_pseudonym(sender, &signed, signature) {
         tracing::warn!(community = %community_id, channel = %channel_id, sender, key_index,
-            "media key did not open: not sealed to us by its sender");
+            "media key refused: not signed by its sender");
+        return None;
+    }
+    let keys = deps.channel_sender_keys(community_id, channel_id);
+    let aad = seal_aad(channel_id, recipient, *key_index);
+    let Ok(secret) = keys.open_sealed(&aad, sealed) else {
+        tracing::warn!(community = %community_id, channel = %channel_id, sender, key_index,
+            "media key did not open: not sealed to our session key");
         return None;
     };
-    deps.channel_sender_keys(community_id, channel_id)
-        .install(sender, *key_index, secret);
+    keys.install(sender, *key_index, secret);
     tracing::info!(community = %community_id, channel = %channel_id, sender, key_index,
         "installed a sender's media key");
     Some(ControlPayload::VoiceMediaKeyAck {
@@ -280,7 +412,7 @@ pub fn handle_voice_media_key(
 }
 
 /// A `VoiceMediaKeyRequest` call: if it asks for our key and the requester
-/// is on our roster, deliver our current and pending keys to it.
+/// is on our roster, deliver our keys from its admission on.
 pub fn handle_voice_media_key_request(
     deps: &Arc<dyn VoiceSignalingDeps>,
     payload: &ControlPayload,
@@ -311,7 +443,10 @@ pub fn handle_voice_media_key_request(
             if !transport.lock().await.peer_keys().contains(&requester) {
                 return;
             }
-            for key in deps_task.channel_sender_keys(&cid, &ch).shareable() {
+            for key in deps_task
+                .channel_sender_keys(&cid, &ch)
+                .shareable_for(&requester)
+            {
                 spawn_delivery(&deps_task, &cid, &ch, &transport, &requester, key);
             }
         });

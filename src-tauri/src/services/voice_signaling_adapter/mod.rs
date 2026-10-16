@@ -258,30 +258,36 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         self.state.voice_sender_keys.keys(community_id, channel_id)
     }
 
-    fn seal_media_key(
+    fn sign_media_session_key(
         &self,
         community_id: &str,
-        recipient: &str,
-        aad: &[u8],
-        secret: &[u8; 32],
+        channel_id: &str,
+        session_key: &[u8],
     ) -> Option<Vec<u8>> {
-        let (_, signing_key) =
-            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
-        let recipient: [u8; 32] = hex::decode(recipient).ok()?.try_into().ok()?;
-        rekindle_secrets::media_sender_key::seal(&signing_key, &recipient, aad, secret).ok()
+        crate::services::voice_adapter::media_keys::sign_media_session_key(
+            &self.state,
+            community_id,
+            channel_id,
+            session_key,
+        )
     }
 
-    fn open_media_key(
+    fn sign_sealed_media_key(
         &self,
         community_id: &str,
-        sender: &str,
-        aad: &[u8],
+        channel_id: &str,
+        recipient: &str,
+        key_index: u64,
         sealed: &[u8],
-    ) -> Option<zeroize::Zeroizing<[u8; 32]>> {
-        let (_, signing_key) =
-            state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
-        let sender: [u8; 32] = hex::decode(sender).ok()?.try_into().ok()?;
-        rekindle_secrets::media_sender_key::open(&signing_key, &sender, aad, sealed).ok()
+    ) -> Option<Vec<u8>> {
+        crate::services::voice_adapter::media_keys::sign_sealed_media_key(
+            &self.state,
+            community_id,
+            channel_id,
+            recipient,
+            key_index,
+            sealed,
+        )
     }
 
     async fn call_peer(

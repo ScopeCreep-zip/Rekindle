@@ -80,6 +80,21 @@ pub fn derive(base_key: &[u8], kid: Kid) -> SframeKey {
     SframeKey { key, salt }
 }
 
+/// The next ratchet step of a sender's base key (RFC 9605 §5.1):
+/// `base_key[i+1] = HKDF-Expand(HKDF-Extract("", base_key[i]),
+/// "SFrame 1.0 Ratchet", 32)`, under the suite's KDF (HKDF-SHA512 for
+/// 0x0005). A receiver holding step `i` derives every later step; nobody
+/// can go back, which is what keeps a participant who joins at step `i+1`
+/// from reading frames sealed at step `i` (plan C7.29, G1).
+#[must_use]
+pub fn ratchet(base_key: &[u8; 32]) -> Zeroizing<[u8; 32]> {
+    let hk = Hkdf::<Sha512>::new(Some(&[]), base_key);
+    let mut next = Zeroizing::new([0u8; 32]);
+    // Expand cannot fail: 32 bytes is far below 255 * HashLen.
+    let _ = hk.expand(b"SFrame 1.0 Ratchet", next.as_mut());
+    next
+}
+
 fn label(prefix: &[u8], kid: Kid) -> Vec<u8> {
     let mut out = Vec::with_capacity(prefix.len() + 10);
     out.extend_from_slice(prefix);

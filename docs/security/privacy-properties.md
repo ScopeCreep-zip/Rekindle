@@ -158,21 +158,18 @@ Layer 4 in the stack — see [`overview.md`](overview.md).
   messages.
 - **Communities:** MEK rotation on every member departure. A departed
   member cannot decrypt content sent after their departure.
-- **Voice channels and calls (ADR 0016):** there is no voice MEK.
-  Each sender makes a new key when someone leaves, used after 5 s, so a
-  leaver cannot decrypt frames sent more than ~10 s after leaving. Two
-  further properties are the target of plan step C7.29 and **do not
-  hold today**:
-  - *late joiners cannot decrypt earlier frames* — today a joiner is
-    handed the key in use since the sender's last rotation; C7.29
-    ratchets the key forward on every join;
-  - *a device seized later does not open recorded calls* — today media
-    keys are sealed (HPKE Auth) to the long-lived community pseudonym,
-    which is not forward-secret (RFC 9180 §9.1); C7.29 seals them to a
-    per-call ephemeral key erased at call end.
-
-  A kicked or banned stage-channel listener keeps the speakers' keys
-  today; C7.29 makes every community departure rotate.
+- **Voice channels and calls (ADR 0016, plan C7.29):** there is no voice
+  MEK.
+  - *A leaver cannot decrypt frames sent more than ~10 s after leaving:*
+    each sender starts a new key generation when someone leaves, used
+    after 5 s, with at most one rotation pending. A member who leaves
+    the community (kicked, banned, departed) always triggers it, in a
+    stage channel too.
+  - *Late joiners cannot decrypt earlier frames:* a join ratchets the
+    sender's key one step and the joiner gets only the new step.
+  - *A device seized later does not open recorded calls:* media keys
+    are sealed (HPKE Base) to a per-session X25519 key, erased when the
+    session ends, never to the long-lived community pseudonym.
 - **DM:** ratchet step every 100 messages or 24 hours.
 
 ### 2.4 Reader-validates governance

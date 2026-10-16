@@ -1,6 +1,6 @@
 # 0016 — Call media is keyed by sender-owned keys (RFC 9605 §5.1)
 
-- **Status:** Accepted (owner ruling Q4, 2026-10-15)
+- **Status:** Accepted (owner ruling Q4, 2026-10-15). G1–G4 below are fixed by plan step C7.29 (2026-10-15).
 - **Date:** 2026-10-15
 - **Plan steps:** C7.20 (built 2026-10-07), C7.22 (delivery), C7.29 (the four fixes below), E4.2 (group calls
   adopt the keyring) in `.claude/plans/standards-remediation/00-integration-plan.md` (v2.2)

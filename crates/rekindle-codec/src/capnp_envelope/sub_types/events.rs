@@ -4,7 +4,7 @@
 
 use super::super::len_u32;
 use crate::capnp_codec::{capnp_err, text_to_string};
-use crate::community::envelope::{OnboardingAnswer, VoiceRosterEntry};
+use crate::community::envelope::{MediaSessionKey, OnboardingAnswer, VoiceRosterEntry};
 use crate::community::types::MemberSummary;
 use crate::error::CodecError;
 use rekindle_types::event::{
@@ -355,6 +355,8 @@ pub(crate) fn write_voice_roster_entry(
     b.set_muted(e.muted);
     b.set_deafened(e.deafened);
     b.set_display_name(e.display_name.as_deref().unwrap_or_default());
+    b.set_session_key(&e.session_key.key);
+    b.set_session_key_sig(&e.session_key.signature);
 }
 
 pub(crate) fn read_voice_roster_entry(
@@ -367,6 +369,10 @@ pub(crate) fn read_voice_roster_entry(
         muted: r.get_muted(),
         deafened: r.get_deafened(),
         display_name: (!display_name.is_empty()).then_some(display_name),
+        session_key: MediaSessionKey {
+            key: r.get_session_key().map_err(|e| capnp_err(&e))?.to_vec(),
+            signature: r.get_session_key_sig().map_err(|e| capnp_err(&e))?.to_vec(),
+        },
     })
 }
 

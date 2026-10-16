@@ -249,6 +249,7 @@ pub async fn reconcile_from_presence(
                 &transport,
                 gone,
                 is_stage,
+                crate::signaling::media_keys::Departure::LeftChannel,
             )
             .await;
         }
@@ -270,6 +271,11 @@ pub async fn reconcile_from_presence(
             channel_id: channel_id.clone(),
             route_blob: our_route.clone(),
             display_name: deps.my_display_name(),
+            session_key: crate::signaling::media_keys::our_session_key(
+                &**deps,
+                community_id,
+                &channel_id,
+            ),
         });
         deps.send_to_mesh(community_id, &join);
         tracing::info!(
@@ -294,6 +300,11 @@ pub async fn reconcile_from_presence(
             joiner_pseudonym: peer.clone(),
             display_name: deps.my_display_name(),
             route_blob: our_route.clone(),
+            session_key: crate::signaling::media_keys::our_session_key(
+                &**deps,
+                community_id,
+                &channel_id,
+            ),
         });
         deps.send_to_channel(community_id, &channel_id, &ack);
         tracing::info!(

@@ -290,13 +290,17 @@ mod tests {
 
     #[test]
     fn voice_join_handshake_roundtrip() {
-        use crate::community::envelope::ControlPayload;
+        use crate::community::envelope::{ControlPayload, MediaSessionKey};
 
         // Leg 1 — VoiceJoin with carried display name.
         let env = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
             channel_id: "ch_voice".into(),
             route_blob: vec![9, 9, 9],
             display_name: Some("FireStarter92".into()),
+            session_key: MediaSessionKey {
+                key: vec![5; 32],
+                signature: vec![6; 64],
+            },
         });
         let bytes = encode_community_envelope(&env).unwrap();
         match decode_community_envelope(&bytes).unwrap() {
@@ -304,10 +308,13 @@ mod tests {
                 channel_id,
                 route_blob,
                 display_name,
+                session_key,
             }) => {
                 assert_eq!(channel_id, "ch_voice");
                 assert_eq!(route_blob, vec![9, 9, 9]);
                 assert_eq!(display_name.as_deref(), Some("FireStarter92"));
+                assert_eq!(session_key.key, vec![5; 32]);
+                assert_eq!(session_key.signature, vec![6; 64]);
             }
             _ => panic!("wrong variant"),
         }
@@ -318,6 +325,10 @@ mod tests {
             joiner_pseudonym: "joiner_hex".into(),
             display_name: None,
             route_blob: vec![4, 2],
+            session_key: MediaSessionKey {
+                key: vec![7; 32],
+                signature: vec![8; 64],
+            },
         });
         let bytes = encode_community_envelope(&env).unwrap();
         match decode_community_envelope(&bytes).unwrap() {
@@ -326,11 +337,14 @@ mod tests {
                 joiner_pseudonym,
                 display_name,
                 route_blob,
+                session_key,
             }) => {
                 assert_eq!(channel_id, "ch_voice");
                 assert_eq!(joiner_pseudonym, "joiner_hex");
                 assert_eq!(display_name, None, "empty wire text decodes to None");
                 assert_eq!(route_blob, vec![4, 2]);
+                assert_eq!(session_key.key, vec![7; 32]);
+                assert_eq!(session_key.signature, vec![8; 64]);
             }
             _ => panic!("wrong variant"),
         }
@@ -350,7 +364,7 @@ mod tests {
 
     #[test]
     fn voice_roster_entry_display_name_roundtrip() {
-        use crate::community::envelope::{ControlPayload, VoiceRosterEntry};
+        use crate::community::envelope::{ControlPayload, MediaSessionKey, VoiceRosterEntry};
 
         let env = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
             channel_id: "ch_voice".into(),
@@ -361,6 +375,10 @@ mod tests {
                     muted: true,
                     deafened: false,
                     display_name: Some("Alice".into()),
+                    session_key: MediaSessionKey {
+                        key: vec![3; 32],
+                        signature: vec![4; 64],
+                    },
                 },
                 VoiceRosterEntry {
                     pseudonym_key: "bob_hex".into(),
@@ -368,6 +386,7 @@ mod tests {
                     muted: false,
                     deafened: false,
                     display_name: None,
+                    session_key: MediaSessionKey::default(),
                 },
             ],
         });
@@ -378,6 +397,9 @@ mod tests {
                 assert_eq!(participants[0].display_name.as_deref(), Some("Alice"));
                 assert!(participants[0].muted);
                 assert_eq!(participants[1].display_name, None);
+                assert_eq!(participants[0].session_key.key, vec![3; 32]);
+                assert_eq!(participants[0].session_key.signature, vec![4; 64]);
+                assert_eq!(participants[1].session_key, MediaSessionKey::default());
             }
             _ => panic!("wrong variant"),
         }

@@ -4,9 +4,10 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::community::envelope::VoiceRosterEntry;
+use rekindle_codec::community::envelope::{MediaSessionKey, VoiceRosterEntry};
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
+use crate::signaling::media_keys;
 use crate::transport::VoiceTransport;
 
 use super::join::send_confirmed_if_first;
@@ -19,16 +20,28 @@ use super::join::send_confirmed_if_first;
 /// later joiner's roster.
 pub(super) async fn roster_entries(
     deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    channel_id: &str,
     my_pk: &str,
     transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
 ) -> Vec<VoiceRosterEntry> {
     let peers = transport.lock().await.peer_named_entries();
-    build_roster_entries(
+    let mut entries = build_roster_entries(
         my_pk,
         deps.our_media_route_blob(),
         deps.my_display_name(),
         peers,
-    )
+    );
+    // Each entry carries its participant's session key as it announced
+    // it, so a joiner can seal to everyone from the roster (plan C7.29).
+    for entry in &mut entries {
+        entry.session_key = if entry.pseudonym_key == my_pk {
+            media_keys::our_session_key(deps, community_id, channel_id)
+        } else {
+            media_keys::relayed_session_key(deps, community_id, channel_id, &entry.pseudonym_key)
+        };
+    }
+    entries
 }
 
 /// Pure roster assembly: map the transport's `(pseudonym, route, name)`
@@ -51,6 +64,7 @@ fn build_roster_entries(
                 muted: false,
                 deafened: false,
                 display_name,
+                session_key: MediaSessionKey::default(),
             },
         )
         .collect();
@@ -65,6 +79,7 @@ fn build_roster_entries(
             muted: false,
             deafened: false,
             display_name: my_name,
+            session_key: MediaSessionKey::default(),
         });
     }
     entries
@@ -124,9 +139,6 @@ pub(in crate::signaling) fn handle_voice_roster(
                 }
                 (added, t.peer_count())
             };
-            let is_stage = deps_task
-                .stage_channel_info(&cid, &channel_id)
-                .is_some_and(|s| s.is_stage);
             for (pseudonym_key, display_name) in added {
                 // Plan C7.20 — every roster add hands the peer our key,
                 // as the join and ack paths do.
@@ -136,7 +148,6 @@ pub(in crate::signaling) fn handle_voice_roster(
                     &channel_id,
                     &transport,
                     &pseudonym_key,
-                    is_stage,
                 )
                 .await;
                 deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
