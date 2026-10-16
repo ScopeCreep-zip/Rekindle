@@ -32,7 +32,7 @@ export interface DirectMessageReceived {
 
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
-  | { directMessageAcknowledged: { messageId: number } }
+  | { directMessageAcknowledged: { messageId: number; conversationId: string } }
   | {
       directConversationInvited: {
         from: string;

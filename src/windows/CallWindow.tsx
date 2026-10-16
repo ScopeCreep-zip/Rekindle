@@ -7,6 +7,7 @@ import { subscribeCallEvents } from "../handlers/calls.handlers";
 import { commands } from "../ipc/commands";
 import { setVoiceState } from "../stores/voice.store";
 import { startEventStream } from "../ipc/channels";
+import { initVoiceEventListener } from "../actions/voice.actions";
 
 /// The call window: the one place a connected 1:1 call's controls and
 /// media pipeline run. The backend opens it on connect
@@ -23,6 +24,10 @@ const CallWindow: Component = () => {
 
   onMount(async () => {
     unlisteners.push(subscribeCallEvents({ owner: false }));
+    // The backend sends a DM call's voice events (mute, speaking,
+    // connection quality) to its call window too; without this the
+    // panel's peer state never moved (plan C7.28).
+    unlisteners.push(initVoiceEventListener());
     void startEventStream();
     const snapshot = await commands.getActiveCall(callId);
     if (!snapshot) return;

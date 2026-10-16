@@ -414,9 +414,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- Architecture §28.8 line 3220 — link preview generation reveals the
     -- user's IP to the target server (the OpenGraph fetch bypasses
     -- Veilid). When 0, the sender skips the fetch entirely so URLs
-    -- remain bare in the chat. Default 1 (enabled) matches the typical
-    -- chat-app expectation of inline previews.
-    link_previews_enabled INTEGER NOT NULL DEFAULT 1
+    -- remain bare in the chat. Default 0: the IP leak is opt-in, and a row
+    -- created by another setting (do-not-disturb, quiet hours) must not
+    -- switch previews on (plan A1.7, C7.28).
+    link_previews_enabled INTEGER NOT NULL DEFAULT 0
         CHECK(link_previews_enabled IN (0, 1)),
     PRIMARY KEY (owner_key)
 );

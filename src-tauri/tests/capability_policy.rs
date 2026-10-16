@@ -277,3 +277,107 @@ fn only_media_windows_capture() {
         assert_eq!(kind.captures_media(), expected, "{kind:?}");
     }
 }
+
+/// The frontend code a window owns: its entry module and, when it has one,
+/// its own folder under `src/windows/`. Shared modules (stores, actions,
+/// hydration) import nearly every command wrapper, so the import closure
+/// cannot tell which commands a window really calls; the code it owns can
+/// (plan C7.28).
+fn owned_frontend_code(kind: WindowKind) -> (&'static str, Option<&'static str>) {
+    match kind {
+        WindowKind::Login => ("src/windows/LoginWindow.tsx", None),
+        WindowKind::BuddyList => ("src/windows/BuddyListWindow.tsx", None),
+        WindowKind::Settings => (
+            "src/windows/SettingsWindow.tsx",
+            Some("src/windows/settings"),
+        ),
+        WindowKind::Chat => ("src/windows/ChatWindow.tsx", None),
+        WindowKind::Dm => ("src/windows/DmWindow.tsx", None),
+        WindowKind::Community => (
+            "src/windows/CommunityWindow.tsx",
+            Some("src/windows/community_window"),
+        ),
+        WindowKind::Call => ("src/windows/CallWindow.tsx", None),
+        WindowKind::Profile => ("src/windows/ProfileWindow.tsx", None),
+    }
+}
+
+fn repo_root() -> PathBuf {
+    manifest_dir()
+        .parent()
+        .expect("src-tauri has a parent")
+        .to_path_buf()
+}
+
+fn frontend_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            frontend_files(&path, out);
+        } else if path.extension().is_some_and(|x| x == "ts" || x == "tsx") {
+            out.push(path);
+        }
+    }
+}
+
+/// `commands.<wrapper>` → the command it invokes, from `src/ipc/commands/`.
+fn command_wrappers() -> BTreeMap<String, String> {
+    let invoke = regex::Regex::new(r#"invoke\b[^"\n]*?\(\s*"(\w+)""#).expect("regex");
+    let key = regex::Regex::new(r"(?m)^\s*(\w+)\s*[:(]").expect("regex");
+    let mut files = Vec::new();
+    frontend_files(&repo_root().join("src/ipc/commands"), &mut files);
+    let mut map = BTreeMap::new();
+    for file in files {
+        let src = std::fs::read_to_string(&file).expect("readable");
+        for m in invoke.captures_iter(&src) {
+            let at = m.get(0).expect("match").start();
+            if let Some(k) = key.captures_iter(&src[..at]).last() {
+                map.insert(k[1].to_owned(), m[1].to_owned());
+            }
+        }
+    }
+    map
+}
+
+/// Every command a window's own code calls is granted to that window. A
+/// call it is not granted fails at runtime with "not allowed by ACL", and
+/// a `.catch` can hide that: the Settings camera list read the denial of
+/// `native_video_capture_available` as "no native capture" (plan C7.28).
+#[test]
+fn windows_are_granted_the_commands_their_own_code_calls() {
+    let wrappers = command_wrappers();
+    assert!(
+        wrappers.len() > 100,
+        "found only {} command wrappers",
+        wrappers.len()
+    );
+    let call = regex::Regex::new(r"\bcommands\s*\.\s*(\w+)\s*\(").expect("regex");
+    let caps = shipped();
+    for kind in WindowKind::ALL {
+        let (entry, dir) = owned_frontend_code(kind);
+        let mut files = vec![repo_root().join(entry)];
+        if let Some(dir) = dir {
+            frontend_files(&repo_root().join(dir), &mut files);
+        }
+        let granted: BTreeSet<String> = caps
+            .iter()
+            .filter(|c| c.windows.iter().any(|w| w == kind.pattern()))
+            .flat_map(|c| c.permissions.iter().cloned())
+            .collect();
+        for file in &files {
+            let src =
+                std::fs::read_to_string(file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+            for m in call.captures_iter(&src) {
+                let Some(cmd) = wrappers.get(&m[1]) else {
+                    continue;
+                };
+                assert!(
+                    granted.contains(&allow_permission(cmd)),
+                    "{} calls `{cmd}`, which no capability grants to window `{}`",
+                    file.display(),
+                    kind.pattern()
+                );
+            }
+        }
+    }
+}

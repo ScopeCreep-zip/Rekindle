@@ -94,7 +94,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// entry set that cannot express `ApprovalRequired` — the variant was
 /// merged, validated and Cap'n Proto encoded, and nothing ever wrote it,
 /// so the mode was unreachable and every community was `Open`.
-pub const SCHEMA_VERSION: i64 = 83;
+/// 84: `app_settings.link_previews_enabled` defaults to 0, so a row
+/// another setting creates no longer turns link previews (an IP leak to
+/// the linked site) on (plan C7.28).
+pub const SCHEMA_VERSION: i64 = 84;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

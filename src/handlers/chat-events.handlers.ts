@@ -17,30 +17,20 @@ import { transformNewFriend } from "../utils/transformers";
 // on the matching outbound DM to "sent". The Rust ack carries the
 // SQLite-row timestamp (ms); the optimistic frontend used a slightly
 // earlier `Date.now()` so we accept a small fuzz window. The matching
-// pass scans all conversations because a single ack doesn't carry
-// the peer id (the message_id is unique enough on its own).
-function applyMessageAck(messageId: number): void {
+// ack names its conversation (the peer's key for a 1:1 DM), so only
+// that conversation is searched.
+function applyMessageAck(messageId: number, conversationId: string): void {
   const FUZZ_MS = 5000;
-  for (const peerId in chatState.conversations) {
-    const convo = chatState.conversations[peerId];
-    if (!convo) continue;
-    const idx = convo.messages.findIndex(
-      (m) =>
-        m.isOwn &&
-        (m.status === "sending" || m.status === "queued") &&
-        Math.abs(m.timestamp - messageId) <= FUZZ_MS,
-    );
-    if (idx >= 0) {
-      setChatState(
-        "conversations",
-        peerId,
-        "messages",
-        idx,
-        "status",
-        "sent" as const,
-      );
-      return;
-    }
+  const convo = chatState.conversations[conversationId];
+  if (!convo) return;
+  const idx = convo.messages.findIndex(
+    (m) =>
+      m.isOwn &&
+      (m.status === "sending" || m.status === "queued") &&
+      Math.abs(m.timestamp - messageId) <= FUZZ_MS,
+  );
+  if (idx >= 0) {
+    setChatState("conversations", conversationId, "messages", idx, "status", "sent" as const);
   }
 }
 
@@ -67,7 +57,8 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
           }
         });
       } else if ("directMessageAcknowledged" in msg) {
-        applyMessageAck(msg.directMessageAcknowledged.messageId);
+        const ack = msg.directMessageAcknowledged;
+        applyMessageAck(ack.messageId, ack.conversationId);
       }
       return;
     }
@@ -218,6 +209,14 @@ export function subscribeDmChatEvents(
         handleResetUnread(peerId);
       });
       onIncoming();
+      return;
+    }
+
+    // Our own sent message reached the peer: flip it to sent in this
+    // window too (plan C7.28; the buddy list's arm does the same).
+    if ("channelMessage" in event && "directMessageAcknowledged" in event.channelMessage) {
+      const ack = event.channelMessage.directMessageAcknowledged;
+      if (ack.conversationId === peerId) applyMessageAck(ack.messageId, peerId);
       return;
     }
 

@@ -28,9 +28,15 @@ const VideoTab: Component = () => {
   // THIS window before labels populate; the temporary stream stops at once.
   async function refreshDevices(): Promise<void> {
     setVideoEnumError(null);
+    // A failure is reported, not read as "no native capture": a missing
+    // grant once made this window fall back silently (plan C7.28).
     const nativeAvailable = await commands
       .nativeVideoCaptureAvailable()
-      .catch(() => false);
+      .catch((e: unknown) => {
+        setVideoEnumError(`Could not check for native camera capture: ${String(e)}`);
+        return null;
+      });
+    if (nativeAvailable === null) return;
     setNative(nativeAvailable);
     if (nativeAvailable) {
       try {

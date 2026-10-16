@@ -43,8 +43,14 @@ pub async fn send_dm_inner(
     })
     .await?;
 
+    // The send's outcome reaches the window: an error is returned (the
+    // window marks the message failed, with Retry) and only a send that
+    // went out or was queued is acknowledged. The ack used to be emitted
+    // either way, so a failed DM read as sent (plan C7.28). E2.5's outbox
+    // replaces this echo with its delivery states.
     if let Err(e) = services::message_service::send_message(&state, &pool, &to, &body).await {
         tracing::warn!(error = %e, "DM send failed — message persisted locally");
+        return Err(e);
     }
 
     let ack = rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(

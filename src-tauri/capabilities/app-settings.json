@@ -23,6 +23,7 @@
     "allow-list-received-relay-offers",
     "allow-list-volunteered-relay-friends",
     "allow-native-video-active",
+    "allow-native-video-capture-available",
     "allow-read-paired-devices",
     "allow-read-sync-manifest",
     "allow-read-sync-preferences",
