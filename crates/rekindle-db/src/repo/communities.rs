@@ -178,6 +178,8 @@ pub enum Column {
     MemberRegistryKey,
     DhtOwnerKeypair,
     MySubkeyIndex,
+    MySegmentIndex,
+    MekGeneration,
 }
 
 impl Column {
@@ -191,6 +193,8 @@ impl Column {
             Self::MemberRegistryKey => "member_registry_key",
             Self::DhtOwnerKeypair => "dht_owner_keypair",
             Self::MySubkeyIndex => "my_subkey_index",
+            Self::MySegmentIndex => "my_segment_index",
+            Self::MekGeneration => "mek_generation",
         }
     }
 }
@@ -268,6 +272,20 @@ pub fn raise_clock(
     Ok(())
 }
 
+/// Take the next governance clock value: the stored clock plus one,
+/// written before it is returned, so no value is handed out twice.
+///
+/// # Errors
+/// The write failed, or there is no such community.
+pub fn next_clock(conn: &Connection, owner_key: &str, id: &str) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "UPDATE communities SET lamport_clock = lamport_clock + 1 \
+         WHERE owner_key = ?1 AND id = ?2 RETURNING lamport_clock",
+        params![owner_key, id],
+        |row| row.get(0),
+    )
+}
+
 /// The community fields merged governance decides.
 #[derive(Debug, Clone, Copy)]
 pub struct GovernanceFields<'a> {
@@ -327,6 +345,21 @@ mod tests {
             my_subkey_index: Some(4),
             governance_key: None,
         }
+    }
+
+    #[test]
+    fn next_clock_hands_out_each_value_once() {
+        let conn = fixture::conn();
+        insert(&conn, OWNER, &community("c1", &[0])).unwrap();
+        raise_clock(&conn, OWNER, "c1", 5).unwrap();
+        assert_eq!(next_clock(&conn, OWNER, "c1").unwrap(), 6);
+        assert_eq!(next_clock(&conn, OWNER, "c1").unwrap(), 7);
+        assert!(next_clock(&conn, OWNER, "ghost").is_err());
+        set(&conn, OWNER, "c1", Column::MySegmentIndex, 2).unwrap();
+        set(&conn, OWNER, "c1", Column::MekGeneration, 9).unwrap();
+        let row = &load_all(&conn, OWNER).unwrap()[0];
+        assert_eq!(row.my_segment_index, Some(2));
+        assert_eq!(row.mek_generation, 9);
     }
 
     /// After a restart both clocks resume where they were: governance from

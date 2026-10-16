@@ -217,7 +217,7 @@ pub async fn create_community_inner(
         }
 
         for channel in &community.channels {
-            crate::channel_repo::insert_channel(conn, &ok, channel, &community_id_clone)?;
+            rekindle_db::repo::channels::insert(conn, &ok, &community_id_clone, &channel.row())?;
         }
 
         rekindle_db::repo::members::insert_if_absent(
@@ -333,7 +333,7 @@ pub async fn join_community_inner(
         )?;
 
         for channel in &channels_for_db {
-            crate::channel_repo::upsert_channel(conn, &ok, channel, &community_id_clone)?;
+            rekindle_db::repo::channels::insert_if_absent(conn, &ok, &community_id_clone, &channel.row())?;
         }
 
         for role in &roles_to_persist {

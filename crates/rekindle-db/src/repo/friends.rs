@@ -185,6 +185,7 @@ pub enum Column {
     MailboxDhtKey,
     LastSeenAt,
     GroupId,
+    DmLogKey,
 }
 
 impl Column {
@@ -197,6 +198,7 @@ impl Column {
             Self::MailboxDhtKey => "mailbox_dht_key",
             Self::LastSeenAt => "last_seen_at",
             Self::GroupId => "group_id",
+            Self::DmLogKey => "dm_log_key",
         }
     }
 }
@@ -220,6 +222,21 @@ pub fn set(
         params![value, owner_key, public_key],
     )?;
     Ok(())
+}
+
+/// Every friend's DM log key: `(friend public key, log key)`.
+///
+/// # Errors
+/// The query failed.
+pub fn dm_log_keys(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT public_key, dm_log_key FROM friends \
+         WHERE owner_key = ?1 AND dm_log_key IS NOT NULL ORDER BY public_key",
+    )?;
+    let rows = stmt
+        .query_map(params![owner_key], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect();
+    rows
 }
 
 /// Set the profile and/or mailbox record keys; `None` keeps the stored one.
@@ -387,6 +404,18 @@ mod tests {
             .collect();
         left.sort();
         assert_eq!(left, ["friend", "new"]);
+    }
+
+    #[test]
+    fn dm_log_keys_list_the_friends_that_have_one() {
+        let conn = fixture::conn();
+        insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        insert_accepted(&conn, OWNER, "carol", "Carol", 1).unwrap();
+        set(&conn, OWNER, "bob", Column::DmLogKey, "log-b").unwrap();
+        assert_eq!(
+            dm_log_keys(&conn, OWNER).unwrap(),
+            vec![("bob".into(), "log-b".into())]
+        );
     }
 
     #[test]

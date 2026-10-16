@@ -374,6 +374,25 @@ pub struct ChannelInfo {
     pub parent_voice_channel_id: Option<String>,
 }
 
+impl ChannelInfo {
+    /// The channel as a `channels` row.
+    #[must_use]
+    pub fn row(&self) -> rekindle_db::repo::channels::StoredChannel<'_> {
+        rekindle_db::repo::channels::StoredChannel {
+            id: &self.id,
+            name: &self.name,
+            channel_type: self.channel_type.as_str(),
+            category_id: self.category_id.as_deref(),
+            topic: &self.topic,
+            slowmode_seconds: self.slowmode_seconds.unwrap_or(0),
+            nsfw: self.nsfw,
+            message_record_key: self.message_record_key.as_deref(),
+            mek_generation: self.mek_generation,
+            parent_voice_channel_id: self.parent_voice_channel_id.as_deref(),
+        }
+    }
+}
+
 fn default_notification_level() -> String {
     "all".to_string()
 }
@@ -404,6 +423,6 @@ pub use rekindle_types::channel::ChannelKind as ChannelType;
 // foreign trait (`rusqlite`'s) for a foreign type (`ChannelKind`, now
 // owned by `rekindle-types`, which the DB-storage traits don't belong
 // in anyway per the Tier 1 dependency rules) is an orphan-rule
-// violation. The two write sites (`channel_repo.rs`) go through
-// `.as_str()` and the one read site (`community_loader/rows.rs`) reads
+// violation. The write path (`ChannelInfo::row`, into
+// `rekindle_db::repo::channels`) goes through `.as_str()` and the one read site (`community_loader/rows.rs`) reads
 // a `String` and `.parse()`s it instead.

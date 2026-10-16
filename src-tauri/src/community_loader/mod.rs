@@ -5,7 +5,7 @@
 //! Per Invariant 7 (services/ is Tauri-runtime glue only), the
 //! community/friend DAO logic doesn't belong there either — it
 //! belongs in a dedicated SQLite-loader module sibling to the
-//! existing `friend_repo`, `message_repo`, `channel_repo`,
+//! existing `friend_repo`, `message_repo`,
 //! `audit_repo` single-file modules. The module-dir split here is
 //! by responsibility:
 //!

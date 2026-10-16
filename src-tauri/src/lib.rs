@@ -6,7 +6,6 @@
 pub mod audit_repo;
 pub mod audit_view;
 pub mod channel_materialize;
-pub mod channel_repo;
 mod channels;
 pub mod commands;
 pub mod community_loader;

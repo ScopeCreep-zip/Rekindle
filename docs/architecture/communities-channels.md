@@ -149,7 +149,7 @@ Per-channel state has three storage layers:
 |---|---|
 | `channels` SQLite table | Channel definition: `topic`, `slowmode_seconds`, `nsfw`, per-channel `message_record_key`, `mek_generation`, `log_key`, `my_sequence` (gap-detection counter) |
 | `messages` SQLite table | Message rows, indexed by `(owner_key, conversation_id, timestamp)` with the dedup constraint |
-| `src-tauri/src/channel_repo.rs` + `channel_materialize.rs` | Read / write façades the runtime uses; materialize produces denormalised snapshots for the UI |
+| `rekindle_db::repo::channels` + `src-tauri/src/channel_materialize.rs` | The `channels` table's SQL (both hosts); materialize produces denormalised snapshots for the UI |
 
 The detailed schema for these tables is in
 [`data-layer.md`](data-layer.md).

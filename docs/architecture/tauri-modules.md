@@ -66,11 +66,6 @@ closures passed here call those functions.
 Fire-and-forget writes to one `friends` column, taking the owner key
 from state; the SQL is `rekindle_db::repo::friends`.
 
-### `channel_repo.rs`
-
-Community channel CRUD against `channels` / `channel_overwrites` /
-`channel_pins` / `channel_slowmode_state`.
-
 ### `channel_materialize.rs`
 
 Materialises channel state for the UI. Reads governance + channel

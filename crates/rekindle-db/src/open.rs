@@ -97,7 +97,13 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 84: `app_settings.link_previews_enabled` defaults to 0, so a row
 /// another setting creates no longer turns link previews (an IP leak to
 /// the linked site) on (plan C7.28).
-pub const SCHEMA_VERSION: i64 = 84;
+///
+/// 85: the identity store (plan D1). One encrypted database per identity;
+/// the identity's record owner keypairs moved to its vault (their
+/// `identity` columns and `friends.local_conversation_keypair` dropped);
+/// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` hold
+/// the daemon's friend-inbox protocol until E2.1.
+pub const SCHEMA_VERSION: i64 = 85;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

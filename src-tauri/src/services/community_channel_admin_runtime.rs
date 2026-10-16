@@ -43,11 +43,11 @@ pub async fn delete_channel_inner(
     let community_id_clone = community_id.clone();
     let channel_id_clone = channel_id.clone();
     db_call(pool, move |conn| {
-        crate::channel_repo::delete_channel(
+        rekindle_db::repo::channels::delete(
             conn,
             &owner_key,
-            &channel_id_clone,
             &community_id_clone,
+            &channel_id_clone,
         )?;
         Ok(())
     })

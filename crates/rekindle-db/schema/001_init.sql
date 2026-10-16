@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS identity (
     avatar_webp BLOB,
     account_dht_key TEXT,
     mailbox_dht_key TEXT,
+    -- The friend inbox (DFLT(32)) and its keypair, which the profile
+    -- publishes so anyone can write a request into it (not a secret).
+    -- E2.1 drops both with the friend inbox.
+    friend_inbox_key TEXT,
+    friend_inbox_keypair TEXT,
     -- Architecture §28.4: personal DFLT record key for cross-device sync.
     -- Created lazily on first launch when the user opts into multi-device.
     personal_sync_record_key TEXT,
@@ -42,6 +47,9 @@ CREATE TABLE IF NOT EXISTS friends (
     local_conversation_key TEXT,
     remote_conversation_key TEXT,
     mailbox_dht_key TEXT,
+    -- The daemon's shared DM log with this friend (a DhtLog spine key).
+    -- E2.1 drops it with the friend inbox.
+    dm_log_key TEXT,
     friendship_state TEXT NOT NULL DEFAULT 'accepted',
     -- Phase 2 Track A.2 — Friend's most-recently-seen DeviceId
     -- (hex Ed25519 device pubkey). NULL until they advertise via the

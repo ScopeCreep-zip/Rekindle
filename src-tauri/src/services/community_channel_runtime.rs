@@ -113,7 +113,7 @@ pub async fn create_channel_inner(
 
     let comm_id = community_id.clone();
     db_call(&pool, move |conn| {
-        crate::channel_repo::insert_channel(conn, &owner_key, &channel, &comm_id)?;
+        rekindle_db::repo::channels::insert(conn, &owner_key, &comm_id, &channel.row())?;
         Ok(())
     })
     .await?;
