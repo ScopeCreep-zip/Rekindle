@@ -14,6 +14,7 @@ pub mod dht_outbox;
 pub mod friends;
 pub mod governance_cache;
 pub mod identity;
+pub mod intent_facts;
 pub mod members;
 pub mod pending_requests;
 mod role_ids;

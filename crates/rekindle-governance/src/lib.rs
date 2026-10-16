@@ -14,6 +14,7 @@
 //! See rekindle-architecture-v2.md §4.4 for field specifications.
 
 pub mod compact;
+pub mod intent_facts;
 pub mod invite_quota;
 pub mod merge;
 pub mod permissions;

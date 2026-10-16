@@ -126,9 +126,30 @@ pub fn safety_number(key_a: &[u8], key_b: &[u8]) -> String {
     hex::encode(&hash.as_bytes()[..4])
 }
 
+/// A public key as a person compares it out of band: its hex in groups
+/// of four (plan U1.4: the subject of an admitting intent leads with our
+/// nickname and this, never a peer-chosen name alone).
+#[must_use]
+pub fn key_fingerprint(public_key: &[u8]) -> String {
+    hex::encode(public_key)
+        .as_bytes()
+        .chunks(4)
+        .map(|c| String::from_utf8_lossy(c).into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fingerprint_groups_the_key_hex_in_fours() {
+        assert_eq!(
+            key_fingerprint(&[0xab, 0xcd, 0x01, 0x23, 0xff]),
+            "abcd 0123 ff"
+        );
+    }
 
     #[test]
     fn generate_and_sign() {

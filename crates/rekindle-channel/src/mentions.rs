@@ -36,6 +36,26 @@ impl MentionMatches {
     }
 }
 
+/// Escalation E2 for a send (plan U1.4; ADR 0019): `@everyone`, `@here`
+/// and role mentions that would notify more people than the channel's
+/// members currently online. `role_holders` is how many members the
+/// mentioned roles reach; `@here` alone never exceeds the online count.
+#[must_use]
+pub fn mass_mention_escalation(
+    matches: &MentionMatches,
+    members: u32,
+    online: u32,
+    role_holders: u32,
+) -> Option<rekindle_types::intent::Escalation> {
+    let notified = if matches.everyone {
+        members
+    } else {
+        let here = if matches.here { online } else { 0 };
+        here.saturating_add(role_holders).min(members)
+    };
+    (notified > online).then_some(rekindle_types::intent::Escalation::MassMention { notified })
+}
+
 /// Walk the body once and collect each `@token` as it appears. Tokens
 /// must be preceded by whitespace, start-of-string, or punctuation;
 /// this keeps an embedded `foo@bar.com` from triggering a mention.
@@ -386,5 +406,36 @@ mod tests {
         assert!(!has_perm(A, B));
         assert!(!has_perm(A | C, A | B));
         assert!(has_perm(u64::MAX, A | B | C));
+    }
+
+    #[test]
+    fn mass_mentions_escalate_only_past_the_online_count() {
+        use rekindle_types::intent::Escalation;
+        let everyone = MentionMatches {
+            everyone: true,
+            ..MentionMatches::default()
+        };
+        assert_eq!(
+            mass_mention_escalation(&everyone, 214, 12, 0),
+            Some(Escalation::MassMention { notified: 214 })
+        );
+        assert_eq!(mass_mention_escalation(&everyone, 10, 10, 0), None);
+        let here = MentionMatches {
+            here: true,
+            ..MentionMatches::default()
+        };
+        assert_eq!(mass_mention_escalation(&here, 214, 12, 0), None);
+        let role = MentionMatches {
+            roles: vec!["raiders".into()],
+            ..MentionMatches::default()
+        };
+        assert_eq!(
+            mass_mention_escalation(&role, 214, 12, 40),
+            Some(Escalation::MassMention { notified: 40 })
+        );
+        assert_eq!(
+            mass_mention_escalation(&MentionMatches::default(), 214, 12, 0),
+            None
+        );
     }
 }

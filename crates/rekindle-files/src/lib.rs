@@ -40,6 +40,7 @@ pub mod error;
 pub mod expression_fetch;
 pub mod expressions;
 pub mod fek;
+pub mod intent_facts;
 mod keys;
 pub mod manifest;
 pub mod pinned;
