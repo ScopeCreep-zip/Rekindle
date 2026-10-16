@@ -89,7 +89,7 @@ struct ServerState {
 
 impl ServerState {
     /// The connections whose key holds at least `Authenticated` clearance
-    /// in the registry now.
+    /// in the registry now (an agent also `events:read`).
     async fn cleared_connections(&self) -> std::collections::HashSet<u64> {
         let registry = self.registry.read().await;
         self.connections
@@ -99,6 +99,7 @@ impl ServerState {
             .filter(|(_, conn)| {
                 registry.lookup(&conn.static_key).is_some_and(|identity| {
                     identity.security_level >= crate::message::SecurityLevel::Authenticated
+                        && identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
                 })
             })
             .map(|(id, _)| *id)

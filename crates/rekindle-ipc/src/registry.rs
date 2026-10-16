@@ -2,8 +2,8 @@
 //! levels, with O(1) pubkey lookups via a reverse index.
 //!
 //! After Noise IK handshake, the server extracts the client's X25519 static
-//! public key and resolves it here. Keys not in the registry receive
-//! `SecurityLevel::Open` (ephemeral CLI clients).
+//! public key and resolves it here, at every frame. Keys not in the
+//! registry receive `SecurityLevel::Open`.
 //!
 //! Adapted from open-sesame `core-ipc/src/registry.rs`.
 //!
@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use super::message::{AgentType, SecurityLevel};
+use super::protocol::AgentCapability;
 
 /// An agent's verified identity, clearance, and key state.
 #[derive(Debug, Clone)]
@@ -24,8 +25,8 @@ pub struct AgentIdentity {
     pub security_level: SecurityLevel,
     /// Agent type classification.
     pub agent_type: AgentType,
-    /// Declared capabilities (e.g., "translate", "moderate").
-    pub capabilities: Vec<String>,
+    /// What an `Agent`-level registration may do (plan D1).
+    pub capabilities: Vec<AgentCapability>,
     /// Monotonic generation counter. Survives crash-restart.
     pub generation: u64,
 }
@@ -54,7 +55,7 @@ impl ClearanceRegistry {
         pubkey: [u8; 32],
         level: SecurityLevel,
         agent_type: AgentType,
-        capabilities: Vec<String>,
+        capabilities: Vec<AgentCapability>,
     ) {
         // Remove existing pubkeys from reverse index.
         if let Some(existing) = self.identities.get(&name) {
@@ -221,6 +222,18 @@ impl ClearanceRegistry {
     }
 }
 
+impl AgentIdentity {
+    /// Whether this registration may send a request needing `capability`
+    /// (only `Agent`-level registrations are scoped by capabilities).
+    #[must_use]
+    pub fn permits(&self, capability: Option<AgentCapability>) -> bool {
+        if self.security_level != SecurityLevel::Agent {
+            return true;
+        }
+        capability.is_some_and(|c| self.capabilities.contains(&c))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +362,30 @@ mod tests {
             revoked.generation + 1,
         );
         assert_eq!(reg.find_by_name("a").unwrap().generation, 2);
+    }
+
+    #[test]
+    fn an_agent_is_scoped_by_its_capabilities_and_others_are_not() {
+        use crate::protocol::AgentCapability;
+        let mut reg = ClearanceRegistry::new();
+        reg.register(
+            "bot".into(),
+            [1; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![AgentCapability::ChatWrite],
+        );
+        reg.register(
+            "client-x".into(),
+            [2; 32],
+            SecurityLevel::Admin,
+            AgentType::Human,
+            Vec::new(),
+        );
+        let bot = reg.lookup(&[1; 32]).unwrap();
+        assert!(bot.permits(Some(AgentCapability::ChatWrite)));
+        assert!(!bot.permits(Some(AgentCapability::ImHistory)));
+        assert!(!bot.permits(None));
+        assert!(reg.lookup(&[2; 32]).unwrap().permits(None));
     }
 }

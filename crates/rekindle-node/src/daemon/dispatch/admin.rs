@@ -91,12 +91,17 @@ pub(crate) async fn handle_agent_register(
             format!("this connection's key is already registered as '{existing}'"),
         );
     }
+    // `validate_request` parsed every name.
+    let scoped = capabilities
+        .iter()
+        .filter_map(|c| rekindle_ipc::protocol::AgentCapability::parse(c))
+        .collect();
     registry.register(
         name.to_owned(),
         static_key,
         SecurityLevel::Agent,
         agent_type,
-        capabilities.to_vec(),
+        scoped,
     );
     drop(registry);
     tracing::info!(agent = name, ?agent_type, "agent registered");

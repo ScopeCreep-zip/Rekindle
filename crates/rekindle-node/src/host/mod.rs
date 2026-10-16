@@ -317,7 +317,8 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         daemon_subscriber_pubkey,
         rekindle_ipc::SecurityLevel::Internal,
         rekindle_ipc::AgentType::System,
-        vec!["dispatch".into()],
+        // `Internal`: not scoped by agent capabilities.
+        Vec::new(),
     );
 
     let bus_server = rekindle_ipc::BusServer::bind(

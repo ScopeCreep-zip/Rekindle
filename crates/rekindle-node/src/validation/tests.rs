@@ -273,6 +273,11 @@ fn agents() {
     assert!(!rejected(&IpcRequest::AgentRegister {
         name: "rekindle-tui".into(),
         agent_type: rekindle_ipc::message::AgentType::Bot,
+        capabilities: vec!["chat:write".into()],
+    }));
+    assert!(rejected(&IpcRequest::AgentRegister {
+        name: "bot".into(),
+        agent_type: rekindle_ipc::message::AgentType::Bot,
         capabilities: vec!["chat".into()],
     }));
     assert!(rejected(&IpcRequest::AgentRevoke {
@@ -281,7 +286,7 @@ fn agents() {
     assert!(rejected(&IpcRequest::AgentRegister {
         name: "bot".into(),
         agent_type: rekindle_ipc::message::AgentType::Bot,
-        capabilities: vec!["chat".into(), "chat".into()],
+        capabilities: vec!["chat:write".into(), "chat:write".into()],
     }));
     assert!(rejected(&IpcRequest::AgentRegister {
         name: "bot".into(),

@@ -339,10 +339,12 @@ pub enum IpcRequest {
     PolicyReload,
 }
 
+mod capability;
 mod debug;
 mod lane;
 mod response;
 
+pub use capability::AgentCapability;
 pub use lane::Lane;
 
 pub use response::{BusPayload, IpcResponse};

@@ -246,6 +246,34 @@ impl DaemonContext {
                 "unlock the identity from this client first",
             );
         }
+        // An agent is scoped by its capabilities above the locked-state
+        // requests (plan D1).
+        if required > rekindle_ipc::message::SecurityLevel::Open
+            && caller.level == rekindle_ipc::message::SecurityLevel::Agent
+        {
+            let permitted = match caller.static_key {
+                Some(key) => self
+                    .registry
+                    .read()
+                    .await
+                    .lookup(&key)
+                    .is_some_and(|identity| identity.permits(request.agent_capability())),
+                None => false,
+            };
+            if !permitted {
+                return IpcResponse::error(
+                    403,
+                    format!(
+                        "{} is not within this agent's capabilities{}",
+                        request.name(),
+                        request.agent_capability().map_or(
+                            String::from(" (no agent may send it)"),
+                            |c| format!(" (needs {})", c.as_str())
+                        )
+                    ),
+                );
+            }
+        }
         match request.lane() {
             Lane::Query => super::router::dispatch(self, request, caller).await,
             Lane::Write => {

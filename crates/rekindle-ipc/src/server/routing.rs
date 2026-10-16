@@ -171,10 +171,20 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
                     // clearance every daemon request but the locked-state
                     // ones needs (plan D1). Delivery re-checks it per event.
                     let needed = crate::message::SecurityLevel::Authenticated;
-                    if msg.security_level < needed {
+                    let permitted = {
+                        let conns = state.connections.read().await;
+                        let registry = state.registry.read().await;
+                        conns
+                            .get(&sender_conn_id)
+                            .and_then(|c| registry.lookup(&c.static_key))
+                            .is_some_and(|identity| {
+                                identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
+                            })
+                    };
+                    if msg.security_level < needed || !permitted {
                         let response = crate::protocol::IpcResponse::error(
                             403,
-                            "subscribing needs Authenticated clearance; unlock from this client first",
+                            "subscribing needs Authenticated clearance (an agent, events:read); unlock from this client first",
                         );
                         reply_direct(state, sender_conn_id, &msg, &response).await;
                         return;

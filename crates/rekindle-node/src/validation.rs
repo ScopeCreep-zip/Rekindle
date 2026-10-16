@@ -164,14 +164,18 @@ fn agent_name(name: &str) -> Checked {
         .map_err(|e| IpcResponse::error(400, format!("invalid agent name: {e}")))
 }
 
-/// Each capability is a token in the agent-name grammar, declared once.
-/// The set becomes a closed vocabulary when agents gain authority (D1).
+/// Each capability is one of the closed vocabulary
+/// (`AgentCapability`), declared once.
 fn capabilities(capabilities: &[String]) -> Checked {
     let mut seen = std::collections::HashSet::new();
     for capability in capabilities {
-        validate_agent_name(capability)
-            .map_err(|e| IpcResponse::error(400, format!("invalid capability: {e}")))?;
-        if !seen.insert(capability.as_str()) {
+        let Some(parsed) = rekindle_ipc::protocol::AgentCapability::parse(capability) else {
+            return Err(IpcResponse::error(
+                400,
+                format!("unknown capability '{capability}'"),
+            ));
+        };
+        if !seen.insert(parsed) {
             return Err(IpcResponse::error(
                 400,
                 format!("capability '{capability}' declared twice"),
