@@ -6,20 +6,22 @@
 //!
 //! ## Encryption layers
 //!
-//! 1. **SQLCipher** (AES-256-CBC at the page level). Encrypts the entire
-//!    database file. Key derived from `Argon2id(passphrase, salt)` →
-//!    `BLAKE3-keyed("rekindle v1 vault-sqlcipher", master)`.
-//! 2. **Per-entry AES-256-GCM**. Every `entries.ciphertext` row is sealed
-//!    independently with a key derived from
-//!    `BLAKE3-keyed("rekindle v1 vault-entry-gcm", master)`.
+//! `Argon2id(passphrase, salt)` with the parameters in the vault header
+//! gives a 64-byte master; BLAKE3 `derive_key` under three labels
+//! (`domains::VAULT_{SQLCIPHER,ENTRY,APP_DB}_KEY`) gives:
 //!
-//! ## Salt storage
+//! 1. **SQLCipher** key: the whole vault file (AES-256-CBC per page).
+//! 2. **Per-entry AES-256-GCM** key: every `entries.ciphertext` row, with
+//!    AAD `namespace ‖ 0x00 ‖ key` binding it to its address.
+//! 3. The **app-db key** ([`AppDbKey`]): the identity's SQLCipher database
+//!    (plan D1), so one passphrase unlocks both.
 //!
-//! The 32-byte salt cannot live inside the SQLCipher database (it would
-//! be needed before decryption to derive the key). It lives in a sidecar
-//! file `{vault_path}.salt` — plaintext, since salts only need to be
-//! unique per install, not secret.
+//! ## Header
 //!
+//! The Argon2id parameters and 32-byte salt live in `{vault}.hdr`
+//! ([`header`]), readable before decryption; neither is secret.
+//! [`VaultStore::create`] writes it; [`VaultStore::open`] never creates.
+
 //! ## Layout
 //!
 //! ```sql
@@ -36,6 +38,7 @@
 //! `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 2.
 
 pub mod error;
+pub mod header;
 pub mod key;
 pub mod schema;
 pub mod store;
@@ -43,4 +46,4 @@ pub mod typed;
 
 pub use error::VaultError;
 pub use key::VaultKey;
-pub use store::VaultStore;
+pub use store::{AppDbKey, VaultStore};

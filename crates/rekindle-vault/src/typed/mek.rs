@@ -163,7 +163,15 @@ mod tests {
     const OTHER: KeyScope = KeyScope::Channel(ChannelId([2; 16]));
 
     fn keystore(dir: &TempDir) -> VaultStore {
-        VaultStore::open(&dir.path().join("rekindle.vault"), "testpass").unwrap()
+        {
+            // Create on first use, reopen after: the tests reopen a vault.
+            let path = dir.path().join("rekindle.vault");
+            if path.exists() {
+                VaultStore::open(&path, "testpass").unwrap().0
+            } else {
+                VaultStore::create(&path, "testpass").unwrap().0
+            }
+        }
     }
 
     #[test]

@@ -95,7 +95,15 @@ mod tests {
     use tempfile::TempDir;
 
     fn vault(dir: &TempDir) -> VaultStore {
-        VaultStore::open(&dir.path().join("rekindle.vault"), "pp").unwrap()
+        {
+            // Create on first use, reopen after: the tests reopen a vault.
+            let path = dir.path().join("rekindle.vault");
+            if path.exists() {
+                VaultStore::open(&path, "pp").unwrap().0
+            } else {
+                VaultStore::create(&path, "pp").unwrap().0
+            }
+        }
     }
 
     #[test]

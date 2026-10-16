@@ -122,6 +122,13 @@ labels! {
     /// BLAKE3 keyed-hash input: daemon keyring disk-fallback key.
     DISK_FALLBACK_KEY = "rekindle-disk-fallback-v1";
 
+    /// BLAKE3 `derive_key` context: the vault's SQLCipher key (plan D1).
+    VAULT_SQLCIPHER_KEY = "rekindle-vault-sqlcipher-v1";
+    /// BLAKE3 `derive_key` context: the vault's per-entry AEAD key.
+    VAULT_ENTRY_KEY = "rekindle-vault-entry-v1";
+    /// BLAKE3 `derive_key` context: the identity database's SQLCipher key,
+    /// derived from the vault passphrase (plan D1).
+    VAULT_APP_DB_KEY = "rekindle-vault-app-db-v1";
     // ── PRE_FORMAT: predate the naming rule; bytes kept until removal ──
     /// HKDF info prefix + decimal slot index: SMPL member-slot keypair.
     /// Renamed to the `-v<N>` form in step 22 (governance op DAG).
@@ -132,11 +139,6 @@ labels! {
     /// HPKE info: MEK transfer — Rekindle-owned, never Veilid's
     /// `veilid-hpke/1`. Deleted with the MEK in step 30 (MLS).
     HPKE_MEK_INFO = "rekindle-mek/1";
-    /// BLAKE3 `derive_key` context: vault SQLCipher key. Replaced by the
-    /// vault header rework in step 15/16.
-    VAULT_SQLCIPHER_KEY = "rekindle v1 vault-sqlcipher";
-    /// BLAKE3 `derive_key` context: vault entry AEAD key (step 15/16).
-    VAULT_ENTRY_KEY = "rekindle v1 vault-entry-gcm";
     /// 1:1 ratchet KDF labels, shared by the desktop and daemon tracks —
     /// deleted with the non-spec ratchet in step 27.
     RATCHET_PQXDH_EXPAND = "ReKindlePQXDH";
@@ -156,8 +158,6 @@ pub const PRE_FORMAT: &[&str] = &[
     SLOT_KEY_PREFIX,
     PERSONAL_SYNC_RECORD_INFO,
     HPKE_MEK_INFO,
-    VAULT_SQLCIPHER_KEY,
-    VAULT_ENTRY_KEY,
     RATCHET_PQXDH_EXPAND,
     RATCHET_ROOT,
     RATCHET_CHAIN_RATCHET,

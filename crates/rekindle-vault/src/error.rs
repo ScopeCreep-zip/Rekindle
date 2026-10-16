@@ -17,4 +17,13 @@ pub enum VaultError {
     /// to NOMEM), so the keying phase of `open` reports it as this.
     #[error("wrong passphrase or corrupt vault")]
     WrongPassphrase,
+    /// The vault's `.hdr` file is absent (`open` never creates one).
+    #[error("vault header missing")]
+    HeaderMissing,
+    /// No vault file at the path (`open` never creates one).
+    #[error("no vault at this path")]
+    NotFound,
+    /// `create` found a vault or header already there.
+    #[error("a vault already exists at this path")]
+    AlreadyExists,
 }

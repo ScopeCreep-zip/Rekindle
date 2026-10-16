@@ -6,10 +6,11 @@
 //! deliberately no `Generic { namespace, key }` escape hatch, so a typo or an
 //! attacker-influenced string can never address an arbitrary slot.
 //!
-//! Each variant maps to a fixed `(namespace, key)` pair via
-//! [`VaultKey::namespace`] and [`VaultKey::key`]. Those strings are the
-//! on-disk identifiers; they must stay byte-stable or existing vaults stop
-//! resolving their entries.
+//! Each variant maps to a `(namespace, key)` pair via
+//! [`VaultKey::namespace`] and [`VaultKey::key`], and back via
+//! [`VaultKey::parse`]. A key is its variant's tag followed by each field
+//! as `:<byte length>:<value>` (plan D1), so no field value can be read as
+//! another field and every stored key parses back to one variant.
 
 use std::borrow::Cow;
 
@@ -21,38 +22,60 @@ pub enum VaultKey {
 
     /// Per-peer trusted identity (trust-on-first-use) —
     /// `("signal", "trusted:{peer}")`.
-    SignalTrusted { peer: String },
+    SignalTrusted {
+        peer: String,
+    },
     /// Per-peer Signal session — `("signal", "session:{peer}")`.
-    SignalSession { peer: String },
+    SignalSession {
+        peer: String,
+    },
     /// Index of peers that have a stored session —
     /// `("signal", "session_index")`.
     SignalSessionIndex,
     /// One-time prekey by id — `("signal", "prekey:{id}")`.
-    SignalPrekey { id: u32 },
+    SignalPrekey {
+        id: u32,
+    },
     /// Index of stored one-time prekey ids — `("signal", "prekey_index")`.
     SignalPrekeyIndex,
     /// Signed prekey by id — `("signal", "signed_prekey:{id}")`.
-    SignalSignedPrekey { id: u32 },
+    SignalSignedPrekey {
+        id: u32,
+    },
     /// PQXDH last-resort ML-KEM-768 secret — `("signal", "pq_lr:{id}")`.
-    SignalPqLastResort { id: u32 },
+    SignalPqLastResort {
+        id: u32,
+    },
     /// PQXDH one-time ML-KEM-768 secret — `("signal", "pq_ot:{id}")`.
-    SignalPqOneTime { id: u32 },
+    SignalPqOneTime {
+        id: u32,
+    },
     /// Index of stored PQ one-time prekey ids, oldest first —
     /// `("signal", "pq_ot_index")`.
     SignalPqOneTimeIndex,
 
     /// Community-level MEK — `("communities", "mek_{community}")`.
-    CommunityMek { community: String },
+    CommunityMek {
+        community: String,
+    },
     /// Community-level MEK at a specific generation, kept so history
     /// written under a replaced key stays readable —
     /// `("communities", "community_mek_{community}_{generation}")`.
-    CommunityMekGeneration { community: String, generation: u64 },
+    CommunityMekGeneration {
+        community: String,
+        generation: u64,
+    },
     /// Community-level MEK generations index —
     /// `("communities", "community_mek_generations_{community}")`.
-    CommunityMekGenerationsIndex { community: String },
+    CommunityMekGenerationsIndex {
+        community: String,
+    },
     /// Per-channel latest MEK —
     /// `("communities", "mek_{community}_{channel}")`.
-    ChannelMek { community: String, channel: String },
+    ChannelMek {
+        community: String,
+        channel: String,
+    },
     /// Per-channel MEK at a specific generation —
     /// `("communities", "mek_{community}_{channel}_{generation}")`.
     ChannelMekGeneration {
@@ -62,19 +85,41 @@ pub enum VaultKey {
     },
     /// Per-channel generations index —
     /// `("communities", "mek_generations_{community}_{channel}")`.
-    ChannelMekGenerationsIndex { community: String, channel: String },
+    ChannelMekGenerationsIndex {
+        community: String,
+        channel: String,
+    },
     /// SMPL slot keypair — `("communities", "slot_keypair_{community}")`.
-    SlotKeypair { community: String },
+    SlotKeypair {
+        community: String,
+    },
     /// SMPL registry owner keypair —
     /// `("communities", "registry_keypair_{community}")`.
-    RegistryKeypair { community: String },
+    RegistryKeypair {
+        community: String,
+    },
     /// SMPL slot seed (hex) — `("communities", "slot_seed_{community}")`.
-    SlotSeed { community: String },
+    SlotSeed {
+        community: String,
+    },
 
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
     /// Audit chain tail anchor — `("audit", "tail")`.
     AuditTail,
+
+    /// The identity's DHT records' owner keypairs (plan D1, moved from the
+    /// `identity` table): profile, friend list, account, personal sync.
+    ProfileOwnerKeypair,
+    FriendListOwnerKeypair,
+    AccountOwnerKeypair,
+    PersonalSyncOwnerKeypair,
+
+    /// A bus client's registered static public key (hex) and its clearance
+    /// (plan D1) — `("clients", "client:<len>:<key>")`.
+    ClientKey {
+        public_key: String,
+    },
 }
 
 impl VaultKey {
@@ -82,7 +127,11 @@ impl VaultKey {
     #[must_use]
     pub fn namespace(&self) -> &'static str {
         match self {
-            Self::IdentityEd25519 => "identity",
+            Self::IdentityEd25519
+            | Self::ProfileOwnerKeypair
+            | Self::FriendListOwnerKeypair
+            | Self::AccountOwnerKeypair
+            | Self::PersonalSyncOwnerKeypair => "identity",
             Self::SignalTrusted { .. }
             | Self::SignalSession { .. }
             | Self::SignalSessionIndex
@@ -102,52 +151,168 @@ impl VaultKey {
             | Self::RegistryKeypair { .. }
             | Self::SlotSeed { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
+            Self::ClientKey { .. } => "clients",
         }
     }
 
-    /// The storage key — the second column of the `entries` table. Static
-    /// variants borrow a `&'static str`; parameterized variants format an
-    /// owned string from their fields.
-    #[must_use]
-    pub fn key(&self) -> Cow<'static, str> {
+    /// The variant's tag and its fields, in order.
+    fn parts(&self) -> (&'static str, Vec<Cow<'_, str>>) {
+        let s = |v: &str| Cow::Owned(v.to_owned());
+        let n = |v: u64| Cow::Owned(v.to_string());
         match self {
-            Self::IdentityEd25519 => Cow::Borrowed("ed25519_private"),
-            Self::SignalTrusted { peer } => Cow::Owned(format!("trusted:{peer}")),
-            Self::SignalSession { peer } => Cow::Owned(format!("session:{peer}")),
-            Self::SignalSessionIndex => Cow::Borrowed("session_index"),
-            Self::SignalPrekey { id } => Cow::Owned(format!("prekey:{id}")),
-            Self::SignalPrekeyIndex => Cow::Borrowed("prekey_index"),
-            Self::SignalSignedPrekey { id } => Cow::Owned(format!("signed_prekey:{id}")),
-            Self::SignalPqLastResort { id } => Cow::Owned(format!("pq_lr:{id}")),
-            Self::SignalPqOneTime { id } => Cow::Owned(format!("pq_ot:{id}")),
-            Self::SignalPqOneTimeIndex => Cow::Borrowed("pq_ot_index"),
-            Self::CommunityMek { community } => Cow::Owned(format!("mek_{community}")),
+            Self::IdentityEd25519 => ("ed25519_private", vec![]),
+            Self::ProfileOwnerKeypair => ("profile_owner_keypair", vec![]),
+            Self::FriendListOwnerKeypair => ("friend_list_owner_keypair", vec![]),
+            Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
+            Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
+            Self::SignalTrusted { peer } => ("trusted", vec![s(peer)]),
+            Self::SignalSession { peer } => ("session", vec![s(peer)]),
+            Self::SignalSessionIndex => ("session_index", vec![]),
+            Self::SignalPrekey { id } => ("prekey", vec![n(u64::from(*id))]),
+            Self::SignalPrekeyIndex => ("prekey_index", vec![]),
+            Self::SignalSignedPrekey { id } => ("signed_prekey", vec![n(u64::from(*id))]),
+            Self::SignalPqLastResort { id } => ("pq_lr", vec![n(u64::from(*id))]),
+            Self::SignalPqOneTime { id } => ("pq_ot", vec![n(u64::from(*id))]),
+            Self::SignalPqOneTimeIndex => ("pq_ot_index", vec![]),
+            Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
             Self::CommunityMekGeneration {
                 community,
                 generation,
-            } => Cow::Owned(format!("community_mek_{community}_{generation}")),
+            } => (
+                "community_mek_generation",
+                vec![s(community), n(*generation)],
+            ),
             Self::CommunityMekGenerationsIndex { community } => {
-                Cow::Owned(format!("community_mek_generations_{community}"))
+                ("community_mek_generations", vec![s(community)])
             }
             Self::ChannelMek { community, channel } => {
-                Cow::Owned(format!("mek_{community}_{channel}"))
+                ("channel_mek", vec![s(community), s(channel)])
             }
             Self::ChannelMekGeneration {
                 community,
                 channel,
                 generation,
-            } => Cow::Owned(format!("mek_{community}_{channel}_{generation}")),
+            } => (
+                "channel_mek_generation",
+                vec![s(community), s(channel), n(*generation)],
+            ),
             Self::ChannelMekGenerationsIndex { community, channel } => {
-                Cow::Owned(format!("mek_generations_{community}_{channel}"))
+                ("channel_mek_generations", vec![s(community), s(channel)])
             }
-            Self::SlotKeypair { community } => Cow::Owned(format!("slot_keypair_{community}")),
-            Self::RegistryKeypair { community } => {
-                Cow::Owned(format!("registry_keypair_{community}"))
-            }
-            Self::SlotSeed { community } => Cow::Owned(format!("slot_seed_{community}")),
-            Self::AuditMacKey => Cow::Borrowed("mac_key"),
-            Self::AuditTail => Cow::Borrowed("tail"),
+            Self::SlotKeypair { community } => ("slot_keypair", vec![s(community)]),
+            Self::RegistryKeypair { community } => ("registry_keypair", vec![s(community)]),
+            Self::SlotSeed { community } => ("slot_seed", vec![s(community)]),
+            Self::AuditMacKey => ("mac_key", vec![]),
+            Self::AuditTail => ("tail", vec![]),
+            Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
         }
+    }
+
+    /// The storage key — the second column of the `entries` table: the
+    /// tag, then each field as `:<byte length>:<value>`.
+    #[must_use]
+    pub fn key(&self) -> Cow<'static, str> {
+        let (tag, fields) = self.parts();
+        if fields.is_empty() {
+            return Cow::Borrowed(tag);
+        }
+        let mut out = tag.to_owned();
+        for field in fields {
+            out.push(':');
+            out.push_str(&field.len().to_string());
+            out.push(':');
+            out.push_str(&field);
+        }
+        Cow::Owned(out)
+    }
+
+    /// The variant stored under `(namespace, key)`, or `None` when the pair
+    /// names none.
+    #[must_use]
+    pub fn parse(namespace: &str, key: &str) -> Option<Self> {
+        let (tag, fields) = split_fields(key)?;
+        let parsed = match (tag, fields.as_slice()) {
+            ("ed25519_private", []) => Self::IdentityEd25519,
+            ("profile_owner_keypair", []) => Self::ProfileOwnerKeypair,
+            ("friend_list_owner_keypair", []) => Self::FriendListOwnerKeypair,
+            ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
+            ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
+            ("trusted", [peer]) => Self::SignalTrusted { peer: peer.clone() },
+            ("session", [peer]) => Self::SignalSession { peer: peer.clone() },
+            ("session_index", []) => Self::SignalSessionIndex,
+            ("prekey", [id]) => Self::SignalPrekey {
+                id: id.parse().ok()?,
+            },
+            ("prekey_index", []) => Self::SignalPrekeyIndex,
+            ("signed_prekey", [id]) => Self::SignalSignedPrekey {
+                id: id.parse().ok()?,
+            },
+            ("pq_lr", [id]) => Self::SignalPqLastResort {
+                id: id.parse().ok()?,
+            },
+            ("pq_ot", [id]) => Self::SignalPqOneTime {
+                id: id.parse().ok()?,
+            },
+            ("pq_ot_index", []) => Self::SignalPqOneTimeIndex,
+            ("community_mek", [c]) => Self::CommunityMek {
+                community: c.clone(),
+            },
+            ("community_mek_generation", [c, g]) => Self::CommunityMekGeneration {
+                community: c.clone(),
+                generation: g.parse().ok()?,
+            },
+            ("community_mek_generations", [c]) => Self::CommunityMekGenerationsIndex {
+                community: c.clone(),
+            },
+            ("channel_mek", [c, ch]) => Self::ChannelMek {
+                community: c.clone(),
+                channel: ch.clone(),
+            },
+            ("channel_mek_generation", [c, ch, g]) => Self::ChannelMekGeneration {
+                community: c.clone(),
+                channel: ch.clone(),
+                generation: g.parse().ok()?,
+            },
+            ("channel_mek_generations", [c, ch]) => Self::ChannelMekGenerationsIndex {
+                community: c.clone(),
+                channel: ch.clone(),
+            },
+            ("slot_keypair", [c]) => Self::SlotKeypair {
+                community: c.clone(),
+            },
+            ("registry_keypair", [c]) => Self::RegistryKeypair {
+                community: c.clone(),
+            },
+            ("slot_seed", [c]) => Self::SlotSeed {
+                community: c.clone(),
+            },
+            ("mac_key", []) => Self::AuditMacKey,
+            ("tail", []) => Self::AuditTail,
+            ("client", [k]) => Self::ClientKey {
+                public_key: k.clone(),
+            },
+            _ => return None,
+        };
+        (parsed.namespace() == namespace).then_some(parsed)
+    }
+}
+
+/// A key's tag and its length-prefixed fields.
+fn split_fields(key: &str) -> Option<(&str, Vec<String>)> {
+    let Some((tag, mut rest)) = key.split_once(':') else {
+        return Some((key, Vec::new()));
+    };
+    let mut fields = Vec::new();
+    loop {
+        let (len, after) = rest.split_once(':')?;
+        let len: usize = len.parse().ok()?;
+        let value = after.get(..len)?;
+        fields.push(value.to_owned());
+        let tail = &after[len..];
+        if tail.is_empty() {
+            return Some((tag, fields));
+        }
+        rest = tail.strip_prefix(':')?;
     }
 }
 
@@ -155,112 +320,94 @@ impl VaultKey {
 mod tests {
     use super::*;
 
-    /// Regression guard: every variant must map to the exact `(namespace,
-    /// key)` strings the pre-typed stringly API produced, or existing vaults
-    /// silently stop resolving their entries.
+    fn every_variant() -> Vec<VaultKey> {
+        let c = || "c_1:x".to_owned();
+        vec![
+            VaultKey::IdentityEd25519,
+            VaultKey::ProfileOwnerKeypair,
+            VaultKey::FriendListOwnerKeypair,
+            VaultKey::AccountOwnerKeypair,
+            VaultKey::PersonalSyncOwnerKeypair,
+            VaultKey::SignalTrusted { peer: "p:1".into() },
+            VaultKey::SignalSession { peer: "p".into() },
+            VaultKey::SignalSessionIndex,
+            VaultKey::SignalPrekey { id: 7 },
+            VaultKey::SignalPrekeyIndex,
+            VaultKey::SignalSignedPrekey { id: 9 },
+            VaultKey::SignalPqLastResort { id: 3 },
+            VaultKey::SignalPqOneTime { id: 4 },
+            VaultKey::SignalPqOneTimeIndex,
+            VaultKey::CommunityMek { community: c() },
+            VaultKey::CommunityMekGeneration {
+                community: c(),
+                generation: 5,
+            },
+            VaultKey::CommunityMekGenerationsIndex { community: c() },
+            VaultKey::ChannelMek {
+                community: c(),
+                channel: "ch_2".into(),
+            },
+            VaultKey::ChannelMekGeneration {
+                community: c(),
+                channel: "ch".into(),
+                generation: 5,
+            },
+            VaultKey::ChannelMekGenerationsIndex {
+                community: c(),
+                channel: "ch".into(),
+            },
+            VaultKey::SlotKeypair { community: c() },
+            VaultKey::RegistryKeypair { community: c() },
+            VaultKey::SlotSeed { community: c() },
+            VaultKey::AuditMacKey,
+            VaultKey::AuditTail,
+            VaultKey::ClientKey {
+                public_key: "ab".repeat(32),
+            },
+        ]
+    }
+
+    /// Every variant's key parses back to it, in its namespace only, even
+    /// when a field holds the separator.
     #[test]
-    fn namespace_and_key_strings_are_byte_stable() {
-        let cases: &[(VaultKey, &str, &str)] = &[
-            (VaultKey::IdentityEd25519, "identity", "ed25519_private"),
-            (
-                VaultKey::SignalTrusted {
-                    peer: "peer-abc".into(),
-                },
-                "signal",
-                "trusted:peer-abc",
-            ),
-            (
-                VaultKey::SignalSession {
-                    peer: "peer-abc".into(),
-                },
-                "signal",
-                "session:peer-abc",
-            ),
-            (VaultKey::SignalSessionIndex, "signal", "session_index"),
-            (VaultKey::SignalPrekey { id: 7 }, "signal", "prekey:7"),
-            (VaultKey::SignalPrekeyIndex, "signal", "prekey_index"),
-            (
-                VaultKey::SignalSignedPrekey { id: 9 },
-                "signal",
-                "signed_prekey:9",
-            ),
-            (VaultKey::SignalPqLastResort { id: 3 }, "signal", "pq_lr:3"),
-            (VaultKey::SignalPqOneTime { id: 4 }, "signal", "pq_ot:4"),
-            (VaultKey::SignalPqOneTimeIndex, "signal", "pq_ot_index"),
-            (
-                VaultKey::CommunityMek {
-                    community: "c1".into(),
-                },
-                "communities",
-                "mek_c1",
-            ),
-            (
-                VaultKey::CommunityMekGeneration {
-                    community: "c1".into(),
-                    generation: 5,
-                },
-                "communities",
-                "community_mek_c1_5",
-            ),
-            (
-                VaultKey::CommunityMekGenerationsIndex {
-                    community: "c1".into(),
-                },
-                "communities",
-                "community_mek_generations_c1",
-            ),
-            (
-                VaultKey::ChannelMek {
-                    community: "c1".into(),
-                    channel: "ch".into(),
-                },
-                "communities",
-                "mek_c1_ch",
-            ),
-            (
-                VaultKey::ChannelMekGeneration {
-                    community: "c1".into(),
-                    channel: "ch".into(),
-                    generation: 5,
-                },
-                "communities",
-                "mek_c1_ch_5",
-            ),
-            (
-                VaultKey::ChannelMekGenerationsIndex {
-                    community: "c1".into(),
-                    channel: "ch".into(),
-                },
-                "communities",
-                "mek_generations_c1_ch",
-            ),
-            (
-                VaultKey::SlotKeypair {
-                    community: "c1".into(),
-                },
-                "communities",
-                "slot_keypair_c1",
-            ),
-            (
-                VaultKey::RegistryKeypair {
-                    community: "c1".into(),
-                },
-                "communities",
-                "registry_keypair_c1",
-            ),
-            (
-                VaultKey::SlotSeed {
-                    community: "c1".into(),
-                },
-                "communities",
-                "slot_seed_c1",
-            ),
-            (VaultKey::AuditMacKey, "audit", "mac_key"),
-            (VaultKey::AuditTail, "audit", "tail"),
-        ];
-        for (vk, namespace, key) in cases {
-            assert_eq!(vk.namespace(), *namespace, "namespace mismatch for {vk:?}");
-            assert_eq!(vk.key().as_ref(), *key, "key mismatch for {vk:?}");
+    fn every_key_parses_back_to_its_variant() {
+        for vk in every_variant() {
+            let key = vk.key();
+            assert_eq!(
+                VaultKey::parse(vk.namespace(), &key),
+                Some(vk.clone()),
+                "{key}"
+            );
+            assert_eq!(VaultKey::parse("elsewhere", &key), None);
         }
+        assert_eq!(
+            VaultKey::ChannelMek {
+                community: "a".into(),
+                channel: "b".into()
+            }
+            .key(),
+            "channel_mek:1:a:1:b"
+        );
+        assert_eq!(
+            VaultKey::parse("signal", "prekey:2:7"),
+            None,
+            "length mismatch"
+        );
+        assert_eq!(VaultKey::parse("signal", "prekey:x:7"), None);
+    }
+
+    /// Field values cannot alias: two different (community, channel) pairs
+    /// whose naive concatenation agrees get different keys.
+    #[test]
+    fn fields_do_not_alias() {
+        let a = VaultKey::ChannelMek {
+            community: "a_b".into(),
+            channel: "c".into(),
+        };
+        let b = VaultKey::ChannelMek {
+            community: "a".into(),
+            channel: "b_c".into(),
+        };
+        assert_ne!(a.key(), b.key());
     }
 }

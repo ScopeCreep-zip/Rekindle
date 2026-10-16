@@ -363,7 +363,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn vault_session_store_roundtrip_through_cache() {
         let dir = TempDir::new().unwrap();
-        let keystore = crate::keystore::StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        let keystore = crate::keystore::test_keystore(dir.path(), "pp").unwrap();
         let handle: KeystoreHandle = Arc::new(Mutex::new(Some(keystore)));
 
         let store = VaultSessionStore::new(handle.clone());
@@ -390,7 +390,7 @@ mod tests {
 
         // Session 1: write.
         {
-            let keystore = crate::keystore::StrongholdKeystore::initialize(dir.path(), pp).unwrap();
+            let keystore = crate::keystore::test_keystore(dir.path(), pp).unwrap();
             let handle: KeystoreHandle = Arc::new(Mutex::new(Some(keystore)));
             let store = VaultSessionStore::new(handle);
             store
@@ -401,7 +401,7 @@ mod tests {
 
         // Session 2: reopen.
         {
-            let keystore = crate::keystore::StrongholdKeystore::initialize(dir.path(), pp).unwrap();
+            let keystore = crate::keystore::test_keystore(dir.path(), pp).unwrap();
             let handle: KeystoreHandle = Arc::new(Mutex::new(Some(keystore)));
             let store = VaultSessionStore::new(handle);
             let bytes = store
@@ -420,7 +420,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn vault_session_store_concurrent_store_and_load() {
         let dir = TempDir::new().unwrap();
-        let keystore = crate::keystore::StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        let keystore = crate::keystore::test_keystore(dir.path(), "pp").unwrap();
         let handle: KeystoreHandle = Arc::new(Mutex::new(Some(keystore)));
         let store = Arc::new(VaultSessionStore::new(handle));
 
@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn prekey_store_persists_order_and_fails_closed() {
         let dir = TempDir::new().unwrap();
-        let keystore = crate::keystore::StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        let keystore = crate::keystore::test_keystore(dir.path(), "pp").unwrap();
         let handle: KeystoreHandle = Arc::new(Mutex::new(Some(keystore)));
 
         let store = StrongholdPreKeyStore::new(handle.clone()).unwrap();

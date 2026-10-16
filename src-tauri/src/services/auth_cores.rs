@@ -50,7 +50,7 @@ pub async fn create_identity_core(
     };
     let now = db::timestamp_now();
 
-    let keystore = StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)
+    let keystore = StrongholdKeystore::create_for_identity(config_dir, &public_key, passphrase)
         .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
     keystore
         .vault_put(&VaultKey::IdentityEd25519, &secret_bytes)
