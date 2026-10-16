@@ -349,12 +349,9 @@ mod tests {
                 ),
             }
         }
-        // At most a few loads (race losers may have loaded before
-        // seeing the winner's insert). The important assertion is
-        // coherence above; load count just confirms we're not loading
-        // 50 times.
-        let loads = persist.load_count.load(Ordering::Relaxed);
-        assert!(loads < 50, "expected < 50 loads, got {loads}");
+        // The load count is not asserted: every racer may load before
+        // the winner inserts, which the cache allows. Coherence (one Arc)
+        // is the property (plan V.0).
     }
 
     /// 50 concurrent mutations to the SAME peer must serialize through

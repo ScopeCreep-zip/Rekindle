@@ -108,11 +108,12 @@ test.describe("New User Registration", () => {
     // Should navigate to buddy list
     await page.waitForURL("**/buddy-list", { timeout: 15_000 });
 
-    // Should have fallback name "User_" + 8 hex chars
-    const displayName = await page
-      .locator(".identity-bar-name")
-      .textContent();
-    expect(displayName).toMatch(/^User_[0-9a-f]{8}$/);
+    // Should have fallback name "User_" + 8 hex chars, once the buddy
+    // list has hydrated (a one-shot textContent() read raced it).
+    await expect(page.locator(".identity-bar-name")).toHaveText(
+      /^User_[0-9a-f]{8}$/,
+      { timeout: 10_000 },
+    );
   });
 });
 
