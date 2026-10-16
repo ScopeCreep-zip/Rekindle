@@ -313,6 +313,29 @@ impl ChannelMessagingDeps for ChannelAdapter {
             .unwrap_or_default()
     }
 
+    fn record_send_state(
+        &self,
+        message_id: &str,
+        state: rekindle_types::message::SendState,
+        held: Option<(&str, u32)>,
+    ) {
+        let Ok(owner) = state_helpers::current_owner_key(&self.state) else {
+            return;
+        };
+        let message_id = message_id.to_string();
+        let held = held.map(|(record, subkey)| (record.to_string(), subkey));
+        crate::db_helpers::db_fire(&self.pool, "message send state", move |conn| {
+            rekindle_db::repo::messages::set_send_state(
+                conn,
+                &owner,
+                &message_id,
+                state,
+                held.as_ref()
+                    .map(|(record, subkey)| (record.as_str(), *subkey)),
+            )
+        });
+    }
+
     // ---------- DB (channel messages) ----------
 
     async fn persist_sent_message(

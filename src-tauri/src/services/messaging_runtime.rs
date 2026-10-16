@@ -55,7 +55,7 @@ pub async fn get_channel_messages_inner(
     let mpk = my_pseudonym_key.clone();
     let mut messages: Vec<Message> = db_call(&pool, move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags \
+            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags, send_state \
                  FROM messages \
                  WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
                  ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?",
@@ -82,6 +82,7 @@ pub async fn get_channel_messages_inner(
                 forwarded_from_author: db::get_str_opt(row, "forwarded_from_author"),
                 attachment,
                 flags,
+                send_state: crate::commands::chat::stored_send_state(row)?,
             })
         })?;
 
@@ -237,7 +238,7 @@ pub async fn get_older_channel_messages_inner(
     let before_ts = before_timestamp.cast_signed();
     let mut messages: Vec<Message> = db_call(&pool, move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags \
+            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags, send_state \
              FROM messages \
              WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
              AND timestamp < ? \
@@ -266,6 +267,7 @@ pub async fn get_older_channel_messages_inner(
                     forwarded_from_author: db::get_str_opt(row, "forwarded_from_author"),
                     attachment,
                     flags,
+                    send_state: crate::commands::chat::stored_send_state(row)?,
                 })
             },
         )?;

@@ -138,6 +138,10 @@ pub(super) async fn insert_channel_message_full_impl(
                 forwarded_from_author: None,
                 flags,
                 attachment_json: Some(&attachment_json),
+                // The upload's write does not report held from stored (E2.5
+                // gives attachments the outbox's state); a write that returned
+                // is sent, as the upload UI shows it.
+                send_state: rekindle_types::message::SendState::Sent,
             },
         )
     })

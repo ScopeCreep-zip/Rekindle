@@ -363,9 +363,11 @@ pub(crate) async fn load_channel_messages_from_smpl(
                     lamport_ts: message.lamport_ts,
                 },
             );
+            let is_own = message.sender_pseudonym == my_pseudonym;
             Message {
                 id: 0,
-                is_own: message.sender_pseudonym == my_pseudonym,
+                is_own,
+                send_state: crate::commands::chat::network_send_state(is_own),
                 sender_id: message.sender_pseudonym.clone(),
                 body: decrypted.body,
                 decryption_failed: decrypted.decryption_failed,

@@ -12,38 +12,55 @@ use crate::state_helpers;
 
 use super::ChannelAdapter;
 
+/// Our own post's row, written `Queued` before its record write: the
+/// write's result moves it (`ChannelMessagingDeps::record_send_state`).
+async fn persist_own_post(
+    adapter: &ChannelAdapter,
+    channel_id: &str,
+    outcome: &ChannelSendOutcome,
+    body: &str,
+    forwarded_from_author: Option<&str>,
+) -> Result<(), ChannelError> {
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
+    let (channel_id, body, outcome, forwarded) = (
+        channel_id.to_string(),
+        body.to_string(),
+        outcome.clone(),
+        forwarded_from_author.map(str::to_string),
+    );
+    db_call(&adapter.pool, move |conn| {
+        crate::message_repo::insert_channel_message_full(
+            conn,
+            &crate::message_repo::ChannelMessageInsert {
+                owner_key: &owner_key,
+                channel_id: &channel_id,
+                sender_key: &outcome.sender_pseudonym_hex,
+                body: &body,
+                timestamp: outcome.timestamp_ms,
+                is_read: true,
+                mek_generation: Some(i64::try_from(outcome.mek_generation).unwrap_or(i64::MAX)),
+                message_id: &outcome.message_id,
+                lamport_ts: outcome.lamport_ts,
+                automod_blurred: false,
+                forwarded_from_author: forwarded.as_deref(),
+                flags: 0,
+                attachment_json: None,
+                send_state: rekindle_types::message::SendState::Queued,
+            },
+        )
+    })
+    .await
+    .map_err(ChannelError::Adapter)
+}
+
 pub(super) async fn persist_sent_message_impl(
     adapter: &ChannelAdapter,
     channel_id: &str,
     outcome: &ChannelSendOutcome,
     body: &str,
 ) -> Result<(), ChannelError> {
-    let owner_key =
-        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
-    let channel_id = channel_id.to_string();
-    let sender_key = outcome.sender_pseudonym_hex.clone();
-    let body = body.to_string();
-    let message_id = outcome.message_id.clone();
-    let mek_generation = outcome.mek_generation;
-    let timestamp_ms = outcome.timestamp_ms;
-    let lamport_ts = outcome.lamport_ts;
-    db_call(&adapter.pool, move |conn| {
-        crate::message_repo::insert_channel_message_with_protocol_metadata(
-            conn,
-            &owner_key,
-            &channel_id,
-            &sender_key,
-            &body,
-            timestamp_ms,
-            true,
-            Some(i64::try_from(mek_generation).unwrap_or(i64::MAX)),
-            &message_id,
-            lamport_ts,
-            false,
-        )
-    })
-    .await
-    .map_err(ChannelError::Adapter)
+    persist_own_post(adapter, channel_id, outcome, body, None).await
 }
 
 pub(super) async fn persist_forwarded_message_impl(
@@ -53,34 +70,14 @@ pub(super) async fn persist_forwarded_message_impl(
     body: &str,
     original_author_pseudonym: &str,
 ) -> Result<(), ChannelError> {
-    let owner_key =
-        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
-    let channel_id = channel_id.to_string();
-    let sender_key = outcome.sender_pseudonym_hex.clone();
-    let body = body.to_string();
-    let message_id = outcome.message_id.clone();
-    let mek_generation = outcome.mek_generation;
-    let timestamp_ms = outcome.timestamp_ms;
-    let lamport_ts = outcome.lamport_ts;
-    let original_author = original_author_pseudonym.to_string();
-    db_call(&adapter.pool, move |conn| {
-        crate::message_repo::insert_channel_message_with_full_metadata(
-            conn,
-            &owner_key,
-            &channel_id,
-            &sender_key,
-            &body,
-            timestamp_ms,
-            true,
-            Some(i64::try_from(mek_generation).unwrap_or(i64::MAX)),
-            &message_id,
-            lamport_ts,
-            false,
-            Some(&original_author),
-        )
-    })
+    persist_own_post(
+        adapter,
+        channel_id,
+        outcome,
+        body,
+        Some(original_author_pseudonym),
+    )
     .await
-    .map_err(ChannelError::Adapter)
 }
 
 pub(super) fn persist_channel_sequence_impl(

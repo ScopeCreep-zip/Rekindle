@@ -1,3 +1,4 @@
+use rekindle_types::message::SendState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -69,6 +70,36 @@ pub struct Message {
     /// branches on these to switch render mode (voice player vs text).
     #[serde(default)]
     pub flags: u32,
+    /// Our own message's delivery state (`queued`, `sent`, `failed`, …);
+    /// `delivered` for a received one (plan D1, C7.14).
+    pub send_state: SendState,
+}
+
+/// The `send_state` column of a `messages` row (the schema's CHECK keeps it
+/// in the vocabulary).
+///
+/// # Errors
+/// The column is missing or holds an unknown state.
+pub fn stored_send_state(row: &rusqlite::Row<'_>) -> rusqlite::Result<SendState> {
+    let stored: String = row.get("send_state")?;
+    SendState::parse(&stored).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            format!("unknown send state {stored}").into(),
+        )
+    })
+}
+
+/// The state of a message read back from the network: at consensus, so
+/// `sent` when it is ours and `delivered` otherwise.
+#[must_use]
+pub fn network_send_state(is_own: bool) -> SendState {
+    if is_own {
+        SendState::Sent
+    } else {
+        SendState::Delivered
+    }
 }
 
 /// An attachment as the webview sees it. The on-disk path of a downloaded

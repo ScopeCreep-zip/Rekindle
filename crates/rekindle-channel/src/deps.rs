@@ -25,6 +25,7 @@ use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::message::SendState;
 
 use crate::error::ChannelError;
 use crate::event::ChannelEvent;
@@ -374,6 +375,11 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     /// Forget and return the messages waiting on `record_key`/`subkey`.
     fn take_pending_deliveries(&self, record_key: &str, subkey: u32) -> Vec<PendingDelivery>;
+
+    /// Record a sent message's delivery state on its row (queued in order
+    /// on the database; a failure is logged). `held` is the record slot a
+    /// `Queued` message waits on (plan D1, C7.14).
+    fn record_send_state(&self, message_id: &str, state: SendState, held: Option<(&str, u32)>);
 
     // ---------- DB (channel messages) ----------
 

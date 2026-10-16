@@ -17,6 +17,7 @@ pub mod governance_cache;
 pub mod identity;
 pub mod intent_facts;
 pub mod members;
+pub mod messages;
 pub mod pending_requests;
 mod role_ids;
 

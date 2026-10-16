@@ -40,7 +40,7 @@ export async function handleSendChannelMessage(
 
   try {
     const result = await commands.sendChannelMessage(channelId, trimmed, replyToId);
-    const status = result.status === "queued" ? ("queued" as const) : ("sent" as const);
+    const status = result.status;
     setCommunityState("channelMessages", channelId, (msgs) =>
       msgs.map((m) => (m.id === tempId ? { ...m, status, serverMessageId: result.messageId } : m)),
     );
@@ -98,7 +98,7 @@ export async function handleRetryChannelMessage(
   try {
     const result = await commands.sendChannelMessage(channelId, message.body);
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status: result.status === "queued" ? "queued" as const : "sent" as const, serverMessageId: result.messageId } : m)),
+      msgs.map((m) => (m.id === messageId ? { ...m, status: result.status, serverMessageId: result.messageId } : m)),
     );
   } catch {
     setCommunityState("channelMessages", channelId, (msgs) =>

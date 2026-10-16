@@ -15,6 +15,9 @@ export interface IdentitySummary {
   createdAt: number;
 }
 
+/** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
+export type SendState = "queued" | "sent" | "delivered" | "read" | "failed";
+
 export interface Message {
   id: number;
   senderId: string;
@@ -36,6 +39,7 @@ export interface Message {
     selectedAnswers: number[];
   };
   forwardedFromAuthor?: string | null;
+  sendState: SendState;
   attachment?: {
     attachmentId: string;
     filename: string;
@@ -100,7 +104,7 @@ export interface AutoModRuleInfo {
 }
 
 export interface SendChannelMessageResult {
-  status: "delivered" | "queued";
+  status: Extract<SendState, "sent" | "queued" | "failed">;
   messageId: string;
 }
 

@@ -74,7 +74,16 @@ CREATE TABLE IF NOT EXISTS messages (
     lamport_ts INTEGER DEFAULT 0,
     message_id TEXT,
     forwarded_from_author TEXT,
-    flags INTEGER NOT NULL DEFAULT 0
+    flags INTEGER NOT NULL DEFAULT 0,
+    -- D22's delivery vocabulary (plan D1, C7.14; `SendState`). Our own
+    -- channel post is written `queued`, then `sent` when its record slot
+    -- settles with it, or `failed`; a received message is `delivered`.
+    send_state TEXT NOT NULL DEFAULT 'delivered'
+        CHECK(send_state IN ('queued', 'sent', 'delivered', 'read', 'failed')),
+    -- While `queued` on a held write: the record slot it waits on, so the
+    -- next login re-registers it when the write is restored (C7.6h).
+    held_record_key TEXT,
+    held_subkey INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);

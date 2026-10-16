@@ -173,3 +173,47 @@ impl MessageClass {
         }
     }
 }
+
+/// A sent message's delivery state: D22's one vocabulary, stored in
+/// `messages.send_state` (plan D1, C7.14). A channel post moves `Queued`
+/// (written locally, not yet at consensus) → `Sent` (its record slot
+/// settled with it) or `Failed`; it never reaches `Delivered`/`Read`,
+/// because a community has no per-reader receipts. A received message is
+/// `Delivered`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SendState {
+    Queued,
+    Sent,
+    Delivered,
+    Read,
+    Failed,
+}
+
+impl SendState {
+    /// The stored and wire form.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Sent => "sent",
+            Self::Delivered => "delivered",
+            Self::Read => "read",
+            Self::Failed => "failed",
+        }
+    }
+
+    /// The state a stored form names.
+    #[must_use]
+    pub fn parse(stored: &str) -> Option<Self> {
+        [
+            Self::Queued,
+            Self::Sent,
+            Self::Delivered,
+            Self::Read,
+            Self::Failed,
+        ]
+        .into_iter()
+        .find(|s| s.as_str() == stored)
+    }
+}

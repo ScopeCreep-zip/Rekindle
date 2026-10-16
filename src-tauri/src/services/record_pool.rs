@@ -53,12 +53,35 @@ pub fn start(state: &Arc<AppState>) -> Result<Arc<RecordPool>, String> {
 }
 
 /// Hold the writes this identity's previous logout left unsent (plan
-/// C7.6h): `host::dht_outbox::restore_unsent`, right after [`start`].
+/// C7.6h): `host::dht_outbox::restore_unsent`, right after [`start`]; and
+/// re-register the queued posts waiting on them.
 pub async fn restore_unsent(state: &Arc<AppState>, pool: &RecordPool) {
     let (Ok(db), Ok(owner)) = (state.db.current(), state_helpers::current_owner_key(state)) else {
         return;
     };
     rekindle_node::host::dht_outbox::restore_unsent(&db, &owner, pool).await;
+    // The posts waiting on those writes wait on them again, so a restored
+    // write's settle moves them to sent or failed (plan D1, C7.14).
+    let held = crate::db_helpers::db_call(&db, move |conn| {
+        rekindle_db::repo::messages::held_channel_messages(conn, &owner)
+    })
+    .await;
+    match held {
+        Ok(held) => {
+            let mut pending = state.channel_pending_deliveries.lock();
+            for message in held {
+                pending
+                    .entry((message.record_key, message.subkey))
+                    .or_default()
+                    .push(rekindle_channel::deps::PendingDelivery {
+                        community: message.community_id,
+                        channel: message.channel_id,
+                        message: message.message_id,
+                    });
+            }
+        }
+        Err(error) => tracing::warn!(%error, "reading the queued posts failed"),
+    }
 }
 
 /// Save the drained pool's held writes for this identity's next login, and

@@ -75,7 +75,7 @@ pub async fn get_message_history_inner(
     let ok = our_key.clone();
     db_call(&pool, move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, timestamp FROM messages \
+            "SELECT id, sender_key, body, timestamp, send_state FROM messages \
                  WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'dm' \
                  ORDER BY timestamp ASC LIMIT ?",
         )?;
@@ -98,6 +98,7 @@ pub async fn get_message_history_inner(
                 forwarded_from_author: None,
                 attachment: None,
                 flags: 0,
+                send_state: crate::commands::chat::stored_send_state(row)?,
             })
         })?;
 

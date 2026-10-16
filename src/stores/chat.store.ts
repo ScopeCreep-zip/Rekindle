@@ -38,8 +38,9 @@ export interface MessagePoll {
  * duplicated a dozen fields. Extending keeps the shared shape in one
  * place without having to decide, field by field, which side owns it.
  */
-export interface Message extends IpcMessage {
-  /** Delivery state, tracked locally — never sent by the backend. */
+export interface Message extends Omit<IpcMessage, "sendState"> {
+  /** Delivery state: from the backend's `sendState` when a message is
+   *  loaded (our own only), then updated locally as a send resolves. */
   status?: MessageStatus;
   replyTo?: number;
   replyToId?: string;

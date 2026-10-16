@@ -11,6 +11,8 @@ use rekindle_codec::community::channel_record::{ChannelForward, ChannelMessage};
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_types::permissions::{BYPASS_SLOWMODE, SEND_MESSAGES};
 
+use rekindle_types::message::SendState;
+
 use crate::deps::{
     ChannelMessagingDeps, ChannelSendOutcome, DhtWrite, PendingDelivery, SentChannelMessageEcho,
 };
@@ -207,28 +209,25 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
             let notification =
                 build_message_notification(channel_id, &channel_msg, context.slot_index)?;
             let _ = deps.send_to_mesh(community_id, &notification);
-            match written {
-                DhtWrite::Stored => "delivered".to_string(),
-                DhtWrite::Held => {
-                    deps.track_pending_delivery(
-                        &context.channel_key,
-                        channel_message_subkey(context.slot_index),
-                        PendingDelivery {
-                            community: community_id.to_string(),
-                            channel: channel_id.to_string(),
-                            message: message_id.clone(),
-                        },
-                    );
-                    "queued".to_string()
-                }
-            }
+            Some(written)
         }
         // Not a network miss (the pool holds those): the write cannot be made.
         Err(error) => {
             tracing::warn!(error = %error, "channel write failed");
-            "failed".to_string()
+            None
         }
     };
+    let status = resolve_write(
+        deps,
+        status,
+        PendingDelivery {
+            community: community_id.to_string(),
+            channel: channel_id.to_string(),
+            message: message_id.clone(),
+        },
+        &context.channel_key,
+        context.slot_index,
+    );
 
     let timestamp_u64 = u64::try_from(timestamp_ms).unwrap_or_default();
     let echo = SentChannelMessageEcho {
@@ -365,27 +364,24 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
             let _ = deps
                 .persist_slowmode_state(dest_community_id, dest_channel_id, timestamp_ms)
                 .await;
-            match written {
-                DhtWrite::Stored => "delivered".to_string(),
-                DhtWrite::Held => {
-                    deps.track_pending_delivery(
-                        &dest_context.channel_key,
-                        channel_message_subkey(dest_context.slot_index),
-                        PendingDelivery {
-                            community: dest_community_id.to_string(),
-                            channel: dest_channel_id.to_string(),
-                            message: new_message_id.clone(),
-                        },
-                    );
-                    "queued".to_string()
-                }
-            }
+            Some(written)
         }
         Err(error) => {
             tracing::warn!(error = %error, "channel forward write failed");
-            "failed".to_string()
+            None
         }
     };
+    let status = resolve_write(
+        deps,
+        status,
+        PendingDelivery {
+            community: dest_community_id.to_string(),
+            channel: dest_channel_id.to_string(),
+            message: new_message_id.clone(),
+        },
+        &dest_context.channel_key,
+        dest_context.slot_index,
+    );
 
     let timestamp_u64 = u64::try_from(timestamp_ms).unwrap_or_default();
     deps.emit_chat_event_local(&SentChannelMessageEcho {
@@ -406,8 +402,33 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
     })
 }
 
+/// Resolve a sent message's write (`None`: it could not be made) into its
+/// delivery state, recorded on its row (it was persisted `Queued`), and
+/// return the state's name for the caller. A held write is tracked by its
+/// record slot until it settles (plan C7.13, D1).
+fn resolve_write<D: ChannelMessagingDeps>(
+    deps: &D,
+    written: Option<DhtWrite>,
+    pending: PendingDelivery,
+    record_key: &str,
+    slot_index: u32,
+) -> String {
+    let subkey = channel_message_subkey(slot_index);
+    let state = match written {
+        Some(DhtWrite::Stored) => SendState::Sent,
+        Some(DhtWrite::Held) => SendState::Queued,
+        None => SendState::Failed,
+    };
+    let held = (state == SendState::Queued).then_some((record_key, subkey));
+    deps.record_send_state(&pending.message, state, held);
+    if held.is_some() {
+        deps.track_pending_delivery(record_key, subkey, pending);
+    }
+    state.as_str().to_string()
+}
+
 /// A held channel write settled (`RecordPool::settled`, plan C7.13): every
-/// message waiting on that slot is delivered when it landed. When the
+/// message waiting on that slot is sent when it landed. When the
 /// network superseded it, our page was replaced by one we did not write and
 /// those messages did not land: they fail visibly, and a resend merges.
 pub fn on_write_settled<D: ChannelMessagingDeps>(
@@ -423,8 +444,10 @@ pub fn on_write_settled<D: ChannelMessagingDeps>(
             "held channel write settled: message delivery resolved"
         );
         if landed {
+            deps.record_send_state(&pending.message, SendState::Sent, None);
             deps.emit_delivery_succeeded(&pending.community, &pending.channel, &pending.message);
         } else {
+            deps.record_send_state(&pending.message, SendState::Failed, None);
             deps.emit_delivery_failed(&pending.community, &pending.channel, &pending.message);
         }
     }

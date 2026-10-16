@@ -34,7 +34,8 @@ export function transformFriendMap(friends: FriendInfo[]): Record<string, Friend
   return map;
 }
 
-/** Backend Message DTO → store Message (no status field — callers add for optimistic sends). */
+/** Backend Message DTO → store Message: our own message's `status` comes
+ *  from its stored `sendState`; optimistic sends set it themselves. */
 export function transformMessage(m: IpcMessage): Message {
   const decryptionFailed = m.decryptionFailed ?? m.body === "(decryption failed)";
   return {
@@ -54,7 +55,22 @@ export function transformMessage(m: IpcMessage): Message {
         }
       : undefined,
     flags: m.flags ?? 0,
+    status: m.isOwn ? ownStatus(m.sendState) : undefined,
   };
+}
+
+/** Our own message's status from its stored delivery state: still queued,
+ *  failed, or out (sent, delivered, read). */
+function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
+  switch (state) {
+    case "queued":
+    case "failed":
+      return state;
+    case "sent":
+    case "delivered":
+    case "read":
+      return "sent";
+  }
 }
 
 /** Convenience: transform an array of messages. */

@@ -139,6 +139,7 @@ pub fn insert_channel_message_with_full_metadata(
             forwarded_from_author,
             flags: 0,
             attachment_json: None,
+            send_state: rekindle_types::message::SendState::Delivered,
         },
     )
 }
@@ -160,6 +161,9 @@ pub struct ChannelMessageInsert<'a> {
     pub forwarded_from_author: Option<&'a str>,
     pub flags: u32,
     pub attachment_json: Option<&'a str>,
+    /// `Delivered` for a received row; our own post's state otherwise
+    /// (`rekindle_types::message::SendState`, plan D1).
+    pub send_state: rekindle_types::message::SendState,
 }
 
 /// Insert a channel message with all metadata including `flags` (Lost
@@ -176,8 +180,9 @@ pub fn insert_channel_message_full(
     conn.execute(
         "INSERT INTO messages \
          (owner_key, conversation_id, conversation_type, sender_key, body, automod_blurred, timestamp, is_read, \
-          mek_generation, message_id, lamport_ts, forwarded_from_author, flags, attachment_json) \
-         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          mek_generation, message_id, lamport_ts, forwarded_from_author, flags, attachment_json, \
+          send_state) \
+         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             msg.owner_key,
             msg.channel_id,
@@ -192,6 +197,7 @@ pub fn insert_channel_message_full(
             msg.forwarded_from_author,
             flags,
             msg.attachment_json,
+            msg.send_state.as_str(),
         ],
     )?;
     Ok(())

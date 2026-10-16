@@ -192,6 +192,7 @@ pub async fn handle_message_notification(
                 forwarded_from_author: forwarded_from_author_for_db.as_deref(),
                 flags: flags_for_db,
                 attachment_json: attachment_json_for_db.as_deref(),
+                send_state: rekindle_types::message::SendState::Delivered,
             },
         )
     });

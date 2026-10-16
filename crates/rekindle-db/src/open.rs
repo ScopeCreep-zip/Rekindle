@@ -103,7 +103,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `identity` columns and `friends.local_conversation_keypair` dropped);
 /// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` hold
 /// the daemon's friend-inbox protocol until E2.1.
-pub const SCHEMA_VERSION: i64 = 85;
+///
+/// 86: `messages.send_state` (D22's delivery vocabulary) and the held
+/// write's slot (`held_record_key`, `held_subkey`), plan D1 / C7.14.
+pub const SCHEMA_VERSION: i64 = 86;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

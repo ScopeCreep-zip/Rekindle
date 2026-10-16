@@ -34,6 +34,7 @@ fn snapshot_to_dto(snapshot: rekindle_channel::deps::ThreadInfoSnapshot) -> Thre
 }
 
 fn view_to_message(view: rekindle_channel::ThreadMessageView) -> Message {
+    let send_state = crate::commands::chat::network_send_state(view.is_own);
     Message {
         id: 0,
         sender_id: view.sender_pseudonym,
@@ -49,6 +50,7 @@ fn view_to_message(view: rekindle_channel::ThreadMessageView) -> Message {
         forwarded_from_author: None,
         attachment: None,
         flags: 0,
+        send_state,
     }
 }
 
