@@ -217,7 +217,7 @@ connect to the per-user socket / pipe
         ◀──── Noise IK handshake (1 RTT) ────▶
                                           prologue: "REKINDLE-IPC-v2" ‖ lo_uid ‖ hi_uid
                                                     ‖ socket path   (no PIDs)
-                                          registry lookup: Noise static key → name, clearance
+                                          registry lookup: Noise static key → name
                                                    │
                                                    ▼
                                           transport: ChaCha20-Poly1305 + BLAKE2s
@@ -237,6 +237,8 @@ Pattern: **`Noise_IK_25519_ChaChaPoly_BLAKE2s`** via `snow`.
 | Local binding | Both UIDs and the socket path are in the prologue, so a handshake relayed to another user's or another path's bus fails. PIDs are not: a PID-namespaced client has none to give |
 | Cancel safety | A reader task per connection owns the socket's read half and hands whole ciphertext messages over a channel; snow advances the receive nonce only on a successful decrypt |
 | Sender stamping | The server overwrites `verified_sender_name` and `verified_sender_key` (the connection's Noise static key) on every routed frame; `WIRE_VERSION` 2, other versions are dropped |
+| Clearance | The server stamps every frame's `security_level` from the registry entry of the connection's key at that frame (`Open` for an unknown key), overwriting the client's claim. The daemon checks it against `IpcRequest::required_clearance()` before the lane split (403): `Open` for the locked-state requests (`Status`, `Unlock`, `Lock`, `Logout`, `IdentityList/Create/Import/Delete/Wipe`), `Admin` for agents, policy, `IdentityRotate` and `IdentityExport`, `Authenticated` for the rest. `Subscribe` needs `Authenticated`, and every event and media frame goes only to connections that hold it at delivery |
+| Client keys | Each frontend connects with a persistent static key (`DataRoot.config/agent-keys/client.*`, 0600, created on first use). An unlock registers the unlocking key at `Admin` in the identity's vault (`VaultKey::ClientKey`); while unlocked the identity's clients are in the registry, and a lock removes them, so their live connections drop to `Open` with their next frame. `AgentRegister` (Admin) registers the caller at `Agent` |
 | Response routing | A correlated frame is accepted only from the daemon's own connection, so a client cannot answer another client's request |
 | Rate limit | 100 requests/sec per connection, refill bucket |
 | Handshake DoS protection | 5-second handshake timeout |

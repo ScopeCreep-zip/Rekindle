@@ -42,7 +42,7 @@ async fn route(
         IpcRequest::Unlock {
             identity,
             passphrase,
-        } => lifecycle::handle_unlock(ctx, state, &identity, &passphrase).await,
+        } => lifecycle::handle_unlock(ctx, state, caller, &identity, &passphrase).await,
         // The daemon keeps no selected identity across a lock, so a
         // logout is a lock (its teardown announces offline first).
         IpcRequest::Lock | IpcRequest::Logout => lifecycle::handle_lock(ctx, state).await,

@@ -98,7 +98,6 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         use std::os::unix::fs::PermissionsExt;
         tokio::fs::set_permissions(&runtime_dir, std::fs::Permissions::from_mode(0o700)).await?;
     }
-    rekindle_ipc::noise_keys::create_keys_dir().await?;
 
     let bus_keypair = bus_key::generate_and_publish(&runtime_dir)
         .await
@@ -250,6 +249,7 @@ pub async fn run(args: HostArgs) -> anyhow::Result<ExitReason> {
         signing_key: signing_key_arc,
         lifecycle: Arc::clone(&lifecycle),
         registry: Arc::clone(&registry),
+        unlocked_clients: parking_lot::Mutex::new(Vec::new()),
         // The policy the daemon actually started under, so
         // `PolicyReload` merges against reality rather than defaults.
         policy: RwLock::new(policy),

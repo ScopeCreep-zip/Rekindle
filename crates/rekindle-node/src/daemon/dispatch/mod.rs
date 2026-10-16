@@ -124,6 +124,9 @@ pub struct DaemonContext {
     pub lifecycle: Arc<crate::daemon::DaemonLifecycle>,
     /// Agent identity and clearance registry (shared with server).
     pub registry: Arc<tokio::sync::RwLock<ClearanceRegistry>>,
+    /// The registry names of the unlocked identity's clients
+    /// (`daemon::clients`), removed again at lock.
+    pub unlocked_clients: parking_lot::Mutex<Vec<String>>,
     /// Active authorization policy.
     pub policy: RwLock<PolicyConfig>,
     /// Path to the policy config directory (for reload).

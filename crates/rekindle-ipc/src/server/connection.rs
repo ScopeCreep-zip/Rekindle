@@ -9,7 +9,6 @@ use super::routing;
 use super::{ConnectionState, ServerState, RATE_LIMIT_MAX_TOKENS};
 
 use crate::media_channel::{MediaReceiver, MediaSender};
-use crate::message::SecurityLevel;
 use crate::noise::{self, NoiseTransport};
 use crate::transport::PeerCredentials;
 
@@ -87,26 +86,17 @@ pub(super) async fn handle_connection(
         return;
     };
 
-    // Registry lookup: pubkey → (name, clearance).
-    let (security_clearance, verified_name) = {
+    // Registry lookup: pubkey → name. The clearance is the registry's at
+    // each frame (`routing::route_frame`), not fixed here.
+    let verified_name = {
         let reg = state.registry.read().await;
-        if let Some(identity) = reg.lookup(&client_pubkey) {
-            let name = reg.lookup_name(&client_pubkey).map(str::to_owned);
-            tracing::info!(
-                conn_id,
-                agent = name.as_deref().unwrap_or("unknown"),
-                clearance = ?identity.security_level,
-                "agent authenticated via registry"
-            );
-            (identity.security_level, name)
-        } else {
-            tracing::info!(
-                conn_id,
-                clearance = ?SecurityLevel::Open,
-                "ephemeral client accepted (not in registry)"
-            );
-            (SecurityLevel::Open, None)
-        }
+        let name = reg.lookup_name(&client_pubkey).map(str::to_owned);
+        tracing::info!(
+            conn_id,
+            agent = name.as_deref().unwrap_or("unregistered"),
+            "client connected"
+        );
+        name
     };
 
     // Register connection AFTER handshake.
@@ -117,7 +107,6 @@ pub(super) async fn handle_connection(
         media_tx,
         static_key: client_pubkey,
         peer: peer_creds,
-        security_clearance,
         connected_at,
         rate_tokens: std::sync::atomic::AtomicU32::new(RATE_LIMIT_MAX_TOKENS),
         last_token_refill: std::sync::atomic::AtomicU64::new(0),

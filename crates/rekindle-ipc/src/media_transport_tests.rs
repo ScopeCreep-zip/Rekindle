@@ -69,12 +69,15 @@ fn bus_payload_media_variant_postcard_roundtrip() {
 
 #[tokio::test]
 async fn push_route_receive_end_to_end() {
-    // ── Keys + registry: the daemon is a known agent; the consumer ephemeral.
+    // ── Keys + registry: the daemon is a known agent; the consumer a client
+    //    the unlocked identity trusts (plan D1: events need Authenticated).
     let server_kp = generate_keypair().unwrap();
     let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
 
     let daemon_kp = generate_keypair().unwrap();
     let daemon_pub: [u8; 32] = daemon_kp.public().try_into().unwrap();
+    let consumer_kp = generate_keypair().unwrap();
+    let consumer_pub: [u8; 32] = consumer_kp.public().try_into().unwrap();
 
     let mut registry = ClearanceRegistry::new();
     registry.register(
@@ -82,6 +85,13 @@ async fn push_route_receive_end_to_end() {
         daemon_pub,
         SecurityLevel::Internal,
         AgentType::System,
+        vec![],
+    );
+    registry.register(
+        "client-consumer".to_string(),
+        consumer_pub,
+        SecurityLevel::Admin,
+        AgentType::Human,
         vec![],
     );
 
@@ -101,9 +111,8 @@ async fn push_route_receive_end_to_end() {
         let _ = srv.run().await;
     });
 
-    // ── Consumer connects (ephemeral) and subscribes so it joins the event
-    //    router — the media audience.
-    let consumer_kp = generate_keypair().unwrap();
+    // ── Consumer connects and subscribes so it joins the event router —
+    //    the media audience.
     let mut consumer =
         BusClient::connect(Uuid::now_v7(), &sock, &server_pub, consumer_kp.as_inner())
             .await
@@ -199,5 +208,44 @@ async fn client_origin_media_is_rejected_by_server() {
     assert!(
         outcome.is_err(),
         "client-origin media must be dropped, not fanned out"
+    );
+}
+
+#[tokio::test]
+async fn an_unregistered_client_cannot_subscribe() {
+    let server_kp = generate_keypair().unwrap();
+    let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("bus.sock");
+    let server = Arc::new(
+        BusServer::bind(
+            &sock,
+            server_kp.into_inner(),
+            Arc::new(tokio::sync::RwLock::new(ClearanceRegistry::new())),
+        )
+        .unwrap(),
+    );
+    let srv = Arc::clone(&server);
+    tokio::spawn(async move {
+        let _ = srv.run().await;
+    });
+    let stranger_kp = generate_keypair().unwrap();
+    let stranger = BusClient::connect(Uuid::now_v7(), &sock, &server_pub, stranger_kp.as_inner())
+        .await
+        .unwrap();
+    // The level the client claims is overwritten by the server's stamp.
+    let resp = stranger
+        .request(
+            IpcRequest::Subscribe {
+                filters: vec![SubscriptionFilter::all()],
+            },
+            SecurityLevel::Admin,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    assert!(
+        matches!(resp, IpcResponse::Error { code: 403, .. }),
+        "an unregistered key is Open: {resp:?}"
     );
 }

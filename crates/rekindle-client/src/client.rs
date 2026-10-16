@@ -32,6 +32,9 @@ pub struct DaemonClient {
     event_rx: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<SubscriptionEvent>>>,
 }
 
+/// The key file name every frontend of this user connects with.
+const CLIENT_KEY_NAME: &str = "client";
+
 impl DaemonClient {
     /// Connect to a running daemon.
     ///
@@ -47,9 +50,12 @@ impl DaemonClient {
         let server_pub = rekindle_ipc::noise_keys::read_bus_public_key()
             .await
             .map_err(|e| ClientError::Connect(format!("no bus public key: {e}")))?;
-        // A fresh ephemeral Noise key per connection; clearance for a
-        // persistent client key arrives with the vault (plan D1).
-        let keypair = rekindle_ipc::generate_keypair().map_err(ClientError::Ipc)?;
+        // The client's persistent Noise key (plan D1): an unlock from it
+        // registers it with the identity, so it keeps its clearance across
+        // connections and reboots.
+        let keypair = rekindle_ipc::noise_keys::load_or_create_agent_keypair(CLIENT_KEY_NAME)
+            .await
+            .map_err(ClientError::Ipc)?;
         let mut client = BusClient::connect_with_retry(
             Uuid::now_v7(),
             &socket,

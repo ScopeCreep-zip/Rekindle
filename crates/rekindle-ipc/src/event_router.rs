@@ -152,11 +152,16 @@ impl EventRouter {
         info!(conn_id, "event_router: connection removed");
     }
 
-    /// Route an event to matching connections.
+    /// Route an event to matching connections that `cleared` admits (the
+    /// connections whose key holds `Authenticated` clearance now, plan D1).
     ///
     /// 3 hash lookups → exact recipient set → serialize once → send to each.
     /// Returns `(delivered, dropped)` counts.
-    pub fn deliver(&self, event: &SubscriptionEvent) -> (usize, usize) {
+    pub fn deliver(
+        &self,
+        event: &SubscriptionEvent,
+        cleared: impl Fn(u64) -> bool,
+    ) -> (usize, usize) {
         // Collect recipients via index lookups
         let mut recipients = self.wildcard.clone();
 
@@ -187,6 +192,7 @@ impl EventRouter {
             }
         }
 
+        recipients.retain(|id| cleared(*id));
         if recipients.is_empty() {
             return (0, 0);
         }
@@ -322,6 +328,7 @@ impl Default for EventRouter {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use rekindle_types::subscription_events::{
         ChannelMessageEvent, FriendEvent, SubscriptionEvent,
@@ -344,9 +351,25 @@ mod tests {
             display_name: "alice".into(),
             message: "hi".into(),
         });
-        let (delivered, _) = router.deliver(&event);
+        let (delivered, _) = router.deliver(&event, |_| true);
         assert_eq!(delivered, 1);
         assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn a_connection_without_clearance_receives_nothing() {
+        let mut router = EventRouter::new();
+        let (tx, mut rx) = make_tx();
+        router
+            .subscribe(1, &[SubscriptionFilter::all()], tx)
+            .unwrap();
+        let event = SubscriptionEvent::Friend(FriendEvent::RequestReceived {
+            from_key: "abc".into(),
+            display_name: "alice".into(),
+            message: "hi".into(),
+        });
+        assert_eq!(router.deliver(&event, |_| false), (0, 0));
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
@@ -365,7 +388,7 @@ mod tests {
         let friend_event = SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: "x".into(),
         });
-        assert_eq!(router.deliver(&friend_event).0, 1);
+        assert_eq!(router.deliver(&friend_event, |_| true).0, 1);
         assert!(rx.try_recv().is_ok());
 
         // Channel event: should not match
@@ -379,7 +402,7 @@ mod tests {
             body: None,
             reply_to_sequence: None,
         });
-        assert_eq!(router.deliver(&channel_event).0, 0);
+        assert_eq!(router.deliver(&channel_event, |_| true).0, 0);
         assert!(rx.try_recv().is_err());
     }
 
@@ -402,7 +425,7 @@ mod tests {
             body: None,
             reply_to_sequence: None,
         });
-        assert_eq!(router.deliver(&e1).0, 1);
+        assert_eq!(router.deliver(&e1, |_| true).0, 1);
         assert!(rx.try_recv().is_ok());
 
         // Event for gov2: should not match
@@ -416,14 +439,14 @@ mod tests {
             body: None,
             reply_to_sequence: None,
         });
-        assert_eq!(router.deliver(&e2).0, 0);
+        assert_eq!(router.deliver(&e2, |_| true).0, 0);
         assert!(rx.try_recv().is_err());
 
         // Global event (no community): should match (global events pass community filters)
         let e3 = SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: "x".into(),
         });
-        assert_eq!(router.deliver(&e3).0, 1);
+        assert_eq!(router.deliver(&e3, |_| true).0, 1);
         assert!(rx.try_recv().is_ok());
     }
 
@@ -441,13 +464,13 @@ mod tests {
         let call = SubscriptionEvent::Call(CallEvent::Ringing {
             call_id: "c".into(),
         });
-        assert_eq!(router.deliver(&call).0, 1);
+        assert_eq!(router.deliver(&call, |_| true).0, 1);
         assert!(rx.try_recv().is_ok());
         let alert = SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
             title: "t".into(),
             body: "b".into(),
         });
-        assert_eq!(router.deliver(&alert).0, 1);
+        assert_eq!(router.deliver(&alert, |_| true).0, 1);
         assert!(rx.try_recv().is_ok());
     }
 
@@ -457,7 +480,7 @@ mod tests {
         let event = SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: "x".into(),
         });
-        assert_eq!(router.deliver(&event), (0, 0));
+        assert_eq!(router.deliver(&event, |_| true), (0, 0));
     }
 
     #[test]
@@ -472,11 +495,11 @@ mod tests {
         let event = SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: "x".into(),
         });
-        assert_eq!(router.deliver(&event).0, 1);
+        assert_eq!(router.deliver(&event, |_| true).0, 1);
         assert!(rx.try_recv().is_ok());
 
         router.unsubscribe(1, &[filter]);
-        assert_eq!(router.deliver(&event).0, 0);
+        assert_eq!(router.deliver(&event, |_| true).0, 0);
         assert!(rx.try_recv().is_err());
     }
 
@@ -513,7 +536,7 @@ mod tests {
         let event = SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: "x".into(),
         });
-        let (delivered, _) = router.deliver(&event);
+        let (delivered, _) = router.deliver(&event, |_| true);
         // conn_id 1 appears in both wildcard and by_category — should only deliver once
         assert_eq!(delivered, 1);
         assert!(rx.try_recv().is_ok());

@@ -14,7 +14,7 @@ dirs = "6"
 parking_lot = { workspace = true }
 postcard = { version = "1", features = [ "use-std" ] }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils" }
+rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

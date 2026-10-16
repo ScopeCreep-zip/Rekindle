@@ -18,7 +18,6 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use super::error::Result;
-use super::message::SecurityLevel;
 use super::registry::ClearanceRegistry;
 use super::transport::{Listener, PeerCredentials};
 
@@ -57,8 +56,6 @@ struct ConnectionState {
     static_key: [u8; 32],
     /// Peer OS-level credentials.
     peer: PeerCredentials,
-    /// Security clearance level from registry lookup.
-    security_clearance: SecurityLevel,
     /// When this connection was established.
     connected_at: Instant,
     /// Token bucket rate limiter: tokens remaining this window.
@@ -88,6 +85,25 @@ struct ServerState {
     event_router: parking_lot::RwLock<crate::event_router::EventRouter>,
     /// Woken whenever a connection finishes its cleanup.
     connection_closed: tokio::sync::Notify,
+}
+
+impl ServerState {
+    /// The connections whose key holds at least `Authenticated` clearance
+    /// in the registry now.
+    async fn cleared_connections(&self) -> std::collections::HashSet<u64> {
+        let registry = self.registry.read().await;
+        self.connections
+            .read()
+            .await
+            .iter()
+            .filter(|(_, conn)| {
+                registry.lookup(&conn.static_key).is_some_and(|identity| {
+                    identity.security_level >= crate::message::SecurityLevel::Authenticated
+                })
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
 }
 
 /// The IPC bus server.
@@ -260,15 +276,24 @@ impl BusServer {
         let stopping = self.stopping.clone();
         self.connections.spawn(async move {
             crate::event_source::follow(&stopping, source, |event| {
-                let (delivered, dropped) = state.event_router.read().deliver(&event);
-                if dropped > 0 {
-                    tracing::debug!(
-                        delivered,
-                        dropped,
-                        "event delivery: some recipients dropped"
-                    );
+                let state = Arc::clone(&state);
+                async move {
+                    // Only connections whose key holds `Authenticated` now:
+                    // a lock lowers every client, and the next unlock admits
+                    // only the clients that identity trusts (plan D1).
+                    let cleared = state.cleared_connections().await;
+                    let (delivered, dropped) = state
+                        .event_router
+                        .read()
+                        .deliver(&event, |id| cleared.contains(&id));
+                    if dropped > 0 {
+                        tracing::debug!(
+                            delivered,
+                            dropped,
+                            "event delivery: some recipients dropped"
+                        );
+                    }
                 }
-                std::future::ready(())
             })
             .await;
             tracing::info!("event delivery stopped");

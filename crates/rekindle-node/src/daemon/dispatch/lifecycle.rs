@@ -19,6 +19,7 @@ use super::{transition, DaemonContext};
 pub(crate) async fn handle_unlock(
     ctx: &DaemonContext,
     state: DaemonState,
+    caller: &super::CallerContext,
     identity: &str,
     passphrase: &str,
 ) -> IpcResponse {
@@ -64,6 +65,14 @@ pub(crate) async fn handle_unlock(
         Ok(session) => {
             *ctx.session.write() = Some(session);
             crate::daemon::mek_rotation::restore_from_vault(ctx);
+            // The identity's trusted clients, and this one: the passphrase
+            // proved it (plan D1).
+            crate::daemon::clients::load(ctx).await;
+            if let Some(key) = caller.static_key {
+                if let Err(e) = crate::daemon::clients::register_unlocking_client(ctx, &key).await {
+                    tracing::error!(error = %e, "the unlocking client is not registered");
+                }
+            }
         }
         Err(failed) => {
             teardown_unlocked(ctx).await;
@@ -332,8 +341,9 @@ pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
     ctx.mek_cache.write().clear();
     ctx.event_watch_tx.send_replace(None);
     *ctx.signing_key.write() = None;
-    // The identity itself, last: its session, Signal manager, database and
-    // vault (plan D1).
+    // The identity itself, last: its clients' clearance, its session, Signal
+    // manager, database and vault (plan D1).
+    crate::daemon::clients::unload(ctx).await;
     *ctx.session.write() = None;
     *ctx.signal.write() = None;
     crate::host::identity::lock(&ctx.identity_stores()).await;

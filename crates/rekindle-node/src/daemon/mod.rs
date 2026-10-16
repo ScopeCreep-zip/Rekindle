@@ -12,6 +12,7 @@
 //! `let _ = ...` (a deliberate signal that the daemon's existing
 //! semantics — "log + ignore" on invalid edges — are preserved).
 
+pub mod clients;
 pub mod community_rpc;
 pub mod community_runtime;
 pub mod dispatch;

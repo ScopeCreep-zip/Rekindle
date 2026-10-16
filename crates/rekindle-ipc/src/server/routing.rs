@@ -96,27 +96,26 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             } else {
                 conn.agent_id = Some(msg.sender);
             }
-
-            // [RC-6] Sender clearance enforcement.
-            if conn.security_clearance < msg.security_level {
-                tracing::warn!(
-                    conn_id = sender_conn_id,
-                    sender = ?conn.security_clearance,
-                    msg = ?msg.security_level,
-                    "clearance insufficient, rejecting"
-                );
-                return;
-            }
         }
     }
 
-    // Stamp the sender's verified name and Noise key from connection
-    // state, overwriting whatever the client put there.
+    // Stamp the sender's verified name, Noise key and clearance from
+    // connection state and the registry, overwriting whatever the client
+    // put there. [RC-6] The clearance is the registry's for this key at
+    // this frame, not the handshake's: an unlock that registers the key
+    // raises its live connection, and a lock that unregisters it lowers it
+    // (plan D1). The daemon checks each request against it.
     {
         let conns = state.connections.read().await;
         let conn = conns.get(&sender_conn_id);
         msg.verified_sender_name = conn.and_then(|c| c.verified_name.clone());
         msg.verified_sender_key = conn.map(|c| c.static_key);
+        let registry = state.registry.read().await;
+        msg.security_level = conn
+            .and_then(|c| registry.lookup(&c.static_key))
+            .map_or(crate::message::SecurityLevel::Open, |identity| {
+                identity.security_level
+            });
     }
 
     // Re-encode with server stamps applied.
@@ -168,6 +167,18 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             // These never reach the daemon dispatch.
             match request {
                 crate::protocol::IpcRequest::Subscribe { filters } => {
+                    // Events carry the identity's private data: the same
+                    // clearance every daemon request but the locked-state
+                    // ones needs (plan D1). Delivery re-checks it per event.
+                    let needed = crate::message::SecurityLevel::Authenticated;
+                    if msg.security_level < needed {
+                        let response = crate::protocol::IpcResponse::error(
+                            403,
+                            "subscribing needs Authenticated clearance; unlock from this client first",
+                        );
+                        reply_direct(state, sender_conn_id, &msg, &response).await;
+                        return;
+                    }
                     let sender_tx = {
                         let conns = state.connections.read().await;
                         conns.get(&sender_conn_id).map(|c| c.tx.clone())
@@ -251,7 +262,11 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
                 );
                 return;
             }
-            let (delivered, dropped) = state.event_router.read().deliver(event);
+            let cleared = state.cleared_connections().await;
+            let (delivered, dropped) = state
+                .event_router
+                .read()
+                .deliver(event, |id| cleared.contains(&id));
             tracing::debug!(delivered, dropped, "event routed via EventRouter");
         }
         BusPayload::Media(_) => {
@@ -277,12 +292,14 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             // to the community's events. Fan out to all of them (noted: media
             // has no finer topic than the event subscription in Step 3), minus
             // the daemon's own connection so it never receives its own frames.
+            // Only subscribers whose key holds `Authenticated` now (plan D1).
+            let cleared = state.cleared_connections().await;
             let recipients = state.event_router.read().subscribed_conn_ids();
             let conns = state.connections.read().await;
             let mut delivered = 0usize;
             let mut evicted = 0usize;
             for conn_id in recipients {
-                if conn_id == sender_conn_id {
+                if conn_id == sender_conn_id || !cleared.contains(&conn_id) {
                     continue;
                 }
                 if let Some(conn) = conns.get(&conn_id) {

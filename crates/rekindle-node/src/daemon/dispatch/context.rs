@@ -230,8 +230,22 @@ impl DaemonContext {
         }
     }
 
-    /// Dispatch `request` holding its lane for the whole handler.
+    /// Dispatch `request` holding its lane for the whole handler, once the
+    /// sender's clearance (stamped by the bus server from the registry)
+    /// meets the request's (plan D1).
     async fn dispatch_in_lane(&self, request: IpcRequest, caller: &CallerContext) -> IpcResponse {
+        let required = request.required_clearance();
+        if caller.level < required {
+            return IpcResponse::error_with_remediation(
+                403,
+                format!(
+                    "{} needs {required:?} clearance; this client has {:?}",
+                    request.name(),
+                    caller.level
+                ),
+                "unlock the identity from this client first",
+            );
+        }
         match request.lane() {
             Lane::Query => super::router::dispatch(self, request, caller).await,
             Lane::Write => {

@@ -7,9 +7,14 @@
 //! - `bus.pub` (0644) — bus server public key, read by connecting clients.
 //!   The bus private key never reaches the disk: the daemon generates it at
 //!   each start and holds it in memory (plan D1).
-//! - `keys/<agent>.pub` (0644) — per-agent public key
-//! - `keys/<agent>.key` (0600) — per-agent private key (atomic write)
-//! - `keys/<agent>.checksum` — per-agent integrity checksum
+//!
+//! Per-agent keys live under the data root's config directory
+//! (`DataRoot.config/agent-keys/`, 0700, created by the client): a client's
+//! static key must survive a reboot, because the daemon remembers it (the
+//! identity's vault holds the public half and its clearance, plan D1).
+//! - `agent-keys/<agent>.pub` (0644) — per-agent public key
+//! - `agent-keys/<agent>.key` (0600) — per-agent private key (atomic write)
+//! - `agent-keys/<agent>.checksum` — per-agent integrity checksum
 //!
 //! [RC-4] All private key writes use atomic tmp+fsync+rename pattern.
 //! [RC-6] Private keys are created with mode 0600 from the moment of creation.
@@ -140,7 +145,12 @@ pub fn generate_keypair() -> Result<ZeroizingKeypair> {
 // ── Key persistence ────────────────────────────────────────────────────
 
 fn keys_dir() -> Result<PathBuf> {
-    Ok(runtime_dir()?.join("keys"))
+    let root =
+        rekindle_utils::paths::DataRoot::resolve().map_err(|e| IpcError::DirectoryCreate {
+            path: "the data root".into(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+    Ok(root.config.join("agent-keys"))
 }
 
 /// Create the per-agent keys directory if it does not exist.
@@ -246,6 +256,31 @@ pub async fn read_bus_public_key() -> Result<[u8; 32]> {
         .map_err(|v: Vec<u8>| IpcError::HandshakeFailed {
             reason: format!("bus.pub: expected 32 bytes, got {}", v.len()),
         })
+}
+
+/// The agent's persistent keypair, created on first use. Created means
+/// none of its files exists; a partial, malformed or tampered keypair is an
+/// error, never silently replaced (a replaced key loses its clearance).
+///
+/// # Errors
+/// An incomplete or damaged keypair, or the files cannot be written.
+pub async fn load_or_create_agent_keypair(agent_name: &str) -> Result<ZeroizingKeypair> {
+    validate_agent_name(agent_name)?;
+    let dir = keys_dir()?;
+    let none_exists = ["key", "pub", "checksum"]
+        .iter()
+        .all(|ext| !dir.join(format!("{agent_name}.{ext}")).exists());
+    if none_exists {
+        create_keys_dir().await?;
+        let keypair = generate_keypair()?;
+        write_agent_keypair(agent_name, keypair.as_inner()).await?;
+        return Ok(keypair);
+    }
+    let (private, public) = read_checked_keypair(&dir, agent_name).await?;
+    Ok(ZeroizingKeypair::new(snow::Keypair {
+        private: private.to_vec(),
+        public: public.to_vec(),
+    }))
 }
 
 /// Read an agent's keypair from disk with tamper detection.
