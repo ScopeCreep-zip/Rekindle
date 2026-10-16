@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// System-level events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SystemEvent {
     /// A system message (community-wide announcement from operator).
     /// Triggered by: gossip `ControlPayload::SystemMessage`.

@@ -81,9 +81,6 @@ export type NetworkEvent =
     }
   | { localRoutesDied: { count: number } }
   | { remoteRoutesDied: { peerKeys: string[] } }
-  | { watchRenewed: { recordKey: string } }
-  | { watchReestablished: { recordKey: string } }
-  | { watchFailed: { recordKey: string; error: string } }
   | { valueChanged: { recordKey: string; changedSubkeys: number[] } };
 
 export type NetworkSubscriptionEvent = { network: NetworkEvent };

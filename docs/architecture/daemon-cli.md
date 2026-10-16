@@ -389,6 +389,14 @@ $ rekindled                            # or run the host directly
 and print each matching event until Ctrl-C. Peer-controlled text goes
 through `sanitize_for_display` before it reaches the terminal.
 
+With `--format json|jsonl` each event is the `SubscriptionEvent` JSON the
+GUI receives: externally tagged and camelCase at every level, e.g.
+`{"friend":{"requestReceived":{"fromKey":"…","displayName":"…","message":"…"}}}`.
+The shape of every variant is pinned by
+`crates/rekindle-types/tests/golden/subscription_events.json` (plan
+C7.26); before C7.26 the inner families printed PascalCase variants and
+snake_case fields.
+
 ### Configuration
 
 One `config.toml` schema (`rekindle_types::config::user::UserConfig`)

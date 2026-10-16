@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// Channel message lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ChannelMessageEvent {
     /// A new message was posted to a community channel.
     ///

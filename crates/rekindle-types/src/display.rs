@@ -42,6 +42,9 @@ pub struct CommunityDetail {
 
 /// Channel info for list and tree display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// camelCase: rides in `GovernanceEvent` to the webview, which reads
+// camelCase keys (plan C7.26).
+#[serde(rename_all = "camelCase")]
 pub struct ChannelOverviewDisplay {
     pub id: String,
     pub name: String,
@@ -57,6 +60,9 @@ pub struct ChannelOverviewDisplay {
 
 /// Channel category, for grouping the channel tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// camelCase: rides in `GovernanceEvent` to the webview, which reads
+// camelCase keys (plan C7.26).
+#[serde(rename_all = "camelCase")]
 pub struct CategoryDisplay {
     pub id: String,
     pub name: String,
@@ -129,6 +135,9 @@ pub struct DmMessageDisplay {
 /// headroom.** Whoever adds permission bit 53 has to solve the JSON
 /// encoding here without reaching for `untagged`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// camelCase: rides in `GovernanceEvent` to the webview, which reads
+// camelCase keys (plan C7.26).
+#[serde(rename_all = "camelCase")]
 pub struct RoleDisplay {
     pub id: u32,
     pub name: String,

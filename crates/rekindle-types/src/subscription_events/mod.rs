@@ -85,6 +85,7 @@ pub enum SubscriptionEvent {
 
 /// Context for unread count changes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum UnreadContext {
     Channel { community: String, channel: String },
     Dm { peer_key: String },

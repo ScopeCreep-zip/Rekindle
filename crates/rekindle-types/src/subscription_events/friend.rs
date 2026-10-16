@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Friend lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum FriendEvent {
     /// An inbound friend request was received.
     /// Triggered by: `DmPayload::FriendRequest`, DHT watch on friend inbox.

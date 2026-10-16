@@ -125,7 +125,9 @@ pub struct OutgoingReset {
 impl OutgoingReset {
     /// Whether an accept's handshake ids answer this request.
     pub fn answered_by(&self, spk_id: u32, otpk_id: Option<u32>, pq_ot_id: Option<u32>) -> bool {
-        self.signed_prekey == spk_id && self.one_time_prekey == otpk_id && self.pq_one_time == pq_ot_id
+        self.signed_prekey == spk_id
+            && self.one_time_prekey == otpk_id
+            && self.pq_one_time == pq_ot_id
     }
 }
 

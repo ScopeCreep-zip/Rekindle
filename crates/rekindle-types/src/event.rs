@@ -9,7 +9,15 @@ use serde::{Deserialize, Serialize};
 /// URL/string the UI renders as a link; `InGame` references a game
 /// title (the rich-presence id) and an optional server address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+// Tags stay snake_case (`"in_game"`, `"voice_channel"`: what the webview
+// matches on); `InGame`'s fields are camelCase like every other payload
+// field (plan C7.26).
+#[serde(
+    tag = "type",
+    content = "data",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum EventLocation {
     /// Event happens in a voice channel of this community.
     VoiceChannel(crate::id::ChannelId),

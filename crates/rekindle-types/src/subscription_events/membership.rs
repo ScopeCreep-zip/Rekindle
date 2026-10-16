@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Membership lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum MembershipEvent {
     /// A join request was submitted (operator sees this).
     /// Triggered by: gossip `ControlPayload::MemberJoinRequest`.

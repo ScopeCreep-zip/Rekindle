@@ -21,6 +21,7 @@ pub enum RouteAvailability {
 
 /// Network infrastructure events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum NetworkEvent {
     /// Network attachment state changed (attached, detached, degraded).
     /// Triggered by: `VeilidUpdate::Attachment` via dispatch loop.

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Cryptographic key lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum CryptoEvent {
     /// A channel MEK was rotated (new generation available).
     /// Triggered by: gossip `ControlPayload::MekRotated`, DHT watch on registry MEK vault.
@@ -58,6 +59,7 @@ pub enum CryptoEvent {
 /// Identifies which PQ bundle component was rotated in a
 /// [`CryptoEvent::PqBundlePublished`] event.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum PqBundleKind {
     /// Long-rotation last-resort ML-KEM key.
     LastResort,

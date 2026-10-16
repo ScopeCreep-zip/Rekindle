@@ -29,6 +29,7 @@ use crate::thread::ThreadInfo;
 
 /// Social feature events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SocialEvent {
     // ── Reactions ───────────────────────────────────────────────
     /// A reaction was added to a message.

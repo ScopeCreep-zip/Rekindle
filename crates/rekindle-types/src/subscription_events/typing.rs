@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Typing indicator events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TypingEvent {
     /// Someone started typing.
     /// Triggered by: gossip `TypingIndicator`, `DmPayload::Typing { typing: true }`.
@@ -19,6 +20,7 @@ pub enum TypingEvent {
 
 /// Where the typing is happening.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TypingContext {
     /// Typing in a community channel.
     Channel { community: String, channel: String },
