@@ -219,19 +219,21 @@ schemas/                              Cap'n Proto schema definitions
 | Pattern | Direction | Mechanism | Use Cases |
 |---------|-----------|-----------|-----------|
 | Commands | Frontend → Rust | `invoke()` / `#[tauri::command]` | Login, send message, add friend, change status |
-| Events | Rust → Frontend | `app.emit()` via `event_dispatch.rs` → `listen()` | Incoming messages, presence updates, typing indicators |
+| Events | Rust → Frontend | typed `WebviewEvent` via `event_dispatch.rs` → `event_router` → each window's `tauri::ipc::Channel` | Incoming messages, presence updates, typing indicators |
 
 Commands are synchronous request-response calls. Events are push-based
-notifications produced by background services. **All `app.emit()` calls
-flow through `src-tauri/src/event_dispatch.rs`** (Phase 23.A single-
-source router) so that cross-cutting concerns — rate limiting,
-journalling, replay-on-reconnect — live in one place. See
+notifications produced by background services. **Every event flows through
+`src-tauri/src/event_dispatch.rs`**: it works out the event's audience and
+`event_router::WebviewRouter` sends it on each audience window's
+`tauri::ipc::Channel` (ADR 0013). Nothing uses Tauri's `Emitter`
+(`cargo xtask check-no-emitter`). The frontend demultiplexes a window's stream
+in `src/ipc/channels/subscriptions.ts`. See
 [`event-dispatch.md`](event-dispatch.md).
 
 ## Window Architecture
 
-Only the `login` window is declared statically in `tauri.conf.json`.
-All other windows are created at runtime by helpers in
+No window is declared in `tauri.conf.json` (`app.windows` is empty, and a
+test enforces it). Every window, login included, is created at runtime by helpers in
 `src-tauri/src/windows.rs`. Each window has its own URL path. The
 SolidJS `Switch` component in `main.tsx` reads
 `window.location.pathname` and renders the corresponding window

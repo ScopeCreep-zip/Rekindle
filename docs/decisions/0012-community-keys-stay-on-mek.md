@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-04
+- **Amended by [0018](0018-mek-rotation-ballots.md):** rotation after a removal is agreed by write-once
+  ballots and strict-majority confirmation before the new key is used. Call media is not under a MEK
+  ([0016](0016-sender-owned-call-media-keys.md)).
 - **Re-affirms:** the community-key choice recorded in [0002](0002-signal-protocol-for-1to1.md)
   ("community channels use MEK + reader-validates governance … Revisit when a CRDT-friendly MLS
   variant matures"). Nothing in 0002 is superseded.

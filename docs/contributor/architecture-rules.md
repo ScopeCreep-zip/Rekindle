@@ -60,7 +60,9 @@ Cross-cutting (consumed by whichever frontend needs them):
    rekindle-e2e-server
 
 Daemon / CLI track:
-   rekindle-transport (sole Veilid boundary on this track),
+   rekindle-transport (links veilid-core; ADR 0014 allows only
+   rekindle-protocol, rekindle-transport, rekindle-node and, until F1,
+   rekindle-desktop, checked transitively by `cargo xtask check-boundaries`),
    rekindle-node; frontends rekindle-client, rekindle-cli (bin `rekindle`),
    rekindle-tui
 ```

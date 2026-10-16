@@ -486,9 +486,11 @@ webview. Used when `VITE_E2E=true`. Single binary `e2e_server`.
 
 ### rekindle-transport
 
-The **sole Veilid boundary** on the daemon track. Every other crate in
-the track depends on `rekindle-transport` and never imports
-`veilid-core` directly. The crate is split into two `veilid_core`-aware
+One of the four crates allowed to link veilid-core (ADR 0014:
+`rekindle-protocol`, `rekindle-transport`, `rekindle-node`, and
+`rekindle-desktop` until F1), checked transitively by
+`cargo xtask check-boundaries`. The daemon track's other crates reach
+Veilid through it. The crate is split into two `veilid_core`-aware
 modules and a body of pure logic:
 
 - `broadcast/` — outbound: sends, DHT writes, route management, node

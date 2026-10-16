@@ -50,9 +50,9 @@ desktop shell as well.
                             │ rekindle-transport public API
                             ▼
               ┌────────────────────────────┐
-              │ rekindle-transport         │   sole Veilid boundary;
-              │ (sole Veilid boundary)     │   broadcast/ + subscriptions/
-              │  broadcast/ subscriptions/ │   are the only veilid_core
+              │ rekindle-transport         │   links veilid-core (ADR
+              │ (Veilid adapter)           │   0014); broadcast/ + subscriptions/
+              │  broadcast/ subscriptions/ │   are its only veilid_core
               │  operations/ payload/ …    │   importers.
               └─────────────┬──────────────┘
                             │

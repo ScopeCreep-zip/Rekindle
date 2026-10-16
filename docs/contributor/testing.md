@@ -129,8 +129,8 @@ mock IPC layer that returns stubbed responses. Useful for:
 - Component-level tests that don't need backend behaviour.
 - Quick iteration on the frontend without spinning up Veilid.
 
-`channels.ts` uses `safeListen()`, which is a no-op in mock mode
-(no Tauri event system in browser).
+`startEventStream()` (`src/ipc/channels/subscriptions.ts`) is a no-op
+under `VITE_E2E=true` (no Tauri event transport in the browser).
 
 ### When to use which
 

@@ -250,11 +250,11 @@ command or event class does not bloat a single file.
 | `notification_events.ts` | `notification-event` + `network-status` |
 | `presence_events.ts` | `presence-event` |
 | `voice_events.ts` | `voice-event` |
-| `subscriptions.ts` | The `safeListen` wrapper used by every channel |
+| `subscriptions.ts` | `startEventStream()`, the window's one backend channel, demultiplexed into the `subscribe*` functions |
 
-`safeListen` is a no-op in E2E mode (`VITE_E2E=true`) because
-there is no Tauri event system in the browser-driven Playwright
-runs.
+`startEventStream()` is a no-op in E2E mode (`VITE_E2E=true`)
+because there is no Tauri event transport in the browser-driven
+Playwright runs.
 
 ### IPC adapters at the root
 
@@ -282,10 +282,11 @@ that no JSX `className` literal contains a Tailwind utility class.
 ## Event-driven Updates
 
 Every Rust → Frontend event flows through the
-[event-dispatch router](event-dispatch.md). On Tauri side every
-emit is routed through `event_dispatch::EventDispatch`; on the
-frontend side `subscriptions.ts::safeListen` registers the
-listener. The frontend persists the latest cursor to
-`localStorage` via the dedicated `cursor-tick` channel so soft
-stalls (page reload, IPC pause) replay missed events through the
-`event_resume` Tauri command without a full re-hydration.
+[event-dispatch router](event-dispatch.md) (ADR 0013). On the Tauri
+side every emit goes through `event_dispatch::EventDispatch`, which
+sends it only to the windows in its `audience()`, over each window's
+`tauri::ipc::Channel`. On the frontend side each window registers its
+handlers and then calls `subscriptions.ts::startEventStream()`, which
+opens that channel with `subscribe_events`. The webview keeps the last
+journal sequence number in `sessionStorage`, so a reload asks for the
+journaled events it missed instead of re-hydrating everything.

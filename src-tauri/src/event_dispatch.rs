@@ -4,7 +4,7 @@
 //! one dispatch task drains the queue, works out the event's
 //! [`Audience`] and hands it to [`crate::event_router::WebviewRouter`],
 //! which sends it on each audience window's channel. Nothing in
-//! `src-tauri` uses Tauri's `Emitter` (ADR 0007, enforced by
+//! `src-tauri` uses Tauri's `Emitter` (ADR 0013, enforced by
 //! `cargo xtask check-no-emitter`).
 //!
 //! The audience is an exhaustive match: a new event variant does not

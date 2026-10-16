@@ -100,6 +100,16 @@ Append-only — superseded ADRs stay in place with a "Superseded by" link.
 | [0007](decisions/0007-event-dispatch-single-source.md) | Single-source event-emission router (Phase 23.A) |
 | [0008](decisions/0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `services/` |
 | [0009](decisions/0009-crate-harvest-tiers.md) | Tier bumps and the 11 harvested crates |
+| [0010](decisions/0010-single-daemon-thin-frontends.md) | One daemon owns the node; GUI, TUI and CLI are thin frontends |
+| [0011](decisions/0011-member-sovereign-records.md) | Member-sovereign records replace the shared-`slot_seed` write model |
+| [0012](decisions/0012-community-keys-stay-on-mek.md) | Community channel keys stay on MEK (amended by 0018) |
+| [0013](decisions/0013-per-window-event-router.md) | Typed webview events delivered per window, no Tauri `Emitter` |
+| [0014](decisions/0014-veilid-boundary-is-transitive.md) | The Veilid boundary is transitive |
+| [0015](decisions/0015-media-engine.md) | Media engine: one Rust engine built from ported production components |
+| [0016](decisions/0016-sender-owned-call-media-keys.md) | Call media is keyed by sender-owned keys (RFC 9605 §5.1) |
+| [0017](decisions/0017-veilid-fork.md) | veilid-core is built from a minimal pinned fork |
+| [0018](decisions/0018-mek-rotation-ballots.md) | MEK rotation agreed by write-once ballots and majority confirmation |
+| [0019](decisions/0019-intentional-actions.md) | Intentional actions: one backend gate classifies every user action |
 
 See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 
@@ -192,7 +202,9 @@ Rekindle ships two ways to talk to the network:
 2. **Daemon + CLI** (`rekindle-node` + `rekindle-cli`) — a long-running
    daemon that owns the Veilid node and exposes it over an encrypted IPC
    bus, with a `clap`/`ratatui` CLI/TUI as the first client.
-   `rekindle-transport` is the sole Veilid boundary on this track. Future
+   veilid-core may link only into `rekindle-protocol`, `rekindle-transport`,
+   `rekindle-node` and `rekindle-desktop` (until F1), checked transitively
+   by `cargo xtask check-boundaries` (ADR 0014). Future
    clients (other frontends, automation, bridges) plug into the same bus.
 
 Both frontends speak the same Veilid protocol, the same SMPL governance,

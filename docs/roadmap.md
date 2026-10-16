@@ -1,16 +1,19 @@
 # Implementation Roadmap
 
 This roadmap is split into three tracks: the original 1:1 messaging
-phases (substantially complete), the **Communities v2.0** flat-SMPL
+phases (built on the desktop, with their two-machine verification still open), the **Communities v2.0** flat-SMPL
 governance work, and the **Crate harvest** that has produced eleven
 new tier-aligned crates since May 2026.
 
 Status legend: `[x]` done · `[~]` in progress · `[ ]` not started.
 
-> **Status source.** The active plan,
-> [`.claude/plans/standards-remediation/00-integration-plan.md`](../.claude/plans/standards-remediation/00-integration-plan.md),
-> is authoritative. Where this roadmap and the plan disagree, the plan wins. An item that the
-> architecture audit showed is not working is `[ ]` here, and names the plan step that owns it.
+> **Status source.** The active plan, `.claude/plans/standards-remediation/00-integration-plan.md`
+> (v2.2, realigned 2026-10-15), is the source of truth for status and order. It lives in the
+> maintainers' local `.claude/` tree, which is not checked in (`.gitignore`), so this file cannot
+> link to it. Decisions are public in [`decisions/`](decisions/README.md) (ADRs 0001–0019). Where
+> this roadmap and the plan disagree, the plan wins. An item that is not working, or whose design
+> an ADR replaced, is `[ ]` or `[~]` here and names the plan step that owns it. No item has yet
+> passed the plan's two-machine (macOS + Pop!_OS) check; that is plan step V.
 
 ## Phase 1: Foundation
 
@@ -40,7 +43,8 @@ windows.
 - [~] PreKey rotation and one-time prekey replenishment — one-time keys are
   minted per handout (fresh pair in every per-peer bundle, capped at 200
   unclaimed); signed-prekey rotation waits for the bundle to carry key ids
-- [x] Signal Protocol session establishment (X3DH)
+- [~] Signal Protocol session establishment: the desktop runs PQXDH; the daemon track
+  establishes no session yet (plan E2.1–E2.3)
 - [x] Message encrypt → envelope → Veilid send
 - [x] Message receive → deserialise → decrypt → SQLite store
 - [x] Chat window (MessageList, MessageBubble, MessageInput)
@@ -76,7 +80,9 @@ publish to DHT, integrate with community game-server favourites.
 
 The original v1.0 coordinator child-process architecture has been
 **removed**. Communities now use the **Communities v2.0**
-flat-governance model:
+flat-governance model. The list below describes **current code**. The target write model is
+member-sovereign records (ADR 0011, plan E3.2) and MEK rotation is agreed by ballots and
+majority confirmation (ADR 0018, plan E3.5):
 
 - No coordinator, no privileged nodes — every member is a full peer
 - All shared state lives in SMPL DHT records with `o_cnt: 0`
@@ -100,8 +106,9 @@ flat-governance model:
 - [x] **Phase 2 — Flat governance:** Coordinator process removed,
   CRDT merge wired, reader-validates permissions, self-sovereign
   join, governance commands ported, BootstrapBundle handler.
-- [x] **Phase 3 — Three-path delivery:** SMPL write + gossip mesh +
-  inspect-polling all wired (`rekindle-gossip`, `rekindle-sync`,
+- [~] **Phase 3 — Three-path delivery:** SMPL write + gossip mesh +
+  inspect-polling all wired; the app-side polling of watched records is removed by plan D4
+  (C7 / E3.2), so this path changes (`rekindle-gossip`, `rekindle-sync`,
   `rekindle-route`). Hardening (rate-limiting integration, history
   advertisement, route-context selection) is largely in place.
 - [x] **Phase 4 — Peer MEK distribution:** Per-channel MEK cache
@@ -153,8 +160,10 @@ codec with acceptable latency.
 - [x] Audio playback via cpal (dedicated thread)
 - [x] Opus encode / decode (48 kHz mono, VoIP mode, 32 kbps, FEC)
 - [x] Voice activity detection (energy-based + RNNoise denoising)
-- [x] Jitter buffer (adaptive, BTreeMap-by-sequence)
-- [x] Audio mixer (multi-participant)
+- [~] Jitter buffer (adaptive, BTreeMap-by-sequence): built; replaced by a NetEQ-class playout
+  buffer (ADR 0015, plan E4.3.5)
+- [~] Audio mixer (multi-participant): built for the MCU host; E4.4 replaces the MCU with a
+  forwarding-only relay that never decodes
 - [x] Voice transport over Veilid (3-hop Tor-class `SafetySelection::Safe`)
 - [x] Join / leave voice channel commands
 - [x] Mute / deafen controls
@@ -169,17 +178,21 @@ codec with acceptable latency.
 - [x] Voice mode switching (`set_voice_mode`)
 - [x] Voice session join / leave analytics
   (`voice_session_events`)
-- [x] Call signaling reliability layer (W13 fire-and-forget +
+- [~] Call signaling reliability layer (W13 fire-and-forget +
   W16 `pending_envelopes` retry queue, per-recipient seq_ack,
-  receiver dedup)
+  receiver dedup): built; plan D22 deletes the queue and D8 replaces it with call transactions
+  (E4.2)
 - [ ] Call crash recovery (Dialing / Incoming survive a restart): plan
   step E4.1
 - [ ] Group calls (multi-party call sessions): plan step E4.2
-- [x] Backend-owned call state machine and authoritative event
-  emit (W14 / W15) — every frontend renders identical lifecycle
-  from the same event stream
+- [~] Backend-owned call state machine and authoritative event
+  emit (W14 / W15): `rekindle-calls::CallStateMachine` exists and the daemon constructs it
+  (`rekindle-transport/src/operations/calls/mod.rs`), but the desktop does not use it; the GUI's
+  call lifecycle comes from `active_calls` and `calls.store.ts` (plan E4.1)
 - [x] SFrame (RFC 9605) audio encryption with per-sender keys for calls
-  and community voice, MCU mixes included (plan step B3)
+  and community voice, MCU mixes included (plan step B3; sender-owned keys, ADR 0016)
+- [ ] Media-key properties (joiner cannot read earlier media; a device seized later does not
+  open recorded calls; stage-channel kicks rotate): plan step C7.29
 - [x] Phase 14.q `CallRegistry` trait + `active_calls` adapter
   surface in `AppState`
 - [ ] Connection quality monitoring and display
@@ -208,8 +221,11 @@ share, overlay, auto-update.
 - [x] Cross-device sync foundation (architecture §28.4)
 - [x] Video / screen-share fragmentation pipeline
   (`rekindle-video`)
-- [x] Transport-correct 4 KiB video fragments + wire-domain AIMD
+- [x] Transport-correct 4 KiB video fragments
   (§10.6 rationale: Veilid per-hop 1,272 B datagram segmentation)
+- [~] Bandwidth estimation: the wire-domain AIMD (`rekindle-video/src/budget.rs`) was deleted
+  in E4.3.3 and replaced by the vendored GoogCC trendline estimator (`rekindle-media-bwe`,
+  ADR 0015); two-machine Verify open
 - [x] Linux-native camera capture + vp8enc realtime CBR
   (`rekindle-video-capture`, capability-detected; loopback self view)
 - [x] Full-text search (FTS5 across messages, threads, DMs)

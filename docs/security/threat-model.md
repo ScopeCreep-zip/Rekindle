@@ -120,7 +120,7 @@ would create cross-community linkability.
 |----|--------|------------|
 | I1 | Network adversary reads message content | Layer 4 (per-channel MEK / Signal Protocol). Content is never sent in plaintext. |
 | I2 | Curious community member decrypts a channel they don't have access to | Channel MEK is wrapped per-recipient at distribution. A peer who never received the wrap cannot decrypt. |
-| I3 | Banned member decrypts post-ban messages | MEK rotation on member departure. New MEK is wrapped only for remaining members. |
+| I3 | Banned member decrypts post-ban messages | MEK rotation on member departure. New MEK is wrapped only for remaining members. From plan E3.5 the rotation is a write-once ballot used only after a strict majority of eligible rotators confirm it (ADR 0018); until it is confirmed, the removed member can still read new text under the old key. |
 | I4 | Banned member decrypts pre-ban messages they had once cached | Acknowledged limitation. Forward secrecy protects only future content. The MEK rotation cadence and the deterministic rotator protocol minimise the exposure window for *future* content. |
 | I5 | Veilid relay node sees content | Layer 1 Veilid AEAD makes intermediate relays see only ciphertext. Layer 4 application AEAD makes them see only outer-envelope ciphertext even after Layer 1 unwraps. Defense in depth. |
 | I6 | Attacker reads at-rest secrets from disk | Layer 4: `rekindle-vault` SQLCipher double-encryption — page-level AES-256-CBC keyed by Argon2id-derived master, per-entry AES-256-GCM on top, sealed when not in use. SQLite (main DB) is not encrypted by default — users on full-disk-encryption OSes get coverage from there; users without FDE accept this gap. |
@@ -130,6 +130,7 @@ would create cross-community linkability.
 | I10 | Game detection leaks "what the user is playing" | Detection is opt-in per identity. Database is bundled (no remote lookup). Output goes only to friends granted presence visibility. Per-friend-group filters ship in the protocol but not yet in the UI. |
 | I11 | A coerced user is forced to reveal their pseudonym in another community | Cross-community linkability requires the user to either share the master secret or sign a challenge with two distinct pseudonyms. We provide no API that does this implicitly; OAuth2 / connected-account features that would create this correlation are deliberately omitted. |
 | I12 | Address-book matching reveals friend lists to a server | We do not implement address-book matching. Identity is a keypair, not a phone number. There is no server. |
+| I13 | A call participant, or someone who later seizes a participant's device, reads call media they should not | Call media uses sender-owned SFrame keys (RFC 9605 §5.1, ADR 0016), delivered pairwise and never under a MEK. **Leaver:** each sender makes a new key when someone leaves, used after 5 s; a leaver cannot read media sent more than ~10 s after leaving (RingRTC's bound under churn). **Today this holds except for a kicked or banned stage-channel listener**, whose removal does not rotate. **Joiner:** target, a joiner cannot read media from before it joined (ratchet on join). **Today it can:** it is handed the key in use since the last rotation (`keyring.rs` `on_join`, `shareable()`). **Device seizure:** target, recorded calls stay sealed after a later seizure, because media keys are sealed to a per-call ephemeral key erased at call end. **Today they do not:** keys are sealed with HPKE Auth mode to the long-lived community pseudonym, which RFC 9180 §9.1 says gives no forward secrecy against recipient compromise. All three targets land in plan step C7.29. Accepted limits: no in-session post-compromise security and no periodic rotation (as DAVE and RingRTC); a > 4 participant MCU host decodes and hears plaintext until E4.4's forwarding-only relay. DM calls already use a fresh ephemeral X25519 per call. |
 
 ### D — Denial of Service
 
@@ -159,7 +160,7 @@ would create cross-community linkability.
 | ID | Threat | Mitigation |
 |----|--------|------------|
 | L1 | Linking the user across communities | Per-community pseudonym derivation; no shared identifier between communities. |
-| L2 | Linking the user to their Veilid network identity | Veilid private routes provide receiver anonymity; safety routes provide sender anonymity. Application-level pseudonyms further decouple. |
+| L2 | Linking the user to their Veilid network identity | Veilid safety routes provide sender anonymity (3 hops, `ANONYMITY_HOP_FLOOR`). Veilid private routes provide receiver anonymity; their depth is the **inbound route depth**, set per route. **Target: 3 hops on both inbound route classes (General and Media)**, with the hop adjacent to us pinned so loss alone never redraws it (Tor vanguards). At 1 hop, the entry hop's PeerInfo (its IP) is in the clear in every route blob we hand out, and that hop connects directly to us, so any caller learns the one node that knows our IP (`~/veilid` `route_assemble.rs:199-216`, `rpc_route.rs:97`). **Today inbound routes are 1 hop** (`default_route_hop_count` = 1; `own_routes.rs` Media `hop_count: 0` = default); plan Phase RH sets `PrivateSpec.hop_count = 3` per route and leaves Veilid's pool default at 1. No app-triggered route replacement driven by measured loss (selective DoS would steer path choice; Tor Prop 271, vanguards-spec §1), and no full PeerInfo in the innermost hop. Application-level pseudonyms further decouple. |
 | L3 | Linking presence updates to a stable identifier | Presence is published to the per-community member registry under the community pseudonym, not the master identity. |
 | L4 | Linking a user's relay-routed message to their direct messages | Different Veilid private routes, different envelope formats, different timing. |
 
@@ -169,7 +170,7 @@ would create cross-community linkability.
 |----|--------|------------|
 | I-priv1 | A non-friend identifies the user from public DHT records | Profile records are encrypted; only the owner key (held by the user) and friends with explicit access can decrypt the friend list / mailbox / presence. |
 | I-priv2 | A community member identifies the user across communities | Pseudonym separation (L1). |
-| I-priv3 | A network adversary identifies the user from packet timing | Veilid safety routes obfuscate the sender on every path. The hop count is a fixed 3-hop Tor-class floor (`ANONYMITY_HOP_FLOOR`), not a per-class or user-tunable knob — voice and video get the same anonymity as text, never a lower-hop fast path. |
+| I-priv3 | A network adversary identifies the user from packet timing | Veilid safety routes (sender side) and private routes (receiver side, L2) on every path. The hop count is a 3-hop Tor-class floor (`ANONYMITY_HOP_FLOOR`) that no class, setting or admin policy can lower (config may raise it) — voice and video get the same anonymity as text, never a lower-hop fast path, and there is no direct peer-to-peer media path, by default or per call. Today the floor is enforced on the safety side only; the private side is 1 hop until plan Phase RH (L2). |
 
 ### N — Non-repudiation (privacy-violating)
 
@@ -186,6 +187,8 @@ non-repudiation from leaking globally.
 | D-priv1 | An observer detects that the user is online | Direct gossip and presence updates make this visible to friends/community members by design. To non-members, route metadata leaks "some Veilid traffic" but not "Rekindle traffic" specifically. |
 | D-priv2 | An observer detects that a community exists | Communities are addressed by DHT key. Without the key, there is no global directory to enumerate. Discovery is opt-in. |
 | D-priv3 | Push-relay platform vendor detects "this device is using Rekindle" | Yes — any push notification reveals app installation. Mitigation: opt-in; users with this concern run Tier 2 only. |
+| D-priv4 | A contact learns when the user read a message (attention, online times; an abuser saying "I know you read this", Freed et al. CHI 2018) | **Policy (plan E2.5):** DM read receipts are opt-in, reciprocal and one global setting, **off by default**. A receipt is a read-up-to marker with no timestamp, coalesced per peer and sent after a uniform random 2–10 s delay, only after the chat window is focused and the message rendered; never to pending, blocked or non-friend contacts and never while Invisible; the setting itself never goes on the wire, so "off" and "unread" look the same; received markers are ignored while our own setting is off. **No community or channel read receipts**: unread state stays local (and syncs only between the user's own devices). **Today:** no read receipts are sent; `is_read` is local only. Residual risk under A8: a coerced user can be made to turn receipts on. |
+| D-priv5 | Delivery receipts reveal that a device is online, how many devices exist, or let a stranger probe activity (Careless Whisper, arXiv 2411.11194) | **Policy (plan E2.5):** `DmAck` is a transport ack, not a setting: sent only to accepted friends, only for user content that is durably committed, coalesced per peer with the same 2–10 s random delay, held while Invisible, and sent by one device per identity. Communities get no per-reader delivery receipts. **Today:** there is no peer delivery receipt; the desktop emits a local `DirectMessageAcknowledged` right after a send, even a failed one (`chat_runtime.rs`), which E2.5 deletes. |
 
 ### D — Disclosure (data)
 
@@ -210,6 +213,13 @@ status.
 ## 5. What we deliberately accept
 
 These are conscious tradeoffs documented for full transparency:
+
+- **Call latency from anonymity routing (L2, I-priv3).** With 3 hops on each side, projected
+  mouth-to-ear is ~470–500 ms median. The ship gate is G.114 §4's own measure, mean one-way *route*
+  delay ≤ 400 ms; mouth-to-ear ≤ 400 ms and E-model R ≥ 70 (G.107 Default class) are measured
+  targets, and the call bar shows the live G.109 category, naming anonymity routing as the cause
+  when quality drops. No faster, lower-hop path is offered.
+- **Call-media leaver window (I13).** A leaver may hear up to ~10 s after leaving under rapid churn.
 
 - **Pre-ban content disclosure (I4).** A banned member retains content
   they cached before the ban. This is intrinsic to E2E P2P — once
@@ -313,9 +323,9 @@ privileged label.
 |------------|--------|
 | App-command ACL manifest exists | **Met** — `build.rs` derives the command list from `src/invoke.rs`, so `tauri-build` emits one `allow-*`/`deny-*` per command and Tauri enforces the per-window grants |
 | Per-window allow-list rather than global grants | **Met** — one `app-*.json` per window family; `app-login.json` is pinned to the 7 pre-auth commands |
-| `default.json` limited to window chrome | **Met** — only the `core:window:*` actions the titlebar/drag region use, plus `core:event:allow-listen`/`unlisten` until the per-window Channel router lands |
-| No webview creation from the frontend (S8) | **Met** — `core:webview:*` not granted; windows are created only by `src/windows.rs` |
-| No `core:default` / plugin `*:default` bundles | **Met** — specific plugin permissions only, in the window that uses them (notification probe: post-auth windows; opener URL: buddy list; dialogs: community) |
+| `default.json` limited to window chrome | **Met** — only the `core:window:*` actions the titlebar/drag region use; no `core:event` (events arrive on each window's own channel, ADR 0013) |
+| No webview creation from the frontend (S8) | **Met** — `core:webview:*` not granted; windows are created only by Rust in `src/windows/` |
+| No `core:default` / plugin `*:default` bundles | **Met** — no plugin grants in any window. Dialogs and URL opening run in Rust behind `upload_attachment`, `download_attachment` and `open_external_url`; `tauri-plugin-notification` is gone (OS notifications from Rust, `os_notify.rs`) |
 | Debug commands absent from release | **Met** — `#[cfg(debug_assertions)]` on the commands; their grants live in `capabilities-dev/`, loaded only in debug builds |
 | Policy enforced in CI | **Met** — `src-tauri/tests/capability_policy.rs` (no blanket grants, login allowlist, every command granted, window patterns match `windows.rs`, debug grants only in `capabilities-dev/`) |
 | Description field documents rationale | **Met** — each capability file's `description` field |
@@ -408,10 +418,16 @@ Tracked in [`../roadmap.md`](../roadmap.md) and the issues listed in
   polish before users can rely on it.
 - **Gossip metadata analysis.** A network adversary observing many
   Veilid relays can do traffic-pattern analysis. Veilid's mitigations
-  (safety routes) help but do not eliminate this. Rekindle fixes the
-  hop count at a 3-hop Tor-class floor on every path — including voice
-  and video — rather than exposing a lower-hop fast path, accepting the
+  (safety and private routes) help but do not eliminate this. Rekindle fixes the
+  hop count at a 3-hop Tor-class floor on every path, on the safety **and**
+  the private side — including voice and video — rather than exposing a lower-hop fast path, accepting the
   latency cost as a deliberate privacy tradeoff.
+- **Inbound route depth.** Receiver-side private routes are 1 hop today;
+  3 hops with the adjacent hop pinned is plan Phase RH (L2). Pinning the
+  adjacent hop needs a Veilid change (`AllocateRouteParams` has only
+  `avoid_nodes`), which goes through the fork policy of ADR 0017.
+- **Call media keys.** The joiner and device-seizure properties in I13
+  hold only after plan step C7.29.
 
 ## 7. How to report a finding
 

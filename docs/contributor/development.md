@@ -234,7 +234,7 @@ Rekindle supports two E2E testing strategies:
 - Playwright drives the real SolidJS UI in a browser
 - Uses real SQLite + Vault (`rekindle-vault`) + Ed25519 — no mocking
 - Frontend code path: `VITE_E2E=true` → `invoke()` sends HTTP POST
-- `channels.ts` uses `safeListen()` which is a no-op in this mode
+- `startEventStream()` (`src/ipc/channels/subscriptions.ts`) is a no-op in this mode
 
 **Mock IPC (`pnpm test:mock`):**
 - `VITE_PLAYWRIGHT=true` → `mockIPC` from `@tauri-apps/api/mocks`

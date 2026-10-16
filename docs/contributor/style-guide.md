@@ -235,8 +235,9 @@ Stores hold reactive signals, expose action functions, and call
 
 ### Handlers
 
-Backend events are subscribed via `safeListen()` in
-`src/handlers/<feature>.ts`. Each handler file is named for the
+Backend events are subscribed via the `subscribe*` functions of
+`src/ipc/channels/` in `src/handlers/<feature>.ts`; each window then
+calls `startEventStream()` once (ADR 0013). Each handler file is named for the
 event channel it owns and exports a setup function called once at
 startup.
 

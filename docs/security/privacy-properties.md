@@ -64,9 +64,26 @@ vulnerable-user platform.
 ### 1.3 Receiver anonymity (private routes)
 
 A node creates a `private_route` and publishes the route blob. Anyone
-holding the blob can send to the route, but **only the originator's
-node** knows that blob → real network identity. The publisher's IP /
-node identity is never revealed.
+holding the blob can send to the route without learning the
+originator's node identity from the blob itself. What protects the
+receiver is the route's **depth**:
+
+- The blob carries the entry hop's full PeerInfo (node ids and dial
+  info, i.e. its IP addresses) in the clear, and the hop adjacent to
+  the owner connects to it directly and knows it is the last hop
+  (`~/veilid` `route_assemble.rs:199-216`, `privacy.rs:94-96`,
+  `rpc_route.rs:97, 395-397`).
+- At **1 hop** those are the same node: every caller holding our blob
+  can name the one node that knows our IP. This is Tor's
+  "NonAnonymous" single-onion configuration.
+- At **3 hops** the blob names only the entry; locating the owner needs
+  all three hops or end-to-end correlation across them.
+
+**Today Rekindle's inbound routes are 1 hop** (Veilid's
+`default_route_hop_count`). The target, plan Phase RH, is 3 hops on
+both route classes, set per route through `PrivateSpec.hop_count`,
+with the hop adjacent to us pinned so loss alone never redraws it
+(threat model L2).
 
 Routes expire (~120 s of inactivity); the presence service periodically
 refreshes route blobs in the registry, which doubles as a liveness
@@ -125,7 +142,10 @@ the DHT or `app_message` transport:
 - DM / group DM messages → ECDH-derived MEK + ratchet
 - Community channel messages → per-channel MEK
 - File chunks → per-file FEK (wrapped under channel MEK)
-- Voice frames → per-channel MEK or per-call key
+- Voice and video frames → sender-owned SFrame keys (RFC 9605 §5.1,
+  ADR 0016): each participant's own random key, delivered pairwise;
+  DM calls use a fresh ephemeral X25519 per call. Call media is never
+  under a channel MEK.
 - Cross-device sync subkeys → per-subkey HKDF-derived key
 
 Layer 4 in the stack — see [`overview.md`](overview.md).
@@ -138,9 +158,21 @@ Layer 4 in the stack — see [`overview.md`](overview.md).
   messages.
 - **Communities:** MEK rotation on every member departure. A departed
   member cannot decrypt content sent after their departure.
-- **Voice channels:** MEK rotates on every join and every leave —
-  late joiners cannot decrypt earlier frames; departing participants
-  cannot decrypt later frames.
+- **Voice channels and calls (ADR 0016):** there is no voice MEK.
+  Each sender makes a new key when someone leaves, used after 5 s, so a
+  leaver cannot decrypt frames sent more than ~10 s after leaving. Two
+  further properties are the target of plan step C7.29 and **do not
+  hold today**:
+  - *late joiners cannot decrypt earlier frames* — today a joiner is
+    handed the key in use since the sender's last rotation; C7.29
+    ratchets the key forward on every join;
+  - *a device seized later does not open recorded calls* — today media
+    keys are sealed (HPKE Auth) to the long-lived community pseudonym,
+    which is not forward-secret (RFC 9180 §9.1); C7.29 seals them to a
+    per-call ephemeral key erased at call end.
+
+  A kicked or banned stage-channel listener keeps the speakers' keys
+  today; C7.29 makes every community departure rotate.
 - **DM:** ratchet step every 100 messages or 24 hours.
 
 ### 2.4 Reader-validates governance
