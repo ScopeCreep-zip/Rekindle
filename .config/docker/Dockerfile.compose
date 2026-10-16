@@ -124,7 +124,8 @@ RUN systemctl enable nix-daemon.socket nix-daemon.service
 #
 COPY .config/docker/data/etc/systemd/system/dbus-user-session.service /etc/systemd/system/dbus-user-session.service
 COPY .config/docker/data/etc/systemd/system/gnome-keyring.service /etc/systemd/system/gnome-keyring.service
-COPY .config/docker/data/etc/systemd/system/rekindled.service /etc/systemd/system/rekindled.service
+COPY crates/rekindle-node/contrib/systemd/rekindled.service /etc/systemd/system/rekindled.service
+COPY .config/docker/data/etc/systemd/system/rekindled.service.d/harness.conf /etc/systemd/system/rekindled.service.d/harness.conf
 COPY .config/docker/data/etc/systemd/system/rekindle-init.service /etc/systemd/system/rekindle-init.service
 COPY .config/docker/data/usr/local/bin/rekindle-init.sh /usr/local/bin/rekindle-init.sh
 COPY .config/docker/data/etc/rekindle/config.toml /etc/rekindle/config.toml

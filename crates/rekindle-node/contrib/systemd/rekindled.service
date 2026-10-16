@@ -42,14 +42,18 @@ NoNewPrivileges=yes
 ProtectHome=read-only
 ProtectSystem=strict
 
-# XDG directories managed by systemd (creates if needed, correct ownership).
+# The IPC socket and bus keys live in $XDG_RUNTIME_DIR/rekindle
+# (rekindle-ipc `socket_path`, `noise_keys::keys_dir`); systemd creates it.
 RuntimeDirectory=rekindle
-StateDirectory=rekindle
-ConfigurationDirectory=rekindle
 
-# Explicit read-write paths (ProtectSystem=strict blocks everything else).
-ReadWritePaths=%h/.local/state/rekindle
-ReadWritePaths=%h/.local/share/rekindle
+# The data root (rekindle_utils::paths::DataRoot, `com.rekindle.app`): data,
+# state and logs under the XDG data dir, config.toml under the config dir.
+# ProtectHome=read-only cannot bind a path that does not exist yet, and no
+# XDG directive creates the data dir, so they are created first outside the
+# sandbox ("+") and then made writable.
+ExecStartPre=+/usr/bin/mkdir -p %h/.local/share/com.rekindle.app %h/.config/com.rekindle.app
+ReadWritePaths=%h/.local/share/com.rekindle.app
+ReadWritePaths=%h/.config/com.rekindle.app
 
 # Kernel hardening.
 ProtectKernelModules=yes
@@ -73,7 +77,7 @@ MemoryMax=512M
 
 Environment=RUST_LOG=info,veilid_core=warn
 # Optional user override file (not required to exist).
-EnvironmentFile=-%h/.config/rekindle/daemon.env
+EnvironmentFile=-%h/.config/com.rekindle.app/daemon.env
 
 [Install]
 WantedBy=default.target

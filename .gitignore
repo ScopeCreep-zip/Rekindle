@@ -123,3 +123,6 @@ ehthumbs.db
 
 # TypeScript project-references build cache (tsconfig.node.json is composite)
 *.tsbuildinfo
+
+# Docker harness per-node passphrases (plan V.4): never committed.
+.config/docker/nodes/*/passphrase
