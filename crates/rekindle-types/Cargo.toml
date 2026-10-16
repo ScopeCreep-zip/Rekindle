@@ -16,7 +16,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-zeroize = "1"
+zeroize = { version = "1", features = [ "serde" ] }
 
 [dev-dependencies]
 postcard = { version = "1", features = [ "use-std" ] }

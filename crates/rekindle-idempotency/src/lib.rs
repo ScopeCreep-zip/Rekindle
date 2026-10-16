@@ -15,5 +15,6 @@
 //! Plan reference: `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 8.
 
 pub mod cache;
+pub mod intent_gate;
 
 pub use cache::{IdempotencyCache, SharedIdempotencyCache};

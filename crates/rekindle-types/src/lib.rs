@@ -23,6 +23,7 @@ pub mod friend_store;
 pub mod game_server;
 pub mod governance;
 pub mod id;
+pub mod intent;
 pub mod invite;
 pub mod key_format;
 pub mod lamport;

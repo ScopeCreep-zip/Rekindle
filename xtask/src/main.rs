@@ -48,6 +48,7 @@ mod bare_spawn;
 mod domain_literals;
 mod duplication;
 mod frontend_boundaries;
+mod intent_table;
 mod literals;
 mod no_emitter;
 mod no_managed_db;
@@ -93,6 +94,8 @@ enum Command {
     CheckNoManagedDb,
     /// Verify session work spawns through a `SessionScope`, not bare `tokio::spawn`.
     CheckBareSpawn,
+    /// Verify every command and IPC request is classified in the intent table.
+    CheckIntentTable,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
     /// Verify no type name is declared in two crates.
@@ -165,6 +168,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| bare_spawn::check_bare_spawn(&root)),
                 ),
                 (
+                    "intent-table",
+                    Box::new(|| intent_table::check_intent_table(&root)),
+                ),
+                (
                     "duplicate-bodies",
                     Box::new(|| check_duplicate_bodies(&root)),
                 ),
@@ -205,6 +212,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckSqlite => sqlite::check_sqlite(&root),
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),
         Command::CheckBareSpawn => bare_spawn::check_bare_spawn(&root),
+        Command::CheckIntentTable => intent_table::check_intent_table(&root),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),
