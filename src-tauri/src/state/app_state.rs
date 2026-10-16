@@ -65,8 +65,10 @@ pub struct AppState {
     /// friends table — no in-memory cache, no hydration race.
     pub friend_store: Arc<RwLock<Option<Arc<dyn rekindle_types::friend_store::FriendStore>>>>,
     /// The logged-in identity's database (plan C6). Every command and
-    /// service reaches SQLite through `db.current()`.
-    pub db: rekindle_db::DbHandle,
+    /// service reaches SQLite through `db.current()`. Shared (`Arc`) with
+    /// the friend store, which resolves it per call and so never holds
+    /// the database open past `clear` (plan C7.18).
+    pub db: Arc<rekindle_db::DbHandle>,
     /// Signal session manager (set after identity unlock). `RwLock` so
     /// encrypt/decrypt readers don't serialize on the wrapper; the
     /// inner `Arc<SignalManagerHandle>` is cloned out under the
@@ -309,7 +311,7 @@ impl Default for AppState {
             transport_session: Arc::new(parking_lot::RwLock::new(None)),
             envelope_store: Arc::new(RwLock::new(None)),
             friend_store: Arc::new(RwLock::new(None)),
-            db: rekindle_db::DbHandle::default(),
+            db: Arc::new(rekindle_db::DbHandle::default()),
             signal_manager: Arc::new(RwLock::new(None)),
             game_detector: Arc::new(Mutex::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),

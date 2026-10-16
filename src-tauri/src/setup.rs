@@ -156,7 +156,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // dispatch-before-hydration race that caused
     // "not friends even though we are" AEAD failures.
     let friend_store: Arc<dyn rekindle_types::friend_store::FriendStore> =
-        Arc::new(rekindle_db::SqliteFriendStore::new(pool.clone()));
+        Arc::new(rekindle_db::SqliteFriendStore::new(Arc::clone(&state.db)));
     *state.friend_store.write() = Some(friend_store);
 
     state.db.set(pool);

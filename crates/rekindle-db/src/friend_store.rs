@@ -8,6 +8,13 @@
 //! At realistic peak throughput (~100 envelopes/sec across active chat,
 //! presence, and voice setup), ~75-150 µs per lookup ≈ ~1.5% of one core.
 //! WAL mode + indexed PK lookup; readers don't block writers.
+//!
+//! # No database of its own
+//!
+//! The store resolves [`DbHandle::current`] on every call and holds no
+//! [`Db`]: a clone held for the app's life kept the identity database open
+//! past `DbHandle::clear` at exit and logout (plan C7.18). With no identity
+//! loaded a lookup is an error, which the receive path fails closed on.
 
 use std::sync::Arc;
 
@@ -15,17 +22,22 @@ use async_trait::async_trait;
 use rekindle_types::friend_store::{FriendRecord, FriendStore, FriendStoreError};
 
 use crate::repo::friends;
-use crate::Db;
+use crate::{Db, DbHandle};
 
 /// SQLite-backed [`FriendStore`].
 pub struct SqliteFriendStore {
-    db: Db,
+    handle: Arc<DbHandle>,
 }
 
 impl SqliteFriendStore {
     #[must_use]
-    pub fn new(db: Db) -> Self {
-        Self { db }
+    pub fn new(handle: Arc<DbHandle>) -> Self {
+        Self { handle }
+    }
+
+    /// The open identity database, or a backend error when none is.
+    fn db(&self) -> Result<Db, FriendStoreError> {
+        self.handle.current().map_err(map_db_err)
     }
 
     /// Convenience: wrap as the trait object expected by transport.
@@ -47,7 +59,7 @@ impl FriendStore for SqliteFriendStore {
     ) -> Result<Option<FriendRecord>, FriendStoreError> {
         let owner = owner_key.to_string();
         let pubkey = pubkey_hex.to_string();
-        self.db
+        self.db()?
             .call(move |conn| friends::record(conn, &owner, &pubkey))
             .await
             .map_err(map_db_err)
@@ -60,7 +72,7 @@ impl FriendStore for SqliteFriendStore {
     ) -> Result<Option<FriendRecord>, FriendStoreError> {
         let owner = owner_key.to_string();
         let key = inbox_record_key.to_string();
-        self.db
+        self.db()?
             .call(move |conn| friends::record_by_profile_key(conn, &owner, &key))
             .await
             .map_err(map_db_err)
@@ -76,7 +88,7 @@ impl FriendStore for SqliteFriendStore {
         }
         let owner = owner_key.to_string();
         let pubkeys = pubkey_hexes.to_vec();
-        self.db
+        self.db()?
             .call(move |conn| friends::records(conn, &owner, &pubkeys))
             .await
             .map_err(map_db_err)
@@ -84,7 +96,7 @@ impl FriendStore for SqliteFriendStore {
 
     async fn iter_active(&self, owner_key: &str) -> Result<Vec<FriendRecord>, FriendStoreError> {
         let owner = owner_key.to_string();
-        self.db
+        self.db()?
             .call(move |conn| friends::active_records(conn, &owner))
             .await
             .map_err(map_db_err)
@@ -118,7 +130,27 @@ mod tests {
             )
             .unwrap();
         }
-        SqliteFriendStore::new(Db::from(rekindle_asql::Connection::from(conn)))
+        let handle = Arc::new(DbHandle::default());
+        handle.set(Db::from(rekindle_asql::Connection::from(conn)));
+        SqliteFriendStore::new(handle)
+    }
+
+    /// The store holds no database of its own: after a read, clearing the
+    /// handle finds no other holder, and a later read is an error rather
+    /// than a closed database (plan C7.18).
+    #[tokio::test]
+    async fn the_store_never_holds_the_database_open() {
+        let store = store_with(&[("alice", "accepted")]);
+        assert!(store
+            .lookup_by_pubkey(OWNER, "alice")
+            .await
+            .unwrap()
+            .is_some());
+        store.handle.clear().await.unwrap();
+        assert!(matches!(
+            store.lookup_by_pubkey(OWNER, "alice").await,
+            Err(FriendStoreError::Backend(_))
+        ));
     }
 
     #[tokio::test]
