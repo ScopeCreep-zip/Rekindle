@@ -139,3 +139,55 @@ async fn a_rename_reaches_the_registry() {
         Err(IdentityError::NotFound)
     ));
 }
+
+#[tokio::test]
+async fn an_exported_identity_imports_on_another_root_and_unlocks() {
+    let a = Fixture::new();
+    let made = create(&a.root, &a.stores(), Some("Mover"), "pass", 1)
+        .await
+        .unwrap();
+    let pk = made.public_key.clone();
+    drop(made);
+    // Exported while unlocked: read through the live vault.
+    let archive = export(&a.root, &a.stores(), &pk, "pass", 2).unwrap();
+    assert!(matches!(
+        export(&a.root, &a.stores(), &pk, "wrong", 3),
+        Err(IdentityError::WrongPassphrase)
+    ));
+
+    let b = Fixture::new();
+    assert!(matches!(
+        import(&b.root, &b.attempts, &archive, "wrong", 4).await,
+        Err(IdentityError::WrongPassphrase)
+    ));
+    assert!(
+        !b.root.identity_vault(&pk).exists(),
+        "a failed import leaves nothing"
+    );
+    let entry = import(&b.root, &b.attempts, &archive, "pass", 5)
+        .await
+        .unwrap();
+    assert_eq!(entry.display_name, "Mover");
+    assert!(matches!(
+        import(&b.root, &b.attempts, &archive, "pass", 6).await,
+        Err(IdentityError::Exists)
+    ));
+    let unlocked = unlock(&b.root, &b.stores(), &pk, "pass", 7).await.unwrap();
+    assert_eq!(unlocked.display_name, "Mover");
+}
+
+#[tokio::test]
+async fn an_archive_naming_a_path_is_refused() {
+    let a = Fixture::new();
+    let made = create(&a.root, &a.stores(), None, "pass", 1).await.unwrap();
+    let pk = made.public_key.clone();
+    drop(made);
+    let bytes = export(&a.root, &a.stores(), &pk, "pass", 2).unwrap();
+    let mut parsed = archive::Archive::decode(&bytes).unwrap();
+    parsed.entry.public_key = "../escape".into();
+    let b = Fixture::new();
+    assert!(matches!(
+        import(&b.root, &b.attempts, &parsed.encode().unwrap(), "pass", 3).await,
+        Err(IdentityError::Corrupt(_))
+    ));
+}

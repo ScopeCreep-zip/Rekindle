@@ -136,6 +136,41 @@ impl VaultStore {
         Ok(())
     }
 
+    /// The vault file's bytes and its header's, for an identity archive.
+    /// Read under the connection lock: every write goes through it, and the
+    /// vault journals by rollback, so the file is a committed state.
+    ///
+    /// # Errors
+    /// I/O.
+    pub fn export_files(&self) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
+        let _conn = self.conn.lock();
+        let vault = std::fs::read(&self.path)?;
+        let header = std::fs::read(crate::header::header_path(&self.path))?;
+        Ok((vault, header))
+    }
+
+    /// Install a vault and its header from an archive at `path`. Refuses to
+    /// replace either; nothing is opened (the caller opens it to verify).
+    ///
+    /// # Errors
+    /// [`VaultError::AlreadyExists`], a header that does not parse, or I/O
+    /// (the files written are removed again).
+    pub fn import_files(path: &Path, vault: &[u8], header: &[u8]) -> Result<(), VaultError> {
+        let parsed = crate::header::VaultHeader::decode(header)?;
+        if path.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        crate::header::write_new(path, &parsed)?;
+        let written = write_private_new(path, vault);
+        if written.is_err() {
+            let _ = std::fs::remove_file(crate::header::header_path(path));
+        }
+        written
+    }
+
     /// On-disk path of this vault file (the SQLCipher database — the salt
     /// sidecar lives at `{path}.salt`).
     pub fn path(&self) -> &Path {
@@ -226,6 +261,29 @@ impl VaultStore {
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))?;
         Ok(usize::try_from(count).unwrap_or(0))
     }
+}
+
+/// Write `bytes` to a new owner-only file at `path`, synced.
+fn write_private_new(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
+        _ => e.into(),
+    })?;
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    if let Err(e) = written {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(e.into());
+    }
+    Ok(())
 }
 
 /// The AAD that binds an entry to its address: `namespace ‖ 0x00 ‖ key`,
@@ -321,6 +379,30 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("alice.vault");
         (dir, path)
+    }
+
+    #[test]
+    fn exported_files_import_and_open_with_the_same_passphrase() {
+        let (dir, path) = fresh_path();
+        let (vault, key) = VaultStore::create(&path, "pp").unwrap();
+        vault.put(&VaultKey::IdentityEd25519, &[3u8; 32]).unwrap();
+        let (bytes, header) = vault.export_files().unwrap();
+        let copy = dir.path().join("copy.vault");
+        VaultStore::import_files(&copy, &bytes, &header).unwrap();
+        assert!(matches!(
+            VaultStore::import_files(&copy, &bytes, &header),
+            Err(VaultError::AlreadyExists)
+        ));
+        let (opened, copy_key) = VaultStore::open(&copy, "pp").unwrap();
+        assert_eq!(copy_key.as_bytes(), key.as_bytes());
+        assert_eq!(
+            &*opened.get(&VaultKey::IdentityEd25519).unwrap().unwrap(),
+            &[3u8; 32]
+        );
+        assert!(matches!(
+            VaultStore::import_files(&dir.path().join("bad.vault"), &bytes, b"junk"),
+            Err(VaultError::Schema(_))
+        ));
     }
 
     #[test]
