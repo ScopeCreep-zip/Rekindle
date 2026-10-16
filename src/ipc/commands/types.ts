@@ -117,6 +117,8 @@ export interface FriendInfo {
   unreadCount: number;
   lastSeenAt: number | null;
   friendshipState: "pendingOut" | "accepted";
+  /** Why the secure session could not be set up, while it is failed (C7.25). */
+  handshakeError: string | null;
 }
 
 export interface GameStatus {

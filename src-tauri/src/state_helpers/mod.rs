@@ -41,7 +41,7 @@ pub use communities::{
 pub use dht_records::{release_friend_record, store_dht_record, DhtRecordType};
 pub use friends::{
     accepted_friend_keys, friend_dht_key, friend_display_name, friend_field, friend_mailbox_key,
-    friends_with_dht_keys, is_active_friend_authoritative, is_friend, is_friend_accepted,
+    friend_status_authoritative, friends_with_dht_keys, is_friend, is_friend_accepted,
 };
 pub use governance::{
     governance_clock, governance_key, governance_state, merge_message_lamport, my_permissions,

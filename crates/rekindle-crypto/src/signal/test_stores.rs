@@ -309,11 +309,8 @@ mod tests {
     fn current_bundle_is_byte_stable() {
         let bob_id = Identity::generate();
         let bob = make_manager(&bob_id);
-        let before = postcard::to_stdvec(&bob.current_bundle().unwrap()).unwrap();
-        assert_eq!(
-            before,
-            postcard::to_stdvec(&bob.current_bundle().unwrap()).unwrap()
-        );
+        let before = bob.current_bundle().unwrap().to_wire();
+        assert_eq!(before, bob.current_bundle().unwrap().to_wire());
 
         let alice_id = Identity::generate();
         let alice = make_manager(&alice_id);
@@ -322,7 +319,7 @@ mod tests {
 
         assert_eq!(
             before,
-            postcard::to_stdvec(&bob.current_bundle().unwrap()).unwrap(),
+            bob.current_bundle().unwrap().to_wire(),
             "handouts and consumption must not touch the long-lived keys"
         );
     }
@@ -406,5 +403,104 @@ mod tests {
 
         let result = alice_mgr.encrypt("nonexistent_peer", b"hello").await;
         assert!(result.is_err());
+    }
+
+    /// One-time keys survive until the first message decrypts under the
+    /// responder's session, then are gone (plan C7.25): a handshake that
+    /// never completes cannot burn them.
+    #[tokio::test]
+    async fn one_time_keys_are_deleted_only_after_the_first_decrypt() {
+        let alice_id = Identity::generate();
+        let bob_id = Identity::generate();
+        let alice = make_manager(&alice_id);
+        let bob = make_manager(&bob_id);
+        let (alice_addr, bob_addr) = (
+            hex::encode(alice_id.public_key_bytes()),
+            hex::encode(bob_id.public_key_bytes()),
+        );
+        let bundle = bob.handout_bundle().unwrap();
+        let init = alice.establish_session(&bob_addr, &bundle).unwrap();
+        let respond = || {
+            bob.respond_to_session(
+                &alice_addr,
+                &alice_id.public_key_bytes(),
+                &init.ephemeral_public_key,
+                init.signed_prekey_id,
+                init.one_time_prekey_id,
+                &init.ml_kem_ciphertext,
+                init.used_ot_pqpk_id,
+            )
+        };
+        respond().unwrap();
+        assert!(init.one_time_prekey_id.is_some() && init.used_ot_pqpk_id.is_some());
+
+        // A message that does not decrypt confirms nothing.
+        assert!(bob.decrypt(&alice_addr, &[0u8; 80]).await.is_err());
+        respond().expect("the one-time keys are still held before any decrypt succeeds");
+
+        let wire = alice.encrypt(&bob_addr, b"hello").await.unwrap();
+        assert_eq!(bob.decrypt(&alice_addr, &wire).await.unwrap(), b"hello");
+        assert!(
+            respond().is_err(),
+            "after the first decrypt the one-time keys are deleted"
+        );
+    }
+
+    /// A handshake under a different identity key for a known address is
+    /// refused and changes nothing (plan C7.25).
+    #[test]
+    fn a_changed_identity_key_is_refused_on_both_sides() {
+        let (alice, bob, alice_addr, bob_addr) = establish_session_pair();
+        let mallory_id = Identity::generate();
+        let mallory = make_manager(&mallory_id);
+
+        // Responder: Mallory claims Alice's address.
+        let bundle = bob.handout_bundle().unwrap();
+        let init = mallory.establish_session(&bob_addr, &bundle).unwrap();
+        let err = bob
+            .respond_to_session(
+                &alice_addr,
+                &mallory_id.public_key_bytes(),
+                &init.ephemeral_public_key,
+                init.signed_prekey_id,
+                init.one_time_prekey_id,
+                &init.ml_kem_ciphertext,
+                init.used_ot_pqpk_id,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, CryptoError::UntrustedIdentity { .. }),
+            "{err}"
+        );
+
+        // Initiator: a bundle under another key for Bob's address.
+        let forged = mallory.handout_bundle().unwrap();
+        let Err(err) = alice.establish_session(&bob_addr, &forged) else {
+            panic!("a forged bundle for a trusted address must be refused");
+        };
+        assert!(
+            matches!(err, CryptoError::UntrustedIdentity { .. }),
+            "{err}"
+        );
+
+        // The trusted keys are untouched.
+        let real = bob.handout_bundle().unwrap();
+        alice.establish_session(&bob_addr, &real).unwrap();
+    }
+
+    #[test]
+    fn unconfirmed_prekeys_survive_serialization() {
+        use crate::signal::ratchet::RatchetState;
+        let okm = [7u8; 96];
+        for ids in [(Some(3), Some(4)), (Some(3), None), (None, Some(4))] {
+            let mut state = RatchetState::responder(&okm, [1; 32], vec![2; 32])
+                .with_unconfirmed_prekeys(ids.0, ids.1);
+            let mut back = RatchetState::deserialize(&state.serialize()).unwrap();
+            assert_eq!(back.take_unconfirmed_prekeys(), Some(ids));
+            assert_eq!(state.take_unconfirmed_prekeys(), Some(ids));
+        }
+        let plain = RatchetState::responder(&okm, [1; 32], vec![2; 32]);
+        let mut back = RatchetState::deserialize(&plain.serialize()).unwrap();
+        assert_eq!(back.take_unconfirmed_prekeys(), None);
     }
 }

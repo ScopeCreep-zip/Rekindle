@@ -19,6 +19,7 @@ interface BuddyItemProps {
   unreadCount: number;
   voiceChannel: string | null;
   friendshipState?: string;
+  handshakeError: string | null;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onSelect: (publicKey: string) => void;
@@ -81,6 +82,11 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
         <Show when={lastSeenText()}>
           <div class="buddy-last-seen">{lastSeenText()}</div>
+        </Show>
+        <Show when={props.handshakeError}>
+          <Tooltip text={props.handshakeError ?? ""}>
+            <div class="buddy-handshake-error">Secure session not set up</div>
+          </Tooltip>
         </Show>
       </div>
       <Show when={props.voiceChannel}>

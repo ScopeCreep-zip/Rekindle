@@ -36,6 +36,12 @@ pub enum CryptoError {
     #[error("signal session error: {0}")]
     SessionError(String),
 
+    /// The peer's identity key differs from the one we trust for that
+    /// address. Nothing was changed; accepting a new key is the user's
+    /// decision, never an automatic one (plan C7.25).
+    #[error("identity key for {address} does not match the trusted key")]
+    UntrustedIdentity { address: String },
+
     /// No session exists for the requested peer, in the in-memory cache
     /// or in persistent storage.
     #[error("no session for peer {0}")]

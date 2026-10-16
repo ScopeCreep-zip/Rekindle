@@ -15,6 +15,24 @@ use crate::signal::ratchet::{self, RatchetState};
 use super::{SessionInitInfo, SignalSessionManager, PQ_LR_ID, SPK_ID};
 
 impl SignalSessionManager {
+    /// Refuse a handshake whose identity key differs from the one trusted
+    /// for `peer_address`, before any key or session is touched. A
+    /// first-seen key is trusted (TOFU) and saved once the session is
+    /// built; a different key is never saved over the trusted one here
+    /// (plan C7.25, r10 B.5).
+    fn require_trusted(&self, peer_address: &str, identity_key: &[u8]) -> Result<(), CryptoError> {
+        if self
+            .identity
+            .is_trusted_identity(peer_address, identity_key)?
+        {
+            Ok(())
+        } else {
+            Err(CryptoError::UntrustedIdentity {
+                address: peer_address.to_string(),
+            })
+        }
+    }
+
     /// Whether we initiate when both sides sent a friend request at once.
     /// The lexically lower identity key initiates, so exactly one side
     /// runs [`Self::establish_session`] and the other answers it.
@@ -45,6 +63,8 @@ impl SignalSessionManager {
         // standard scalar derivation; PQ keys are verified, ML-KEM
         // ciphertext is encapsulated, root_key is derived via the
         // PQXDH KDF (F || DH1 || DH2 || DH3 [|| DH4] || SS).
+
+        self.require_trusted(peer_address, &bundle.identity_key)?;
 
         // 1. Our X25519 identity secret (Ed25519 → X25519 via scalar).
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
@@ -107,6 +127,7 @@ impl SignalSessionManager {
         // Loads our X25519 identity, signed prekey, optional OPK, and
         // the ML-KEM secret matching whichever PQ key the initiator
         // encapsulated to. Reconstructs the same root_key.
+        self.require_trusted(peer_address, their_identity_key)?;
 
         // 1. Our X25519 identity (Ed25519 scalar form).
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
@@ -175,24 +196,23 @@ impl SignalSessionManager {
         })
         .map_err(|e| CryptoError::SessionError(format!("PQXDH responder: {e}")))?;
 
-        // 7. Consume one-time keys (PQ OT + X25519 OPK).
-        if pq_kind == PqKeyKind::OneTime {
-            self.prekeys.remove_pq_secret(pq_id, PqKeyKind::OneTime)?;
-        }
-        if let Some(otpk_id) = one_time_prekey_id {
-            self.prekeys.remove_prekey(otpk_id)?;
-        }
-
-        // 8. Expand the root_key and seed the shared Double Ratchet
+        // 7. Expand the root_key and seed the shared Double Ratchet
         //    core as responder (chain assignment mirrors the
         //    initiator's). The SPK SECRET seeds our ratchet secret —
         //    the initiator's first message DHs against SPK_B.
+        //
+        //    The one-time keys the handshake used are recorded on the
+        //    session, not deleted: `decrypt` deletes them after the first
+        //    message decrypts under it, so a handshake whose first message
+        //    never arrives cannot burn them (plan C7.25).
         let okm = ratchet::expand_pqxdh_root(&root_key_z)?;
+        let pq_ot_id = (pq_kind == PqKeyKind::OneTime).then_some(pq_id);
         let ratchet = RatchetState::responder(
             &okm,
             our_spk_secret.to_bytes(),
             their_ephemeral_key.to_vec(),
-        );
+        )
+        .with_unconfirmed_prekeys(one_time_prekey_id, pq_ot_id);
         self.sessions
             .store_session(peer_address, &ratchet.serialize())?;
 

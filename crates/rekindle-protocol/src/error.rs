@@ -31,6 +31,12 @@ pub enum ProtocolError {
     #[error("message send failed: {0}")]
     SendFailed(String),
 
+    /// An encoded envelope larger than Veilid's message cap
+    /// ([`rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN`]), refused
+    /// before Veilid sees it. Permanent: no retry or other path fits it.
+    #[error("message of {len} bytes exceeds the {max}-byte Veilid message limit")]
+    MessageTooLarge { len: usize, max: usize },
+
     #[error("message receive failed: {0}")]
     ReceiveFailed(String),
 

@@ -21,6 +21,8 @@ pub struct FriendResponse {
     pub unread_count: u32,
     pub last_seen_at: Option<i64>,
     pub friendship_state: FriendshipState,
+    /// Why the secure session could not be set up, if it failed (C7.25).
+    pub handshake_error: Option<String>,
 }
 
 pub fn list_friends_inner(state: &Arc<AppState>) -> Vec<FriendResponse> {
@@ -53,6 +55,7 @@ pub fn list_friends_inner(state: &Arc<AppState>) -> Vec<FriendResponse> {
                 unread_count: f.unread_count,
                 last_seen_at: f.last_seen_at,
                 friendship_state: f.friendship_state,
+                handshake_error: f.handshake_error.clone(),
             }
         })
         .collect()

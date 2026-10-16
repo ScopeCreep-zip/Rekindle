@@ -18,6 +18,8 @@ export interface Friend {
   lastSeenAt: number | null;
   voiceChannel: string | null;
   friendshipState: FriendshipState;
+  /** Why the secure session could not be set up, while it is failed (C7.25). */
+  handshakeError: string | null;
 }
 
 export interface PendingRequest {

@@ -13,6 +13,14 @@
 //! already depend on it and it has no dependencies of its own. Anything
 //! that indexes a shared record belongs here — never in a track.
 
+/// Largest `app_message` / `app_call` payload Veilid accepts:
+/// `MAX_APP_MESSAGE_MESSAGE_LEN` and `MAX_APP_CALL_Q_MESSAGE_LEN`, both
+/// 32,768 bytes (`veilid-core/src/rpc_processor/coders/operations/
+/// operation_app_message.rs:3`, `operation_app_call.rs:3-4`, fork
+/// 0cd847de). Every encoded envelope a peer sends must fit, so the
+/// sender refuses a larger one before Veilid sees it (plan C7.25).
+pub const MAX_APP_MESSAGE_LEN: usize = 32_768;
+
 /// Maximum member slots per registry segment.
 ///
 /// Veilid's `DHTSchemaSMPL` has `MAX_MEMBER_COUNT = 256` and

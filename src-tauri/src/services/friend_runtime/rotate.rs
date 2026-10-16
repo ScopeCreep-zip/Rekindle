@@ -32,7 +32,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
             .manager
             .current_bundle()
             .map_err(|e| format!("prekey bundle: {e}"))?;
-        serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))?
+        bundle.to_wire()
     };
 
     // A new profile record with a fresh owner key, written as login writes

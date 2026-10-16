@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 
 use super::circuit::CircuitBreakerState;
 use super::community::CommunityState;
-use super::friend::{FriendState, IdentityState, UserStatus};
+use super::friend::{FriendState, IdentityState, OutgoingReset, UserStatus};
 use super::runtime::{
     DHTManagerHandle, GameDetectorHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle,
     VoiceEngineHandle,
@@ -235,6 +235,11 @@ pub struct AppState {
     /// P3.3 — incoming SessionResetRequest payloads awaiting user confirmation.
     /// Held in memory only — never persisted before user explicit consent.
     pub pending_session_resets: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// Session resets we requested, by peer: the keys our
+    /// SessionResetRequest's bundle offered. A SessionResetAccept installs
+    /// only against a matching entry, which it consumes; an accept we did
+    /// not ask for is dropped (plan C7.25). Memory only, cleared at logout.
+    pub outgoing_session_resets: Arc<Mutex<HashMap<String, OutgoingReset>>>,
     /// Phase 11 Tier 1 — frontend-registered `ipc::Channel` handles for
     /// the high-throughput video streams (DM + community). Frames bypass
     /// the `event_dispatch` bus and go straight to these channels.
@@ -373,6 +378,7 @@ impl Default for AppState {
             voice_packet_rx_staged: parking_lot::Mutex::new(None),
             group_calls: Arc::new(Mutex::new(HashMap::new())),
             pending_session_resets: Arc::new(Mutex::new(HashMap::new())),
+            outgoing_session_resets: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
             video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
             media_ready: Mutex::new(rekindle_voice::media_ready::MediaReadyTracker::new()),

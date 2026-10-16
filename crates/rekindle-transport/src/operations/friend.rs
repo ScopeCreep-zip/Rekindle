@@ -106,13 +106,7 @@ pub async fn send_friend_request(
     // Extract prekey private material for persistence across restarts
     let signed_prekey_private = signal.load_signed_prekey(1).unwrap_or_default();
     let one_time_prekey_private = signal.load_prekey(1).ok().flatten();
-    let prekey_bytes =
-        prekey_bundle
-            .to_bytes()
-            .map_err(|e| TransportError::FriendRequestFailed {
-                target: target_mailbox_key.to_string(),
-                reason: format!("prekey serialize: {e}"),
-            })?;
+    let prekey_bytes = prekey_bundle.to_wire();
 
     let request = FriendRequestEntry {
         sender_public_key: session.identity.public_key_hex.clone(),
@@ -160,7 +154,7 @@ pub async fn send_friend_request(
     .await
     .ok()
     .flatten()
-    .and_then(|bytes| crate::crypto::prekeys::from_bytes(&bytes).ok())
+    .and_then(|bytes| crate::crypto::prekeys::PreKeyBundle::from_wire(&bytes).ok())
     .and_then(|bundle| <[u8; 32]>::try_from(bundle.identity_key.as_slice()).ok());
     if let (Some(recipient), Ok(Some(route_blob))) = (
         target_identity,

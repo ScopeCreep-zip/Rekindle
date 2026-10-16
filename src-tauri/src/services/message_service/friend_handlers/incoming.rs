@@ -14,7 +14,7 @@ use crate::state_helpers;
 use rekindle_db::Db;
 
 use super::lifecycle::{auto_accept_cross_request, delete_pending_request_row};
-use super::session::{handle_friend_accept, handle_friend_request};
+use super::session::{handle_friend_accept, handle_friend_request, AcceptOutcome};
 use super::{IncomingFriendAccept, IncomingFriendRequest};
 use crate::services::message_service::{
     build_and_queue_envelope, send_friend_reject, send_to_peer,
@@ -70,7 +70,7 @@ pub(crate) async fn handle_friend_request_full(
             // → safe to proceed; mismatch → require explicit user trust
             // via Direction::SENDING UntrustedIdentityException.
             let bundle_identity_key =
-                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
+                rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle)
                     .ok()
                     .map(|b| b.identity_key);
 
@@ -291,7 +291,7 @@ pub(crate) async fn handle_friend_accept_full(
         return;
     }
 
-    handle_friend_accept(
+    let outcome = handle_friend_accept(
         app_handle,
         state,
         a.sender_hex,
@@ -306,10 +306,31 @@ pub(crate) async fn handle_friend_accept_full(
     if !a.route_blob.is_empty() {
         state_helpers::cache_peer_route(state, a.sender_hex, a.route_blob.clone());
     }
+    // No session, no friendship: the row stays pending and says why,
+    // rather than reading Accepted while every message would fail AEAD
+    // (plan C7.25).
+    if let AcceptOutcome::Failed(reason) = outcome {
+        if let Some(friend) = state.friends.write().get_mut(a.sender_hex) {
+            friend.handshake_error = Some(reason.clone());
+        }
+        crate::event_dispatch::emit_journaled(
+            state,
+            crate::event_dispatch::WebviewEvent::Subscription(
+                rekindle_types::subscription_events::SubscriptionEvent::Friend(
+                    rekindle_types::subscription_events::FriendEvent::HandshakeFailed {
+                        peer_key: a.sender_hex.to_string(),
+                        reason,
+                    },
+                ),
+            ),
+        );
+        return;
+    }
     // Store profile key, mailbox key, and transition friendship to Accepted
     {
         let mut friends = state.friends.write();
         if let Some(friend) = friends.get_mut(a.sender_hex) {
+            friend.handshake_error = None;
             if !a.profile_dht_key.is_empty() {
                 friend.dht_record_key = Some(a.profile_dht_key.to_string());
             }

@@ -125,10 +125,23 @@ pub(crate) async fn handle_prekey_replenish(
         Err(e) => return e,
     };
 
-    match rekindle_transport::operations::mek::replenish_prekeys(
+    // Generate, keep every private half, and only then publish: a bundle
+    // published without its secrets answers no handshake (plan C7.25).
+    let (bundle, material) =
+        match rekindle_transport::operations::identity::generate_replenish_bundle(&signing_key) {
+            Ok(generated) => generated,
+            Err(e) => return IpcResponse::error(500, format!("prekey replenish: {e}")),
+        };
+    if let Err(e) = crate::state::keystore::store_prekey_material(&material).await {
+        return IpcResponse::error(
+            500,
+            format!("prekey replenish: storing secrets failed: {e}"),
+        );
+    }
+    match rekindle_transport::operations::mek::publish_prekey_bundle(
         &transport,
         &profile_key,
-        &signing_key,
+        &bundle,
     )
     .await
     {

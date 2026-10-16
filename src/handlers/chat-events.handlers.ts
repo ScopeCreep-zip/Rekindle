@@ -120,6 +120,7 @@ function applyFriendEvent(friend: FriendEvent): void {
           ...existing,
           friendshipState: "accepted" as const,
           displayName: displayName || existing.displayName,
+          handshakeError: null,
         }),
       );
     }
@@ -165,6 +166,14 @@ function applyFriendEvent(friend: FriendEvent): void {
     const next = { ...friendsState.friends };
     delete next[friend.removed.peerKey];
     setFriendsState("friends", reconcile(next));
+    return;
+  }
+
+  if ("handshakeFailed" in friend) {
+    const { peerKey, reason } = friend.handshakeFailed;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "handshakeError", reason);
+    }
     return;
   }
 

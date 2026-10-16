@@ -163,9 +163,15 @@ impl InviteLink {
 const PAIRING_PREFIX: &str = "rekindle://pair";
 /// Every Rekindle URL.
 const SCHEME_PREFIX: &str = "rekindle://";
-/// Longest friend-invite URL accepted from the OS. A friend invite carries
-/// a signed blob with a PQXDH prekey bundle and a route blob.
-pub const MAX_FRIEND_INVITE_URL_LEN: usize = 16 * 1024;
+/// Longest friend-invite URL accepted from the OS. A friend invite is a
+/// signed blob of keys, a display name and a route blob, with no prekey
+/// bundle (plan C7.25). The worst case, a 64-character name of 4-byte
+/// characters and a 4,096-byte route blob (3.5x the largest 1-hop blob
+/// measured, room for 3-hop inbound routes), encodes to 8,215 bytes: the
+/// route blob is base64 inside JSON that is base64url'd again. 12 KiB
+/// holds it with headroom (`rekindle-codec`'s
+/// `the_worst_case_invite_url_fits_the_deep_link_cap` builds it).
+pub const MAX_FRIEND_INVITE_URL_LEN: usize = 12 * 1024;
 
 /// What an OS deep link asks for, before any network access.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,7 +225,10 @@ impl DeepLink {
 
 #[cfg(test)]
 mod invite_link_tests {
-    use super::{DeepLink, DeepLinkError, InviteLink, InviteLinkError, MAX_INVITE_URL_LEN};
+    use super::{
+        DeepLink, DeepLinkError, InviteLink, InviteLinkError, MAX_FRIEND_INVITE_URL_LEN,
+        MAX_INVITE_URL_LEN,
+    };
 
     const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
     const CODE: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
@@ -319,8 +328,14 @@ mod invite_link_tests {
             DeepLink::parse("https://x"),
             Err(DeepLinkError::NotRekindle)
         );
+        let at_cap = format!("rekindle://{}", "A".repeat(MAX_FRIEND_INVITE_URL_LEN - 11));
+        assert_eq!(at_cap.len(), MAX_FRIEND_INVITE_URL_LEN);
         assert!(matches!(
-            DeepLink::parse(&format!("rekindle://{}", "A".repeat(20_000))),
+            DeepLink::parse(&at_cap),
+            Ok(DeepLink::FriendInvite(_))
+        ));
+        assert!(matches!(
+            DeepLink::parse(&format!("{at_cap}A")),
             Err(DeepLinkError::TooLong { .. })
         ));
     }

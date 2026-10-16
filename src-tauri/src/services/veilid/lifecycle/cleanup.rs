@@ -11,6 +11,10 @@ pub async fn logout_cleanup(end: crate::services::session::SessionEnd<'_>, state
         .await;
 
     *state.pre_away_status.write() = None;
+    // Session resets belong to the identity that requested or received
+    // them, never the next one to log in (plan C7.25).
+    state.pending_session_resets.lock().clear();
+    state.outgoing_session_resets.lock().clear();
     // A deep link received while this user was logged in is theirs to
     // answer, never the next user's.
     *state.pending_deep_link.lock() = None;

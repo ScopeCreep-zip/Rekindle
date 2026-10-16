@@ -344,8 +344,7 @@ fn initialize_signal_manager(
     let bundle = manager
         .current_bundle()
         .map_err(|e| format!("Signal prekey bundle: {e}"))?;
-    let bundle_bytes =
-        serde_json::to_vec(&bundle).map_err(|e| format!("serialize PreKeyBundle: {e}"))?;
+    let bundle_bytes = bundle.to_wire();
 
     *state.signal_manager.write() = Some(std::sync::Arc::new(SignalManagerHandle {
         manager: manager.with_session_cache(256),

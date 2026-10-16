@@ -32,7 +32,16 @@ pub async fn reset_signal_session_inner(
             .manager
             .handout_bundle()
             .map_err(|e| format!("handout_bundle: {e}"))?;
-        serde_json::to_vec(&bundle).map_err(|e| format!("serialize PreKeyBundle: {e}"))?
+        // Only an accept naming these keys answers this request (plan C7.25).
+        state.outgoing_session_resets.lock().insert(
+            peer_public_key.clone(),
+            crate::state::OutgoingReset {
+                signed_prekey: rekindle_crypto::signal::SPK_ID,
+                one_time_prekey: bundle.one_time_prekey_id,
+                pq_one_time: bundle.pqpk_ot_id,
+            },
+        );
+        bundle.to_wire()
     };
     tracing::info!(
         peer = %peer_public_key,
@@ -41,9 +50,16 @@ pub async fn reset_signal_session_inner(
     let payload = rekindle_codec::message::envelope::MessagePayload::SessionResetRequest {
         our_prekey_bundle,
     };
-    crate::services::message_service::send_to_peer(&state, &pool, &peer_public_key, &payload)
-        .await
-        .map_err(|e| format!("send SessionResetRequest: {e}"))?;
+    if let Err(e) =
+        crate::services::message_service::send_to_peer(&state, &pool, &peer_public_key, &payload)
+            .await
+    {
+        state
+            .outgoing_session_resets
+            .lock()
+            .remove(&peer_public_key);
+        return Err(format!("send SessionResetRequest: {e}"));
+    }
     Ok(())
 }
 
@@ -60,9 +76,8 @@ pub async fn accept_session_reset_inner(
         .lock()
         .remove(&peer_public_key)
         .ok_or("no pending session reset for this peer (it may have expired or already been processed)")?;
-    let peer_bundle: rekindle_crypto::signal::PreKeyBundle =
-        serde_json::from_slice(&peer_bundle_bytes)
-            .map_err(|e| format!("invalid PreKeyBundle in pending reset: {e}"))?;
+    let peer_bundle = rekindle_crypto::signal::PreKeyBundle::from_wire(&peer_bundle_bytes)
+        .map_err(|e| format!("invalid PreKeyBundle in pending reset: {e}"))?;
 
     let session_init = {
         let signal = state.signal_manager.read();

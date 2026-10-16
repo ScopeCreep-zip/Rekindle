@@ -1,8 +1,8 @@
 //! Phase 23.C — generate_invite orchestrator lifted from
 //! `commands/friends.rs`. Gather identity + profile DHT keys
 //! (with 30s wait for DHT publish), validate route blob is
-//! self-importable, generate PreKeyBundle, create signed invite
-//! blob with B11 signature-covered issued_at, encode URL, persist
+//! self-importable, create signed invite blob (no prekey bundle,
+//! plan C7.25) with B11 signature-covered issued_at, encode URL, persist
 //! to outgoing_invites for tracking.
 
 use std::sync::Arc;
@@ -63,16 +63,6 @@ pub async fn generate_invite_inner(
         }
     }
 
-    let prekey_bundle = {
-        let signal = state.signal_manager.read();
-        let handle = signal.as_ref().ok_or("signal manager not initialized")?;
-        let bundle = handle
-            .manager
-            .current_bundle()
-            .map_err(|e| format!("prekey bundle: {e}"))?;
-        serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))?
-    };
-
     let invite_id = uuid::Uuid::new_v4().to_string();
 
     let issued_at_ms = rekindle_utils::timestamp_ms();
@@ -83,11 +73,11 @@ pub async fn generate_invite_inner(
         &mailbox_dht_key,
         &profile_dht_key,
         &route_blob,
-        &prekey_bundle,
         Some(&invite_id),
         issued_at_ms,
     );
     let url = rekindle_codec::message::encode_invite_url(&blob);
+    tracing::info!(url_len = url.len(), "generated friend invite URL");
 
     let owner_key = state_helpers::current_owner_key(&state)?;
     crate::invite_helpers::create_outgoing_invite(&pool, &owner_key, &invite_id, &url).await?;

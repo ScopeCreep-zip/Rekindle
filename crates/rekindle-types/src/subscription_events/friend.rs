@@ -62,4 +62,11 @@ pub enum FriendEvent {
         peer_key: String,
         nickname: Option<String>,
     },
+    /// The first-contact Signal handshake with a peer we sent a request to
+    /// failed: no secure session exists, so the friendship stays pending.
+    /// This is not a trust prompt; it never asks for "Reset Secure
+    /// Session" (plan C7.25). An identity-key mismatch also lands here,
+    /// with its own notice.
+    /// Triggered by: a `FriendAccept` whose session init does not complete.
+    HandshakeFailed { peer_key: String, reason: String },
 }

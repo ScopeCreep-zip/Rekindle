@@ -65,34 +65,16 @@ pub fn unwrap_mek_transfer_payload(
 // peer to do the wrapping — the same reason `node/daemon/mek_wrap.rs`
 // went earlier in this migration.
 
-/// Replenish prekeys — generate new bundle, publish to profile DHT via raw primitive.
-pub async fn replenish_prekeys(
+/// Publish a prekey bundle to our profile's prekey subkey. The caller
+/// generated it with `operations::identity::generate_replenish_bundle` and
+/// has already stored every private half: publishing first would hand out
+/// keys whose secrets may be lost (plan C7.25).
+pub async fn publish_prekey_bundle(
     node: &TransportNode,
     profile_dht_key: &str,
-    signing_key_bytes: &[u8; 32],
+    bundle: &crate::crypto::prekeys::PreKeyBundle,
 ) -> Result<u32> {
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
-    let verifying_key = signing_key.verifying_key();
-    let signal = crate::crypto::signal_session::SignalSessionManager::new(
-        Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
-            signing_key.to_bytes().to_vec(),
-            verifying_key.as_bytes().to_vec(),
-            1,
-        )),
-        Box::new(crate::crypto::signal_store::MemoryPreKeyStore::new()),
-        Box::new(crate::crypto::signal_store::MemorySessionStore::new()),
-    );
-    let bundle = signal
-        .generate_prekey_bundle(1, Some(1), Some(1))
-        .map_err(|e| TransportError::IdentityCreationFailed {
-            step: "prekey replenish".into(),
-            reason: e.to_string(),
-        })?;
-    let bundle_bytes = bundle
-        .to_bytes()
-        .map_err(|e| TransportError::SerializationFailed {
-            reason: format!("prekey bundle: {e}"),
-        })?;
+    let bundle_bytes = bundle.to_wire();
     let byte_count = bundle_bytes.len();
     crate::broadcast::dht_writes::set_own_profile_subkey(
         node,

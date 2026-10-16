@@ -5,6 +5,7 @@
 use crate::error::CryptoError;
 use crate::signal::ratchet::{self, RatchetState};
 use crate::signal::session_cache::SessionCache;
+use crate::signal::store::PqKeyKind;
 
 use super::SignalSessionManager;
 
@@ -106,7 +107,7 @@ impl SignalSessionManager {
         let arc = cache.get_or_load(peer_address).await?;
         let mut guard = arc.lock().await;
         let mut ratchet = RatchetState::deserialize(&guard)?;
-        let (plaintext, new_data) = Self::decrypt_mutate(&mut ratchet, message)?;
+        let (plaintext, new_data) = self.decrypt_mutate(&mut ratchet, message)?;
         guard.clone_from(&new_data);
         self.sessions.store_session(peer_address, &new_data)?;
         Ok(plaintext)
@@ -122,16 +123,35 @@ impl SignalSessionManager {
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
         let mut ratchet = RatchetState::deserialize(&session_data)?;
-        let (plaintext, new_data) = Self::decrypt_mutate(&mut ratchet, message)?;
+        let (plaintext, new_data) = self.decrypt_mutate(&mut ratchet, message)?;
         self.sessions.store_session(peer_address, &new_data)?;
         Ok(plaintext)
     }
 
+    /// Decrypt one message and return the session's new bytes. The first
+    /// message that decrypts under a responder's session confirms its
+    /// handshake: the one-time prekeys it consumed are deleted here,
+    /// before the session is stored (plan C7.25).
     fn decrypt_mutate(
+        &self,
         ratchet: &mut RatchetState,
         message: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
         let plaintext = ratchet.decrypt_step(message)?;
+        if let Some((otpk_id, pq_ot_id)) = ratchet.take_unconfirmed_prekeys() {
+            let removed = otpk_id
+                .map_or(Ok(()), |id| self.prekeys.remove_prekey(id))
+                .and_then(|()| {
+                    pq_ot_id.map_or(Ok(()), |id| {
+                        self.prekeys.remove_pq_secret(id, PqKeyKind::OneTime)
+                    })
+                });
+            if let Err(e) = removed {
+                // Keep the ids so the next message retries the deletion.
+                tracing::warn!(error = %e, "could not delete confirmed one-time prekeys");
+                ratchet.set_unconfirmed_prekeys(otpk_id, pq_ot_id);
+            }
+        }
         Ok((plaintext, ratchet.serialize()))
     }
 }

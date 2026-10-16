@@ -134,9 +134,11 @@ fn handle_session_reset_request(
 
 /// P3.3 — receive a SessionResetAccept from the peer we previously
 /// sent a SessionResetRequest to. Installs a fresh responder-side
-/// session matching the peer's new initiator-side session.
-/// `delete_session` is idempotent on a missing peer, so repeated
-/// accepts (e.g., due to a retry) just overwrite cleanly.
+/// session matching the peer's new initiator-side session, only when it
+/// answers our outstanding request (`outgoing_session_resets`): an accept
+/// we did not ask for, or one naming other keys, installs nothing
+/// (plan C7.25). The matching entry is consumed, so a repeat installs
+/// nothing either.
 fn handle_session_reset_accept(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -162,12 +164,31 @@ fn handle_session_reset_accept(
         );
         return;
     }
+    {
+        let mut outgoing = state.outgoing_session_resets.lock();
+        match outgoing.remove(sender_hex) {
+            Some(sent)
+                if sent.answered_by(signed_prekey_id, one_time_prekey_id, used_ot_pqpk_id) => {}
+            Some(sent) => {
+                // Not an answer to our request; keep it for the real one.
+                outgoing.insert(sender_hex.to_string(), sent);
+                tracing::warn!(from = %sender_hex,
+                    "dropping SessionResetAccept that names keys our request did not offer");
+                return;
+            }
+            None => {
+                tracing::warn!(from = %sender_hex,
+                    "dropping SessionResetAccept: we requested no session reset");
+                return;
+            }
+        }
+    }
     let signal = state.signal_manager.read();
     let Some(handle) = signal.as_ref() else {
         tracing::warn!(from = %sender_hex, "SessionResetAccept arrived but signal manager not initialized");
         return;
     };
-    // Idempotent — clear any stale session before installing the fresh one.
+    // Clear the old session before installing the fresh one.
     let _ = handle.manager.delete_session(sender_hex);
     match handle.manager.respond_to_session(
         sender_hex,
@@ -217,8 +238,7 @@ fn compute_safety_number(
     _peer_hex: &str,
     peer_prekey_bundle: &[u8],
 ) -> Option<String> {
-    let bundle: rekindle_crypto::signal::PreKeyBundle =
-        serde_json::from_slice(peer_prekey_bundle).ok()?;
+    let bundle = rekindle_crypto::signal::PreKeyBundle::from_wire(peer_prekey_bundle).ok()?;
     let our_secret_bytes = (*state.identity_secret.lock())?;
     let our_identity = rekindle_crypto::Identity::from_secret_bytes(&our_secret_bytes);
     let our_pub_bytes = our_identity.public_key_bytes();

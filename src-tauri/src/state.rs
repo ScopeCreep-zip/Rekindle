@@ -25,7 +25,9 @@ pub use community::{
     display_role_name, CategoryInfo, ChannelInfo, ChannelType, CommunityRecords, CommunityState,
     MemberProfileSnapshot, RoleDefinition,
 };
-pub use friend::{FriendState, FriendshipState, GameInfoState, IdentityState, UserStatus};
+pub use friend::{
+    FriendState, FriendshipState, GameInfoState, IdentityState, OutgoingReset, UserStatus,
+};
 pub use gossip::{GossipOverlay, OnlineMember};
 pub use rekindle_channel::{AutoModCompiledCache, CompiledAutoModRule};
 pub use runtime::{

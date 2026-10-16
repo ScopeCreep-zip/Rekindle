@@ -88,6 +88,7 @@ pub async fn add_friend_from_invite_inner(
         mailbox_dht_key: Some(blob.mailbox_dht_key.clone()),
         last_heartbeat_at: None,
         friendship_state: FriendshipState::PendingOut,
+        handshake_error: None,
     };
     state
         .friends

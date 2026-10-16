@@ -21,6 +21,7 @@ export function transformFriend(f: FriendInfo): Friend {
     lastSeenAt: f.lastSeenAt ?? null,
     voiceChannel: null,
     friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
+    handshakeError: f.handshakeError ?? null,
   };
 }
 
@@ -179,6 +180,7 @@ export function transformNewFriend(publicKey: string, displayName: string, frien
     statusMessage: null, gameInfo: null, group: "Friends", unreadCount: 0,
     lastSeenAt: null, voiceChannel: null,
     friendshipState: (friendshipState === "accepted" ? "accepted" : "pendingOut") as Friend["friendshipState"],
+    handshakeError: null,
   };
 }
 

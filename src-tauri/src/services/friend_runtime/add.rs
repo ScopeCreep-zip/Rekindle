@@ -68,6 +68,7 @@ pub async fn add_friend_inner(
         mailbox_dht_key: None,
         last_heartbeat_at: None,
         friendship_state: FriendshipState::PendingOut,
+        handshake_error: None,
     };
     state.friends.write().insert(public_key.clone(), friend);
 

@@ -79,23 +79,8 @@ pub(crate) async fn handle_create(
         return IpcResponse::error(500, format!("failed to store friend list keypair: {e}"));
     }
 
-    // Store prekey material
-    let (spk_id, ref spk_bytes) = created.prekey_material.signed_prekey;
-    if let Err(e) =
-        crate::state::keystore::store_keypair_bytes(&format!("signed-prekey-{spk_id}"), spk_bytes)
-            .await
-    {
-        return IpcResponse::error(500, format!("failed to store signed prekey: {e}"));
-    }
-    for (otpk_id, ref otpk_bytes) in &created.prekey_material.one_time_prekeys {
-        if let Err(e) = crate::state::keystore::store_keypair_bytes(
-            &format!("one-time-prekey-{otpk_id}"),
-            otpk_bytes,
-        )
-        .await
-        {
-            return IpcResponse::error(500, format!("failed to store one-time prekey: {e}"));
-        }
+    if let Err(e) = crate::state::keystore::store_prekey_material(&created.prekey_material).await {
+        return IpcResponse::error(500, format!("failed to store prekey material: {e}"));
     }
 
     // Zeroize signing key bytes after keyring storage

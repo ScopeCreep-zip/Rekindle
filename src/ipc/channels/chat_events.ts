@@ -81,7 +81,8 @@ export type FriendEvent =
   | { removed: { peerKey: string } }
   | { removeAcknowledged: { peerKey: string } }
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
-  | { nicknameChanged: { peerKey: string; nickname: string | null } };
+  | { nicknameChanged: { peerKey: string; nickname: string | null } }
+  | { handshakeFailed: { peerKey: string; reason: string } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
 export interface DirectCallInfo {

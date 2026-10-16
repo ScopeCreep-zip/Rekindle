@@ -40,6 +40,7 @@ pub async fn load_friends_from_db(
                 mailbox_dht_key: row.mailbox_dht_key,
                 last_heartbeat_at: None,
                 friendship_state,
+                handshake_error: None,
             },
         );
     }

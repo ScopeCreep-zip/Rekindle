@@ -66,7 +66,7 @@ fn handout_bundle_bytes(state: &Arc<AppState>) -> Result<Vec<u8>, String> {
         .manager
         .handout_bundle()
         .map_err(|e| format!("prekey bundle: {e}"))?;
-    serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))
+    Ok(bundle.to_wire())
 }
 
 /// Send a friend request to a peer via Veilid.

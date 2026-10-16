@@ -141,6 +141,13 @@ pub(super) async fn send_envelope_to_peer(
 ) -> Result<(), String> {
     let is_ephemeral = matches!(payload, MessagePayload::TypingIndicator { .. });
     let envelope = super::seal::build_signed_envelope(state, to, payload).await?;
+    // An envelope over Veilid's message cap fails on every path, so it is
+    // refused here and the caller is told, never queued for a retry that
+    // cannot succeed (plan C7.25).
+    let wire_len = rekindle_protocol::messaging::sender::encode_within_limit(&envelope)
+        .map_err(|e| e.to_string())?
+        .len();
+    tracing::debug!(to = %to, wire_len, "envelope fits the Veilid message cap");
 
     // Look up the peer's cached route blob and import the RouteId via cache
     let route_id_and_rc = state_helpers::try_import_peer_route(state, to);

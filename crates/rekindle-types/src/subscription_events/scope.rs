@@ -178,7 +178,8 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::Removed { peer_key }
         | FriendEvent::RemoveAcknowledged { peer_key }
         | FriendEvent::ProfileKeyRotated { peer_key, .. }
-        | FriendEvent::NicknameChanged { peer_key, .. } => peer_key,
+        | FriendEvent::NicknameChanged { peer_key, .. }
+        | FriendEvent::HandshakeFailed { peer_key, .. } => peer_key,
     }
 }
 

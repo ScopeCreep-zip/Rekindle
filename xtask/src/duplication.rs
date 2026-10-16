@@ -230,11 +230,11 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          NOTE, from the X3DH specification: the bundle omits the \
          one-time prekey when the server has none left, and the DH count \
          differs (four operations with it, three without). crypto's \
-         models that with `Option`; the capnp DTO collapses the ids to \
-         bare `u32`, so `None` and a real id 0 are indistinguishable. \
-         Not live — that DTO is written into conversation headers and \
-         never read back for key agreement — but it is a landmine in a \
-         codec someone would reach for.",
+         models that with `Option`; the capnp DTO collapses an absent \
+         key to an empty field and id 0. Since plan C7.25 the DTO is the \
+         bundle's only wire form (`PreKeyBundle::to_wire`/`from_wire`), \
+         which reads id 0 back as `None`: real one-time ids are random \
+         and never 0 (`session::bundles::fresh_id`).",
     ),
     (
         &[

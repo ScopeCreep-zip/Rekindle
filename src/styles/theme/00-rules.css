@@ -379,6 +379,15 @@
     white-space: nowrap;
   }
 
+  /* First-contact handshake failed: the friendship stays pending (C7.25). */
+  .buddy-handshake-error {
+    font-size: 10px;
+    color: var(--color-xfire-busy);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* Pending friend requests (Awaiting Response group) */
   .buddy-group-pending .buddy-item {
     opacity: 0.6;

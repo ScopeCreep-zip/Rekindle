@@ -71,6 +71,13 @@ pub struct RatchetState {
     /// Receive message counter.
     #[zeroize(skip)]
     recv_counter: u64,
+    /// The one-time prekeys this session's handshake consumed, as
+    /// `(X25519 one-time id, ML-KEM one-time id)`: set by the responder,
+    /// whose secrets are deleted only once the first message decrypts
+    /// under the session, so a handshake that never completes cannot burn
+    /// the keys (plan C7.25; PQXDH §4.13).
+    #[zeroize(skip)]
+    unconfirmed_prekeys: Option<(Option<u32>, Option<u32>)>,
 }
 
 /// Expand a PQXDH root key into the 96-byte OKM that seeds a session:
@@ -106,6 +113,7 @@ impl RatchetState {
             their_ratchet_public: their_spk_public,
             send_counter: 0,
             recv_counter: 0,
+            unconfirmed_prekeys: None,
         }
     }
 
@@ -126,6 +134,7 @@ impl RatchetState {
             their_ratchet_public: their_ek_public,
             send_counter: 0,
             recv_counter: 0,
+            unconfirmed_prekeys: None,
         }
     }
 
@@ -227,6 +236,16 @@ impl RatchetState {
         data.extend_from_slice(&self.their_ratchet_public);
         data.extend_from_slice(&self.send_counter.to_le_bytes());
         data.extend_from_slice(&self.recv_counter.to_le_bytes());
+        match self.unconfirmed_prekeys {
+            None => data.push(0),
+            Some((otpk, pq_ot)) => {
+                data.push(1);
+                for id in [otpk, pq_ot] {
+                    data.push(u8::from(id.is_some()));
+                    data.extend_from_slice(&id.unwrap_or(0).to_le_bytes());
+                }
+            }
+        }
         data
     }
 
@@ -275,6 +294,25 @@ impl RatchetState {
         pos += 8;
         let recv_counter =
             u64::from_le_bytes(data[pos..pos + 8].try_into().map_err(|_| CORRUPT())?);
+        pos += 8;
+
+        let unconfirmed_prekeys = match data.get(pos) {
+            Some(0) => None,
+            Some(1) => {
+                let id_at = |at: usize| -> Result<Option<u32>, CryptoError> {
+                    let present = *data.get(at).ok_or_else(CORRUPT)?;
+                    let id = u32::from_le_bytes(
+                        data.get(at + 1..at + 5)
+                            .ok_or_else(CORRUPT)?
+                            .try_into()
+                            .map_err(|_| CORRUPT())?,
+                    );
+                    Ok((present == 1).then_some(id))
+                };
+                Some((id_at(pos + 1)?, id_at(pos + 6)?))
+            }
+            _ => return Err(CORRUPT()),
+        };
 
         Ok(Self {
             root_key,
@@ -284,7 +322,28 @@ impl RatchetState {
             their_ratchet_public,
             send_counter,
             recv_counter,
+            unconfirmed_prekeys,
         })
+    }
+
+    /// Record the one-time prekeys the responder's handshake consumed;
+    /// see [`Self::take_unconfirmed_prekeys`].
+    #[must_use]
+    pub fn with_unconfirmed_prekeys(mut self, otpk_id: Option<u32>, pq_ot_id: Option<u32>) -> Self {
+        self.set_unconfirmed_prekeys(otpk_id, pq_ot_id);
+        self
+    }
+
+    /// Set (or, with two `None`s, clear) the unconfirmed one-time ids.
+    pub fn set_unconfirmed_prekeys(&mut self, otpk_id: Option<u32>, pq_ot_id: Option<u32>) {
+        self.unconfirmed_prekeys =
+            (otpk_id.is_some() || pq_ot_id.is_some()).then_some((otpk_id, pq_ot_id));
+    }
+
+    /// The handshake's one-time prekey ids, once: the caller deletes them
+    /// after the first message decrypts under this session.
+    pub fn take_unconfirmed_prekeys(&mut self) -> Option<(Option<u32>, Option<u32>)> {
+        self.unconfirmed_prekeys.take()
     }
 
     /// Messages sent so far on this session.

@@ -13,6 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::CryptoError;
+
 /// A bundle of public keys published to DHT for session establishment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreKeyBundle {
@@ -44,14 +46,103 @@ pub struct PreKeyBundle {
 }
 
 impl PreKeyBundle {
-    /// Serialize to bytes for DHT storage. Uses postcard so the encoding
-    /// matches the daemon-track transport crate's wire format.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
-        postcard::to_stdvec(self)
+    /// The bundle's one wire form, on both tracks and everywhere it
+    /// travels (profile subkey 5, FriendRequest, FriendAccept, session
+    /// reset): the packed Cap'n Proto `PreKeyBundle` of
+    /// `schemas/identity.capnp`. It was JSON on the desktop and postcard
+    /// on the daemon, so neither track read the other's, and the JSON form
+    /// nested in a JSON payload put the friend handshake over Veilid's
+    /// 32,768-byte message cap (plan C7.25).
+    ///
+    /// An absent one-time key is an empty field with id 0. Real one-time
+    /// ids are never 0 (`session::bundles::fresh_id`), so `from_wire`
+    /// reads 0 back as `None`.
+    #[must_use]
+    pub fn to_wire(&self) -> Vec<u8> {
+        rekindle_codec::capnp_codec::identity::encode_prekey_bundle(
+            &rekindle_codec::capnp_codec::identity::PreKeyBundle {
+                identity_key: self.identity_key.clone(),
+                signed_pre_key: self.signed_prekey.clone(),
+                signed_pre_key_sig: self.signed_prekey_signature.clone(),
+                one_time_pre_key: self.one_time_prekey.clone().unwrap_or_default(),
+                one_time_pre_key_id: self.one_time_prekey_id.unwrap_or(0),
+                registration_id: self.registration_id,
+                pqpk_lr: self.pqpk_lr.clone(),
+                pqpk_lr_sig: self.pqpk_lr_signature.clone(),
+                pqpk_ot: self.pqpk_ot.clone().unwrap_or_default(),
+                pqpk_ot_sig: self.pqpk_ot_signature.clone().unwrap_or_default(),
+                pqpk_ot_id: self.pqpk_ot_id.unwrap_or(0),
+            },
+        )
     }
 
-    /// Deserialize from bytes read from DHT.
-    pub fn from_bytes(data: &[u8]) -> Result<Self, postcard::Error> {
-        postcard::from_bytes(data)
+    /// Parse [`Self::to_wire`]'s form.
+    pub fn from_wire(data: &[u8]) -> Result<Self, CryptoError> {
+        let dto = rekindle_codec::capnp_codec::identity::decode_prekey_bundle(data)
+            .map_err(|e| CryptoError::invalid_key(format!("prekey bundle: {e}")))?;
+        let present = |bytes: Vec<u8>| (!bytes.is_empty()).then_some(bytes);
+        let id = |id: u32| (id != 0).then_some(id);
+        Ok(Self {
+            identity_key: dto.identity_key,
+            signed_prekey: dto.signed_pre_key,
+            signed_prekey_signature: dto.signed_pre_key_sig,
+            one_time_prekey: present(dto.one_time_pre_key),
+            one_time_prekey_id: id(dto.one_time_pre_key_id),
+            registration_id: dto.registration_id,
+            pqpk_lr: dto.pqpk_lr,
+            pqpk_lr_signature: dto.pqpk_lr_sig,
+            pqpk_ot: present(dto.pqpk_ot),
+            pqpk_ot_signature: present(dto.pqpk_ot_sig),
+            pqpk_ot_id: id(dto.pqpk_ot_id),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PreKeyBundle;
+
+    fn bundle(one_time: bool) -> PreKeyBundle {
+        PreKeyBundle {
+            identity_key: vec![1; 32],
+            signed_prekey: vec![2; 32],
+            signed_prekey_signature: vec![3; 64],
+            one_time_prekey: one_time.then(|| vec![4; 32]),
+            one_time_prekey_id: one_time.then_some(7),
+            registration_id: 9,
+            pqpk_lr: vec![5; 1184],
+            pqpk_lr_signature: vec![6; 64],
+            pqpk_ot: one_time.then(|| vec![8; 1184]),
+            pqpk_ot_signature: one_time.then(|| vec![10; 64]),
+            pqpk_ot_id: one_time.then_some(11),
+        }
+    }
+
+    #[test]
+    fn the_wire_form_round_trips_with_and_without_one_time_keys() {
+        for one_time in [true, false] {
+            let original = bundle(one_time);
+            let decoded = PreKeyBundle::from_wire(&original.to_wire()).unwrap();
+            assert_eq!(decoded.one_time_prekey, original.one_time_prekey);
+            assert_eq!(decoded.one_time_prekey_id, original.one_time_prekey_id);
+            assert_eq!(decoded.pqpk_ot, original.pqpk_ot);
+            assert_eq!(decoded.pqpk_ot_signature, original.pqpk_ot_signature);
+            assert_eq!(decoded.pqpk_ot_id, original.pqpk_ot_id);
+            assert_eq!(decoded.pqpk_lr, original.pqpk_lr);
+            assert_eq!(decoded.identity_key, original.identity_key);
+            assert_eq!(decoded.registration_id, original.registration_id);
+        }
+    }
+
+    #[test]
+    fn a_handout_bundle_is_binary_sized() {
+        // Two ML-KEM-768 keys dominate: the wire form stays near the raw
+        // key bytes, where the JSON form was ~3.6× them.
+        assert!(bundle(true).to_wire().len() < 2_800);
+    }
+
+    #[test]
+    fn garbage_is_an_error_not_a_panic() {
+        assert!(PreKeyBundle::from_wire(b"not a bundle").is_err());
     }
 }

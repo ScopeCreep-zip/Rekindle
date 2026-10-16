@@ -55,7 +55,7 @@ pub async fn send_envelope(
     route_id: veilid_core::RouteId,
     envelope: &MessageEnvelope,
 ) -> Result<(), ProtocolError> {
-    let data = capnp_codec::message::encode_envelope(envelope);
+    let data = encode_within_limit(envelope)?;
 
     routing_context
         .app_message(Target::RouteId(route_id), data)
@@ -69,6 +69,22 @@ pub async fn send_envelope(
     );
 
     Ok(())
+}
+
+/// The envelope's wire bytes, or [`ProtocolError::MessageTooLarge`] when
+/// they exceed Veilid's message cap. Callers that queue or relay an
+/// envelope check it here first: an envelope that does not fit fails on
+/// every path.
+pub fn encode_within_limit(envelope: &MessageEnvelope) -> Result<Vec<u8>, ProtocolError> {
+    let data = capnp_codec::message::encode_envelope(envelope);
+    let max = rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
+    if data.len() > max {
+        return Err(ProtocolError::MessageTooLarge {
+            len: data.len(),
+            max,
+        });
+    }
+    Ok(data)
 }
 
 /// A send failure, typed so the caller releases a route only when the

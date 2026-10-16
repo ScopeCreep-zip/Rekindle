@@ -9,6 +9,8 @@ mod call_signaling;
 mod dispatch;
 mod dm_dispatch;
 mod friend_handlers;
+#[cfg(test)]
+mod handshake_size_tests;
 mod outgoing;
 mod profile_push;
 mod seal;

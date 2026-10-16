@@ -229,9 +229,8 @@ fn cross_request_session_init(
     req: &IncomingFriendRequest<'_>,
 ) -> CrossRole {
     let result = (|| -> Result<CrossRole, String> {
-        let bundle =
-            serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
-                .map_err(|e| format!("unparseable prekey bundle: {e}"))?;
+        let bundle = rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle)
+            .map_err(|e| format!("unparseable prekey bundle: {e}"))?;
         let their_identity = hex::decode(req.sender_hex).map_err(|e| format!("sender key: {e}"))?;
         let signal = state.signal_manager.read();
         let handle = signal.as_ref().ok_or("signal manager not initialized")?;
@@ -298,7 +297,15 @@ pub(super) async fn auto_accept_cross_request(
             }
         }
     }
-    crate::friend_repo::fire_update_friendship_state(state, pool, req.sender_hex, "accepted");
+    // Stored before anything is sent, so the row that gates the peer's
+    // reply is on disk when the reply arrives (plan C7.25).
+    if let Err(e) =
+        crate::friend_repo::update_friendship_state(state, pool, req.sender_hex, "accepted").await
+    {
+        tracing::error!(peer = %req.sender_hex, error = %e,
+            "cross-request auto-accept: storing the accepted state failed; not answering");
+        return;
+    }
     crate::friend_repo::fire_update_display_name(state, pool, req.sender_hex, req.display_name);
 
     // Persist profile/mailbox keys

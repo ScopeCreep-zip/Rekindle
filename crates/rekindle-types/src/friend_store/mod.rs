@@ -4,7 +4,7 @@
 //! The trait is Tier 1 so every host shares one shape. The SQLite
 //! implementation lives in `rekindle-db` (`SqliteFriendStore`). Today the
 //! desktop's receive path consults it through
-//! `state_helpers::is_active_friend_authoritative`; the daemon wires the
+//! `state_helpers::friend_status_authoritative`; the daemon wires the
 //! same store when it gains `rekindle-db` (plan step D1).
 //!
 //! - dyn-safe via `#[async_trait]` for `Arc<dyn FriendStore>`;
@@ -39,7 +39,9 @@ pub enum FriendStoreError {
 /// - `Active` — sender is authorized for any envelope variant.
 /// - `PendingOut` — *we* sent a friend request and are awaiting their
 ///   accept. Sender is authorized only for `FriendAccept` (W16.10e
-///   idempotent receive); other variants drop with a `SystemAlert`.
+///   idempotent receive; enforced in the desktop's
+///   `dispatch::prepare::sender_admitted`, plan C7.25); other variants
+///   drop.
 /// - `Removing` — friendship is being torn down. Envelopes silently dropped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FriendStatus {
@@ -130,6 +132,20 @@ pub trait FriendStore: Send + Sync {
     /// All `Active` friends for this owner. Used at attach time to install
     /// per-pair inbox watches for each.
     async fn iter_active(&self, owner_key: &str) -> Result<Vec<FriendRecord>, FriendStoreError>;
+
+    /// The sender's friendship status, or `None` for a stranger. The
+    /// receive gate reads it: `FriendAccept` is admitted from a
+    /// `PendingOut` sender, everything else needs `Active` (plan C7.25).
+    async fn status_of(
+        &self,
+        owner_key: &str,
+        pubkey_hex: &str,
+    ) -> Result<Option<FriendStatus>, FriendStoreError> {
+        Ok(self
+            .lookup_by_pubkey(owner_key, pubkey_hex)
+            .await?
+            .map(|f| f.status))
+    }
 
     /// Boolean test for receive-path gating. Replaces
     /// `src-tauri/src/state_helpers::is_friend`.

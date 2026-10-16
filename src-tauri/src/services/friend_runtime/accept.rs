@@ -68,6 +68,7 @@ pub async fn accept_request_inner(
         mailbox_dht_key: pending_mailbox_key.clone(),
         last_heartbeat_at: None,
         friendship_state: FriendshipState::Accepted,
+        handshake_error: None,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -91,9 +92,7 @@ pub async fn accept_request_inner(
     let session_init = if let Some(ref prekey_bytes) = pending_prekey_bundle {
         let signal = state.signal_manager.read();
         if let Some(handle) = signal.as_ref() {
-            let bundle = match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(
-                prekey_bytes,
-            ) {
+            let bundle = match rekindle_crypto::signal::PreKeyBundle::from_wire(prekey_bytes) {
                 Ok(b) => Some(b),
                 Err(e) => {
                     tracing::error!(peer = %public_key, error = %e,

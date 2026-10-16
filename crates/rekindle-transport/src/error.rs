@@ -153,6 +153,11 @@ pub enum TransportError {
     #[error("signal protocol error: {reason}")]
     SignalProtocol { reason: String },
 
+    /// A handshake under an identity key other than the one trusted for
+    /// that peer; nothing was changed (plan C7.25).
+    #[error("identity key for {peer} does not match the trusted key")]
+    UntrustedIdentity { peer: String },
+
     // ── Serialization ────────────────────────────────────────────────
     /// Serialization of an outbound payload failed.
     #[error("serialization failed: {reason}")]
@@ -249,6 +254,7 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
             // two impls used to carry the same seven-arm mapping.
             C::Core(core) => core.into(),
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
+            C::UntrustedIdentity { address } => Self::UntrustedIdentity { peer: address },
             other @ (C::SessionError(_) | C::VaultLocked | C::WrongPassphrase) => {
                 Self::SignalProtocol {
                     reason: other.to_string(),
@@ -308,6 +314,7 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
                 size: len,
                 max: cap,
             },
+            P::MessageTooLarge { len, max } => Self::PayloadTooLarge { size: len, max },
             P::LeaseNotHeld(lease) => Self::RecordNotOpen {
                 key: format!("<lease {lease}>"),
             },

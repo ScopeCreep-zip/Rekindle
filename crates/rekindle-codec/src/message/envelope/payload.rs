@@ -23,10 +23,12 @@ pub enum MessagePayload {
     FriendRequest {
         display_name: String,
         message: String,
+        #[serde(with = "rekindle_types::base64_bytes")]
         prekey_bundle: Vec<u8>,
         /// Sender's private profile DHT key (for presence watching).
         profile_dht_key: String,
         /// Sender's current route blob (for immediate contact).
+        #[serde(with = "rekindle_types::base64_bytes")]
         route_blob: Vec<u8>,
         /// Sender's mailbox DHT key (for route discovery after reconnect).
         mailbox_dht_key: String,
@@ -36,14 +38,17 @@ pub enum MessagePayload {
     },
     /// Friend request acceptance.
     FriendAccept {
+        #[serde(with = "rekindle_types::base64_bytes")]
         prekey_bundle: Vec<u8>,
         /// Acceptor's private profile DHT key.
         profile_dht_key: String,
         /// Acceptor's current route blob.
+        #[serde(with = "rekindle_types::base64_bytes")]
         route_blob: Vec<u8>,
         /// Acceptor's mailbox DHT key.
         mailbox_dht_key: String,
         /// Initiator's X25519 ephemeral public key (for responder-side PQXDH).
+        #[serde(with = "rekindle_types::base64_bytes")]
         ephemeral_key: Vec<u8>,
         /// Which of the responder's signed prekeys was used by the initiator.
         signed_prekey_id: u32,
@@ -51,6 +56,7 @@ pub enum MessagePayload {
         one_time_prekey_id: Option<u32>,
         /// ML-KEM-768 ciphertext (Phase 3b PQXDH — encapsulated to the
         /// responder's PQ prekey; empty in the unlikely degenerate path).
+        #[serde(with = "rekindle_types::base64_bytes")]
         ml_kem_ciphertext: Vec<u8>,
         /// Which of the responder's one-time ML-KEM prekeys was consumed,
         /// or `None` if the last-resort PQ prekey was used instead.
@@ -79,6 +85,7 @@ pub enum MessagePayload {
     RelayOffer {
         /// Opaque Veilid private-route blob created by the relay friend
         /// for forwarding-only use (kept distinct from her personal route).
+        #[serde(with = "rekindle_types::base64_bytes")]
         relay_route_blob: Vec<u8>,
         /// Hex-encoded Ed25519 public key of the friend volunteering to relay.
         relay_pseudonym: String,
@@ -357,9 +364,10 @@ pub enum MessagePayload {
     /// bundle, calls establish_session(sender, bundle), and sends back
     /// SessionResetAccept with the X3DH metadata.
     SessionResetRequest {
-        /// Requester's serialized PreKeyBundle (JSON of
-        /// rekindle_crypto::signal::PreKeyBundle). Receiver feeds this
-        /// into establish_session(sender, bundle) on user-accept.
+        /// Requester's `PreKeyBundle` in its wire form
+        /// (`rekindle_crypto::signal::PreKeyBundle::to_wire`). Receiver
+        /// feeds it into establish_session(sender, bundle) on user-accept.
+        #[serde(with = "rekindle_types::base64_bytes")]
         our_prekey_bundle: Vec<u8>,
     },
     /// P3.3 session renewal — Bob → Alice: "I accepted, here's the X3DH
@@ -370,6 +378,7 @@ pub enum MessagePayload {
     SessionResetAccept {
         /// Bob's X25519 ephemeral public key generated during his
         /// establish_session. Alice uses this in respond_to_session.
+        #[serde(with = "rekindle_types::base64_bytes")]
         ephemeral_key: Vec<u8>,
         /// Which of Alice's signed prekeys Bob used.
         signed_prekey_id: u32,
@@ -382,6 +391,7 @@ pub enum MessagePayload {
         /// ML-KEM-768 ciphertext (Phase 3b PQXDH — encapsulated to one of
         /// Alice's PQ prekeys during Bob's `establish_session`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[serde(with = "rekindle_types::base64_bytes")]
         ml_kem_ciphertext: Vec<u8>,
         /// Which of Alice's one-time ML-KEM prekeys Bob consumed, or
         /// `None` if the last-resort PQ prekey was used.
@@ -409,6 +419,7 @@ pub enum MessagePayload {
         /// The peer's most recent route blob, so the requester can
         /// short-circuit DHT route lookup as well.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[serde(with = "rekindle_types::base64_bytes")]
         route_blob: Vec<u8>,
     },
     /// W11.4 (P6.2) — DM video frame fragment for 1:1 video calls.

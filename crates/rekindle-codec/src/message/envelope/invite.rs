@@ -17,9 +17,8 @@ pub struct InviteBlob {
     /// Sender's private profile DHT record key (for presence watching).
     pub profile_dht_key: String,
     /// Sender's current route blob (for immediate contact, may be stale).
+    #[serde(with = "rekindle_types::base64_bytes")]
     pub route_blob: Vec<u8>,
-    /// Sender's Signal `PreKeyBundle` (serialized JSON).
-    pub prekey_bundle: Vec<u8>,
     /// Correlation token linking this invite to tracked outgoing invites.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invite_id: Option<String>,
@@ -31,6 +30,7 @@ pub struct InviteBlob {
     #[serde(default)]
     pub issued_at: u64,
     /// Ed25519 signature over the JSON of all fields above.
+    #[serde(with = "rekindle_types::base64_bytes")]
     pub signature: Vec<u8>,
 }
 
@@ -47,7 +47,6 @@ pub fn create_invite_blob(
     mailbox_dht_key: &str,
     profile_dht_key: &str,
     route_blob: &[u8],
-    prekey_bundle: &[u8],
     invite_id: Option<&str>,
     issued_at_ms: u64,
 ) -> InviteBlob {
@@ -55,19 +54,15 @@ pub fn create_invite_blob(
 
     let signing_key = SigningKey::from_bytes(secret_key);
 
-    // Build the signable payload (all fields except signature)
-    let signable = serde_json::json!({
-        "public_key": public_key,
-        "display_name": display_name,
-        "mailbox_dht_key": mailbox_dht_key,
-        "profile_dht_key": profile_dht_key,
-        "route_blob": route_blob,
-        "prekey_bundle": prekey_bundle,
-        "invite_id": invite_id,
-        "issued_at": issued_at_ms,
-    });
-    let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
-    let signature = signing_key.sign(&signable_bytes);
+    let signature = signing_key.sign(&signable_bytes(
+        public_key,
+        display_name,
+        mailbox_dht_key,
+        profile_dht_key,
+        route_blob,
+        invite_id,
+        issued_at_ms,
+    ));
 
     InviteBlob {
         public_key: public_key.to_string(),
@@ -75,11 +70,36 @@ pub fn create_invite_blob(
         mailbox_dht_key: mailbox_dht_key.to_string(),
         profile_dht_key: profile_dht_key.to_string(),
         route_blob: route_blob.to_vec(),
-        prekey_bundle: prekey_bundle.to_vec(),
         invite_id: invite_id.map(str::to_string),
         issued_at: issued_at_ms,
         signature: signature.to_bytes().to_vec(),
     }
+}
+
+/// The bytes an invite's signature covers: every field but the signature,
+/// as JSON, with the route blob base64 as the blob itself carries it.
+/// The invite carries no prekey bundle: B1's accepter starts the
+/// handshake from the FriendRequest's own bundle, and nothing read the
+/// invite's copy, which was ~75 % of the URL (plan C7.25).
+fn signable_bytes(
+    public_key: &str,
+    display_name: &str,
+    mailbox_dht_key: &str,
+    profile_dht_key: &str,
+    route_blob: &[u8],
+    invite_id: Option<&str>,
+    issued_at_ms: u64,
+) -> Vec<u8> {
+    let signable = serde_json::json!({
+        "public_key": public_key,
+        "display_name": display_name,
+        "mailbox_dht_key": mailbox_dht_key,
+        "profile_dht_key": profile_dht_key,
+        "route_blob": base64::engine::general_purpose::STANDARD.encode(route_blob),
+        "invite_id": invite_id,
+        "issued_at": issued_at_ms,
+    });
+    serde_json::to_vec(&signable).unwrap_or_default()
 }
 
 /// Verify the Ed25519 signature on an invite blob.
@@ -103,21 +123,18 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
         .map_err(|_| "signature must be 64 bytes".to_string())?;
     let signature = Signature::from_bytes(&sig_array);
 
-    // Reconstruct the signable payload
-    let signable = serde_json::json!({
-        "public_key": blob.public_key,
-        "display_name": blob.display_name,
-        "mailbox_dht_key": blob.mailbox_dht_key,
-        "profile_dht_key": blob.profile_dht_key,
-        "route_blob": blob.route_blob,
-        "prekey_bundle": blob.prekey_bundle,
-        "invite_id": blob.invite_id,
-        "issued_at": blob.issued_at,
-    });
-    let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
+    let signed = signable_bytes(
+        &blob.public_key,
+        &blob.display_name,
+        &blob.mailbox_dht_key,
+        &blob.profile_dht_key,
+        &blob.route_blob,
+        blob.invite_id.as_deref(),
+        blob.issued_at,
+    );
 
     verifying_key
-        .verify_strict(&signable_bytes, &signature)
+        .verify_strict(&signed, &signature)
         .map_err(|e| {
             // Most signature failures users hit in practice are version
             // mismatches: the sender's build pre-dates the B11 issued_at
@@ -222,7 +239,6 @@ mod invite_blob_tests {
             "VLD0:mailbox-key",
             "VLD0:profile-key",
             &[1u8, 2, 3],
-            &[10u8, 20, 30, 40],
             Some("inv-123"),
             1_715_000_000_000,
         );
@@ -247,8 +263,7 @@ mod invite_blob_tests {
             "display_name": "Alice",
             "mailbox_dht_key": "VLD0:mailbox",
             "profile_dht_key": "VLD0:profile",
-            "route_blob": &[1u8, 2, 3],
-            "prekey_bundle": &[10u8, 20],
+            "route_blob": "AQID",
             "invite_id": Some("inv-old"),
         });
         let signable_bytes = serde_json::to_vec(&pre_b11_signable).unwrap();
@@ -259,7 +274,6 @@ mod invite_blob_tests {
             mailbox_dht_key: "VLD0:mailbox".to_string(),
             profile_dht_key: "VLD0:profile".to_string(),
             route_blob: vec![1u8, 2, 3],
-            prekey_bundle: vec![10u8, 20],
             invite_id: Some("inv-old".to_string()),
             issued_at: 0, // pre-B11 sender didn't include this field
             signature: signature.to_bytes().to_vec(),
@@ -281,7 +295,6 @@ mod invite_blob_tests {
             "mb",
             "pr",
             &[],
-            &[],
             None,
             1_715_000_000_000,
         );
@@ -301,7 +314,6 @@ mod invite_blob_tests {
             "mb",
             "pr",
             &[],
-            &[],
             None,
             1_715_000_000_000,
         );
@@ -309,5 +321,35 @@ mod invite_blob_tests {
         let err = check_invite_recency(&blob, 1_715_000_000_000, 7 * 24 * 3600)
             .expect_err("issued_at=0 must be rejected");
         assert!(err.contains("missing issued_at"), "got: {err}",);
+    }
+
+    /// The worst-case friend invite fits the OS deep-link cap: a 64-char
+    /// display name of 4-byte characters, a 4,096-byte route blob (3.5x
+    /// the largest 1-hop blob measured) and an invite id (plan C7.25).
+    #[test]
+    fn the_worst_case_invite_url_fits_the_deep_link_cap() {
+        use rekindle_types::invite::{DeepLink, MAX_FRIEND_INVITE_URL_LEN};
+        let secret = make_secret();
+        let pk = pubkey_hex(&secret);
+        let key = format!("VLD0:{}", "A".repeat(43));
+        let blob = create_invite_blob(
+            &secret,
+            &pk,
+            &"😀".repeat(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
+            &key,
+            &key,
+            &[0xAB; 4_096],
+            Some("6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f"),
+            1_715_000_000_000,
+        );
+        let url = encode_invite_url(&blob);
+        assert!(url.len() <= MAX_FRIEND_INVITE_URL_LEN, "{} B", url.len());
+        assert!(matches!(
+            DeepLink::parse(&url),
+            Ok(DeepLink::FriendInvite(_))
+        ));
+        let decoded = decode_invite_url(&url).unwrap();
+        verify_invite_blob(&decoded).expect("the decoded invite verifies");
+        assert_eq!(decoded.route_blob.len(), 4_096);
     }
 }

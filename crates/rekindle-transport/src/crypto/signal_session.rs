@@ -67,6 +67,22 @@ impl SignalSessionManager {
         }
     }
 
+    /// Refuse a handshake whose identity key differs from the one trusted
+    /// for `peer_address`, before any key or session is touched; the
+    /// desktop's `SignalSessionManager::require_trusted` mirror (plan C7.25).
+    fn require_trusted(&self, peer_address: &str, identity_key: &[u8]) -> Result<()> {
+        if self
+            .identity
+            .is_trusted_identity(peer_address, identity_key)?
+        {
+            Ok(())
+        } else {
+            Err(TransportError::UntrustedIdentity {
+                peer: peer_address.to_string(),
+            })
+        }
+    }
+
     /// The lock guarding one peer's ratchet state.
     fn peer_lock(&self, peer_address: &str) -> std::sync::Arc<parking_lot::Mutex<()>> {
         std::sync::Arc::clone(
@@ -85,6 +101,7 @@ impl SignalSessionManager {
     ) -> Result<SessionInitInfo> {
         // PQXDH initiator (Phase 3b) — daemon-track mirror of
         // `rekindle_crypto::signal::session::SignalSessionManager::establish_session`.
+        self.require_trusted(peer_address, &bundle.identity_key)?;
         let (identity_private, _) = self.identity.get_identity_key_pair()?;
         let identity_signing = SigningKey::from_bytes(&to_32(&identity_private, "identity key")?);
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
@@ -130,6 +147,7 @@ impl SignalSessionManager {
         ml_kem_ciphertext: &[u8],
         used_ot_pqpk_id: Option<u32>,
     ) -> Result<()> {
+        self.require_trusted(peer_address, their_identity_key)?;
         let (identity_private, _) = self.identity.get_identity_key_pair()?;
         let identity_signing = SigningKey::from_bytes(&to_32(&identity_private, "identity key")?);
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
@@ -286,6 +304,12 @@ impl SignalSessionManager {
     /// persistence to the OS keyring.
     pub fn load_prekey(&self, id: u32) -> Result<Option<Vec<u8>>> {
         Ok(self.prekeys.load_prekey(id)?)
+    }
+
+    /// Load an ML-KEM secret's bytes from the store, for the same keyring
+    /// persistence as [`Self::load_prekey`] (plan C7.25).
+    pub fn load_pq_secret(&self, id: u32, kind: PqKeyKind) -> Result<Option<Vec<u8>>> {
+        Ok(self.prekeys.load_pq_secret(id, kind)?)
     }
 
     /// Generate a PreKeyBundle for publication to DHT (PQXDH-augmented).

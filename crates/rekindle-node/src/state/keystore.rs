@@ -390,6 +390,27 @@ fn decrypt_fallback(encrypted: &[u8], key: &[u8; 32]) -> anyhow::Result<Vec<u8>>
     Ok(plaintext)
 }
 
+/// Store every private half behind a published prekey bundle, under the
+/// labels identity creation established (`signed-prekey-{id}`,
+/// `one-time-prekey-{id}`) plus the ML-KEM secrets (`pq-last-resort-{id}`,
+/// `pq-one-time-{id}`). Callers publish the bundle only after this
+/// succeeds (plan C7.25).
+pub async fn store_prekey_material(
+    material: &rekindle_transport::operations::identity::PrekeyMaterial,
+) -> anyhow::Result<()> {
+    let (spk_id, spk) = &material.signed_prekey;
+    store_keypair_bytes(&format!("signed-prekey-{spk_id}"), spk).await?;
+    for (id, secret) in &material.one_time_prekeys {
+        store_keypair_bytes(&format!("one-time-prekey-{id}"), secret).await?;
+    }
+    let (lr_id, lr) = &material.pq_last_resort;
+    store_keypair_bytes(&format!("pq-last-resort-{lr_id}"), lr).await?;
+    for (id, secret) in &material.pq_one_time {
+        store_keypair_bytes(&format!("pq-one-time-{id}"), secret).await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
