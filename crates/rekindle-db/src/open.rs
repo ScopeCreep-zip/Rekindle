@@ -108,6 +108,15 @@ pub enum DbError {
         context: &'static str,
         source: rusqlite::Error,
     },
+    /// The key does not decrypt the identity database.
+    #[error("the database key does not open this database")]
+    WrongKey,
+    /// The identity database was written for another schema version.
+    #[error("the database is at schema version {found}, not {expected}", expected = SCHEMA_VERSION)]
+    VersionMismatch { found: i64 },
+    /// A file operation on the database failed.
+    #[error("database file: {0}")]
+    Io(std::io::Error),
 }
 
 fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
@@ -162,6 +171,62 @@ pub fn open(path: &Path) -> Result<DbOpenResult, DbError> {
     })
 }
 
+/// Open an identity's encrypted database (plan D1): keyed with the
+/// vault-derived `key` (SQLCipher), verified, WAL, foreign keys and
+/// `secure_delete` on. A new database gets the schema; a database at
+/// another schema version is an error, never a silent reset — the layout
+/// check (`crate::reset::check_layout`) already cleared a root laid out for
+/// another version.
+///
+/// # Errors
+/// [`DbError::WrongKey`] when `key` does not decrypt it,
+/// [`DbError::VersionMismatch`], or the SQLite step that failed.
+pub fn open_identity(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
+    let conn = Connection::open(path).map_err(sqlite("open database"))?;
+    conn.pragma_update(None, "key", format!("x'{}'", hex_lower(key)))
+        .map_err(sqlite("key database"))?;
+    let tables: i64 = conn
+        .query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
+        .map_err(|e| match e.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::NotADatabase | rusqlite::ErrorCode::OutOfMemory) => {
+                DbError::WrongKey
+            }
+            _ => DbError::Sqlite {
+                context: "verify key",
+                source: e,
+            },
+        })?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;")
+        .map_err(sqlite("set pragmas"))?;
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(sqlite("read schema version"))?;
+    if version == 0 && tables == 0 {
+        conn.execute_batch(SCHEMA).map_err(sqlite("apply schema"))?;
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+            .map_err(sqlite("set schema version"))?;
+    } else if version != SCHEMA_VERSION {
+        return Err(DbError::VersionMismatch { found: version });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(DbError::Io)?;
+    }
+    Ok(Db::from(rekindle_asql::Connection::from(conn)))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, b| {
+            let _ = write!(out, "{b:02x}");
+            out
+        })
+}
+
 /// Drop every user table so the schema can be re-applied.
 ///
 /// Virtual tables (FTS5) go first: they own shadow tables (`<name>_data`,
@@ -213,6 +278,46 @@ mod tests {
         assert_eq!(version, SCHEMA_VERSION);
         drop(first);
         assert!(!open(&path).unwrap().schema_reset, "reopening keeps it");
+    }
+
+    #[tokio::test]
+    async fn an_identity_database_opens_only_with_its_key_and_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pk.db");
+        let db = open_identity(&path, &[7; 32]).unwrap();
+        let version: i64 = db
+            .call(|c| c.pragma_query_value(None, "user_version", |r| r.get(0)))
+            .await
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        drop(db);
+        assert!(matches!(
+            open_identity(&path, &[8; 32]),
+            Err(DbError::WrongKey)
+        ));
+        assert!(open_identity(&path, &[7; 32]).is_ok());
+        let plain = std::fs::read(&path).unwrap();
+        assert!(
+            !plain.starts_with(b"SQLite format 3"),
+            "the file is encrypted"
+        );
+    }
+
+    #[test]
+    fn an_identity_database_at_another_version_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pk.db");
+        drop(open_identity(&path, &[7; 32]).unwrap());
+        let conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "key", format!("x'{}'", hex_lower(&[7; 32])))
+            .unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+            .unwrap();
+        drop(conn);
+        assert!(matches!(
+            open_identity(&path, &[7; 32]),
+            Err(DbError::VersionMismatch { found }) if found == SCHEMA_VERSION - 1
+        ));
     }
 
     #[test]

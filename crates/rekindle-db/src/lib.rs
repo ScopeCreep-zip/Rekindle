@@ -15,9 +15,11 @@ mod handle;
 pub mod lock;
 mod open;
 pub mod paths;
+pub mod registry;
 pub mod repo;
+pub mod reset;
 
 pub use db::Db;
 pub use friend_store::SqliteFriendStore;
 pub use handle::{DbHandle, DbStillHeld, NotLoggedIn};
-pub use open::{open, DbError, DbOpenResult, SCHEMA, SCHEMA_VERSION};
+pub use open::{open, open_identity, DbError, DbOpenResult, SCHEMA, SCHEMA_VERSION};

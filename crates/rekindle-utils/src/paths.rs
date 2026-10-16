@@ -110,6 +110,32 @@ impl DataRoot {
         Ok(())
     }
 
+    /// An identity's database, `state/{pk}.db` (plan D1).
+    #[must_use]
+    pub fn identity_db(&self, public_key: &str) -> PathBuf {
+        self.state.join(format!("{public_key}.db"))
+    }
+
+    /// An identity's vault, `state/{pk}.vault` (its header is
+    /// `state/{pk}.vault.hdr`, plan D1).
+    #[must_use]
+    pub fn identity_vault(&self, public_key: &str) -> PathBuf {
+        self.state.join(format!("{public_key}.vault"))
+    }
+
+    /// The identity registry, `state/identities.json` (plan D1).
+    #[must_use]
+    pub fn registry(&self) -> PathBuf {
+        self.state.join("identities.json")
+    }
+
+    /// The layout version, `state/layout-version` (plan D1): the decimal
+    /// schema version the root was laid out for.
+    #[must_use]
+    pub fn layout_version(&self) -> PathBuf {
+        self.state.join("layout-version")
+    }
+
     /// The user layer of `config.toml`.
     #[must_use]
     pub fn user_config(&self) -> PathBuf {
