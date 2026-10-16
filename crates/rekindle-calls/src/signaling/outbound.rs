@@ -443,3 +443,27 @@ pub fn end_group_call<D: CallSignalingDeps + ?Sized>(
     });
     Ok(())
 }
+
+/// End every call when the session ends (quit or logout): each 1:1 call
+/// through [`end_dm_call`], so the peer gets `CallEnd` instead of waiting
+/// out its own timeout, and each group call through [`end_group_call`].
+/// The registries are empty afterwards (plan C7.27).
+pub async fn end_all_calls<D: CallSignalingDeps + ?Sized>(deps: &D, reason: &str) {
+    let dm_ids: Vec<String> = deps
+        .registry()
+        .list_all()
+        .into_iter()
+        .map(|call| call.call_id.clone())
+        .collect();
+    for call_id in dm_ids {
+        // A call that ended on its own meanwhile is simply gone.
+        if let Err(e) = end_dm_call(deps, &call_id, Some(reason.to_string())).await {
+            tracing::debug!(call = %call_id, error = %e, "end_all_calls: call already ended");
+        }
+    }
+    for call_id in deps.group_registry().list_ids() {
+        if let Err(e) = end_group_call(deps, &call_id, Some(reason.to_string())) {
+            tracing::debug!(call = %call_id, error = %e, "end_all_calls: group call already ended");
+        }
+    }
+}

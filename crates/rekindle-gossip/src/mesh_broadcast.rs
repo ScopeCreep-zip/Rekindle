@@ -41,7 +41,7 @@ pub const MAX_PENDING_MESH: usize = 100;
 /// differs — `send_to_channel_peers` additionally forces `ttl = 0` so
 /// honest receivers never gossip-forward channel media past the roster
 /// the sender addressed (architecture §10.6).
-fn sign_and_record<D: GossipDeps>(
+pub(crate) fn sign_and_record<D: GossipDeps>(
     deps: &Arc<D>,
     community_id: &str,
     envelope: &CommunityEnvelope,
@@ -80,54 +80,6 @@ pub async fn send_to_mesh<D: GossipDeps>(
 ) -> Result<(), GossipError> {
     let signed = sign_and_record(&deps, community_id, envelope)?;
     send_to_mesh_raw(deps, community_id, signed);
-    Ok(())
-}
-
-/// Directed, channel-scoped variant of [`send_to_mesh`]. Signs the
-/// envelope exactly like the mesh path but forces `ttl = 0` and fans
-/// out to exactly the given peers (the voice/video channel roster)
-/// instead of the community gossip overlay. Architecture §10.6 —
-/// media and its per-stream control traffic flow only among the
-/// members actively in the channel, so there is no reliability
-/// ranking, no fan-out degree cap, and no pending-mesh queue: a
-/// frame with no recipients is stale by the next frame interval and
-/// is dropped, not deferred.
-pub async fn send_to_channel_peers<D: GossipDeps>(
-    deps: Arc<D>,
-    community_id: &str,
-    envelope: &CommunityEnvelope,
-    peers: Vec<PeerInfo>,
-) -> Result<(), GossipError> {
-    let mut signed = sign_and_record(&deps, community_id, envelope)?;
-    // ttl = 0 — honest receivers must never gossip-forward channel
-    // media beyond the roster the sender addressed.
-    signed.ttl = 0;
-
-    if peers.is_empty() {
-        tracing::debug!(
-            community = %community_id,
-            "send_to_channel_peers: no channel peers — dropping",
-        );
-        return Ok(());
-    }
-
-    let signed_bytes = encode_signed_envelope(&signed);
-    let cid_owner = community_id.to_string();
-    // Dropping the supervisor (session end) drops the JoinSet, which
-    // aborts every per-peer send.
-    deps.scope()
-        .spawn_or_drop("channel peer fan-out", async move {
-            let mut set = tokio::task::JoinSet::new();
-            for peer in peers {
-                let deps_clone = Arc::clone(&deps);
-                let cid = cid_owner.clone();
-                let data = signed_bytes.clone();
-                set.spawn(async move {
-                    send_to_one_peer(deps_clone, cid, peer, data, None).await;
-                });
-            }
-            while set.join_next().await.is_some() {}
-        });
     Ok(())
 }
 
@@ -196,7 +148,7 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
 
 /// One peer send + route re-resolve + retry. Records delivery /
 /// reliability on every terminal outcome.
-async fn send_to_one_peer<D: GossipDeps>(
+pub(crate) async fn send_to_one_peer<D: GossipDeps>(
     deps: Arc<D>,
     community_id: String,
     peer: PeerInfo,
@@ -307,6 +259,7 @@ mod tests {
     use rekindle_codec::community::envelope::SignedEnvelope;
 
     use super::*;
+    use crate::channel_send::send_to_channel_peers;
 
     #[derive(Default)]
     struct MockState {

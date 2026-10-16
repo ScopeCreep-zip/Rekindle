@@ -397,6 +397,18 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     );
 
+    /// Send a community envelope to every peer on the voice channel's
+    /// roster and return once the sends are handed to Veilid. Unlike
+    /// [`Self::send_community_envelope`] it does not spawn onto the
+    /// session scope, so it still delivers while the session is being
+    /// torn down: the `VoiceLeave` of a quit or logout (plan C7.27).
+    async fn send_channel_envelope_now(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    );
+
     /// DB analytics: log a voice join / leave event into the
     /// per-owner SQLite analytics table. Best-effort.
     /// (Phase 22 sync may consolidate this; for now it stays as a

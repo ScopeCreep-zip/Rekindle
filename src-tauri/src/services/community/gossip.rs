@@ -163,6 +163,46 @@ pub fn send_to_channel_peers(
     Ok(())
 }
 
+/// [`send_to_channel_peers`], awaited and not spawned onto the login
+/// scope: for an envelope that must leave during teardown, after which
+/// the scope is cancelled (the `VoiceLeave` of a quit or logout, plan
+/// C7.27). Returns once every per-peer send is handed to Veilid.
+pub async fn send_to_channel_peers_now(
+    state: &SharedState,
+    community_id: &str,
+    channel_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<(), String> {
+    let transport = {
+        let ve = state.voice_engine.lock();
+        let Some(handle) = ve.as_ref() else {
+            return Err("not in a voice session".to_string());
+        };
+        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
+            return Err(format!(
+                "active voice session is not bound to {community_id}/{channel_id}"
+            ));
+        }
+        handle.transport.clone()
+    };
+    let Some(adapter) = build_adapter(state) else {
+        return Err("app handle / db pool unavailable".to_string());
+    };
+    let peers: Vec<rekindle_gossip::PeerInfo> = transport
+        .lock()
+        .await
+        .peer_entries()
+        .into_iter()
+        .map(|(pseudonym_key, route_blob)| rekindle_gossip::PeerInfo {
+            pseudonym_key,
+            route_blob,
+        })
+        .collect();
+    rekindle_gossip::send_to_channel_peers_now(Arc::new(adapter), community_id, envelope, peers)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Fan out a pre-signed envelope. Used by the presence-poll drain
 /// path which holds pending broadcasts from a prior empty-peers
 /// fan-out attempt.

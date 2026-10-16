@@ -48,7 +48,7 @@ pub use handlers::{
     handle_ringing_received, IncomingInvite,
 };
 pub use outbound::{
-    accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_dm_call,
-    end_group_call, start_dm_call, start_group_call,
+    accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_all_calls,
+    end_dm_call, end_group_call, start_dm_call, start_group_call,
 };
 pub use registry::{CallRegistry, GroupCallRegistry};

@@ -104,6 +104,10 @@ impl GroupCallRegistry for MockGroupRegistry {
             call.status = status;
         }
     }
+    fn list_ids(&self) -> Vec<String> {
+        self.inner.lock().keys().cloned().collect()
+    }
+
     fn snapshot(&self, call_id: &str) -> Option<GroupCallSnapshot> {
         let g = self.inner.lock();
         let c = g.get(call_id)?;

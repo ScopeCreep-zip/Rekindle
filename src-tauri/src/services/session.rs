@@ -30,6 +30,12 @@ const SCOPE_STOP_DEADLINE: Duration = rekindle_types::config::SESSION_STOP_DEADL
 /// Desktop bounds its shutdown queue drain the same way (`10 * SECOND`).
 const OFFLINE_WRITE_WAIT: Duration = Duration::from_secs(10);
 
+/// How long the session's end waits for us to leave calls and voice
+/// (plan C7.27): the `CallEnd`s, the `VoiceLeave` and the presence row
+/// without a voice claim. Each step runs on to completion past it; only
+/// the teardown's wait is bounded.
+const LEAVE_ON_END_WAIT: Duration = Duration::from_secs(3);
+
 /// Start the login session's scope. A task that panics ends the session:
 /// the state it shared with the other tasks may be half-mutated
 /// (`evidence/c4-session-scope-research.md`), so the user is logged out
@@ -87,6 +93,9 @@ impl<'a> SessionEnd<'a> {
 /// End the login session.
 pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &KeystoreHandle) {
     let app = end.app();
+    // 0. Leave calls and voice while the session can still send: the
+    //    scope cancel and pool drain below would refuse it (plan C7.27).
+    leave_calls_and_voice(app, state).await;
     // 1. Every session task. The stop token first, so a task sees stop
     //    before any refused call; then draining the record pool releases
     //    every task waiting on it (their DHT work is pool calls), so the
@@ -141,6 +150,60 @@ pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>, keystore: &
     services::veilid::logout_cleanup(end, state).await;
     // 6. The keys, last: everything above may still sign or decrypt.
     keystore.lock().take();
+}
+
+/// End every call and leave the voice channel before the session closes:
+/// `CallEnd` to each call peer, `VoiceLeave` to the channel roster, voice
+/// shut down, and our community presence row rewritten without its voice
+/// claim, so peers drop us at once instead of after 180 s of presence
+/// staleness (plan C7.27).
+///
+/// The steps run in order as one task on their own scope, which the
+/// teardown waits for up to `LEAVE_ON_END_WAIT`. Past it the step then
+/// running is named in the log and the task is stopped: an unsent leave
+/// message is simply not delivered, and the presence write is a record-pool
+/// call, which runs on the pool's own scope and is never aborted (C7.6g).
+async fn leave_calls_and_voice(app: Option<&tauri::AppHandle>, state: &Arc<AppState>) {
+    let Some(app) = app.cloned().or_else(|| state.app_handle.read().clone()) else {
+        return;
+    };
+    let Ok(pool) = state.db.current() else {
+        return;
+    };
+    let scope = SessionScope::new(
+        "session end",
+        Arc::new(|task| tracing::error!(task, "session end task panicked")),
+    );
+    let step = Arc::new(parking_lot::Mutex::new("end calls"));
+    let (state_task, step_task) = (Arc::clone(state), Arc::clone(&step));
+    scope.spawn_or_drop("leave calls and voice", async move {
+        let voice_community = state_task
+            .voice_engine
+            .lock()
+            .as_ref()
+            .and_then(|engine| engine.community_id.clone());
+        let calls =
+            services::calls_adapter::CallsAdapter::new(Arc::clone(&state_task), app.clone(), pool);
+        rekindle_calls::signaling::end_all_calls(calls.as_ref(), "signed out").await;
+
+        *step_task.lock() = "announce voice leave";
+        if let Ok(voice) = services::voice_runtime::build_voice_session_deps(&app, &state_task) {
+            rekindle_voice::session::announce_leave(&voice).await;
+        }
+
+        *step_task.lock() = "shut down voice";
+        shutdown_voice(&state_task, &VoiceShutdownOpts::FULL).await;
+
+        if let Some(community_id) = voice_community {
+            *step_task.lock() = "presence row without voice";
+            services::community::presence::registry::write_our_presence(&state_task, &community_id)
+                .await;
+        }
+    });
+    if let Err(stuck) = scope.shutdown(LEAVE_ON_END_WAIT).await {
+        let step = *step.lock();
+        tracing::info!(step, %stuck, "session end: leaving calls and voice ran past its wait");
+    }
 }
 
 /// Shut the login scope down and wait for its tasks. On its own this is

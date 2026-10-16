@@ -95,6 +95,10 @@ impl GroupCallRegistry for ActiveGroupCallRegistry {
         }
     }
 
+    fn list_ids(&self) -> Vec<String> {
+        self.inner.lock().keys().cloned().collect()
+    }
+
     fn snapshot(&self, call_id: &str) -> Option<GroupCallSnapshot> {
         let guard = self.inner.lock();
         let call = guard.get(call_id)?;

@@ -99,20 +99,31 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
     );
 }
 
-/// User clicked Leave. Reads the current channel/community off the
-/// engine, broadcasts VoiceLeave (community channels only),
-/// tears down the voice session, emits UserLeft.
+/// Tell the channel we are leaving: `VoiceLeave` to every rostered peer,
+/// awaited until handed to Veilid, then the same envelope to the
+/// community mesh for members not on the call. No-op outside a community
+/// voice channel. The Leave button and the end of a session (quit,
+/// logout) share it, so a peer that quits leaves the roster at once
+/// instead of after 180 s of presence staleness (plan C7.27).
+pub async fn announce_leave<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
+    let (channel_id, community_id) = deps.active_channel_info();
+    let Some(cid) = community_id else {
+        return;
+    };
+    deps.log_voice_membership(&cid, &channel_id, false);
+    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceLeave {
+        channel_id: channel_id.clone(),
+    });
+    deps.send_channel_envelope_now(&cid, &channel_id, &envelope)
+        .await;
+    deps.send_community_envelope(&cid, &envelope);
+}
+
+/// User clicked Leave. Announces the leave, tears down the voice session,
+/// emits UserLeft.
 pub async fn leave_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Result<(), VoiceError> {
     let public_key = deps.owner_key().unwrap_or_default();
-    let (channel_id, community_id) = deps.active_channel_info();
-
-    if let Some(ref cid) = community_id {
-        deps.log_voice_membership(cid, &channel_id, false);
-        let envelope = CommunityEnvelope::Control(ControlPayload::VoiceLeave {
-            channel_id: channel_id.clone(),
-        });
-        deps.send_community_envelope(cid, &envelope);
-    }
+    announce_leave(deps).await;
 
     crate::session::shutdown_voice(deps, &VoiceShutdownOpts::FULL).await;
 

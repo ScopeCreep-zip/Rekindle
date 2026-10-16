@@ -53,7 +53,7 @@ pub use expressions::{
 };
 pub use gossip::{
     flush_peer_reliability, hydrate_peer_reliability, record_peer_reliability,
-    send_to_channel_peers, send_to_mesh, start_peer_reliability_flush,
+    send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
 pub(crate) use join::try_derive_slot_keypair;

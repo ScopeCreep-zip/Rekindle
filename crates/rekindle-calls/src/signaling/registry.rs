@@ -52,6 +52,9 @@ pub trait GroupCallRegistry: Send + Sync {
     /// Read-only diagnostic snapshot: returns the participant list +
     /// status + accepted count, omitting the X25519 secret and call_key.
     fn snapshot(&self, call_id: &str) -> Option<GroupCallSnapshot>;
+    /// Every group call's id, for ending them all when the session ends
+    /// (plan C7.27).
+    fn list_ids(&self) -> Vec<String>;
 }
 
 /// Diagnostic-safe snapshot of a `GroupCallState` (no key material).

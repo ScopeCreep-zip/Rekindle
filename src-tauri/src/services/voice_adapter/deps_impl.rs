@@ -351,6 +351,25 @@ impl VoiceSessionDeps for VoiceAdapter {
         }
     }
 
+    async fn send_channel_envelope_now(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) {
+        if let Err(e) = crate::services::community::send_to_channel_peers_now(
+            &self.state,
+            community_id,
+            channel_id,
+            envelope,
+        )
+        .await
+        {
+            tracing::debug!(community = %community_id, error = %e,
+                "voice adapter: send_channel_envelope_now failed");
+        }
+    }
+
     fn log_voice_membership(&self, community_id: &str, channel_id: &str, joined: bool) {
         io_helpers::log_voice_membership_impl(
             &self.state,
