@@ -40,7 +40,7 @@ pub fn notify(app: &tauri::AppHandle, state: &Arc<AppState>, event: &Subscriptio
     crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
         "os notification",
         async move {
-            let inputs = gather_inputs(&app, &state).await;
+            let inputs = gather_inputs(&state).await;
             let Some(notification) = notify_policy::os_notification_for(&event, &inputs) else {
                 return;
             };
@@ -51,12 +51,12 @@ pub fn notify(app: &tauri::AppHandle, state: &Arc<AppState>, event: &Subscriptio
     );
 }
 
-async fn gather_inputs(app: &tauri::AppHandle, state: &Arc<AppState>) -> NotifyInputs {
+async fn gather_inputs(state: &Arc<AppState>) -> NotifyInputs {
     use crate::services::community::notifications::{
         is_do_not_disturb_active, is_quiet_hours_active,
     };
 
-    let prefs = crate::commands::settings::load_preferences(app);
+    let prefs = crate::services::preferences::current(state);
     // Without an identity database there is no DND or quiet-hours setting
     // to honour; notifications are then decided by the global switch alone.
     let pool = state.db.current().ok();

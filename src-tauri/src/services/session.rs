@@ -158,6 +158,7 @@ pub async fn lock_identity(state: &AppState) {
     *state.friend_store.write() = None;
     *state.signal_manager.write() = None;
     *state.identity_secret.lock() = None;
+    services::preferences::reset(state);
     rekindle_node::host::identity::lock(&services::auth_cores::stores(state)).await;
 }
 

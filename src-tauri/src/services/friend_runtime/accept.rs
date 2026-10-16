@@ -186,7 +186,7 @@ pub async fn accept_request_inner(
         crate::invite_helpers::mark_invite_accepted(&pool, &ok, iid);
     }
 
-    if auto_volunteer_relay_enabled(&app) {
+    if auto_volunteer_relay_enabled(&state) {
         if let Err(e) =
             crate::services::relay::offer::volunteer_relay(&state, &pool, &public_key).await
         {

@@ -433,7 +433,38 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- switch previews on (plan A1.7, C7.28).
     link_previews_enabled INTEGER NOT NULL DEFAULT 0
         CHECK(link_previews_enabled IN (0, 1)),
+    -- The user's preferences (plan D1; `rekindle_types::preferences`):
+    -- one column per field, defaults matching `Preferences::default`.
+    notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK(notifications_enabled IN (0, 1)),
+    notification_sound INTEGER NOT NULL DEFAULT 1 CHECK(notification_sound IN (0, 1)),
+    start_minimized INTEGER NOT NULL DEFAULT 0 CHECK(start_minimized IN (0, 1)),
+    game_detection_enabled INTEGER NOT NULL DEFAULT 1 CHECK(game_detection_enabled IN (0, 1)),
+    game_scan_interval_secs INTEGER NOT NULL DEFAULT 15
+        CHECK(game_scan_interval_secs BETWEEN 1 AND 3600),
+    input_device TEXT,
+    output_device TEXT,
+    video_device_id TEXT,
+    video_device_label TEXT,
+    input_volume REAL NOT NULL DEFAULT 1.0 CHECK(input_volume BETWEEN 0.0 AND 1.0),
+    output_volume REAL NOT NULL DEFAULT 1.0 CHECK(output_volume BETWEEN 0.0 AND 1.0),
+    noise_suppression INTEGER NOT NULL DEFAULT 1 CHECK(noise_suppression IN (0, 1)),
+    echo_cancellation INTEGER NOT NULL DEFAULT 1 CHECK(echo_cancellation IN (0, 1)),
+    auto_away_minutes INTEGER NOT NULL DEFAULT 10 CHECK(auto_away_minutes BETWEEN 0 AND 1440),
+    auto_volunteer_relay_for_new_friends INTEGER NOT NULL DEFAULT 0
+        CHECK(auto_volunteer_relay_for_new_friends IN (0, 1)),
+    ringtone_enabled INTEGER NOT NULL DEFAULT 1 CHECK(ringtone_enabled IN (0, 1)),
+    ringtone_volume REAL NOT NULL DEFAULT 0.4 CHECK(ringtone_volume BETWEEN 0.0 AND 1.0),
+    in_call_dnd_auto_enable INTEGER NOT NULL DEFAULT 1 CHECK(in_call_dnd_auto_enable IN (0, 1)),
     PRIMARY KEY (owner_key)
+);
+
+-- The input-channel choice per input device (`Preferences::input_channels`,
+-- plan C7.24b): a device without rows averages all its channels.
+CREATE TABLE IF NOT EXISTS app_input_channels (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    device_name TEXT NOT NULL,
+    channel INTEGER NOT NULL CHECK(channel BETWEEN 0 AND 65535),
+    PRIMARY KEY (owner_key, device_name, channel)
 );
 
 -- Architecture §28.7 / §32 W18 — per-channel slowmode bookkeeping.

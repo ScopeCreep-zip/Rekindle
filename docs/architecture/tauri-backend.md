@@ -48,14 +48,13 @@ are registered in this order:
 | Order | Plugin | Rationale |
 |-------|--------|-----------|
 | 1 | `single-instance` | Must be first — prevents duplicate processes; deep links re-route to existing instance |
-| 2 | `store` | Persistent user preferences |
-| 3 | `opener` | Opens confirmed https links (`open_external_url`) and reveals downloads, from Rust; its JS link interception is off |
-| 4 | `dialog` | Native file and confirmation dialogs, from Rust |
-| 5 | `deep-link` | `rekindle://` URL scheme (consent flow in `deep_links.rs`) |
-| 6 | `autostart` | Launch at system boot (LaunchAgent on macOS); applied by `set_preferences`, read back by `get_preferences` |
-| 7 | `global-shortcut` | Registered in `setup()` for state access |
+| 2 | `opener` | Opens confirmed https links (`open_external_url`) and reveals downloads, from Rust; its JS link interception is off |
+| 3 | `dialog` | Native file and confirmation dialogs, from Rust |
+| 4 | `deep-link` | `rekindle://` URL scheme (consent flow in `deep_links.rs`) |
+| 5 | `autostart` | Launch at system boot (LaunchAgent on macOS); applied by `set_preferences`, read back by `get_preferences` |
+| 6 | `global-shortcut` | Registered in `setup()` for state access |
 
-Plugins are driven from Rust; the webview holds only the specific plugin
+Preferences are the unlocked identity's, in its database (`services::preferences`, plan D1); there is no store plugin. Plugins are driven from Rust; the webview holds only the specific plugin
 permissions its window uses (no `*:default` bundles), granted in the
 per-window `capabilities/app-*.json` files — see
 [`../security/threat-model.md` §5b W4](../security/threat-model.md) and

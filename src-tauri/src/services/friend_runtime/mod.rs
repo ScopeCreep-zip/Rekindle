@@ -70,19 +70,9 @@ pub async fn read_pending_request_data(
     .await
 }
 
-/// W11.3 — read the auto-volunteer Strand Relay preference from the
-/// Tauri Store. Defaults to `false` (no auto-volunteer) on any error
-/// or when the field is absent — explicit consent per
-/// `feedback_vulnerable_users_no_creative_paths.md`.
-pub fn auto_volunteer_relay_enabled(app: &tauri::AppHandle) -> bool {
-    use tauri_plugin_store::StoreExt;
-    let Ok(store) = app.store("preferences.json") else {
-        return false;
-    };
-    let Some(val) = store.get("preferences") else {
-        return false;
-    };
-    val.get("autoVolunteerRelayForNewFriends")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
+/// W11.3 — the auto-volunteer Strand Relay preference: off unless the
+/// user turned it on (explicit consent, per
+/// `feedback_vulnerable_users_no_creative_paths.md`).
+pub fn auto_volunteer_relay_enabled(state: &crate::state::AppState) -> bool {
+    crate::services::preferences::current(state).auto_volunteer_relay_for_new_friends
 }

@@ -106,7 +106,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 86: `messages.send_state` (D22's delivery vocabulary) and the held
 /// write's slot (`held_record_key`, `held_subkey`), plan D1 / C7.14.
-pub const SCHEMA_VERSION: i64 = 86;
+///
+/// 87: the preferences move from the plugin store into `app_settings`
+/// columns and `app_input_channels` (plan D1).
+pub const SCHEMA_VERSION: i64 = 87;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

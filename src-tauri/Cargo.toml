@@ -75,7 +75,6 @@ tauri = { version = "2.12", features = [ "macos-private-api", "tray-icon", "imag
 notify-rust = "4"
 # tauri-plugin-window-state removed — causes infinite windowDidMove loop on macOS
 # with prevent_exit(), see tauri#11489
-tauri-plugin-store = "2"
 
 # tauri-plugin-sql removed — using rusqlite directly for veilid-core compatibility
 tauri-plugin-autostart = "2"

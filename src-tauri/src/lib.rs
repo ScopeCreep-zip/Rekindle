@@ -90,7 +90,6 @@ pub fn run() {
         }))
         // NOTE: tauri_plugin_window_state removed — causes infinite windowDidMove
         // event loop on macOS when combined with prevent_exit(). See tauri#11489.
-        .plugin(tauri_plugin_store::Builder::new().build())
         // NOTE: tauri-plugin-stronghold removed — the plugin was registered but
         // never invoked by the frontend, and its hardcoded production Argon2
         // params conflicted with our debug-mode params. `keystore.rs` is now

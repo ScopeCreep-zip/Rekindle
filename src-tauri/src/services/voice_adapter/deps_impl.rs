@@ -213,11 +213,8 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn audio_prefs(&self) -> AudioPrefs {
-        // The saved preferences live in the `preferences.json` store. They
-        // were read from Tauri managed state, where nothing ever put them,
-        // so every call ran on defaults: the system input instead of the
-        // chosen one, default volumes and processing (plan C7.23).
-        let prefs = crate::commands::settings::load_preferences(&self.app_handle);
+        // The unlocked identity's saved preferences (plan C7.23, D1).
+        let prefs = crate::services::preferences::current(&self.state);
         AudioPrefs {
             noise_suppression: prefs.noise_suppression,
             echo_cancellation: prefs.echo_cancellation,

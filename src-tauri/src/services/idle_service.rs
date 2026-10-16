@@ -7,7 +7,6 @@
 
 use std::sync::Arc;
 
-use tauri_plugin_store::StoreExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::state::{AppState, UserStatus};
@@ -55,7 +54,7 @@ pub async fn run_idle_service(
             () = stop.cancelled() => break,
         }
 
-        let auto_away_minutes = read_auto_away_minutes(&app_handle);
+        let auto_away_minutes = crate::services::preferences::current(&state).auto_away_minutes;
         if auto_away_minutes == 0 {
             continue;
         }
@@ -106,14 +105,4 @@ pub async fn run_idle_service(
         }
     }
     tracing::debug!("idle service shut down");
-}
-
-fn read_auto_away_minutes(app_handle: &tauri::AppHandle) -> u32 {
-    let Ok(store) = app_handle.store("preferences.json") else {
-        return 10;
-    };
-    store
-        .get("preferences")
-        .and_then(|v| v.get("autoAwayMinutes")?.as_u64())
-        .map_or(10, |v| u32::try_from(v).unwrap_or(10))
 }

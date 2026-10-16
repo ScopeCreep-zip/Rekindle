@@ -19,6 +19,7 @@ pub mod intent_facts;
 pub mod members;
 pub mod messages;
 pub mod pending_requests;
+pub mod preferences;
 mod role_ids;
 
 #[cfg(test)]

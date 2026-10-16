@@ -1,160 +1,45 @@
+use rekindle_types::preferences::Preferences;
 use serde::{Deserialize, Serialize};
+use tauri::State;
 use tauri_plugin_autostart::ManagerExt as _;
-use tauri_plugin_store::StoreExt;
 
+use crate::state::SharedState;
+
+/// The preferences as the settings window edits them: the identity's
+/// stored preferences plus launch-at-login, which is the OS login item's
+/// state (read back from the autostart plugin, never stored).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Preferences {
-    pub notifications_enabled: bool,
-    pub notification_sound: bool,
-    pub start_minimized: bool,
+pub struct PreferencesDto {
+    #[serde(flatten)]
+    pub prefs: Preferences,
     pub auto_start: bool,
-    pub game_detection_enabled: bool,
-    pub game_scan_interval_secs: u32,
-    /// Selected input device name (None = system default).
-    #[serde(default)]
-    pub input_device: Option<String>,
-    /// Selected output device name (None = system default).
-    #[serde(default)]
-    pub output_device: Option<String>,
-    /// Selected camera deviceId (WebView MediaDevices). None = system default.
-    #[serde(default)]
-    pub video_device_id: Option<String>,
-    /// Selected camera LABEL — WebKit deviceIds are origin/data-store
-    /// salted and rotate across reinstalls; the label is the stable
-    /// key. Selection resolves id-first, then label, then default.
-    #[serde(default)]
-    pub video_device_label: Option<String>,
-    /// Input volume multiplier (0.0–1.0).
-    #[serde(default = "default_volume")]
-    pub input_volume: f32,
-    /// Input-channel choice per input device name, 0-based (plan C7.24b,
-    /// Mumble's input channel mask). A device without an entry averages
-    /// all its channels.
-    #[serde(default)]
-    pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
-    /// Output volume multiplier (0.0–1.0).
-    #[serde(default = "default_volume")]
-    pub output_volume: f32,
-    /// Whether noise suppression is enabled.
-    #[serde(default = "default_true")]
-    pub noise_suppression: bool,
-    /// Whether echo cancellation is enabled.
-    #[serde(default = "default_true")]
-    pub echo_cancellation: bool,
-    /// Minutes of inactivity before auto-away (0 = disabled).
-    #[serde(default = "default_auto_away")]
-    pub auto_away_minutes: u32,
-    /// W11.3 — when ON, accepting a friend request also volunteers a
-    /// Strand Relay route for that friend so they can route via you
-    /// when their direct route is unavailable. OFF by default
-    /// (explicit consent per `feedback_vulnerable_users_no_creative_paths.md`).
-    /// Per-friend, never network-wide — chiral §28.4 invite-gated
-    /// model. The toggle does not retroactively volunteer for
-    /// existing friends; users opt those in via the friend context
-    /// menu.
-    #[serde(default)]
-    pub auto_volunteer_relay_for_new_friends: bool,
-    /// Wave 12 W12.2 — gates the synthesized incoming-call ring and
-    /// outgoing ringback. Independent of `notification_sound` (which
-    /// covers message dings) so the user can silence one without the
-    /// other. Default ON.
-    #[serde(default = "default_true")]
-    pub ringtone_enabled: bool,
-    /// Wave 12 W12.2 — linear volume for ringtone / ringback / busy
-    /// tone, [0, 1]. Default 0.4 (matches the synth lib's clamp).
-    #[serde(default = "default_ringtone_volume")]
-    pub ringtone_volume: f32,
-    /// Wave 12 W12.2 — when ON, suppresses OS notifications and
-    /// message-arrival sounds while a call is active so a noisy chat
-    /// doesn't distract participants. In-app modals still surface.
-    #[serde(default = "default_true")]
-    pub in_call_dnd_auto_enable: bool,
 }
 
-fn default_ringtone_volume() -> f32 {
-    0.4
-}
-
-fn default_volume() -> f32 {
-    1.0
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_auto_away() -> u32 {
-    10
-}
-
-impl Default for Preferences {
-    fn default() -> Self {
-        Self {
-            notifications_enabled: true,
-            notification_sound: true,
-            start_minimized: false,
-            auto_start: false,
-            game_detection_enabled: true,
-            game_scan_interval_secs: 15,
-            input_device: None,
-            input_channels: std::collections::BTreeMap::new(),
-            output_device: None,
-            video_device_id: None,
-            video_device_label: None,
-            input_volume: 1.0,
-            output_volume: 1.0,
-            noise_suppression: true,
-            echo_cancellation: true,
-            auto_away_minutes: 10,
-            auto_volunteer_relay_for_new_friends: false,
-            ringtone_enabled: true,
-            ringtone_volume: 0.4,
-            in_call_dnd_auto_enable: true,
-        }
-    }
-}
-
-/// The OS login-item registration is the source of truth for
-/// `auto_start` — the user can also toggle it in System Settings /
-/// their desktop session — so it is read back from the autostart plugin
-/// rather than trusted from the store.
+/// The unlocked identity's preferences and the OS login item's state.
 #[tauri::command]
-pub async fn get_preferences(app: tauri::AppHandle) -> Result<Preferences, String> {
-    let mut prefs = read_stored_preferences(&app)?;
-    prefs.auto_start = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;
-    Ok(prefs)
-}
-
-/// The stored preferences, defaults when none are saved yet.
-fn read_stored_preferences(app: &tauri::AppHandle) -> Result<Preferences, String> {
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    match store.get("preferences") {
-        Some(val) => serde_json::from_value(val).map_err(|e| e.to_string()),
-        None => Ok(Preferences::default()),
-    }
-}
-
-/// The stored preferences for backend decisions (OS notifications). An
-/// unreadable store is logged and read as the defaults.
-pub fn load_preferences(app: &tauri::AppHandle) -> Preferences {
-    read_stored_preferences(app).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "preferences unreadable — using defaults");
-        Preferences::default()
+pub async fn get_preferences(
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<PreferencesDto, String> {
+    state.db.current()?;
+    Ok(PreferencesDto {
+        prefs: crate::services::preferences::current(state.inner()),
+        auto_start: app.autolaunch().is_enabled().map_err(|e| e.to_string())?,
     })
 }
 
-/// Persist preferences, applying `auto_start` to the OS login items
-/// first so a failed registration is reported instead of being stored
-/// as if it had taken effect.
+/// Save the preferences, applying `auto_start` to the OS login items
+/// first so a failed registration is reported instead of being stored as
+/// if it had taken effect.
 #[tauri::command]
-pub async fn set_preferences(prefs: Preferences, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn set_preferences(
+    prefs: PreferencesDto,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
     apply_auto_start(&app, prefs.auto_start)?;
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())?;
-    Ok(())
+    crate::services::preferences::update(state.inner(), |stored| *stored = prefs.prefs).await
 }
 
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {

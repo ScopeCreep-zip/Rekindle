@@ -3,14 +3,12 @@
 //! * `list_audio_devices_inner` — pure DTO mapping over
 //!   `rekindle_voice::device::enumerate_audio_devices`.
 //! * `persist_audio_device_prefs` — write the user's selected devices to
-//!   the `preferences.json` Tauri store.
+//!   the unlocked identity's preferences (`services::preferences`).
 //! * `apply_stage_audience_gate` — force-mute when joining a Stage channel
 //!   as an audience member (not on the speaker list).
 //!
 //! The Tauri command handlers in `commands/voice.rs` stay as ≤15-LoC
 //! delegations.
-
-use tauri_plugin_store::StoreExt;
 
 use crate::state::{ChannelType, SharedState};
 
@@ -60,28 +58,27 @@ pub fn list_audio_devices_inner() -> AudioDevices {
     }
 }
 
-pub fn persist_audio_device_prefs(
-    app: &tauri::AppHandle,
+pub async fn persist_audio_device_prefs(
+    state: &SharedState,
     input_device: Option<&str>,
     output_device: Option<&str>,
 ) -> Result<(), String> {
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let mut prefs: crate::commands::settings::Preferences = store
-        .get("preferences")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    prefs.input_device = input_device.map(str::to_string);
-    prefs.output_device = output_device.map(str::to_string);
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())
+    let (input, output) = (
+        input_device.map(str::to_string),
+        output_device.map(str::to_string),
+    );
+    crate::services::preferences::update(state, |prefs| {
+        prefs.input_device = input;
+        prefs.output_device = output;
+    })
+    .await
 }
 
 /// Persist the input-channel choice for input `device` (plan C7.24b). The
 /// channels must exist on the connected device; an empty choice clears the
 /// entry, so the device averages all its channels again.
-pub fn persist_input_channels(
-    app: &tauri::AppHandle,
+pub async fn persist_input_channels(
+    state: &SharedState,
     device: &str,
     mut channels: Vec<u16>,
 ) -> Result<(), String> {
@@ -98,19 +95,15 @@ pub fn persist_input_channels(
             bad + 1
         ));
     }
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let mut prefs: crate::commands::settings::Preferences = store
-        .get("preferences")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    if channels.is_empty() {
-        prefs.input_channels.remove(device);
-    } else {
-        prefs.input_channels.insert(device.to_string(), channels);
-    }
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())
+    let device = device.to_string();
+    crate::services::preferences::update(state, |prefs| {
+        if channels.is_empty() {
+            prefs.input_channels.remove(&device);
+        } else {
+            prefs.input_channels.insert(device, channels);
+        }
+    })
+    .await
 }
 
 pub fn apply_stage_audience_gate(state: &SharedState, community_id: &str, channel_id: &str) {

@@ -159,23 +159,16 @@ pub fn switch_device(state: &AppState, device_label: Option<String>) {
 
 /// Save the camera choice: the device id the webview path resolves first,
 /// and the label both paths share.
-pub fn persist_video_device_prefs(
-    app: &tauri::AppHandle,
+pub async fn persist_video_device_prefs(
+    state: &crate::state::SharedState,
     device_id: Option<String>,
     device_label: Option<String>,
 ) -> Result<(), String> {
-    use tauri_plugin_store::StoreExt;
-
-    let store = app.store("preferences.json").map_err(|e| e.to_string())?;
-    let mut prefs: crate::commands::settings::Preferences = store
-        .get("preferences")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    prefs.video_device_id = device_id;
-    prefs.video_device_label = device_label;
-    let val = serde_json::to_value(&prefs).map_err(|e| e.to_string())?;
-    store.set("preferences", val);
-    store.save().map_err(|e| e.to_string())
+    crate::services::preferences::update(state, |prefs| {
+        prefs.video_device_id = device_id;
+        prefs.video_device_label = device_label;
+    })
+    .await
 }
 
 /// Stop `session` and open the camera again with `config`: stop first,

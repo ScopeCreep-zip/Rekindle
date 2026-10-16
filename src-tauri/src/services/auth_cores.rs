@@ -103,6 +103,7 @@ pub async fn create_identity_core(
     .await
     .map_err(|e| identity_error_message(&e))?;
     let (pool, result, secret_bytes) = adopt(state, unlocked)?;
+    services::preferences::load(state, &pool, &result.public_key).await?;
 
     initialize_audit_chain(
         app_handle,
@@ -176,6 +177,7 @@ pub async fn login_core(
         identity_error_message(&e)
     })?;
     let (pool, result, key_array) = adopt(state, unlocked)?;
+    services::preferences::load(state, &pool, public_key).await?;
     let keystore_handle = &state.keystore;
 
     let dht_keys = owned_records(state, &pool, public_key).await?;

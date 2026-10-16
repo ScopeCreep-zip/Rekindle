@@ -86,7 +86,12 @@ pub async fn set_audio_devices(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    persist_audio_device_prefs(&app, input_device.as_deref(), output_device.as_deref())?;
+    persist_audio_device_prefs(
+        state.inner(),
+        input_device.as_deref(),
+        output_device.as_deref(),
+    )
+    .await?;
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::change_audio_devices(&deps, input_device, output_device)
         .await
@@ -103,8 +108,9 @@ pub async fn set_input_channels(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    crate::services::voice_runtime::persist_input_channels(&app, &device, channels)?;
-    let prefs = crate::commands::settings::load_preferences(&app);
+    crate::services::voice_runtime::persist_input_channels(state.inner(), &device, channels)
+        .await?;
+    let prefs = crate::services::preferences::current(state.inner());
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::change_audio_devices(&deps, prefs.input_device, prefs.output_device)
         .await

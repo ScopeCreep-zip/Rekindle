@@ -33,6 +33,7 @@ pub mod member;
 pub mod message;
 pub mod notification;
 pub mod permissions;
+pub mod preferences;
 pub mod presence;
 pub mod search;
 pub mod subscription_events;

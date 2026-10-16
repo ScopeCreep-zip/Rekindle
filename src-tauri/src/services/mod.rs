@@ -57,6 +57,7 @@ pub mod mek_adapter; // Phase 17 — MekDistributeDeps impl + ChannelMekCache wr
 pub mod message_service;
 pub mod messaging_runtime; // Phase 23.C — channel-messaging runtime orchestration lifted from commands/community/messaging.rs.
 pub mod native_video; // Linux-native GStreamer camera capture facade (plan rosy-bouncing-kahn Phase 3).
+pub mod preferences; // Plan D1 — the unlocked identity's preferences.
 pub mod presence_adapter; // Phase 21.e-REDO — FriendPresenceDeps impl for friend presence.
 pub mod presence_service;
 pub mod push_relay;

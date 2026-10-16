@@ -72,6 +72,9 @@ pub struct AppState {
     /// unlock and delete count on it, and a locked-out identity is refused
     /// before Argon2id runs.
     pub identity_attempts: rekindle_idempotency::attempts::AttemptLimiter<String>,
+    /// The unlocked identity's preferences (`services::preferences`; the
+    /// defaults while locked).
+    pub preferences: RwLock<rekindle_types::preferences::Preferences>,
     /// Signal session manager (set after identity unlock). `RwLock` so
     /// encrypt/decrypt readers don't serialize on the wrapper; the
     /// inner `Arc<SignalManagerHandle>` is cloned out under the
@@ -316,6 +319,7 @@ impl Default for AppState {
             friend_store: Arc::new(RwLock::new(None)),
             db: Arc::new(rekindle_db::DbHandle::default()),
             identity_attempts: rekindle_idempotency::attempts::AttemptLimiter::default(),
+            preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
             signal_manager: Arc::new(RwLock::new(None)),
             game_detector: Arc::new(Mutex::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),
