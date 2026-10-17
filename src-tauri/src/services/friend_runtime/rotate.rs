@@ -89,7 +89,11 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
     // Notify all remaining friends about the new profile key
     let friend_keys: Vec<String> = {
         let friends = state.friends.read();
-        friends.keys().cloned().collect()
+        friends
+            .values()
+            .filter(|f| f.friendship_state != crate::state::FriendshipState::Removing)
+            .map(|f| f.public_key.clone())
+            .collect()
     };
     let payload = rekindle_codec::message::envelope::MessagePayload::ProfileKeyRotated {
         new_profile_dht_key: new_key.clone(),

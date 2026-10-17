@@ -56,9 +56,12 @@ fn select_probe_targets(state: &Arc<AppState>, target_pubkey: &str) -> Vec<Strin
     let friends: Vec<String> = {
         let friends_map = state.friends.read();
         friends_map
-            .keys()
-            .filter(|k| k.as_str() != target_pubkey)
-            .cloned()
+            .values()
+            .filter(|f| {
+                f.public_key != target_pubkey
+                    && f.friendship_state != crate::state::FriendshipState::Removing
+            })
+            .map(|f| f.public_key.clone())
             .collect()
     };
     let mut online: Vec<String> = Vec::new();

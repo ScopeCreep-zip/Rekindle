@@ -299,8 +299,13 @@ pub(super) async fn auto_accept_cross_request(
     }
     // Stored before anything is sent, so the row that gates the peer's
     // reply is on disk when the reply arrives (plan C7.25).
-    if let Err(e) =
-        crate::friend_repo::update_friendship_state(state, pool, req.sender_hex, "accepted").await
+    if let Err(e) = crate::friend_repo::update_friendship_state(
+        state,
+        pool,
+        req.sender_hex,
+        crate::state::FriendshipState::Accepted,
+    )
+    .await
     {
         tracing::error!(peer = %req.sender_hex, error = %e,
             "cross-request auto-accept: storing the accepted state failed; not answering");

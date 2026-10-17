@@ -42,8 +42,7 @@ pub enum FriendEvent {
     Added {
         peer_key: String,
         display_name: String,
-        /// Serialized `FriendshipState` — "pending", "active", etc.
-        friendship_state: String,
+        friendship_state: crate::friend_store::FriendshipState,
     },
     /// A friend removed us.
     /// Triggered by: `DmPayload::Unfriend`.

@@ -1,10 +1,9 @@
 //! `friends`: one row per (owner, friend).
 //!
-//! `friendship_state` holds the wire form of
-//! [`FriendStatus`](rekindle_types::friend_store::FriendStatus):
-//! `accepted`, `pending_out`, or a removal in progress.
+//! `friendship_state` holds the stored form of
+//! [`FriendshipState`]; a value it does not name is a read error.
 
-use rekindle_types::friend_store::{FriendRecord, FriendStatus};
+use rekindle_types::friend_store::{FriendRecord, FriendshipState};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension as _};
 
 /// A friend as the buddy list loads it, with its group's name.
@@ -19,7 +18,7 @@ pub struct FriendRow {
     pub local_conversation_key: Option<String>,
     pub remote_conversation_key: Option<String>,
     pub mailbox_dht_key: Option<String>,
-    pub friendship_state: String,
+    pub friendship_state: FriendshipState,
 }
 
 /// Every friend of `owner_key`.
@@ -46,15 +45,38 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Frie
                 local_conversation_key: row.get(6)?,
                 remote_conversation_key: row.get(7)?,
                 mailbox_dht_key: row.get(8)?,
-                friendship_state: row.get(9)?,
+                friendship_state: crate::row::get_enum(row, "friendship_state")?,
             })
         })?
         .collect();
     rows
 }
 
+/// A friend we are removing who is added again: the removal ends here.
+/// Its row goes, and so does what is still queued to them (the
+/// `Unfriended` notice must not follow the new request out).
+fn end_removal(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
+    let removing = conn
+        .query_row(
+            "SELECT 1 FROM friends \
+             WHERE owner_key = ?1 AND public_key = ?2 AND friendship_state = 'removing'",
+            params![owner_key, public_key],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if removing {
+        conn.execute(
+            "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
+            params![owner_key, public_key],
+        )?;
+        delete(conn, owner_key, public_key)?;
+    }
+    Ok(())
+}
+
 /// Record an outgoing request: a `pending_out` row, unless the friend is
-/// already there.
+/// already there (a friend we are removing is added afresh).
 ///
 /// # Errors
 /// The write failed.
@@ -65,6 +87,7 @@ pub fn insert_pending_out(
     display_name: &str,
     added_at: i64,
 ) -> rusqlite::Result<()> {
+    end_removal(conn, owner_key, public_key)?;
     conn.execute(
         "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
          VALUES (?1, ?2, ?3, ?4, 'pending_out')",
@@ -73,7 +96,8 @@ pub fn insert_pending_out(
     Ok(())
 }
 
-/// Record an accepted friend, unless the friend is already there.
+/// Record an accepted friend, unless the friend is already there (a friend
+/// we are removing is added afresh).
 ///
 /// # Errors
 /// The write failed.
@@ -84,9 +108,10 @@ pub fn insert_accepted(
     display_name: &str,
     added_at: i64,
 ) -> rusqlite::Result<()> {
+    end_removal(conn, owner_key, public_key)?;
     conn.execute(
-        "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) \
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
+         VALUES (?1, ?2, ?3, ?4, 'accepted')",
         params![owner_key, public_key, display_name, added_at],
     )?;
     Ok(())
@@ -106,6 +131,7 @@ pub fn replace_with_invited(
     profile_key: &str,
     mailbox_key: &str,
 ) -> rusqlite::Result<()> {
+    end_removal(conn, owner_key, public_key)?;
     delete(conn, owner_key, public_key)?;
     conn.execute(
         "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, \
@@ -180,7 +206,6 @@ pub fn avatar(
 pub enum Column {
     DisplayName,
     Nickname,
-    FriendshipState,
     DhtRecordKey,
     MailboxDhtKey,
     LastSeenAt,
@@ -193,7 +218,6 @@ impl Column {
         match self {
             Self::DisplayName => "display_name",
             Self::Nickname => "nickname",
-            Self::FriendshipState => "friendship_state",
             Self::DhtRecordKey => "dht_record_key",
             Self::MailboxDhtKey => "mailbox_dht_key",
             Self::LastSeenAt => "last_seen_at",
@@ -222,6 +246,45 @@ pub fn set(
         params![value, owner_key, public_key],
     )?;
     Ok(())
+}
+
+/// Set the friend's friendship state.
+///
+/// # Errors
+/// The write failed.
+pub fn set_state(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+    state: FriendshipState,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE friends SET friendship_state = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+        params![state.as_str(), owner_key, public_key],
+    )?;
+    Ok(())
+}
+
+/// Forget the friends we removed once nothing is queued to them any more
+/// (their `Unfriended` notice was acknowledged or ran out of retries);
+/// their keys.
+///
+/// # Errors
+/// The query or a delete failed.
+pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
+    let done = conn
+        .prepare(
+            "SELECT public_key FROM friends f \
+             WHERE owner_key = ?1 AND friendship_state = 'removing' \
+               AND NOT EXISTS (SELECT 1 FROM pending_messages p \
+                               WHERE p.owner_key = f.owner_key AND p.recipient_key = f.public_key)",
+        )?
+        .query_map(params![owner_key], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    for public_key in &done {
+        delete(conn, owner_key, public_key)?;
+    }
+    Ok(done)
 }
 
 /// Every friend's DM log key: `(friend public key, log key)`.
@@ -275,7 +338,7 @@ fn to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<FriendRecord> {
         added_at_us: u64::try_from(row.get::<_, i64>(5)?)
             .unwrap_or(0)
             .saturating_mul(1_000),
-        status: FriendStatus::from_wire(&row.get::<_, String>(6)?),
+        status: crate::row::get_enum(row, "friendship_state")?,
     })
 }
 
@@ -368,7 +431,7 @@ mod tests {
         let rows = load_all(&conn, OWNER).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].display_name, "Bob");
-        assert_eq!(rows[0].friendship_state, "pending_out");
+        assert_eq!(rows[0].friendship_state, FriendshipState::PendingOut);
     }
 
     #[test]
@@ -384,7 +447,63 @@ mod tests {
         let record = record_by_profile_key(&conn, OWNER, "profile")
             .unwrap()
             .unwrap();
-        assert_eq!(record.status, FriendStatus::PendingOut);
+        assert_eq!(record.status, FriendshipState::PendingOut);
+    }
+
+    #[test]
+    fn a_removed_friend_is_forgotten_once_nothing_is_queued_to_them() {
+        let conn = fixture::conn();
+        insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        set_state(&conn, OWNER, "bob", FriendshipState::Removing).unwrap();
+        conn.execute(
+            "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
+             VALUES (?1, 'bob', 'unfriended', 1)",
+            params![OWNER],
+        )
+        .unwrap();
+        assert!(forget_removed(&conn, OWNER).unwrap().is_empty());
+        assert_eq!(
+            load_all(&conn, OWNER).unwrap()[0].friendship_state,
+            FriendshipState::Removing
+        );
+        conn.execute("DELETE FROM pending_messages", []).unwrap();
+        assert_eq!(forget_removed(&conn, OWNER).unwrap(), ["bob"]);
+        assert!(load_all(&conn, OWNER).unwrap().is_empty());
+    }
+
+    #[test]
+    fn adding_a_friend_we_are_removing_ends_the_removal() {
+        let conn = fixture::conn();
+        insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        set_state(&conn, OWNER, "bob", FriendshipState::Removing).unwrap();
+        conn.execute(
+            "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
+             VALUES (?1, 'bob', 'unfriended', 1)",
+            params![OWNER],
+        )
+        .unwrap();
+        insert_pending_out(&conn, OWNER, "bob", "Bob", 2).unwrap();
+        assert_eq!(
+            load_all(&conn, OWNER).unwrap()[0].friendship_state,
+            FriendshipState::PendingOut
+        );
+        let queued: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pending_messages", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(queued, 0);
+    }
+
+    #[test]
+    fn a_corrupt_friendship_state_is_a_read_error() {
+        let conn = fixture::conn();
+        insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        conn.pragma_update(None, "ignore_check_constraints", true)
+            .unwrap();
+        conn.execute("UPDATE friends SET friendship_state = 'active'", [])
+            .unwrap();
+        let err = load_all(&conn, OWNER).unwrap_err().to_string();
+        assert!(err.contains("friendship_state"), "{err}");
+        assert!(record(&conn, OWNER, "bob").is_err());
     }
 
     #[test]

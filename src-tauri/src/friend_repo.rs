@@ -7,7 +7,7 @@ use std::sync::Arc;
 use rekindle_db::repo::friends::{self, Column};
 
 use crate::db_helpers::{db_call, db_fire};
-use crate::state::AppState;
+use crate::state::{AppState, FriendshipState};
 use crate::state_helpers;
 use rekindle_db::Db;
 
@@ -58,33 +58,27 @@ pub fn fire_update_friendship_state(
     state: &Arc<AppState>,
     pool: &Db,
     public_key: &str,
-    value: &str,
+    value: FriendshipState,
 ) {
-    fire_set(
-        state,
-        pool,
-        public_key,
-        Column::FriendshipState,
-        value.to_string(),
-        "update friendship state",
-    );
+    let ok = state_helpers::owner_key_or_default(state);
+    let pk = public_key.to_string();
+    db_fire(pool, "update friendship state", move |conn| {
+        friends::set_state(conn, &ok, &pk, value)
+    });
 }
 
-/// Store a friend's friendship state and wait for the write: for a call
-/// site whose next step (a send) must not run ahead of the stored row.
+/// Store a friend's friendship state and wait for the write: the next
+/// step (a send, or the removal's retries) must not run ahead of the
+/// stored row.
 pub async fn update_friendship_state(
     state: &Arc<AppState>,
     pool: &Db,
     public_key: &str,
-    value: &str,
+    value: FriendshipState,
 ) -> Result<(), String> {
     let ok = state_helpers::owner_key_or_default(state);
     let pk = public_key.to_string();
-    let value = value.to_string();
-    db_call(pool, move |conn| {
-        friends::set(conn, &ok, &pk, Column::FriendshipState, value)
-    })
-    .await
+    db_call(pool, move |conn| friends::set_state(conn, &ok, &pk, value)).await
 }
 
 /// Fire-and-forget: update a friend's mailbox DHT key.

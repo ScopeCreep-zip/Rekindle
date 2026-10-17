@@ -50,7 +50,11 @@ CREATE TABLE IF NOT EXISTS friends (
     -- The daemon's shared DM log with this friend (a DhtLog spine key).
     -- E2.1 drops it with the friend inbox.
     dm_log_key TEXT,
-    friendship_state TEXT NOT NULL DEFAULT 'accepted',
+    -- `FriendshipState` (plan D2). `removing`: we removed them and the
+    -- `Unfriended` notice is still queued; the row keeps their routing
+    -- information until nothing is queued to them.
+    friendship_state TEXT NOT NULL
+        CHECK(friendship_state IN ('pending_out', 'accepted', 'removing')),
     -- Phase 2 Track A.2 — Friend's most-recently-seen DeviceId
     -- (hex Ed25519 device pubkey). NULL until they advertise via the
     -- DeviceList owner subkey on their per-pair inbox.

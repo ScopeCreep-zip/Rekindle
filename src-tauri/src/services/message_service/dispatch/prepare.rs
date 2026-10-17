@@ -11,7 +11,7 @@ use rekindle_protocol::messaging::receiver::{
     parse_sealed_payload, process_incoming, received_sealing,
 };
 use rekindle_protocol::messaging::replay::Sighting;
-use rekindle_types::friend_store::FriendStatus;
+use rekindle_types::friend_store::FriendshipState;
 
 use crate::db_helpers::db_call;
 use crate::state::AppState;
@@ -117,13 +117,13 @@ pub(super) async fn prepare_incoming(
 /// - The friend-handshake and invitation payloads come from anyone not
 ///   blocked (blocking is checked before this).
 /// - `FriendAccept` comes from a sender we sent a request to
-///   (`PendingOut`) or one already `Active`: the higher side of a crossing
-///   request is `Active` with no session when the lower side's accept
+///   (`PendingOut`) or one already `Accepted`: the higher side of a crossing
+///   request is `Accepted` with no session when the lower side's accept
 ///   arrives, and `handle_friend_accept` decides whether to answer it.
 ///   Never from a stranger or a `Removing` row. Before plan C7.25 it
-///   needed `Active`, so the requester dropped every accept.
-/// - Everything else needs `Active`.
-pub(super) fn sender_admitted(payload: &MessagePayload, status: Option<FriendStatus>) -> bool {
+///   needed `Accepted`, so the requester dropped every accept.
+/// - Everything else needs `Accepted`.
+pub(super) fn sender_admitted(payload: &MessagePayload, status: Option<FriendshipState>) -> bool {
     match payload {
         MessagePayload::FriendRequest { .. }
         | MessagePayload::FriendRequestReceived
@@ -137,10 +137,10 @@ pub(super) fn sender_admitted(payload: &MessagePayload, status: Option<FriendSta
         MessagePayload::FriendAccept { .. } => {
             matches!(
                 status,
-                Some(FriendStatus::PendingOut | FriendStatus::Active)
+                Some(FriendshipState::PendingOut | FriendshipState::Accepted)
             )
         }
-        _ => status == Some(FriendStatus::Active),
+        _ => status == Some(FriendshipState::Accepted),
     }
 }
 
@@ -249,21 +249,24 @@ mod tests {
 
     #[test]
     fn friend_accept_reaches_the_requester() {
-        assert!(sender_admitted(&accept(), Some(FriendStatus::PendingOut)));
-        // The higher side of a crossing request is already Active.
-        assert!(sender_admitted(&accept(), Some(FriendStatus::Active)));
+        assert!(sender_admitted(
+            &accept(),
+            Some(FriendshipState::PendingOut)
+        ));
+        // The higher side of a crossing request is already Accepted.
+        assert!(sender_admitted(&accept(), Some(FriendshipState::Accepted)));
     }
 
     #[test]
     fn friend_accept_from_a_stranger_or_a_removed_row_drops() {
         assert!(!sender_admitted(&accept(), None));
-        assert!(!sender_admitted(&accept(), Some(FriendStatus::Removing)));
+        assert!(!sender_admitted(&accept(), Some(FriendshipState::Removing)));
     }
 
     #[test]
     fn a_pending_sender_may_send_nothing_but_the_accept() {
-        assert!(!sender_admitted(&dm(), Some(FriendStatus::PendingOut)));
+        assert!(!sender_admitted(&dm(), Some(FriendshipState::PendingOut)));
         assert!(!sender_admitted(&dm(), None));
-        assert!(sender_admitted(&dm(), Some(FriendStatus::Active)));
+        assert!(sender_admitted(&dm(), Some(FriendshipState::Accepted)));
     }
 }

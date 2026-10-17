@@ -1,7 +1,7 @@
 //! Phase 23.C — `load_friends_from_db` lifted from `commands/auth.rs`.
 
 use crate::db_helpers::db_call;
-use crate::state::{FriendState, FriendshipState, SharedState, UserStatus};
+use crate::state::{FriendState, SharedState, UserStatus};
 use rekindle_db::Db;
 
 /// Load friends from `SQLite` into `AppState`, scoped to the given identity.
@@ -18,10 +18,6 @@ pub async fn load_friends_from_db(
 
     let mut friends = state.friends.write();
     for row in rows {
-        let friendship_state = match row.friendship_state.as_str() {
-            "pending_out" => FriendshipState::PendingOut,
-            _ => FriendshipState::Accepted,
-        };
         friends.insert(
             row.public_key.clone(),
             FriendState {
@@ -39,7 +35,7 @@ pub async fn load_friends_from_db(
                 remote_conversation_key: row.remote_conversation_key,
                 mailbox_dht_key: row.mailbox_dht_key,
                 last_heartbeat_at: None,
-                friendship_state,
+                friendship_state: row.friendship_state,
                 handshake_error: None,
             },
         );

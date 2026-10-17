@@ -352,7 +352,12 @@ pub(crate) async fn handle_friend_accept_full(
         }
     }
     // Persist friendship_state transition to DB
-    crate::friend_repo::fire_update_friendship_state(state, pool, a.sender_hex, "accepted");
+    crate::friend_repo::fire_update_friendship_state(
+        state,
+        pool,
+        a.sender_hex,
+        crate::state::FriendshipState::Accepted,
+    );
     // Persist profile key to `SQLite`
     if !a.profile_dht_key.is_empty() {
         crate::friend_repo::fire_update_dht_record_key(

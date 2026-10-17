@@ -33,42 +33,53 @@ pub enum FriendStoreError {
     Backend(String),
 }
 
-/// Friendship state, as the `friends.friendship_state` column stores it.
+/// A friendship's state: the one type every host uses, stored in
+/// `friends.friendship_state` (plan D2).
 ///
 /// Authorization rule applied at receive-dispatch:
-/// - `Active` — sender is authorized for any envelope variant.
-/// - `PendingOut` — *we* sent a friend request and are awaiting their
-///   accept. Sender is authorized only for `FriendAccept` (W16.10e
+/// - `Accepted`: the sender is authorized for any envelope variant.
+/// - `PendingOut`: *we* sent a friend request and are awaiting their
+///   accept. The sender is authorized only for `FriendAccept` (W16.10e
 ///   idempotent receive; enforced in the desktop's
 ///   `dispatch::prepare::sender_admitted`, plan C7.25); other variants
 ///   drop.
-/// - `Removing` — friendship is being torn down. Envelopes silently dropped.
+/// - `Removing`: we removed the friend and the `Unfriended` notice is still
+///   queued to them. The row keeps their routing information for the
+///   retries and is forgotten once nothing is queued; their envelopes drop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FriendStatus {
-    Active,
+#[serde(rename_all = "camelCase")]
+pub enum FriendshipState {
     PendingOut,
+    Accepted,
     Removing,
 }
 
-impl FriendStatus {
-    /// Parse from the SQLite `friendship_state` column. The `"removing"`
-    /// row value and any unknown value both map to `Removing` — the safest
-    /// non-active default, so a corrupted or future-schema status row
-    /// cannot auto-authorize.
-    pub fn from_wire(s: &str) -> Self {
-        match s {
-            "accepted" => Self::Active,
-            "pending_out" => Self::PendingOut,
-            _ => Self::Removing,
+impl FriendshipState {
+    /// The stored form (`friends.friendship_state`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PendingOut => "pending_out",
+            Self::Accepted => "accepted",
+            Self::Removing => "removing",
         }
     }
+}
 
-    /// Wire form. Matches existing `friends.friendship_state` values.
-    pub fn as_wire(self) -> &'static str {
-        match self {
-            Self::Active => "accepted",
-            Self::PendingOut => "pending_out",
-            Self::Removing => "removing",
+/// A stored friendship state that is none of the known values.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown friendship state {0:?}")]
+pub struct UnknownFriendshipState(pub String);
+
+impl std::str::FromStr for FriendshipState {
+    type Err = UnknownFriendshipState;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending_out" => Ok(Self::PendingOut),
+            "accepted" => Ok(Self::Accepted),
+            "removing" => Ok(Self::Removing),
+            other => Err(UnknownFriendshipState(other.to_string())),
         }
     }
 }
@@ -95,7 +106,7 @@ pub struct FriendRecord {
     pub display_name: String,
     /// Microseconds since epoch when this friendship was added.
     pub added_at_us: u64,
-    pub status: FriendStatus,
+    pub status: FriendshipState,
 }
 
 /// Receive-path read API for the friend authority.
@@ -129,18 +140,18 @@ pub trait FriendStore: Send + Sync {
         pubkey_hexes: &[String],
     ) -> Result<Vec<FriendRecord>, FriendStoreError>;
 
-    /// All `Active` friends for this owner. Used at attach time to install
+    /// All `Accepted` friends for this owner. Used at attach time to install
     /// per-pair inbox watches for each.
     async fn iter_active(&self, owner_key: &str) -> Result<Vec<FriendRecord>, FriendStoreError>;
 
     /// The sender's friendship status, or `None` for a stranger. The
     /// receive gate reads it: `FriendAccept` is admitted from a
-    /// `PendingOut` sender, everything else needs `Active` (plan C7.25).
+    /// `PendingOut` sender, everything else needs `Accepted` (plan C7.25).
     async fn status_of(
         &self,
         owner_key: &str,
         pubkey_hex: &str,
-    ) -> Result<Option<FriendStatus>, FriendStoreError> {
+    ) -> Result<Option<FriendshipState>, FriendStoreError> {
         Ok(self
             .lookup_by_pubkey(owner_key, pubkey_hex)
             .await?
@@ -149,7 +160,7 @@ pub trait FriendStore: Send + Sync {
 
     /// Boolean test for receive-path gating. Replaces
     /// `src-tauri/src/state_helpers::is_friend`.
-    /// Returns `true` only for `FriendStatus::Active`.
+    /// Returns `true` only for `FriendshipState::Accepted`.
     async fn is_active_friend(
         &self,
         owner_key: &str,
@@ -158,6 +169,6 @@ pub trait FriendStore: Send + Sync {
         Ok(self
             .lookup_by_pubkey(owner_key, pubkey_hex)
             .await?
-            .is_some_and(|f| f.status == FriendStatus::Active))
+            .is_some_and(|f| f.status == FriendshipState::Accepted))
     }
 }

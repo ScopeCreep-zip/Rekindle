@@ -274,7 +274,7 @@
     "friend": {
       "added": {
         "displayName": "Bob",
-        "friendshipState": "active",
+        "friendshipState": "pendingOut",
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }

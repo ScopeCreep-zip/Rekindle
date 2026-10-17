@@ -110,7 +110,7 @@ impl FriendStore for SqliteFriendStore {
 mod tests {
     use super::*;
     use crate::repo::fixture::{self, OWNER};
-    use rekindle_types::friend_store::FriendStatus;
+    use rekindle_types::friend_store::FriendshipState;
 
     /// A store over the real schema with one friend per `(key, state)`.
     fn store_with(friends: &[(&str, &str)]) -> SqliteFriendStore {
@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(record.current_device_id.as_deref(), Some("device-id-hex"));
         assert_eq!(record.display_name, "Alice");
         assert_eq!(record.added_at_us, 1_700_000_000_000_000);
-        assert_eq!(record.status, FriendStatus::Active);
+        assert_eq!(record.status, FriendshipState::Accepted);
     }
 
     #[tokio::test]

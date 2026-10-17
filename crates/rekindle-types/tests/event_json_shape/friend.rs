@@ -64,7 +64,7 @@ pub fn samples() -> Vec<Sample> {
             FriendEvent::Added {
                 peer_key: pk('b'),
                 display_name: text("Bob"),
-                friendship_state: text("active"),
+                friendship_state: rekindle_types::friend_store::FriendshipState::PendingOut,
             },
         ),
         ev("removed", FriendEvent::Removed { peer_key: pk('b') }),

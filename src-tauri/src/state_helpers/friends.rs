@@ -28,7 +28,7 @@ pub fn is_friend(state: &Arc<AppState>, public_key: &str) -> bool {
 pub async fn friend_status_authoritative(
     state: &Arc<AppState>,
     public_key: &str,
-) -> Option<rekindle_types::friend_store::FriendStatus> {
+) -> Option<FriendshipState> {
     let store = state.friend_store.read().as_ref().cloned()?;
     let owner = owner_key_or_default(state);
     match store.status_of(&owner, public_key).await {
@@ -80,12 +80,14 @@ pub fn accepted_friend_keys(state: &Arc<AppState>) -> Vec<String> {
         .collect()
 }
 
-/// Collect friends with DHT record keys (for sync/presence).
+/// Collect friends with DHT record keys (for sync/presence); a friend we
+/// are removing is not watched.
 pub fn friends_with_dht_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
     state
         .friends
         .read()
         .values()
+        .filter(|f| f.friendship_state != FriendshipState::Removing)
         .filter_map(|f| {
             f.dht_record_key
                 .as_ref()

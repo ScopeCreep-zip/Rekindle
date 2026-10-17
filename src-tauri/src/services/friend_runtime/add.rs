@@ -86,7 +86,7 @@ pub async fn add_friend_inner(
             rekindle_types::subscription_events::FriendEvent::Added {
                 peer_key: public_key.clone(),
                 display_name: display_name.clone(),
-                friendship_state: "pendingOut".to_string(),
+                friendship_state: FriendshipState::PendingOut,
             },
         ),
     );

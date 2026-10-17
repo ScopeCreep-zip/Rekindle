@@ -50,7 +50,7 @@ pub use nickname::set_friend_nickname_inner;
 pub use outgoing_invites::{cancel_invite_inner, get_outgoing_invites_inner};
 pub use pending::{get_pending_requests_inner, PendingFriendRequest};
 pub use reject::reject_request_inner;
-pub use remove::remove_friend_inner;
+pub use remove::{forget_removed_friends, remove_friend_inner};
 pub use rotate::rotate_profile_key;
 pub use session_reset::{
     accept_session_reset_inner, decline_session_reset_inner, reset_signal_session_inner,

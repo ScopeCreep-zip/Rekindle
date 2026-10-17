@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::db_helpers::db_call;
-use crate::state::AppState;
+use crate::state::{AppState, FriendshipState};
 use crate::state_helpers;
 use rekindle_db::Db;
 
@@ -64,6 +64,10 @@ pub async fn start_sync_loop(
         }
         if let Err(e) = retry_pending_messages(&state, &pool, &stop).await {
             tracing::warn!(error = %e, "pending message retry failed");
+        }
+        if let Err(e) = crate::services::friend_runtime::forget_removed_friends(&state, &pool).await
+        {
+            tracing::warn!(error = %e, "forgetting removed friends failed");
         }
         // Every ~6th tick (~3 minutes) — expire stale pending requests + invites
         if tick_count.is_multiple_of(6) && !stop.is_cancelled() {
@@ -194,6 +198,7 @@ async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> 
         let friends = state.friends.read();
         friends
             .values()
+            .filter(|f| f.friendship_state != FriendshipState::Removing)
             .filter_map(|f| {
                 f.remote_conversation_key
                     .as_ref()
