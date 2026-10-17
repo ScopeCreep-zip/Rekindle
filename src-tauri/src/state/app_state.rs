@@ -115,11 +115,6 @@ pub struct AppState {
     pub cold_start: std::sync::Arc<
         rekindle_transport::subscriptions::ColdStartBuffer<veilid_core::VeilidUpdate>,
     >,
-    /// Journaled webview events, replayed to a window that reloads.
-    /// Capacity 10_000, FIFO eviction. Written by
-    /// `event_dispatch::emit_journaled`.
-    pub event_journal:
-        std::sync::Arc<rekindle_events::EventJournal<crate::event_dispatch::WebviewEvent>>,
     /// The single queue every webview event goes through.
     pub event_dispatch: std::sync::Arc<crate::event_dispatch::EventDispatch>,
     /// Per-window event channels (`subscribe_events`).
@@ -339,7 +334,6 @@ impl Default for AppState {
             cold_start: std::sync::Arc::new(
                 rekindle_transport::subscriptions::ColdStartBuffer::new(),
             ),
-            event_journal: std::sync::Arc::new(rekindle_events::EventJournal::new(10_000)),
             event_dispatch: std::sync::Arc::new(crate::event_dispatch::EventDispatch::new()),
             event_router: crate::event_router::WebviewRouter::default(),
             host: super::host_slot::HostSlot::default(),

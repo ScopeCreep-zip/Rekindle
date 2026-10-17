@@ -3,8 +3,10 @@
 //! reach it over the bus, whose subscriber calls it for each request. F1
 //! swaps the GUI's implementation for `DaemonClient`.
 
+pub use rekindle_events::EventStream;
 use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+pub use rekindle_types::subscription_events::Cursor;
 
 /// The connection a request came on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -50,11 +52,20 @@ pub trait HostApi: Send + Sync {
     /// Clearance, then dispatch by `Lane` (`validate_request` runs in
     /// dispatch; D3.3 puts the intent gate between them).
     async fn call(&self, caller: Caller, req: IpcRequest) -> IpcResponse;
+
+    /// The host's event stream from `from` (plan D21): sequenced and
+    /// resumable — what followed `from`, then `Resumed`, or
+    /// `InvalidSession`; `None` for live frames only.
+    fn subscribe(&self, from: Option<Cursor>) -> EventStream;
 }
 
 #[async_trait::async_trait]
 impl HostApi for super::Host {
     async fn call(&self, caller: Caller, req: IpcRequest) -> IpcResponse {
         self.ctx.call(req, &caller).await
+    }
+
+    fn subscribe(&self, from: Option<Cursor>) -> EventStream {
+        self.ctx.journal.subscribe(from)
     }
 }

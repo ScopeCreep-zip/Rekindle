@@ -1,5 +1,7 @@
 //! Frame routing: request-response correlation and pub-sub broadcast.
 
+use std::sync::Arc;
+
 use uuid::Uuid;
 
 use super::{ServerState, DAEMON_AGENT_NAME, RATE_LIMIT_MAX_TOKENS, RATE_LIMIT_REFILL_MS};
@@ -20,7 +22,7 @@ use crate::protocol::BusPayload;
 /// - If `correlation_id` is None: this is a new request or broadcast —
 ///   record the `msg_id` for response routing and forward to all other
 ///   connections at sufficient clearance.
-pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
+pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, payload: &[u8]) {
     // Decode the message envelope. Single type for all bus traffic.
     let mut msg: Message<BusPayload> = match decode_frame(payload) {
         Ok(m) => m,
@@ -167,7 +169,7 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
             // Intercept Subscribe/Unsubscribe — handled server-side via EventRouter.
             // These never reach the daemon dispatch.
             match request {
-                crate::protocol::IpcRequest::Subscribe { filters } => {
+                crate::protocol::IpcRequest::Subscribe { filters, from } => {
                     // Events carry the identity's private data: the same
                     // clearance every daemon request but the locked-state
                     // ones needs (plan D1). Delivery re-checks it per event.
@@ -194,15 +196,27 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
                         let conns = state.connections.read().await;
                         conns.get(&sender_conn_id).map(|c| c.tx.clone())
                     };
-                    let response = if let Some(tx) = sender_tx {
-                        match state
-                            .event_router
-                            .write()
-                            .subscribe(sender_conn_id, filters, tx)
-                        {
-                            Ok(count) => crate::protocol::IpcResponse::ok(&serde_json::json!({
-                                "subscribed": true, "filter_count": count,
-                            })),
+                    let response = if state.journal.get().is_none() {
+                        crate::protocol::IpcResponse::error(503, "host starting — retry shortly")
+                    } else if let Some(tx) = sender_tx {
+                        let subscribed = state.event_router.write().subscribe(
+                            sender_conn_id,
+                            filters,
+                            tx.clone(),
+                        );
+                        match subscribed {
+                            // The reply goes first, then the stream: the
+                            // client is waiting on the reply before reading
+                            // its event queue.
+                            Ok(count) => {
+                                let response =
+                                    crate::protocol::IpcResponse::ok(&serde_json::json!({
+                                        "subscribed": true, "filter_count": count,
+                                    }));
+                                reply_direct(state, sender_conn_id, &msg, &response).await;
+                                super::stream::start(state, sender_conn_id, tx, *from);
+                                return;
+                            }
                             Err(reason) => crate::protocol::IpcResponse::error(400, reason),
                         }
                     } else {
@@ -263,22 +277,13 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
                 "uncorrelated response without correlation_id, dropping"
             );
         }
-        BusPayload::Event(ref event) => {
-            // Events from the daemon's bridge task: route via EventRouter.
-            // Only the daemon agent may send events. Other sources are rejected.
-            if !is_daemon(state, sender_conn_id).await {
-                tracing::warn!(
-                    conn_id = sender_conn_id,
-                    "event from non-daemon source — rejected"
-                );
-                return;
-            }
-            let cleared = state.cleared_connections().await;
-            let (delivered, dropped) = state
-                .event_router
-                .read()
-                .deliver(event, |id| cleared.contains(&id));
-            tracing::debug!(delivered, dropped, "event routed via EventRouter");
+        BusPayload::Event(_) => {
+            // Events come only from the host's journal, each connection's
+            // own stream (`stream`); no connection may send one.
+            tracing::warn!(
+                conn_id = sender_conn_id,
+                "event frame from a connection — rejected"
+            );
         }
         BusPayload::Media(_) => {
             // Compressed video frame from the daemon. Fan out DIRECTLY to every

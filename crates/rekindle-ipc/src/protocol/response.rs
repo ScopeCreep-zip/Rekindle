@@ -99,8 +99,10 @@ pub enum BusPayload {
     /// JSON by the client. This is the only type that crosses the postcard/JSON
     /// boundary — all other variants are fully postcard-compatible.
     Response(Vec<u8>),
-    /// Daemon → Frontend push event, routed via EventRouter to subscribed connections.
-    Event(rekindle_types::subscription_events::SubscriptionEvent),
+    /// Host → frontend stream frame (plan D3.2): a journaled event with its
+    /// cursor, `Resumed` after a replay, or `InvalidSession`. Each
+    /// subscribed connection has its own ordered stream from the journal.
+    Event(rekindle_types::subscription_events::StreamFrame),
     /// Daemon → Frontend compressed video frame.
     ///
     /// A sibling of `Event`, deliberately **not** an event: media bypasses the

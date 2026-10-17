@@ -192,7 +192,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
 
     // The single event-dispatch task: every webview event goes through
     // it to the windows in its audience (`event_router`).
-    event_dispatch::spawn_dispatch_loop(app.handle().clone(), state);
+    event_dispatch::spawn_dispatch_loop(state);
 
     tracing::info!("Rekindle started");
     Ok(())
@@ -216,6 +216,9 @@ async fn start_host(
     })
     .await
     .map_err(|e| format!("{e:#}"))?;
+    if let Some(app) = state.app_handle.read().clone() {
+        crate::event_dispatch::spawn_host_stream(app, state, Arc::clone(&host));
+    }
     state.host.set(host);
     Ok(())
 }

@@ -26,7 +26,7 @@ const ProfileWindow: Component = () => {
   onMount(() => {
     hydrateState();
     unlistenPresence = subscribeProfilePresenceEvents(publicKey);
-    void startEventStream();
+    void startEventStream(() => void hydrateState());
   });
 
   onCleanup(() => {

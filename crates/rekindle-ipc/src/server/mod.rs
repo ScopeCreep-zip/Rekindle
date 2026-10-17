@@ -23,6 +23,7 @@ use super::transport::{Listener, PeerCredentials};
 
 mod connection;
 mod routing;
+mod stream;
 
 /// Rate limit: max requests per second per connection.
 const RATE_LIMIT_MAX_TOKENS: u32 = 100;
@@ -85,9 +86,34 @@ struct ServerState {
     event_router: parking_lot::RwLock<crate::event_router::EventRouter>,
     /// Woken whenever a connection finishes its cleanup.
     connection_closed: tokio::sync::Notify,
+    /// The host's event journal (`start_event_delivery`); subscriptions
+    /// are refused until it is set.
+    journal: std::sync::OnceLock<Arc<rekindle_events::SessionJournal>>,
+    /// Each subscribed connection's stream task (`stream`).
+    streams: parking_lot::Mutex<HashMap<u64, tokio::task::JoinHandle<()>>>,
+    /// The server's tasks (the connections' and their streams), so
+    /// shutdown can wait for them.
+    tasks: tokio_util::task::TaskTracker,
+    /// Stops the accept loop and every stream.
+    stopping: tokio_util::sync::CancellationToken,
 }
 
 impl ServerState {
+    /// Whether `conn_id`'s key holds at least `Authenticated` clearance in
+    /// the registry now (an agent also `events:read`).
+    async fn is_cleared(&self, conn_id: u64) -> bool {
+        let registry = self.registry.read().await;
+        self.connections
+            .read()
+            .await
+            .get(&conn_id)
+            .and_then(|conn| registry.lookup(&conn.static_key))
+            .is_some_and(|identity| {
+                identity.security_level >= crate::message::SecurityLevel::Authenticated
+                    && identity.permits(Some(crate::protocol::AgentCapability::EventsRead))
+            })
+    }
+
     /// The connections whose key holds at least `Authenticated` clearance
     /// in the registry now (an agent also `events:read`).
     async fn cleared_connections(&self) -> std::collections::HashSet<u64> {
@@ -131,6 +157,8 @@ impl BusServer {
         let listener = Listener::bind(path)?;
 
         tracing::info!(path = %path.display(), "IPC bus server bound");
+        let tasks = tokio_util::task::TaskTracker::new();
+        let stopping = tokio_util::sync::CancellationToken::new();
 
         Ok(Self {
             listener,
@@ -145,10 +173,14 @@ impl BusServer {
                 registry,
                 event_router: parking_lot::RwLock::new(crate::event_router::EventRouter::new()),
                 connection_closed: tokio::sync::Notify::new(),
+                journal: std::sync::OnceLock::new(),
+                streams: parking_lot::Mutex::new(HashMap::new()),
+                tasks: tasks.clone(),
+                stopping: stopping.clone(),
             }),
             keypair: Arc::new(keypair),
-            connections: tokio_util::task::TaskTracker::new(),
-            stopping: tokio_util::sync::CancellationToken::new(),
+            connections: tasks,
+            stopping,
         })
     }
 
@@ -266,39 +298,12 @@ impl BusServer {
         &self.socket_path
     }
 
-    /// Start the event delivery system using a watch channel.
-    ///
-    /// The watch carries the subscription event source while the daemon is
-    /// unlocked. The delivery task follows it across lock cycles
-    /// ([`crate::event_source::follow`]) and routes each event through the
-    /// EventRouter to subscribed connections, until the server shuts down.
-    pub fn start_event_delivery(&self, source: crate::event_source::EventSource) {
-        let state = Arc::clone(&self.state);
-        let stopping = self.stopping.clone();
-        self.connections.spawn(async move {
-            crate::event_source::follow(&stopping, source, |event| {
-                let state = Arc::clone(&state);
-                async move {
-                    // Only connections whose key holds `Authenticated` now:
-                    // a lock lowers every client, and the next unlock admits
-                    // only the clients that identity trusts (plan D1).
-                    let cleared = state.cleared_connections().await;
-                    let (delivered, dropped) = state
-                        .event_router
-                        .read()
-                        .deliver(&event, |id| cleared.contains(&id));
-                    if dropped > 0 {
-                        tracing::debug!(
-                            delivered,
-                            dropped,
-                            "event delivery: some recipients dropped"
-                        );
-                    }
-                }
-            })
-            .await;
-            tracing::info!("event delivery stopped");
-        });
+    /// Hand the server the host's event journal (plan D3.2): from here on
+    /// a `Subscribe` starts that connection's stream from it.
+    pub fn start_event_delivery(&self, journal: Arc<rekindle_events::SessionJournal>) {
+        if self.state.journal.set(journal).is_err() {
+            tracing::warn!("event journal already set");
+        }
     }
 }
 

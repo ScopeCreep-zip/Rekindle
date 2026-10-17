@@ -50,7 +50,7 @@ const SettingsWindow: Component = () => {
     handleLoadSettings();
 
     unlistenSwitchTab = subscribeSettingsTab(setActiveTab);
-    void startEventStream();
+    void startEventStream(() => void hydrateState());
   });
 
   onCleanup(() => {

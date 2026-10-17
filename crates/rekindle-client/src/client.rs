@@ -16,7 +16,7 @@ use rekindle_ipc::client::BusClient;
 use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::IpcError;
-use rekindle_types::subscription_events::{SubscriptionEvent, SubscriptionFilter};
+use rekindle_types::subscription_events::{Cursor, StreamFrame, SubscriptionFilter};
 
 use crate::ClientError;
 
@@ -28,8 +28,8 @@ const LONG_TIMEOUT: Duration = Duration::from_secs(180);
 /// A connection to the daemon.
 pub struct DaemonClient {
     client: Arc<BusClient>,
-    /// Typed event stream, taken once by a streaming consumer.
-    event_rx: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<SubscriptionEvent>>>,
+    /// The host's stream frames, taken once by a streaming consumer.
+    event_rx: parking_lot::Mutex<Option<mpsc::Receiver<StreamFrame>>>,
 }
 
 /// The key file name every frontend of this user connects with.
@@ -65,7 +65,10 @@ impl DaemonClient {
             Duration::from_millis(500),
         )
         .await
-        .map_err(|e| ClientError::Connect(e.to_string()))?;
+        .map_err(|e| match e {
+            IpcError::BuildMismatch { client, host } => ClientError::BuildMismatch { client, host },
+            other => ClientError::Connect(other.to_string()),
+        })?;
         let event_rx = client.take_event_receiver();
         Ok(Self {
             client: Arc::new(client),
@@ -73,25 +76,31 @@ impl DaemonClient {
         })
     }
 
-    /// Take the typed event stream. Returns `None` after the first call.
-    pub fn take_event_receiver(&self) -> Option<mpsc::UnboundedReceiver<SubscriptionEvent>> {
+    /// Take the host's stream frames. Returns `None` after the first call.
+    pub fn take_event_receiver(&self) -> Option<mpsc::Receiver<StreamFrame>> {
         self.event_rx.lock().take()
     }
 
-    /// Subscribe this connection to every event category.
+    /// Subscribe this connection to every event category, from `from` (the
+    /// last cursor processed; `None` for live events only).
     ///
     /// # Errors
     /// The request failed or the daemon refused it.
-    pub async fn subscribe_all(&self) -> Result<(), ClientError> {
-        self.subscribe(vec![SubscriptionFilter::all()]).await
+    pub async fn subscribe_all(&self, from: Option<Cursor>) -> Result<(), ClientError> {
+        self.subscribe(vec![SubscriptionFilter::all()], from).await
     }
 
-    /// Subscribe this connection to the events matching `filters`.
+    /// Subscribe this connection to the events matching `filters`, from
+    /// `from` (plan D3.2: replay, then `Resumed`, or `InvalidSession`).
     ///
     /// # Errors
     /// The request failed or the daemon refused it.
-    pub async fn subscribe(&self, filters: Vec<SubscriptionFilter>) -> Result<(), ClientError> {
-        self.request_ok(IpcRequest::Subscribe { filters })
+    pub async fn subscribe(
+        &self,
+        filters: Vec<SubscriptionFilter>,
+        from: Option<Cursor>,
+    ) -> Result<(), ClientError> {
+        self.request_ok(IpcRequest::Subscribe { filters, from })
             .await
             .map(drop)
     }

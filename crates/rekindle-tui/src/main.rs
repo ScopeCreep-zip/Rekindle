@@ -101,8 +101,10 @@ async fn run(args: TuiArgs) -> anyhow::Result<()> {
     tracing::info!(state = %status["state"], "daemon connected");
 
     // Every view renders from this event stream; without it the TUI would
-    // show stale data, so a refused subscription is an error.
-    client.subscribe_all().await?;
+    // show stale data, so a refused subscription is an error. It resumes
+    // from the cursor the last run kept (plan D3.2).
+    let from = app::load_cursor();
+    client.subscribe_all(from).await?;
 
     // Take the event receiver before wrapping in Arc
     let event_rx = client.take_event_receiver();
@@ -115,7 +117,7 @@ async fn run(args: TuiArgs) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("terminal initialization failed: {e}"))?;
     let mut application = app::App::new(Arc::clone(&client), &config, theme_manager, keymap_store);
 
-    let result = application.run(&mut tui, event_rx).await;
+    let result = application.run(&mut tui, event_rx, from).await;
 
     drop(application);
     drop(tui);

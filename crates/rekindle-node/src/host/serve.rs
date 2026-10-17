@@ -8,12 +8,9 @@ use super::{bus_key, watchdog, ConfigFault};
 use crate::daemon::dispatch::DaemonContext;
 use crate::daemon::shutdown::ExitReason;
 
-/// Bind the bus, start its event delivery and accept loop, and connect the
+/// Bind the bus, hand it the journal, start its accept loop, and connect the
 /// host's own subscriber (requests are unicast to it).
-pub(super) async fn serve(
-    ctx: &Arc<DaemonContext>,
-    event_watch_rx: rekindle_ipc::event_source::EventSource,
-) -> anyhow::Result<Bus> {
+pub(super) async fn serve(ctx: &Arc<DaemonContext>) -> anyhow::Result<Bus> {
     let runtime_dir = rekindle_ipc::runtime_dir()?;
     tokio::fs::create_dir_all(&runtime_dir).await?;
     #[cfg(unix)]
@@ -51,7 +48,7 @@ pub(super) async fn serve(
         Arc::clone(&ctx.registry),
     )?);
     tracing::info!(path = %socket_path.display(), "IPC bus server bound");
-    server.start_event_delivery(event_watch_rx);
+    server.start_event_delivery(Arc::clone(&ctx.journal));
 
     let accept = spawn_accept(&server, &ctx.shutdown);
     let subscriber = spawn_bus_subscriber(Arc::clone(ctx), socket_path, subscriber_kp);

@@ -30,6 +30,7 @@ rekindle-governance-runtime = { path = "../rekindle-governance-runtime" }
 # boundary. No veilid_core types are named from this crate.
 rekindle-audit = { path = "../rekindle-audit" }
 rekindle-db = { path = "../rekindle-db" }
+rekindle-events = { path = "../rekindle-events" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-protocol = { path = "../rekindle-protocol" }

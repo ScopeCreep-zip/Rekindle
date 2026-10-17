@@ -289,7 +289,7 @@ export function useCommunityWindow() {
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityVoiceEvents());
     unlisteners.push(subscribeCommunityChannelChatEvents(() => activeCommunity()?.myPseudonymKey));
-    void startEventStream();
+    void startEventStream(() => void hydrateState());
 
     // Architecture §23 — global Cmd/Ctrl-F opens the message search overlay.
     window.addEventListener("keydown", searchShortcutHandler);

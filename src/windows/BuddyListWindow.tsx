@@ -86,7 +86,7 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     unlisteners.push(subscribeDeepLinkHandler());
     unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
-    void startEventStream();
+    void startEventStream(() => void hydrateState());
     void refreshMissedCalls();
 
     // Await hydration so store is populated before subsequent commands

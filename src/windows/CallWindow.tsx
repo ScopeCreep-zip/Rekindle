@@ -22,13 +22,9 @@ const CallWindow: Component = () => {
   const callId = getCallIdFromUrl();
   const unlisteners: Promise<UnlistenFn>[] = [];
 
-  onMount(async () => {
-    unlisteners.push(subscribeCallEvents({ owner: false }));
-    // The backend sends a DM call's voice events (mute, speaking,
-    // connection quality) to its call window too; without this the
-    // panel's peer state never moved (plan C7.28).
-    unlisteners.push(initVoiceEventListener());
-    void startEventStream();
+  /// Load this call's state from the backend: at mount, and again when the
+  /// event stream says this window's state may be stale.
+  async function load(): Promise<void> {
     const snapshot = await commands.getActiveCall(callId);
     if (!snapshot) return;
     const entry: CallEntry = {
@@ -46,6 +42,16 @@ const CallWindow: Component = () => {
     if (snapshot.connected && snapshot.kind === "video") {
       setVoiceState("cameraOn", true);
     }
+  }
+
+  onMount(async () => {
+    unlisteners.push(subscribeCallEvents({ owner: false }));
+    // The backend sends a DM call's voice events (mute, speaking,
+    // connection quality) to its call window too; without this the
+    // panel's peer state never moved (plan C7.28).
+    unlisteners.push(initVoiceEventListener());
+    void startEventStream(() => void load());
+    await load();
   });
 
   onCleanup(() => {

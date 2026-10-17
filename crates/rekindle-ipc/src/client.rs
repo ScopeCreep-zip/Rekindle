@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use rekindle_types::subscription_events::StreamFrame;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
@@ -33,6 +34,38 @@ use super::transport::PeerCredentials;
 /// consumer without hoarding stale video.
 const MEDIA_RECEIVER_CAPACITY: usize = 128;
 
+/// How many stream frames the client buffers for its consumer.
+const EVENT_QUEUE_CAPACITY: usize = 1024;
+
+/// The consumer's bounded event queue (plan D3.2). A consumer that falls
+/// a full queue behind loses frames, so it is told `InvalidSession` (as
+/// soon as there is room) and reloads; frames until then are dropped.
+struct EventQueue {
+    tx: mpsc::Sender<StreamFrame>,
+    lagging: bool,
+}
+
+impl EventQueue {
+    fn push(&mut self, frame: StreamFrame) {
+        if self.lagging {
+            if self.tx.try_send(StreamFrame::InvalidSession).is_ok() {
+                self.lagging = false;
+            }
+            return;
+        }
+        match self.tx.try_send(frame) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                tracing::warn!("event consumer fell behind; it reloads");
+                self.lagging = true;
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                tracing::debug!("event channel closed, event dropped");
+            }
+        }
+    }
+}
+
 /// The IPC bus client used by frontends and agents.
 pub struct BusClient {
     sender_id: Uuid,
@@ -43,8 +76,7 @@ pub struct BusClient {
     inbound_rx: mpsc::Receiver<Vec<u8>>,
     /// Typed subscription events from the server's EventRouter.
     /// Taken once by the consumer via `take_event_receiver()`.
-    event_rx:
-        Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
+    event_rx: Option<mpsc::Receiver<StreamFrame>>,
     /// Bounded, drop-oldest media frame channel. Taken once via
     /// `take_media_receiver()`. Video frames arrive at frame rate and a late
     /// one is worthless, so this bypasses the ordered event channel — a full
@@ -91,8 +123,11 @@ impl BusClient {
 
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<Vec<u8>>(256);
         let (inbound_tx, inbound_rx) = mpsc::channel::<Vec<u8>>(1024);
-        let (event_tx, event_rx) =
-            mpsc::unbounded_channel::<rekindle_types::subscription_events::SubscriptionEvent>();
+        let (event_tx, event_rx) = mpsc::channel::<StreamFrame>(EVENT_QUEUE_CAPACITY);
+        let mut events = EventQueue {
+            tx: event_tx,
+            lagging: false,
+        };
         let (media_tx, media_rx) = media_channel::<MediaFrame>(MEDIA_RECEIVER_CAPACITY);
         let pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -115,7 +150,7 @@ impl BusClient {
                                     payload,
                                     &pending_clone,
                                     &inbound_tx,
-                                    &event_tx,
+                                    &mut events,
                                     &media_tx,
                                 ).await;
                             }
@@ -170,6 +205,8 @@ impl BusClient {
         for attempt in 1..=max_attempts {
             match Self::connect(sender_id, path, server_public_key, client_keypair).await {
                 Ok(client) => return Ok(client),
+                // Another build will not become this one by retrying.
+                Err(e @ IpcError::BuildMismatch { .. }) => return Err(e),
                 Err(e) => {
                     tracing::warn!(attempt, error = %e, "IPC connect failed, retrying");
                     last_err = Some(e);
@@ -300,10 +337,7 @@ impl BusClient {
     ///
     /// The TUI calls this at startup to get the event stream. The receiver
     /// is moved out — subsequent calls return `None`.
-    pub fn take_event_receiver(
-        &mut self,
-    ) -> Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>
-    {
+    pub fn take_event_receiver(&mut self) -> Option<mpsc::Receiver<StreamFrame>> {
         self.event_rx.take()
     }
 
@@ -341,14 +375,14 @@ impl BusClient {
 ///
 /// Four-way split:
 /// - `BusPayload::Response` → pending oneshot waiter (request-response correlation)
-/// - `BusPayload::Event(SubscriptionEvent)` → typed event channel (TUI consumes)
+/// - `BusPayload::Event(StreamFrame)` → bounded event queue (TUI consumes)
 /// - `BusPayload::Media(MediaFrame)` → bounded drop-oldest media channel (video consumer)
 /// - `BusPayload::Request` → inbound channel (daemon subscriber consumes)
 async fn route_inbound(
     payload: Vec<u8>,
     pending: &Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>,
     inbound_tx: &mpsc::Sender<Vec<u8>>,
-    event_tx: &mpsc::UnboundedSender<rekindle_types::subscription_events::SubscriptionEvent>,
+    events: &mut EventQueue,
     media_tx: &MediaSender<MediaFrame>,
 ) {
     let msg: Message<BusPayload> = match decode_frame(&payload) {
@@ -379,13 +413,7 @@ async fn route_inbound(
                 tracing::debug!(correlation_id = %corr_id, "response for unknown request");
             }
         }
-        BusPayload::Event(event) => {
-            // Typed subscription event — send to the dedicated event channel.
-            // The TUI reads from this via DaemonClient::take_event_receiver().
-            if event_tx.send(event).is_err() {
-                tracing::debug!("event channel closed, event dropped");
-            }
-        }
+        BusPayload::Event(frame) => events.push(frame),
         BusPayload::Media(frame) => {
             // Compressed video frame — hand to the bounded, drop-oldest media
             // channel the consumer took via take_media_receiver(). The queue

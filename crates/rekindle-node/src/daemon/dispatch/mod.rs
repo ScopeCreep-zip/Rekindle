@@ -132,9 +132,11 @@ pub struct DaemonContext {
     /// Consolidated outbound broadcast manager (gossip mesh + rate limiting).
     /// None before unlock/resume. Created during Resuming transition.
     pub broadcast_mgr: RwLock<Option<rekindle_transport::BroadcastManager>>,
-    /// Watch channel sender for notifying the IPC server when the subscription
-    /// event source becomes available (on unlock) or unavailable (on lock).
-    /// The server awaits `.changed()` and starts/stops its delivery task.
+    /// The host's one event journal (plan D3.2): every event a frontend
+    /// observes is published here, and every subscriber reads from it.
+    pub journal: std::sync::Arc<rekindle_events::SessionJournal>,
+    /// The transport's subscription event source while unlocked: the
+    /// forwarder (`daemon::event_forward`) journals what it carries.
     pub event_watch_tx: tokio::sync::watch::Sender<
         Option<
             tokio::sync::broadcast::Sender<rekindle_types::subscription_events::SubscriptionEvent>,
@@ -263,14 +265,8 @@ impl DaemonContext {
             .unwrap_or_default()
     }
 
-    /// Publish one `SubscriptionEvent`, if anything is listening.
-    ///
-    /// Send failure means every receiver has dropped, which is the
-    /// normal state with no clients attached — not an error.
+    /// Journal one `SubscriptionEvent` for every subscriber (plan D3.2).
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
-        let guard = self.subscriptions.read();
-        if let Some(manager) = guard.as_ref() {
-            let _ = manager.event_sender().send(event);
-        }
+        self.journal.publish(event);
     }
 }

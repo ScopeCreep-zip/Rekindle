@@ -58,7 +58,7 @@ pub(super) fn handle_direct_message(
         },
     );
     // Journaled so a chat window that reloads mid-stream gets it.
-    crate::event_dispatch::emit_journaled(
+    crate::event_dispatch::emit_from_state(
         state,
         crate::event_dispatch::WebviewEvent::Subscription(event),
     );
@@ -103,7 +103,7 @@ pub(super) fn handle_channel_message(
     };
     // A channel message over a 1:1 envelope names no community, so it can
     // only go to every community window (plan N7 decides this arm's fate).
-    crate::event_dispatch::emit_journaled(
+    crate::event_dispatch::emit_from_state(
         state,
         crate::event_dispatch::WebviewEvent::ChannelChat {
             community_id: None,

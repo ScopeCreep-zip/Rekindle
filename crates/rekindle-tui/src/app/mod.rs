@@ -16,6 +16,9 @@ mod commands;
 mod events;
 mod reducer;
 mod render;
+mod stream;
+
+pub(crate) use stream::load_cursor;
 
 /// Centre a rect inside another — shared with the overlay components,
 /// which each carried a byte-identical copy.
@@ -71,6 +74,10 @@ pub struct App {
     pub(crate) cached_communities: Vec<CachedCommunity>,
     /// Cached identity from the last Status/IdentityShow response.
     pub(crate) cached_identity: Option<CachedIdentity>,
+    /// The last stream frame's cursor (`stream`), and the one last kept on
+    /// disk.
+    pub(crate) cursor: Option<rekindle_types::subscription_events::Cursor>,
+    pub(crate) kept_cursor: Option<rekindle_types::subscription_events::Cursor>,
 }
 
 /// Minimal community cache for UI labels and navigation.
@@ -141,24 +148,27 @@ impl App {
             idle_frames: 0,
             cached_communities: Vec::new(),
             cached_identity: None,
+            cursor: None,
+            kept_cursor: None,
         }
     }
 
     /// Main event loop. Runs until quit.
     ///
-    /// Three event sources in the select loop:
+    /// Two sources:
     /// 1. Terminal events (keys, mouse, resize, tick, render)
-    /// 2. Subscription events from the daemon (typed SubscriptionEvent via IPC)
-    /// 3. Fallback refresh (60s) for data without event coverage
+    /// 2. The host's stream frames (plan D3.2), subscribed from `from` by
+    ///    the caller; `InvalidSession` reloads (`stream`)
     pub async fn run(
         &mut self,
         tui: &mut Tui,
         mut event_rx: Option<
-            tokio::sync::mpsc::UnboundedReceiver<
-                rekindle_types::subscription_events::SubscriptionEvent,
-            >,
+            tokio::sync::mpsc::Receiver<rekindle_types::subscription_events::StreamFrame>,
         >,
+        from: Option<rekindle_types::subscription_events::Cursor>,
     ) -> anyhow::Result<()> {
+        self.cursor = from;
+        self.kept_cursor = from;
         // Set identity from daemon if available
         if let Some(ref id) = self.cached_identity {
             self.nav
@@ -168,18 +178,6 @@ impl App {
         self.loading_spinner.set_label("Loading dashboard...");
         self.loading_spinner.start();
         self.load_dashboard_data();
-
-        // Subscribe to daemon events (TUI gets everything)
-        if event_rx.is_some() {
-            if let Err(e) = self.client.subscribe_all().await {
-                tracing::warn!(error = %e, "event subscription failed — TUI will use polling only");
-            }
-        }
-
-        // 60-second fallback refresh for data without event coverage.
-        // Real-time updates come through the event_rx channel.
-        let mut fallback_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-        fallback_interval.tick().await; // skip immediate first tick
 
         loop {
             tokio::select! {
@@ -194,22 +192,15 @@ impl App {
                         None => break,
                     }
                 }
-                // Subscription events from daemon: real-time updates
-                Some(sub_event) = async {
+                // The host's stream frames: real-time updates
+                Some(frame) = async {
                     match event_rx.as_mut() {
                         Some(rx) => rx.recv().await,
                         None => std::future::pending().await,
                     }
-                } => {
-                    if let Some(action) = self.subscription_event_to_action(sub_event) {
-                        let _ = self.action_tx.send(action);
-                    }
-                }
-                // Fallback refresh: 60s for non-event-covered data
-                _ = fallback_interval.tick() => {
-                    self.load_dashboard_data();
-                }
+                } => self.handle_frame(frame).await,
             }
+            self.keep_cursor();
 
             // Drain any buffered terminal events
             while let Ok(event) = tui.event_rx.try_recv() {

@@ -20,15 +20,26 @@ import type {
 import type { LifecycleState } from "../commands/dto";
 import type { DeepLinkRequest, SettingsTab } from "../commands/types";
 
+/// Where this window is in the host's event stream
+/// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
+interface Cursor {
+  epoch: number;
+  seq: number;
+}
+
 /// What the backend sends on a window's event channel
 /// (`src-tauri/src/event_router.rs::OutboundEnvelope`).
 interface OutboundEnvelope {
-  /// Journal sequence number for journaled events, else null.
-  seq: number | null;
-  /// The logical channel the payload belongs to (`chat-event`, …).
+  /// The host's cursor for a journaled event, else null.
+  cursor: Cursor | null;
+  /// The logical channel the payload belongs to (`chat-event`, …), or
+  /// `event-stream` for the stream's own frames.
   channel: string;
   payload: unknown;
 }
+
+/// The stream's own frames (`event_router::STREAM_CHANNEL`).
+const STREAM_CHANNEL = "event-stream";
 
 type Handler = (payload: never) => void;
 
@@ -55,26 +66,37 @@ function on<T>(channel: string, handler: (payload: T) => void): Promise<Unlisten
   });
 }
 
-/// `sessionStorage` key for the last journal sequence number this webview
-/// processed. `sessionStorage` survives a reload of this webview only, so
-/// a reload replays exactly what this window missed; a new window starts
-/// empty and hydrates from the database instead.
-const SEQ_KEY = "rekindle.eventSeq";
+/// `sessionStorage` key for the last cursor this webview processed.
+/// `sessionStorage` survives a reload of this webview only, so a reload
+/// replays exactly what this window missed; a new window starts empty and
+/// hydrates from the database instead.
+const CURSOR_KEY = "rekindle.eventCursor";
 
-function readSeq(): number | null {
+function readCursor(): Cursor | null {
   try {
-    const raw = sessionStorage.getItem(SEQ_KEY);
+    const raw = sessionStorage.getItem(CURSOR_KEY);
     if (raw === null) return null;
-    const n = Number(raw);
-    return Number.isSafeInteger(n) && n >= 0 ? n : null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" && parsed !== null &&
+      Number.isSafeInteger((parsed as Cursor).epoch) &&
+      Number.isSafeInteger((parsed as Cursor).seq)
+    ) {
+      return parsed as Cursor;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-function writeSeq(seq: number): void {
+function writeCursor(cursor: Cursor | null): void {
   try {
-    sessionStorage.setItem(SEQ_KEY, String(seq));
+    if (cursor === null) {
+      sessionStorage.removeItem(CURSOR_KEY);
+    } else {
+      sessionStorage.setItem(CURSOR_KEY, JSON.stringify(cursor));
+    }
   } catch {
     // Storage unavailable — a reload then just doesn't replay.
   }
@@ -84,25 +106,41 @@ let stream: Promise<void> | null = null;
 
 /// Open this window's event stream. Call it once the window has
 /// registered its handlers (end of its `onMount` subscriptions): a
-/// reloading window is sent its missed events immediately. Idempotent per
-/// webview; a no-op under E2E, which has no Tauri event transport.
-export function startEventStream(): Promise<void> {
+/// reloading window is sent what it missed immediately. `reload` reloads
+/// the window's state from the backend; it runs when the host cannot serve
+/// the window's cursor (a new login or logout, or the window fell behind).
+/// Idempotent per webview; a no-op under E2E, which has no Tauri event
+/// transport.
+export function startEventStream(reload?: () => void): Promise<void> {
   if (import.meta.env.VITE_E2E === "true") return Promise.resolve();
   if (stream) return stream;
-  const lastSeq = readSeq();
-  let maxSeq = lastSeq ?? 0;
+  const from = readCursor();
+  let last = from;
   const channel = new Channel<OutboundEnvelope>();
   channel.onmessage = (envelope) => {
-    if (envelope.seq !== null) {
-      // A journaled event already seen (replayed and also delivered live
-      // around the moment of subscription) is processed once.
-      if (envelope.seq <= maxSeq) return;
-      maxSeq = envelope.seq;
-      writeSeq(maxSeq);
+    if (envelope.channel === STREAM_CHANNEL) {
+      if (envelope.cursor === null) {
+        // invalidSession: what this window holds may be stale.
+        last = null;
+        writeCursor(null);
+        reload?.();
+      } else {
+        last = envelope.cursor;
+        writeCursor(last);
+      }
+      return;
+    }
+    const cursor = envelope.cursor;
+    if (cursor !== null) {
+      // An event already seen (replayed and also delivered live around
+      // the moment of subscription) is processed once.
+      if (last !== null && cursor.epoch === last.epoch && cursor.seq <= last.seq) return;
+      last = cursor;
+      writeCursor(last);
     }
     dispatch(envelope.channel, envelope.payload);
   };
-  stream = invoke<void>("subscribe_events", { channel, lastSeq }).catch((err) => {
+  stream = invoke<void>("subscribe_events", { channel, from }).catch((err) => {
     stream = null;
     console.error("subscribe_events failed — this window receives no events", err);
   });

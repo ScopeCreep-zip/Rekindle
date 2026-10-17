@@ -72,11 +72,6 @@ pub async fn logout_cleanup(end: crate::services::session::SessionEnd<'_>, state
     // The friendship coordinator stopped with the login scope; drop its
     // trigger senders so the next login installs fresh ones.
     state.friendship_handle.clear();
-    // Privacy: drop journaled events from the previous user so no window
-    // of the next session can replay them. Every post-login window is
-    // destroyed on logout, so no window holds a sequence number from the
-    // old journal generation.
-    state.event_journal.clear();
     crate::state_helpers::clear_meks(state);
     state.dm_mek_cache.lock().clear();
     state.relay_probe_cooldown.lock().clear();

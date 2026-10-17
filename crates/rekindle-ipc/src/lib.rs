@@ -42,7 +42,6 @@
 pub mod client;
 pub mod error;
 pub mod event_router;
-pub mod event_source;
 pub mod framing;
 pub mod media_channel;
 pub mod message;
@@ -57,6 +56,8 @@ pub mod transport;
 mod media_transport_tests;
 #[cfg(test)]
 mod routing_tests;
+#[cfg(test)]
+mod stream_tests;
 
 // Re-exports for convenience.
 pub use client::BusClient;

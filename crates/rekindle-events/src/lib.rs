@@ -12,8 +12,9 @@
 //! pulling in `rekindle-transport`'s `veilid-core` dep.
 //!
 //! Transport keeps its `SubscriptionManager` (which IS the pipeline). This
-//! crate publishes the building blocks plus the new `EventJournal` (cursor
-//! + replay-since for Tauri reconnect).
+//! crate publishes the building blocks plus the host's one
+//! [`SessionJournal`] (plan D3.2: epoch + sequence cursors, replay and
+//! resume for every frontend).
 
 pub mod dedup;
 pub mod journal;
@@ -22,5 +23,5 @@ pub mod state;
 pub mod state_effects;
 
 pub use dedup::EventDedup;
-pub use journal::{EventJournal, JournalCursor, JournalEntry};
+pub use journal::{EventStream, SessionJournal};
 pub use state::SubscriptionState;

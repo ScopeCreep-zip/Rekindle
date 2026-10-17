@@ -41,6 +41,8 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         friend_store,
         failed_attempts,
     } = unlocked;
+    // This unlock's events start a new journal epoch (plan D3.2).
+    ctx.journal.begin();
     *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(*secret));
     let signal = Arc::new(signal);
     *ctx.signal.write() = Some(Arc::clone(&signal));
@@ -86,6 +88,8 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     *ctx.session.write() = None;
     *ctx.signal.write() = None;
     super::identity::lock(&ctx.identity_stores()).await;
+    // No event of this session replays into the next (plan D3.2).
+    ctx.journal.begin();
 }
 
 /// Open the identity's audit chain and record the wrong passphrases the

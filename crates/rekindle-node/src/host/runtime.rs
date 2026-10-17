@@ -209,7 +209,7 @@ impl Host {
         };
 
         let keepalive = watchdog::keepalive_interval();
-        let (event_watch_tx, event_watch_rx) = tokio::sync::watch::channel(None);
+        let (event_watch_tx, _) = tokio::sync::watch::channel(None);
         let ctx = Arc::new(DaemonContext {
             mode,
             community_runtime: Arc::new(
@@ -240,6 +240,7 @@ impl Host {
                 keepalive.map_or(crate::daemon::heartbeat::DEFAULT_TICK, |ping| ping / 2),
             ),
             shutdown: Arc::new(crate::daemon::shutdown::Shutdown::new()),
+            journal: Arc::new(rekindle_events::SessionJournal::default()),
             event_watch_tx,
             pending_joins,
             gossip_tx,
@@ -268,11 +269,14 @@ impl Host {
                 Arc::clone(&ctx),
                 presence_start_rx,
             ));
-            workers.spawn(run_event_consumer(Arc::clone(&ctx)));
+            workers.spawn(crate::daemon::event_forward::run_forwarder(Arc::clone(
+                &ctx,
+            )));
+            workers.spawn(crate::daemon::event_forward::run_consumer(Arc::clone(&ctx)));
         }
 
         let bus = if serve_bus {
-            Some(super::serve::serve(&ctx, event_watch_rx).await?)
+            Some(super::serve::serve(&ctx).await?)
         } else {
             None
         };
@@ -294,6 +298,25 @@ impl Host {
     #[must_use]
     pub fn mode(&self) -> HostMode {
         self.mode
+    }
+
+    /// Journal `event` for every subscriber (plan D3.2): the GUI's emitters
+    /// publish here until their E port moves the emitter into the host.
+    pub fn publish(
+        &self,
+        event: rekindle_types::subscription_events::SubscriptionEvent,
+    ) -> rekindle_types::subscription_events::Cursor {
+        self.ctx.journal.publish(event)
+    }
+
+    /// What followed `from` in the journal, then `Resumed`, or
+    /// `InvalidSession` (plan D3.2): a reloading GUI window's replay.
+    #[must_use]
+    pub fn replay(
+        &self,
+        from: rekindle_types::subscription_events::Cursor,
+    ) -> Vec<rekindle_types::subscription_events::StreamFrame> {
+        self.ctx.journal.replay(from)
     }
 
     /// The data root this host holds.
@@ -503,46 +526,6 @@ async fn shutdown_transport(ctx: &Arc<DaemonContext>) {
                 drop(arc);
             }
         }
-    }
-}
-
-/// The daemon's tier-3 event consumer: each `ValueChanged` that tier 1
-/// missed triggers the matching inbox scan. It follows the event source
-/// across lock cycles, so a Lock → Unlock cycle never leaves the daemon
-/// without its tier-3 inbox path.
-async fn run_event_consumer(ctx: Arc<DaemonContext>) {
-    let source = ctx.event_watch_tx.subscribe();
-    rekindle_ipc::event_source::follow(ctx.shutdown.token(), source, |event| {
-        let ctx = Arc::clone(&ctx);
-        async move {
-            if let rekindle_types::subscription_events::SubscriptionEvent::Network(
-                rekindle_types::subscription_events::NetworkEvent::ValueChanged {
-                    record_key, ..
-                },
-            ) = event
-            {
-                handle_value_changed(&ctx, &record_key).await;
-            }
-        }
-    })
-    .await;
-}
-
-/// Route a tier-3 `ValueChanged` to our friend inbox scan when it names it.
-async fn handle_value_changed(ctx: &Arc<DaemonContext>, record_key: &str) {
-    let friend_inbox_key = ctx.session.read().as_ref().and_then(|s| {
-        (!s.identity.friend_inbox_key.is_empty() && s.identity.friend_inbox_key == *record_key)
-            .then(|| s.identity.friend_inbox_key.clone())
-    });
-    if let Some(inbox_key) = friend_inbox_key {
-        tracing::info!("tier 3 poll triggered friend inbox scan");
-        crate::daemon::friend_inbox::scan_friend_inbox(
-            &ctx.session,
-            &ctx.transport,
-            &ctx.db,
-            &inbox_key,
-        )
-        .await;
     }
 }
 

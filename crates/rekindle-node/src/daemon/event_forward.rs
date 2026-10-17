@@ -1,10 +1,11 @@
-//! Following the subscription event source across lock cycles.
+//! Forwarding the transport's events into the host's journal (plan D3.2).
 //!
 //! The daemon's unlock publishes its `SubscriptionManager` broadcast sender
-//! on a watch channel and its lock clears it. A consumer that subscribed
-//! once would die with the first lock; [`follow`] re-subscribes to each new
-//! sender, idles while locked, and stops when told to. Both the bus
-//! server's event delivery and the daemon's tier-3 consumer follow it.
+//! on a watch channel and its lock clears it. [`follow`] re-subscribes to
+//! each new sender, idles while locked, and stops when told to; the
+//! forwarder journals every event it sees. If the forwarder falls behind
+//! the transport's broadcast, the events it missed were never journaled, so
+//! `on_lag` begins a new journal epoch: every subscriber reloads.
 
 use std::future::Future;
 
@@ -26,10 +27,15 @@ async fn until<T>(stop: &CancellationToken, work: impl Future<Output = T>) -> Op
     }
 }
 
-/// Hand every event from the current source to `on_event` until `stop` is
-/// cancelled or the source's sender is gone.
-pub async fn follow<F, Fut>(stop: &CancellationToken, mut source: EventSource, mut on_event: F)
-where
+/// Hand every event from the current source to `on_event`, and each lag
+/// (how many events were skipped) to `on_lag`, until `stop` is cancelled
+/// or the source's sender is gone.
+pub async fn follow<F, Fut>(
+    stop: &CancellationToken,
+    mut source: EventSource,
+    mut on_event: F,
+    mut on_lag: impl FnMut(u64),
+) where
     F: FnMut(SubscriptionEvent) -> Fut,
     Fut: Future<Output = ()>,
 {
@@ -57,7 +63,8 @@ where
                 event = events.recv() => match event {
                     Ok(event) => on_event(event).await,
                     Err(RecvError::Lagged(skipped)) => {
-                        tracing::warn!(skipped, "event source: consumer lagging");
+                        tracing::warn!(skipped, "event forwarder fell behind the transport");
+                        on_lag(skipped);
                     }
                     // The watch holds a sender while unlocked, so this only
                     // follows a replaced source; the change arm sees it.
@@ -70,6 +77,78 @@ where
                 },
             }
         }
+    }
+}
+
+/// Journal every event the transport's subscription manager emits, across
+/// lock cycles. A lag means events were lost before the journal saw them:
+/// a new epoch makes every subscriber reload (plan D3.2).
+pub(crate) async fn run_forwarder(ctx: std::sync::Arc<crate::daemon::dispatch::DaemonContext>) {
+    let source = ctx.event_watch_tx.subscribe();
+    let journal = std::sync::Arc::clone(&ctx.journal);
+    follow(
+        ctx.shutdown.token(),
+        source,
+        |event| {
+            ctx.journal.publish(event);
+            std::future::ready(())
+        },
+        |_| journal.begin(),
+    )
+    .await;
+}
+
+/// The daemon's tier-3 event consumer: each journaled `ValueChanged` that
+/// tier 1 missed triggers the matching inbox scan. Each new epoch (an
+/// unlock) or a lag ends its stream; it subscribes again, live.
+pub(crate) async fn run_consumer(ctx: std::sync::Arc<crate::daemon::dispatch::DaemonContext>) {
+    let stop = ctx.shutdown.token().clone();
+    loop {
+        let mut stream = ctx.journal.subscribe(None);
+        loop {
+            let frame = tokio::select! {
+                () = stop.cancelled() => return,
+                frame = stream.next() => frame,
+            };
+            match frame {
+                Some(rekindle_types::subscription_events::StreamFrame::Event(sequenced)) => {
+                    if let rekindle_types::subscription_events::SubscriptionEvent::Network(
+                        rekindle_types::subscription_events::NetworkEvent::ValueChanged {
+                            record_key,
+                            ..
+                        },
+                    ) = sequenced.event
+                    {
+                        handle_value_changed(&ctx, &record_key).await;
+                    }
+                }
+                Some(rekindle_types::subscription_events::StreamFrame::Resumed(_)) => {}
+                Some(rekindle_types::subscription_events::StreamFrame::InvalidSession) | None => {
+                    break
+                }
+            }
+        }
+    }
+}
+
+/// Route a tier-3 `ValueChanged` to our friend inbox scan when it names it.
+async fn handle_value_changed(
+    ctx: &std::sync::Arc<crate::daemon::dispatch::DaemonContext>,
+    record_key: &str,
+) {
+    let friend_inbox_key = ctx.session.read().as_ref().and_then(|s| {
+        (!s.identity.friend_inbox_key.is_empty() && s.identity.friend_inbox_key == *record_key)
+            .then(|| s.identity.friend_inbox_key.clone())
+    });
+    if let Some(inbox_key) = friend_inbox_key {
+        tracing::info!("tier 3 poll triggered friend inbox scan");
+        crate::daemon::friend_inbox::scan_friend_inbox(
+            &ctx.session,
+            &ctx.transport,
+            &ctx.db,
+            &inbox_key,
+        )
+        .await;
     }
 }
 
@@ -96,12 +175,17 @@ mod tests {
         let consumer = tokio::spawn({
             let stop = stop.clone();
             async move {
-                follow(&stop, watch, |event| {
-                    let seen_tx = seen_tx.clone();
-                    async move {
-                        let _ = seen_tx.send(event);
-                    }
-                })
+                follow(
+                    &stop,
+                    watch,
+                    |event| {
+                        let seen_tx = seen_tx.clone();
+                        async move {
+                            let _ = seen_tx.send(event);
+                        }
+                    },
+                    |_| {},
+                )
                 .await;
             }
         });

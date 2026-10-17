@@ -61,7 +61,7 @@ async function deliver(page: Page, sample: string, channel: string): Promise<voi
       const w = window as any;
       w.__TAURI_INTERNALS__.runCallback(w.__eventChannelId, { index, message: envelope });
     },
-    { index, envelope: { seq: null, channel, payload } },
+    { index, envelope: { cursor: null, channel, payload } },
   );
 }
 

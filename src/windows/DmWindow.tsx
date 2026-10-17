@@ -48,12 +48,10 @@ const DmWindow: Component = () => {
 
   const unlisteners: Promise<UnlistenFn>[] = [];
 
-  onMount(async () => {
-    setDmState("activeRecordKey", recordKey);
-    unlisteners.push(subscribeDmInbox(() => ownPublicKey()));
-    // Keeps the call bar in step with a call to this DM's peer.
-    unlisteners.push(subscribeCallEvents({ owner: false }));
-    void startEventStream();
+  /// Load the conversation list and this DM's scrollback from the backend:
+  /// at mount, and again when the event stream says this window's state may
+  /// be stale.
+  async function load(): Promise<void> {
     // Hydrate conversation list (we may have been launched directly into
     // the DM window without ever populating the buddy list's dm map).
     await handleListDms();
@@ -68,6 +66,15 @@ const DmWindow: Component = () => {
       isOwn: row.senderPseudonym === me,
     }));
     setDmState("messages", recordKey, hydrated);
+  }
+
+  onMount(async () => {
+    setDmState("activeRecordKey", recordKey);
+    unlisteners.push(subscribeDmInbox(() => ownPublicKey()));
+    // Keeps the call bar in step with a call to this DM's peer.
+    unlisteners.push(subscribeCallEvents({ owner: false }));
+    void startEventStream(() => void load());
+    await load();
   });
 
   onCleanup(() => {

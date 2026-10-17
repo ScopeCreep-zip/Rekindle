@@ -197,6 +197,7 @@ pub(super) async fn handle_connection(
     };
     state.connections.write().await.remove(&conn_id);
     state.event_router.write().remove_connection(conn_id);
+    super::stream::stop(&state, conn_id);
     state
         .pending_requests
         .write()

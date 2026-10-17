@@ -19,14 +19,41 @@ use tauri::ipc::Channel;
 use crate::window_labels::WindowKind;
 
 /// What a webview receives: the frontend channel name its handlers listen
-/// on, the event payload, and the journal sequence number for journaled
-/// events (used to skip duplicates after a reload replay).
+/// on, the event payload, and, for an event the host journaled, its cursor
+/// (plan D3.2: the window keeps the last one, replays from it after a
+/// reload, and skips an event it has already seen).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutboundEnvelope {
-    pub seq: Option<u64>,
+    pub cursor: Option<rekindle_types::subscription_events::Cursor>,
     pub channel: &'static str,
     pub payload: serde_json::Value,
+}
+
+/// The channel of the stream's own frames: `{"invalidSession": null}` (the
+/// window reloads) and `{"resumed": cursor}`.
+pub const STREAM_CHANNEL: &str = "event-stream";
+
+impl OutboundEnvelope {
+    /// The window's cursor cannot be served: it reloads.
+    #[must_use]
+    pub fn invalid_session() -> Self {
+        Self {
+            cursor: None,
+            channel: STREAM_CHANNEL,
+            payload: serde_json::json!({ "invalidSession": null }),
+        }
+    }
+
+    /// The replay is complete up to `cursor`.
+    #[must_use]
+    pub fn resumed(cursor: rekindle_types::subscription_events::Cursor) -> Self {
+        Self {
+            cursor: Some(cursor),
+            channel: STREAM_CHANNEL,
+            payload: serde_json::json!({ "resumed": cursor }),
+        }
+    }
 }
 
 /// The windows an event is for: specific labels, plus every open window
@@ -111,6 +138,15 @@ impl WebviewRouter {
     /// Forget a destroyed window.
     pub fn remove(&self, label: &str) {
         self.subs.write().remove(label);
+    }
+
+    /// Send `envelope` to every registered window.
+    pub fn deliver_all(&self, envelope: &OutboundEnvelope) {
+        for (label, channel) in self.subs.read().iter() {
+            if let Err(e) = channel.send(envelope.clone()) {
+                tracing::debug!(window = %label, error = %e, "event send failed");
+            }
+        }
     }
 
     /// Send `envelope` to every registered window in `audience`.

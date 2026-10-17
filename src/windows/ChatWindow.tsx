@@ -106,7 +106,7 @@ const ChatWindow: Component = () => {
     unlisteners.push(subscribeBuddyListPresenceEvents());
     // Keeps the call buttons in step with a call to this peer.
     unlisteners.push(subscribeCallEvents({ owner: false }));
-    void startEventStream();
+    void startEventStream(() => void hydrateState());
 
     // Await hydration so stores are populated before loading history
     await hydrateState();

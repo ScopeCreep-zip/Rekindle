@@ -20,6 +20,11 @@ use uuid::Uuid;
 /// (`REKINDLE-IPC-v3`) already refuses a mismatched peer at handshake.
 pub const WIRE_VERSION: u8 = 3;
 
+/// This build's protocol id (`build.rs`: a hash of the sources that shape a
+/// frame). Both ends send it in the Noise handshake and refuse a peer whose
+/// id differs (plan D3.2), with [`crate::error::IpcError::BuildMismatch`].
+pub const BUILD_ID: &str = env!("REKINDLE_IPC_BUILD_ID");
+
 /// Security level classification for IPC messages.
 ///
 /// Ordered by privilege: higher discriminant = more privileged.

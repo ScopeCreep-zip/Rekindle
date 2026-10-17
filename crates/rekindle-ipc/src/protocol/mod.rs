@@ -198,8 +198,14 @@ pub enum IpcRequest {
     DmInbox { limit: u32 },
 
     // ── Subscriptions ─────────────────────────────────────────────
-    /// Subscribe to events matching filters.
-    Subscribe { filters: Vec<SubscriptionFilter> },
+    /// Subscribe to events matching filters. `from` is the last cursor this
+    /// client processed (plan D3.2): what followed it is replayed, then
+    /// `Resumed`, or `InvalidSession` when the host can no longer serve it.
+    /// `None` subscribes to live events only.
+    Subscribe {
+        filters: Vec<SubscriptionFilter>,
+        from: Option<rekindle_types::subscription_events::Cursor>,
+    },
     /// Unsubscribe from events matching filters.
     Unsubscribe { filters: Vec<SubscriptionFilter> },
 

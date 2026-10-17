@@ -50,7 +50,7 @@ pub(super) fn emit_message_received(
         sender_display_name: None,
     };
     // Journaled so a community window that reloads mid-stream gets it.
-    crate::event_dispatch::emit_journaled(
+    crate::event_dispatch::emit_from_state(
         state,
         crate::event_dispatch::WebviewEvent::ChannelChat {
             community_id: Some(pending.community_id.clone()),

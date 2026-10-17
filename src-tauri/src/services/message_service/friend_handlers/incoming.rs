@@ -239,7 +239,7 @@ pub(crate) async fn handle_friend_request_full(
             message: req.message.to_string(),
         },
     );
-    crate::event_dispatch::emit_journaled(
+    crate::event_dispatch::emit_from_state(
         state,
         crate::event_dispatch::WebviewEvent::Subscription(event),
     );
@@ -324,7 +324,7 @@ pub(crate) async fn handle_friend_accept_full(
         if let Some(friend) = state.friends.write().get_mut(a.sender_hex) {
             friend.handshake_error = Some(reason.clone());
         }
-        crate::event_dispatch::emit_journaled(
+        crate::event_dispatch::emit_from_state(
             state,
             crate::event_dispatch::WebviewEvent::Subscription(
                 rekindle_types::subscription_events::SubscriptionEvent::Friend(
@@ -383,7 +383,7 @@ pub(crate) async fn handle_friend_accept_full(
             display_name: Some(display_name),
         },
     );
-    crate::event_dispatch::emit_journaled(
+    crate::event_dispatch::emit_from_state(
         state,
         crate::event_dispatch::WebviewEvent::Subscription(event),
     );

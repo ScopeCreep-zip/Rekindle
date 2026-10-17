@@ -151,7 +151,7 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
     let request = pending.request();
     *state.pending_deep_link.lock() = Some(pending);
     if state.identity.read().is_some() {
-        crate::event_dispatch::emit_journaled(
+        crate::event_dispatch::emit_from_state(
             &state,
             crate::event_dispatch::WebviewEvent::DeepLink(request),
         );

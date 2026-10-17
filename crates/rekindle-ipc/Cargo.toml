@@ -13,6 +13,7 @@ blake3 = "1"
 dirs = "6"
 parking_lot = { workspace = true }
 postcard = { version = "1", features = [ "use-std" ] }
+rekindle-events = { path = "../rekindle-events" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }
@@ -42,6 +43,9 @@ rustix = { version = "1", features = [ "process" ] }
 interprocess = { version = "2.4", features = [ "tokio" ] }
 # The SDDL string `interprocess`'s `SecurityDescriptor::deserialize` takes.
 widestring = "1"
+
+[build-dependencies]
+blake3 = "1"
 
 [dev-dependencies]
 tempfile = "3"

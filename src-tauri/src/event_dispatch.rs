@@ -13,10 +13,14 @@
 //! [`EventScope`], so the desktop routes the same way the daemon and the
 //! TUI do.
 //!
-//! Journaled events ([`emit_journaled`]) also go into the event journal
-//! with a sequence number. A window that reloads asks for the journaled
-//! events it missed (`subscribe_events` with its last sequence number);
-//! nothing else is ever replayed.
+//! A [`SubscriptionEvent`] is journaled by the in-process host (plan
+//! D3.2), which gives it a cursor; [`spawn_host_stream`] delivers the
+//! host's stream to the windows, and a window that reloads asks the host
+//! for what followed its last cursor (`subscribe_events`). The shell-only
+//! variants (`Lifecycle`, `DeepLink`, `ProfileUpdated`, `SettingsSwitchTab`)
+//! and the legacy `ChannelChat`/`Community` shapes are delivered live from
+//! the local queue and never replayed; a reloading window reads that
+//! history through `hydrateState()`.
 
 use std::sync::Arc;
 
@@ -119,10 +123,13 @@ impl WebviewEvent {
     /// The envelope a window receives, or `None` if the payload does not
     /// serialize (logged; such an event reaches no one).
     #[must_use]
-    pub fn envelope(&self, seq: Option<u64>) -> Option<OutboundEnvelope> {
+    pub fn envelope(
+        &self,
+        cursor: Option<rekindle_types::subscription_events::Cursor>,
+    ) -> Option<OutboundEnvelope> {
         match self.payload() {
             Ok(payload) => Some(OutboundEnvelope {
-                seq,
+                cursor,
                 channel: self.channel(),
                 payload,
             }),
@@ -219,35 +226,43 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
     }
 }
 
-/// An event waiting for the dispatch task.
-struct Queued {
-    seq: Option<u64>,
-    event: WebviewEvent,
-}
+/// How many local events wait for the dispatch task.
+const QUEUE_CAPACITY: usize = 4096;
 
-/// The single dispatch queue. Emitters push; one task drains.
+/// The local dispatch queue (shell-only and legacy events). Emitters push;
+/// one task drains. It is bounded: when it is full the event is dropped and
+/// every window is told to reload (its history is in the database).
 pub struct EventDispatch {
-    tx: mpsc::UnboundedSender<Queued>,
-    rx_holder: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<Queued>>>,
+    tx: mpsc::Sender<WebviewEvent>,
+    rx_holder: parking_lot::Mutex<Option<mpsc::Receiver<WebviewEvent>>>,
+    overflowed: std::sync::atomic::AtomicBool,
 }
 
 impl EventDispatch {
     /// A queue that buffers until [`spawn_dispatch_loop`] takes it.
     #[must_use]
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(QUEUE_CAPACITY);
         Self {
             tx,
             rx_holder: parking_lot::Mutex::new(Some(rx)),
+            overflowed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
-    fn take_receiver(&self) -> Option<mpsc::UnboundedReceiver<Queued>> {
+    fn take_receiver(&self) -> Option<mpsc::Receiver<WebviewEvent>> {
         self.rx_holder.lock().take()
     }
 
-    fn enqueue(&self, seq: Option<u64>, event: WebviewEvent) {
-        let _ = self.tx.send(Queued { seq, event });
+    fn enqueue(&self, event: WebviewEvent) {
+        if let Err(mpsc::error::TrySendError::Full(event)) = self.tx.try_send(event) {
+            tracing::warn!(
+                channel = event.channel(),
+                "event queue full; windows reload"
+            );
+            self.overflowed
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -257,25 +272,67 @@ impl Default for EventDispatch {
     }
 }
 
-/// Start the dispatch task: each event goes to the windows in its
-/// audience, and an event the notification policy picks also becomes an
-/// OS notification (`os_notify`).
-pub fn spawn_dispatch_loop(app: AppHandle, state: &Arc<AppState>) {
+/// Start the local dispatch task: each event goes to the windows in its
+/// audience. A dropped event (full queue) makes every window reload.
+pub fn spawn_dispatch_loop(state: &Arc<AppState>) {
     let Some(mut rx) = state.event_dispatch.take_receiver() else {
         tracing::warn!("spawn_dispatch_loop: receiver already taken — duplicate setup?");
         return;
     };
     let state = Arc::clone(state);
     tauri::async_runtime::spawn(async move {
-        while let Some(Queued { seq, event }) = rx.recv().await {
-            if let WebviewEvent::Subscription(e) = &event {
-                crate::os_notify::notify(&app, &state, e);
+        while let Some(event) = rx.recv().await {
+            if state
+                .event_dispatch
+                .overflowed
+                .swap(false, std::sync::atomic::Ordering::Relaxed)
+            {
+                state
+                    .event_router
+                    .deliver_all(&OutboundEnvelope::invalid_session());
             }
-            if let Some(envelope) = event.envelope(seq) {
+            if let Some(envelope) = event.envelope(None) {
                 state.event_router.deliver(&envelope, &event.audience());
             }
         }
         tracing::debug!("event-dispatch loop exited (channel closed)");
+    });
+}
+
+/// Deliver the host's event stream to the windows (plan D3.2): each event
+/// to its audience with its cursor, and each event the notification policy
+/// picks as an OS notification. `InvalidSession` (a new epoch at login or
+/// logout, or this task fell behind) makes every window reload; the stream
+/// is then taken again, live.
+pub fn spawn_host_stream(
+    app: AppHandle,
+    state: &Arc<AppState>,
+    host: Arc<rekindle_node::host::Host>,
+) {
+    use rekindle_node::host::HostApi as _;
+    use rekindle_types::subscription_events::StreamFrame;
+    let state = Arc::clone(state);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let mut stream = host.subscribe(None);
+            while let Some(frame) = stream.next().await {
+                match frame {
+                    StreamFrame::Event(sequenced) => {
+                        crate::os_notify::notify(&app, &state, &sequenced.event);
+                        let event = WebviewEvent::Subscription(sequenced.event);
+                        if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
+                            state.event_router.deliver(&envelope, &event.audience());
+                        }
+                    }
+                    StreamFrame::InvalidSession => state
+                        .event_router
+                        .deliver_all(&OutboundEnvelope::invalid_session()),
+                    StreamFrame::Resumed(_) => {}
+                }
+            }
+            // The stream ended after an `InvalidSession` (this task fell
+            // behind): take it again, live.
+        }
     });
 }
 
@@ -291,15 +348,14 @@ pub fn emit(app: &AppHandle, event: WebviewEvent) {
     }
 }
 
-/// Send `event` to its audience, for callers that hold the state.
+/// Send `event` to its audience, for callers that hold the state: a
+/// [`SubscriptionEvent`] through the host's journal, the rest through the
+/// local queue.
 pub fn emit_from_state(state: &AppState, event: WebviewEvent) {
-    state.event_dispatch.enqueue(None, event);
-}
-
-/// Journal `event` (so a reloading window can recover it), then send it.
-pub fn emit_journaled(state: &AppState, event: WebviewEvent) {
-    let seq = state.event_journal.append(event.clone());
-    state.event_dispatch.enqueue(Some(seq), event);
+    match event {
+        WebviewEvent::Subscription(event) => state.host.publish(event),
+        other => state.event_dispatch.enqueue(other),
+    }
 }
 
 /// Send a shared-vocabulary event, live.
@@ -350,16 +406,30 @@ pub fn emit_community(app: &AppHandle, event: CommunityEvent) {
     emit(app, WebviewEvent::Community(event));
 }
 
-/// The journaled events after `since` that a window labelled `label` would
-/// have received, as envelopes.
+/// A reloading window's replay from `from` (plan D3.2): the journaled
+/// events after it that were addressed to `label`, then `Resumed`; or
+/// `InvalidSession`, when the host cannot serve the cursor.
 #[must_use]
-pub fn replay_for(state: &AppState, label: &str, since: u64) -> Vec<OutboundEnvelope> {
-    state
-        .event_journal
-        .replay_since(since)
+pub fn replay_for(
+    host: &rekindle_node::host::Host,
+    label: &str,
+    from: rekindle_types::subscription_events::Cursor,
+) -> Vec<OutboundEnvelope> {
+    use rekindle_types::subscription_events::StreamFrame;
+    host.replay(from)
         .into_iter()
-        .filter(|entry| entry.event.audience().includes(label))
-        .filter_map(|entry| entry.event.envelope(Some(entry.cursor)))
+        .filter_map(|frame| match frame {
+            StreamFrame::Event(sequenced) => {
+                let event = WebviewEvent::Subscription(sequenced.event);
+                event
+                    .audience()
+                    .includes(label)
+                    .then(|| event.envelope(Some(sequenced.cursor)))
+                    .flatten()
+            }
+            StreamFrame::Resumed(cursor) => Some(OutboundEnvelope::resumed(cursor)),
+            StreamFrame::InvalidSession => Some(OutboundEnvelope::invalid_session()),
+        })
         .collect()
 }
 

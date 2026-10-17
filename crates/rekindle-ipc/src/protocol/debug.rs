@@ -202,9 +202,10 @@ impl std::fmt::Debug for IpcRequest {
                 .field("typing", typing)
                 .finish(),
             Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
-            Self::Subscribe { filters } => f
+            Self::Subscribe { filters, from } => f
                 .debug_struct("Subscribe")
                 .field("filter_count", &filters.len())
+                .field("from", from)
                 .finish(),
             Self::Unsubscribe { filters } => f
                 .debug_struct("Unsubscribe")
