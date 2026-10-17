@@ -70,6 +70,16 @@ pub struct Cli {
     /// input (scripts, CI).
     #[arg(long, global = true)]
     pub no_input: bool,
+
+    /// Commit a consequential action without the y/N prompt (plan D3.4).
+    /// It never confirms a trust-changing, destructive or protected one.
+    #[arg(long, short = 'y', global = true)]
+    pub yes: bool,
+
+    /// Confirm a trust-changing or destructive action by naming its
+    /// subject (the community, channel, role or person the review names).
+    #[arg(long, global = true, value_name = "SUBJECT")]
+    pub confirm: Option<String>,
 }
 
 /// Top-level command dispatch enum.
@@ -227,19 +237,33 @@ mod tests {
     }
 
     #[test]
-    fn parse_delete_confirm() {
+    fn parse_confirm_and_yes() {
+        let cli = Cli::try_parse_from([
+            "rekindle",
+            "community",
+            "leave",
+            "--community",
+            "Team",
+            "--confirm=Team",
+        ])
+        .unwrap();
+        assert_eq!(cli.confirm.as_deref(), Some("Team"));
+        let cli = Cli::try_parse_from(["rekindle", "-y", "friend", "remove", "--friend", "abcd"])
+            .unwrap();
+        assert!(cli.yes);
         let cli = Cli::try_parse_from([
             "rekindle",
             "identity",
             "delete",
             "abcd",
-            "--confirm=DESTROY MY IDENTITY",
+            "--passphrase-file",
+            "-",
         ])
         .unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Identity(IdentityCmd::Delete {
-                confirm: Some(_),
+                passphrase_file: Some(_),
                 ..
             }))
         ));

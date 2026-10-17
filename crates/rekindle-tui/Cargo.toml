@@ -18,6 +18,7 @@ arboard = { version = "3", default-features = false, features = [ "wayland-data-
 clap = { version = "4", features = [ "derive", "std", "help", "usage", "error-context" ] }
 color-eyre = "0.6"
 crossterm = { version = "0.29", features = [ "event-stream" ] }
+zeroize = { version = "1", features = [ "serde" ] }
 futures-util = { version = "0.3", default-features = false, features = [ "std" ] }
 opaline = { version = "0.2", features = [ "ratatui", "builtin-themes", "gradients" ] }
 ratatui = { version = "0.30", default-features = false, features = [ "crossterm" ] }

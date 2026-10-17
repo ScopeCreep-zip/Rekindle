@@ -256,6 +256,14 @@ impl View for FriendListView {
                 let request = self.pending_requests.get(pending_idx)?;
                 Some(Action::AcceptFriendRequest(request.public_key.clone()))
             }
+            KeyCode::Char('d') => {
+                // Remove the selected friend; the host asks to confirm.
+                let idx = self.list_state.selected()?;
+                let friend = self.friends.get(idx)?;
+                Some(Action::RemoveFriend {
+                    peer_key: friend.public_key.clone(),
+                })
+            }
             KeyCode::Char('r') => {
                 // Reject pending request at current selection
                 let idx = self.list_state.selected()?;

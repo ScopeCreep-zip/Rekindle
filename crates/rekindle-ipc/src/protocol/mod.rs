@@ -21,15 +21,6 @@ pub use rekindle_types::subscription_events::{
     EventCategory, SubscriptionFilter, MAX_FILTERS_PER_CONNECTION,
 };
 
-// ── Typed confirmations ─────────────────────────────────────────────────
-
-/// The phrase `IdentityDestroy` must carry, typed by the user (clig.dev:
-/// a severe action is confirmed by typing something non-trivial).
-pub const DESTROY_CONFIRMATION: &str = "DESTROY MY IDENTITY";
-
-/// The phrase `IdentityWipe` must carry.
-pub const WIPE_CONFIRMATION: &str = "WIPE ALL DATA";
-
 // ── IPC Request ─────────────────────────────────────────────────────────
 
 /// Frontend → Daemon request.
@@ -85,14 +76,11 @@ pub enum IpcRequest {
     /// Rotate the unlocked identity's Ed25519 keypair: friends are told,
     /// then the identity is locked and moved to its new key.
     IdentityRotate { passphrase: String },
-    /// Delete `identity` (requires typed confirmation until D3 makes the
-    /// passphrase its proof).
-    IdentityDelete {
-        identity: String,
-        confirmation: String,
-    },
-    /// Factory reset: delete every identity and Veilid storage.
-    IdentityWipe { confirmation: String },
+    /// Delete `identity`. Protected: the host's intent gate asks for its
+    /// passphrase (plan D3.3).
+    IdentityDelete { identity: String },
+    /// Factory reset: delete every identity and Veilid storage. Protected.
+    IdentityWipe,
 
     // ── Friends ───────────────────────────────────────────────────
     /// Send a friend request to a target (mailbox DHT key).
@@ -196,6 +184,17 @@ pub enum IpcRequest {
     DmTyping { peer_key: String, typing: bool },
     /// List DM inbox.
     DmInbox { limit: u32 },
+
+    // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
+    /// Commit a held action with the proof its review asked for.
+    IntentCommit {
+        intent_id: rekindle_types::intent::IntentId,
+        proof: rekindle_types::intent::IntentProof,
+    },
+    /// Drop a held action.
+    IntentCancel {
+        intent_id: rekindle_types::intent::IntentId,
+    },
 
     // ── Subscriptions ─────────────────────────────────────────────
     /// Subscribe to events matching filters. `from` is the last cursor this

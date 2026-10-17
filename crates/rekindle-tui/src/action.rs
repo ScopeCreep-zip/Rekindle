@@ -112,7 +112,19 @@ pub enum Action {
 
     // ─── Overlay ────────────────────────────────────────────────
     CloseOverlay,
-    ConfirmOverlay,
+
+    // ─── Intent reviews (plan D3.4) ─────────────────────────────
+    /// The host holds an action for review: show it.
+    ShowIntent(Box<rekindle_types::intent::IntentReview>),
+    /// Commit the reviewed action with this proof.
+    CommitIntent {
+        review: Box<rekindle_types::intent::IntentReview>,
+        proof: rekindle_types::intent::IntentProof,
+    },
+    /// Drop the reviewed action.
+    CancelIntent {
+        intent_id: rekindle_types::intent::IntentId,
+    },
 
     // ─── Notifications ──────────────────────────────────────────
     ShowToast {
@@ -137,8 +149,8 @@ pub enum SearchMode {
 
 /// Modal overlay type.
 ///
-/// Search and confirm dialogs are handled by their own dedicated state
-/// (`SearchOverlay`, `ConfirmDialogState`); this enum covers the simple
+/// Search and intent reviews are handled by their own dedicated state
+/// (`SearchOverlay`, `IntentOverlay`); this enum covers the simple
 /// full-screen help overlay.
 #[derive(Debug, Clone)]
 pub enum OverlayKind {

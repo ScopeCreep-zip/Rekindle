@@ -21,37 +21,39 @@ pub async fn dispatch(
             ..
         } => {
             let validated_name = helpers::validate_name(name, "Community")?;
-            let value = client
-                .request_ok(IpcRequest::CommunityCreate {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityCreate {
                     name: validated_name,
                     description: description.clone().unwrap_or_default(),
                     approval_required: *approval_required,
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         CommunityCmd::Join { invite, .. } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityJoin {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityJoin {
                     invite: invite.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::Leave { community, force } => {
-            if !helpers::confirm_unless_forced(*force, &format!("Leave community '{community}'?"))?
-            {
-                return format::print_text("Cancelled.");
-            }
-            let value = client
-                .request_ok(IpcRequest::CommunityLeave {
+        CommunityCmd::Leave { community } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityLeave {
                     governance_key: community.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         CommunityCmd::List { .. } => {
-            let value = client.request_ok(IpcRequest::CommunityList).await?;
+            let value = helpers::send(client, IpcRequest::CommunityList).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -84,11 +86,13 @@ pub async fn dispatch(
             table::print_table(&["Name", "Members", "Channels", "Key"], &rows, mode)
         }
         CommunityCmd::Info { community, .. } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityInfo {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityInfo {
                     governance_key: community.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -143,12 +147,14 @@ pub async fn dispatch(
             table::print_kv_table(&pairs, mode)
         }
         CommunityCmd::Approve { community, member } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityApprove {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityApprove {
                     governance_key: community.clone(),
                     member_pseudonym: member.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -163,24 +169,28 @@ pub async fn dispatch(
             member,
             reason,
         } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityReject {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityReject {
                     governance_key: community.clone(),
                     member_pseudonym: member.clone(),
                     reason: reason.clone().unwrap_or_default(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
             format::print_text(&format!("Rejected {member}"))
         }
         CommunityCmd::Pending { community } => {
-            let value = client
-                .request_ok(IpcRequest::CommunityPendingMembers {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityPendingMembers {
                     governance_key: community.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -213,20 +223,15 @@ pub async fn dispatch(
         CommunityCmd::Transfer {
             community,
             new_owner,
-            force,
         } => {
-            if !helpers::confirm_unless_forced(
-                *force,
-                &format!("Transfer ownership of '{community}' to {new_owner}?"),
-            )? {
-                return format::print_text("Cancelled.");
-            }
-            let value = client
-                .request_ok(IpcRequest::CommunityTransferOwnership {
+            let value = helpers::send(
+                client,
+                IpcRequest::CommunityTransferOwnership {
                     governance_key: community.clone(),
                     new_owner_pseudonym: new_owner.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }

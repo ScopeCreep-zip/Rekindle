@@ -8,7 +8,8 @@ use super::{
     Caller, DaemonContext,
 };
 
-/// Dispatch an IPC request to the appropriate domain handler.
+/// Dispatch a validated, gated IPC request to its domain handler
+/// (`HostApi::call` validated it and ran the intent gate).
 ///
 /// Returns an `IpcResponse` for every request — no request goes unanswered.
 /// Every `IpcRequest` variant is explicitly matched; there is no catch-all arm.
@@ -18,12 +19,6 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest, caller: &Caller)
     // Audit: log every request before dispatch (best-effort, non-blocking).
     audit_request(ctx, &request);
 
-    if let Err(rejection) = crate::validation::validate_request(&request) {
-        return rejection;
-    }
-    if let Some(refused) = super::shell::refusal(ctx, &request) {
-        return refused;
-    }
     route(ctx, state, request, caller).await
 }
 
@@ -64,13 +59,15 @@ async fn route(
         IpcRequest::IdentityRotate { passphrase } => {
             identity::handle_rotate(ctx, state, &passphrase).await
         }
-        // `validate_request` checked the key and the typed confirmation.
-        IpcRequest::IdentityDelete {
-            identity,
-            confirmation: _,
-        } => identity::handle_delete(ctx, state, &identity).await,
-        // `validate_request` checked the typed confirmation.
-        IpcRequest::IdentityWipe { confirmation: _ } => identity::handle_wipe(ctx, state).await,
+        // Protected: the gate checked the passphrase (plan D3.3).
+        IpcRequest::IdentityDelete { identity } => {
+            identity::handle_delete(ctx, state, &identity).await
+        }
+        IpcRequest::IdentityWipe => identity::handle_wipe(ctx, state).await,
+        // The gate answers these in `HostApi::call`; they never route.
+        IpcRequest::IntentCommit { .. } | IpcRequest::IntentCancel { .. } => {
+            IpcResponse::error(400, "intent commits are answered by the host's gate")
+        }
 
         // ── Community ────────────────────────────────────────────
         IpcRequest::CommunityCreate {

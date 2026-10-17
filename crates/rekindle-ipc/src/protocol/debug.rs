@@ -60,17 +60,20 @@ impl std::fmt::Debug for IpcRequest {
             Self::Status => write!(f, "Status"),
             Self::IdentityList => write!(f, "IdentityList"),
             Self::IdentityShow => write!(f, "IdentityShow"),
-            Self::IdentityDelete {
-                identity,
-                confirmation,
-            } => f
+            Self::IdentityDelete { identity } => f
                 .debug_struct("IdentityDelete")
                 .field("identity", identity)
-                .field("confirmation", confirmation)
                 .finish(),
-            Self::IdentityWipe { confirmation } => f
-                .debug_struct("IdentityWipe")
-                .field("confirmation", confirmation)
+            Self::IdentityWipe => f.write_str("IdentityWipe"),
+            // `IntentProof`'s own `Debug` redacts a passphrase.
+            Self::IntentCommit { intent_id, proof } => f
+                .debug_struct("IntentCommit")
+                .field("intent_id", intent_id)
+                .field("proof", proof)
+                .finish(),
+            Self::IntentCancel { intent_id } => f
+                .debug_struct("IntentCancel")
+                .field("intent_id", intent_id)
                 .finish(),
             Self::FriendAdd { target, message } => f
                 .debug_struct("FriendAdd")

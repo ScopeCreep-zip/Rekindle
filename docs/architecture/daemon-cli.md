@@ -432,10 +432,16 @@ Input follows clig.dev:
 - `unlock` and `init` read the passphrase from a no-echo prompt or from
   `--passphrase-file <PATH>` (`-` is stdin), never from a flag value or
   the environment;
-- severe actions (`identity destroy`, `init --wipe-all-data`) are
-  confirmed by typing the phrase, or with `--confirm="<phrase>"`; the
-  daemon checks the phrase;
-- other confirmations are skipped with `--force`.
+- the host decides what needs confirming (ADR 0019, plan D3.3): a held
+  request answers `IntentRequired` with a review, which the CLI prints to
+  stderr (as JSON with `--format json`) and commits with the proof it asks
+  for: a y/N prompt or `--yes` for a consequential action; `yes` typed or
+  `--confirm=<subject>` to acknowledge a trust-changing one; the subject's
+  name typed or `--confirm=<subject>` for a destructive one; the
+  passphrase (prompt or `--passphrase-file`) for a protected one
+  (`identity delete`, `identity rotate`, `identity export`,
+  `init --wipe-all-data`). `--yes` never confirms anything above
+  consequential.
 
 Exit codes: 0 success, 1 error, 2 timeout, 3 auth, 4 daemon state (409,
 503), 69 (`EX_UNAVAILABLE`) for a command that is not implemented yet.

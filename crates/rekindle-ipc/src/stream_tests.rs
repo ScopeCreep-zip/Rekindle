@@ -104,15 +104,26 @@ async fn a_returning_client_resumes_from_its_cursor() {
     journal.publish(changed("c"));
     let mut f = fixture(journal, SecurityLevel::Authenticated).await;
     let mut frames = f.client.take_event_receiver().unwrap();
-    assert!(matches!(subscribe(&f.client, Some(seen)).await, IpcResponse::Ok(_)));
+    assert!(matches!(
+        subscribe(&f.client, Some(seen)).await,
+        IpcResponse::Ok { .. }
+    ));
     f.journal.publish(changed("d"));
     let mut got = Vec::new();
     for _ in 0..4 {
-        got.push(tokio::time::timeout(WAIT, frames.recv()).await.unwrap().unwrap());
+        got.push(
+            tokio::time::timeout(WAIT, frames.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
     }
     assert_eq!(seq(&got[0]), Some(2));
     assert_eq!(seq(&got[1]), Some(3));
-    assert!(matches!(got[2], StreamFrame::Resumed(Cursor { seq: 3, .. })));
+    assert!(matches!(
+        got[2],
+        StreamFrame::Resumed(Cursor { seq: 3, .. })
+    ));
     assert_eq!(seq(&got[3]), Some(4));
 }
 
@@ -124,7 +135,10 @@ async fn a_stale_cursor_is_an_invalid_session() {
     journal.begin();
     let mut f = fixture(journal, SecurityLevel::Authenticated).await;
     let mut frames = f.client.take_event_receiver().unwrap();
-    assert!(matches!(subscribe(&f.client, Some(stale)).await, IpcResponse::Ok(_)));
+    assert!(matches!(
+        subscribe(&f.client, Some(stale)).await,
+        IpcResponse::Ok { .. }
+    ));
     assert!(matches!(
         tokio::time::timeout(WAIT, frames.recv()).await.unwrap(),
         Some(StreamFrame::InvalidSession)

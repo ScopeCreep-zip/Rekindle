@@ -3,6 +3,7 @@
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::DmCmd;
+use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
@@ -12,20 +13,24 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
         DmCmd::Send {
             friend, message, ..
         } => {
-            let value = client
-                .request_ok(IpcRequest::DmSend {
+            let value = helpers::send(
+                client,
+                IpcRequest::DmSend {
                     peer_key: friend.clone(),
                     body: message.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         DmCmd::Inbox { limit, .. } => {
-            let value = client
-                .request_ok(IpcRequest::DmInbox {
+            let value = helpers::send(
+                client,
+                IpcRequest::DmInbox {
                     limit: u32::try_from(*limit).unwrap_or(u32::MAX),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         DmCmd::Watch { friend } => watch_dms(client, friend.as_deref(), mode).await,
@@ -36,11 +41,13 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
         } => {
             // DM read is inbox scoped to a conversation — daemon returns all, CLI filters
             let _ = conversation_id;
-            let value = client
-                .request_ok(IpcRequest::DmInbox {
+            let value = helpers::send(
+                client,
+                IpcRequest::DmInbox {
                     limit: u32::try_from(*limit).unwrap_or(u32::MAX),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
     }

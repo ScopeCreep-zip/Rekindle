@@ -15,7 +15,7 @@ use rekindle_types::key_format::{
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
 use rekindle_ipc::noise_keys::validate_agent_name;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, DESTROY_CONFIRMATION, WIPE_CONFIRMATION};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 /// Largest identity archive (base64) an import takes: the bus's whole
 /// application frame (`framing::MAX_APP_FRAME`, 16 MiB).
@@ -122,14 +122,14 @@ fn slowmode(seconds: u32) -> Checked {
     }
 }
 
-fn confirmation(given: &str, required: &str) -> Checked {
-    if given == required {
-        Ok(())
-    } else {
-        Err(IpcResponse::error(
-            400,
-            format!("confirmation must be exactly '{required}'"),
-        ))
+/// A commit's proof: a typed name within the longest name a subject has.
+/// A passphrase is opaque.
+fn proof(proof: &rekindle_types::intent::IntentProof) -> Checked {
+    match proof {
+        rekindle_types::intent::IntentProof::Typed(name) => text(name, MAX_NAME_LEN, "typed name"),
+        rekindle_types::intent::IntentProof::Commit
+        | rekindle_types::intent::IntentProof::Acknowledged
+        | rekindle_types::intent::IntentProof::Passphrase(_) => Ok(()),
     }
 }
 
@@ -229,6 +229,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::NetworkStatus
         | IpcRequest::NetworkPeers
         | IpcRequest::PolicyReload
+        | IpcRequest::IdentityWipe
+        | IpcRequest::IntentCancel { .. }
         // The bus server owns subscriptions; dispatch refuses them.
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. } => Ok(()),
@@ -236,17 +238,14 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::Unlock {
             identity,
             passphrase: _,
-        } => public_key(identity, "identity"),
+        }
+        | IpcRequest::IdentityDelete { identity } => public_key(identity, "identity"),
         IpcRequest::IdentityCreate {
             display_name,
             passphrase,
         } => new_identity(display_name, passphrase),
         IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
-        IpcRequest::IdentityDelete {
-            identity,
-            confirmation: given,
-        } => public_key(identity, "identity").and_then(|()| confirmation(given, DESTROY_CONFIRMATION)),
-        IpcRequest::IdentityWipe { confirmation: given } => confirmation(given, WIPE_CONFIRMATION),
+        IpcRequest::IntentCommit { proof: given, .. } => proof(given),
 
         IpcRequest::FriendAdd { target, message } => {
             record_key(target, "target mailbox key")?;

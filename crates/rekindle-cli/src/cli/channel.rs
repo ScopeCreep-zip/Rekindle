@@ -49,9 +49,6 @@ pub enum ChannelCmd {
         /// Channel name or ID.
         #[arg(long, short = 'C')]
         channel: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
     /// Update a channel's properties.

@@ -225,7 +225,7 @@ fn proofs() -> Vec<IntentProof> {
     ]
 }
 
-fn review() -> IntentReview {
+pub fn review() -> IntentReview {
     IntentReview {
         intent_id: id(),
         kind: IntentKind::DeleteChannel,

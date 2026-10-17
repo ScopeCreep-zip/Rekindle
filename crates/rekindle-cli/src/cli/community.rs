@@ -45,9 +45,6 @@ pub enum CommunityCmd {
         /// Community name or governance key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
     /// List joined communities.
@@ -105,9 +102,6 @@ pub enum CommunityCmd {
         /// New owner's pseudonym key.
         #[arg(long, short = 'M')]
         new_owner: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
     /// Invite management.
@@ -202,9 +196,6 @@ pub enum RoleCmd {
         /// Role ID.
         #[arg(long, short = 'r')]
         role_id: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
     /// Assign a role to a member.

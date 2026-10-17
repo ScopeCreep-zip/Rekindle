@@ -198,6 +198,9 @@ pub(super) async fn handle_connection(
     state.connections.write().await.remove(&conn_id);
     state.event_router.write().remove_connection(conn_id);
     super::stream::stop(&state, conn_id);
+    if let Some(hook) = state.on_disconnect.get() {
+        hook(conn_id);
+    }
     state
         .pending_requests
         .write()

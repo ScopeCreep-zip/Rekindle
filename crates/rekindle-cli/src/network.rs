@@ -38,7 +38,7 @@ pub async fn cmd_status(
 ) -> anyhow::Result<()> {
     use rekindle_types::display::{Check, StatusSnapshot};
 
-    let value = client.request_ok(IpcRequest::Status).await?;
+    let value = helpers::send(client, IpcRequest::Status).await?;
 
     if mode.is_structured() {
         return format::print_structured(&value, mode);
@@ -191,7 +191,7 @@ pub async fn dispatch(
 ) -> anyhow::Result<()> {
     match cmd {
         NetworkCmd::Peers { .. } => {
-            let value = client.request_ok(IpcRequest::NetworkPeers).await?;
+            let value = helpers::send(client, IpcRequest::NetworkPeers).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -231,7 +231,7 @@ pub async fn dispatch(
             table::print_table(&["Peer", "Route", "Failures", "Circuit"], &peers, mode)
         }
         NetworkCmd::Status | NetworkCmd::Routes { .. } | NetworkCmd::Config => {
-            let value = client.request_ok(IpcRequest::NetworkStatus).await?;
+            let value = helpers::send(client, IpcRequest::NetworkStatus).await?;
             format::print_structured(&value, mode)
         }
     }

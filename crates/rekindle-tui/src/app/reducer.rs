@@ -164,36 +164,10 @@ impl App {
                 self.nav.close_overlay();
                 self.search.close();
             }
-            Action::ConfirmOverlay => {
-                self.confirm.hide();
-                if self.confirm.is_confirmed() {
-                    if let Some(deferred) = self.pending_confirm_action.take() {
-                        // Dispatch directly to the IPC-backed spawn_* call
-                        // rather than resending `deferred` — that action
-                        // routes back to the arming `process_*` function
-                        // above (`pending_confirm_action` is `None` again
-                        // by the time it's processed), which would just
-                        // re-show the same confirm dialog instead of
-                        // performing the operation.
-                        match deferred {
-                            Action::RemoveFriend { peer_key } => {
-                                self.spawn_remove_friend(peer_key);
-                            }
-                            Action::LeaveCommunity { community } => {
-                                let name = self.community_name(&community).to_string();
-                                self.spawn_leave_community(community, name);
-                            }
-                            Action::LeaveVoice => self.spawn_leave_voice(),
-                            other => {
-                                let _ = self.action_tx.send(other);
-                            }
-                        }
-                    }
-                } else {
-                    self.pending_confirm_action = None;
-                }
-            }
-            Action::LeaveVoice => self.process_leave_voice(),
+            Action::ShowIntent(review) => self.intent.show(*review),
+            Action::CommitIntent { review, proof } => self.spawn_commit_intent(*review, proof),
+            Action::CancelIntent { intent_id } => self.spawn_cancel_intent(intent_id),
+            Action::LeaveVoice => self.spawn_leave_voice(),
             Action::ToggleMute => {
                 let _ = self.nav.current_view_mut().update(Action::ToggleMute);
             }
@@ -204,8 +178,12 @@ impl App {
             // Friend operations
             Action::AcceptFriendRequest(id) => self.spawn_accept_friend(id),
             Action::RejectFriendRequest(id) => self.spawn_reject_friend(id),
-            Action::RemoveFriend { ref peer_key } => self.process_remove_friend(peer_key),
-            Action::LeaveCommunity { ref community } => self.process_leave_community(community),
+            // The host's gate asks for any confirmation (plan D3.4).
+            Action::RemoveFriend { peer_key } => self.spawn_remove_friend(peer_key),
+            Action::LeaveCommunity { community } => {
+                let name = self.community_name(&community).to_string();
+                self.spawn_leave_community(community, name);
+            }
 
             // Clipboard
             Action::YankToClipboard { ref text } => self.yank_to_clipboard(text),
@@ -304,40 +282,5 @@ impl App {
                 .notifications
                 .push(format!("Clipboard write failed: {e}"), ToastLevel::Warning),
         }
-    }
-
-    /// Two-step leave-voice flow: first press arms a confirmation, second
-    /// press (after confirm) performs the disconnect.
-    /// Arm the leave-voice confirmation dialog. The actual `VoiceLeave`
-    /// IPC call fires from `Action::ConfirmOverlay` once confirmed — see
-    /// its handler above, which dispatches on `pending_confirm_action`
-    /// instead of resending this action (that would just re-arm it).
-    fn process_leave_voice(&mut self) {
-        self.pending_confirm_action = Some(Action::LeaveVoice);
-        self.confirm
-            .show("Leave voice channel?", "You will be disconnected.");
-    }
-
-    /// Arm the remove-friend confirmation dialog (see `process_leave_voice`).
-    fn process_remove_friend(&mut self, peer_key: &str) {
-        self.pending_confirm_action = Some(Action::RemoveFriend {
-            peer_key: peer_key.to_string(),
-        });
-        self.confirm.show(
-            format!("Remove {}?", crate::helpers::abbreviate_key(peer_key)),
-            "They will no longer see your messages or presence.",
-        );
-    }
-
-    /// Arm the leave-community confirmation dialog (see `process_leave_voice`).
-    fn process_leave_community(&mut self, community: &str) {
-        let name = self.community_name(community).to_string();
-        self.pending_confirm_action = Some(Action::LeaveCommunity {
-            community: community.to_string(),
-        });
-        self.confirm.show(
-            format!("Leave '{name}'?"),
-            "You will lose access to all channels.",
-        );
     }
 }

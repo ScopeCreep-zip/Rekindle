@@ -58,7 +58,11 @@ impl IpcRequest {
             Self::IdentityImport { .. } => ("IdentityImport", Exclusive, Open),
             Self::IdentityRotate { .. } => ("IdentityRotate", Exclusive, Admin),
             Self::IdentityDelete { .. } => ("IdentityDelete", Exclusive, Open),
-            Self::IdentityWipe { .. } => ("IdentityWipe", Exclusive, Open),
+            Self::IdentityWipe => ("IdentityWipe", Exclusive, Open),
+            // The gate checks who may commit (plan D3.3); the held request
+            // runs in its own lane.
+            Self::IntentCommit { .. } => ("IntentCommit", Write, Open),
+            Self::IntentCancel { .. } => ("IntentCancel", Write, Open),
 
             Self::FriendAdd { .. } => ("FriendAdd", Write, Authenticated),
             Self::FriendAccept { .. } => ("FriendAccept", Write, Authenticated),
@@ -155,9 +159,7 @@ mod tests {
                 archive: String::new(),
                 passphrase: String::new(),
             },
-            IpcRequest::IdentityWipe {
-                confirmation: String::new(),
-            },
+            IpcRequest::IdentityWipe,
         ] {
             assert_eq!(request.lane(), Lane::Exclusive, "{}", request.name());
         }

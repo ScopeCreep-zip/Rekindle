@@ -153,8 +153,10 @@ fn buddy_list() -> Audience {
 
 fn subscription_audience(event: &SubscriptionEvent) -> Audience {
     match event {
-        // One OS notification, one inbox, one ring: the buddy list owns them.
+        // One OS notification, one inbox, one ring, one review of an action
+        // the backend began: the buddy list owns them.
         SubscriptionEvent::Notification(_)
+        | SubscriptionEvent::IntentPending(_)
         | SubscriptionEvent::ChannelMessage(ChannelMessageEvent::ConversationFocusRequested {
             ..
         }) => buddy_list(),
@@ -222,6 +224,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         | SubscriptionEvent::Call(_)
         | SubscriptionEvent::Friend(_) => "chat-event",
         SubscriptionEvent::Notification(_) => "notification-event",
+        SubscriptionEvent::IntentPending(_) => "intent-event",
         SubscriptionEvent::Network(_) => "network-status",
     }
 }

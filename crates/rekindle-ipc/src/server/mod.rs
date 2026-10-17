@@ -96,6 +96,8 @@ struct ServerState {
     tasks: tokio_util::task::TaskTracker,
     /// Stops the accept loop and every stream.
     stopping: tokio_util::sync::CancellationToken,
+    /// Told each closed connection's id (`BusServer::on_disconnect`).
+    on_disconnect: std::sync::OnceLock<Arc<dyn Fn(u64) + Send + Sync>>,
 }
 
 impl ServerState {
@@ -177,6 +179,7 @@ impl BusServer {
                 streams: parking_lot::Mutex::new(HashMap::new()),
                 tasks: tasks.clone(),
                 stopping: stopping.clone(),
+                on_disconnect: std::sync::OnceLock::new(),
             }),
             keypair: Arc::new(keypair),
             connections: tasks,
@@ -296,6 +299,14 @@ impl BusServer {
     /// The socket path this server is bound to.
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
+    }
+
+    /// Tell `hook` each connection that closes (plan D3.3: the host drops the
+    /// actions it held for it).
+    pub fn on_disconnect(&self, hook: Arc<dyn Fn(u64) + Send + Sync>) {
+        if self.state.on_disconnect.set(hook).is_err() {
+            tracing::warn!("disconnect hook already set");
+        }
     }
 
     /// Hand the server the host's event journal (plan D3.2): from here on

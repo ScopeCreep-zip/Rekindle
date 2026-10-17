@@ -16,6 +16,7 @@ use rekindle_ipc::client::BusClient;
 use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::IpcError;
+use rekindle_types::intent::{IntentId, IntentProof, Reversibility};
 use rekindle_types::subscription_events::{Cursor, StreamFrame, SubscriptionFilter};
 
 use crate::ClientError;
@@ -24,6 +25,14 @@ use crate::ClientError;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for requests that wait on Veilid network I/O.
 const LONG_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// A request that ran: its answer, and for an intent how it can be taken
+/// back.
+#[derive(Debug, Clone)]
+pub struct Ran {
+    pub data: serde_json::Value,
+    pub reversibility: Option<Reversibility>,
+}
 
 /// A connection to the daemon.
 pub struct DaemonClient {
@@ -128,12 +137,30 @@ impl DaemonClient {
     /// Send a request and unwrap a successful answer.
     ///
     /// # Errors
-    /// As [`Self::request`], plus [`ClientError::Daemon`] for an error
-    /// answer. Events never travel in the response slot, so one there is a
-    /// protocol violation.
+    /// As [`Self::request_outcome`].
     pub async fn request_ok(&self, request: IpcRequest) -> Result<serde_json::Value, ClientError> {
+        self.request_outcome(request).await.map(|ran| ran.data)
+    }
+
+    /// Send a request and unwrap a successful answer with how it can be
+    /// taken back (plan D3.3).
+    ///
+    /// # Errors
+    /// As [`Self::request`], plus [`ClientError::Daemon`] for an error
+    /// answer and [`ClientError::IntentRequired`] when the host's gate holds
+    /// the request for review: render it, then [`Self::commit_intent`].
+    pub async fn request_outcome(&self, request: IpcRequest) -> Result<Ran, ClientError> {
         match self.request(request).await? {
-            IpcResponse::Ok(value) => Ok(value),
+            IpcResponse::Ok {
+                data,
+                reversibility,
+            } => Ok(Ran {
+                data,
+                reversibility,
+            }),
+            IpcResponse::IntentRequired(review) => {
+                Err(ClientError::IntentRequired(Box::new(review)))
+            }
             IpcResponse::Error {
                 code,
                 message,
@@ -143,8 +170,32 @@ impl DaemonClient {
                 message,
                 remediation,
             }),
-            IpcResponse::Event(_) => Err(ClientError::Protocol("event in a response")),
         }
+    }
+
+    /// Commit a held action with `proof` (plan D3.3). A changed fact is
+    /// answered with a fresh review ([`ClientError::IntentRequired`]).
+    ///
+    /// # Errors
+    /// As [`Self::request_outcome`]; a wrong proof is a daemon error and the
+    /// action stays held.
+    pub async fn commit_intent(
+        &self,
+        intent_id: IntentId,
+        proof: IntentProof,
+    ) -> Result<Ran, ClientError> {
+        self.request_outcome(IpcRequest::IntentCommit { intent_id, proof })
+            .await
+    }
+
+    /// Drop a held action.
+    ///
+    /// # Errors
+    /// As [`Self::request_outcome`].
+    pub async fn cancel_intent(&self, intent_id: IntentId) -> Result<(), ClientError> {
+        self.request_ok(IpcRequest::IntentCancel { intent_id })
+            .await
+            .map(drop)
     }
 
     /// Close the connection, flushing anything still queued.
@@ -168,7 +219,8 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::IdentityExport { .. }
         | IpcRequest::IdentityImport { .. }
         | IpcRequest::IdentityDelete { .. }
-        | IpcRequest::IdentityWipe { .. }
+        | IpcRequest::IdentityWipe
+        | IpcRequest::IntentCommit { .. }
         | IpcRequest::Logout
         | IpcRequest::CommunityCreate { .. }
         | IpcRequest::CommunityJoin { .. }

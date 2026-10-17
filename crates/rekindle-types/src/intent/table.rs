@@ -411,6 +411,9 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("DmSend", Some(IntentKind::SendDmMessage)),
     ("DmTyping", None),
     ("DmInbox", None),
+    // The gate answers these itself (plan D3.3).
+    ("IntentCommit", None),
+    ("IntentCancel", None),
     ("Subscribe", None),
     ("Unsubscribe", None),
     ("MekList", None),

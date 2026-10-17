@@ -99,7 +99,7 @@ mod tests {
     fn code(response: &IpcResponse) -> Option<u32> {
         match response {
             IpcResponse::Error { code, .. } => Some(*code),
-            IpcResponse::Ok(_) | IpcResponse::Event(_) => None,
+            IpcResponse::Ok { .. } | IpcResponse::IntentRequired(_) => None,
         }
     }
 

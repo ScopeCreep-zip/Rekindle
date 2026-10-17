@@ -127,7 +127,7 @@ async fn only_the_daemon_can_answer_a_request() {
 
     let response = pending.await.unwrap().unwrap();
     assert!(
-        matches!(&response, IpcResponse::Ok(v) if v == "genuine"),
+        matches!(&response, IpcResponse::Ok { data, .. } if data == "genuine"),
         "victim got {response:?}"
     );
 }
@@ -183,7 +183,7 @@ async fn a_reply_in_flight_at_shutdown_still_arrives() {
         .expect("drain finishes");
 
     let response = pending.await.unwrap().unwrap();
-    assert!(matches!(&response, IpcResponse::Ok(v) if v == "stopping"));
+    assert!(matches!(&response, IpcResponse::Ok { data, .. } if data == "stopping"));
 }
 
 #[tokio::test]

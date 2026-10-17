@@ -83,6 +83,9 @@ pub enum SubscriptionEvent {
     System(SystemEvent),
     /// Unread count changed for a specific context.
     UnreadChanged { context: UnreadContext, count: u32 },
+    /// The backend began an action that needs the user's review (plan
+    /// D3.3): any connection of the identity renders it and commits it.
+    IntentPending(crate::intent::IntentReview),
 }
 
 /// Context for unread count changes.
@@ -115,11 +118,12 @@ pub enum EventCategory {
     Network,
     System,
     UnreadChanged,
+    Intent,
 }
 
 impl EventCategory {
     /// Every category, for subscribers that want all of them.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::ChannelMessage,
         Self::Typing,
         Self::Presence,
@@ -134,6 +138,7 @@ impl EventCategory {
         Self::Network,
         Self::System,
         Self::UnreadChanged,
+        Self::Intent,
     ];
 }
 
@@ -155,6 +160,7 @@ impl SubscriptionEvent {
             Self::Network(_) => EventCategory::Network,
             Self::System(_) => EventCategory::System,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
+            Self::IntentPending(_) => EventCategory::Intent,
         }
     }
 
@@ -263,6 +269,7 @@ impl SubscriptionEvent {
             | Self::Network(_)
             | Self::Notification(_)
             | Self::UnreadChanged { .. }
+            | Self::IntentPending(_)
             | Self::Friend(_) => None,
         }
     }

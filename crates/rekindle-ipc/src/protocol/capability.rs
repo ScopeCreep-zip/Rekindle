@@ -146,7 +146,11 @@ impl IpcRequest {
             | Self::IdentityImport { .. }
             | Self::IdentityRotate { .. }
             | Self::IdentityDelete { .. }
-            | Self::IdentityWipe { .. }
+            | Self::IdentityWipe
+            // A commit runs the request the gate held, which passed this
+            // caller's capability check when it was selected.
+            | Self::IntentCommit { .. }
+            | Self::IntentCancel { .. }
             | Self::MekList { .. }
             | Self::MekRotate { .. }
             | Self::MekRequest { .. }

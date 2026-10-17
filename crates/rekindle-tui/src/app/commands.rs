@@ -33,12 +33,7 @@ impl App {
                         });
                     }
                 },
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "status".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "status", e),
             }
 
             // Peer list
@@ -56,12 +51,7 @@ impl App {
                         });
                     }
                 },
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "peers".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "peers", e),
             }
 
             // Community list
@@ -81,12 +71,7 @@ impl App {
                         }
                     }
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "communities".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "communities", e),
             }
 
             // Identity (for dashboard identity panel)
@@ -157,12 +142,7 @@ impl App {
                         }
                     }
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "channel history".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "channel history", e),
             }
         });
     }
@@ -186,12 +166,7 @@ impl App {
                         )));
                     }
                 },
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "dm inbox".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "dm inbox", e),
             }
         });
     }
@@ -214,12 +189,7 @@ impl App {
                         });
                     }
                 },
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "friend list".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "friend list", e),
             }
         });
     }
@@ -248,12 +218,7 @@ impl App {
                         });
                     }
                 },
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "community info".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "community info", e),
             }
         });
     }
@@ -324,12 +289,7 @@ impl App {
                         level: ToastLevel::Success,
                     });
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "send DM".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "send DM", e),
             }
         });
     }
@@ -353,12 +313,7 @@ impl App {
                         level: ToastLevel::Success,
                     });
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "accept friend".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "accept friend", e),
             }
         });
     }
@@ -382,12 +337,7 @@ impl App {
                         level: ToastLevel::Info,
                     });
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "reject friend".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "reject friend", e),
             }
         });
     }
@@ -411,12 +361,7 @@ impl App {
                         level: ToastLevel::Info,
                     });
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "remove friend".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "remove friend", e),
             }
         });
     }
@@ -438,12 +383,7 @@ impl App {
                     });
                     let _ = tx.send(Action::ShowDashboard);
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "leave community".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "leave community", e),
             }
         });
     }
@@ -460,13 +400,71 @@ impl App {
                     });
                     let _ = tx.send(Action::ShowDashboard);
                 }
-                Err(e) => {
-                    let _ = tx.send(Action::CommandFailed {
-                        context: "leave voice channel".into(),
-                        error: e.to_string(),
-                    });
-                }
+                Err(e) => report_failure(&tx, "leave voice channel", e),
             }
         });
     }
+
+    /// Commit a reviewed action with `proof`; a changed fact shows the fresh
+    /// review, a wrong proof shows the same one again (it is still held).
+    pub(crate) fn spawn_commit_intent(
+        &self,
+        review: rekindle_types::intent::IntentReview,
+        proof: rekindle_types::intent::IntentProof,
+    ) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.commit_intent(review.intent_id, proof).await {
+                Ok(ran) => {
+                    let _ = tx.send(Action::ShowToast {
+                        message: format!(
+                            "{:?} done ({:?})",
+                            review.kind,
+                            ran.reversibility.unwrap_or(review.reversibility)
+                        ),
+                        level: ToastLevel::Success,
+                    });
+                }
+                Err(rekindle_client::ClientError::Daemon {
+                    code: 403, message, ..
+                }) => {
+                    let _ = tx.send(Action::ShowToast {
+                        message,
+                        level: ToastLevel::Warning,
+                    });
+                    let _ = tx.send(Action::ShowIntent(Box::new(review)));
+                }
+                Err(e) => report_failure(&tx, "confirm", e),
+            }
+        });
+    }
+
+    /// Drop a reviewed action.
+    pub(crate) fn spawn_cancel_intent(&self, intent_id: rekindle_types::intent::IntentId) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            if let Err(e) = client.cancel_intent(intent_id).await {
+                report_failure(&tx, "cancel", e);
+            }
+        });
+    }
+}
+
+/// A request that did not run: the host's review, shown in the overlay, or
+/// the error.
+fn report_failure(
+    tx: &tokio::sync::mpsc::UnboundedSender<Action>,
+    context: &str,
+    error: rekindle_client::ClientError,
+) {
+    let action = match error {
+        rekindle_client::ClientError::IntentRequired(review) => Action::ShowIntent(review),
+        other => Action::CommandFailed {
+            context: context.into(),
+            error: other.to_string(),
+        },
+    };
+    let _ = tx.send(action);
 }

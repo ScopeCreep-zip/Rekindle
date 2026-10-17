@@ -35,29 +35,8 @@ impl App {
                     return self.search.handle_key(key);
                 }
 
-                if self.confirm.visible {
-                    use crossterm::event::KeyCode;
-                    match key.code {
-                        KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
-                            self.confirm.toggle_focus();
-                            return None;
-                        }
-                        KeyCode::Char('y') => {
-                            // Explicit yes: focus Confirm, then resolve.
-                            self.confirm.confirm_focused = true;
-                            return Some(Action::ConfirmOverlay);
-                        }
-                        KeyCode::Char('n') | KeyCode::Esc => {
-                            // Explicit no: leave Confirm unfocused, then resolve (cancels).
-                            self.confirm.confirm_focused = false;
-                            return Some(Action::ConfirmOverlay);
-                        }
-                        KeyCode::Enter => {
-                            // Resolve based on whichever button is focused.
-                            return Some(Action::ConfirmOverlay);
-                        }
-                        _ => return None,
-                    }
+                if self.intent.visible() {
+                    return self.intent.handle_key(key);
                 }
 
                 let use_unicode = self.theme.use_unicode();
@@ -118,6 +97,9 @@ impl App {
         self.idle_frames = 0;
 
         match event {
+            // An action the backend began, waiting for this identity's
+            // review (plan D3.4).
+            SubscriptionEvent::IntentPending(review) => Some(Action::ShowIntent(Box::new(review))),
             // ── Events forwarded to active view (real-time data push) ─────
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { .. }) => {
                 if self.nav.tab_bar.selected_id() != Some("communities") {

@@ -476,102 +476,72 @@
     }
   },
   "intent.escalation.attachment": {
-    "data": {
+    "attachment": {
       "fileName": "photo.jpg",
       "metadataRemoved": false,
       "sizeBytes": 2048
-    },
-    "type": "attachment"
+    }
   },
   "intent.escalation.containerNotEmpty": {
-    "data": {
+    "containerNotEmpty": {
       "members": 57,
       "messages": 1204
-    },
-    "type": "containerNotEmpty"
+    }
   },
   "intent.escalation.crossAudience": {
-    "data": {
+    "crossAudience": {
       "fromMembers": 12,
       "toMembers": 340
-    },
-    "type": "crossAudience"
+    }
   },
-  "intent.escalation.firstMediaInCall": {
-    "type": "firstMediaInCall"
-  },
-  "intent.escalation.lastAdmin": {
-    "type": "lastAdmin"
-  },
+  "intent.escalation.firstMediaInCall": "firstMediaInCall",
+  "intent.escalation.lastAdmin": "lastAdmin",
   "intent.escalation.massMention": {
-    "data": {
+    "massMention": {
       "notified": 214
-    },
-    "type": "massMention"
+    }
   },
   "intent.escalation.pendingWork": {
-    "data": {
+    "pendingWork": {
       "inCall": true,
       "unsent": 3,
       "uploading": false
-    },
-    "type": "pendingWork"
+    }
   },
-  "intent.escalation.soleMember": {
-    "type": "soleMember"
-  },
-  "intent.escalation.startsMekBallot": {
-    "type": "startsMekBallot"
-  },
+  "intent.escalation.soleMember": "soleMember",
+  "intent.escalation.startsMekBallot": "startsMekBallot",
   "intent.escalation.verifiedKeyChanged": {
-    "data": {
+    "verifiedKeyChanged": {
       "newSafetyNumber": "5e6f7a8b",
       "oldSafetyNumber": "1a2b3c4d"
-    },
-    "type": "verifiedKeyChanged"
+    }
   },
   "intent.fact.fingerprint": {
-    "data": {
+    "fingerprint": {
       "fingerprint": "abcd 0123"
-    },
-    "type": "fingerprint"
+    }
   },
-  "intent.fact.ipAddressLeaves": {
-    "type": "ipAddressLeaves"
-  },
+  "intent.fact.ipAddressLeaves": "ipAddressLeaves",
   "intent.fact.membersAffected": {
-    "data": {
+    "membersAffected": {
       "count": 41
-    },
-    "type": "membersAffected"
+    }
   },
   "intent.fact.messagesDeleted": {
-    "data": {
+    "messagesDeleted": {
       "count": 1204
-    },
-    "type": "messagesDeleted"
+    }
   },
-  "intent.fact.pendingMessagesDropped": {
-    "type": "pendingMessagesDropped"
-  },
-  "intent.fact.presenceVisible": {
-    "type": "presenceVisible"
-  },
-  "intent.fact.rejoinNeedsInvite": {
-    "type": "rejoinNeedsInvite"
-  },
+  "intent.fact.pendingMessagesDropped": "pendingMessagesDropped",
+  "intent.fact.presenceVisible": "presenceVisible",
+  "intent.fact.rejoinNeedsInvite": "rejoinNeedsInvite",
   "intent.fact.safetyNumber": {
-    "data": {
+    "safetyNumber": {
       "safetyNumber": "1a2b3c4d"
-    },
-    "type": "safetyNumber"
+    }
   },
-  "intent.fact.sessionDeleted": {
-    "type": "sessionDeleted"
-  },
-  "intent.fact.subjectNotTold": {
-    "type": "subjectNotTold"
-  },
+  "intent.fact.sessionDeleted": "sessionDeleted",
+  "intent.fact.subjectNotTold": "subjectNotTold",
   "intent.intentClass.consequential": "consequential",
   "intent.intentClass.destructive": "destructive",
   "intent.intentClass.protected": "protected",
@@ -579,140 +549,143 @@
   "intent.intentClass.trustChanging": "trustChanging",
   "intent.intentId": "01900000-0000-7000-8000-000000000001",
   "intent.intentKind.deleteChannel": "deleteChannel",
-  "intent.intentProof.acknowledged": {
-    "type": "acknowledged"
-  },
-  "intent.intentProof.commit": {
-    "type": "commit"
-  },
+  "intent.intentProof.acknowledged": "acknowledged",
+  "intent.intentProof.commit": "commit",
   "intent.intentProof.passphrase": {
-    "data": "correct horse",
-    "type": "passphrase"
+    "passphrase": "correct horse"
   },
   "intent.intentProof.typed": {
-    "data": "general",
-    "type": "typed"
+    "typed": "general"
   },
   "intent.intentReview": {
     "class": "destructive",
     "escalations": [
       {
-        "data": {
+        "containerNotEmpty": {
           "members": 57,
           "messages": 1204
-        },
-        "type": "containerNotEmpty"
+        }
       }
     ],
     "expiresAtMs": 1700000300000,
     "facts": [
       {
-        "data": {
+        "messagesDeleted": {
           "count": 1204
-        },
-        "type": "messagesDeleted"
+        }
       }
     ],
     "intentId": "01900000-0000-7000-8000-000000000001",
     "kind": "deleteChannel",
     "notifies": {
-      "data": 57,
-      "type": "members"
+      "members": 57
     },
     "proof": "typeSubject",
-    "reversibility": {
-      "type": "never"
-    },
+    "reversibility": "never",
     "subject": {
-      "data": {
+      "channel": {
         "communityName": "Raiders",
         "id": "ch_cccccccccccccccccccccccccccccccc",
         "name": "general"
-      },
-      "type": "channel"
+      }
     }
   },
   "intent.notifies.members": {
-    "data": 57,
-    "type": "members"
+    "members": 57
   },
-  "intent.notifies.nobody": {
-    "type": "nobody"
-  },
-  "intent.notifies.subject": {
-    "type": "subject"
-  },
+  "intent.notifies.nobody": "nobody",
+  "intent.notifies.subject": "subject",
   "intent.proofRequired.acknowledge": "acknowledge",
   "intent.proofRequired.commit": "commit",
   "intent.proofRequired.none": "none",
   "intent.proofRequired.passphrase": "passphrase",
   "intent.proofRequired.typeSubject": "typeSubject",
-  "intent.reversibility.needsOthers": {
-    "type": "needsOthers"
-  },
-  "intent.reversibility.never": {
-    "type": "never"
-  },
+  "intent.reversibility.needsOthers": "needsOthers",
+  "intent.reversibility.never": "never",
   "intent.reversibility.reversibleByInverse": {
-    "data": "unblockUser",
-    "type": "reversibleByInverse"
+    "reversibleByInverse": "unblockUser"
   },
-  "intent.reversibility.undoable": {
-    "type": "undoable"
-  },
+  "intent.reversibility.undoable": "undoable",
   "intent.subject.channel": {
-    "data": {
+    "channel": {
       "communityName": "Raiders",
       "id": "ch_cccccccccccccccccccccccccccccccc",
       "name": "general"
-    },
-    "type": "channel"
+    }
   },
   "intent.subject.community": {
-    "data": {
+    "community": {
       "id": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
       "name": "Raiders"
-    },
-    "type": "community"
+    }
   },
   "intent.subject.file": {
-    "data": {
+    "file": {
       "name": "photo.jpg"
-    },
-    "type": "file"
+    }
   },
   "intent.subject.link": {
-    "data": {
+    "link": {
       "host": "example.org"
-    },
-    "type": "link"
+    }
   },
   "intent.subject.named": {
-    "data": {
+    "named": {
       "name": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    },
-    "type": "named"
+    }
   },
   "intent.subject.ownIdentity": {
-    "data": {
+    "ownIdentity": {
       "name": "Me"
-    },
-    "type": "ownIdentity"
+    }
   },
   "intent.subject.person": {
-    "data": {
+    "person": {
       "displayName": "alice_g",
       "fingerprint": "abcd 0123",
       "localNickname": "Alice"
-    },
-    "type": "person"
+    }
   },
   "intent.subject.role": {
-    "data": {
+    "role": {
       "id": "role_1",
       "name": "officer"
-    },
-    "type": "role"
+    }
+  },
+  "intentPending.intentPending": {
+    "intentPending": {
+      "class": "destructive",
+      "escalations": [
+        {
+          "containerNotEmpty": {
+            "members": 57,
+            "messages": 1204
+          }
+        }
+      ],
+      "expiresAtMs": 1700000300000,
+      "facts": [
+        {
+          "messagesDeleted": {
+            "count": 1204
+          }
+        }
+      ],
+      "intentId": "01900000-0000-7000-8000-000000000001",
+      "kind": "deleteChannel",
+      "notifies": {
+        "members": 57
+      },
+      "proof": "typeSubject",
+      "reversibility": "never",
+      "subject": {
+        "channel": {
+          "communityName": "Raiders",
+          "id": "ch_cccccccccccccccccccccccccccccccc",
+          "name": "general"
+        }
+      }
+    }
   },
   "membership.banned": {
     "membership": {

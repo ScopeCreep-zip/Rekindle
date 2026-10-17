@@ -132,7 +132,7 @@ async fn push_route_receive_end_to_end() {
         .await
         .unwrap();
     assert!(
-        matches!(resp, IpcResponse::Ok(_)),
+        matches!(resp, IpcResponse::Ok { .. }),
         "subscribe should succeed: {resp:?}"
     );
 

@@ -53,6 +53,8 @@ pub mod server;
 pub mod transport;
 
 #[cfg(test)]
+mod intent_wire_tests;
+#[cfg(test)]
 mod media_transport_tests;
 #[cfg(test)]
 mod routing_tests;

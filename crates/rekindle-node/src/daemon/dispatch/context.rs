@@ -237,9 +237,9 @@ impl DaemonContext {
         }
     }
 
-    /// `HostApi::call`: dispatch `request` holding its lane for the whole
-    /// handler, once the sender's clearance (stamped by the bus server from
-    /// the registry, or the shell's) meets the request's (plan D1).
+    /// `HostApi::call`: the sender's clearance (stamped by the bus server
+    /// from the registry, or the shell's) must meet the request's (plan D1),
+    /// and an agent's capabilities admit it.
     pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
         let required = request.required_clearance();
         if caller.clearance < required {
@@ -281,6 +281,17 @@ impl DaemonContext {
                 );
             }
         }
+        // Then `validate_request`, the shell's refusals and the intent gate
+        // (plan D3.3), which dispatches what may run.
+        crate::host::gate::run(self, request, caller).await
+    }
+
+    /// Dispatch `request` holding its lane for the whole handler.
+    pub(crate) async fn dispatch_in_lane(
+        &self,
+        request: IpcRequest,
+        caller: &Caller,
+    ) -> IpcResponse {
         match request.lane() {
             Lane::Query => super::router::dispatch(self, request, caller).await,
             Lane::Write => {

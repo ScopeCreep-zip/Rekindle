@@ -82,11 +82,16 @@ pub enum GateError {
     TooManyPending,
 }
 
-/// Who holds an action: the gate binds it to the whole owner (connection
-/// and identity) and counts wrong passphrases per identity.
+/// Who holds an action: the gate binds it to its owner (connection and
+/// identity) and counts wrong passphrases per identity.
 pub trait GateOwner: Clone + PartialEq + Send + Sync + 'static {
     type Identity: Clone + Eq + Hash + Send + Sync + 'static;
     fn identity(&self) -> &Self::Identity;
+
+    /// Whether this caller may commit, cancel or read an action `held` by
+    /// that owner (plan D3.3: the same connection and identity, or any
+    /// connection of the identity for an action the backend began).
+    fn may_act_for(&self, held: &Self) -> bool;
 }
 
 /// Why a commit did not run, inside the shared run of `commit_and_run`.
@@ -192,7 +197,7 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         let mut pending = self.pending.lock();
         let held = pending
             .get(&intent_id)
-            .filter(|p| p.owner == *owner && p.review.expires_at_ms > now_ms)
+            .filter(|p| owner.may_act_for(&p.owner) && p.review.expires_at_ms > now_ms)
             .ok_or(GateError::UnknownIntent)?;
         if fresh != held.selection {
             let Some(mut held) = pending.remove(&intent_id) else {
@@ -261,7 +266,7 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             })
             .await;
         match outcome {
-            Ok((ran_for, result)) if ran_for == *owner => Ok(Committed::Ran(result)),
+            Ok((ran_for, result)) if owner.may_act_for(&ran_for) => Ok(Committed::Ran(result)),
             Ok(_) => Err(GateError::UnknownIntent),
             Err(not_run) => match &*not_run {
                 NotRun::Review(review) => Ok(Committed::Review(review.clone())),
@@ -270,28 +275,61 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         }
     }
 
+    /// The result of `intent_id`'s run, when it already ran for an owner
+    /// `owner` may act for: a repeated commit is answered from it (plan
+    /// U1.9) without the held action, which the run consumed.
+    pub async fn ran(&self, intent_id: IntentId, owner: &O) -> Option<R> {
+        self.results
+            .get(intent_id.0)
+            .await
+            .filter(|(ran_for, _)| owner.may_act_for(ran_for))
+            .map(|(_, result)| result)
+    }
+
     /// The held action's selection, for recomputing its facts at commit.
     pub fn selection(&self, intent_id: IntentId, owner: &O) -> Option<Selection> {
         self.pending
             .lock()
             .get(&intent_id)
-            .filter(|p| p.owner == *owner)
+            .filter(|p| owner.may_act_for(&p.owner))
             .map(|p| p.selection.clone())
     }
 
-    /// Drop a held action. Returns whether it was held for `owner`.
+    /// A copy of the held action, so the host recomputes its facts from the
+    /// request itself at commit (plan D3.3).
+    pub fn held_action(&self, intent_id: IntentId, owner: &O) -> Option<A>
+    where
+        A: Clone,
+    {
+        self.pending
+            .lock()
+            .get(&intent_id)
+            .filter(|p| owner.may_act_for(&p.owner))
+            .map(|p| p.action.clone())
+    }
+
+    /// Drop a held action. Returns whether `owner` could act for it.
     pub fn cancel(&self, intent_id: IntentId, owner: &O) -> bool {
         let mut pending = self.pending.lock();
-        if pending.get(&intent_id).is_some_and(|p| p.owner == *owner) {
+        if pending
+            .get(&intent_id)
+            .is_some_and(|p| owner.may_act_for(&p.owner))
+        {
             pending.remove(&intent_id);
             return true;
         }
         false
     }
 
-    /// Drop every action `owner` holds (lock, logout, identity switch).
+    /// Drop every action `owner` holds.
     pub fn clear(&self, owner: &O) {
         self.pending.lock().retain(|_, p| p.owner != *owner);
+    }
+
+    /// Drop every action whose owner `matches` (plan D3.3: lock, logout or
+    /// identity switch clears an identity's; a disconnect, a connection's).
+    pub fn clear_matching(&self, matches: impl Fn(&O) -> bool) {
+        self.pending.lock().retain(|_, p| !matches(&p.owner));
     }
 }
 

@@ -106,6 +106,11 @@ impl<T: Clone + Send + Sync + 'static> IdempotencyCache<T> {
         self.inner.try_get_with(key, async { f().await }).await
     }
 
+    /// The value cached under `key`, if any; runs nothing.
+    pub async fn get(&self, key: Uuid) -> Option<T> {
+        self.inner.get(&key).await
+    }
+
     /// Diagnostic: number of entries currently cached.
     #[must_use]
     pub fn entry_count(&self) -> u64 {

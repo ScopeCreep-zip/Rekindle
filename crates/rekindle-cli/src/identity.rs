@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use base64::Engine as _;
-use rekindle_ipc::protocol::{IpcRequest, DESTROY_CONFIRMATION, WIPE_CONFIRMATION};
+use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::{ExportCmd, IdentityCmd, ImportCmd, InitArgs, UnlockArgs};
 use crate::error::{cmd, CliError};
@@ -19,17 +19,9 @@ pub async fn cmd_init(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     if args.wipe_all_data {
-        let Some(confirmation) = helpers::confirm_severe(
-            "This will delete ALL local Rekindle data.",
-            WIPE_CONFIRMATION,
-            args.confirm.as_deref(),
-        )?
-        else {
-            return format::print_text("Cancelled.");
-        };
-        let value = client
-            .request_ok(IpcRequest::IdentityWipe { confirmation })
-            .await?;
+        // Protected: the host asks for a passphrase (plan D3.3).
+        helpers::set_passphrase_file(args.passphrase_file.clone());
+        let value = helpers::send(client, IpcRequest::IdentityWipe).await?;
         return format::print_structured(&value, mode);
     }
 
@@ -40,12 +32,14 @@ pub async fn cmd_init(
     )?;
 
     format::step_header(1, 2, "Creating identity via daemon")?;
-    let value = client
-        .request_ok(IpcRequest::IdentityCreate {
+    let value = helpers::send(
+        client,
+        IpcRequest::IdentityCreate {
             display_name: display_name.clone(),
             passphrase: passphrase.as_str().to_owned(),
-        })
-        .await?;
+        },
+    )
+    .await?;
     format::step_done("identity created")?;
     let public_key = value
         .get("public_key")
@@ -102,7 +96,7 @@ pub async fn cmd_unlock(
 
 /// The device's one identity, or an error that says what to do.
 async fn only_identity(client: &DaemonClient) -> anyhow::Result<String> {
-    let value = client.request_ok(IpcRequest::IdentityList).await?;
+    let value = helpers::send(client, IpcRequest::IdentityList).await?;
     let keys: Vec<String> = value
         .get("identities")
         .and_then(|v| v.as_array())
@@ -129,13 +123,13 @@ async fn only_identity(client: &DaemonClient) -> anyhow::Result<String> {
 
 /// `lock`: take the daemon offline and drop the identity's keys.
 pub async fn cmd_lock(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    let value = client.request_ok(IpcRequest::Lock).await?;
+    let value = helpers::send(client, IpcRequest::Lock).await?;
     format::print_structured(&value, mode)
 }
 
 /// `logout`: go offline and close the identity.
 pub async fn cmd_logout(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    let value = client.request_ok(IpcRequest::Logout).await?;
+    let value = helpers::send(client, IpcRequest::Logout).await?;
     format::print_structured(&value, mode)
 }
 
@@ -144,12 +138,14 @@ async fn unlock(
     identity: &str,
     passphrase: &zeroize::Zeroizing<String>,
 ) -> anyhow::Result<serde_json::Value> {
-    Ok(client
-        .request_ok(IpcRequest::Unlock {
+    helpers::send(
+        client,
+        IpcRequest::Unlock {
             identity: identity.to_owned(),
             passphrase: passphrase.as_str().to_owned(),
-        })
-        .await?)
+        },
+    )
+    .await
 }
 
 /// Write the unlocked identity's archive to `path`, owner-only.
@@ -159,11 +155,15 @@ async fn export_identity(
     passphrase_file: Option<&Path>,
 ) -> anyhow::Result<()> {
     let passphrase = helpers::read_passphrase("Passphrase", passphrase_file)?;
-    let value = client
-        .request_ok(IpcRequest::IdentityExport {
+    // The same passphrase is the Protected review's proof.
+    helpers::offer_passphrase(passphrase.clone());
+    let value = helpers::send(
+        client,
+        IpcRequest::IdentityExport {
             passphrase: passphrase.as_str().to_owned(),
-        })
-        .await?;
+        },
+    )
+    .await?;
     let archive = value
         .get("archive")
         .and_then(|v| v.as_str())
@@ -185,12 +185,14 @@ async fn import_identity(
     let bytes =
         std::fs::read(path).map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
     let passphrase = helpers::read_passphrase("Passphrase of the archive", passphrase_file)?;
-    let value = client
-        .request_ok(IpcRequest::IdentityImport {
+    let value = helpers::send(
+        client,
+        IpcRequest::IdentityImport {
             archive: base64::engine::general_purpose::STANDARD.encode(bytes),
             passphrase: passphrase.as_str().to_owned(),
-        })
-        .await?;
+        },
+    )
+    .await?;
     format::print_structured(&value, mode)
 }
 
@@ -219,46 +221,39 @@ pub async fn dispatch(
 ) -> anyhow::Result<()> {
     match cmd {
         IdentityCmd::Show { .. } => {
-            let value = client.request_ok(IpcRequest::IdentityShow).await?;
+            let value = helpers::send(client, IpcRequest::IdentityShow).await?;
             format::print_structured(&value, mode)
         }
         IdentityCmd::List => {
-            let value = client.request_ok(IpcRequest::IdentityList).await?;
+            let value = helpers::send(client, IpcRequest::IdentityList).await?;
             format::print_structured(&value, mode)
         }
-        IdentityCmd::Rotate {
-            force,
+        IdentityCmd::Rotate { passphrase_file } => {
+            let passphrase = helpers::read_passphrase("Passphrase", passphrase_file.as_deref())?;
+            // The same passphrase is the Protected review's proof.
+            helpers::offer_passphrase(passphrase.clone());
+            let value = helpers::send(
+                client,
+                IpcRequest::IdentityRotate {
+                    passphrase: passphrase.as_str().to_owned(),
+                },
+            )
+            .await?;
+            format::print_structured(&value, mode)
+        }
+        IdentityCmd::Delete {
+            identity,
             passphrase_file,
         } => {
-            if !helpers::confirm_unless_forced(
-                *force,
-                "Rotate identity keypair? All peers will need to re-verify.",
-            )? {
-                return format::print_text("Cancelled.");
-            }
-            let passphrase = helpers::read_passphrase("Passphrase", passphrase_file.as_deref())?;
-            let value = client
-                .request_ok(IpcRequest::IdentityRotate {
-                    passphrase: passphrase.as_str().to_owned(),
-                })
-                .await?;
-            format::print_structured(&value, mode)
-        }
-        IdentityCmd::Delete { identity, confirm } => {
-            let Some(confirmation) = helpers::confirm_severe(
-                "This will permanently delete this identity from this device.",
-                DESTROY_CONFIRMATION,
-                confirm.as_deref(),
-            )?
-            else {
-                return format::print_text("Cancelled.");
-            };
-            let value = client
-                .request_ok(IpcRequest::IdentityDelete {
+            // Protected: the host asks for the identity's passphrase.
+            helpers::set_passphrase_file(passphrase_file.clone());
+            let value = helpers::send(
+                client,
+                IpcRequest::IdentityDelete {
                     identity: identity.clone(),
-                    confirmation,
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         IdentityCmd::Export {

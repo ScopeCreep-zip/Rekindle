@@ -182,6 +182,24 @@ pub fn delete_pending_out_before(
     Ok(expired)
 }
 
+/// The friend's local nickname and display name, when the friend is
+/// stored: what an intent review names them by (plan D3.3).
+///
+/// # Errors
+/// The query failed.
+pub fn names(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Option<(Option<String>, Option<String>)>> {
+    conn.query_row(
+        "SELECT nickname, display_name FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+        params![owner_key, public_key],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+}
+
 /// The friend's cached avatar, if any.
 ///
 /// # Errors

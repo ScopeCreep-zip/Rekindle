@@ -118,7 +118,8 @@ impl SubscriptionEvent {
             Self::Call(e) => EventScope::Call(e.call_id().to_owned()),
             // A notification is about something, but surfacing it is the
             // device's job: one OS toast, one inbox, whatever the source.
-            Self::Notification(_) | Self::Network(_) => EventScope::Device,
+            // A review is the identity's, whichever window or client acts.
+            Self::Notification(_) | Self::Network(_) | Self::IntentPending(_) => EventScope::Device,
             Self::System(e) => match e {
                 SystemEvent::Announcement { community, .. } => community
                     .clone()

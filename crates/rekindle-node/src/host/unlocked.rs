@@ -81,6 +81,10 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
 /// the audit chain, the session, the Signal manager, then the database and
 /// vault (plan D1).
 pub(crate) async fn release(ctx: &DaemonContext) {
+    // Every action held for this identity goes with it (plan D3.3).
+    if let Ok(owner) = ctx.require_owner() {
+        ctx.intents.clear_matching(|held| held.identity == owner);
+    }
     crate::daemon::clients::unload(ctx).await;
     ctx.mek_cache.write().clear();
     *ctx.signing_key.write() = None;

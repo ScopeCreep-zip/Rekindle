@@ -87,6 +87,8 @@ const UNREAD_NESTED: &[&str] = &[
     "UnreadContext.friendRequests",
 ];
 
+const INTENT_PENDING_NAMES: &[&str] = &["intentPending"];
+
 const FAMILIES: &[Family] = &[
     Family {
         tag: "channelMessage",
@@ -158,6 +160,11 @@ const FAMILIES: &[Family] = &[
         names: UNREAD_NAMES,
         nested: UNREAD_NESTED,
     },
+    Family {
+        tag: "intentPending",
+        names: INTENT_PENDING_NAMES,
+        nested: &[],
+    },
 ];
 
 /// What one sample exercises: its family tag, its variant name and the
@@ -216,6 +223,7 @@ fn classify(event: &SubscriptionEvent) -> Classified {
             "unreadChanged",
             vec![unread_context_name(context)],
         ),
+        SubscriptionEvent::IntentPending(_) => ("intentPending", "intentPending", vec![]),
     };
     Classified {
         tag,
@@ -261,6 +269,10 @@ fn all_samples() -> Vec<Sample> {
     all.extend(network::samples());
     all.extend(system::samples());
     all.extend(unread_samples());
+    all.push((
+        "intentPending.intentPending".to_owned(),
+        SubscriptionEvent::IntentPending(intent::review()),
+    ));
     all
 }
 
@@ -437,7 +449,8 @@ fn variant_names_match_the_serde_tags() {
         let inner = outer
             .get(c.tag)
             .unwrap_or_else(|| panic!("{id}: outer tag is not `{}`", c.tag));
-        if c.tag == "unreadChanged" {
+        // Single-variant families: their payload is the struct itself.
+        if c.tag == "unreadChanged" || c.tag == "intentPending" {
             continue;
         }
         let inner = inner.as_object().expect("struct variant object");
@@ -571,4 +584,9 @@ fn system_family_is_covered() {
 #[test]
 fn unread_changed_is_covered() {
     check_family("unreadChanged");
+}
+
+#[test]
+fn intent_pending_is_covered() {
+    check_family("intentPending");
 }

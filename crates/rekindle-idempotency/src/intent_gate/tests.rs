@@ -16,6 +16,10 @@ impl GateOwner for Who {
     fn identity(&self) -> &&'static str {
         &self.identity
     }
+
+    fn may_act_for(&self, held: &Self) -> bool {
+        self == held
+    }
 }
 
 const ME: Who = Who {
@@ -374,4 +378,44 @@ async fn a_wrong_proof_is_not_cached() {
         )
         .await;
     assert!(matches!(right, Ok(Committed::Ran("act"))));
+}
+
+#[test]
+fn the_held_action_is_readable_by_its_owner_only() {
+    let gate = gate();
+    let review = held(&gate, selection(IntentKind::DeleteChannel, vec![]));
+    assert_eq!(gate.held_action(review.intent_id, &ME), Some("act"));
+    assert_eq!(gate.held_action(review.intent_id, &who(2)), None);
+}
+
+#[test]
+fn clear_matching_drops_the_matching_owners_actions_only() {
+    let gate = gate();
+    let mine = held(&gate, selection(IntentKind::DeleteChannel, vec![]));
+    let theirs = match gate
+        .begin(
+            Who {
+                conn: 9,
+                identity: "you",
+            },
+            selection(IntentKind::DeleteChannel, vec![]),
+            "act",
+            0,
+        )
+        .unwrap()
+    {
+        Gate::Review(r) => r,
+        Gate::Run(_) => panic!("expected a review"),
+    };
+    gate.clear_matching(|owner| owner.identity == "me");
+    assert!(gate.selection(mine.intent_id, &ME).is_none());
+    assert!(gate
+        .selection(
+            theirs.intent_id,
+            &Who {
+                conn: 9,
+                identity: "you"
+            }
+        )
+        .is_some());
 }

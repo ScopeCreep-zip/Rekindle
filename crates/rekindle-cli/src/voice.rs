@@ -3,6 +3,7 @@
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::VoiceCmd;
+use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
@@ -20,14 +21,16 @@ pub async fn dispatch(
             deafened,
             watch,
         } => {
-            let value = client
-                .request_ok(IpcRequest::VoiceJoin {
+            let value = helpers::send(
+                client,
+                IpcRequest::VoiceJoin {
                     community: community.clone(),
                     channel: channel.clone(),
                     muted: *muted,
                     deafened: *deafened,
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)?;
             if !watch {
                 return Ok(());
@@ -35,12 +38,12 @@ pub async fn dispatch(
             let streamed = watch_voice(client, &value, mode).await;
             // Leave on Ctrl-C, and on a failed stream too: a session nobody
             // is watching should not stay joined.
-            let left = client.request_ok(IpcRequest::VoiceLeave).await;
+            let left = helpers::send(client, IpcRequest::VoiceLeave).await;
             streamed?;
-            left.map(drop).map_err(Into::into)
+            left.map(drop)
         }
         VoiceCmd::Leave => {
-            let value = client.request_ok(IpcRequest::VoiceLeave).await?;
+            let value = helpers::send(client, IpcRequest::VoiceLeave).await?;
             format::print_structured(&value, mode)
         }
         VoiceCmd::Status => Err(crate::identity::unimplemented("voice status")),

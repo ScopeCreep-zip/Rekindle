@@ -9,7 +9,7 @@ use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use super::DaemonContext;
 
 /// The refusal for `request` in the shell, or `None` when it may run.
-pub(super) fn refusal(ctx: &DaemonContext, request: &IpcRequest) -> Option<IpcResponse> {
+pub(crate) fn refusal(ctx: &DaemonContext, request: &IpcRequest) -> Option<IpcResponse> {
     if ctx.mode != crate::host::HostMode::Shell {
         return None;
     }
@@ -22,7 +22,7 @@ pub(super) fn refusal(ctx: &DaemonContext, request: &IpcRequest) -> Option<IpcRe
         | IpcRequest::Logout
         | IpcRequest::IdentityCreate { .. }
         | IpcRequest::IdentityRotate { .. }
-        | IpcRequest::IdentityWipe { .. }
+        | IpcRequest::IdentityWipe
         | IpcRequest::Shutdown => true,
         _ => false,
     };

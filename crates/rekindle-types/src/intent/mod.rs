@@ -10,6 +10,11 @@
 //!
 //! Pure data: the gate lives in `rekindle-idempotency::intent_gate`, the
 //! facts in the tier crates that own them.
+//!
+//! Every enum here is externally tagged (`camelCase`), like
+//! `SubscriptionEvent`: a commit and an `IntentPending` review cross the
+//! postcard bus, which cannot decode an internally or adjacently tagged
+//! enum, and the webview reads the same JSON.
 
 mod all;
 mod kind;
@@ -115,7 +120,7 @@ pub struct AttachmentFacts {
 
 /// A backend fact computed at Select that raises the class (r9 §7.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase")]
 pub enum Escalation {
     /// E1: the peer's identity key changed since it was marked verified.
     #[serde(rename_all = "camelCase")]
@@ -191,7 +196,7 @@ pub fn effective_class(kind: IntentKind, escalations: &[Escalation]) -> IntentCl
 /// nickname and its key fingerprint; a peer-chosen display name is never
 /// shown alone (it is spoofable).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase")]
 pub enum Subject {
     #[serde(rename_all = "camelCase")]
     Person {
@@ -246,7 +251,7 @@ impl Subject {
 /// A fact the review states. Typed, so each frontend words it in its own
 /// idiom and all state the same facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase")]
 pub enum Fact {
     /// The subject is not told.
     SubjectNotTold,
@@ -276,7 +281,7 @@ pub enum Fact {
 
 /// Whether the action can be taken back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase")]
 pub enum Reversibility {
     /// An undo is offered right after.
     Undoable,
@@ -289,7 +294,7 @@ pub enum Reversibility {
 
 /// Who learns of the action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase")]
 pub enum Notifies {
     Nobody,
     Subject,
@@ -315,7 +320,7 @@ pub struct IntentReview {
 
 /// The proof a commit carries (step 3).
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase")]
 pub enum IntentProof {
     Commit,
     Acknowledged,

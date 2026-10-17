@@ -28,10 +28,6 @@ pub struct InitArgs {
     /// Named to be unmistakable in shell history.
     #[arg(long)]
     pub wipe_all_data: bool,
-
-    /// With `--wipe-all-data`: the confirmation phrase, for scripts.
-    #[arg(long, requires = "wipe_all_data")]
-    pub confirm: Option<String>,
 }
 
 /// Arguments for `rekindle unlock`.
@@ -107,20 +103,18 @@ pub enum IdentityCmd {
     /// Rotate the unlocked identity's Ed25519 keypair; the daemon is left
     /// locked, and the identity unlocks under its new key.
     Rotate {
-        /// Skip confirmation.
-        #[arg(long)]
-        force: bool,
         /// Read the passphrase from this file (`-` for stdin).
         #[arg(long)]
         passphrase_file: Option<PathBuf>,
     },
 
-    /// Delete an identity from this device (requires typed confirmation).
+    /// Delete an identity from this device (the host asks for its
+    /// passphrase).
     Delete {
         /// The identity's public key (`rekindle identity list`).
         identity: String,
-        /// The confirmation phrase, for scripts.
+        /// Read the passphrase from this file (`-` for stdin).
         #[arg(long)]
-        confirm: Option<String>,
+        passphrase_file: Option<PathBuf>,
     },
 }

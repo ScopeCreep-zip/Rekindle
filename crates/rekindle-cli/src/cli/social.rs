@@ -44,14 +44,11 @@ pub enum FriendCmd {
         format: Option<String>,
     },
 
-    /// Remove a friend (with confirmation).
+    /// Remove a friend (the host asks to confirm).
     Remove {
         /// Friend identifier (display name or public key).
         #[arg(long, short = 'f')]
         friend: String,
-        /// Skip the confirmation prompt.
-        #[arg(long)]
-        force: bool,
     },
 
     /// List pending inbound/outbound requests.

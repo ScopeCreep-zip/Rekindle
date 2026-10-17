@@ -173,6 +173,10 @@ fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
             // Never reaches here — check() returns true early for UnreadChanged
             hasher.update(b"unread");
         }
+        // Each review has its own id: two are never the same action.
+        SubscriptionEvent::IntentPending(review) => {
+            hasher.update(review.intent_id.to_string().as_bytes());
+        }
     }
 
     *hasher.finalize().as_bytes()
@@ -194,6 +198,7 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Network(_) => "ne",
         SubscriptionEvent::System(_) => "sy",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
+        SubscriptionEvent::IntentPending(_) => "ip",
     }
 }
 

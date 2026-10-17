@@ -3,6 +3,7 @@
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::PresenceCmd;
+use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
@@ -16,16 +17,18 @@ pub async fn dispatch(
         PresenceCmd::Set {
             status, message, ..
         } => {
-            let value = client
-                .request_ok(IpcRequest::PresenceSet {
+            let value = helpers::send(
+                client,
+                IpcRequest::PresenceSet {
                     status: status.clone(),
                     message: message.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         PresenceCmd::Watch { .. } => {
-            let value = client.request_ok(IpcRequest::Status).await?;
+            let value = helpers::send(client, IpcRequest::Status).await?;
             format::print_structured(&value, mode)
         }
     }

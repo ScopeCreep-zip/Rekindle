@@ -15,43 +15,48 @@ pub async fn dispatch(
 ) -> anyhow::Result<()> {
     match cmd {
         FriendCmd::Add { target, message } => {
-            let value = client
-                .request_ok(IpcRequest::FriendAdd {
+            let value = helpers::send(
+                client,
+                IpcRequest::FriendAdd {
                     target: target.clone(),
                     message: message.clone().unwrap_or_default(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Accept { request_id } => {
-            let value = client
-                .request_ok(IpcRequest::FriendAccept {
+            let value = helpers::send(
+                client,
+                IpcRequest::FriendAccept {
                     public_key: request_id.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Reject { request_id } => {
-            let value = client
-                .request_ok(IpcRequest::FriendReject {
+            let value = helpers::send(
+                client,
+                IpcRequest::FriendReject {
                     public_key: request_id.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
-        FriendCmd::Remove { friend, force } => {
-            if !helpers::confirm_unless_forced(*force, &format!("Remove friend '{friend}'?"))? {
-                return format::print_text("Cancelled.");
-            }
-            let value = client
-                .request_ok(IpcRequest::FriendRemove {
+        FriendCmd::Remove { friend } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::FriendRemove {
                     public_key: friend.clone(),
-                })
-                .await?;
+                },
+            )
+            .await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::List { .. } => {
-            let value = client.request_ok(IpcRequest::FriendList).await?;
+            let value = helpers::send(client, IpcRequest::FriendList).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -89,7 +94,7 @@ pub async fn dispatch(
             table::print_table(&["Name", "Status", "Key", "Route"], &rows, mode)
         }
         FriendCmd::Requests => {
-            let value = client.request_ok(IpcRequest::FriendRequests).await?;
+            let value = helpers::send(client, IpcRequest::FriendRequests).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Block { .. } | FriendCmd::Unblock { .. } => {

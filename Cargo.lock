@@ -7273,6 +7273,7 @@ dependencies = [
  "dialoguer",
  "insta",
  "owo-colors",
+ "parking_lot 0.12.5",
  "predicates",
  "rekindle-client",
  "rekindle-ipc",
@@ -7978,6 +7979,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

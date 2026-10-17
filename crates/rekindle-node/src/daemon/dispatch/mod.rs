@@ -29,7 +29,7 @@ mod keys;
 mod lifecycle;
 mod presence;
 mod router;
-mod shell;
+pub(crate) mod shell;
 mod social;
 mod status;
 
@@ -132,6 +132,9 @@ pub struct DaemonContext {
     /// Consolidated outbound broadcast manager (gossip mesh + rate limiting).
     /// None before unlock/resume. Created during Resuming transition.
     pub broadcast_mgr: RwLock<Option<rekindle_transport::BroadcastManager>>,
+    /// The host's one intent gate (plan D3.3), counting wrong passphrase
+    /// proofs on `identity_attempts`.
+    pub intents: std::sync::Arc<crate::host::gate::HostGate>,
     /// The host's one event journal (plan D3.2): every event a frontend
     /// observes is published here, and every subscriber reads from it.
     pub journal: std::sync::Arc<rekindle_events::SessionJournal>,

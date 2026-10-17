@@ -241,6 +241,7 @@ impl Host {
             ),
             shutdown: Arc::new(crate::daemon::shutdown::Shutdown::new()),
             journal: Arc::new(rekindle_events::SessionJournal::default()),
+            intents: Arc::new(super::gate::HostGate::new(Arc::clone(&stores.attempts))),
             event_watch_tx,
             pending_joins,
             gossip_tx,

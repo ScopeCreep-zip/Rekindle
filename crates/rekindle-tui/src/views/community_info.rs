@@ -305,6 +305,10 @@ impl View for CommunityInfoView {
                 }
                 None
             }
+            // Leave this community; the host asks to confirm.
+            KeyCode::Char('L') => Some(Action::LeaveCommunity {
+                community: self.community.clone(),
+            }),
             _ => None,
         }
     }

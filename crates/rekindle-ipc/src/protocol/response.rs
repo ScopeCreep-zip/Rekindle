@@ -9,17 +9,22 @@ use super::IpcRequest;
 /// Daemon → Frontend response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResponse {
-    /// Success with a JSON value payload.
-    Ok(serde_json::Value),
+    /// Success with a JSON value payload, and for an intent that ran, how it
+    /// can be taken back (plan D3.3: the undo toast and the CLI/TUI render
+    /// it).
+    Ok {
+        data: serde_json::Value,
+        reversibility: Option<rekindle_types::intent::Reversibility>,
+    },
+    /// The request is held by the host's intent gate (plan D3.3, ADR 0019):
+    /// render this review and commit it with the proof it asks for.
+    IntentRequired(rekindle_types::intent::IntentReview),
     /// Error with code, message, and optional remediation advice.
     Error {
         code: u32,
         message: String,
         remediation: Option<String>,
     },
-    /// Unsolicited push: a subscription event from the three-tier event pipeline.
-    /// Delivered to all connected clients via the event push task.
-    Event(rekindle_types::subscription_events::SubscriptionEvent),
 }
 
 impl IpcResponse {
@@ -28,7 +33,10 @@ impl IpcResponse {
         // [RC-2] serde_json::to_value can fail on recursive structures,
         // but our types are flat. If it fails, return an internal error.
         match serde_json::to_value(value) {
-            std::result::Result::Ok(v) => Self::Ok(v),
+            std::result::Result::Ok(data) => Self::Ok {
+                data,
+                reversibility: None,
+            },
             Err(e) => Self::Error {
                 code: 500,
                 message: format!("response serialization failed: {e}"),

@@ -15,6 +15,7 @@ name = "rekindle"
 path = "src/main.rs"
 
 [dependencies]
+parking_lot = { workspace = true }
 base64 = "0.22"
 anyhow = { workspace = true }
 chrono = { version = "0.4", features = [ "serde", "clock" ], default-features = false }

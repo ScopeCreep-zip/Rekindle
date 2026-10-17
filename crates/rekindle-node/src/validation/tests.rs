@@ -202,26 +202,19 @@ fn status_and_description_caps() {
 }
 
 #[test]
-fn confirmations_are_exact() {
-    assert!(!rejected(&IpcRequest::IdentityWipe {
-        confirmation: WIPE_CONFIRMATION.into()
-    }));
-    assert!(rejected(&IpcRequest::IdentityWipe {
-        confirmation: "wipe all data".into()
-    }));
-    let pk = "ab".repeat(32);
-    assert!(rejected(&IpcRequest::IdentityDelete {
-        identity: pk.clone(),
-        confirmation: WIPE_CONFIRMATION.into()
-    }));
+fn deletes_name_a_key_and_typed_proofs_are_bounded() {
     assert!(!rejected(&IpcRequest::IdentityDelete {
-        identity: pk,
-        confirmation: DESTROY_CONFIRMATION.into()
+        identity: "ab".repeat(32)
     }));
     assert!(rejected(&IpcRequest::IdentityDelete {
-        identity: "../x".into(),
-        confirmation: DESTROY_CONFIRMATION.into()
+        identity: "../x".into()
     }));
+    let commit = |name: String| IpcRequest::IntentCommit {
+        intent_id: rekindle_types::intent::IntentId::new(),
+        proof: rekindle_types::intent::IntentProof::Typed(name),
+    };
+    assert!(!rejected(&commit("general".into())));
+    assert!(rejected(&commit("a".repeat(MAX_NAME_LEN + 1))));
 }
 
 #[test]

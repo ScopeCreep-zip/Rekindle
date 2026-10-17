@@ -29,7 +29,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use super::action::Action;
-use super::components::confirm_dialog::ConfirmDialogState;
+use super::components::intent_overlay::IntentOverlay;
 use super::components::search_overlay::SearchOverlay;
 use super::components::spinner::Spinner;
 use super::components::tab_bar::Tab;
@@ -61,9 +61,8 @@ pub struct App {
 
     pub(crate) notifications: NotificationStack,
     pub(crate) search: SearchOverlay,
-    pub(crate) confirm: ConfirmDialogState,
+    pub(crate) intent: IntentOverlay,
     pub(crate) loading_spinner: Spinner,
-    pub(crate) pending_confirm_action: Option<Action>,
     pub(crate) node_was_connected: bool,
     pub(crate) clipboard: Option<arboard::Clipboard>,
     pub(crate) clipboard_clear_at: Option<std::time::Instant>,
@@ -139,9 +138,8 @@ impl App {
             nav: Navigator::new(tabs, use_unicode),
             notifications: NotificationStack::new(),
             search: SearchOverlay::new(),
-            confirm: ConfirmDialogState::new(),
+            intent: IntentOverlay::default(),
             loading_spinner: Spinner::new(animations, use_unicode),
-            pending_confirm_action: None,
             node_was_connected: false,
             clipboard: None,
             clipboard_clear_at: None,

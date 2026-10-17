@@ -55,6 +55,7 @@ async fn main() {
     helpers::set_no_input(cli.no_input);
 
     let mode = OutputMode::detect(cli.format.as_deref(), cli.script);
+    helpers::set_proof_flags(cli.yes, cli.confirm.clone(), mode.is_structured());
 
     if let Err(e) = run(cli, mode).await {
         let code = error::exit_code(&e);
@@ -148,9 +149,7 @@ async fn dispatch_node(
     match cmd {
         cli::NodeCmd::Start { .. } => unreachable!("node start is handled before connecting"),
         cli::NodeCmd::Stop => {
-            let value = client
-                .request_ok(rekindle_ipc::protocol::IpcRequest::Shutdown)
-                .await?;
+            let value = helpers::send(client, rekindle_ipc::protocol::IpcRequest::Shutdown).await?;
             if mode.is_structured() {
                 output::format::print_structured(&value, mode)
             } else {

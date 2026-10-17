@@ -143,6 +143,27 @@ pub fn verify_passphrase(
     open_vault(root, attempts, public_key, passphrase, now_ms).map(drop)
 }
 
+/// Whether `passphrase` opens `public_key`'s vault, counting nothing: the
+/// intent gate counts a wrong proof on the shared limiter itself (plan
+/// D3.3). Argon2id: call it off the async executor.
+///
+/// # Errors
+/// Not found, or the vault cannot be read.
+pub fn passphrase_matches(
+    root: &DataRoot,
+    public_key: &str,
+    passphrase: &str,
+) -> Result<bool, IdentityError> {
+    if registry::load(&root.registry())?.get(public_key).is_none() {
+        return Err(IdentityError::NotFound);
+    }
+    match VaultStore::open(&root.identity_vault(public_key), passphrase) {
+        Ok(_) => Ok(true),
+        Err(rekindle_vault::VaultError::WrongPassphrase) => Ok(false),
+        Err(e) => Err(map_open(e)),
+    }
+}
+
 /// The unlock's Signal manager over the vault-backed stores: the identity
 /// store holds the Ed25519 keypair bytes (PQXDH derives X25519 from them),
 /// and the registration id is derived from the public key so it is stable.

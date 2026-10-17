@@ -149,8 +149,8 @@ fn the_table_names_each_command_once_and_classifies_the_self_proving() {
     }
 }
 
-/// The review's wire shape is camelCase throughout (one sample per
-/// type; C7.26's rule).
+/// The review's wire shape is camelCase throughout and externally tagged
+/// (one sample per type; C7.26's rule).
 #[test]
 fn the_review_serializes_in_camel_case() {
     let review = IntentReview {
@@ -179,11 +179,11 @@ fn the_review_serializes_in_camel_case() {
             "intentId": "01900000-0000-7000-8000-000000000000",
             "kind": "deleteChannel",
             "class": "destructive",
-            "subject": {"type": "channel", "data": {"communityName": "c", "id": "1", "name": "general"}},
-            "facts": [{"type": "messagesDeleted", "data": {"count": 1204}}],
-            "escalations": [{"type": "containerNotEmpty", "data": {"messages": 1204, "members": 57}}],
-            "reversibility": {"type": "reversibleByInverse", "data": "createChannel"},
-            "notifies": {"type": "members", "data": 57},
+            "subject": {"channel": {"communityName": "c", "id": "1", "name": "general"}},
+            "facts": [{"messagesDeleted": {"count": 1204}}],
+            "escalations": [{"containerNotEmpty": {"messages": 1204, "members": 57}}],
+            "reversibility": {"reversibleByInverse": "createChannel"},
+            "notifies": {"members": 57},
             "proof": "typeSubject",
             "expiresAtMs": 1
         })

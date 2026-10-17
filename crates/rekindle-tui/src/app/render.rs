@@ -7,8 +7,8 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::Frame;
 
 use super::super::action::{Action, OverlayKind, SearchMode, ToastLevel};
-use super::super::components::confirm_dialog;
 use super::super::components::help_bar;
+use super::super::components::intent_overlay;
 use super::super::components::search_overlay::SearchItem;
 use super::super::components::status_bar;
 use super::super::components::tab_bar;
@@ -78,7 +78,7 @@ impl App {
         if let Some(overlay) = self.nav.overlay().cloned() {
             self.render_overlay(frame, content, &overlay);
         }
-        confirm_dialog::render(frame, content, &self.confirm, &self.theme);
+        intent_overlay::render(frame, content, &self.intent, &self.theme);
         self.search.render(frame, content, &self.theme);
         if !self.notifications.is_empty() {
             self.notifications.render(frame, area, &self.theme);

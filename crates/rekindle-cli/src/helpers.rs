@@ -85,34 +85,11 @@ fn interactive() -> bool {
     !NO_INPUT.load(std::sync::atomic::Ordering::Relaxed) && std::io::stdin().is_terminal()
 }
 
-/// Confirm a severe operation (clig.dev "severe": make it hard to confirm
-/// by accident). The user types `phrase`, or passes it as
-/// `--confirm="<phrase>"` for scripts. Returns the phrase the user gave,
-/// which the daemon checks; `None` means they typed something else and
-/// cancelled.
-pub fn confirm_severe(
-    prompt: &str,
-    phrase: &str,
-    confirm_flag: Option<&str>,
-) -> anyhow::Result<Option<String>> {
-    if let Some(given) = confirm_flag {
-        return Ok(Some(given.to_owned()));
-    }
+/// A yes/no prompt, default No. Without a terminal it is an error naming
+/// `flag`, the non-interactive way to answer.
+fn ask_yes_no(prompt: &str, flag: &str) -> anyhow::Result<bool> {
     if !interactive() {
-        anyhow::bail!("this cannot be undone and needs confirmation: pass --confirm=\"{phrase}\"");
-    }
-    let input: String = dialoguer::Input::new()
-        .with_prompt(format!("{prompt}\nType \"{phrase}\" to confirm"))
-        .interact_text()
-        .context("failed to read confirmation")?;
-    Ok((input.trim() == phrase).then(|| phrase.to_owned()))
-}
-
-/// Confirm a moderate operation with yes/no (default no). `--force` skips
-/// the prompt; without a terminal the flag is required.
-pub fn confirm(prompt: &str) -> anyhow::Result<bool> {
-    if !interactive() {
-        anyhow::bail!("confirmation needed and there is no terminal to ask on: pass --force");
+        anyhow::bail!("confirmation needed and there is no terminal to ask on: pass {flag}");
     }
     dialoguer::Confirm::new()
         .with_prompt(prompt)
@@ -121,12 +98,15 @@ pub fn confirm(prompt: &str) -> anyhow::Result<bool> {
         .context("failed to read confirmation")
 }
 
-/// [`confirm`], unless the user passed `--force`.
-pub fn confirm_unless_forced(force: bool, prompt: &str) -> anyhow::Result<bool> {
-    if force {
-        return Ok(true);
+/// A typed answer. Without a terminal it is an error naming `flag`.
+fn ask_text(prompt: &str, flag: &str) -> anyhow::Result<String> {
+    if !interactive() {
+        anyhow::bail!("confirmation needed and there is no terminal to ask on: pass {flag}");
     }
-    confirm(prompt)
+    dialoguer::Input::new()
+        .with_prompt(prompt)
+        .interact_text()
+        .context("failed to read confirmation")
 }
 
 /// Read a passphrase (clig.dev: never from a flag value or the
@@ -193,6 +173,11 @@ pub fn resolve_display_name(provided: Option<&str>) -> anyhow::Result<String> {
 
     validate_display_name(&name)
 }
+
+#[path = "helpers/prove.rs"]
+mod prove;
+
+pub use prove::{offer_passphrase, send, set_passphrase_file, set_proof_flags};
 
 #[cfg(test)]
 #[path = "helpers/tests.rs"]
