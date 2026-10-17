@@ -392,7 +392,7 @@ pub fn persist_discovered_registry_members<D, S1, S2>(
                 community_id,
                 &row.pseudonym_key,
                 row.display_name.as_deref().unwrap_or_default(),
-                u32::try_from(row.subkey_index).unwrap_or(0),
+                row.subkey_index,
             );
         }
     }
@@ -409,25 +409,20 @@ fn build_member_row<S: BuildHasher>(
     member_roles: &HashMap<String, Vec<u32>, S>,
 ) -> DiscoveredMemberRow {
     let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
-    let role_ids_json = serde_json::to_string(
-        member_roles
-            .get(&pseudonym_hex)
-            .cloned()
-            .unwrap_or_else(|| vec![0])
-            .as_slice(),
-    )
-    .unwrap_or_else(|_| "[0]".to_string());
-    let badges_json = serde_json::to_string(&presence.badges).unwrap_or_else(|_| "[]".to_string());
+    let role_ids = member_roles
+        .get(&pseudonym_hex)
+        .cloned()
+        .unwrap_or_else(|| vec![0]);
     DiscoveredMemberRow {
         pseudonym_key: pseudonym_hex,
         display_name: presence.display_name.clone(),
-        role_ids_json,
-        subkey_index: i64::from(subkey),
-        segment_index: i64::from(segment_index),
+        role_ids,
+        subkey_index: subkey,
+        segment_index,
         bio: presence.bio.clone(),
         pronouns: presence.pronouns.clone(),
-        theme_color: presence.theme_color.map(i64::from),
-        badges_json,
+        theme_color: presence.theme_color,
+        badges: presence.badges.clone(),
         avatar_ref: presence.avatar_ref.clone(),
         banner_ref: presence.banner_ref.clone(),
     }

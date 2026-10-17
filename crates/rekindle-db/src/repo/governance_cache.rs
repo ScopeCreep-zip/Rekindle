@@ -90,6 +90,9 @@ mod tests {
         fixture::community(&conn, "good");
         fixture::community(&conn, "bad");
         save(&conn, OWNER, "good", &[], 1).unwrap();
+        // Written past the column's CHECK, as a damaged file would hold it.
+        conn.pragma_update(None, "ignore_check_constraints", true)
+            .unwrap();
         conn.execute(
             "INSERT INTO governance_entries_cache VALUES (?1, 'bad', 'not json', 1)",
             [OWNER],

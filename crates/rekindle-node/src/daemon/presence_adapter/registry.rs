@@ -123,12 +123,12 @@ impl DaemonPresenceAdapter {
             .map(|row| {
                 let record = MemberRecord {
                     display_name: row.display_name,
-                    subkey_index: u32::try_from(row.subkey_index).unwrap_or(0),
-                    segment_index: u32::try_from(row.segment_index).unwrap_or(0),
+                    subkey_index: row.subkey_index,
+                    segment_index: row.segment_index,
                     bio: row.bio,
                     pronouns: row.pronouns,
-                    theme_color: row.theme_color.and_then(|c| u32::try_from(c).ok()),
-                    badges: serde_json::from_str(&row.badges_json).unwrap_or_default(),
+                    theme_color: row.theme_color,
+                    badges: row.badges,
                     avatar_ref: row.avatar_ref,
                     banner_ref: row.banner_ref,
                 };

@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS messages (
     timestamp INTEGER NOT NULL,
     is_read INTEGER NOT NULL DEFAULT 0,
     reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
-    attachment_json TEXT,
+    attachment_json TEXT CHECK(json_valid(attachment_json)),
     mek_generation INTEGER,
     lamport_ts INTEGER DEFAULT 0,
     message_id TEXT,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS communities (
     description TEXT,
     icon_hash TEXT,
     banner_hash TEXT,
-    my_role_ids TEXT NOT NULL DEFAULT '[0]',
+    my_role_ids TEXT NOT NULL DEFAULT '[0]' CHECK(json_valid(my_role_ids)),
     joined_at INTEGER NOT NULL,
     last_synced INTEGER,
     dht_record_key TEXT,
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS communities (
     -- Local-only presence sharing consent (default-deny). JSON-encoded
     -- PresenceSharingPolicy; NULL falls back to the default-deny policy.
     -- Never published to the registry — this is the user's private choice.
-    presence_policy TEXT,
+    presence_policy TEXT CHECK(json_valid(presence_policy)),
     PRIMARY KEY (owner_key, id)
 );
 
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS community_members (
     community_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
     display_name TEXT,
-    role_ids TEXT NOT NULL DEFAULT '[0,1]',
+    role_ids TEXT NOT NULL DEFAULT '[0,1]' CHECK(json_valid(role_ids)),
     timeout_until INTEGER,
     joined_at INTEGER NOT NULL,
     -- LOCAL slot within the segment's registry record (raw SMPL subkey
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS community_members (
     bio TEXT,
     pronouns TEXT,
     theme_color INTEGER,
-    badges TEXT NOT NULL DEFAULT '[]',
+    badges TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(badges)),
     -- BLAKE3 content references for avatar + banner. The bytes
     -- themselves live in the local Lost Cargo cache or as an inline
     -- expression asset (architecture §32 Week 15).
@@ -253,7 +253,7 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     cursor INTEGER NOT NULL,
     prev_mac BLOB NOT NULL,
     mac BLOB NOT NULL,
-    payload_json TEXT NOT NULL,
+    payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
     PRIMARY KEY (owner_key, cursor)
 );
 
@@ -537,10 +537,10 @@ CREATE TABLE IF NOT EXISTS community_events (
     -- NULL for one-off events; non-NULL holds the full struct so the
     -- frontend can render "every 2 weeks on Mon, Wed" without back-end
     -- date math.
-    recurrence_json TEXT,
+    recurrence_json TEXT CHECK(json_valid(recurrence_json)),
     -- Architecture §21 line 2629 — JSON-serialized EventLocation enum.
     -- Falls back to channel_id-based VoiceChannel for legacy rows.
-    location_json TEXT,
+    location_json TEXT CHECK(json_valid(location_json)),
     PRIMARY KEY (owner_key, community_id, id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
@@ -660,7 +660,7 @@ CREATE TABLE IF NOT EXISTS dms (
     initiator_public_key TEXT NOT NULL,
     initiator_pseudonym TEXT NOT NULL,
     my_subkey INTEGER NOT NULL,
-    participants_json TEXT NOT NULL,
+    participants_json TEXT NOT NULL CHECK(json_valid(participants_json)),
     -- 32-byte slot seed (hex) used to derive the SMPL slot keypairs for
     -- both peers. Persisted so writes survive a restart without re-
     -- exchanging the seed.
@@ -718,7 +718,7 @@ CREATE TABLE IF NOT EXISTS push_relay_registrations (
     relay_pseudonym TEXT NOT NULL,
     device_push_token TEXT NOT NULL,
     platform TEXT NOT NULL CHECK(platform IN ('fcm', 'apns', 'self')),
-    record_keys_json TEXT NOT NULL,
+    record_keys_json TEXT NOT NULL CHECK(json_valid(record_keys_json)),
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, relay_pseudonym)
 );
@@ -801,7 +801,7 @@ CREATE TABLE IF NOT EXISTS pending_pairings (
 CREATE TABLE IF NOT EXISTS governance_entries_cache (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
-    entries_json TEXT NOT NULL,
+    entries_json TEXT NOT NULL CHECK(json_valid(entries_json)),
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, community_id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE

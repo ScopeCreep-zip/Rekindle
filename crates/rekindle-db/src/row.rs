@@ -13,6 +13,16 @@ pub fn get<T: rusqlite::types::FromSql>(row: &Row<'_>, column: &str) -> rusqlite
     row.get(column)
 }
 
+/// An integer column that holds a count, clock or timestamp: written from
+/// values that fit `i64`, so a negative one is a corrupt row.
+///
+/// # Errors
+/// The column at `index` is missing, not an integer, or negative.
+pub fn get_u64(row: &Row<'_>, index: usize) -> rusqlite::Result<u64> {
+    let value: i64 = row.get(index)?;
+    u64::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(index, value))
+}
+
 /// A text column parsed as `T` (an enum stored by its name).
 ///
 /// # Errors

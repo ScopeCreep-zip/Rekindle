@@ -12,8 +12,7 @@ pub struct CommunityRow {
     pub description: Option<String>,
     pub icon_hash: Option<String>,
     pub banner_hash: Option<String>,
-    /// Stored JSON; login decodes it with the community's other state.
-    pub my_role_ids_json: String,
+    pub my_role_ids: Vec<u32>,
     pub dht_owner_keypair: Option<String>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,
@@ -22,22 +21,13 @@ pub struct CommunityRow {
     pub my_segment_index: Option<u32>,
     /// Our own member row's onboarding flag.
     pub onboarding_complete: bool,
-    pub presence_policy_json: Option<String>,
+    /// `None` when the community never set one.
+    pub presence_policy: Option<rekindle_types::presence::PresenceSharingPolicy>,
     /// Persisted governance clock (`lamport_clock`).
     pub governance_clock: u64,
     /// Highest Lamport timestamp among the community's stored channel
     /// messages: where the message clock resumes.
     pub message_clock: u64,
-}
-
-/// A stored clock or counter: written from values that fit `i64`, so a
-/// negative one is a corrupt row and loads as 0, not as a huge value.
-fn unsigned(value: Option<i64>) -> u64 {
-    value.and_then(|v| u64::try_from(v).ok()).unwrap_or(0)
-}
-
-fn index(value: Option<i64>) -> Option<u32> {
-    value.map(|v| u32::try_from(v).unwrap_or(0))
 }
 
 /// Every community of `owner_key`.
@@ -69,17 +59,17 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
                 description: row.get(2)?,
                 icon_hash: row.get(3)?,
                 banner_hash: row.get(4)?,
-                my_role_ids_json: row.get(5)?,
+                my_role_ids: role_ids::decode(5, &row.get::<_, String>(5)?)?,
                 dht_owner_keypair: row.get(6)?,
                 my_pseudonym_key: row.get(7)?,
-                mek_generation: unsigned(row.get(8)?),
+                mek_generation: crate::row::get_u64(row, 8)?,
                 member_registry_key: row.get(9)?,
-                my_subkey_index: index(row.get(10)?),
-                my_segment_index: index(row.get(11)?),
+                my_subkey_index: row.get(10)?,
+                my_segment_index: row.get(11)?,
                 onboarding_complete: row.get::<_, i64>(12)? != 0,
-                presence_policy_json: row.get(13)?,
-                governance_clock: unsigned(row.get(14)?),
-                message_clock: unsigned(row.get(15)?),
+                presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
+                governance_clock: crate::row::get_u64(row, 14)?,
+                message_clock: crate::row::get_u64(row, 15)?,
             })
         })?
         .collect();
@@ -382,7 +372,7 @@ mod tests {
         set(&conn, OWNER, "c1", Column::Description, "about").unwrap();
         set(&conn, OWNER, "c1", Column::MySubkeyIndex, 8_i64).unwrap();
         let row = &load_all(&conn, OWNER).unwrap()[0];
-        assert_eq!(row.my_role_ids_json, "[0,1]");
+        assert_eq!(row.my_role_ids, [0, 1]);
         assert_eq!(row.description.as_deref(), Some("about"));
         assert_eq!(
             (

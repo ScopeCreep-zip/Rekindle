@@ -335,9 +335,7 @@ fn to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<FriendRecord> {
         current_device_id: row.get(3)?,
         display_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
         // `added_at` is milliseconds; the record carries microseconds.
-        added_at_us: u64::try_from(row.get::<_, i64>(5)?)
-            .unwrap_or(0)
-            .saturating_mul(1_000),
+        added_at_us: crate::row::get_u64(row, 5)?.saturating_mul(1_000),
         status: crate::row::get_enum(row, "friendship_state")?,
     })
 }

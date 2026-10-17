@@ -34,17 +34,17 @@ fn conn_with_community() -> Connection {
     conn
 }
 
-fn discovered(pseudonym_key: &str, name: &str, subkey: i64) -> DiscoveredMemberRow {
+fn discovered(pseudonym_key: &str, name: &str, subkey: u32) -> DiscoveredMemberRow {
     DiscoveredMemberRow {
         pseudonym_key: pseudonym_key.into(),
         display_name: Some(name.into()),
-        role_ids_json: "[0,1]".into(),
+        role_ids: vec![0, 1],
         subkey_index: subkey,
         segment_index: 0,
         bio: None,
         pronouns: None,
         theme_color: None,
-        badges_json: "[]".into(),
+        badges: Vec::new(),
         avatar_ref: None,
         banner_ref: None,
     }
@@ -160,7 +160,7 @@ fn timeouts_set_and_clear_and_a_bootstrap_member_is_stored_once() {
     set_timeout(&conn, OWNER, "c1", "bob", None).unwrap();
     let profiles = load_profiles(&conn, OWNER).unwrap();
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].badges_json, r#"["early"]"#);
+    assert_eq!(profiles[0].badges, ["early"]);
     assert_eq!(roster(&conn, OWNER, "c1").unwrap()[0].timeout_until, None);
     delete(&conn, OWNER, "c1", "bob").unwrap();
     assert!(load_profiles(&conn, OWNER).unwrap().is_empty());

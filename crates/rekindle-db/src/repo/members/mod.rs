@@ -30,8 +30,8 @@ pub struct ProfileRow {
     pub display_name: Option<String>,
     pub bio: Option<String>,
     pub pronouns: Option<String>,
-    pub theme_color: Option<i64>,
-    pub badges_json: String,
+    pub theme_color: Option<u32>,
+    pub badges: Vec<String>,
     pub avatar_ref: Option<String>,
     pub banner_ref: Option<String>,
 }
@@ -54,7 +54,7 @@ pub fn load_profiles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec
                 bio: row.get(3)?,
                 pronouns: row.get(4)?,
                 theme_color: row.get(5)?,
-                badges_json: row.get(6)?,
+                badges: crate::row::get_json(row, "badges")?,
                 avatar_ref: row.get(7)?,
                 banner_ref: row.get(8)?,
             })
@@ -206,20 +206,19 @@ pub fn replace_accepted(
     Ok(())
 }
 
-/// A member found in the registry scan, as stored: the role and badge
-/// sets JSON-encoded. `rekindle-presence` builds these from the signed
-/// presence rows it reads.
+/// A member found in the registry scan. `rekindle-presence` builds these
+/// from the signed presence rows it reads.
 #[derive(Debug, Clone)]
 pub struct DiscoveredMemberRow {
     pub pseudonym_key: String,
     pub display_name: Option<String>,
-    pub role_ids_json: String,
-    pub subkey_index: i64,
-    pub segment_index: i64,
+    pub role_ids: Vec<u32>,
+    pub subkey_index: u32,
+    pub segment_index: u32,
     pub bio: Option<String>,
     pub pronouns: Option<String>,
-    pub theme_color: Option<i64>,
-    pub badges_json: String,
+    pub theme_color: Option<u32>,
+    pub badges: Vec<String>,
     pub avatar_ref: Option<String>,
     pub banner_ref: Option<String>,
 }
@@ -236,6 +235,8 @@ pub fn upsert_discovered(
     member: &DiscoveredMemberRow,
     joined_at: i64,
 ) -> rusqlite::Result<()> {
+    let badges = serde_json::to_string(&member.badges)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
         "INSERT INTO community_members \
          (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
@@ -251,14 +252,14 @@ pub fn upsert_discovered(
             community_id,
             member.pseudonym_key,
             member.display_name,
-            member.role_ids_json,
+            role_ids::encode(&member.role_ids)?,
             joined_at,
             member.subkey_index,
             member.segment_index,
             member.bio,
             member.pronouns,
             member.theme_color,
-            member.badges_json,
+            badges,
             member.avatar_ref,
             member.banner_ref,
         ],
@@ -355,10 +356,7 @@ pub fn slots(
     )?;
     let rows = stmt
         .query_map(params![owner_key, community_id], |row| {
-            Ok((
-                row.get(0)?,
-                u32::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
-            ))
+            Ok((row.get(0)?, row.get::<_, u32>(1)?))
         })?
         .collect();
     rows

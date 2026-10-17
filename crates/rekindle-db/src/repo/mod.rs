@@ -23,6 +23,9 @@ pub mod preferences;
 mod role_ids;
 
 #[cfg(test)]
+mod constraints_tests;
+
+#[cfg(test)]
 pub(crate) mod fixture {
     use rusqlite::Connection;
 

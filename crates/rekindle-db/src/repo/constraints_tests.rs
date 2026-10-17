@@ -1,0 +1,130 @@
+//! Every enum and JSON column refuses a value outside its vocabulary
+//! (plan D2): a corrupt value cannot be written, and the readers parse
+//! strictly for one that is (`row::get_enum`, `row::get_json`).
+
+use rusqlite::{params, Connection};
+
+use crate::repo::fixture::{self, OWNER};
+
+/// One valid row in every table with an enum or JSON column.
+fn seeded() -> Connection {
+    let conn = fixture::conn();
+    fixture::community(&conn, "c");
+    for sql in [
+        "INSERT INTO friends (owner_key, public_key, added_at, friendship_state) \
+         VALUES (?1, 'f', 0, 'accepted')",
+        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
+         timestamp, attachment_json) VALUES (?1, 'ch', 'channel', 's', 'b', 0, '{}')",
+        "INSERT INTO channels (owner_key, id, community_id, name, channel_type) \
+         VALUES (?1, 'ch', 'c', 'general', 'text')",
+        "INSERT INTO community_members (owner_key, community_id, pseudonym_key, joined_at) \
+         VALUES (?1, 'c', 'p', 0)",
+        "INSERT INTO channel_overwrites (owner_key, community_id, channel_id, target_type, target_id) \
+         VALUES (?1, 'c', 'ch', 'role', '1')",
+        "INSERT INTO audit_entries (owner_key, cursor, prev_mac, mac, payload_json) \
+         VALUES (?1, 0, x'00', x'00', '{}')",
+        "INSERT INTO missed_calls (call_id, owner_key, peer_key, kind, expired_at) \
+         VALUES ('call', ?1, 'peer', 0, 0)",
+        "INSERT INTO notification_preferences (owner_key, community_id) VALUES (?1, 'c')",
+        "INSERT INTO outgoing_invites (owner_key, invite_id, created_at, expires_at) \
+         VALUES (?1, 'i', 0, 0)",
+        "INSERT INTO community_events (owner_key, community_id, id, title, creator_pseudonym, \
+         start_time, created_at, recurrence_json, location_json) \
+         VALUES (?1, 'c', 'e', 't', 'p', 0, 0, '{}', '{}')",
+        "INSERT INTO event_rsvps (owner_key, community_id, event_id, pseudonym_key, status) \
+         VALUES (?1, 'c', 'e', 'p', 'going')",
+        "INSERT INTO message_delivery (owner_key, message_id, community_id, recipient_pseudonym) \
+         VALUES (?1, 'm', 'c', 'p')",
+        "INSERT INTO dms (owner_key, record_key, initiator_public_key, initiator_pseudonym, \
+         my_subkey, participants_json, created_at) VALUES (?1, 'r', 'i', 'p', 0, '[]', 0)",
+        "INSERT INTO push_relay_registrations (owner_key, relay_pseudonym, device_push_token, \
+         platform, record_keys_json, created_at) VALUES (?1, 'r', 't', 'self', '[]', 0)",
+        "INSERT INTO voice_session_events (owner_key, community_id, channel_id, member_pseudonym, \
+         event_type, occurred_at) VALUES (?1, 'c', 'ch', 'p', 'join', 0)",
+        "INSERT INTO governance_entries_cache (owner_key, community_id, entries_json, updated_at) \
+         VALUES (?1, 'c', '[]', 0)",
+    ] {
+        conn.execute(sql, params![OWNER]).unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    conn
+}
+
+/// `(table, column, a value outside its vocabulary)`.
+const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
+    ("friends", "friendship_state", "'active'"),
+    ("messages", "conversation_type", "'group'"),
+    ("messages", "send_state", "'sending'"),
+    ("messages", "attachment_json", "'not json'"),
+    ("communities", "my_role_ids", "'[0'"),
+    ("communities", "presence_policy", "'{'"),
+    ("channels", "channel_type", "'unknown'"),
+    ("community_members", "role_ids", "'0,1'"),
+    ("community_members", "badges", "'early'"),
+    ("channel_overwrites", "target_type", "'everyone'"),
+    ("audit_entries", "payload_json", "'}'"),
+    ("missed_calls", "kind", "2"),
+    ("notification_preferences", "level", "3"),
+    ("outgoing_invites", "status", "'lost'"),
+    ("community_events", "status", "'postponed'"),
+    ("community_events", "recurrence_json", "'weekly'"),
+    ("community_events", "location_json", "'here'"),
+    ("event_rsvps", "status", "'none'"),
+    ("message_delivery", "status", "'queued'"),
+    ("dms", "participants_json", "'a,b'"),
+    ("push_relay_registrations", "platform", "'sms'"),
+    ("push_relay_registrations", "record_keys_json", "'k'"),
+    ("voice_session_events", "event_type", "'mute'"),
+    ("governance_entries_cache", "entries_json", "'['"),
+];
+
+#[test]
+fn every_enum_and_json_column_refuses_a_value_outside_its_vocabulary() {
+    let conn = seeded();
+    for (table, column, value) in OUT_OF_VOCABULARY {
+        let err = conn
+            .execute(&format!("UPDATE {table} SET {column} = {value}"), [])
+            .expect_err(&format!("{table}.{column} took {value}"));
+        assert!(
+            err.to_string().contains("CHECK constraint failed"),
+            "{table}.{column}: {err}"
+        );
+    }
+}
+
+/// A corrupt value that reaches the file anyway (written past the CHECKs)
+/// is a read error naming its column, never a default.
+#[test]
+fn a_corrupt_json_or_enum_value_is_a_read_error() {
+    let conn = seeded();
+    conn.pragma_update(None, "ignore_check_constraints", true)
+        .unwrap();
+    conn.execute("UPDATE communities SET my_role_ids = 'x'", [])
+        .unwrap();
+    assert!(crate::repo::communities::load_all(&conn, OWNER).is_err());
+
+    conn.execute(
+        "UPDATE communities SET my_role_ids = '[0]', presence_policy = '{\"no\": 1'",
+        [],
+    )
+    .unwrap();
+    let err = crate::repo::communities::load_all(&conn, OWNER)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("presence_policy"), "{err}");
+
+    conn.execute("UPDATE communities SET presence_policy = NULL", [])
+        .unwrap();
+    conn.execute("UPDATE community_members SET badges = 'early'", [])
+        .unwrap();
+    let err = crate::repo::members::load_profiles(&conn, OWNER)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("badges"), "{err}");
+
+    conn.execute(
+        "UPDATE community_members SET badges = '[]', role_ids = '0'",
+        [],
+    )
+    .unwrap();
+    assert!(crate::repo::members::roster(&conn, OWNER, "c").is_err());
+}
