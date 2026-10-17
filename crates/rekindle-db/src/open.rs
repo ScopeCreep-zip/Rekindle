@@ -109,7 +109,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 87: the preferences move from the plugin store into `app_settings`
 /// columns and `app_input_channels` (plan D1).
-pub const SCHEMA_VERSION: i64 = 88;
+pub const SCHEMA_VERSION: i64 = 89;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

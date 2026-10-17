@@ -116,9 +116,6 @@ CREATE TABLE IF NOT EXISTS communities (
     my_subkey_index INTEGER,
     -- Plate Gate: which segment the user joined into. 0 = primary.
     my_segment_index INTEGER NOT NULL DEFAULT 0,
-    coordinator_pseudonym TEXT,
-    coordinator_route_blob BLOB,
-    coordinator_epoch INTEGER NOT NULL DEFAULT 0,
     governance_key TEXT,
     lamport_clock INTEGER NOT NULL DEFAULT 0,
     -- Local-only presence sharing consent (default-deny). JSON-encoded
@@ -185,7 +182,8 @@ CREATE TABLE IF NOT EXISTS community_members (
     -- expression asset (architecture §32 Week 15).
     avatar_ref TEXT,
     banner_ref TEXT,
-    PRIMARY KEY (owner_key, community_id, pseudonym_key)
+    PRIMARY KEY (owner_key, community_id, pseudonym_key),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS community_roles (
@@ -201,7 +199,8 @@ CREATE TABLE IF NOT EXISTS community_roles (
     self_assignable INTEGER NOT NULL DEFAULT 0,
     -- Architecture §19.4 — mutually exclusive role groups (NULL = independent).
     exclusion_group TEXT,
-    PRIMARY KEY (owner_key, community_id, role_id)
+    PRIMARY KEY (owner_key, community_id, role_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS community_categories (
@@ -210,7 +209,8 @@ CREATE TABLE IF NOT EXISTS community_categories (
     id TEXT NOT NULL,
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner_key, community_id, id)
+    PRIMARY KEY (owner_key, community_id, id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Per-channel permission overwrites (role or member specific allow/deny).
@@ -222,39 +222,14 @@ CREATE TABLE IF NOT EXISTS channel_overwrites (
     target_id TEXT NOT NULL,
     allow INTEGER NOT NULL DEFAULT 0,
     deny INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner_key, community_id, channel_id, target_type, target_id)
+    PRIMARY KEY (owner_key, community_id, channel_id, target_type, target_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Performance indexes for JOIN keys
 CREATE INDEX IF NOT EXISTS idx_friends_group_id ON friends(owner_key, group_id);
 CREATE INDEX IF NOT EXISTS idx_channels_community_id ON channels(owner_key, community_id);
 CREATE INDEX IF NOT EXISTS idx_community_members_community ON community_members(owner_key, community_id, pseudonym_key);
-
-CREATE TABLE IF NOT EXISTS trusted_identities (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    public_key TEXT NOT NULL,
-    identity_key BLOB NOT NULL,
-    verified INTEGER NOT NULL DEFAULT 0,
-    first_seen INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, public_key)
-);
-
-CREATE TABLE IF NOT EXISTS signal_sessions (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    recipient_key TEXT NOT NULL,
-    session_data BLOB NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, recipient_key)
-);
-
-CREATE TABLE IF NOT EXISTS prekeys (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    id INTEGER NOT NULL,
-    key_data BLOB NOT NULL,
-    is_signed INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, id)
-);
 
 CREATE TABLE IF NOT EXISTS pending_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -407,7 +382,8 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     -- bool in `app_settings`. Value is an expression `sound_id` from
     -- the community soundboard (`ExpressionAdded { kind: "sound" }`).
     sound_ref TEXT,
-    PRIMARY KEY (owner_key, community_id, channel_id)
+    PRIMARY KEY (owner_key, community_id, channel_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -481,7 +457,8 @@ CREATE TABLE IF NOT EXISTS channel_slowmode_state (
     community_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     last_send_ms INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, community_id, channel_id)
+    PRIMARY KEY (owner_key, community_id, channel_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_channel_slowmode_state_owner
     ON channel_slowmode_state(owner_key, community_id);
@@ -512,7 +489,8 @@ CREATE TABLE IF NOT EXISTS community_threads (
     auto_archive_seconds INTEGER NOT NULL DEFAULT 0,
     last_message_at INTEGER NOT NULL DEFAULT 0,
     message_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner_key, community_id, id)
+    PRIMARY KEY (owner_key, community_id, id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Thread messages (messages within a thread).
@@ -529,7 +507,8 @@ CREATE TABLE IF NOT EXISTS thread_messages (
     body TEXT NOT NULL DEFAULT '',
     timestamp INTEGER NOT NULL,
     reply_to_id TEXT,
-    UNIQUE (owner_key, community_id, thread_id, message_id)
+    UNIQUE (owner_key, community_id, thread_id, message_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_thread_messages_thread
     ON thread_messages(owner_key, community_id, thread_id, timestamp);
@@ -562,7 +541,8 @@ CREATE TABLE IF NOT EXISTS community_events (
     -- Architecture §21 line 2629 — JSON-serialized EventLocation enum.
     -- Falls back to channel_id-based VoiceChannel for legacy rows.
     location_json TEXT,
-    PRIMARY KEY (owner_key, community_id, id)
+    PRIMARY KEY (owner_key, community_id, id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Event RSVPs (one per member per event).
@@ -571,17 +551,10 @@ CREATE TABLE IF NOT EXISTS event_rsvps (
     community_id TEXT NOT NULL,
     event_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'none',
-    PRIMARY KEY (owner_key, community_id, event_id, pseudonym_key)
-);
-
--- Local member-owned event RSVPs mirrored into presence writes.
-CREATE TABLE IF NOT EXISTS community_event_rsvps (
-    owner_key TEXT NOT NULL,
-    community_id TEXT NOT NULL,
-    event_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'declined',
-    PRIMARY KEY (owner_key, community_id, event_id)
+    -- `RsvpStatus` (rekindle-types::event).
+    status TEXT NOT NULL CHECK(status IN ('going', 'interested', 'declined')),
+    PRIMARY KEY (owner_key, community_id, event_id, pseudonym_key),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Channel pinned messages.
@@ -592,7 +565,8 @@ CREATE TABLE IF NOT EXISTS channel_pins (
     message_id TEXT NOT NULL,
     pinned_by TEXT NOT NULL,
     pinned_at INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner_key, community_id, channel_id, message_id)
+    PRIMARY KEY (owner_key, community_id, channel_id, message_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Game servers shared within a community.
@@ -605,7 +579,8 @@ CREATE TABLE IF NOT EXISTS game_servers (
     address TEXT NOT NULL,
     added_by TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, community_id, id)
+    PRIMARY KEY (owner_key, community_id, id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Locally cached invite codes (raw code never stored in DHT, only code_hash).
@@ -631,18 +606,21 @@ CREATE TABLE IF NOT EXISTS community_invites (
     -- threshold (the `max_uses` policy is enforced by the inviter at
     -- write time, not by reader consensus).
     uses INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner_key, community_id, code_hash)
+    PRIMARY KEY (owner_key, community_id, code_hash),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Per-message per-peer delivery tracking (Xfire imindex + SimpleX delivery states)
 CREATE TABLE IF NOT EXISTS message_delivery (
+    owner_key TEXT NOT NULL,
     message_id TEXT NOT NULL,
     community_id TEXT NOT NULL,
     recipient_pseudonym TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'sending' CHECK(status IN ('sending', 'delivered', 'failed')),
     attempts INTEGER NOT NULL DEFAULT 0,
     last_attempt_at INTEGER,
-    PRIMARY KEY (message_id, recipient_pseudonym)
+    PRIMARY KEY (owner_key, message_id, recipient_pseudonym),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Strand Relay Network (architecture §13). For each friend who has volunteered
@@ -726,7 +704,8 @@ CREATE TABLE IF NOT EXISTS peer_reliability (
     peer_pseudonym TEXT NOT NULL,
     success_count INTEGER NOT NULL DEFAULT 0,
     failure_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner_key, community_id, peer_pseudonym)
+    PRIMARY KEY (owner_key, community_id, peer_pseudonym),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Mobile push relay registrations (architecture §17.3 Tier 3). A self-
@@ -752,7 +731,8 @@ CREATE TABLE IF NOT EXISTS community_member_leaves (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
-    left_at INTEGER NOT NULL
+    left_at INTEGER NOT NULL,
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_member_leaves_recent
     ON community_member_leaves(owner_key, community_id, left_at);
@@ -768,7 +748,8 @@ CREATE TABLE IF NOT EXISTS voice_session_events (
     channel_id TEXT NOT NULL,
     member_pseudonym TEXT NOT NULL,
     event_type TEXT NOT NULL CHECK(event_type IN ('join', 'leave')),
-    occurred_at INTEGER NOT NULL
+    occurred_at INTEGER NOT NULL,
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_voice_session_events_channel
     ON voice_session_events(owner_key, community_id, channel_id, occurred_at);
@@ -794,7 +775,8 @@ CREATE TABLE IF NOT EXISTS channel_read_state (
     channel_id TEXT NOT NULL,
     last_read_lamport INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, community_id, channel_id)
+    PRIMARY KEY (owner_key, community_id, channel_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Pending pairing sessions — short-lived rows the existing device
@@ -821,7 +803,8 @@ CREATE TABLE IF NOT EXISTS governance_entries_cache (
     community_id TEXT NOT NULL,
     entries_json TEXT NOT NULL,
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, community_id)
+    PRIMARY KEY (owner_key, community_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
 -- Durable DHT writes a logout left unsent (plan C7.6h): the record pool's

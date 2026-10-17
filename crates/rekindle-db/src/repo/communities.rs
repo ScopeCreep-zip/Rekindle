@@ -398,4 +398,64 @@ mod tests {
         delete(&conn, OWNER, "c1").unwrap();
         assert_eq!(my_role_ids(&conn, OWNER, "c1").unwrap(), None);
     }
+
+    #[test]
+    fn deleting_a_community_deletes_every_row_that_belongs_to_it() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c1");
+        fixture::community(&conn, "c2");
+        let per_community = [
+            "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, ?2, 1, 'r')",
+            "INSERT INTO community_members (owner_key, community_id, pseudonym_key, joined_at) VALUES (?1, ?2, 'p', 0)",
+            "INSERT INTO event_rsvps (owner_key, community_id, event_id, pseudonym_key, status) VALUES (?1, ?2, 'e', 'p', 'going')",
+            "INSERT INTO channel_read_state (owner_key, community_id, channel_id, updated_at) VALUES (?1, ?2, 'ch', 0)",
+            "INSERT INTO governance_entries_cache (owner_key, community_id, entries_json, updated_at) VALUES (?1, ?2, '[]', 0)",
+            "INSERT INTO message_delivery (owner_key, message_id, community_id, recipient_pseudonym) VALUES (?1, ?2 || '-m', ?2, 'p')",
+        ];
+        for sql in per_community {
+            for id in ["c1", "c2"] {
+                conn.execute(sql, params![OWNER, id]).unwrap();
+            }
+        }
+        delete(&conn, OWNER, "c1").unwrap();
+        for table in [
+            "community_roles",
+            "community_members",
+            "event_rsvps",
+            "channel_read_state",
+            "governance_entries_cache",
+            "message_delivery",
+        ] {
+            let left: Vec<String> = conn
+                .prepare(&format!("SELECT community_id FROM {table}"))
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert_eq!(left, ["c2"], "{table}");
+        }
+    }
+
+    #[test]
+    fn a_row_for_a_community_we_do_not_hold_is_refused() {
+        let conn = fixture::conn();
+        let err = conn.execute(
+            "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, 'gone', 1, 'r')",
+            params![OWNER],
+        );
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn an_rsvp_status_outside_the_vocabulary_is_refused() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c1");
+        let err = conn.execute(
+            "INSERT INTO event_rsvps (owner_key, community_id, event_id, pseudonym_key, status) \
+             VALUES (?1, 'c1', 'e', 'p', 'none')",
+            params![OWNER],
+        );
+        assert!(err.is_err());
+    }
 }

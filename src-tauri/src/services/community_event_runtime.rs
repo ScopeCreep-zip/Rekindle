@@ -232,7 +232,7 @@ pub async fn set_event_rsvp_inner(
         communities
             .get(&community_id)
             .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
+            .ok_or("we hold no pseudonym in this community")?
     };
 
     let lamport =
@@ -252,14 +252,19 @@ pub async fn set_event_rsvp_inner(
     let community_id_for_db = community_id.clone();
     let event_id_for_db = event_id.clone();
     let status_for_db = normalized_status.clone();
+    let pseudonym_for_db = pseudonym_key.clone();
+    // Our answer is our own row in `event_rsvps` (the one gossip writes
+    // for every member), under our pseudonym in the community.
     db_call(pool, move |conn| {
         conn.execute(
-            "INSERT OR REPLACE INTO community_event_rsvps \
-             (owner_key, community_id, event_id, status) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR REPLACE INTO event_rsvps \
+             (owner_key, community_id, event_id, pseudonym_key, status) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![
                 owner_key,
                 community_id_for_db,
                 event_id_for_db,
+                pseudonym_for_db,
                 status_for_db
             ],
         )?;

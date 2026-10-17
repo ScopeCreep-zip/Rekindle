@@ -65,6 +65,7 @@ mod tests {
     #[test]
     fn counts_are_per_owner_and_per_container() {
         let conn = fixture::conn();
+        fixture::community(&conn, "c");
         for (i, ch) in ["ch1", "ch1", "ch2"].iter().enumerate() {
             conn.execute(
                 "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp) \

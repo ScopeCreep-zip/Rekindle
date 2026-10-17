@@ -73,6 +73,7 @@ mod tests {
     #[test]
     fn a_saved_entry_set_loads_back_and_a_resave_replaces_it() {
         let conn = fixture::conn();
+        fixture::community(&conn, "c1");
         let first = vec![(PseudonymKey([1; 32]), Vec::new())];
         save(&conn, OWNER, "c1", &first, 1).unwrap();
         let second = vec![(PseudonymKey([2; 32]), Vec::new())];
@@ -86,6 +87,8 @@ mod tests {
     #[test]
     fn a_corrupt_row_is_skipped() {
         let conn = fixture::conn();
+        fixture::community(&conn, "good");
+        fixture::community(&conn, "bad");
         save(&conn, OWNER, "good", &[], 1).unwrap();
         conn.execute(
             "INSERT INTO governance_entries_cache VALUES (?1, 'bad', 'not json', 1)",

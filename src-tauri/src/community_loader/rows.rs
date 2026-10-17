@@ -167,7 +167,9 @@ fn load_event_rsvp_rows(
     owner_key: &str,
 ) -> rusqlite::Result<Vec<EventRsvpRow>> {
     let mut stmt = conn.prepare(
-        "SELECT community_id, event_id, status FROM community_event_rsvps WHERE owner_key = ?1",
+        "SELECT r.community_id, r.event_id, r.status FROM event_rsvps r \
+         JOIN communities c ON c.owner_key = r.owner_key AND c.id = r.community_id \
+         WHERE r.owner_key = ?1 AND r.pseudonym_key = c.my_pseudonym_key",
     )?;
     let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
         Ok(EventRsvpRow {

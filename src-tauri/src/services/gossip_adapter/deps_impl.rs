@@ -82,6 +82,9 @@ impl GossipDeps for GossipAdapter {
         recipient: &str,
         status: &str,
     ) {
+        let Ok(owner_key) = crate::state_helpers::current_owner_key(&self.state) else {
+            return;
+        };
         let mid = message_id.to_string();
         let cid = community_id.to_string();
         let rp = recipient.to_string();
@@ -89,11 +92,11 @@ impl GossipDeps for GossipAdapter {
         let now = rekindle_utils::timestamp_secs();
         crate::db_helpers::db_fire(&self.pool, "record_delivery", move |conn| {
             conn.execute(
-                "INSERT INTO message_delivery (message_id, community_id, recipient_pseudonym, status, attempts, last_attempt_at) \
-                 VALUES (?1, ?2, ?3, ?4, 1, ?5) \
-                 ON CONFLICT(message_id, recipient_pseudonym) \
+                "INSERT INTO message_delivery (owner_key, message_id, community_id, recipient_pseudonym, status, attempts, last_attempt_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6) \
+                 ON CONFLICT(owner_key, message_id, recipient_pseudonym) \
                  DO UPDATE SET status=excluded.status, attempts=attempts+1, last_attempt_at=excluded.last_attempt_at",
-                rusqlite::params![mid, cid, rp, st, now.cast_signed()],
+                rusqlite::params![owner_key, mid, cid, rp, st, now.cast_signed()],
             )?;
             Ok(())
         });

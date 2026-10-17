@@ -42,4 +42,14 @@ pub(crate) mod fixture {
         .unwrap();
         conn
     }
+
+    /// A `communities` row for [`OWNER`], which the per-community tables
+    /// reference.
+    pub fn community(conn: &Connection, id: &str) {
+        conn.execute(
+            "INSERT INTO communities (owner_key, id, name, joined_at) VALUES (?1, ?2, ?2, 0)",
+            [OWNER, id],
+        )
+        .unwrap();
+    }
 }

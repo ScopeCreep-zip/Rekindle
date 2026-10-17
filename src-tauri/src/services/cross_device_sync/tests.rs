@@ -39,6 +39,11 @@ fn paired_devices_table_round_trips() {
 fn channel_read_state_row_writes_and_reads() {
     let conn = open_seeded_db();
     conn.execute(
+        "INSERT INTO communities (owner_key, id, name, joined_at) VALUES ('owner_pk', 'c1', 'C1', 0)",
+        [],
+    )
+    .expect("community");
+    conn.execute(
         "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
          VALUES ('owner_pk', 'c1', 'ch1', 42, 100)",
         [],

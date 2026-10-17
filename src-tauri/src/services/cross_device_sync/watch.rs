@@ -147,10 +147,13 @@ fn merge_read_state_into_db(pool: &Db, owner_key: &str, _device_id: &str, remote
     let owner_key = owner_key.to_string();
     db_fire(pool, "merge remote read state", move |conn| {
         let tx = conn.transaction()?;
+        // A community the other device holds and this one does not has
+        // no read state here (its rows belong to the `communities` row).
         for entry in &remote.entries {
             tx.execute(
                 "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                 SELECT ?1, ?2, ?3, ?4, ?5 \
+                 WHERE EXISTS (SELECT 1 FROM communities WHERE owner_key = ?1 AND id = ?2) \
                  ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
                    last_read_lamport = MAX(last_read_lamport, excluded.last_read_lamport), \
                    updated_at = excluded.updated_at",
