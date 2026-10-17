@@ -43,7 +43,7 @@ const FRAME_HEADER_LEN: usize = 4;
 const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Build the Noise prologue (v2):
-/// `REKINDLE-IPC-v2 ‖ lower_uid (u32 BE) ‖ higher_uid (u32 BE) ‖ socket path`.
+/// `REKINDLE-IPC-v3 ‖ lower_uid (u32 BE) ‖ higher_uid (u32 BE) ‖ socket path`.
 ///
 /// Sorted UIDs give both ends identical bytes. No PIDs: a peer in another PID
 /// namespace has no meaningful PID, and the UID check plus the socket's
@@ -57,7 +57,7 @@ fn build_prologue(local_uid: u32, remote_uid: u32, socket_path: &Path) -> Vec<u8
     };
     let path = socket_path.as_os_str().as_encoded_bytes();
     let mut prologue = Vec::with_capacity(15 + 8 + path.len());
-    prologue.extend_from_slice(b"REKINDLE-IPC-v2");
+    prologue.extend_from_slice(b"REKINDLE-IPC-v3");
     prologue.extend_from_slice(&low.to_be_bytes());
     prologue.extend_from_slice(&high.to_be_bytes());
     prologue.extend_from_slice(path);
@@ -384,7 +384,7 @@ mod tests {
     fn prologue_v2_is_canonical_and_pid_free() {
         let a = build_prologue(1000, 1001, Path::new(BUS));
         assert_eq!(a, build_prologue(1001, 1000, Path::new(BUS)));
-        let mut expected = b"REKINDLE-IPC-v2".to_vec();
+        let mut expected = b"REKINDLE-IPC-v3".to_vec();
         expected.extend_from_slice(&1000u32.to_be_bytes());
         expected.extend_from_slice(&1001u32.to_be_bytes());
         expected.extend_from_slice(BUS.as_bytes());

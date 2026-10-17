@@ -26,47 +26,27 @@ pub fn append(
     );
 }
 
-/// Open the identity's chain at unlock and record the wrong passphrases the
-/// unlock cleared. A truncated chain raises the tamper signal.
-pub async fn restore(
-    app: Option<&tauri::AppHandle>,
-    state: &AppState,
-    pool: &Db,
-    owner: &str,
-    failed_attempts: u32,
-) {
-    match rekindle_node::host::audit::restore(&state.audit_chain, pool, &state.keystore, owner)
-        .await
-    {
-        Ok(Restored::Intact) => {}
-        Ok(Restored::Truncated { anchor_cursor }) => {
-            tracing::error!(
-                owner,
-                anchor_cursor,
-                "audit chain truncated between sessions"
-            );
-            if let Some(app) = app {
-                broken(
-                    app,
-                    anchor_cursor,
-                    format!(
-                        "Your device's tamper-evident audit log was modified between sessions. \
-                         The most recent vault-anchored entry was #{anchor_cursor}, but the \
-                         on-disk log has different content. Someone with write access to your \
-                         local database may have removed or altered audit history."
-                    ),
-                );
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, owner, "audit chain not restored"),
+/// Raise the tamper signal when the host's restore at unlock found the
+/// chain truncated between sessions (`host::unlocked::install`).
+pub fn report_restored(app: &tauri::AppHandle, owner: &str, restored: Option<&Restored>) {
+    if let Some(Restored::Truncated { anchor_cursor }) = restored {
+        let anchor_cursor = *anchor_cursor;
+        tracing::error!(
+            owner,
+            anchor_cursor,
+            "audit chain truncated between sessions"
+        );
+        broken(
+            app,
+            anchor_cursor,
+            format!(
+                "Your device's tamper-evident audit log was modified between sessions. \
+                 The most recent vault-anchored entry was #{anchor_cursor}, but the \
+                 on-disk log has different content. Someone with write access to your \
+                 local database may have removed or altered audit history."
+            ),
+        );
     }
-    rekindle_node::host::audit::record_unlock_failures(
-        &state.audit_chain,
-        pool,
-        &state.keystore,
-        owner,
-        failed_attempts,
-    );
 }
 
 /// Verify the chain end to end; a broken one raises the tamper signal.

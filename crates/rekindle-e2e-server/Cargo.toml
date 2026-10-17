@@ -14,6 +14,7 @@ workspace = true
 [dependencies]
 axum = "0.8"
 rekindle-db = { path = "../rekindle-db" }
+rekindle-node = { path = "../rekindle-node" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
 rekindle_lib = { package = "rekindle-desktop", path = "../../src-tauri" }
 serde = { workspace = true }

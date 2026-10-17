@@ -12,7 +12,7 @@ use rekindle_ipc::protocol::{BusPayload, IpcRequest, IpcResponse, Lane};
 use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
 
 use super::in_flight::{shutting_down, Correlation, Finished, InFlight};
-use super::{CallerContext, DaemonContext};
+use super::{Caller, DaemonContext};
 
 /// A store write or read failed: 500, naming what.
 pub(crate) fn store_error(what: &str, e: impl std::fmt::Display) -> IpcResponse {
@@ -180,14 +180,21 @@ impl DaemonContext {
                             id: msg.msg_id,
                             level: msg.security_level,
                         };
-                        let caller = CallerContext {
+                        // A frame the server did not stamp with its
+                        // connection cannot be answered for one.
+                        let Some(conn) = msg.verified_sender_conn else {
+                            tracing::warn!("daemon subscriber: unstamped request, ignoring");
+                            continue;
+                        };
+                        let caller = Caller {
+                            conn: crate::host::ConnId::Bus(conn),
+                            clearance: msg.security_level,
                             verified_name: msg.verified_sender_name,
                             static_key: msg.verified_sender_key,
-                            level: msg.security_level,
                         };
                         let ctx = Arc::clone(self);
                         in_flight.spawn(correlation, async move {
-                            ctx.dispatch_in_lane(request, &caller).await
+                            ctx.call(request, &caller).await
                         });
                     }
                     Some(Err(e)) => {
@@ -230,18 +237,18 @@ impl DaemonContext {
         }
     }
 
-    /// Dispatch `request` holding its lane for the whole handler, once the
-    /// sender's clearance (stamped by the bus server from the registry)
-    /// meets the request's (plan D1).
-    async fn dispatch_in_lane(&self, request: IpcRequest, caller: &CallerContext) -> IpcResponse {
+    /// `HostApi::call`: dispatch `request` holding its lane for the whole
+    /// handler, once the sender's clearance (stamped by the bus server from
+    /// the registry, or the shell's) meets the request's (plan D1).
+    pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
         let required = request.required_clearance();
-        if caller.level < required {
+        if caller.clearance < required {
             return IpcResponse::error_with_remediation(
                 403,
                 format!(
                     "{} needs {required:?} clearance; this client has {:?}",
                     request.name(),
-                    caller.level
+                    caller.clearance
                 ),
                 "unlock the identity from this client first",
             );
@@ -249,7 +256,7 @@ impl DaemonContext {
         // An agent is scoped by its capabilities above the locked-state
         // requests (plan D1).
         if required > rekindle_ipc::message::SecurityLevel::Open
-            && caller.level == rekindle_ipc::message::SecurityLevel::Agent
+            && caller.clearance == rekindle_ipc::message::SecurityLevel::Agent
         {
             let permitted = match caller.static_key {
                 Some(key) => self

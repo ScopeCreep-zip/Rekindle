@@ -150,8 +150,8 @@ pub async fn end_session(end: SessionEnd<'_>, state: &Arc<AppState>) {
 }
 
 /// Take the unlocked identity out of the session: what the unlock handed it
-/// (identity, keys, Signal manager, friend authority), then the vault and
-/// database through `host::identity::lock`. Also the cleanup for a login
+/// (identity, keys, Signal manager, friend authority), then the host's
+/// install and the vault and database (`Host::release_identity`). Also the cleanup for a login
 /// that failed after its unlock.
 pub async fn lock_identity(state: &AppState) {
     *state.identity.write() = None;
@@ -159,7 +159,12 @@ pub async fn lock_identity(state: &AppState) {
     *state.signal_manager.write() = None;
     *state.identity_secret.lock() = None;
     services::preferences::reset(state);
-    rekindle_node::host::identity::lock(&services::auth_cores::stores(state)).await;
+    // The host takes out what its install put in (its clients lose their
+    // clearance with the window's session), then the vault and database.
+    // Before the host has started nothing was unlocked.
+    if let Some(host) = state.host.current() {
+        host.release_identity().await;
+    }
 }
 
 /// End every call and leave the voice channel before the session closes:

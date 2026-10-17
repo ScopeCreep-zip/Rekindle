@@ -44,7 +44,15 @@ pub async fn graceful_shutdown(state: &SharedState) {
     services::session::end_session(services::session::SessionEnd::Exit, state).await;
     state_helpers::clear_meks(state);
 
-    // 2. The app-lifetime dispatch loop.
+    // 2. The in-process host: its bus drains (every request in flight is
+    //    answered) before the node it serves over stops.
+    if let Some(host) = state.host.current() {
+        if let Err(e) = host.shutdown().await {
+            tracing::warn!(error = %format!("{e:#}"), "host shutdown");
+        }
+    }
+
+    // 3. The app-lifetime dispatch loop.
     let shutdown_tx = state.shutdown_tx.read().clone();
     if let Some(tx) = shutdown_tx {
         let _ = tx.send(()).await;
@@ -54,7 +62,7 @@ pub async fn graceful_shutdown(state: &SharedState) {
         let _ = h.await;
     }
 
-    // 3. The Veilid node itself.
+    // 4. The Veilid node itself.
     services::veilid::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");

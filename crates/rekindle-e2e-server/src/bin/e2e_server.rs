@@ -60,16 +60,23 @@ async fn main() {
         state: data.join("state"),
         data,
     };
-    root.create_dirs()
-        .expect("failed to create the temp data root");
-    rekindle_db::reset::apply(&root).expect("layout check of the temp data root");
+    // The host claims the temp root (its lock and layout check) and runs
+    // with no node: the E2E suite drives the identity lifecycle only.
+    let claimed = rekindle_node::host::claim(root.clone()).expect("claim of the temp data root");
 
     tracing::info!(dir = %dir.display(), "E2E server starting");
 
-    let server = Arc::new(ServerState {
-        state: Arc::new(AppState::default()),
-        root,
-    });
+    let state: SharedState = Arc::new(AppState::default());
+    let host = rekindle_node::host::Host::start(rekindle_node::host::HostConfig {
+        root: claimed,
+        stores: state.host_stores(),
+        transport: rekindle_node::host::TransportSource::Offline,
+        serve_bus: false,
+    })
+    .await
+    .expect("the E2E host did not start");
+    state.host.set(host);
+    let server = Arc::new(ServerState { state, root });
 
     let cors = CorsLayer::new()
         .allow_origin(Any)

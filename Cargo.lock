@@ -7488,6 +7488,7 @@ dependencies = [
  "axum",
  "rekindle-db",
  "rekindle-desktop",
+ "rekindle-node",
  "rekindle-utils",
  "serde",
  "serde_json",

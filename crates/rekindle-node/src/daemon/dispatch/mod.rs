@@ -29,6 +29,7 @@ mod keys;
 mod lifecycle;
 mod presence;
 mod router;
+mod shell;
 mod social;
 mod status;
 
@@ -47,19 +48,8 @@ pub use router::dispatch;
 
 use crate::host::policy::PolicyConfig;
 
-/// Who sent the request being dispatched, as the bus server verified it.
-///
-/// Every field is server-stamped from the sender's connection; nothing
-/// here comes from the client's own claims.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallerContext {
-    /// The agent name the sender's Noise key is registered under, if any.
-    pub verified_name: Option<String>,
-    /// The sender's Noise static key, proven by the handshake.
-    pub static_key: Option<[u8; 32]>,
-    /// The clearance the request was sent at.
-    pub level: rekindle_ipc::message::SecurityLevel,
-}
+/// Who sent the request being dispatched (`host::api::Caller`).
+pub use crate::host::api::Caller;
 
 /// Build a governance adapter over this request's context.
 ///
@@ -96,6 +86,8 @@ pub(crate) fn adapter(
 /// Rule: if the critical section contains `await`, use `tokio::sync`. Otherwise,
 /// use `parking_lot`.
 pub struct DaemonContext {
+    /// Daemon or shell (`host::runtime::HostMode`).
+    pub mode: crate::host::HostMode,
     /// The transport node (Veilid bridge). None before Veilid is started.
     pub transport: RwLock<Option<Arc<TransportNode>>>,
     /// The unlocked identity's session, projected from its stores at
@@ -110,7 +102,7 @@ pub struct DaemonContext {
     pub vault: rekindle_vault::VaultHandle,
     /// The one wrong-passphrase counter per identity (U1.9): unlock,
     /// import, rotate and export count on it.
-    pub identity_attempts: rekindle_idempotency::attempts::AttemptLimiter<String>,
+    pub identity_attempts: std::sync::Arc<rekindle_idempotency::attempts::AttemptLimiter<String>>,
     /// The unlock's one Signal manager (`host::identity::unlock`). None
     /// while locked.
     pub signal: RwLock<Option<Arc<rekindle_crypto::signal::SignalSessionManager>>>,
@@ -133,7 +125,7 @@ pub struct DaemonContext {
     pub config_dir: std::path::PathBuf,
     /// The unlocked identity's tamper-evident audit chain
     /// (`host::audit`); `None` while locked, when nothing is written.
-    pub audit_chain: crate::host::audit::ChainSlot,
+    pub audit_chain: std::sync::Arc<crate::host::audit::ChainSlot>,
     /// Consolidated inbound event manager (watch + gossip + poll → dedup → emit).
     /// None before unlock/resume. Created during Resuming transition.
     pub subscriptions: RwLock<Option<rekindle_transport::SubscriptionManager>>,

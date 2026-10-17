@@ -215,7 +215,7 @@ connect to the per-user socket / pipe
                                           peer credentials → UID (PID if the OS gives one)
                                           refuse a UID other than the daemon's
         ◀──── Noise IK handshake (1 RTT) ────▶
-                                          prologue: "REKINDLE-IPC-v2" ‖ lo_uid ‖ hi_uid
+                                          prologue: "REKINDLE-IPC-v3" ‖ lo_uid ‖ hi_uid
                                                     ‖ socket path   (no PIDs)
                                           registry lookup: Noise static key → name
                                                    │

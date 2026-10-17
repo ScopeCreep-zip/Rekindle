@@ -59,9 +59,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "the app-lifetime dispatch loop's ingress workers; joined when the loop stops",
     ),
     (
-        "crates/rekindle-node/src/host/mod.rs",
+        "crates/rekindle-node/src/host/serve.rs",
         "spawn_bus_subscriber",
-        "process-lifetime bus subscriber; its handle is joined at exit",
+        "host-lifetime bus subscriber; Host::shutdown joins its handle",
+    ),
+    (
+        "crates/rekindle-node/src/host/serve.rs",
+        "spawn_accept",
+        "host-lifetime accept loop; Host::shutdown stops the server and ends it",
     ),
     (
         "crates/rekindle-transport/src/broadcast/node/lifecycle.rs",

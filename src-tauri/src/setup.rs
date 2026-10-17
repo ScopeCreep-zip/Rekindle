@@ -25,20 +25,20 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     *state.app_handle.write() = Some(app.handle().clone());
 
     // The data root every host shares (plan C5): the same folders Tauri's
-    // `app_{data,config}_dir` name, created owner-only. The node lock makes
-    // the desktop and `rekindled` refuse to run one node twice on a root
-    // (F3); it is held for the process's lifetime. The layout check runs
-    // under it, before anything opens a store (plan D1): a root laid out
-    // for another version is reset.
+    // `app_{data,config}_dir` name, created owner-only. The host claims it
+    // (plan D3.1): its node lock makes the desktop and `rekindled` refuse to
+    // run one node twice on a root (F3), and the layout check runs under it
+    // before anything opens a store (plan D1). The claim is held by the
+    // host for the process's lifetime.
     let root = rekindle_db::paths::DataRoot::resolve()?;
-    root.create_dirs()
-        .map_err(|e| format!("failed to create the data directories: {e}"))?;
-    app.manage(rekindle_db::lock::NodeLock::acquire(&root.data)?);
-    if let Err(e) = rekindle_db::reset::apply(&root) {
-        tracing::error!(error = %e, "data root layout check failed");
-        show_startup_error(app, &e.to_string());
-        return Ok(());
-    }
+    let claimed = match rekindle_node::host::claim(root.clone()) {
+        Ok(claimed) => claimed,
+        Err(e) => {
+            tracing::error!(error = %e, "data root claim failed");
+            show_startup_error(app, &format!("{e:#}"));
+            return Ok(());
+        }
+    };
 
     #[cfg(debug_assertions)]
     add_dev_capabilities(app)?;
@@ -162,6 +162,13 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     tauri::async_runtime::spawn(async move {
         match services::veilid::initialize_node(&app_handle_clone, &state_for_veilid).await {
             Ok(update_rx) => {
+                // The host runs in-process over the adopted node (plan
+                // D3.1) and serves the bus the TUI and CLI attach to.
+                if let Err(e) = start_host(&state_for_veilid, claimed).await {
+                    tracing::error!(error = %e, "host did not start");
+                    exit_with_error(&app_handle_clone, &e);
+                    return;
+                }
                 // Create shutdown channel for the dispatch loop
                 let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
                 *state_for_veilid.shutdown_tx.write() = Some(shutdown_tx);
@@ -178,6 +185,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
             }
             Err(e) => {
                 tracing::error!(error = %e, "failed to start Veilid node at app startup");
+                exit_with_error(&app_handle_clone, &e);
             }
         }
     });
@@ -188,6 +196,42 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
 
     tracing::info!("Rekindle started");
     Ok(())
+}
+
+/// Start the in-process host over the node `initialize_node` adopted.
+async fn start_host(
+    state: &SharedState,
+    claimed: rekindle_node::host::ClaimedRoot,
+) -> Result<(), String> {
+    let node = state
+        .transport
+        .read()
+        .clone()
+        .ok_or("transport node not adopted")?;
+    let host = rekindle_node::host::Host::start(rekindle_node::host::HostConfig {
+        root: claimed,
+        stores: state.host_stores(),
+        transport: rekindle_node::host::TransportSource::Adopted(node),
+        serve_bus: true,
+    })
+    .await
+    .map_err(|e| format!("{e:#}"))?;
+    state.host.set(host);
+    Ok(())
+}
+
+/// Show a failure after the first window opened, and exit when the dialog
+/// closes: without its node and host the app can do nothing.
+fn exit_with_error(app: &tauri::AppHandle, detail: &str) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    let handle = app.clone();
+    app.dialog()
+        .message(format!(
+            "Rekindle could not start and has to close.\n\n{detail}"
+        ))
+        .title("Rekindle could not start")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| handle.exit(1));
 }
 
 /// Show a startup failure in a native dialog and exit when it closes. No

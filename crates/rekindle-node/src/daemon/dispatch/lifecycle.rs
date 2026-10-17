@@ -19,10 +19,17 @@ use super::{transition, DaemonContext};
 pub(crate) async fn handle_unlock(
     ctx: &DaemonContext,
     state: DaemonState,
-    caller: &super::CallerContext,
+    caller: &super::Caller,
     identity: &str,
     passphrase: &str,
 ) -> IpcResponse {
+    // The identity this host already holds: the passphrase proves this
+    // client, which gets the unlocking client's clearance (plan D3.1: the
+    // TUI attaches to the GUI's session this way).
+    if state == DaemonState::Operational && ctx.require_owner().is_ok_and(|owner| owner == identity)
+    {
+        return attach_client(ctx, caller, identity, passphrase).await;
+    }
     if !state.can_unlock() {
         return IpcResponse::error(409, format!("cannot unlock in state '{}'", state.as_str()));
     }
@@ -46,43 +53,21 @@ pub(crate) async fn handle_unlock(
             return super::identity::identity_error(&e);
         }
     };
-    *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(
-        *unlocked.secret,
-    ));
-    let signing_bytes = zeroize::Zeroizing::new(*unlocked.secret);
-    let unlocked_failures = unlocked.failed_attempts;
-    let audit_restored;
-    *ctx.signal.write() = Some(Arc::new(unlocked.signal));
-
-    // The session is projected from the identity's stores (plan D1). Resume
-    // opens the profile and friend list writable with the owner keypairs it
-    // carries from the vault, and fails without them (C7.4 finding 2).
-    let loaded = match ctx.require_db() {
-        Ok(db) => crate::host::session::load(&db, &ctx.vault, identity)
-            .await
-            .map_err(|e| IpcResponse::error(500, format!("session: {e}"))),
-        Err(e) => Err(e),
-    };
-    match loaded {
-        Ok(session) => {
-            *ctx.session.write() = Some(session);
-            crate::daemon::mek_rotation::restore_from_vault(ctx);
-            audit_restored = restore_audit(ctx, identity, unlocked_failures).await;
-            // The identity's trusted clients, and this one: the passphrase
-            // proved it (plan D1).
-            crate::daemon::clients::load(ctx).await;
-            if let Some(key) = caller.static_key {
-                if let Err(e) = crate::daemon::clients::register_unlocking_client(ctx, &key).await {
-                    tracing::error!(error = %e, "the unlocking client is not registered");
-                }
-            }
-        }
-        Err(failed) => {
-            teardown_unlocked(ctx).await;
+    let installed = match crate::host::unlocked::install(ctx, unlocked).await {
+        Ok(installed) => installed,
+        Err(e) => {
             if let Err(refused) = transition(ctx, DaemonState::Locked) {
                 return refused;
             }
-            return failed;
+            return IpcResponse::error(500, e);
+        }
+    };
+    let signing_bytes = installed.secret;
+    let audit_restored = installed.audit;
+    // This client: the passphrase proved it (plan D1).
+    if let Some(key) = caller.static_key {
+        if let Err(e) = crate::daemon::clients::register_unlocking_client(ctx, &key).await {
+            tracing::error!(error = %e, "the unlocking client is not registered");
         }
     }
 
@@ -318,6 +303,17 @@ fn begin_unlock_scope(ctx: &DaemonContext) -> Arc<rekindle_lifecycle::SessionSco
 /// Logout, a failed Unlock, Delete, Rotate, Wipe and process exit, so no
 /// path leaves part of an unlock behind.
 pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
+    // The shell's node, record pool, routes and status are the GUI's; its
+    // logout tears those down itself (plan D3.1).
+    if ctx.mode == crate::host::HostMode::Daemon {
+        teardown_domain(ctx).await;
+    }
+    crate::host::unlocked::release(ctx).await;
+}
+
+/// The daemon's half of a teardown: the unlock's tasks, subscriptions,
+/// status, record pool and routes.
+async fn teardown_domain(ctx: &DaemonContext) {
     // The stop token first, so a task sees stop before any refused call;
     // then draining the record pool releases every unlock task waiting on
     // it, so the scope stops at once. The calls in flight run on (C7.6g).
@@ -372,43 +368,44 @@ pub(crate) async fn teardown_unlocked(ctx: &DaemonContext) {
     // keepalive flags its scopes (plan C7.8b).
     ctx.community_runtime.clear();
     drop(ctx.broadcast_mgr.write().take());
-    ctx.mek_cache.write().clear();
     ctx.event_watch_tx.send_replace(None);
-    *ctx.signing_key.write() = None;
-    // The identity itself, last: its clients' clearance, its session, Signal
-    // manager, database and vault (plan D1).
-    crate::daemon::clients::unload(ctx).await;
-    crate::host::audit::close(&ctx.audit_chain);
-    *ctx.session.write() = None;
-    *ctx.signal.write() = None;
-    crate::host::identity::lock(&ctx.identity_stores()).await;
 }
 
-/// Open the identity's audit chain and record the wrong passphrases the
-/// unlock cleared; what the restore found, when it ran.
-async fn restore_audit(
+/// `Unlock` of the identity already unlocked: check the passphrase off the
+/// executor (a wrong one counts against the identity) and give this client
+/// the unlocking client's clearance.
+async fn attach_client(
     ctx: &DaemonContext,
-    owner: &str,
-    failures: u32,
-) -> Option<rekindle_audit::Restored> {
-    let db = ctx.db.current().ok()?;
-    match crate::host::audit::restore(&ctx.audit_chain, &db, &ctx.vault, owner).await {
-        Ok(restored) => {
-            if let rekindle_audit::Restored::Truncated { anchor_cursor } = restored {
-                tracing::error!(anchor_cursor, "audit chain truncated between sessions");
-            }
-            crate::host::audit::record_unlock_failures(
-                &ctx.audit_chain,
-                &db,
-                &ctx.vault,
-                owner,
-                failures,
-            );
-            Some(restored)
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "audit chain not restored");
-            None
-        }
+    caller: &super::Caller,
+    identity: &str,
+    passphrase: &str,
+) -> IpcResponse {
+    let Some(key) = caller.static_key else {
+        return IpcResponse::ok(&serde_json::json!({ "state": "operational" }));
+    };
+    let (root, attempts, pk, pass) = (
+        ctx.root.clone(),
+        std::sync::Arc::clone(&ctx.identity_attempts),
+        identity.to_string(),
+        zeroize::Zeroizing::new(passphrase.to_string()),
+    );
+    let verified = tokio::task::spawn_blocking(move || {
+        crate::host::identity::verify_passphrase(
+            &root,
+            &attempts,
+            &pk,
+            &pass,
+            rekindle_utils::timestamp_ms(),
+        )
+    })
+    .await;
+    match verified {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return super::identity::identity_error(&e),
+        Err(e) => return IpcResponse::error(500, format!("passphrase check: {e}")),
     }
+    if let Err(e) = crate::daemon::clients::register_unlocking_client(ctx, &key).await {
+        return IpcResponse::error(500, format!("client not registered: {e}"));
+    }
+    IpcResponse::ok(&serde_json::json!({ "state": "operational" }))
 }

@@ -209,6 +209,7 @@ impl EventRouter {
             security_level: SecurityLevel::Open,
             verified_sender_name: Some("server".to_string()),
             verified_sender_key: None,
+            verified_sender_conn: None,
             agent_type: None,
             community_scope: event.community().map(String::from),
         };

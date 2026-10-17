@@ -15,6 +15,7 @@ use crate::state_helpers;
 use rekindle_db::paths::DataRoot;
 use rekindle_db::Db;
 use rekindle_node::host::identity::{self, IdentityError, Stores, Unlocked};
+use rekindle_node::host::Installed;
 use rekindle_vault::typed::owner_keys::OwnerKey;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,22 +55,24 @@ fn clear_session_state(state: &SharedState) {
     state.communities.write().clear();
 }
 
-/// Hand the unlock's keys and friend authority to the session and return
-/// the database the unlock installed.
-/// Also returns the wrong passphrases the unlock cleared, for the audit
-/// chain.
-fn adopt(
+/// Install the unlock in the in-process host (plan D3.1: the identity, its
+/// keys and its audit chain are the host's), hand its keys and friend
+/// authority to the session, report what the audit restore found, and
+/// return the database the unlock installed.
+async fn adopt(
+    app: Option<&tauri::AppHandle>,
     state: &SharedState,
     unlocked: Unlocked,
-) -> Result<(Db, LoginResult, [u8; 32], u32), String> {
-    let Unlocked {
+) -> Result<(Db, LoginResult, [u8; 32]), String> {
+    let host = state.host.get().await;
+    let Installed {
         public_key,
         display_name,
         secret,
         signal,
         friend_store,
-        failed_attempts,
-    } = unlocked;
+        audit,
+    } = host.install(unlocked).await?;
     *state.friend_store.write() = Some(friend_store);
     *state.signal_manager.write() = Some(Arc::new(SignalManagerHandle { manager: signal }));
     *state.identity_secret.lock() = Some(*secret);
@@ -79,6 +82,9 @@ fn adopt(
         status: UserStatus::Online,
         status_message: String::new(),
     });
+    if let Some(app) = app {
+        services::audit::report_restored(app, &public_key, audit.as_ref());
+    }
     let pool = state.db.current()?;
     Ok((
         pool,
@@ -87,7 +93,6 @@ fn adopt(
             display_name,
         },
         *secret,
-        failed_attempts,
     ))
 }
 
@@ -108,17 +113,9 @@ pub async fn create_identity_core(
     )
     .await
     .map_err(|e| identity_error_message(&e))?;
-    let (pool, result, secret_bytes, failed_attempts) = adopt(state, unlocked)?;
+    let (pool, result, secret_bytes) = adopt(app_handle, state, unlocked).await?;
     services::preferences::load(state, &pool, &result.public_key).await?;
 
-    services::audit::restore(
-        app_handle,
-        state,
-        &pool,
-        &result.public_key,
-        failed_attempts,
-    )
-    .await;
     if let Some(app) = app_handle {
         services::audit::verify(app, state, &pool, &result.public_key).await;
     }
@@ -153,7 +150,7 @@ pub async fn login_core(
         tracing::warn!(public_key = %public_key, error = %e, "identity unlock failed");
         identity_error_message(&e)
     })?;
-    let (pool, result, key_array, failed_attempts) = adopt(state, unlocked)?;
+    let (pool, result, key_array) = adopt(app_handle, state, unlocked).await?;
     services::preferences::load(state, &pool, public_key).await?;
     let keystore_handle = &state.keystore;
 
@@ -180,7 +177,6 @@ pub async fn login_core(
         tracing::warn!(%error, "failed to restore governance from local cache");
     }
 
-    services::audit::restore(app_handle, state, &pool, public_key, failed_attempts).await;
     if let Some(app) = app_handle {
         services::audit::verify(app, state, &pool, public_key).await;
     }

@@ -17,8 +17,8 @@ use uuid::Uuid;
 /// Postcard encoding is positional, so a field change makes old and new
 /// frames mutually unreadable. The bus server drops a frame whose
 /// `wire_version` is not this one; the Noise prologue
-/// (`REKINDLE-IPC-v2`) already refuses a mismatched peer at handshake.
-pub const WIRE_VERSION: u8 = 2;
+/// (`REKINDLE-IPC-v3`) already refuses a mismatched peer at handshake.
+pub const WIRE_VERSION: u8 = 3;
 
 /// Security level classification for IPC messages.
 ///
@@ -105,6 +105,9 @@ pub struct Message<T> {
     /// Server-stamped Noise static key of the sending connection. NEVER
     /// set by clients: the server overwrites it on every routed frame.
     pub verified_sender_key: Option<[u8; 32]>,
+    /// Server-stamped id of the sending connection. NEVER set by clients: the
+    /// host keys a connection's held intents by it (plan D3.3).
+    pub verified_sender_conn: Option<u64>,
     /// Agent type classification.
     pub agent_type: Option<AgentType>,
     /// Community scope for event routing (governance key, or None for global).
@@ -152,6 +155,7 @@ impl<T: Serialize> Message<T> {
             security_level: level,
             verified_sender_name: None, // Server fills this
             verified_sender_key: None,  // Server fills this
+            verified_sender_conn: None, // Server fills this
             agent_type: ctx.agent_type,
             community_scope: None,
         }
@@ -184,6 +188,7 @@ impl<T: fmt::Debug> fmt::Debug for Message<T> {
             .field("security_level", &self.security_level)
             .field("verified_sender_name", &self.verified_sender_name)
             .field("verified_sender_key", &self.verified_sender_key.is_some())
+            .field("verified_sender_conn", &self.verified_sender_conn)
             .field("agent_type", &self.agent_type)
             .field("community_scope", &self.community_scope)
             .field("payload", &self.payload)

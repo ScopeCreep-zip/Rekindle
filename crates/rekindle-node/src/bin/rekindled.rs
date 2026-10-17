@@ -18,13 +18,32 @@ async fn main() -> ExitCode {
         Ok(guard) => guard,
         Err(e) => return fail(&e),
     };
-    match rekindle_node::host::run(args).await {
+    tracing::debug!(?args, "rekindled starting");
+    match run().await {
         Ok(reason) => ExitCode::from(reason.exit_code()),
         Err(e) => {
             tracing::error!(error = %format!("{e:#}"), "rekindled failed");
             fail(&e)
         }
     }
+}
+
+/// Claim the data root, start the host over its own node, serve until asked
+/// to stop, then stop gracefully (plan D3.1).
+async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
+    use rekindle_node::host::{self, Host, HostConfig, HostStores, TransportSource};
+    let root = host::claim(rekindle_db::paths::DataRoot::resolve()?)?;
+    let identities = host::identity::list(root.root()).map_err(|e| anyhow::anyhow!("{e}"))?;
+    tracing::info!(count = identities.len(), "identity registry read");
+    let host = Host::start(HostConfig {
+        root,
+        stores: HostStores::default(),
+        transport: TransportSource::Start(host::user_transport_config()?),
+        serve_bus: true,
+    })
+    .await?;
+    host.run_until_stopped().await?;
+    host.shutdown().await
 }
 
 /// Report a fatal error on stderr — the one channel a supervisor or the

@@ -8,7 +8,7 @@ use rekindle_ipc::message::{AgentType, SecurityLevel};
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_ipc::server::DAEMON_AGENT_NAME;
 
-use super::{state_error, CallerContext, DaemonContext};
+use super::{state_error, Caller, DaemonContext};
 
 // ── Network ─────────────────────────────────────────────────────────────
 
@@ -64,14 +64,14 @@ pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> I
 /// Handle AgentRegister — register the calling connection under `name`.
 ///
 /// The registry key is the caller's Noise static key, which the bus server
-/// stamped from the handshake (`CallerContext::static_key`), so an agent
+/// stamped from the handshake (`Caller::static_key`), so an agent
 /// can only ever register itself. It registers at `Agent` (plan D1); the
 /// bus server stamps that clearance on the key's next frame. The request
 /// itself needs `Admin`, so only a client the identity trusts registers
 /// an agent.
 pub(crate) async fn handle_agent_register(
     ctx: &DaemonContext,
-    caller: &CallerContext,
+    caller: &Caller,
     name: &str,
     agent_type: AgentType,
     capabilities: &[String],

@@ -48,12 +48,9 @@ pub struct AppState {
     /// into this; receive paths go through existing src-tauri services
     /// until those services migrate flow-by-flow.
     pub transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
-    /// W16.9b — transport's `Session` mirroring src-tauri's identity +
-    /// friend-inbox metadata. `None` before login. In outbound-only
-    /// adoption the transport spawns no route loop (the HOST owns the
-    /// route lifecycle — `OwnRoutes` and `route_publish`), so this
-    /// exists only for
-    /// transport operations that read identity metadata.
+    /// The unlocked identity's session projection (`host::session`), the
+    /// host's own (`HostStores::session`) and the adopted node's. `None`
+    /// while locked.
     pub transport_session: Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
     /// W16.9b — durable retry queue store. Used by `EnvelopeQueue` for
     /// DM body sends + future expect-reply flows. `Some` after app
@@ -71,7 +68,7 @@ pub struct AppState {
     /// The one wrong-passphrase counter per identity (plan D1, U1.9):
     /// unlock and delete count on it, and a locked-out identity is refused
     /// before Argon2id runs.
-    pub identity_attempts: rekindle_idempotency::attempts::AttemptLimiter<String>,
+    pub identity_attempts: Arc<rekindle_idempotency::attempts::AttemptLimiter<String>>,
     /// The unlocked identity's preferences (`services::preferences`; the
     /// defaults while locked).
     pub preferences: RwLock<rekindle_types::preferences::Preferences>,
@@ -97,7 +94,7 @@ pub struct AppState {
     pub identity_secret: Mutex<Option<[u8; 32]>>,
     /// The unlocked identity's tamper-evident audit chain
     /// (`rekindle_node::host::audit`). `None` while locked.
-    pub audit_chain: Mutex<Option<rekindle_audit::AuditChain>>,
+    pub audit_chain: Arc<rekindle_node::host::audit::ChainSlot>,
     /// Phase 4 — shared keystore handle so background services that
     /// only have `&AppState` can reach the vault.
     pub keystore: rekindle_vault::VaultHandle,
@@ -127,6 +124,8 @@ pub struct AppState {
     pub event_dispatch: std::sync::Arc<crate::event_dispatch::EventDispatch>,
     /// Per-window event channels (`subscribe_events`).
     pub event_router: crate::event_router::WebviewRouter,
+    /// The in-process host (plan D3.1), set once it has started.
+    pub host: super::host_slot::HostSlot,
     /// The login session's scope; every post-login task runs in it
     /// (`services::session`, plan C4). `None` while logged out.
     pub login_scope: RwLock<Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>>,
@@ -318,7 +317,7 @@ impl Default for AppState {
             envelope_store: Arc::new(RwLock::new(None)),
             friend_store: Arc::new(RwLock::new(None)),
             db: Arc::new(rekindle_db::DbHandle::default()),
-            identity_attempts: rekindle_idempotency::attempts::AttemptLimiter::default(),
+            identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
             signal_manager: Arc::new(RwLock::new(None)),
             game_detector: Arc::new(Mutex::new(None)),
@@ -327,7 +326,7 @@ impl Default for AppState {
             network_ready_tx: Arc::new(network_ready_tx),
             network_ready_rx,
             identity_secret: Mutex::new(None),
-            audit_chain: Mutex::new(None),
+            audit_chain: Arc::new(Mutex::new(None)),
             keystore: rekindle_vault::new_handle(),
             lifecycle: std::sync::Arc::new(rekindle_lifecycle::AppLifecycle::new()),
             friendship_handle: crate::services::friendship::FriendshipHandle::new(),
@@ -343,6 +342,7 @@ impl Default for AppState {
             event_journal: std::sync::Arc::new(rekindle_events::EventJournal::new(10_000)),
             event_dispatch: std::sync::Arc::new(crate::event_dispatch::EventDispatch::new()),
             event_router: crate::event_router::WebviewRouter::default(),
+            host: super::host_slot::HostSlot::default(),
             login_scope: RwLock::new(None),
             record_pool: RwLock::new(None),
             own_routes: RwLock::new(None),
@@ -412,6 +412,19 @@ impl Default for AppState {
 }
 
 impl AppState {
+    /// The identity slots the in-process host shares (plan D3.1): the host
+    /// and every command reach one identity through these `Arc`s.
+    #[must_use]
+    pub fn host_stores(&self) -> rekindle_node::host::HostStores {
+        rekindle_node::host::HostStores {
+            db: Arc::clone(&self.db),
+            vault: self.keystore.clone(),
+            attempts: Arc::clone(&self.identity_attempts),
+            audit_chain: Arc::clone(&self.audit_chain),
+            session: Arc::clone(&self.transport_session),
+        }
+    }
+
     /// Toggle the voice engine's mute state. Returns `Some(new_muted)` if
     /// the voice engine is active, `None` otherwise. The caller is
     /// responsible for emitting any UI event tied to the change.

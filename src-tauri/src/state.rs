@@ -17,6 +17,7 @@ pub mod circuit;
 pub mod community;
 pub mod friend;
 pub mod gossip;
+pub mod host_slot;
 pub mod runtime;
 
 pub use app_state::AppState;

@@ -99,7 +99,7 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
         }
     }
 
-    // Stamp the sender's verified name, Noise key and clearance from
+    // Stamp the sender's verified name, Noise key, connection id and clearance from
     // connection state and the registry, overwriting whatever the client
     // put there. [RC-6] The clearance is the registry's for this key at
     // this frame, not the handshake's: an unlock that registers the key
@@ -110,6 +110,7 @@ pub(super) async fn route_frame(state: &ServerState, sender_conn_id: u64, payloa
         let conn = conns.get(&sender_conn_id);
         msg.verified_sender_name = conn.and_then(|c| c.verified_name.clone());
         msg.verified_sender_key = conn.map(|c| c.static_key);
+        msg.verified_sender_conn = conn.map(|_| sender_conn_id);
         let registry = state.registry.read().await;
         msg.security_level = conn
             .and_then(|c| registry.lookup(&c.static_key))
@@ -359,6 +360,7 @@ async fn reply_direct(
         security_level: request.security_level,
         verified_sender_name: Some(DAEMON_AGENT_NAME.to_string()),
         verified_sender_key: None,
+        verified_sender_conn: None,
         agent_type: None,
         community_scope: None,
         payload: BusPayload::Response(body),

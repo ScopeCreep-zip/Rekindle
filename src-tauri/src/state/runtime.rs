@@ -76,8 +76,9 @@ impl NodeHandle {
 
 /// Handle to the Signal session manager.
 pub struct SignalManagerHandle {
-    /// The crypto session manager.
-    pub manager: rekindle_crypto::SignalSessionManager,
+    /// The unlock's one Signal manager, shared with the in-process host
+    /// (plan D3.1), so a bus request and the window use one session state.
+    pub manager: std::sync::Arc<rekindle_crypto::SignalSessionManager>,
 }
 
 /// Handle to the game detector.

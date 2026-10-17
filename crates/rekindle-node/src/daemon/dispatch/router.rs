@@ -5,18 +5,14 @@ use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::{
     admin, channel, community, governance, identity, keys, lifecycle, presence, social, status,
-    CallerContext, DaemonContext,
+    Caller, DaemonContext,
 };
 
 /// Dispatch an IPC request to the appropriate domain handler.
 ///
 /// Returns an `IpcResponse` for every request — no request goes unanswered.
 /// Every `IpcRequest` variant is explicitly matched; there is no catch-all arm.
-pub async fn dispatch(
-    ctx: &DaemonContext,
-    request: IpcRequest,
-    caller: &CallerContext,
-) -> IpcResponse {
+pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest, caller: &Caller) -> IpcResponse {
     let state = ctx.lifecycle.state();
 
     // Audit: log every request before dispatch (best-effort, non-blocking).
@@ -24,6 +20,9 @@ pub async fn dispatch(
 
     if let Err(rejection) = crate::validation::validate_request(&request) {
         return rejection;
+    }
+    if let Some(refused) = super::shell::refusal(ctx, &request) {
+        return refused;
     }
     route(ctx, state, request, caller).await
 }
@@ -34,7 +33,7 @@ async fn route(
     ctx: &DaemonContext,
     state: crate::daemon::DaemonState,
     request: IpcRequest,
-    caller: &CallerContext,
+    caller: &Caller,
 ) -> IpcResponse {
     match request {
         // ── Lifecycle (any state) ────────────────────────────────

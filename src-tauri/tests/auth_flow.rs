@@ -9,8 +9,10 @@ use rekindle_db::paths::DataRoot;
 use rekindle_lib::commands::auth::{create_identity_core, lock_identity, login_core};
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
 
-/// A data root under `dir`, laid out like the real one.
-fn test_root(dir: &std::path::Path) -> DataRoot {
+/// A data root under `dir`, laid out like the real one, claimed by an
+/// in-process host with no node (plan D3.1: login installs the identity in
+/// the host), and the state that shares the host's identity slots.
+async fn test_env(dir: &std::path::Path) -> (DataRoot, SharedState) {
     let data = dir.join("data");
     let root = DataRoot {
         config: dir.join("config"),
@@ -18,12 +20,17 @@ fn test_root(dir: &std::path::Path) -> DataRoot {
         state: data.join("state"),
         data,
     };
-    root.create_dirs().unwrap();
-    root
-}
-
-fn test_state() -> SharedState {
-    Arc::new(AppState::default())
+    let state: SharedState = Arc::new(AppState::default());
+    let host = rekindle_node::host::Host::start(rekindle_node::host::HostConfig {
+        root: rekindle_node::host::claim(root.clone()).unwrap(),
+        stores: state.host_stores(),
+        transport: rekindle_node::host::TransportSource::Offline,
+        serve_bus: false,
+    })
+    .await
+    .unwrap();
+    state.host.set(host);
+    (root, state)
 }
 
 // ── Create Identity ──────────────────────────────────────────────────
@@ -31,8 +38,7 @@ fn test_state() -> SharedState {
 #[tokio::test]
 async fn create_identity_writes_the_vault_database_and_registry() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let (result, secret) =
         create_identity_core(&root, "test-passphrase", Some("Alice".into()), &state, None)
@@ -79,8 +85,7 @@ async fn create_identity_writes_the_vault_database_and_registry() {
 #[tokio::test]
 async fn create_identity_uses_fallback_display_name() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let (result, _) = create_identity_core(&root, "pass", None, &state, None)
         .await
@@ -97,8 +102,7 @@ async fn create_identity_uses_fallback_display_name() {
 #[tokio::test]
 async fn create_identity_with_empty_display_name_uses_fallback() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let (result, _) = create_identity_core(&root, "pass", Some("   ".into()), &state, None)
         .await
@@ -112,8 +116,7 @@ async fn create_identity_with_empty_display_name_uses_fallback() {
 #[tokio::test]
 async fn login_after_lock_restores_the_same_keypair() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let (created, create_secret) = create_identity_core(
         &root,
@@ -149,8 +152,7 @@ async fn login_after_lock_restores_the_same_keypair() {
 #[tokio::test]
 async fn login_fails_with_wrong_passphrase_and_installs_nothing() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let (created, _) =
         create_identity_core(&root, "correct-pass", Some("Dave".into()), &state, None)
@@ -175,8 +177,7 @@ async fn login_fails_with_wrong_passphrase_and_installs_nothing() {
 #[tokio::test]
 async fn login_fails_with_no_identity() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let err = login_core(&root, "nonexistent-key", "any-pass", &state, None)
         .await
@@ -192,8 +193,7 @@ async fn login_fails_with_no_identity() {
 #[tokio::test]
 async fn two_identities_coexist_and_unlock_one_at_a_time() {
     let dir = tempfile::TempDir::new().unwrap();
-    let root = test_root(dir.path());
-    let state = test_state();
+    let (root, state) = test_env(dir.path()).await;
 
     let (first, _) = create_identity_core(&root, "pass-one", Some("First".into()), &state, None)
         .await

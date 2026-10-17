@@ -145,11 +145,14 @@ async fn the_server_stamps_the_senders_real_name_and_key() {
     );
     forged.verified_sender_name = Some(DAEMON_AGENT_NAME.to_string());
     forged.verified_sender_key = Some([9; 32]);
+    forged.verified_sender_conn = Some(u64::MAX);
     client.send(&forged).await.unwrap();
 
     let received = bus.next_request().await;
     assert_eq!(received.verified_sender_name, None);
     assert_eq!(received.verified_sender_key, Some(client_pub));
+    assert_ne!(received.verified_sender_conn, Some(u64::MAX));
+    assert!(received.verified_sender_conn.is_some());
 }
 
 #[tokio::test]

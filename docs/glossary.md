@@ -527,7 +527,7 @@ terminal frontend: a separate binary and crate (plan C3), a client of
 (`SO_PEERCRED` on Linux; `getpeereid` and `LOCAL_PEEREPID` on macOS):
 the peer's UID, and its PID where the OS gives one. The bus refuses a
 peer whose UID is not the daemon's, and binds both UIDs and the socket
-path into the Noise IK prologue (`REKINDLE-IPC-v2`); PIDs are logged,
+path into the Noise IK prologue (`REKINDLE-IPC-v3`); PIDs are logged,
 not bound.
 
 **VICE (Veilid Internet Connectivity Establishment).** Veilid's
