@@ -55,7 +55,7 @@ vault files and Veilid storage that must stay in step, as described in
 
 ### `db_helpers.rs`
 
-`db_call`, `db_call_or_default`, `db_fire`: the three wrappers every
+`db_call` and `db_fire`: the two wrappers every
 command and service uses to reach the database thread. The SQL for the
 tables both hosts share is in `rekindle_db::repo` (identity, friends,
 pending requests, communities, members, governance cache, audit); the

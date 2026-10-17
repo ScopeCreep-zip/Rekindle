@@ -44,5 +44,5 @@ pub async fn list_push_relay_registrations(
     state: State<'_, SharedState>,
 ) -> Result<Vec<(String, String, String)>, String> {
     let pool = state.db.current()?;
-    Ok(push_relay::list_registrations(state.inner(), &pool).await)
+    push_relay::list_registrations(state.inner(), &pool).await
 }

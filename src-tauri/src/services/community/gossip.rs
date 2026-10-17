@@ -261,8 +261,8 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &rekindle_db::D
         return;
     }
     let owner = owner_key;
-    let rows: Vec<(String, String, i64, i64)> =
-        crate::db_helpers::db_call_or_default(pool, move |conn| {
+    let rows: Result<Vec<(String, String, u32, u32)>, String> =
+        crate::db_helpers::db_call(pool, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT community_id, peer_pseudonym, success_count, failure_count
                  FROM peer_reliability WHERE owner_key = ?1",
@@ -271,26 +271,27 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &rekindle_db::D
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u32>(3)?,
                 ))
             })?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })
         .await;
+    let rows = match rows {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "peer reliability unreadable; ranking starts neutral");
+            return;
+        }
+    };
     if rows.is_empty() {
         return;
     }
     let mut communities = state.communities.write();
     for (community_id, peer, succ, fail) in rows {
         if let Some(community) = communities.get_mut(&community_id) {
-            community.peer_reliability.insert(
-                peer,
-                (
-                    u32::try_from(succ).unwrap_or(0),
-                    u32::try_from(fail).unwrap_or(0),
-                ),
-            );
+            community.peer_reliability.insert(peer, (succ, fail));
         }
     }
 }

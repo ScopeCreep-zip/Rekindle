@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db_helpers::{db_call, db_call_or_default};
+use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -18,17 +18,15 @@ pub struct BlockedUser {
     pub blocked_at: i64,
 }
 
-pub async fn is_user_blocked(pool: &Db, owner_key: &str, public_key: &str) -> bool {
+pub async fn is_user_blocked(pool: &Db, owner_key: &str, public_key: &str) -> Result<bool, String> {
     let ok = owner_key.to_string();
     let pk = public_key.to_string();
-    db_call_or_default(pool, move |conn| {
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![ok, pk],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
+    db_call(pool, move |conn| {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+            |row| row.get(0),
+        )?;
         Ok(count > 0)
     })
     .await

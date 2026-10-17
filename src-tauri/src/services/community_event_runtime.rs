@@ -328,27 +328,21 @@ pub async fn get_events_inner(
         )?;
         let events: Vec<EventInfoDto> = stmt
             .query_map(rusqlite::params![owner_key, community_id_for_db], |row| {
-                let recurrence_json: Option<String> = row.get(11).ok();
-                let location_json: Option<String> = row.get(12).ok();
                 Ok(EventInfoDto {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
                     creator_pseudonym: row.get(3)?,
-                    start_time: row.get::<_, i64>(4).unwrap_or(0).cast_unsigned(),
+                    start_time: row.get::<_, i64>(4)?.cast_unsigned(),
                     end_time: row.get::<_, Option<i64>>(5)?.map(i64::cast_unsigned),
                     channel_id: row.get(6)?,
                     max_attendees: row.get::<_, Option<i32>>(7)?.map(i32::cast_unsigned),
-                    created_at: row.get::<_, i64>(8).unwrap_or(0).cast_unsigned(),
+                    created_at: row.get::<_, i64>(8)?.cast_unsigned(),
                     status: row.get(9)?,
                     rsvps: Vec::new(),
-                    cover_image_ref: row.get(10).ok(),
-                    recurrence: recurrence_json
-                        .as_deref()
-                        .and_then(|s| serde_json::from_str(s).ok()),
-                    location: location_json
-                        .as_deref()
-                        .and_then(|s| serde_json::from_str(s).ok()),
+                    cover_image_ref: row.get(10)?,
+                    recurrence: rekindle_db::row::get_json_opt(row, "recurrence_json")?,
+                    location: rekindle_db::row::get_json_opt(row, "location_json")?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

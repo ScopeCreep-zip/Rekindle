@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use rekindle_protocol::dht::schema::personal_sync_dflt_schema;
 
-use crate::db_helpers::{db_call, db_call_or_default};
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -79,11 +79,17 @@ pub async fn open_personal_sync_record(
 ) -> Option<PersonalSyncRecordHandle> {
     let owner_key = state_helpers::current_owner_key(state).ok()?;
     let ok = owner_key.clone();
-    let row: Option<(String, String)> = db_call_or_default(pool, move |conn| {
+    let row = db_call(pool, move |conn| {
         rekindle_db::repo::identity::personal_sync(conn, &ok)
     })
     .await;
-    let (record_key, device_id) = row?;
+    let (record_key, device_id) = match row {
+        Ok(row) => row?,
+        Err(e) => {
+            tracing::warn!(error = %e, "personal sync record key unreadable");
+            return None;
+        }
+    };
     let owner_keypair_hex = match state_helpers::load_owner_keypair(state, OwnerKey::PersonalSync) {
         Ok(Some(keypair)) => keypair,
         Ok(None) => {

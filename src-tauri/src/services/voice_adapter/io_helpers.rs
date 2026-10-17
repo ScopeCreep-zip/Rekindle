@@ -118,8 +118,13 @@ pub(super) async fn load_community_member_names_impl(
         rekindle_db::repo::members::display_names(conn, &owner_key, &cid_owned)
     })
     .await
-    .map(|names| names.into_iter().collect())
-    .unwrap_or_default()
+    .map_or_else(
+        |e| {
+            tracing::warn!(error = %e, "member display names unreadable");
+            HashMap::new()
+        },
+        |names| names.into_iter().collect(),
+    )
 }
 
 /// Ship a signed receiver report back to the peer whose stream it

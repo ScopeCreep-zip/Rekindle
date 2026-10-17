@@ -12,11 +12,12 @@ use std::sync::Arc;
 
 use rekindle_codec::message::envelope::MessagePayload;
 
-use crate::db_helpers::{db_call, db_call_or_default};
+use crate::db_helpers::db_call;
 use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
+use rusqlite::OptionalExtension;
 
 pub async fn register_with_push_relay(
     state: &Arc<AppState>,
@@ -82,7 +83,7 @@ pub async fn unregister_with_push_relay(
                     rusqlite::params![owner, pseudo],
                     |r| r.get::<_, String>(0),
                 )
-                .ok();
+                .optional()?;
             Ok(row)
         }
     })
@@ -109,12 +110,15 @@ pub async fn unregister_with_push_relay(
     Ok(())
 }
 
-pub async fn list_registrations(state: &Arc<AppState>, pool: &Db) -> Vec<(String, String, String)> {
+pub async fn list_registrations(
+    state: &Arc<AppState>,
+    pool: &Db,
+) -> Result<Vec<(String, String, String)>, String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT relay_pseudonym, platform, record_keys_json
              FROM push_relay_registrations WHERE owner_key = ?1",

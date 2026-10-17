@@ -192,13 +192,14 @@ async fn load_local_oldest_lamports(
         let mut stmt = conn.prepare(
             "SELECT conversation_id, COALESCE(MIN(lamport_ts), 0) \
              FROM messages \
-             WHERE owner_key = ?1 AND community_id = ?2 AND conversation_type = 'channel' \
+             WHERE owner_key = ?1 \
+               AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) AND conversation_type = 'channel' \
              GROUP BY conversation_id",
         )?;
         let rows = stmt.query_map(rusqlite::params![owner_key, cid], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
         })?;
-        Ok(rows.filter_map(Result::ok).collect::<HashMap<_, _>>())
+        rows.collect::<rusqlite::Result<HashMap<_, _>>>()
     })
     .await
 }

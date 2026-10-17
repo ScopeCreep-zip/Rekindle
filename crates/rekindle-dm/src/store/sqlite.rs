@@ -265,7 +265,10 @@ impl DmStore for SqliteDmStore {
         let now_ms = msg.timestamp_secs; // also used for last_message_at
         self.conn
             .call(move |conn| -> rusqlite::Result<()> {
-                conn.execute(
+                // The message and the conversation's last-message time land
+                // together or not at all (plan D2).
+                let tx = conn.transaction()?;
+                tx.execute(
                     "INSERT INTO dm_messages
                         (owner_key, record_key, sender_pseudonym, body, timestamp,
                          sequence, mek_generation)
@@ -280,11 +283,11 @@ impl DmStore for SqliteDmStore {
                         gen_i,
                     ],
                 )?;
-                conn.execute(
+                tx.execute(
                     "UPDATE dms SET last_message_at = ?3 WHERE owner_key = ?1 AND record_key = ?2",
                     rusqlite::params![owner, msg.record_key, now_ms],
                 )?;
-                Ok(())
+                tx.commit()
             })
             .await
             .map_err(|e| DmError::Sqlite(e.to_string()))

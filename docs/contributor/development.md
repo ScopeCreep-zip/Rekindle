@@ -325,7 +325,7 @@ synchronised. The files live under the shared data root; see
   from `NodeHandle` before async DHT or routing calls
 - The database is `state.db.current()` (`rekindle_db::DbHandle` → `Db`, an
   async wrapper around `rusqlite` on a dedicated background thread). Use the
-  `db_helpers` module (`db_call`, `db_call_or_default`, `db_fire`)
+  `db_helpers` module (`db_call`, `db_fire`)
 - `cpal::Stream` is `!Send` on macOS — audio streams live on dedicated OS
   threads, communicating via `mpsc` channels
 

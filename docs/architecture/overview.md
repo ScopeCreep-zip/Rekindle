@@ -166,7 +166,7 @@ src-tauri/
 │   │                                 governance_persist, identity, node,
 │   │                                 routes)
 │   ├── db.rs                         Lenient row helpers (DB: AppState.db)
-│   ├── db_helpers.rs                 db_call / db_call_or_default / db_fire
+│   ├── db_helpers.rs                 db_call / db_fire
 │   ├── event_dispatch.rs             Phase 23.A — single-source emit router
 │   ├── keystore/                     The per-identity VaultStore handle;
 │   │                                 typed helpers are rekindle_vault::typed

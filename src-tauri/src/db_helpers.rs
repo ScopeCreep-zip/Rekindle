@@ -1,11 +1,11 @@
 //! Thin async wrappers around `rekindle_db::Db` that map errors to `String`
 //! for IPC.
 //!
-//! Every DB access in the codebase should go through one of these three
-//! helpers — no raw `pool.call()` in business logic.
+//! Every DB access in the codebase should go through one of these two
+//! helpers — no raw `pool.call()` in business logic. A failed read is an
+//! error the caller handles, never a silent default (plan D2).
 //!
 //! * [`db_call`]  — standard path, propagates errors (commands returning `Result<T, String>`)
-//! * [`db_call_or_default`] — graceful degradation (existence checks, counts)
 //! * [`db_fire`]  — fire-and-forget writes where failure is non-fatal but logged
 
 use rekindle_db::Db;
@@ -20,18 +20,6 @@ where
     F: FnOnce(&mut rusqlite::Connection) -> Result<T, rusqlite::Error> + Send + 'static,
 {
     pool.call(f).await.map_err(|e| e.to_string())
-}
-
-/// Async DB call that returns `T::default()` on *any* failure (query error,
-/// connection closed, thread panic).
-///
-/// Replaces the old `.unwrap_or(Ok(default)).unwrap_or(default)` chains.
-pub async fn db_call_or_default<T, F>(pool: &Db, f: F) -> T
-where
-    T: Send + Default + 'static,
-    F: FnOnce(&mut rusqlite::Connection) -> Result<T, rusqlite::Error> + Send + 'static,
-{
-    pool.call_or_default(f).await
 }
 
 /// Fire-and-forget DB operation — queued on the DB thread, logs errors,

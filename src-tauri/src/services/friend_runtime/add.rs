@@ -36,7 +36,7 @@ pub async fn add_friend_inner(
     }
 
     // Prevent adding a blocked user
-    if crate::commands::friends::is_user_blocked(&pool, &owner_key, &public_key).await {
+    if crate::commands::friends::is_user_blocked(&pool, &owner_key, &public_key).await? {
         return Err("Cannot add a blocked user. Unblock them first.".to_string());
     }
 

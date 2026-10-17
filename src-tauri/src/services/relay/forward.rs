@@ -7,10 +7,11 @@
 
 use std::sync::Arc;
 
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
+use rusqlite::OptionalExtension;
 
 pub async fn handle_relay_envelope(
     state: &Arc<AppState>,
@@ -31,7 +32,7 @@ pub async fn handle_relay_envelope(
     }
     let owner = owner_key;
     let target = target_pubkey.to_string();
-    let volunteered: bool = db_call_or_default(pool, move |conn| {
+    let volunteered: bool = db_call(pool, move |conn| {
         Ok(conn
             .query_row(
                 "SELECT 1 FROM strand_relay_volunteered
@@ -39,9 +40,10 @@ pub async fn handle_relay_envelope(
                 rusqlite::params![owner, target],
                 |_| Ok(()),
             )
-            .is_ok())
+            .optional()?
+            .is_some())
     })
-    .await;
+    .await?;
     if !volunteered {
         return Err("not volunteered to relay for this friend".into());
     }

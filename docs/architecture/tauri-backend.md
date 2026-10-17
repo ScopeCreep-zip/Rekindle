@@ -258,7 +258,7 @@ catalogued in [`tauri-modules.md`](tauri-modules.md):
 - Guards are `!Send` — clone data out before `.await` points.
 - `tokio_rusqlite::Connection` for the database pool (async wrapper
   over `rusqlite` on a dedicated background thread). All access goes
-  through `db_helpers::{db_call, db_call_or_default, db_fire}`.
+  through `db_helpers::{db_call, db_fire}`.
 - `rusqlite` 0.37 is used (not `sqlx`) to match `veilid-core`'s
   dependency on the same version and avoid `libsqlite3-sys` build
   conflicts.

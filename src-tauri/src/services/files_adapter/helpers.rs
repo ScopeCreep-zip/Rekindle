@@ -168,21 +168,27 @@ pub(super) async fn persist_local_path_impl(
         )?;
         let rows = stmt
             .query_map(rusqlite::params![owner, chan], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    rekindle_db::row::get::<Option<String>>(row, "message_id")?,
+                    rekindle_db::row::get_json::<rekindle_files::AttachmentRecordJson>(
+                        row,
+                        "attachment_json",
+                    )?,
+                ))
             })?
-            .filter_map(Result::ok)
-            .collect::<Vec<_>>();
-        for (message_id, json) in rows {
-            let Ok(mut record) =
-                serde_json::from_str::<rekindle_files::AttachmentRecordJson>(&json)
-            else {
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (message_id, mut record) in rows {
+            // The UPDATE addresses a row by its network message id; a row
+            // without one is not the posted attachment this path is for.
+            let Some(message_id) = message_id else {
                 continue;
             };
             if record.attachment_id != attachment_id_hex {
                 continue;
             }
             record.local_path = Some(new_path.clone());
-            let updated = serde_json::to_string(&record).unwrap_or_else(|_| json.clone());
+            let updated = serde_json::to_string(&record)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
             conn.execute(
                 "UPDATE messages SET attachment_json = ?1 \
                  WHERE owner_key = ?2 AND conversation_id = ?3 AND message_id = ?4",

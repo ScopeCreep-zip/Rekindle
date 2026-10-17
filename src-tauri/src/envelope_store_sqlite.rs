@@ -16,6 +16,7 @@ use rekindle_transport::envelope_store::{
 
 use crate::db_helpers::db_call;
 use rekindle_db::Db;
+use rusqlite::OptionalExtension;
 
 /// SQLite-backed [`EnvelopeStore`]. Cloned cheaply (single `Arc<Db>`
 /// inside).
@@ -236,8 +237,9 @@ impl EnvelopeStore for SqliteEnvelopeStore {
                     rusqlite::params![owner, recipient, kind_str, cid],
                     |row| row.get(0),
                 )
-                .ok();
-            let next = current.unwrap_or(0) + 1;
+                .optional()?;
+            // No row yet: the first envelope of this correlation is seq 1.
+            let next = current.map_or(1, |seq| seq + 1);
             tx.execute(
                 "INSERT OR REPLACE INTO outbound_seqs
                     (owner_key, recipient_key, envelope_kind, correlation_id, next_seq)
@@ -294,7 +296,7 @@ impl EnvelopeStore for SqliteEnvelopeStore {
         let cid = correlation_id.to_string();
 
         db_call(&self.pool, move |conn| {
-            let result: Option<i64> = conn
+            let result: Option<u64> = conn
                 .query_row(
                     "SELECT last_seq FROM seen_envelopes
                      WHERE owner_key = ?1 AND sender_key = ?2
@@ -302,8 +304,8 @@ impl EnvelopeStore for SqliteEnvelopeStore {
                     rusqlite::params![owner, sender, kind_str, cid],
                     |row| row.get(0),
                 )
-                .ok();
-            Ok(result.map(|s| u64::try_from(s).unwrap_or(0)))
+                .optional()?;
+            Ok(result)
         })
         .await
         .map_err(map_db_err)
@@ -376,22 +378,17 @@ impl EnvelopeStore for SqliteEnvelopeStore {
                  WHERE owner_key = ?1",
             )?;
             let rows = stmt.query_map(rusqlite::params![owner], |row| {
-                let expires_i: i64 = row.get(4)?;
-                let inserted_i: i64 = row.get(8)?;
-                let participants_str: String = row.get(7)?;
-                let group_participants: Vec<String> =
-                    serde_json::from_str(&participants_str).unwrap_or_default();
                 Ok(PersistedCallState {
                     owner_key: String::new(), // filled below
                     call_id: row.get(0)?,
                     peer_pubkey: row.get(1)?,
                     kind: row.get(2)?,
                     status: row.get(3)?,
-                    expires_at_ms: u64::try_from(expires_i).unwrap_or(0),
+                    expires_at_ms: row.get::<_, u64>(4)?,
                     my_x25519_secret: row.get::<_, Option<Vec<u8>>>(5)?,
                     peer_x25519_pub: row.get::<_, Option<Vec<u8>>>(6)?,
-                    group_participants,
-                    inserted_at_ms: u64::try_from(inserted_i).unwrap_or(0),
+                    group_participants: rekindle_db::row::get_json(row, "group_participants")?,
+                    inserted_at_ms: row.get::<_, u64>(8)?,
                 })
             })?;
 

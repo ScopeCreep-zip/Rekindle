@@ -141,6 +141,7 @@ pub(super) async fn find_channel_message_by_id_impl(
         crate::message_repo::find_channel_message_by_id(conn, &owner_key, &channel_id, &message_id)
     })
     .await
+    .inspect_err(|e| tracing::warn!(error = %e, "channel message lookup failed"))
     .ok()
     .flatten()?;
     Some(ChannelMessageRow {

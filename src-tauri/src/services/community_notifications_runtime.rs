@@ -98,13 +98,11 @@ pub async fn get_notification_sound_inner(
     channel_id: &str,
 ) -> Result<Option<String>, String> {
     let owner_key = crate::state_helpers::current_owner_key(state)?;
-    Ok(
-        crate::services::community::notifications::resolve_notification_sound(
-            pool,
-            &owner_key,
-            community_id,
-            channel_id,
-        )
-        .await,
+    crate::services::community::notifications::resolve_notification_sound(
+        pool,
+        &owner_key,
+        community_id,
+        channel_id,
     )
+    .await
 }

@@ -33,7 +33,7 @@ pub async fn list_received_relay_offers(
 ) -> Result<Vec<String>, String> {
     let pool = state.db.current()?;
     Ok(relay::list_received_offers(state.inner(), &pool)
-        .await
+        .await?
         .into_iter()
         .map(|(pseudonym, _blob)| pseudonym)
         .collect())
@@ -44,5 +44,5 @@ pub async fn list_volunteered_relay_friends(
     state: State<'_, SharedState>,
 ) -> Result<Vec<String>, String> {
     let pool = state.db.current()?;
-    Ok(relay::list_volunteered_for(state.inner(), &pool).await)
+    relay::list_volunteered_for(state.inner(), &pool).await
 }

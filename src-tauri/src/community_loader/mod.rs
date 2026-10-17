@@ -42,7 +42,7 @@ pub async fn load_communities_from_db(
     let rows = rows::fetch_community_loader_rows(pool, owner_key).await?;
     let mut communities = state.communities.write();
     for community in &rows.communities {
-        let community_state = assemble::build_community_state(community, &rows);
+        let community_state = assemble::build_community_state(community, &rows)?;
         communities.insert(community.id.clone(), community_state);
     }
     Ok(())

@@ -11,6 +11,7 @@ use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::AppState;
 use crate::state_helpers;
+use rekindle_db::row::get;
 use rekindle_db::Db;
 
 pub async fn send_dm_inner(
@@ -81,15 +82,15 @@ pub async fn get_message_history_inner(
         )?;
 
         let rows = stmt.query_map(rusqlite::params![ok, peer_id, limit], |row| {
-            let sender = db::get_str(row, "sender_key");
+            let sender = get::<String>(row, "sender_key")?;
             let is_own = sender == our_key;
             Ok(Message {
-                id: db::get_i64(row, "id"),
+                id: get(row, "id")?,
                 sender_id: sender,
-                body: db::get_str(row, "body"),
+                body: get(row, "body")?,
                 decryption_failed: false,
                 automod_blurred: false,
-                timestamp: db::get_i64(row, "timestamp"),
+                timestamp: get(row, "timestamp")?,
                 is_own,
                 server_message_id: None,
                 reactions: None,

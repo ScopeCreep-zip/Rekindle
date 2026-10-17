@@ -106,7 +106,7 @@ async fn next_pending_reminder(
         )?;
         let rows = stmt
             .query_map(rusqlite::params![owner_key], |row| {
-                let start_time = row.get::<_, i64>(3).unwrap_or(0).unsigned_abs();
+                let start_time = row.get::<_, i64>(3)?.unsigned_abs();
                 Ok(PendingReminder {
                     community_id: row.get(0)?,
                     event_id: row.get(1)?,

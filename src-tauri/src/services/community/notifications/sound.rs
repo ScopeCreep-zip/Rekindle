@@ -60,16 +60,20 @@ pub async fn set_notification_sound(
 /// Three-tier resolver mirroring `resolve_notification_level`:
 /// channel override → community default → `None` (caller falls back to
 /// the app-global `notification_sound: bool` toggle in `app_settings`).
+///
+/// # Errors
+/// A preference row cannot be read.
 pub async fn resolve_notification_sound(
     pool: &Db,
     owner_key: &str,
     community_id: &str,
     channel_id: &str,
-) -> Option<String> {
+) -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
     let owner = owner_key.to_string();
     let cid = community_id.to_string();
     let chid = channel_id.to_string();
-    let row: Option<String> = crate::db_helpers::db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         // Channel override.
         let channel: Option<String> = conn
             .query_row(
@@ -78,7 +82,7 @@ pub async fn resolve_notification_sound(
                 rusqlite::params![owner, cid, chid],
                 |r| r.get(0),
             )
-            .ok()
+            .optional()?
             .flatten();
         if channel.is_some() {
             return Ok(channel);
@@ -91,10 +95,9 @@ pub async fn resolve_notification_sound(
                 rusqlite::params![owner, cid],
                 |r| r.get(0),
             )
-            .ok()
+            .optional()?
             .flatten();
         Ok(default)
     })
-    .await;
-    row
+    .await
 }

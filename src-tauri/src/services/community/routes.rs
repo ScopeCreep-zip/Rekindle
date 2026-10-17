@@ -27,6 +27,7 @@ pub async fn resolve_member_route(
         rekindle_db::repo::members::slot(conn, &owner_key, &cid, &pk)
     })
     .await
+    .inspect_err(|e| tracing::warn!(community = %community_id, error = %e, "route resolve: member slot unreadable"))
     .ok()
     .flatten();
     let Some((subkey_index, segment_index)) = slot else {

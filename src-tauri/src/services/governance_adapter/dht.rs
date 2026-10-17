@@ -12,7 +12,7 @@ use rekindle_protocol::dht::schema;
 use rekindle_records::lease::LeaseId;
 use veilid_core::DHTSchema;
 
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state_helpers;
 
 use super::GovernanceAdapter;
@@ -200,30 +200,40 @@ pub(super) async fn recent_channel_messages_impl(
     };
     let cid = community_id.to_string();
     let chan = channel_id.to_string();
-    db_call_or_default(&adapter.pool, move |conn| {
+    let rows = db_call(&adapter.pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT message_id, sender_key, body, timestamp, mek_generation \
              FROM messages \
-             WHERE owner_key = ?1 AND community_id = ?2 \
+             WHERE owner_key = ?1 \
+               AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) \
                AND conversation_type = 'channel' AND conversation_id = ?3 \
              ORDER BY timestamp DESC LIMIT ?4",
         )?;
         let rows = stmt.query_map(rusqlite::params![owner_key, cid, chan, limit], |row| {
-            Ok(RecentMessageRow {
-                message_id: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+            // A row with no network message id or no stored generation
+            // cannot go into a bundle (the joiner dedupes on the id and
+            // decrypts under the generation), so it is left out.
+            let message_id = row.get::<_, Option<String>>(0)?;
+            let mek_generation = row.get::<_, Option<u64>>(4)?;
+            let (Some(message_id), Some(mek_generation)) = (message_id, mek_generation) else {
+                return Ok(None);
+            };
+            Ok(Some(RecentMessageRow {
+                message_id,
                 sender_pseudonym: row.get::<_, String>(1)?,
                 body: row.get::<_, String>(2)?,
                 timestamp: row.get::<_, i64>(3)?,
-                mek_generation: row
-                    .get::<_, Option<i64>>(4)?
-                    .unwrap_or(0)
-                    .max(0)
-                    .cast_unsigned(),
-            })
+                mek_generation,
+            }))
         })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()
+        rows.filter_map(Result::transpose)
+            .collect::<rusqlite::Result<Vec<_>>>()
     })
-    .await
+    .await;
+    rows.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "reading recent channel messages for a bootstrap bundle failed");
+        Vec::new()
+    })
 }
 
 pub(super) async fn app_call_peer_impl(

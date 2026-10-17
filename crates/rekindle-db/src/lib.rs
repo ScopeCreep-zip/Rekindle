@@ -18,6 +18,7 @@ pub mod paths;
 pub mod registry;
 pub mod repo;
 pub mod reset;
+pub mod row;
 
 pub use db::Db;
 pub use friend_store::SqliteFriendStore;

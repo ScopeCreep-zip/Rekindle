@@ -117,17 +117,16 @@ pub struct MessageAttachmentDto {
 }
 
 impl MessageAttachmentDto {
-    /// Build from a `messages.attachment_json` value.
-    pub fn from_record_json(json: &str) -> Option<Self> {
-        let record = serde_json::from_str::<rekindle_files::AttachmentRecordJson>(json).ok()?;
-        Some(Self {
+    /// Build from a parsed `messages.attachment_json` value.
+    pub fn from_record(record: rekindle_files::AttachmentRecordJson) -> Self {
+        Self {
             downloaded: record.local_path.is_some(),
             attachment_id: record.attachment_id,
             filename: record.filename,
             mime_type: record.mime_type,
             total_size: record.total_size,
             chunk_count: record.chunk_count,
-        })
+        }
     }
 }
 

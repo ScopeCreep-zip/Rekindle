@@ -133,7 +133,7 @@ pub async fn get_missed_calls_inner(
                 Ok(MissedCallRow {
                     call_id: row.get::<_, String>(0)?,
                     peer_key: row.get::<_, String>(1)?,
-                    kind: u8::try_from(row.get::<_, i64>(2)?).unwrap_or(0),
+                    kind: row.get::<_, u8>(2)?,
                     expired_at: row.get::<_, i64>(3)?,
                 })
             })?

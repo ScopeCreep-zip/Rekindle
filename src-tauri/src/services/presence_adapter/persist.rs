@@ -59,13 +59,11 @@ pub(super) fn insert_channel_catchup_messages(
             if mid.is_empty() {
                 continue;
             }
-            let exists: bool = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
-                    rusqlite::params![owner_key, mid],
-                    |r| r.get(0),
-                )
-                .unwrap_or(false);
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
+                rusqlite::params![owner_key, mid],
+                |r| r.get(0),
+            )?;
             if exists {
                 continue;
             }
@@ -102,7 +100,9 @@ pub(super) async fn compute_history_ranges(
             let mut stmt = conn.prepare(
                 "SELECT conversation_id, MIN(lamport_ts), MAX(lamport_ts) \
                  FROM messages \
-                 WHERE owner_key = ?1 AND community_id = ?2 AND lamport_ts > 0 \
+                 WHERE owner_key = ?1 \
+                   AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) \
+                   AND conversation_type = 'channel' AND lamport_ts > 0 \
                  GROUP BY conversation_id",
             )?;
             let rows = stmt
@@ -112,8 +112,7 @@ pub(super) async fn compute_history_ranges(
                     let newest: u64 = row.get(2)?;
                     Ok((channel_id_str, oldest, newest))
                 })?
-                .filter_map(Result::ok)
-                .collect::<Vec<_>>();
+                .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         })
         .await;

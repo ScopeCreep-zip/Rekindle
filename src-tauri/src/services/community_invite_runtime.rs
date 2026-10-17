@@ -294,7 +294,7 @@ pub async fn list_community_invites_inner(
         community_governance_key(state, &community_id).ok_or("community not found")?;
     let cid = community_id.clone();
     let local_invites: Vec<(String, String, String, i64, Option<i64>, i64, i64)> =
-        crate::db_helpers::db_call_or_default(pool, move |conn| {
+        crate::db_helpers::db_call(pool, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT code_hash, code, secrets_record_key, max_uses, expires_at, created_at, uses \
                  FROM community_invites WHERE community_id = ?",
@@ -312,7 +312,7 @@ pub async fn list_community_invites_inner(
             })?;
             rows.collect::<Result<Vec<_>, _>>()
         })
-        .await;
+        .await?;
 
     Ok(local_invites
         .into_iter()

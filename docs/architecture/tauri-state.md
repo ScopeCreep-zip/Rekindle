@@ -166,6 +166,6 @@ The pattern is:
    cannot cross `.await` points).
 3. Drop the guard before any `.await`.
 
-`db_helpers::{db_call, db_call_or_default, db_fire}` use the same
-discipline for the SQLite pool — fire-and-forget vs. async-await vs.
-return-default semantics are picked per call site.
+`db_helpers::{db_call, db_fire}` use the same
+discipline for the SQLite pool — fire-and-forget or awaited, picked per
+call site; a read never turns an error into a default (plan D2).

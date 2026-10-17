@@ -40,7 +40,7 @@ pub async fn add_friend_from_invite_inner(
         return Err("You cannot add yourself as a friend".to_string());
     }
 
-    if crate::commands::friends::is_user_blocked(&pool, &owner_key, &blob.public_key).await {
+    if crate::commands::friends::is_user_blocked(&pool, &owner_key, &blob.public_key).await? {
         return Err("Cannot add a blocked user. Unblock them first.".to_string());
     }
 

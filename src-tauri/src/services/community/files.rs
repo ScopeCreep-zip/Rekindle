@@ -267,14 +267,15 @@ pub async fn attachment_record(
              AND attachment_json IS NOT NULL",
         )?;
         let rows = stmt.query_map(rusqlite::params![owner, channel], |row| {
-            row.get::<_, String>(0)
+            rekindle_db::row::get_json::<rekindle_files::AttachmentRecordJson>(
+                row,
+                "attachment_json",
+            )
         })?;
-        for json in rows {
-            if let Ok(record) = serde_json::from_str::<rekindle_files::AttachmentRecordJson>(&json?)
-            {
-                if record.attachment_id == wanted {
-                    return Ok(Some(record));
-                }
+        for record in rows {
+            let record = record?;
+            if record.attachment_id == wanted {
+                return Ok(Some(record));
             }
         }
         Ok(None)

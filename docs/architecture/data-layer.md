@@ -282,7 +282,7 @@ The handle is `rekindle_db::Db`: a `rekindle_asql::Connection` (the
 vendored tokio-rusqlite) running `rusqlite` on a dedicated background
 thread, plus a liveness token plan C6 checks before closing it. In the
 desktop all access goes through
-`db_helpers::{db_call, db_call_or_default, db_fire}`. Read-only state
+`db_helpers::{db_call, db_fire}`. Read-only state
 lookups go through `state_helpers`.
 
 `rusqlite` 0.39 is used (not `sqlx`) to match `veilid-core` 0.5.7's

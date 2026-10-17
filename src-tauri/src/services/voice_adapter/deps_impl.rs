@@ -17,7 +17,7 @@ use rekindle_voice::{
 };
 
 use super::{event_mapping, io_helpers, session_setup, VoiceAdapter};
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state_helpers;
 
 #[async_trait]
@@ -513,9 +513,13 @@ impl VoiceSessionDeps for VoiceAdapter {
         let owner_key = state_helpers::current_owner_key(&self.state).ok()?;
         let community = community_id.to_string();
         let pseu = pseudonym.to_string();
-        db_call_or_default(&self.pool, move |conn| {
+        db_call(&self.pool, move |conn| {
             rekindle_db::repo::members::display_name(conn, &owner_key, &community, &pseu)
         })
         .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "member display name unreadable");
+            None
+        })
     }
 }

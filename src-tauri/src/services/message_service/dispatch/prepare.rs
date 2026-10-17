@@ -13,7 +13,7 @@ use rekindle_protocol::messaging::receiver::{
 use rekindle_protocol::messaging::replay::Sighting;
 use rekindle_types::friend_store::FriendStatus;
 
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -66,9 +66,17 @@ pub(super) async fn prepare_incoming(
     }
     tracing::debug!(from = %sender_hex, payload_len = envelope.payload.len(), "processing verified envelope");
 
-    if is_blocked(state, pool, &sender_hex).await {
-        tracing::debug!(from = %sender_hex, "dropping message from blocked user");
-        return None;
+    match is_blocked(state, pool, &sender_hex).await {
+        Ok(false) => {}
+        Ok(true) => {
+            tracing::debug!(from = %sender_hex, "dropping message from blocked user");
+            return None;
+        }
+        Err(e) => {
+            // Fail closed: a sender whose block state is unknown is not let in.
+            tracing::warn!(from = %sender_hex, error = %e, "block list unreadable; dropping message");
+            return None;
+        }
     }
 
     let received = received_sealing(&envelope.payload);
@@ -200,10 +208,10 @@ async fn decrypt_payload(
     }
 }
 
-async fn is_blocked(state: &Arc<AppState>, pool: &Db, sender_hex: &str) -> bool {
+async fn is_blocked(state: &Arc<AppState>, pool: &Db, sender_hex: &str) -> Result<bool, String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     let pk = sender_hex.to_string();
-    db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![owner_key, pk],

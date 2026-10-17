@@ -73,16 +73,6 @@ impl Db {
         }
     }
 
-    /// Run a call whose failure is not an error to the caller: `T::default()`
-    /// on any failure.
-    pub async fn call_or_default<T, F>(&self, function: F) -> T
-    where
-        T: Send + Default + 'static,
-        F: FnOnce(&mut rusqlite::Connection) -> Result<T, rusqlite::Error> + Send + 'static,
-    {
-        self.conn.call(function).await.unwrap_or_default()
-    }
-
     /// Close the connection: queued calls finish, later calls on any other
     /// handle fail with `ConnectionClosed`.
     ///

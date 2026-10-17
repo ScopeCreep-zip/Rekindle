@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use rekindle_types::key_format::{PublicKeyHex, RecordKeyStr};
 
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -50,10 +50,14 @@ async fn peer_name(state: &Arc<AppState>, pool: &Db, key: &str) -> String {
     }
     let owner = state_helpers::owner_key_or_default(state);
     let pseudonym = key.to_owned();
-    let member: Option<String> = db_call_or_default(pool, move |conn| {
+    let member = db_call(pool, move |conn| {
         rekindle_db::repo::members::any_display_name(conn, &owner, &pseudonym)
     })
-    .await;
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "member display name unreadable; titling by short key");
+        None
+    });
     member
         .map(|n| title_text(&n))
         .filter(|n| !n.is_empty())

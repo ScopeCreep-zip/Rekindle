@@ -418,21 +418,19 @@ impl MembershipEventDeps for GovernanceAdapter {
                 rusqlite::params![&owner_key, &cid, &code_hash],
             )?;
             if updated > 0 {
-                let new_use_count: i64 = conn
-                    .query_row(
-                        "SELECT uses FROM community_invites \
-                         WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
-                        rusqlite::params![&owner_key, &cid, &code_hash],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
+                let new_use_count: u32 = conn.query_row(
+                    "SELECT uses FROM community_invites \
+                     WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
+                    rusqlite::params![&owner_key, &cid, &code_hash],
+                    |row| row.get(0),
+                )?;
                 crate::event_dispatch::emit_subscription(
                     &app_for_emit,
                     &rekindle_types::subscription_events::SubscriptionEvent::Governance(
                         rekindle_types::subscription_events::GovernanceEvent::InviteUsed {
                             community: cid_for_emit,
                             code_hash: code_hash_for_emit,
-                            uses: u32::try_from(new_use_count).unwrap_or(u32::MAX),
+                            uses: new_use_count,
                         },
                     ),
                 );

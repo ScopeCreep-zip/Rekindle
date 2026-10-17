@@ -110,7 +110,13 @@ pub async fn emit_message_notification(
     let sound_ref = if owner_key.is_empty() {
         None
     } else {
-        resolve_notification_sound(pool, &owner_key, community_id, channel_id).await
+        resolve_notification_sound(pool, &owner_key, community_id, channel_id)
+            .await
+            .unwrap_or_else(|e| {
+                // No override readable: the app-global sound toggle applies.
+                tracing::warn!(error = %e, "notification sound override unreadable");
+                None
+            })
     };
 
     let (title, payload_body) = match decision {

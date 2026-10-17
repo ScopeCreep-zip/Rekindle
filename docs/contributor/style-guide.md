@@ -178,7 +178,6 @@ let pool = state.db.current()?;
 
 // Use db_helpers::* for all DB access:
 db_call(pool, |conn| { /* sync rusqlite */ }).await?
-db_call_or_default(pool, |conn| { /* sync rusqlite */ }, default).await
 db_fire(pool, |conn| { /* sync rusqlite, fire-and-forget */ })
 ```
 

@@ -28,7 +28,7 @@ pub async fn handle_message_notification(
     if owner_key.is_empty() {
         return Err("owner key unavailable".into());
     }
-    if message_exists(&pool, &owner_key, &pending.message_id).await {
+    if message_exists(&pool, &owner_key, &pending.message_id).await? {
         return Ok(());
     }
 

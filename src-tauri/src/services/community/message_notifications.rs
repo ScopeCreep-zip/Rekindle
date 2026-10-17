@@ -85,7 +85,12 @@ pub(super) fn decrypt_message_body(
     (!opened.decryption_failed).then_some(opened.body)
 }
 
-pub(super) async fn message_exists(pool: &Db, owner_key: &str, message_id: &str) -> bool {
+pub(super) async fn message_exists(
+    pool: &Db,
+    owner_key: &str,
+    message_id: &str,
+) -> Result<bool, String> {
+    use rusqlite::OptionalExtension;
     let owner = owner_key.to_string();
     let mid = message_id.to_string();
     db_call(pool, move |conn| {
@@ -95,10 +100,10 @@ pub(super) async fn message_exists(pool: &Db, owner_key: &str, message_id: &str)
                 rusqlite::params![owner, mid],
                 |_| Ok(()),
             )
-            .is_ok())
+            .optional()?
+            .is_some())
     })
     .await
-    .unwrap_or(false)
 }
 
 /// Result of fetching a channel notification target — either a regular message

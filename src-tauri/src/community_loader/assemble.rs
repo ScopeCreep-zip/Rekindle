@@ -102,16 +102,24 @@ pub fn assemble_known_members_for(
         .collect()
 }
 
+/// # Errors
+/// A member's stored badges are not valid JSON, or its theme colour is out
+/// of range (plan D2: a corrupt value is an error, never a default).
 pub fn assemble_member_profiles_for(
     community_id: &str,
     rows: &[MemberRow],
-) -> std::collections::HashMap<String, crate::state::MemberProfileSnapshot> {
+) -> Result<std::collections::HashMap<String, crate::state::MemberProfileSnapshot>, String> {
     rows.iter()
         .filter(|r| r.community_id == community_id)
         .map(|r| {
-            let badges: Vec<String> = serde_json::from_str(&r.badges_json).unwrap_or_default();
-            let theme_color = r.theme_color.and_then(|c| u32::try_from(c).ok());
-            (
+            let badges: Vec<String> = serde_json::from_str(&r.badges_json)
+                .map_err(|e| format!("member {} badges: {e}", r.pseudonym_key))?;
+            let theme_color = r
+                .theme_color
+                .map(u32::try_from)
+                .transpose()
+                .map_err(|e| format!("member {} theme_color: {e}", r.pseudonym_key))?;
+            Ok((
                 r.pseudonym_key.clone(),
                 crate::state::MemberProfileSnapshot {
                     display_name: r.display_name.clone(),
@@ -125,7 +133,7 @@ pub fn assemble_member_profiles_for(
                     // it repopulates from the next presence scan.
                     location: None,
                 },
-            )
+            ))
         })
         .collect()
 }
@@ -150,16 +158,26 @@ pub fn assemble_slowmode_for(
         .collect()
 }
 
+/// # Errors
+/// A JSON column of the community or one of its members does not parse.
 pub fn build_community_state(
     community: &CommunityRow,
     rows: &CommunityLoaderRows,
-) -> CommunityState {
+) -> Result<CommunityState, String> {
     let (channels, channel_log_keys, channel_sequences) =
         assemble_channels_for(&community.id, &rows.channels);
-    let my_role_ids: Vec<u32> =
-        serde_json::from_str(&community.my_role_ids_json).unwrap_or_else(|_| vec![0, 1]);
+    let my_role_ids: Vec<u32> = serde_json::from_str(&community.my_role_ids_json)
+        .map_err(|e| format!("community {} my_role_ids: {e}", community.id))?;
     let roles = assemble_roles_for(&community.id, &rows.roles);
-    CommunityState {
+    let presence_policy = community
+        .presence_policy_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|e| format!("community {} presence_policy: {e}", community.id))?
+        // NULL column: the community never set a policy.
+        .unwrap_or_default();
+    Ok(CommunityState {
         id: community.id.clone(),
         name: community.name.clone(),
         description: community.description.clone(),
@@ -209,13 +227,9 @@ pub fn build_community_state(
         my_badges: Vec::new(),
         my_avatar_ref: None,
         my_banner_ref: None,
-        member_profiles: assemble_member_profiles_for(&community.id, &rows.members),
+        member_profiles: assemble_member_profiles_for(&community.id, &rows.members)?,
         recent_member_joins: std::collections::VecDeque::new(),
         my_session_location: None,
-        presence_policy: community
-            .presence_policy_json
-            .as_deref()
-            .and_then(|json| serde_json::from_str(json).ok())
-            .unwrap_or_default(),
-    }
+        presence_policy,
+    })
 }

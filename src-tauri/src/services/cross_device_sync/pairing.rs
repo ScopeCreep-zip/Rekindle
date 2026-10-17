@@ -23,7 +23,7 @@ use std::sync::Arc;
 use rekindle_secrets::sync_key::{generate_pairing_code, random_pairing_salt, PairingKey};
 use rekindle_types::cross_device_sync::{DeviceListEntry, PairingAccept, PairingPayload};
 
-use crate::db_helpers::{db_call, db_call_or_default};
+use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -108,7 +108,7 @@ pub async fn handle_pairing_app_call(
     let now = rekindle_utils::timestamp_ms_i64();
     let owner_owned = owner_key.clone();
     let salt = payload.pairing_salt.clone();
-    let row: Option<String> = db_call_or_default(pool, move |conn| {
+    let row: Option<String> = db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT pairing_code FROM pending_pairings \
               WHERE owner_key = ?1 AND pairing_salt = ?2 AND expires_at > ?3",
@@ -119,7 +119,7 @@ pub async fn handle_pairing_app_call(
         }
         Ok(None)
     })
-    .await;
+    .await?;
     let pairing_code = row.ok_or("no matching pending pairing — code expired or wrong salt")?;
 
     let pairing_key = PairingKey::derive(&pairing_code, &payload.pairing_salt);

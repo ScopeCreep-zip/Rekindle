@@ -17,7 +17,7 @@ impl SyncDeps for SyncAdapter {
 
     async fn load_pending_messages(&self, owner_key: &str) -> Vec<PendingMessageRow> {
         let owner = owner_key.to_string();
-        crate::db_helpers::db_call_or_default(&self.pool, move |conn| {
+        let rows = crate::db_helpers::db_call(&self.pool, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, recipient_key, body, retry_count \
                  FROM pending_messages WHERE owner_key = ?1 ORDER BY id",
@@ -36,7 +36,11 @@ impl SyncDeps for SyncAdapter {
             }
             Ok(results)
         })
-        .await
+        .await;
+        rows.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "pending messages unreadable; retry sweep skipped");
+            Vec::new()
+        })
     }
 
     async fn delete_pending_message(&self, id: i64) {

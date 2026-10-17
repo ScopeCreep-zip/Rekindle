@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use rekindle_codec::message::envelope::MessagePayload;
 
-use crate::db_helpers::db_call_or_default;
+use crate::db_helpers::db_call;
 use crate::services::message_service;
 use crate::state::{AppState, UserStatus};
 use crate::state_helpers;
 use rekindle_db::Db;
+use rusqlite::OptionalExtension;
 
 /// Cooldown window between consecutive probes for the same target.
 /// BEP-11 PEX uses ~60s as a sane bound; we adopt the same. Forward
@@ -116,7 +117,7 @@ pub async fn respond_to_status_request(
     }
     let owner = owner_key;
     let target = target_pubkey.to_string();
-    let volunteered: bool = db_call_or_default(pool, move |conn| {
+    let volunteered: bool = db_call(pool, move |conn| {
         Ok(conn
             .query_row(
                 "SELECT 1 FROM strand_relay_volunteered
@@ -124,9 +125,10 @@ pub async fn respond_to_status_request(
                 rusqlite::params![owner, target],
                 |_| Ok(()),
             )
-            .is_ok())
+            .optional()?
+            .is_some())
     })
-    .await;
+    .await?;
     if !volunteered {
         // Architecture §13.5: only relay friends serve a peer's status.
         // Reply with empty so the requester can fall back to DHT.

@@ -10,7 +10,7 @@ use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_db::Db;
 use rusqlite::OptionalExtension as _;
 
-use crate::db_helpers::{db_call, db_call_or_default};
+use crate::db_helpers::db_call;
 use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -51,7 +51,7 @@ pub async fn on_dead_relay_routes(state: &Arc<AppState>, pool: &Db, dead: &[veil
         return;
     }
     let dead_ids: Vec<String> = dead.iter().map(ToString::to_string).collect();
-    let friends: Vec<String> = db_call_or_default(pool, move |conn| {
+    let friends = db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT friend_public_key, relay_route_id FROM strand_relay_volunteered \
              WHERE owner_key = ?1",
@@ -64,9 +64,16 @@ pub async fn on_dead_relay_routes(state: &Arc<AppState>, pool: &Db, dead: &[veil
             .into_iter()
             .filter(|(_, route_id)| dead_ids.contains(route_id))
             .map(|(friend, _)| friend)
-            .collect())
+            .collect::<Vec<String>>())
     })
     .await;
+    let friends = match friends {
+        Ok(friends) => friends,
+        Err(e) => {
+            tracing::warn!(error = %e, "relay volunteers unreadable; dead relay routes not re-offered");
+            return;
+        }
+    };
     for friend in friends {
         match offer_relay(state, pool, &friend, Replaced::Dead).await {
             Ok(()) => tracing::info!(friend = %friend, "relay route died; re-volunteered"),
@@ -217,12 +224,12 @@ fn release_relay_route(api: &veilid_core::VeilidAPI, id: &str) {
 /// List friends we've volunteered to relay for. Used by the buddy-list
 /// context menu to swap "Volunteer to relay" for "Stop relaying" without
 /// a server round-trip.
-pub async fn list_volunteered_for(state: &Arc<AppState>, pool: &Db) -> Vec<String> {
+pub async fn list_volunteered_for(state: &Arc<AppState>, pool: &Db) -> Result<Vec<String>, String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT friend_public_key FROM strand_relay_volunteered WHERE owner_key = ?1",
         )?;

@@ -82,7 +82,7 @@ pub async fn get_channel_pins_inner(
                     message_id: row.get(0)?,
                     channel_id: row.get(1)?,
                     pinned_by: row.get(2)?,
-                    pinned_at: row.get::<_, i64>(3).unwrap_or(0).cast_unsigned(),
+                    pinned_at: row.get::<_, i64>(3)?.cast_unsigned(),
                 })
             },
         )?;

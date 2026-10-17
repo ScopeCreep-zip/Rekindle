@@ -63,7 +63,7 @@ pub async fn get_game_servers_inner(
                 label: row.get(2)?,
                 address: row.get(3)?,
                 added_by: row.get(4)?,
-                created_at: row.get::<_, i64>(5).unwrap_or(0).cast_unsigned(),
+                created_at: row.get::<_, i64>(5)?.cast_unsigned(),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>()

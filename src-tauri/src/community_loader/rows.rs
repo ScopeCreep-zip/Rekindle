@@ -4,9 +4,9 @@
 //! categories, members, event_rsvps, slowmode) are loaded in a single
 //! `db_call` round-trip via [`fetch_community_loader_rows`].
 
-use crate::db;
 use crate::db_helpers::db_call;
 use crate::state::ChannelType;
+use rekindle_db::row::{get, get_enum};
 use rekindle_db::Db;
 
 pub use rekindle_db::repo::communities::CommunityRow;
@@ -85,19 +85,16 @@ fn load_role_rows(conn: &rusqlite::Connection, owner_key: &str) -> rusqlite::Res
     )?;
     let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
         Ok(RoleRow {
-            community_id: db::get_str(row, "community_id"),
-            role_id: row.get::<_, u32>("role_id").unwrap_or(0),
-            name: db::get_str(row, "name"),
-            color: row.get::<_, u32>("color").unwrap_or(0),
-            permissions: row
-                .get::<_, i64>("permissions")
-                .unwrap_or(0)
-                .cast_unsigned(),
-            position: row.get::<_, i32>("position").unwrap_or(0),
-            hoist: row.get::<_, i32>("hoist").unwrap_or(0) != 0,
-            mentionable: row.get::<_, i32>("mentionable").unwrap_or(0) != 0,
-            self_assignable: row.get::<_, i32>("self_assignable").unwrap_or(0) != 0,
-            exclusion_group: db::get_str_opt(row, "exclusion_group"),
+            community_id: get(row, "community_id")?,
+            role_id: get(row, "role_id")?,
+            name: get(row, "name")?,
+            color: get(row, "color")?,
+            permissions: get::<i64>(row, "permissions")?.cast_unsigned(),
+            position: get(row, "position")?,
+            hoist: get::<i32>(row, "hoist")? != 0,
+            mentionable: get::<i32>(row, "mentionable")? != 0,
+            self_assignable: get::<i32>(row, "self_assignable")? != 0,
+            exclusion_group: get(row, "exclusion_group")?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -113,10 +110,10 @@ fn load_category_rows(
     )?;
     let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
         Ok(CategoryRow {
-            community_id: db::get_str(row, "community_id"),
-            id: db::get_str(row, "id"),
-            name: db::get_str(row, "name"),
-            sort_order: row.get::<_, i32>("sort_order").unwrap_or(0),
+            community_id: get(row, "community_id")?,
+            id: get(row, "id")?,
+            name: get(row, "name")?,
+            sort_order: get(row, "sort_order")?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -142,39 +139,24 @@ fn load_channel_rows(
     )?;
     let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
         Ok(ChannelRow {
-            id: db::get_str(row, "id"),
-            community_id: db::get_str(row, "community_id"),
-            name: db::get_str(row, "name"),
-            // No ToSql/FromSql impl for ChannelType itself: it's now an
-            // alias for rekindle_types::channel::ChannelKind (orphan
-            // rule — neither the trait nor the type is local once it's
-            // not src-tauri's own enum). Read as text and parse,
-            // matching the fallback convention already used at the
-            // other two ChannelType parse sites in this crate.
-            channel_type: row
-                .get::<_, String>("channel_type")?
-                .parse()
-                .unwrap_or(ChannelType::Text),
-            category_id: db::get_str_opt(row, "category_id"),
-            topic: db::get_str(row, "topic"),
-            slowmode_seconds: row
-                .get::<_, Option<i64>>("slowmode_seconds")
-                .unwrap_or(None)
-                .map(|v| u32::try_from(v).unwrap_or(0)),
-            nsfw: row.get::<_, i64>("nsfw").unwrap_or(0) != 0,
-            message_record_key: db::get_str_opt(row, "message_record_key"),
-            mek_generation: row
-                .get::<_, i64>("mek_generation")
-                .unwrap_or(0)
-                .cast_unsigned(),
-            log_key: db::get_str_opt(row, "log_key"),
-            my_sequence: row
-                .get::<_, i64>("my_sequence")
-                .unwrap_or(0)
-                .cast_unsigned(),
-            notification_level: row.get::<_, i64>("notification_level").unwrap_or(0),
-            notification_sound_ref: db::get_str_opt(row, "notification_sound_ref"),
-            parent_voice_channel_id: db::get_str_opt(row, "parent_voice_channel_id"),
+            id: get(row, "id")?,
+            community_id: get(row, "community_id")?,
+            name: get(row, "name")?,
+            // No ToSql/FromSql impl for ChannelType itself: it's an alias
+            // for rekindle_types::channel::ChannelKind (orphan rule). Read
+            // as text and parse; a value outside the set is an error.
+            channel_type: get_enum::<ChannelType>(row, "channel_type")?,
+            category_id: get(row, "category_id")?,
+            topic: get(row, "topic")?,
+            slowmode_seconds: get(row, "slowmode_seconds")?,
+            nsfw: get::<i64>(row, "nsfw")? != 0,
+            message_record_key: get(row, "message_record_key")?,
+            mek_generation: get::<i64>(row, "mek_generation")?.cast_unsigned(),
+            log_key: get(row, "log_key")?,
+            my_sequence: get::<i64>(row, "my_sequence")?.cast_unsigned(),
+            notification_level: get(row, "notification_level")?,
+            notification_sound_ref: get(row, "notification_sound_ref")?,
+            parent_voice_channel_id: get(row, "parent_voice_channel_id")?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -189,9 +171,9 @@ fn load_event_rsvp_rows(
     )?;
     let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
         Ok(EventRsvpRow {
-            community_id: db::get_str(row, "community_id"),
-            event_id: db::get_str(row, "event_id"),
-            status: db::get_str(row, "status"),
+            community_id: get(row, "community_id")?,
+            event_id: get(row, "event_id")?,
+            status: get(row, "status")?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -207,9 +189,9 @@ fn load_slowmode_rows(
     )?;
     let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
         Ok(SlowmodeRow {
-            community_id: db::get_str(row, "community_id"),
-            channel_id: db::get_str(row, "channel_id"),
-            last_send_ms: row.get::<_, i64>("last_send_ms").unwrap_or(0),
+            community_id: get(row, "community_id")?,
+            channel_id: get(row, "channel_id")?,
+            last_send_ms: get(row, "last_send_ms")?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()

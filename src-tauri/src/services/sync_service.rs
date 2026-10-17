@@ -144,10 +144,17 @@ async fn expire_stale_requests(state: &Arc<AppState>, pool: &Db, app_handle: &ta
 
     // 2. Find and remove expired pending_out friends.
     let ok = owner_key;
-    let expired_pending: Vec<String> = crate::db_helpers::db_call_or_default(pool, move |conn| {
+    let expired_pending: Vec<String> = match crate::db_helpers::db_call(pool, move |conn| {
         rekindle_db::repo::friends::delete_pending_out_before(conn, &ok, cutoff)
     })
-    .await;
+    .await
+    {
+        Ok(expired) => expired,
+        Err(e) => {
+            tracing::warn!(error = %e, "expiring stale pending-out friends failed");
+            return;
+        }
+    };
 
     for pk in &expired_pending {
         state.friends.write().remove(pk);
@@ -298,7 +305,7 @@ pub(super) async fn request_channel_sync(
 ) {
     let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
     let ch = channel_id.to_string();
-    let last_ts: i64 = db_call(pool, move |conn| {
+    let last_ts: i64 = match db_call(pool, move |conn| {
         conn.query_row(
             "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
              WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
@@ -307,7 +314,13 @@ pub(super) async fn request_channel_sync(
         )
     })
     .await
-    .unwrap_or(0);
+    {
+        Ok(ts) => ts,
+        Err(e) => {
+            tracing::warn!(channel = %channel_id, error = %e, "channel sync not requested: last timestamp unreadable");
+            return;
+        }
+    };
 
     let sync_req = rekindle_codec::community::envelope::CommunityEnvelope::Control(
         rekindle_codec::community::envelope::ControlPayload::SyncRequest {

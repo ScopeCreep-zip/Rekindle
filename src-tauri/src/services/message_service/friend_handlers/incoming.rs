@@ -178,7 +178,18 @@ pub(crate) async fn handle_friend_request_full(
     // Invite correlation: if this request carries an invite_id, check if cancelled
     if let Some(iid) = req.invite_id {
         let owner_key = state_helpers::owner_key_or_default(state);
-        if crate::invite_helpers::is_invite_cancelled(pool, &owner_key, iid).await {
+        let cancelled = match crate::invite_helpers::is_invite_cancelled(pool, &owner_key, iid)
+            .await
+        {
+            Ok(cancelled) => cancelled,
+            Err(e) => {
+                // Unknown invite state: drop the request rather than accept
+                // one that may answer a cancelled invite; the sender retries.
+                tracing::warn!(from = %req.sender_hex, %iid, error = %e, "invite status unreadable; dropping request");
+                return;
+            }
+        };
+        if cancelled {
             tracing::info!(from = %req.sender_hex, %iid, "rejecting request for cancelled invite");
             // Same silent-swallow class the FriendRequestReceived ACK below
             // guards against: a dropped rejection means the sender never

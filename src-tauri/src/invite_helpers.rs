@@ -1,7 +1,7 @@
 use rusqlite::OptionalExtension;
 
 use crate::db;
-use crate::db_helpers::{db_call, db_call_or_default, db_fire};
+use crate::db_helpers::{db_call, db_fire};
 use rekindle_db::Db;
 
 /// 48 hours in milliseconds.
@@ -50,10 +50,14 @@ pub async fn cancel_outgoing_invite(
 }
 
 /// Check if an `invite_id` is cancelled (for auto-rejecting incoming requests).
-pub async fn is_invite_cancelled(pool: &Db, owner_key: &str, invite_id: &str) -> bool {
+pub async fn is_invite_cancelled(
+    pool: &Db,
+    owner_key: &str,
+    invite_id: &str,
+) -> Result<bool, String> {
     let ok = owner_key.to_string();
     let iid = invite_id.to_string();
-    db_call_or_default(pool, move |conn| {
+    db_call(pool, move |conn| {
         let status: Option<String> = conn
             .query_row(
                 "SELECT status FROM outgoing_invites WHERE owner_key=?1 AND invite_id=?2",

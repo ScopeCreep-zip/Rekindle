@@ -130,8 +130,9 @@ async fn try_handle_dm_change(
     subkeys: &[u32],
     record_pool: Option<&rekindle_protocol::dht::pool::RecordPool>,
 ) -> bool {
-    use crate::db_helpers::db_call_or_default;
+    use crate::db_helpers::db_call;
     use crate::state_helpers;
+    use rusqlite::OptionalExtension;
 
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
@@ -139,18 +140,24 @@ async fn try_handle_dm_change(
     }
     let owner = owner_key;
     let record = record_key.to_string();
-    let exists: bool = db_call_or_default(pool, move |conn| {
+    let exists = db_call(pool, move |conn| {
         Ok(conn
             .query_row(
                 "SELECT 1 FROM dms WHERE owner_key = ?1 AND record_key = ?2 LIMIT 1",
                 rusqlite::params![owner, record],
                 |_| Ok(()),
             )
-            .is_ok())
+            .optional()?
+            .is_some())
     })
     .await;
-    if !exists {
-        return false;
+    match exists {
+        Ok(true) => {}
+        Ok(false) => return false,
+        Err(e) => {
+            tracing::warn!(record_key, error = %e, "dm lookup for a record change failed");
+            return false;
+        }
     }
 
     let Some(record_pool) = record_pool else {

@@ -92,7 +92,12 @@ impl CommunityPresenceDeps for PresenceAdapter {
             )
         })
         .await
-        .unwrap_or(0)
+        .unwrap_or_else(|e| {
+            // 0 asks the peer for the channel's whole history: a full
+            // re-sync is the safe answer when our high-water mark is unknown.
+            tracing::warn!(channel = %channel_id, error = %e, "last channel timestamp unreadable");
+            0
+        })
     }
 
     fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32) {
