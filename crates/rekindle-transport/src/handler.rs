@@ -64,6 +64,10 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// are verified as addressed to it; with none, they are dropped.
     fn local_identity(&self) -> Option<[u8; 32]>;
 
+    /// The host's wall clock (plan C9.2): the time buckets of the gossip
+    /// dedup key.
+    fn clock(&self) -> &dyn rekindle_utils::Clock;
+
     /// An authenticated DM payload arrived from a verified peer.
     ///
     /// W16.4 — `DmPayload` includes call signaling variants

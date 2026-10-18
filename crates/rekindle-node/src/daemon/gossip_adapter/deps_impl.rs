@@ -25,6 +25,10 @@ impl GossipDeps for DaemonGossipAdapter {
         self.ctx.unlock_scope_or_closed()
     }
 
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        std::sync::Arc::clone(&self.ctx.clock)
+    }
+
     // ---------- Mesh bookkeeping ----------
 
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {

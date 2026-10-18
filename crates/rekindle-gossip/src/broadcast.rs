@@ -6,8 +6,9 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 /// Phase 20 — pure community-envelope dedup-key extractor.
 ///
 /// Mirrors src-tauri's `extract_mesh_dedup_key`: returns a stable
-/// string the dedup cache uses to gate duplicate broadcasts. Different
-/// envelope variants use different bucketing strategies:
+/// string the dedup cache uses to gate duplicate broadcasts. `now_secs`
+/// is the caller's clock (plan C9.2). Different envelope variants use
+/// different bucketing strategies:
 ///
 /// - `MessageNotification` — use the message_id directly
 /// - `TypingIndicator` — 5-second buckets per channel + sender
@@ -15,18 +16,18 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 /// - `Control` — full 16-byte BLAKE2b hash of the encoded envelope
 /// - `WatchRelay` — (record_key, subkey, content_hash) tuple
 #[must_use]
-pub fn extract_mesh_dedup_key(envelope: &CommunityEnvelope) -> String {
+pub fn extract_mesh_dedup_key(envelope: &CommunityEnvelope, now_secs: u64) -> String {
     match envelope {
         CommunityEnvelope::MessageNotification { message_id, .. } => message_id.clone(),
         CommunityEnvelope::TypingIndicator {
             channel_id,
             pseudonym_key,
         } => {
-            let bucket = rekindle_utils::timestamp_secs() / 5;
+            let bucket = now_secs / 5;
             format!("typing:{channel_id}:{pseudonym_key}:{bucket}")
         }
         CommunityEnvelope::PresenceUpdate { pseudonym_key, .. } => {
-            let bucket = rekindle_utils::timestamp_secs() / 30;
+            let bucket = now_secs / 30;
             format!("presence:{pseudonym_key}:{bucket}")
         }
         CommunityEnvelope::Control(_) => {

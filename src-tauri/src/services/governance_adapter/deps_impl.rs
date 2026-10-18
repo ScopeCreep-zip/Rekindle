@@ -28,6 +28,14 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         crate::state_helpers::login_scope_or_closed(&self.state)
     }
 
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        std::sync::Arc::clone(&self.state.clock)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::clone(&self.state.rng)
+    }
+
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {

@@ -138,6 +138,13 @@ pub struct DaemonContext {
     /// The host's one event journal (plan D3.2): every event a frontend
     /// observes is published here, and every subscriber reads from it.
     pub journal: std::sync::Arc<rekindle_events::SessionJournal>,
+    /// The host's wall clock (plan C9.2): every timestamp the host and its
+    /// engines write or compare. `SystemClock` in production.
+    pub clock: Arc<dyn rekindle_utils::Clock>,
+    /// The host's generator for the ids, keys and jitter it and its engines
+    /// mint (plan C9.2). `OsRandom` in production; AEAD nonces never come
+    /// from it.
+    pub rng: Arc<dyn rekindle_utils::RandomSource>,
     /// The transport's subscription event source while unlocked: the
     /// forwarder (`daemon::event_forward`) journals what it carries.
     pub event_watch_tx: tokio::sync::watch::Sender<

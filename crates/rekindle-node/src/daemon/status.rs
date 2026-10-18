@@ -23,6 +23,7 @@ struct DaemonStatusDeps {
     node: Arc<TransportNode>,
     profile_key: String,
     status: Arc<RwLock<UserStatusKind>>,
+    clock: Arc<dyn rekindle_utils::Clock>,
 }
 
 #[async_trait]
@@ -60,7 +61,7 @@ impl StatusPublisherDeps for DaemonStatusDeps {
     }
 
     fn now_ms(&self) -> i64 {
-        rekindle_utils::timestamp_ms_i64()
+        self.clock.now_ms_i64()
     }
 }
 
@@ -75,6 +76,7 @@ fn deps(ctx: &DaemonContext) -> Option<Arc<DaemonStatusDeps>> {
         node,
         profile_key,
         status: Arc::clone(&ctx.status),
+        clock: Arc::clone(&ctx.clock),
     }))
 }
 

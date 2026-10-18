@@ -16,10 +16,6 @@ use crate::daemon::shutdown::ExitReason;
 
 use super::{state_error, store_error, teardown_unlocked, transition, DaemonContext};
 
-fn now_ms() -> u64 {
-    rekindle_utils::timestamp_ms()
-}
-
 /// An identity failure as the IPC caller sees it: 404 unknown, 401 wrong
 /// passphrase, 429 locked out (with the wait), 409 already here, 400 a
 /// damaged archive, 500 anything else.
@@ -68,7 +64,7 @@ pub(crate) async fn handle_create(
         &stores,
         Some(&display_name),
         passphrase,
-        rekindle_utils::timestamp_ms_i64(),
+        ctx.clock.now_ms_i64(),
     )
     .await
     {
@@ -207,7 +203,7 @@ pub(crate) fn handle_export(
         &ctx.identity_stores(),
         &owner,
         passphrase,
-        now_ms(),
+        ctx.clock.now_ms(),
     ) {
         Ok(archive) => IpcResponse::ok(&serde_json::json!({
             "public_key": owner,
@@ -232,7 +228,7 @@ pub(crate) async fn handle_import(
         &ctx.identity_attempts,
         &bytes,
         passphrase,
-        now_ms(),
+        ctx.clock.now_ms(),
     )
     .await
     {
@@ -275,7 +271,7 @@ pub(crate) async fn handle_rotate(
         &ctx.identity_attempts,
         &old_key,
         passphrase,
-        now_ms(),
+        ctx.clock.now_ms(),
     ) {
         return identity_error(&e);
     }
@@ -294,7 +290,7 @@ pub(crate) async fn handle_rotate(
         &old_key,
         &result.new_signing_key_bytes,
         passphrase,
-        now_ms(),
+        ctx.clock.now_ms(),
     )
     .await;
     result.new_signing_key_bytes.zeroize();

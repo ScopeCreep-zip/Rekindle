@@ -484,7 +484,7 @@ async fn record_accept(
         request.display_name.clone(),
         accepted.dm_log_key.clone(),
     );
-    let now = rekindle_utils::timestamp_ms_i64();
+    let now = ctx.clock.now_ms_i64();
     ctx.require_db()?
         .call(move |conn| {
             let tx = conn.transaction()?;

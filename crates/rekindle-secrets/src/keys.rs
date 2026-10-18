@@ -9,6 +9,7 @@ use aes_gcm::{
 };
 use rand::RngCore;
 use rekindle_types::error::CryptoError;
+use rekindle_utils::random::RandomSource;
 use zeroize::ZeroizeOnDrop;
 
 /// A user's master secret — the root of all identity derivation.
@@ -22,10 +23,11 @@ pub struct MasterSecret(pub [u8; 32]);
 pub struct SlotSeed(pub [u8; 32]);
 
 impl SlotSeed {
-    /// Generate a cryptographically random slot seed.
-    pub fn generate() -> Self {
+    /// A random slot seed from `rng`, the engine's injected generator.
+    #[must_use]
+    pub fn generate_with(rng: &dyn RandomSource) -> Self {
         let mut bytes = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        rng.fill(&mut bytes);
         Self(bytes)
     }
 }
@@ -88,8 +90,15 @@ pub struct MediaEncryptionKey {
 impl MediaEncryptionKey {
     /// Generate a new random MEK at the given generation.
     pub fn generate(generation: u64) -> Self {
+        Self::generate_with(generation, &rekindle_utils::random::OsRandom)
+    }
+
+    /// A new random MEK at `generation`, from `rng`, the engine's injected
+    /// generator (plan C9.2).
+    #[must_use]
+    pub fn generate_with(generation: u64, rng: &dyn RandomSource) -> Self {
         let mut key = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut key);
+        rng.fill(&mut key);
         Self {
             key,
             generation,
@@ -410,8 +419,8 @@ mod tests {
 
     #[test]
     fn slot_seed_generates_random() {
-        let s1 = SlotSeed::generate();
-        let s2 = SlotSeed::generate();
+        let s1 = SlotSeed::generate_with(&rekindle_utils::random::OsRandom);
+        let s2 = SlotSeed::generate_with(&rekindle_utils::random::OsRandom);
         assert_ne!(s1.0, s2.0);
     }
 }

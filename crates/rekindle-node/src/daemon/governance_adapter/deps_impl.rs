@@ -27,6 +27,14 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
         self.ctx.unlock_scope_or_closed()
     }
 
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        std::sync::Arc::clone(&self.ctx.clock)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::clone(&self.ctx.rng)
+    }
+
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {

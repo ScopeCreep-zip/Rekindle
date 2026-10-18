@@ -23,6 +23,7 @@ pub fn append(
         owner,
         kind,
         payload,
+        state.clock.now_ms_i64(),
     );
 }
 

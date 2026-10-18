@@ -65,7 +65,7 @@ impl DaemonGovernanceAdapter<'_> {
             &pseudonym,
             None,
             &state,
-            rekindle_utils::timestamp_secs(),
+            self.ctx.clock.now_secs(),
         );
         if rekindle_governance::permissions::has_capability(effective, perm_bits) {
             Ok(())
@@ -194,7 +194,7 @@ impl DaemonGovernanceAdapter<'_> {
             return;
         };
         let (community, entries) = (community_id.to_string(), entries.to_vec());
-        let now = rekindle_utils::timestamp_ms_i64();
+        let now = self.ctx.clock.now_ms_i64();
         db.fire("governance entries cache", move |conn| {
             rekindle_db::repo::governance_cache::save(conn, &owner, &community, &entries, now)
         });

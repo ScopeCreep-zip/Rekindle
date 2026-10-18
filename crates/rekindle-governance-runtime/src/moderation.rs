@@ -93,7 +93,7 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
             reason: reason.map(ToString::to_string),
             // Wall-clock start, so every peer computes the same expiry
             // from the entry alone rather than from when it merged it.
-            started_at: rekindle_utils::timestamp_secs(),
+            started_at: deps.clock().now_secs(),
             lamport,
         },
     )

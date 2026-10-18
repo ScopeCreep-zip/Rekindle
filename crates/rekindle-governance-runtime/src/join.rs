@@ -95,8 +95,9 @@ pub fn default_community_name(governance_key: &str) -> String {
 pub fn find_invite_in_entries(
     subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
     code_hash: &str,
+    now_secs: u64,
 ) -> Result<(String, PseudonymKey), GovernanceRuntimeError> {
-    match inspect_invite_in_entries(subkeys, code_hash) {
+    match inspect_invite_in_entries(subkeys, code_hash, now_secs) {
         InviteGovStatus::Active {
             inviter,
             secrets_record_key,
@@ -138,6 +139,7 @@ pub enum InviteGovStatus {
 pub fn inspect_invite_in_entries(
     subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
     code_hash: &str,
+    now_secs: u64,
 ) -> InviteGovStatus {
     let mut revoked_ids: HashSet<[u8; 16]> = HashSet::new();
     for (_, entries) in subkeys {
@@ -163,7 +165,7 @@ pub fn inspect_invite_in_entries(
                         return InviteGovStatus::Revoked;
                     }
                     if let Some(exp) = expires_at {
-                        if rekindle_utils::timestamp_secs() > *exp {
+                        if now_secs > *exp {
                             return InviteGovStatus::Expired;
                         }
                     }
@@ -297,7 +299,9 @@ mod tests {
                 lamport: 1,
             }],
         )];
-        let (record_key, inviter) = find_invite_in_entries(&entries, "abc").expect("found");
+        let (record_key, inviter) =
+            find_invite_in_entries(&entries, "abc", rekindle_utils::timestamp_secs())
+                .expect("found");
         assert_eq!(record_key, "VLD0:record-key");
         assert_eq!(inviter.0, author.0);
     }
@@ -322,7 +326,8 @@ mod tests {
                 },
             ],
         )];
-        let err = find_invite_in_entries(&entries, "abc").expect_err("revoked");
+        let err = find_invite_in_entries(&entries, "abc", rekindle_utils::timestamp_secs())
+            .expect_err("revoked");
         match err {
             GovernanceRuntimeError::Adapter(msg) => assert!(msg.contains("revoked")),
             other => panic!("expected Adapter(revoked), got {other:?}"),
@@ -332,7 +337,8 @@ mod tests {
     #[test]
     fn find_invite_no_match_errors() {
         let entries = vec![];
-        let err = find_invite_in_entries(&entries, "nope").expect_err("no match");
+        let err = find_invite_in_entries(&entries, "nope", rekindle_utils::timestamp_secs())
+            .expect_err("no match");
         match err {
             GovernanceRuntimeError::Adapter(msg) => assert!(msg.contains("no matching invite")),
             other => panic!("expected Adapter(no matching invite), got {other:?}"),
@@ -353,7 +359,7 @@ mod tests {
                 lamport: 1,
             }],
         )];
-        match inspect_invite_in_entries(&entries, "live") {
+        match inspect_invite_in_entries(&entries, "live", rekindle_utils::timestamp_secs()) {
             InviteGovStatus::Active {
                 inviter,
                 secrets_record_key,
@@ -381,7 +387,7 @@ mod tests {
             }],
         )];
         assert!(matches!(
-            inspect_invite_in_entries(&entries, "old"),
+            inspect_invite_in_entries(&entries, "old", rekindle_utils::timestamp_secs()),
             InviteGovStatus::Expired
         ));
     }

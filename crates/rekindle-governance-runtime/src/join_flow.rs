@@ -74,7 +74,7 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
     all_entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
 ) -> Result<InviteContext, GovernanceRuntimeError> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
-    let status = inspect_invite_in_entries(all_entries, &code_hash);
+    let status = inspect_invite_in_entries(all_entries, &code_hash, deps.clock().now_secs());
     match status {
         InviteGovStatus::Revoked => {
             return Err(GovernanceRuntimeError::Adapter(

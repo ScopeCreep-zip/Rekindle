@@ -509,7 +509,7 @@ fn leave_escalations(
         &state,
         &me,
         &members,
-        rekindle_utils::timestamp_secs(),
+        ctx.clock.now_secs(),
     ))
 }
 

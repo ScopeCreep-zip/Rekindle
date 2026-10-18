@@ -93,6 +93,9 @@ pub trait MekDistributeDeps: Send + Sync {
     /// and the per-recipient sends stop once it is closed (plan C4.L1).
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope>;
 
+    /// The host's generator for the MEKs this node mints (plan C9.2).
+    fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource>;
+
     /// In-memory MEK cache (typically a parking_lot-backed HashMap on
     /// AppState).
     fn cache(&self) -> Arc<dyn ChannelMekCache>;

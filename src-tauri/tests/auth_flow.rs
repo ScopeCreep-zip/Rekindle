@@ -26,6 +26,8 @@ async fn test_env(dir: &std::path::Path) -> (DataRoot, SharedState) {
         stores: state.host_stores(),
         transport: rekindle_node::host::TransportSource::Offline,
         serve_bus: false,
+        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
+        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
     })
     .await
     .unwrap();

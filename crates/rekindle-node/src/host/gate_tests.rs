@@ -34,6 +34,8 @@ async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, S
         stores: HostStores::default(),
         transport: TransportSource::Offline,
         serve_bus: false,
+        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
+        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
     })
     .await
     .unwrap();

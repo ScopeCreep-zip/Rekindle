@@ -469,7 +469,7 @@ pub(crate) fn handle_invite_list(
     // From merged governance. Revocation is a `InviteRevoked` tombstone
     // the merge applies, so an entry present here is one no peer has
     // revoked — the manifest list could not say that.
-    let now = rekindle_utils::timestamp_secs();
+    let now = ctx.clock.now_secs();
     let invites: Vec<serde_json::Value> = ctx
         .community_runtime
         .governance_state(&membership.governance_key)

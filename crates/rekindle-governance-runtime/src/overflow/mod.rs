@@ -79,7 +79,7 @@ pub const MAX_OVERFLOW_PAGES: usize = 64;
 /// a strict subset of [`GovernanceRuntimeDeps`], blanket-implemented for every
 /// deps impl so production callers pass their existing `deps` unchanged.
 /// Segregating it keeps these helpers (and their tests) decoupled from the
-/// 60-method composite trait: a test mock implements four methods, not sixty.
+/// 58-method composite trait: a test mock implements four methods, not 58.
 #[async_trait::async_trait]
 pub trait OverflowIo: Send + Sync {
     /// Borrow a record from the host's pool (see

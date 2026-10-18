@@ -258,7 +258,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
             display_name: ctx.display_name.clone(),
             status: ctx.join_status_label.into(),
             route_blob: vec![],
-            last_heartbeat: rekindle_utils::timestamp_secs(),
+            last_heartbeat: deps.clock().now_secs(),
             ..Default::default()
         };
         let presence_sig =
@@ -331,12 +331,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
     full_segment_index: u32,
 ) -> Result<ClaimedSlot, GovernanceRuntimeError> {
     let community_id = ctx.community_id;
-    let perms = compute_permissions(
-        ctx.my_pseudo,
-        None,
-        ctx.gov_state,
-        rekindle_utils::timestamp_secs(),
-    );
+    let perms = compute_permissions(ctx.my_pseudo, None, ctx.gov_state, deps.clock().now_secs());
     let have_manage_community = (perms & MANAGE_COMMUNITY) != 0;
     let requester_pseudonym = hex::encode(ctx.my_pseudo.0);
 
@@ -371,8 +366,9 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
 
     // Poll up to 30s for the new segment to land in our merged
     // governance state. Quicker than a watch-driven notify, simpler than
-    // a Notify channel, and bounded.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    // a Notify channel, and bounded. The tokio clock, as the poll's sleep,
+    // so a paused runtime advances both together (plan C9.2).
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut new_segments: Vec<SegmentState>;
     loop {
         new_segments = deps
@@ -387,7 +383,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
         if max_seg > full_segment_index {
             break;
         }
-        if std::time::Instant::now() >= deadline || crate::join_gate::should_stop(deps) {
+        if tokio::time::Instant::now() >= deadline || crate::join_gate::should_stop(deps) {
             return Err(GovernanceRuntimeError::Adapter(format!(
                 "Community is full and no admin expanded within 30s. The community has {} active segment(s); admins must run expand_community_segment to grow it.",
                 new_segments.len() + 1

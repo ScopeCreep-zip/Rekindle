@@ -157,7 +157,7 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // Architecture §4.2 Strategy 1 — compact the WHOLE logical set before
     // re-paging (the genesis guard + create/archive lifecycle pairing require the
     // full set). Dead lifecycles and superseded single-key metadata are dropped.
-    let my_entries = compact::compact_author_entries(my_entries, rekindle_utils::timestamp_secs());
+    let my_entries = compact::compact_author_entries(my_entries, deps.clock().now_secs());
 
     let identity_secret = deps
         .identity_secret()

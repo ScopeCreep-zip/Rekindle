@@ -213,6 +213,8 @@ async fn start_host(
         stores: state.host_stores(),
         transport: rekindle_node::host::TransportSource::Adopted(node),
         serve_bus: true,
+        clock: Arc::clone(&state.clock),
+        rng: Arc::clone(&state.rng),
     })
     .await
     .map_err(|e| format!("{e:#}"))?;

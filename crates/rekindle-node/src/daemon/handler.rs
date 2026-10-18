@@ -53,6 +53,8 @@ pub struct DaemonHandler {
     pub(crate) mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
     /// Outbound gossip, for the Mutual Aid watch relay (§14.3).
     pub(crate) gossip_tx: crate::daemon::gossip::GossipSender,
+    /// The host's wall clock (plan C9.2).
+    pub(crate) clock: Arc<dyn rekindle_utils::Clock>,
 }
 
 impl DaemonHandler {
@@ -73,6 +75,7 @@ impl DaemonHandler {
         >,
         mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
         gossip_tx: crate::daemon::gossip::GossipSender,
+        clock: Arc<dyn rekindle_utils::Clock>,
     ) -> Self {
         Self {
             subscriptions,
@@ -84,6 +87,7 @@ impl DaemonHandler {
             pending_joins,
             mek_rotation_tx,
             gossip_tx,
+            clock,
         }
     }
 
@@ -143,6 +147,10 @@ impl InboundHandler for DaemonHandler {
         let guard = self.session.read();
         let hex = &guard.as_ref()?.identity.public_key_hex;
         rekindle_transport::recipient_bytes(hex).ok()
+    }
+
+    fn clock(&self) -> &dyn rekindle_utils::Clock {
+        self.clock.as_ref()
     }
 
     async fn on_dm(

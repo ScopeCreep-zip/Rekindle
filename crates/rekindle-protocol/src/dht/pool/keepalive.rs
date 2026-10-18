@@ -11,8 +11,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rand::Rng;
 use rekindle_records::port::RecordPort;
+use rekindle_utils::RandomSource;
 use tokio_util::sync::CancellationToken;
 
 /// The base interval between warmings.
@@ -20,17 +20,20 @@ pub const BASE_INTERVAL: Duration = Duration::from_secs(300);
 /// Uniform jitter on top of [`BASE_INTERVAL`], in seconds either way.
 const INTERVAL_JITTER_SECS: i64 = 60;
 
-/// The next warming delay: [`BASE_INTERVAL`] ± up to 60 s.
+/// The next warming delay: [`BASE_INTERVAL`] ± up to 60 s, from the host's
+/// generator (plan C9.2).
 #[must_use]
-pub fn next_warming_delay() -> Duration {
-    let offset: i64 = rand::thread_rng().gen_range(-INTERVAL_JITTER_SECS..=INTERVAL_JITTER_SECS);
+pub fn next_warming_delay(rng: &dyn RandomSource) -> Duration {
+    let span = INTERVAL_JITTER_SECS.unsigned_abs() * 2 + 1;
+    let offset = i64::try_from(rng.below(span)).unwrap_or(0) - INTERVAL_JITTER_SECS;
     Duration::from_secs(BASE_INTERVAL.as_secs().saturating_add_signed(offset))
 }
 
-/// The per-community start offset, in `[0, BASE_INTERVAL)`.
+/// The per-community start offset, in `[0, BASE_INTERVAL)`, from the host's
+/// generator.
 #[must_use]
-pub fn initial_offset() -> Duration {
-    Duration::from_secs(rand::thread_rng().gen_range(0..BASE_INTERVAL.as_secs()))
+pub fn initial_offset(rng: &dyn RandomSource) -> Duration {
+    Duration::from_secs(rng.below(BASE_INTERVAL.as_secs()))
 }
 
 /// Rehydrate one record: a re-open of a local record is Veilid's only
@@ -51,7 +54,8 @@ async fn rehydrate(pool: &dyn RecordPort, key: &str) {
     pool.release(lease).await;
 }
 
-/// Run the keepalive until `stop`: after a random start offset, rehydrate
+/// Run the keepalive until `stop`: after a random start offset (from `rng`,
+/// the host's generator), rehydrate
 /// every record `keys` names, then wait a jittered interval, and again.
 /// `pool` is the session's pool while there is one; `keys` is `None` once
 /// the community is gone. Leaving the community (or the session) cancels
@@ -60,10 +64,11 @@ async fn rehydrate(pool: &dyn RecordPort, key: &str) {
 pub async fn run(
     pool: impl Fn() -> Option<Arc<dyn RecordPort>>,
     keys: impl Fn() -> Option<Vec<String>>,
+    rng: Arc<dyn RandomSource>,
     stop: CancellationToken,
 ) {
     if stop
-        .run_until_cancelled(tokio::time::sleep(initial_offset()))
+        .run_until_cancelled(tokio::time::sleep(initial_offset(rng.as_ref())))
         .await
         .is_none()
     {
@@ -87,7 +92,7 @@ pub async fn run(
             tracing::info!(records = count, "keepalive: community records rehydrated");
         }
         if stop
-            .run_until_cancelled(tokio::time::sleep(next_warming_delay()))
+            .run_until_cancelled(tokio::time::sleep(next_warming_delay(rng.as_ref())))
             .await
             .is_none()
         {
@@ -103,9 +108,9 @@ mod tests {
     #[test]
     fn the_cadence_stays_within_its_jitter_and_the_start_within_one_window() {
         for _ in 0..200 {
-            let delay = next_warming_delay().as_secs();
+            let delay = next_warming_delay(&rekindle_utils::OsRandom).as_secs();
             assert!((240..=360).contains(&delay), "delay {delay}");
-            assert!(initial_offset() < BASE_INTERVAL);
+            assert!(initial_offset(&rekindle_utils::OsRandom) < BASE_INTERVAL);
         }
     }
 }

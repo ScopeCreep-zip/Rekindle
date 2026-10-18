@@ -35,8 +35,8 @@ const IDLE_TTL_SECS: u64 = 60;
 /// second sustained, 10 burst. The chiral spec calls this the "hard
 /// floor" — even a malicious client cannot exceed it because honest
 /// receivers drop the excess.
-fn default_bucket() -> TokenBucket {
-    TokenBucket::ten_per_second()
+fn default_bucket(now: Instant) -> TokenBucket {
+    TokenBucket::ten_per_second(now)
 }
 
 /// Receiver-side check before any gossip dispatch. Returns `true` if the
@@ -48,8 +48,9 @@ fn default_bucket() -> TokenBucket {
 pub fn check_gossip_rate(state: &AppState, community_id: &str, sender: &str) -> bool {
     let mut limits = state.gossip_rate_limits.lock();
     let key = (community_id.to_string(), sender.to_string());
-    let bucket = limits.entry(key).or_insert_with(default_bucket);
-    let accepted = bucket.try_consume(1);
+    let now = Instant::now();
+    let bucket = limits.entry(key).or_insert_with(|| default_bucket(now));
+    let accepted = bucket.try_consume_at(1, now);
     if limits.len() > SOFT_CAP {
         prune_idle_buckets(&mut limits);
     }

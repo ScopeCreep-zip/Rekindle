@@ -48,6 +48,7 @@ async fn writes_come_back_in_the_next_projection() {
             membership: membership(),
             dht_owner_keypair: None,
             registry_keypair: Some("reg-kp".into()),
+            joined_at: 1,
         },
     )
     .unwrap();

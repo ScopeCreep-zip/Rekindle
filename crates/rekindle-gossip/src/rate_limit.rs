@@ -1,4 +1,7 @@
-//! Token-bucket rate limiter for per-sender gossip control.
+//! Token-bucket rate limiter for per-sender gossip control. Time is the
+//! caller's monotonic clock (plan C9.2): a host passes
+//! `tokio::time::Instant::now().into_std()`, which a paused runtime
+//! advances with the simulation.
 
 use std::time::Instant;
 
@@ -12,9 +15,9 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    /// Create a bucket with `capacity` burst and `refill_rate_per_sec`.
-    pub fn new(capacity: u32, refill_rate_per_sec: u32) -> Self {
-        let now = Instant::now();
+    /// Create a bucket with `capacity` burst and `refill_rate_per_sec`,
+    /// full at `now`.
+    pub fn new(capacity: u32, refill_rate_per_sec: u32, now: Instant) -> Self {
         Self {
             capacity,
             tokens: f64::from(capacity),
@@ -42,11 +45,6 @@ impl TokenBucket {
         false
     }
 
-    /// Attempt to consume `amount` tokens using `Instant::now()`.
-    pub fn try_consume(&mut self, amount: u32) -> bool {
-        self.try_consume_at(amount, Instant::now())
-    }
-
     /// Approximate number of currently available tokens.
     pub fn available(&self) -> f64 {
         self.tokens
@@ -64,8 +62,8 @@ impl TokenBucket {
     }
 
     /// Convenience constructor for the default 10 msg/sec channel limit.
-    pub fn ten_per_second() -> Self {
-        Self::new(10, 10)
+    pub fn ten_per_second(now: Instant) -> Self {
+        Self::new(10, 10, now)
     }
 }
 
@@ -81,8 +79,8 @@ mod tests {
         // messages/second sustained. The token bucket sized to that
         // rate should accept exactly that many over a one-second window
         // and reject the 101st without burst.
-        let mut bucket = TokenBucket::new(100, 100);
         let start = std::time::Instant::now();
+        let mut bucket = TokenBucket::new(100, 100, start);
         let mut accepted = 0u32;
         for _ in 0..100 {
             if bucket.try_consume_at(1, start) {
@@ -101,7 +99,7 @@ mod tests {
     #[test]
     fn token_refill_restores_capacity_over_time() {
         let start = std::time::Instant::now();
-        let mut bucket = TokenBucket::new(10, 10);
+        let mut bucket = TokenBucket::new(10, 10, start);
 
         assert!(bucket.try_consume_at(10, start));
         assert!(!bucket.try_consume_at(1, start));

@@ -141,6 +141,12 @@ pub struct AppState {
     >,
     /// Wakes the session's one STATUS publisher (plan C7.8c).
     pub status_wake: Arc<tokio::sync::Notify>,
+    /// The process's wall clock (plan C9.2), shared with the in-process
+    /// host: the governance, gossip and MEK adapters read it.
+    pub clock: Arc<dyn rekindle_utils::Clock>,
+    /// The process's generator for the ids and keys the engines mint (plan
+    /// C9.2), shared with the in-process host.
+    pub rng: Arc<dyn rekindle_utils::RandomSource>,
     /// Each DM's watch lease in the record pool, by record key, kept for
     /// the session (`DmDeps::dht_hold_session`). The pool's shutdown at
     /// logout closes them; `record_pool::end` clears the map.
@@ -342,6 +348,8 @@ impl Default for AppState {
             record_pool: RwLock::new(None),
             own_routes: RwLock::new(None),
             status_wake: Arc::new(tokio::sync::Notify::new()),
+            clock: Arc::new(rekindle_utils::SystemClock),
+            rng: Arc::new(rekindle_utils::OsRandom),
             dm_leases: Mutex::new(HashMap::new()),
             friend_leases: Mutex::new(HashMap::new()),
             personal_sync_lease: Mutex::new(None),

@@ -9,7 +9,6 @@
 //! decides how to map the abstract `RoleStateChange` to its concrete
 //! `state.communities` write + DB row update).
 
-use rand::RngCore;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
 
@@ -124,9 +123,12 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
 /// Allocate a fresh u32 role id that's not already in use. Caller
 /// passes the existing id set (read from governance state); we try up
 /// to 64 random ids before giving up.
-fn allocate_unique_role_id(existing_ids: &[u32]) -> Option<u32> {
+fn allocate_unique_role_id(
+    existing_ids: &[u32],
+    rng: &dyn rekindle_utils::RandomSource,
+) -> Option<u32> {
     for _ in 0..64 {
-        let candidate = rand::rngs::OsRng.next_u32().saturating_add(100);
+        let candidate = rng.next_u32().saturating_add(100);
         if !existing_ids.contains(&candidate) {
             return Some(candidate);
         }
@@ -146,7 +148,7 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
     exclusion_group: Option<String>,
 ) -> Result<u32, GovernanceRuntimeError> {
     let (existing_ids, next_position) = deps.role_table_summary(community_id);
-    let role_id = allocate_unique_role_id(&existing_ids).ok_or_else(|| {
+    let role_id = allocate_unique_role_id(&existing_ids, deps.rng().as_ref()).ok_or_else(|| {
         GovernanceRuntimeError::Adapter("failed to allocate unique role id".into())
     })?;
 
@@ -271,13 +273,13 @@ mod tests {
     #[test]
     fn allocate_unique_role_id_returns_unused() {
         let existing = vec![100, 200, 300];
-        let id = allocate_unique_role_id(&existing).expect("found");
+        let id = allocate_unique_role_id(&existing, &rekindle_utils::OsRandom).expect("found");
         assert!(!existing.contains(&id));
     }
 
     #[test]
     fn allocate_unique_role_id_minimum_threshold() {
-        let id = allocate_unique_role_id(&[]).expect("found");
+        let id = allocate_unique_role_id(&[], &rekindle_utils::OsRandom).expect("found");
         assert!(
             id >= 100,
             "id should be >= 100 to avoid built-in reserved range"

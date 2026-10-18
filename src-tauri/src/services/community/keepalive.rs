@@ -14,6 +14,7 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
     let scope = state_helpers::community_scope(&state, &community_id);
     scope.spawn_with_token_or_drop("community DHT keepalive", |stop| async move {
         let pool_state = Arc::clone(&state);
+        let rng = Arc::clone(&state.rng);
         rekindle_protocol::dht::pool::keepalive::run(
             move || state_helpers::record_pool(&pool_state).ok(),
             move || {
@@ -23,6 +24,7 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
                     .get(&community_id)
                     .map(super::record_inventory::warmable_record_keys)
             },
+            rng,
             stop,
         )
         .await;

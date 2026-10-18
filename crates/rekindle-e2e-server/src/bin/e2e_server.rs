@@ -72,6 +72,8 @@ async fn main() {
         stores: state.host_stores(),
         transport: rekindle_node::host::TransportSource::Offline,
         serve_bus: false,
+        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
+        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
     })
     .await
     .expect("the E2E host did not start");

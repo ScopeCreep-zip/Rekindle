@@ -278,6 +278,8 @@ pub struct NewMembership {
     pub dht_owner_keypair: Option<String>,
     /// The registry's owner keypair (the vault's `RegistryKeypair`).
     pub registry_keypair: Option<String>,
+    /// When it was joined, in ms, by the host's clock.
+    pub joined_at: i64,
 }
 
 /// Record a membership: its slot seed and registry keypair into the vault
@@ -297,6 +299,7 @@ pub fn record_membership(
         membership,
         dht_owner_keypair,
         registry_keypair,
+        joined_at,
     } = new;
     let community = membership.governance_key.clone();
     {
@@ -324,7 +327,6 @@ pub fn record_membership(
         }
     }
     let row = membership.clone();
-    let joined_at = rekindle_utils::timestamp_ms_i64();
     db.fire("community membership", move |conn| {
         repo::communities::insert(
             conn,

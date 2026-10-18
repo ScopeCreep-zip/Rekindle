@@ -54,9 +54,10 @@ pub fn append(
     owner: &str,
     kind: AuditKind,
     payload: serde_json::Value,
+    at_ms: i64,
 ) {
     let record = AuditRecord {
-        at_ms: rekindle_utils::timestamp_ms_i64(),
+        at_ms,
         actor_pub: owner.to_string(),
         kind,
         payload,
@@ -132,6 +133,7 @@ pub fn record_unlock_failures(
     vault: &VaultHandle,
     owner: &str,
     count: u32,
+    at_ms: i64,
 ) {
     if count > 0 {
         append(
@@ -141,6 +143,7 @@ pub fn record_unlock_failures(
             owner,
             AuditKind::UnlockFailures,
             serde_json::json!({ "count": count }),
+            at_ms,
         );
     }
 }
@@ -176,9 +179,10 @@ mod tests {
             &owner,
             AuditKind::VaultUnlocked,
             serde_json::json!({}),
+            1,
         );
-        record_unlock_failures(&slot, &db, &f.vault, &owner, 3);
-        record_unlock_failures(&slot, &db, &f.vault, &owner, 0);
+        record_unlock_failures(&slot, &db, &f.vault, &owner, 3, 2);
+        record_unlock_failures(&slot, &db, &f.vault, &owner, 0, 3);
         assert_eq!(
             verify(&slot, &db, &owner).await,
             Verified::Intact { length: 2 }
@@ -196,6 +200,7 @@ mod tests {
             &owner,
             AuditKind::Request,
             serde_json::json!({}),
+            4,
         );
         assert_eq!(
             verify(&slot, &db, &owner).await,

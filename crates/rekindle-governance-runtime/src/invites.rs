@@ -116,7 +116,9 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         })
         .collect();
 
-    let code = hex::encode(rekindle_utils::random::id_bytes_16());
+    let code = hex::encode(rekindle_utils::random::id_bytes_16_from(
+        deps.rng().as_ref(),
+    ));
     let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
 
     let secrets = InviteSecrets {
@@ -149,8 +151,8 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
 
     let secrets_record_key = publish_invite_secrets(deps, &encrypted_b64).await?;
 
-    let invite_id = rekindle_utils::random::id_bytes_16();
-    let expires_at = expires_in_seconds.map(|s| rekindle_utils::timestamp_secs() + s);
+    let invite_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
+    let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
     let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,

@@ -123,6 +123,12 @@ pub struct HostConfig {
     pub transport: TransportSource,
     /// Bind the IPC bus, so the TUI and CLI attach to this process.
     pub serve_bus: bool,
+    /// The wall clock the host and its engines read (plan C9.2):
+    /// `SystemClock`, or the network simulator's.
+    pub clock: Arc<dyn rekindle_utils::Clock>,
+    /// The generator the host and its engines mint ids, keys and jitter
+    /// from (plan C9.2): `OsRandom`, or the simulator's seeded one.
+    pub rng: Arc<dyn rekindle_utils::RandomSource>,
 }
 
 /// The bus this host serves, and its own subscriber connection.
@@ -156,6 +162,8 @@ impl Host {
             stores,
             transport,
             serve_bus,
+            clock,
+            rng,
         } = config;
         let root = claimed.root().clone();
         let veilid_dir = root.create_veilid_dir()?;
@@ -191,6 +199,7 @@ impl Host {
                 Arc::clone(&pending_joins),
                 mek_rotation_tx.clone(),
                 gossip_tx.clone(),
+                Arc::clone(&clock),
             ));
             (handler, handler_transport)
         };
@@ -269,6 +278,8 @@ impl Host {
             ),
             shutdown: Arc::new(crate::daemon::shutdown::Shutdown::new()),
             journal: Arc::new(rekindle_events::SessionJournal::default()),
+            clock,
+            rng,
             intents: Arc::new(super::gate::HostGate::new(Arc::clone(&stores.attempts))),
             event_watch_tx,
             pending_joins,

@@ -83,7 +83,9 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
     // same-named channel concurrently must get two channels, not one
     // colliding id whose `ChannelCreated` entries LWW each other and
     // strand one record.
-    let channel_id = ChannelId(rekindle_utils::random::id_bytes_16());
+    let channel_id = ChannelId(rekindle_utils::random::id_bytes_16_from(
+        deps.rng().as_ref(),
+    ));
     let channel_id_hex = hex::encode(channel_id.0);
 
     let announced = apply::write_entry(

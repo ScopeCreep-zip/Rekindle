@@ -64,7 +64,7 @@ pub(crate) fn sign_and_record<D: GossipDeps>(
         &envelope_bytes,
     );
 
-    let dedup_key = extract_mesh_dedup_key(envelope);
+    let dedup_key = extract_mesh_dedup_key(envelope, deps.clock().now_secs());
     deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &dedup_key);
 
     Ok(signed)
@@ -306,6 +306,9 @@ mod tests {
         }
         fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
             Arc::clone(&self.scope)
+        }
+        fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+            Arc::new(rekindle_utils::SystemClock)
         }
         fn check_and_insert_dedup(&self, c: &str, s: &str, k: &str) {
             self.state

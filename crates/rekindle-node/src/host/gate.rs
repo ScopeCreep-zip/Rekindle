@@ -96,7 +96,7 @@ async fn begin(ctx: &DaemonContext, caller: &Caller, request: IpcRequest) -> Ipc
     let owner = owner_of(ctx, caller, &request);
     match ctx
         .intents
-        .begin(owner, selection, request, rekindle_utils::timestamp_ms())
+        .begin(owner, selection, request, ctx.clock.now_ms())
     {
         Ok(Gate::Run(request)) => {
             with_reversibility(ctx.dispatch_in_lane(request, caller).await, reversibility)
@@ -128,7 +128,7 @@ async fn commit(
         Err(refused) => return refused,
     };
     let owner = owner_of(ctx, caller, &held);
-    let now_ms = rekindle_utils::timestamp_ms();
+    let now_ms = ctx.clock.now_ms();
     // Argon2id runs here, off the executor and outside the gate's lock;
     // the gate then counts a failure on the shared limiter.
     let needs_passphrase =

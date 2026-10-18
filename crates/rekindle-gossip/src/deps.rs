@@ -63,6 +63,9 @@ pub trait GossipDeps: Send + Sync + 'static {
     /// owns the identity (plan C4).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
 
+    /// The host's wall clock (plan C9.2): the dedup key's time buckets.
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock>;
+
     // === Dedup (interior mutability) ===
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str);
 

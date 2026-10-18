@@ -115,6 +115,7 @@ async fn restore_audit(
                 &ctx.vault,
                 owner,
                 failures,
+                ctx.clock.now_ms_i64(),
             );
             Some(restored)
         }

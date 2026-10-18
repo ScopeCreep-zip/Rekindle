@@ -64,7 +64,7 @@ impl DaemonGossipAdapter {
         let Some(mesh) = meshes.get_mut(community_id) else {
             return;
         };
-        let last_seen = rekindle_utils::timestamp_secs();
+        let last_seen = self.ctx.clock.now_secs();
         for map in [&mut mesh.peers, &mut mesh.online_members] {
             map.insert(
                 peer_key.to_string(),

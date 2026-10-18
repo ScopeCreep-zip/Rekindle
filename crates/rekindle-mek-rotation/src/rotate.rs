@@ -68,9 +68,10 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     let mek = match deps.my_pseudonym(community_id) {
         Some(me) => {
             let rank = rekindle_secrets::rotator::election_hash(&departed.0, &me.0);
-            MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank)
+            MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref())
+                .with_provenance(me.0, rank)
         }
-        None => MediaEncryptionKey::generate(new_generation),
+        None => MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref()),
     };
     distribute_mek(
         deps,
@@ -164,7 +165,8 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
     // A manual rotation has no trigger member, so the rank is taken
     // against a zero context — a stable per-minter tiebreak.
     let rank = rekindle_secrets::rotator::election_hash(&[0u8; 32], &me.0);
-    let new_mek = MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank);
+    let new_mek = MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref())
+        .with_provenance(me.0, rank);
 
     // Excluding nobody: everyone online is still a member.
     let recipients = deps.online_recipients(community_id, None);

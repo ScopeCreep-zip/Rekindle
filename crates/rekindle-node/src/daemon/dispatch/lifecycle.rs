@@ -41,7 +41,7 @@ pub(crate) async fn handle_unlock(
         &ctx.identity_stores(),
         identity,
         passphrase,
-        rekindle_utils::timestamp_ms(),
+        ctx.clock.now_ms(),
     )
     .await
     {
@@ -383,20 +383,15 @@ async fn attach_client(
     let Some(key) = caller.static_key else {
         return IpcResponse::ok(&serde_json::json!({ "state": "operational" }));
     };
-    let (root, attempts, pk, pass) = (
+    let (root, attempts, pk, pass, now_ms) = (
         ctx.root.clone(),
         std::sync::Arc::clone(&ctx.identity_attempts),
         identity.to_string(),
         zeroize::Zeroizing::new(passphrase.to_string()),
+        ctx.clock.now_ms(),
     );
     let verified = tokio::task::spawn_blocking(move || {
-        crate::host::identity::verify_passphrase(
-            &root,
-            &attempts,
-            &pk,
-            &pass,
-            rekindle_utils::timestamp_ms(),
-        )
+        crate::host::identity::verify_passphrase(&root, &attempts, &pk, &pass, now_ms)
     })
     .await;
     match verified {

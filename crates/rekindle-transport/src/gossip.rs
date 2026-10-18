@@ -92,7 +92,7 @@ impl RateLimiter {
         let accepted = self
             .buckets
             .entry(sender.to_string())
-            .or_insert_with(TokenBucket::ten_per_second)
+            .or_insert_with(|| TokenBucket::ten_per_second(now))
             .try_consume_at(1, now);
         if self.buckets.len() > RATE_LIMIT_SOFT_CAP {
             self.prune_idle(now);

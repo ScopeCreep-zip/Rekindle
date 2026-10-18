@@ -58,6 +58,10 @@ impl MekDistributeDeps for MekAdapter {
         crate::state_helpers::login_scope_or_closed(&self.state)
     }
 
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::clone(&self.state.rng)
+    }
+
     fn cache(&self) -> Arc<dyn ChannelMekCache> {
         Arc::clone(&self.cache)
     }

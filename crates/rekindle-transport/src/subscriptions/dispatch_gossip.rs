@@ -64,7 +64,8 @@ pub(super) async fn dispatch_bare_gossip<H: InboundHandler>(
         return true;
     }
 
-    let dedup_key = rekindle_gossip::broadcast::extract_mesh_dedup_key(&inner);
+    let dedup_key =
+        rekindle_gossip::broadcast::extract_mesh_dedup_key(&inner, handler.clock().now_secs());
     if dedup.check_and_insert(&signed.community_id, &signed.sender_pseudonym, &dedup_key) {
         trace!(dedup_key = %dedup_key, "unframed gossip dedup: duplicate");
         return true;

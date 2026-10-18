@@ -14,6 +14,9 @@ blake3 = "1"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hkdf = "0.12"
 rekindle-types = { path = "../rekindle-types" }
+# `RandomSource` (plan C9.2): keys an engine mints come from its injected
+# generator, so a seeded run fixes them. AEAD nonces stay on `OsRng`.
+rekindle-utils = { path = "../rekindle-utils" }
 sha2 = "0.10"
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 # RFC 9180 HPKE for MEK wrapping v2 — the same crate veilid-core uses

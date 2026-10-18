@@ -16,6 +16,7 @@ pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
         return;
     };
     let runtime = Arc::clone(&ctx.community_runtime);
+    let rng = Arc::clone(&ctx.rng);
     let id = community_id.to_string();
     ctx.community_scope(community_id).spawn_with_token_or_drop(
         "community DHT keepalive",
@@ -34,6 +35,7 @@ pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
                             .collect(),
                     )
                 },
+                rng,
                 stop,
             )
             .await;

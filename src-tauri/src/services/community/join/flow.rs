@@ -378,7 +378,11 @@ async fn decode_invite_context(
     // read only to ENFORCE revocation/expiry when visible and to recover the
     // inviter pseudonym for the best-effort quota sanity check — never as the
     // sole source of the secrets pointer (which now rides in the deep link).
-    let status = gov_rt::inspect_invite_in_entries(all_entries, &code_hash);
+    let status = gov_rt::inspect_invite_in_entries(
+        all_entries,
+        &code_hash,
+        rekindle_governance_runtime::GovernanceRuntimeDeps::clock(adapter).now_secs(),
+    );
     if matches!(status, gov_rt::InviteGovStatus::Revoked) {
         return Err("invite has been revoked".into());
     }

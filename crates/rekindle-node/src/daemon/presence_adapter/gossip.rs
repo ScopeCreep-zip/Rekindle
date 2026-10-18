@@ -98,7 +98,7 @@ impl DaemonPresenceAdapter {
         my_pseudonym: &str,
         eviction_threshold_secs: u64,
     ) {
-        let now = rekindle_utils::timestamp_secs();
+        let now = self.ctx.clock.now_secs();
         for (pseudonym, member) in self.online_from_mesh(community_id) {
             if pseudonym == my_pseudonym {
                 continue;

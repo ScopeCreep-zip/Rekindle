@@ -8,7 +8,6 @@
 //! background services. Returns the governance record key as the
 //! community ID.
 
-use rand::RngCore;
 use rekindle_governance::merge;
 use rekindle_secrets::derive;
 use rekindle_secrets::keys::{MediaEncryptionKey, SlotSeed};
@@ -32,11 +31,9 @@ const CREATOR_SLOT: u32 = 0;
 /// stable across community installs (architecture §Failure 4).
 const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
 
-/// Generate a fresh random 16-byte channel id.
-fn random_channel_id() -> ChannelId {
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    ChannelId(bytes)
+/// Generate a fresh random 16-byte channel id from the host's generator.
+fn random_channel_id(rng: &dyn rekindle_utils::RandomSource) -> ChannelId {
+    ChannelId(rekindle_utils::random::id_bytes_16_from(rng))
 }
 
 /// Map a `RoleId` to the legacy u32 form the src-tauri `RoleDefinition`
@@ -129,7 +126,7 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
 ) -> Result<String, GovernanceRuntimeError> {
     // 1. Generate the shared slot seed (32 bytes) — derives all 255 member
     //    slot keypairs deterministically.
-    let slot_seed = SlotSeed::generate();
+    let slot_seed = SlotSeed::generate_with(deps.rng().as_ref());
 
     // 2. Derive the 255 slot public keys for the universal SMPL schema.
     let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
@@ -210,7 +207,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     );
 
     // 7. Genesis governance entries.
-    let channel_id = random_channel_id();
+    let channel_id = random_channel_id(deps.rng().as_ref());
     let genesis_entries = genesis_entries(name, &my_pseudo, channel_id, &ch_key, admission);
 
     // Architecture §26 W26 — sign the genesis payload with the creator's
@@ -248,7 +245,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         display_name: Some(deps.identity_display_name()),
         status: deps.identity_status().as_wire_str().into(),
         route_blob: deps.our_route_blob(),
-        last_heartbeat: rekindle_utils::timestamp_secs(),
+        last_heartbeat: deps.clock().now_secs(),
         ..Default::default()
     };
     let presence_sig = derive::sign_with_pseudonym(&pseudonym_signing, &presence.signing_bytes());
@@ -269,7 +266,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     }
 
     // 9. Generate the initial community MEK.
-    let mek = MediaEncryptionKey::generate(1);
+    let mek = MediaEncryptionKey::generate_with(1, deps.rng().as_ref());
     let mek_generation = mek.generation();
     let mek_snapshot = MekSnapshot {
         generation: mek_generation,
@@ -369,8 +366,8 @@ mod tests {
 
     #[test]
     fn random_channel_id_is_16_bytes_and_random() {
-        let a = random_channel_id();
-        let b = random_channel_id();
+        let a = random_channel_id(&rekindle_utils::OsRandom);
+        let b = random_channel_id(&rekindle_utils::OsRandom);
         assert_ne!(a.0, b.0, "two consecutive channel ids should differ");
     }
 

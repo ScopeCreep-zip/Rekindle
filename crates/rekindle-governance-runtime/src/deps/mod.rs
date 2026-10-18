@@ -47,7 +47,7 @@ pub use types::*;
 // The exemption is narrow and does not touch that property: this is
 // `cfg(test)` only, so no mock code is ever linked into a shipped
 // binary. What is being exempted is a test harness, not a code path an
-// attacker can reach. The alternative — hand-writing a 66-method double
+// attacker can reach. The alternative — hand-writing a 58-method double
 // — is exactly what left the slot-claim retry untested.
 #[cfg_attr(
     test,
@@ -67,6 +67,15 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// orchestrators check it before each Veilid call and stop once it is
     /// closed (plan C4.L1).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
+    /// The host's wall clock (plan C9.2): every timestamp this crate writes
+    /// or compares, so a simulated run fixes them. `Arc`, as `scope`, so the
+    /// mock can return one.
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock>;
+
+    /// The host's generator for the ids and keys this crate mints (plan
+    /// C9.2). AEAD nonces never come from it.
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource>;
 
     // ---------- Identity ----------
 

@@ -180,6 +180,7 @@ pub(crate) async fn handle_join(
             membership,
             dht_owner_keypair: None,
             registry_keypair: None,
+            joined_at: ctx.clock.now_ms_i64(),
         },
     ) {
         return IpcResponse::error(500, format!("community joined but not recorded: {e}"));

@@ -23,6 +23,8 @@ async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
         stores: HostStores::default(),
         transport: TransportSource::Offline,
         serve_bus: false,
+        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
+        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
     })
     .await
     .unwrap()

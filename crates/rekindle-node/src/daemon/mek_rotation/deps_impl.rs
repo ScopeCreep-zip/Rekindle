@@ -48,6 +48,10 @@ impl MekDistributeDeps for DaemonMekAdapter {
         self.ctx.unlock_scope_or_closed()
     }
 
+    fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource> {
+        Arc::clone(&self.ctx.rng)
+    }
+
     fn cache(&self) -> Arc<dyn ChannelMekCache> {
         Arc::clone(&self.cache)
     }

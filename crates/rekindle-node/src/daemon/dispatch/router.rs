@@ -379,5 +379,6 @@ fn audit_request(ctx: &DaemonContext, request: &IpcRequest) {
         &owner,
         rekindle_audit::AuditKind::Request,
         serde_json::json!({ "request": request.name() }),
+        ctx.clock.now_ms_i64(),
     );
 }

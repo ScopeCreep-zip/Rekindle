@@ -85,6 +85,7 @@ impl DaemonGovernanceAdapter<'_> {
                 membership,
                 dht_owner_keypair: community.dht_owner_keypair,
                 registry_keypair: community.registry_owner_keypair,
+                joined_at: self.ctx.clock.now_ms_i64(),
             },
         );
         if let Err(e) = recorded {

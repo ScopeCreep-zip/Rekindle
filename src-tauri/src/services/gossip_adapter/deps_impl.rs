@@ -28,6 +28,10 @@ impl GossipDeps for GossipAdapter {
         state_helpers::login_scope_or_closed(&self.state)
     }
 
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        std::sync::Arc::clone(&self.state.clock)
+    }
+
     fn check_and_insert_dedup(&self, community_id: &str, sender: &str, dedup_key: &str) {
         self.state
             .dedup_cache

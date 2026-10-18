@@ -40,6 +40,8 @@ async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
         stores: HostStores::default(),
         transport: TransportSource::Start(host::user_transport_config()?),
         serve_bus: true,
+        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
+        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
     })
     .await?;
     host.run_until_stopped().await?;
