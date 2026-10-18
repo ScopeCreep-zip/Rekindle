@@ -49,7 +49,7 @@ pub use router::dispatch;
 use crate::host::policy::PolicyConfig;
 
 /// Who sent the request being dispatched (`host::api::Caller`).
-pub use crate::host::api::Caller;
+pub use rekindle_ipc::Caller;
 
 /// Build a governance adapter over this request's context.
 ///

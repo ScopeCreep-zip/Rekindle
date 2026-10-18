@@ -7,7 +7,7 @@
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::DaemonContext;
-use crate::host::api::{Caller, ConnId};
+use rekindle_ipc::{Caller, ConnId};
 
 /// The refusal for a bus client's `request` in the shell, or `None` when it
 /// may run.

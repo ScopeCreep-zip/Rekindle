@@ -74,6 +74,13 @@ impl HostSlot {
         }
     }
 
+    /// The host's request surface, waiting until it has started: every GUI
+    /// request goes through it (plan E1.1), so F1 swaps in `DaemonClient`
+    /// here alone.
+    pub async fn api(&self) -> Arc<dyn rekindle_ipc::HostApi> {
+        self.get().await
+    }
+
     /// The host, if it has started.
     pub fn current(&self) -> Option<Arc<Host>> {
         self.tx.borrow().clone()

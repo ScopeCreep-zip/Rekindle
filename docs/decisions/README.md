@@ -19,7 +19,7 @@ filename is `NNNN-short-title.md`.
 | [0005](0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app | Accepted; "Future direction" superseded by 0010 |
 | [0006](0006-vault-replaces-stronghold.md) | Replace `iota_stronghold` with the SQLCipher-backed `rekindle-vault` | Accepted |
 | [0007](0007-event-dispatch-single-source.md) | Route every Rust → Frontend event through one mpsc dispatcher | Accepted; delivery and replay superseded by 0013 |
-| [0008](0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` | Accepted |
+| [0008](0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` | Superseded by 0020 |
 | [0009](0009-crate-harvest-tiers.md) | Tier bumps and the eleven harvest crates | Accepted; veilid-core rule superseded by 0014 |
 | [0010](0010-single-daemon-thin-frontends.md) | One daemon owns the node; GUI, TUI and CLI are thin frontends | Accepted (supersedes 0005 "Future direction") |
 | [0011](0011-member-sovereign-records.md) | Member-sovereign records replace the shared-`slot_seed` write model | Accepted (supersedes the 0003 write model) |
@@ -31,6 +31,7 @@ filename is `NNNN-short-title.md`.
 | [0017](0017-veilid-fork.md) | veilid-core is built from a minimal pinned fork until upstream carries our fixes | Accepted (amends 0001; ruling O4) |
 | [0018](0018-mek-rotation-ballots.md) | MEK rotation after a removal is agreed by write-once ballots and majority confirmation | Accepted (amends the 0012 rotator clause; ruling O5) |
 | [0019](0019-intentional-actions.md) | Intentional actions: one backend gate classifies every user action | Accepted (ruling O6) |
+| [0020](0020-domain-logic-in-host-and-tier-crates.md) | Domain logic lives in tier crates and the Host; `src-tauri` is a frontend | Accepted (supersedes 0008) |
 
 ## How to write a new ADR
 

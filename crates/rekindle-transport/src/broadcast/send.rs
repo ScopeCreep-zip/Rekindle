@@ -108,13 +108,13 @@ impl Sender {
 }
 
 /// Request/response RPC caller (app calls).
-pub struct Caller {
+pub struct AppCaller {
     messages: Arc<dyn AppMessagePort>,
     routes: Arc<dyn RoutePort>,
     config: Arc<TransportConfig>,
 }
 
-impl Caller {
+impl AppCaller {
     pub(crate) fn new(
         messages: Arc<dyn AppMessagePort>,
         routes: Arc<dyn RoutePort>,

@@ -166,13 +166,6 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     ),
     // ── Same name, genuinely different concepts ──────────────────
     (
-        &["rekindle-node::Caller", "rekindle-transport::Caller"],
-        "rekindle-node's is who sent a host request (connection, clearance, \
-         verified name and key; plan D3.1). rekindle-transport's is the \
-         Veilid `app_call` request/response client. One is a sender's \
-         identity, the other an RPC handle.",
-    ),
-    (
         &["rekindle-audit::AuditEntry", "rekindle-node::AuditEntry"],
         "rekindle-audit's is a hash-chain link — `cursor`, `prev_mac`, \
          `mac`, `record`. rekindle-node's is the IPC audit record the \

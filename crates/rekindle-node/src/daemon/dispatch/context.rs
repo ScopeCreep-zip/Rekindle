@@ -187,7 +187,7 @@ impl DaemonContext {
                             continue;
                         };
                         let caller = Caller {
-                            conn: crate::host::ConnId::Bus(conn),
+                            conn: rekindle_ipc::ConnId::Bus(conn),
                             clearance: msg.security_level,
                             verified_name: msg.verified_sender_name,
                             static_key: msg.verified_sender_key,

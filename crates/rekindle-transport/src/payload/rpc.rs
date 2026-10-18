@@ -165,7 +165,7 @@ pub enum InboundCall {
     /// envelope signature because the payload authenticates its own
     /// sender: `unwrap_mek` feeds the sender's pseudonym public key
     /// into the ECDH, so only the real rotator can produce ciphertext
-    /// that decrypts. See `Caller::call_community_envelope`.
+    /// that decrypts. See `AppCaller::call_community_envelope`.
     ///
     /// Carries **protocol's** `MekTransferPayload`, not the
     /// transport-local one above: that is the type on this wire, and

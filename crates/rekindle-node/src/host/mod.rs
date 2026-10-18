@@ -1,6 +1,7 @@
 //! The one backend host (ADR 0010, plan D3): `rekindled` runs it over its own
 //! node, and the GUI runs it in-process over its adopted node
-//! ([`runtime::Host`]). Every frontend reaches it through [`api::HostApi`].
+//! ([`runtime::Host`]). Every frontend reaches it through
+//! [`rekindle_ipc::HostApi`] (implemented in [`api`]).
 
 pub mod adapters;
 pub mod api;
@@ -23,7 +24,6 @@ pub mod watchdog;
 
 use rekindle_db::paths::DataRoot;
 
-pub use api::{Caller, ConnId, HostApi};
 pub use runtime::{
     claim, user_transport_config, ClaimedRoot, Host, HostConfig, HostMode, HostStores,
     TransportSource,

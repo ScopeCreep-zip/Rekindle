@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+async-trait = "0.1"
 tracing = { workspace = true }
 uuid = { version = "1", features = [ "v4", "v7", "serde" ] }
 zeroize = { version = "1", features = [ "derive" ] }

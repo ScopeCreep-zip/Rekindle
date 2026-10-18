@@ -4,8 +4,8 @@ use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::*;
-use crate::host::api::{Caller, ConnId, HostApi};
 use crate::host::identity;
+use rekindle_ipc::{Caller, ConnId, HostApi};
 
 fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
     let data = dir.path().join("data");

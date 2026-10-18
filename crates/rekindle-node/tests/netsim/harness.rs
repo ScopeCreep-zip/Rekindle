@@ -10,10 +10,9 @@ use std::time::Duration;
 
 use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
-use rekindle_node::host::{
-    claim, Caller, ConnId, Host, HostApi, HostConfig, HostStores, TransportSource,
-};
+use rekindle_node::host::{claim, Host, HostConfig, HostStores, TransportSource};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
 
 /// Every simulated identity's passphrase.

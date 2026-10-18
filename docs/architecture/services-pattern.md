@@ -1,5 +1,7 @@
 # Services Pattern
 
+> **ADR [0020](../decisions/0020-domain-logic-in-host-and-tier-crates.md) supersedes ADR 0008:** new domain code goes to its tier crate and `rekindle-node::host`; `src-tauri` commands are `HostApi` calls, and the shell's unported stages hang on the shrinking `ShellHooks` seam until their ports. What follows describes the code as it is during the migration.
+
 `src-tauri/src/services/` is the largest directory in the Tauri shell
 — around 229 `.rs` files. It is also the most patterned. Every file
 in there belongs to one of three categories, and the categories are

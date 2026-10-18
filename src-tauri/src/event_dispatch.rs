@@ -312,12 +312,18 @@ pub fn spawn_host_stream(
     state: &Arc<AppState>,
     host: Arc<rekindle_node::host::Host>,
 ) {
-    use rekindle_node::host::HostApi as _;
+    use rekindle_ipc::HostApi as _;
     use rekindle_types::subscription_events::StreamFrame;
     let state = Arc::clone(state);
     tauri::async_runtime::spawn(async move {
         loop {
-            let mut stream = host.subscribe(None);
+            let mut stream = match host.subscribe(None).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    tracing::error!(error = %e, "the host's event stream did not open");
+                    return;
+                }
+            };
             while let Some(frame) = stream.next().await {
                 match frame {
                     StreamFrame::Event(sequenced) => {

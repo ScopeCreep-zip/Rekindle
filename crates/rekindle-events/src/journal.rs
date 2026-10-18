@@ -114,8 +114,10 @@ impl SessionJournal {
             .map(|from| replay_from(&ring, from))
             .unwrap_or_default();
         EventStream {
-            first: first.into(),
-            live: Some(live),
+            source: Source::Journal {
+                first: first.into(),
+                live: Some(live),
+            },
         }
     }
 
@@ -152,30 +154,54 @@ fn replay_from(ring: &Ring, from: Cursor) -> Vec<StreamFrame> {
     }
 }
 
-/// One subscriber's stream: its replay, then the live frames.
+/// One subscriber's stream: its replay, then the live frames — from this
+/// process's journal, or from a channel another transport feeds (the
+/// daemon client's bus stream, plan E1.1).
 pub struct EventStream {
-    first: VecDeque<StreamFrame>,
-    live: Option<broadcast::Receiver<StreamFrame>>,
+    source: Source,
+}
+
+enum Source {
+    Journal {
+        first: VecDeque<StreamFrame>,
+        live: Option<broadcast::Receiver<StreamFrame>>,
+    },
+    Channel(tokio::sync::mpsc::Receiver<StreamFrame>),
 }
 
 impl EventStream {
-    /// The next frame, or `None` once the stream has ended (the journal is
-    /// gone, or the subscriber fell behind and was sent `InvalidSession`).
-    pub async fn next(&mut self) -> Option<StreamFrame> {
-        if let Some(frame) = self.first.pop_front() {
-            return Some(frame);
+    /// A stream fed by `frames`: the frames as the sender orders them (a
+    /// bus client relays the host's, replay and `Resumed` included).
+    #[must_use]
+    pub fn from_channel(frames: tokio::sync::mpsc::Receiver<StreamFrame>) -> Self {
+        Self {
+            source: Source::Channel(frames),
         }
-        let live = self.live.as_mut()?;
-        match live.recv().await {
-            Ok(frame) => Some(frame),
-            Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                tracing::warn!(skipped, "event subscriber fell behind; it reloads");
-                self.live = None;
-                Some(StreamFrame::InvalidSession)
-            }
-            Err(broadcast::error::RecvError::Closed) => {
-                self.live = None;
-                None
+    }
+
+    /// The next frame, or `None` once the stream has ended (the journal or
+    /// the channel is gone, or the subscriber fell behind and was sent
+    /// `InvalidSession`).
+    pub async fn next(&mut self) -> Option<StreamFrame> {
+        match &mut self.source {
+            Source::Channel(frames) => frames.recv().await,
+            Source::Journal { first, live } => {
+                if let Some(frame) = first.pop_front() {
+                    return Some(frame);
+                }
+                let receiver = live.as_mut()?;
+                match receiver.recv().await {
+                    Ok(frame) => Some(frame),
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(skipped, "event subscriber fell behind; it reloads");
+                        *live = None;
+                        Some(StreamFrame::InvalidSession)
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        *live = None;
+                        None
+                    }
+                }
             }
         }
     }
@@ -198,6 +224,19 @@ mod tests {
             StreamFrame::Event(s) => Some(s.cursor.seq),
             _ => None,
         }
+    }
+
+    #[tokio::test]
+    async fn a_channel_stream_yields_its_sender_s_frames_then_ends() {
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        let mut stream = EventStream::from_channel(rx);
+        tx.send(StreamFrame::InvalidSession).await.unwrap();
+        drop(tx);
+        assert!(matches!(
+            stream.next().await,
+            Some(StreamFrame::InvalidSession)
+        ));
+        assert!(stream.next().await.is_none());
     }
 
     #[tokio::test]

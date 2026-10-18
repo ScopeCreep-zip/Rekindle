@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use crate::config::TransportConfig;
 
 use super::peer_registry::PeerRegistry;
-use super::send::{Caller, Sender};
+use super::send::{AppCaller, Sender};
 use crate::error::{Result, TransportError};
 use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
 
@@ -43,8 +43,8 @@ impl TransportNode {
         )
     }
 
-    pub fn caller(&self) -> Caller {
-        Caller::new(
+    pub fn caller(&self) -> AppCaller {
+        AppCaller::new(
             Arc::clone(&self.ports.messages),
             Arc::clone(&self.ports.routes),
             Arc::clone(&self.config),

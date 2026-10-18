@@ -49,7 +49,7 @@ mod tests;
 // Core lifecycle (from broadcast/)
 pub use broadcast::node::TransportNode;
 pub use broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot};
-pub use broadcast::send::{BroadcastReport, Caller, Sender};
+pub use broadcast::send::{AppCaller, BroadcastReport, Sender};
 pub use rekindle_records::port::PeerTarget;
 
 // Inbound handler trait

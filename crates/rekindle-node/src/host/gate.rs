@@ -18,8 +18,8 @@ use rekindle_types::intent::{
     effective_class, kind_of, Classified, IntentId, IntentProof, ProofRequired, Reversibility,
 };
 
-use super::api::{Caller, ConnId};
 use crate::daemon::dispatch::DaemonContext;
+use rekindle_ipc::{Caller, ConnId};
 
 /// Who holds an action: the connection that selected it (`None` for one
 /// the backend began) and the identity it is for.

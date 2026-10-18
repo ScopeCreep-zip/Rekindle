@@ -1,5 +1,7 @@
 # Tauri Application Shell
 
+> **ADR [0020](../decisions/0020-domain-logic-in-host-and-tier-crates.md) supersedes ADR 0008:** new domain code goes to its tier crate and `rekindle-node::host`; `src-tauri` commands are `HostApi` calls, and the shell's unported stages hang on the shrinking `ShellHooks` seam until their ports. What follows describes the code as it is during the migration.
+
 The `src-tauri/` directory contains the Tauri 2 application shell that
 bridges the pure Rust crates to the SolidJS frontend. It manages
 application state, IPC commands, event emission, background services,

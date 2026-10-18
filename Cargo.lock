@@ -7415,6 +7415,7 @@ dependencies = [
  "rekindle-governance-runtime",
  "rekindle-idempotency",
  "rekindle-idle",
+ "rekindle-ipc",
  "rekindle-lifecycle",
  "rekindle-link-preview",
  "rekindle-mek-rotation",
@@ -7661,6 +7662,7 @@ dependencies = [
 name = "rekindle-ipc"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "blake3",
  "dirs 6.0.0",
  "interprocess",

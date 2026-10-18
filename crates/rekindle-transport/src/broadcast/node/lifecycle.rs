@@ -84,7 +84,7 @@ impl TransportNode {
     ///
     /// The host keeps its own dispatch loop (src-tauri's
     /// `lifecycle::dispatch::run_dispatch_loop`) and its own route
-    /// publishing. This mode gives the caller `Sender`, `Caller`, the record
+    /// publishing. This mode gives the caller `Sender`, `AppCaller`, the record
     /// sessions, and the peer registry — everything needed for outbound app
     /// messages, app calls, and DHT operations — without consuming inbound
     /// events. Deleted at E5.7, when the GUI's Host starts its own node.
