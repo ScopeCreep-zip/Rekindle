@@ -54,7 +54,7 @@ pub(crate) async fn run(ctx: &DaemonContext, request: IpcRequest, caller: &Calle
     if let Err(rejection) = crate::validation::validate_request(&request) {
         return rejection;
     }
-    if let Some(refused) = crate::daemon::dispatch::shell::refusal(ctx, &request) {
+    if let Some(refused) = crate::daemon::dispatch::shell::refusal(ctx, &request, caller) {
         return refused;
     }
     match request {

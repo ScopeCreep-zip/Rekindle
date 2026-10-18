@@ -84,6 +84,21 @@ async fn the_shell_refuses_the_requests_the_window_owns() {
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Operational);
 }
 
+/// The window's own identity calls are not refused: the refusal guards the
+/// window against bus clients, not against itself.
+#[tokio::test]
+async fn the_shell_does_not_refuse_its_own_calls() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let created = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
+        .await
+        .unwrap();
+    host.install(created).await.unwrap();
+    let answer = host.call(Caller::shell(), IpcRequest::Lock).await;
+    assert!(status_of(&answer).is_none(), "{answer:?}");
+    assert_eq!(host.ctx.lifecycle.state(), DaemonState::Locked);
+}
+
 /// One host per data root: a second claim of a held root is refused.
 #[tokio::test]
 async fn a_held_root_cannot_be_claimed_again() {

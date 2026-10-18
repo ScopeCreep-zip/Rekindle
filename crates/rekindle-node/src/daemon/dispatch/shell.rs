@@ -2,15 +2,21 @@
 //! (plan D3.1): the identity lifecycle and the process. The GUI's login
 //! pipeline unlocks, locks and changes identities until E1.1 moves it into
 //! the host, and it owns the process, so a bus client cannot pull either out
-//! from under the window.
+//! from under the window. The window's own calls are never refused.
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::DaemonContext;
+use crate::host::api::{Caller, ConnId};
 
-/// The refusal for `request` in the shell, or `None` when it may run.
-pub(crate) fn refusal(ctx: &DaemonContext, request: &IpcRequest) -> Option<IpcResponse> {
-    if ctx.mode != crate::host::HostMode::Shell {
+/// The refusal for a bus client's `request` in the shell, or `None` when it
+/// may run.
+pub(crate) fn refusal(
+    ctx: &DaemonContext,
+    request: &IpcRequest,
+    caller: &Caller,
+) -> Option<IpcResponse> {
+    if ctx.mode != crate::host::HostMode::Shell || caller.conn == ConnId::Shell {
         return None;
     }
     let owner = ctx.require_owner().ok();
