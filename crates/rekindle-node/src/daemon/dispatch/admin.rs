@@ -146,7 +146,7 @@ pub(crate) async fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcR
 /// the user layer, each only tightening. A layer that does not parse fails
 /// the reload and leaves the active policy unchanged.
 pub(crate) fn handle_policy_reload(ctx: &DaemonContext) -> IpcResponse {
-    let policy = match crate::host::policy::load_layered() {
+    let policy = match crate::host::policy::load_layered(&ctx.config_dir) {
         Ok(policy) => policy,
         Err(e) => return IpcResponse::error(500, e.to_string()),
     };

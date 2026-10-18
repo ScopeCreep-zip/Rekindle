@@ -97,13 +97,13 @@ pub(crate) async fn handle_create(
         .map(|m| m.registry_key.clone())
         .unwrap_or_default();
 
-    // Register the gossip mesh for the new community.
-    {
-        let bcast_guard = ctx.broadcast_mgr.read();
-        if let Some(ref bcast_mgr) = *bcast_guard {
-            bcast_mgr.register_mesh(&community_id);
-            tracing::info!(community = %name, "gossip mesh registered for new community");
-        }
+    let membership = ctx
+        .session
+        .read()
+        .as_ref()
+        .and_then(|s| s.community(&community_id).cloned());
+    if let Some(membership) = membership {
+        activate_community(ctx, &membership).await;
     }
 
     IpcResponse::ok(&serde_json::json!({
@@ -111,6 +111,34 @@ pub(crate) async fn handle_create(
         "registry_key": registry_key,
         "name": name,
     }))
+}
+
+/// Bring a community this unlock created or joined up as unlock brings up
+/// each resumed one (`dispatch::lifecycle`): its record keepalive, its
+/// watches and subscription mesh (the message clock lives there), its
+/// gossip mesh, and its presence poll.
+pub(crate) async fn activate_community(
+    ctx: &DaemonContext,
+    membership: &rekindle_transport::session::CommunityMembership,
+) {
+    let community_id = membership.governance_key.clone();
+    crate::daemon::keepalive::start(ctx, &community_id);
+    let subscriptions = ctx.subscriptions.read().clone();
+    if let Some(subscriptions) = subscriptions {
+        subscriptions.setup_community(membership).await;
+    }
+    if let Some(broadcast) = ctx.broadcast_mgr.read().as_ref() {
+        broadcast.register_mesh(&community_id);
+    }
+    let started = ctx.presence_start_tx.send(
+        crate::daemon::presence_adapter::supervisor::PresenceStartRequest {
+            community_ids: vec![community_id.clone()],
+        },
+    );
+    if started.is_err() {
+        tracing::warn!(community = %community_id, "presence supervisor is gone — no roster");
+    }
+    tracing::info!(community = %community_id, "community activated");
 }
 
 pub(crate) async fn handle_join(
@@ -190,6 +218,14 @@ pub(crate) async fn handle_join(
     // the first read afterwards does not go back to the DHT.
     ctx.community_runtime
         .set_governance_state(link.governance_key.as_str(), outcome.snapshot.gov_state);
+    let membership = ctx
+        .session
+        .read()
+        .as_ref()
+        .and_then(|s| s.community(link.governance_key.as_str()).cloned());
+    if let Some(membership) = membership {
+        activate_community(ctx, &membership).await;
+    }
 
     IpcResponse::ok(&serde_json::json!({
         "community_name": outcome.invite.community_name,

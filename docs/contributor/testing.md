@@ -65,6 +65,25 @@ Failing seeds are pinned in
 not delete this file** — it captures the inputs that caught past
 bugs and is part of the regression test suite.
 
+### Network simulation (`rekindle-netsim`)
+
+Multi-node behaviour runs on a seeded simulation of the network (plan
+C9.3): `rekindle-netsim` implements the record, route and app-message
+ports of `rekindle_records::port` in memory, with Veilid's record rules
+(publish on first write, schema writers, local seq + 1, supersede,
+per-node watches), a seeded delivery order, a `SimClock` and a
+`SimRandom` per node, and faults (try again, offline, stale reads,
+partitions and heal, dropped messages, unanswered calls, clock skew,
+watch and route death, a modified client's write, a same-seq conflict).
+
+Scenarios live in `crates/rekindle-node/tests/netsim/`: each node is a
+real `Host::start` with `TransportSource::Ports` on a temp data root, and
+requests go through `HostApi::call` (a held request is proved as the CLI
+proves it). Run them with
+`cargo test -p rekindle-node --test netsim` (add `-- --include-ignored`
+to run the scenarios a later plan step fixes; `RUST_LOG=... -- --nocapture`
+shows the Hosts' logs). One seed gives one trace (`Trace::hash`).
+
 ### Where to put new tests
 
 | Test target | Location |
@@ -74,6 +93,7 @@ bugs and is part of the regression test suite.
 | Multi-crate integration | `src-tauri/src/services/<feature>/tests.rs` or similar |
 | Property tests for CRDT-style code | Use `proptest`, pin regressions |
 | Round-trip tests for wire formats | `crates/rekindle-codec/src/envelope.rs::tests`, similar |
+| Several nodes, faults, ordering | A netsim scenario in `crates/rekindle-node/tests/netsim/` |
 
 ### Argon2 in debug builds
 

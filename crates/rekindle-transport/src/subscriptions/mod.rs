@@ -55,7 +55,9 @@ const EVENT_CHANNEL_CAPACITY: usize = 4096;
 ///
 /// Owns all inbound reactive state. Created once during daemon resume.
 /// The daemon's `InboundHandler` forwards every signal here. Consumers
-/// (TUI, CLI) subscribe via `subscribe()` and receive typed events.
+/// (TUI, CLI) subscribe via `subscribe()` and receive typed events. A clone
+/// is a handle to the same state (every field is shared).
+#[derive(Clone)]
 pub struct SubscriptionManager {
     /// Transport node for DHT operations.
     node: Arc<TransportNode>,

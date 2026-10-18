@@ -491,6 +491,27 @@ HTTP IPC bridge that exposes Tauri commands over `localhost:3001` so
 Playwright tests can drive the real Rust backend without the Tauri
 webview. Used when `VITE_E2E=true`. Single binary `e2e_server`.
 
+### rekindle-netsim
+
+A seeded, deterministic network simulator (plan C9.3), `publish = false`
+and Veilid-free. It implements the ports of `rekindle_records::port` in
+memory: `FakeRecords`/`FakePool` (Veilid's record rules: publish on first
+write, schema-admitted writers checked through `parse_keypair_text`,
+sticky writers via `rekindle_records::lease::LeaseTable`, local seq + 1 and
+supersede, per-node local copies and watches), `FakeRoutes` over the real
+`rekindle_route::own_routes::OwnRoutes` with a `FakeAllocator`, and
+`FakeMessages` (size cap, call timeout). `SimClock` and `SimRandom` are
+injected into each Host (plan C9.2). A pump delivers the events in flight in
+an order drawn from the seed and records a semantic `Trace`. Faults:
+try again, offline, stale reads, partition and heal, dropped messages,
+unanswered calls, clock skew, watch and route death, a modified client's
+write, a same-seq conflict. `rekindle-node` takes it as a dev-dependency
+only; its scenarios are in `crates/rekindle-node/tests/netsim/`.
+
+Dependencies: `rekindle-records`, `rekindle-route`, `rekindle-crypto`,
+`rekindle-secrets`, `rekindle-types`, `rekindle-utils`, `async-trait`,
+`base64`, `blake3`, `parking_lot`, `rand`, `tokio`, `tracing`.
+
 ## Daemon and CLI Track
 
 ### rekindle-transport

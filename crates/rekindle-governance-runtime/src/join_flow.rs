@@ -45,7 +45,8 @@ use crate::join_stages::{
 pub struct InviteContext {
     pub registry_key: String,
     pub slot_seed_hex: String,
-    pub mek_wire_bytes: String,
+    /// The community key the invite carries, checked when decoded.
+    pub mek: crate::deps::MekSnapshot,
     pub community_name: String,
     pub inviter_pseudonym: Option<PseudonymKey>,
     pub inviter_route_blob: Vec<u8>,
@@ -111,11 +112,25 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
         })?;
     let secrets: rekindle_types::invite::InviteSecrets = serde_json::from_slice(&secrets_json)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid invite secrets: {e}")))?;
+    // The key is checked before any slot is claimed: an invite whose key
+    // does not decode is refused whole.
+    let mek = {
+        use base64::Engine as _;
+        let wire = base64::engine::general_purpose::STANDARD
+            .decode(&secrets.mek_wire_bytes)
+            .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid MEK encoding: {e}")))?;
+        let key = rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&wire)
+            .ok_or_else(|| GovernanceRuntimeError::Encoding("invalid MEK wire bytes".into()))?;
+        crate::deps::MekSnapshot {
+            generation: key.generation(),
+            key_bytes: *key.as_bytes(),
+        }
+    };
 
     Ok(InviteContext {
         registry_key: secrets.registry_key,
         slot_seed_hex: secrets.slot_seed,
-        mek_wire_bytes: secrets.mek_wire_bytes,
+        mek,
         community_name: secrets.community_name,
         inviter_pseudonym,
         inviter_route_blob: secrets.inviter_route_blob,
@@ -231,6 +246,12 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
             );
         }
     }
+
+    // 8. The community key the invite carried, through the host's one
+    //    convergence rule (a join racing a rotation keeps the newer key) and
+    //    into its vault, so the joiner reads the channels from the first
+    //    page (the desktop's join did this alone).
+    deps.insert_community_mek(governance_key, invite.mek.clone());
 
     Ok(JoinStagesOutcome {
         snapshot,

@@ -238,6 +238,11 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     /// the next login, so no route is shared by two identities.
     pub fn renew(self: &Arc<Self>) {
         self.release_all();
+        self.want_all();
+    }
+
+    /// Want both classes: the general route and the media route.
+    pub fn want_all(self: &Arc<Self>) {
         self.want(RouteClass::General);
         self.want(RouteClass::Media);
     }

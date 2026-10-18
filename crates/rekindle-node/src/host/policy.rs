@@ -40,18 +40,19 @@ pub enum PolicyError {
     Dir(#[from] rekindle_utils::config_layers::LayerError),
 }
 
-/// Load the system layer, then the user layer, merged so the result is at
-/// least as strict as each. Absent layers contribute nothing.
+/// Load the system layer, then the user layer (`user_config`, the host's
+/// data root's `config`), merged so the result is at least as strict as
+/// each. Absent layers contribute nothing.
 ///
 /// # Errors
-/// A config directory cannot be resolved, or a layer that exists cannot be
-/// read or parsed.
-pub fn load_layered() -> Result<PolicyConfig, PolicyError> {
-    use rekindle_utils::config_layers::{system_dir, user_dir};
+/// The system directory cannot be resolved, or a layer that exists cannot
+/// be read or parsed.
+pub fn load_layered(user_config: &Path) -> Result<PolicyConfig, PolicyError> {
+    use rekindle_utils::config_layers::system_dir;
     let mut policy = PolicyConfig::default();
     for path in [
         system_dir()?.join("policy.toml"),
-        user_dir()?.join("policy.toml"),
+        user_config.join("policy.toml"),
     ] {
         if let Some(layer) = load_layer(&path)? {
             merge(&mut policy, &layer);

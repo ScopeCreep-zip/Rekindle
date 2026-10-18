@@ -69,8 +69,7 @@ pub async fn initialize_node(
         rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
         state.network_ready.subscribe(),
     );
-    own_routes.want(rekindle_records::port::RouteClass::General);
-    own_routes.want(rekindle_records::port::RouteClass::Media);
+    own_routes.want_all();
     // The process's one route importer (plan C7.3): routes are imported
     // before login too (invites, inbound app_message).
     let route_imports = Arc::new(rekindle_protocol::dht::route_imports::RouteImports::new(

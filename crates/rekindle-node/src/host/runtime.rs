@@ -174,7 +174,9 @@ impl Host {
         // Admin policy, from the same loader `PolicyReload` uses. A policy
         // file that exists but does not parse stops startup: running
         // unconstrained would drop a constraint an administrator meant.
-        let policy = policy::load_layered().map_err(|e| ConfigFault(e.into()))?;
+        // The user layer is the claimed root's: a host on another root
+        // (a test, the network simulator) never reads this user's config.
+        let policy = policy::load_layered(&root.config).map_err(|e| ConfigFault(e.into()))?;
 
         let mek_cache = Arc::new(RwLock::new(MekCache::new()));
         let signing_key = Arc::new(RwLock::new(None));
@@ -267,8 +269,7 @@ impl Host {
             // The policy the host started under, so `PolicyReload` merges
             // against reality rather than defaults.
             policy: RwLock::new(policy),
-            config_dir: rekindle_utils::config_layers::user_dir()
-                .map_err(|e| ConfigFault(e.into()))?,
+            config_dir: root.config.clone(),
             audit_chain: Arc::clone(&stores.audit_chain),
             subscriptions: RwLock::new(None),
             broadcast_mgr: RwLock::new(None),

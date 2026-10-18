@@ -13,8 +13,9 @@ name = "rekindled"
 path = "src/bin/rekindled.rs"
 
 [dependencies]
-# Workspace crates — rekindle-transport is the SOLE Veilid boundary.
-# rekindle-node NEVER imports veilid-core directly.
+# Workspace crates. rekindle-node never imports veilid-core: it links Veilid
+# only through rekindle-transport (ADR 0014), which runs on the
+# Veilid-free ports of rekindle-records (plan C9.1).
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
 # The IPC bus (protocol, Noise, client/server, event router).
@@ -102,5 +103,9 @@ hex = "0.4"
 
 
 [dev-dependencies]
+# The network simulator the netsim scenarios run real Hosts on (plan C9.3).
+rekindle-netsim = { path = "../rekindle-netsim" }
+# A scenario's outsider and modified client sign and wrap as a peer would.
+rekindle-secrets = { path = "../rekindle-secrets" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

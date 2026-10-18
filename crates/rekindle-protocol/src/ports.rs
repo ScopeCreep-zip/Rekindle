@@ -131,8 +131,7 @@ impl RoutePort for VeilidRoutes {
     }
 
     fn want_own(&self) {
-        self.own.want(RouteClass::General);
-        self.own.want(RouteClass::Media);
+        self.own.want_all();
     }
 
     fn on_dead_own(&self, dead: &[String]) {

@@ -7749,6 +7749,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-netsim"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "blake3",
+ "parking_lot 0.12.5",
+ "rand 0.8.5",
+ "rekindle-crypto",
+ "rekindle-records",
+ "rekindle-route",
+ "rekindle-secrets",
+ "rekindle-types",
+ "rekindle-utils",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "rekindle-node"
 version = "0.1.0"
 dependencies = [
@@ -7774,9 +7793,11 @@ dependencies = [
  "rekindle-ipc",
  "rekindle-lifecycle",
  "rekindle-mek-rotation",
+ "rekindle-netsim",
  "rekindle-presence",
  "rekindle-protocol",
  "rekindle-records",
+ "rekindle-secrets",
  "rekindle-transport",
  "rekindle-types",
  "rekindle-utils",

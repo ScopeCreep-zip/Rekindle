@@ -46,6 +46,7 @@ members = [
     "crates/rekindle-vault",
     "crates/rekindle-analytics",
     "crates/rekindle-asql",
+    "crates/rekindle-netsim",
     "xtask",
 ]
 # W-1 #12 — `rekindle-cli` and `rekindle-node` are sister artifacts
