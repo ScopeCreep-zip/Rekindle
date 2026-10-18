@@ -16,10 +16,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore};
-use rekindle_protocol::dht::pool::RecordPool;
-use rekindle_protocol::dht::schema;
 use rekindle_records::lease::LeaseId;
-use veilid_core::{BarePublicKey, BareSecretKey, KeyPair, PublicKey, RecordKey, CRYPTO_KIND_VLD0};
+use rekindle_records::port::RecordPort;
 
 use crate::services::message_service;
 
@@ -109,14 +107,13 @@ impl DmAdapter {
     }
 }
 
-/// A slot writer from its Ed25519 `(secret, public)` bytes.
-fn slot_keypair((secret, public): ([u8; 32], [u8; 32])) -> KeyPair {
-    let veilid_pub = PublicKey::new(CRYPTO_KIND_VLD0, BarePublicKey::new(&public));
-    KeyPair::new_from_parts(veilid_pub, BareSecretKey::new(&secret))
+/// A slot writer's keypair text from its Ed25519 `(secret, public)` bytes.
+fn slot_keypair((secret, public): ([u8; 32], [u8; 32])) -> String {
+    rekindle_crypto::keypair_text::keypair_text(&public, &secret)
 }
 
 impl DmAdapter {
-    fn record_pool(&self) -> Result<Arc<RecordPool>, DmError> {
+    fn record_pool(&self) -> Result<Arc<dyn RecordPort>, DmError> {
         state_helpers::record_pool(&self.state).map_err(|_| DmError::RoutingContextUnavailable)
     }
 }
@@ -143,14 +140,13 @@ impl DmDeps for DmAdapter {
         &self,
         member_pubkeys: Vec<[u8; 32]>,
     ) -> Result<(LeaseId, String), DmError> {
-        let smpl_schema = schema::community_smpl_schema(&member_pubkeys)
-            .map_err(|e| DmError::transport(format!("dm smpl schema: {e}")))?;
+        let smpl_schema = rekindle_records::schema::community_smpl(&member_pubkeys);
         let (lease, key, _owner) = self
             .record_pool()?
-            .create(smpl_schema, None)
+            .create(&smpl_schema, None)
             .await
             .map_err(|e| DmError::transport(format!("create dm dht record: {e}")))?;
-        Ok((lease, key.to_string()))
+        Ok((lease, key))
     }
 
     async fn dht_acquire_record(
@@ -158,11 +154,9 @@ impl DmDeps for DmAdapter {
         record_key: &str,
         writer_keypair: Option<([u8; 32], [u8; 32])>,
     ) -> Result<LeaseId, DmError> {
-        let record_key_typed = record_key
-            .parse::<RecordKey>()
-            .map_err(|e| DmError::transport(format!("invalid record key: {e}")))?;
+        let writer = writer_keypair.map(slot_keypair);
         self.record_pool()?
-            .acquire(&record_key_typed, writer_keypair.map(slot_keypair))
+            .acquire(record_key, writer.as_deref())
             .await
             .map_err(|e| DmError::transport(format!("open dm record: {e}")))
     }
@@ -182,7 +176,7 @@ impl DmDeps for DmAdapter {
     ) -> Result<(), DmError> {
         let outcome = self
             .record_pool()?
-            .set(lease, subkey, value, Some(slot_keypair(writer_keypair)))
+            .set(lease, subkey, value, Some(&slot_keypair(writer_keypair)))
             .await
             .map_err(|e| DmError::transport(format!("write dm subkey: {e}")))?;
         if outcome.missed() {
@@ -195,7 +189,7 @@ impl DmDeps for DmAdapter {
 
     async fn dht_watch_subkeys(&self, lease: LeaseId, subkeys: Vec<u32>) -> Result<(), DmError> {
         self.record_pool()?
-            .watch(lease, subkeys.into_iter().collect())
+            .watch(lease, &subkeys)
             .await
             .map_err(|e| DmError::transport(format!("watch dm subkeys: {e}")))
     }

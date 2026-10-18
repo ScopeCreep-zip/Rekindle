@@ -1,8 +1,6 @@
 use rekindle_records::lease::LeaseId;
-use veilid_core::{DHTSchema, KeyPair};
+use rekindle_records::port::{RecordPort, SetOutcome};
 
-use super::parse_record_key;
-use super::pool::{RecordPool, SetOutcome};
 use crate::error::ProtocolError;
 
 // Subkey constants for the user profile DHT record.
@@ -39,16 +37,12 @@ pub struct ProfileFields<'a> {
 /// # Errors
 /// The record could not be created, or a write failed outright.
 pub async fn create_profile(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     fields: ProfileFields<'_>,
-) -> Result<(LeaseId, String, KeyPair, SetOutcome), ProtocolError> {
-    let schema = DHTSchema::dflt(
-        u16::try_from(PROFILE_SUBKEY_COUNT)
-            .map_err(|e| ProtocolError::DhtError(format!("profile subkey count: {e}")))?,
-    )
-    .map_err(|e| ProtocolError::DhtError(format!("invalid profile schema: {e}")))?;
-    let (lease, key, keypair) = pool.create(schema, None).await?;
-    let key = key.to_string();
+) -> Result<(LeaseId, String, String, SetOutcome), ProtocolError> {
+    let (lease, key, keypair) = pool
+        .create(&rekindle_records::schema::profile(), None)
+        .await?;
     let outcome = publish_fields(pool, &key, fields, "profile create").await?;
     tracing::info!(key = %key, name = %fields.display_name, ?outcome, "profile record created");
     Ok((lease, key, keypair, outcome))
@@ -61,13 +55,11 @@ pub async fn create_profile(
 /// The record could not be opened within the pool's retry budget. That is
 /// login's to report: re-creating would change the key peers know.
 pub async fn open_profile(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
-    owner_keypair: KeyPair,
+    owner_keypair: &str,
 ) -> Result<LeaseId, ProtocolError> {
-    let lease = pool
-        .acquire(&parse_record_key(key)?, Some(owner_keypair))
-        .await?;
+    let lease = pool.acquire(key, Some(owner_keypair)).await?;
     tracing::info!(key, "profile record reopened");
     Ok(lease)
 }
@@ -79,7 +71,7 @@ pub async fn open_profile(
 /// # Errors
 /// The record could not be reached, or a write failed outright.
 pub async fn publish_profile_fields(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     fields: ProfileFields<'_>,
 ) -> Result<SetOutcome, ProtocolError> {
@@ -90,20 +82,20 @@ pub async fn publish_profile_fields(
 /// (taken at login by [`create_profile`] or [`open_profile`]): the write is
 /// signed by that lease's writer, and fails if there is none. Durable: a
 /// write that misses consensus is held and re-pushed by the pool until it
-/// lands (`RecordPool::set_durable`).
+/// lands (`RecordPort::set_durable`).
 ///
 /// # Errors
 /// The record could not be reached, or the write failed outright.
 pub async fn set_own_profile_subkey(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     subkey: u32,
     value: Vec<u8>,
 ) -> Result<SetOutcome, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let outcome = pool.set_durable(lease, subkey, value).await;
+    let lease = pool.acquire(key, None).await?;
+    let outcome = pool.set_durable(lease, subkey, value, None).await;
     pool.release(lease).await;
-    outcome
+    Ok(outcome?)
 }
 
 /// Write our own STATUS subkey (status byte + time). Present-tense: a plain
@@ -114,14 +106,11 @@ pub async fn set_own_profile_subkey(
 /// # Errors
 /// The record could not be reached, or the write failed outright.
 pub async fn set_own_profile_status(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     value: Vec<u8>,
 ) -> Result<SetOutcome, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let outcome = pool.set(lease, SUBKEY_STATUS, value, None).await;
-    pool.release(lease).await;
-    outcome
+    Ok(pool.write_once(key, SUBKEY_STATUS, value, None).await?)
 }
 
 /// One subkey of a profile, or `None` if it has not been published.
@@ -130,15 +119,15 @@ pub async fn set_own_profile_status(
 /// # Errors
 /// The record could not be opened or read.
 pub async fn read_profile_subkey(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     subkey: u32,
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let value = pool.get(lease, subkey, force_refresh).await;
-    pool.release(lease).await;
-    Ok(value?.map(|v| v.data().to_vec()))
+    Ok(pool
+        .read_once(key, subkey, force_refresh)
+        .await?
+        .map(|v| v.data))
 }
 
 /// The status subkey's payload: the status byte, then the time in ms.
@@ -156,7 +145,7 @@ pub fn status_payload(status: u8) -> Vec<u8> {
 /// status over one the user already picked (plan C7.8c). Returns the first
 /// missed outcome ([`SetOutcome::missed`]), or `Landed`.
 async fn publish_fields(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     fields: ProfileFields<'_>,
     context: &str,

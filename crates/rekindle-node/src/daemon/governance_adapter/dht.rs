@@ -85,7 +85,7 @@ impl DaemonGovernanceAdapter<'_> {
     }
 
     pub(super) fn format_writer_keypair_impl(ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
-        dht_writes::format_keypair_str(ed_public, ed_secret)
+        rekindle_crypto::keypair_text::keypair_text(&ed_public, &ed_secret)
     }
 
     pub(super) async fn acquire_record_impl(

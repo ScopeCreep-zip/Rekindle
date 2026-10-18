@@ -56,9 +56,9 @@ pub async fn create_identity(
         };
 
     // Step 4: Create profile DHT record
-    let (_profile_lease, profile_dht_key, profile_keypair, outcome) =
+    let (_profile_lease, profile_dht_key, profile_owner_keypair, outcome) =
         rekindle_protocol::dht::profile::create_profile(
-            &pool,
+            pool.as_ref(),
             rekindle_protocol::dht::profile::ProfileFields {
                 display_name,
                 status_message,
@@ -71,26 +71,24 @@ pub async fn create_identity(
     if outcome.missed() {
         warn!(?outcome, "profile fields not all stored at consensus");
     }
-    let profile_owner_keypair = profile_keypair.to_string();
     info!(key = %profile_dht_key, "profile record created");
 
     // Step 5: Create mailbox DHT record, owned by the identity key
-    let identity_keypair = ed25519_to_keypair(&signing_key);
+    let identity_keypair = rekindle_crypto::keypair_text::keypair_text_from_signing(&signing_key);
     let (_mailbox_lease, mailbox_dht_key) =
-        rekindle_protocol::dht::mailbox::create_mailbox(&pool, identity_keypair)
+        rekindle_protocol::dht::mailbox::create_mailbox(pool.as_ref(), &identity_keypair)
             .await
             .map_err(|e| failed("mailbox record", e))?;
     info!(key = %mailbox_dht_key, "mailbox record created");
 
     // Step 6: Create friend list DHT record
-    let (friend_list_dht_key, friend_list_keypair, outcome) =
-        rekindle_protocol::dht::friends::create_friend_list(&pool)
+    let (_friend_list_lease, friend_list_dht_key, friend_list_owner_keypair, outcome) =
+        rekindle_protocol::dht::friends::create_friend_list(pool.as_ref())
             .await
             .map_err(|e| failed("friend list record", e))?;
     if outcome.missed() {
         warn!(?outcome, "empty friend list not stored at consensus");
     }
-    let friend_list_owner_keypair = friend_list_keypair.to_string();
     info!(key = %friend_list_dht_key, "friend list record created");
 
     // Step 7: Create the friend inbox (DFLT(32)) in the pool, and seed
@@ -101,17 +99,19 @@ pub async fn create_identity(
         step: "friend inbox".into(),
         reason,
     };
-    let inbox_schema = veilid_core::DHTSchema::dflt(32).map_err(|e| inbox_failed(e.to_string()))?;
-    let (inbox_lease, inbox_key, inbox_keypair) = pool
-        .create(inbox_schema, None)
+    let (inbox_lease, friend_inbox_key, inbox_keypair) = pool
+        .create(&rekindle_records::schema::friend_inbox(), None)
         .await
         .map_err(|e| inbox_failed(e.to_string()))?;
     pool.set(inbox_lease, 0, b"[]".to_vec(), None)
         .await
-        .and_then(|outcome| outcome.require_stored(0))
+        .map_err(|e| inbox_failed(format!("seed write: {e}")))?
+        .require_stored(0)
         .map_err(|e| inbox_failed(format!("seed write: {e}")))?;
-    let friend_inbox_key = inbox_key.to_string();
-    let friend_inbox_keypair_hex = hex::encode(serialize_keypair(&inbox_keypair));
+    let friend_inbox_keypair_hex = hex::encode(
+        rekindle_crypto::keypair_text::keypair_wire(&inbox_keypair)
+            .map_err(|e| inbox_failed(e.to_string()))?,
+    );
 
     // Publish inbox key + keypair to our profile (the pool's writable lease)
     for (subkey, value) in [
@@ -200,7 +200,3 @@ pub struct RotatedIdentity {
     pub new_signing_key_bytes: [u8; 32],
     pub friends_notified: u32,
 }
-
-pub(crate) use crate::broadcast::node::ed25519_to_keypair;
-/// Re-export from broadcast boundary for crate-internal use.
-pub(crate) use crate::broadcast::node::serialize_keypair;

@@ -41,16 +41,11 @@ pub async fn write_message(
     signing_key: &ed25519_dalek::SigningKey,
     message: &ChannelMessage,
 ) -> Result<channel_record::AppendOutcome> {
-    let writer = writer_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| TransportError::DhtError {
-            reason: format!("invalid slot keypair: {e}"),
-        })?;
     channel_record::write_member_message(
         &*node.require_records()?,
         channel_key,
         slot_index,
-        writer,
+        writer_keypair_str,
         author_pseudonym,
         signing_key,
         message,
@@ -68,7 +63,7 @@ pub async fn write_message(
 /// Only `member_slots` (the writer index) are read (plan C7.12). Sorted by
 /// `(lamport_ts, subkey)`, the reader's deterministic order.
 pub async fn read_message_items(
-    pool: &rekindle_protocol::dht::pool::RecordPool,
+    pool: &dyn rekindle_records::port::RecordPort,
     channel_key: &str,
     member_slots: &[u32],
 ) -> Result<Vec<(u32, ChannelMessage)>> {

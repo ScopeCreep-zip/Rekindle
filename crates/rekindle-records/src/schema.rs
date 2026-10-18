@@ -1,12 +1,123 @@
-//! SMPL record sizing constant.
+//! The schemas of every record Rekindle creates, as Veilid-free
+//! [`RecordSchema`]s (plan C9.1c). The port's Veilid implementation
+//! converts and validates them (`rekindle_protocol::dht::pool::dht_schema`);
+//! a schema Veilid refuses (no subkeys, or more than 1024) is a
+//! `PortError::Dht` from `create`.
 //!
-//! The `DHTSchema` builders that this module used to host (`community_smpl_schema`,
-//! `bootstrap_dflt_schema`, `personal_sync_dflt_schema`) construct `veilid-core`
-//! types, so they live in `rekindle-protocol::dht::schema` (a `veilid-core`
-//! boundary crate) — keeping `rekindle-records` free of `veilid-core` (Invariant 2).
-//! Only the pure, veilid-free sizing constant remains here.
+//! Community records (governance, registry, channels) share the universal
+//! SMPL shape, the Q-pid equation (architecture doc §4.2): `o_cnt: 0`, so
+//! the creation keypair writes nothing, and one subkey per member slot.
+
+use rekindle_types::dht_layout as layout;
+
+use crate::port::{RecordSchema, SchemaMember};
 
 /// Maximum members per SMPL record segment.
 /// Veilid allows up to 1024 total subkeys. With m_cnt=1 per member,
 /// 255 members = 255 subkeys, well within limits.
 pub const MAX_MEMBERS_PER_SEGMENT: usize = 255;
+
+/// The universal community SMPL schema: no owner subkeys, one subkey per
+/// member, each member key a raw 32-byte Ed25519 public key (for VLD0 the
+/// member id is the key itself).
+#[must_use]
+pub fn community_smpl(member_public_keys: &[[u8; 32]]) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: 0,
+        members: member_public_keys
+            .iter()
+            .map(|key| SchemaMember {
+                key: *key,
+                subkeys: 1,
+            })
+            .collect(),
+    }
+}
+
+/// A single invite's encrypted `InviteSecrets` record: one owner subkey,
+/// so the several-KB payload fits the single-owner budget (architecture §6).
+#[must_use]
+pub fn invite_secrets() -> RecordSchema {
+    RecordSchema::Dflt { owner_subkeys: 1 }
+}
+
+/// The personal cross-device sync record (architecture §28.4): 4 active
+/// subkeys (manifest, read state, preferences, device list), 12 reserved.
+#[must_use]
+pub fn personal_sync() -> RecordSchema {
+    RecordSchema::Dflt { owner_subkeys: 16 }
+}
+
+/// Our profile record.
+#[must_use]
+pub fn profile() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::profile::SUBKEY_COUNT,
+    }
+}
+
+/// Our mailbox record (owned by the identity keypair).
+#[must_use]
+pub fn mailbox() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::mailbox::SUBKEY_COUNT,
+    }
+}
+
+/// A single-subkey record: our friend list, a log spine, the account
+/// header.
+#[must_use]
+pub fn single() -> RecordSchema {
+    RecordSchema::Dflt { owner_subkeys: 1 }
+}
+
+/// A short array of `capacity` slots after its head subkey; `None` when
+/// the head does not fit (`capacity` is `u16::MAX`).
+#[must_use]
+pub fn short_array(capacity: u16) -> Option<RecordSchema> {
+    Some(RecordSchema::Dflt {
+        owner_subkeys: capacity.checked_add(1)?,
+    })
+}
+
+/// A friend-request inbox.
+#[must_use]
+pub fn friend_inbox() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::friend_inbox::SUBKEY_COUNT,
+    }
+}
+
+/// A community channel record: the channel layout's owner subkeys, then a
+/// member page of the layout's size per slot key, in slot order (the slot
+/// keys derive from the community's slot seed).
+#[must_use]
+pub fn channel(slot_public_keys: &[[u8; 32]]) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: layout::channel::OWNER_SUBKEY_COUNT,
+        members: slot_public_keys
+            .iter()
+            .map(|key| SchemaMember {
+                key: *key,
+                subkeys: layout::channel::MEMBER_SUBKEY_COUNT,
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layouts_size_their_records() {
+        assert_eq!(profile().subkey_count(), 11);
+        assert_eq!(mailbox().subkey_count(), 1);
+        assert_eq!(friend_inbox().subkey_count(), 32);
+        assert_eq!(short_array(255).unwrap().subkey_count(), 256);
+        assert!(short_array(u16::MAX).is_none());
+        let keys = [[1u8; 32], [2u8; 32]];
+        assert_eq!(community_smpl(&keys).subkey_count(), 2);
+        assert_eq!(channel(&keys).subkey_count(), 2);
+    }
+}

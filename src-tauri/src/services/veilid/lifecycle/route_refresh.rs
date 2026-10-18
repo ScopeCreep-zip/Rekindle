@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::state::AppState;
-use rekindle_protocol::own_routes::RouteClass;
+use rekindle_records::port::RouteClass;
 use tokio_util::sync::CancellationToken;
 
 /// Route watchdog: the only timer in the route lifecycle.

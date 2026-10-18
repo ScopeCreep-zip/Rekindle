@@ -1,9 +1,7 @@
-use rekindle_records::lease::{LeaseId, SubkeySet};
+use rekindle_records::lease::LeaseId;
+use rekindle_records::port::RecordPort;
 use serde::{Deserialize, Serialize};
-use veilid_core::{DHTSchema, KeyPair};
 
-use super::parse_record_key;
-use super::pool::RecordPool;
 use crate::dht::short_array::DHTShortArray;
 use crate::error::ProtocolError;
 
@@ -33,14 +31,14 @@ struct LogSpine {
 /// All segments share the same owner keypair as the spine, so only one
 /// keypair needs to be persisted for write access.
 ///
-/// The handle holds a lease on the spine in the session's [`RecordPool`]
+/// The handle holds a lease on the spine in the session's [`RecordPort`]
 /// (plan C7.4); each segment is borrowed for the one operation that needs
 /// it and released after, so no segment open outlives its use. Call
 /// [`release`](Self::release) when done.
 pub struct DHTLog {
     spine: LeaseId,
     spine_key: String,
-    writer: Option<KeyPair>,
+    writer: Option<String>,
 }
 
 impl DHTLog {
@@ -51,13 +49,13 @@ impl DHTLog {
     ///
     /// # Errors
     /// The spine could not be created, or its first value not stored.
-    pub async fn create(pool: &RecordPool) -> Result<(Self, KeyPair), ProtocolError> {
-        let schema = DHTSchema::dflt(1)
-            .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
-        let (spine, key, keypair) = pool.create(schema, None).await?;
+    pub async fn create(pool: &dyn RecordPort) -> Result<(Self, String), ProtocolError> {
+        let (spine, key, keypair) = pool
+            .create(&rekindle_records::schema::single(), None)
+            .await?;
         let log = Self {
             spine,
-            spine_key: key.to_string(),
+            spine_key: key,
             writer: Some(keypair.clone()),
         };
         log.write_spine(
@@ -79,18 +77,16 @@ impl DHTLog {
     /// # Errors
     /// The spine could not be opened.
     pub async fn open_write(
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         key: &str,
-        writer: KeyPair,
+        writer: &str,
     ) -> Result<Self, ProtocolError> {
-        let spine = pool
-            .acquire(&parse_record_key(key)?, Some(writer.clone()))
-            .await?;
+        let spine = pool.acquire(key, Some(writer)).await?;
         tracing::debug!(key, "DHTLog opened (write)");
         Ok(Self {
             spine,
             spine_key: key.to_string(),
-            writer: Some(writer),
+            writer: Some(writer.to_string()),
         })
     }
 
@@ -98,8 +94,8 @@ impl DHTLog {
     ///
     /// # Errors
     /// The spine could not be opened.
-    pub async fn open_read(pool: &RecordPool, key: &str) -> Result<Self, ProtocolError> {
-        let spine = pool.acquire(&parse_record_key(key)?, None).await?;
+    pub async fn open_read(pool: &dyn RecordPort, key: &str) -> Result<Self, ProtocolError> {
+        let spine = pool.acquire(key, None).await?;
         tracing::debug!(key, "DHTLog opened (read)");
         Ok(Self {
             spine,
@@ -109,7 +105,7 @@ impl DHTLog {
     }
 
     /// End this handle's borrow of the spine.
-    pub async fn release(self, pool: &RecordPool) {
+    pub async fn release(self, pool: &dyn RecordPort) {
         pool.release(self.spine).await;
     }
 
@@ -118,7 +114,7 @@ impl DHTLog {
     ///
     /// # Errors
     /// The log is read-only, or a write was not stored.
-    pub async fn append(&self, pool: &RecordPool, data: &[u8]) -> Result<u64, ProtocolError> {
+    pub async fn append(&self, pool: &dyn RecordPort, data: &[u8]) -> Result<u64, ProtocolError> {
         let writer = self
             .writer
             .as_ref()
@@ -129,7 +125,7 @@ impl DHTLog {
             || (spine.total_count > 0 && spine.total_count % u64::from(cap) == 0);
 
         let segment = if needs_new_segment {
-            let (segment, _) = DHTShortArray::create(pool, cap, Some(writer.clone())).await?;
+            let (segment, _) = DHTShortArray::create(pool, cap, Some(writer.as_str())).await?;
             spine.segments.push(segment.record_key().to_string());
             segment
         } else {
@@ -137,7 +133,7 @@ impl DHTLog {
                 .segments
                 .last()
                 .ok_or_else(|| ProtocolError::DhtError("no segments in spine".into()))?;
-            DHTShortArray::open(pool, latest_key, Some(writer.clone())).await?
+            DHTShortArray::open(pool, latest_key, Some(writer.as_str())).await?
         };
         let added = segment.add(pool, data).await;
         segment.release(pool).await;
@@ -153,7 +149,11 @@ impl DHTLog {
     ///
     /// # Errors
     /// The spine or the segment could not be read.
-    pub async fn get(&self, pool: &RecordPool, pos: u64) -> Result<Option<Vec<u8>>, ProtocolError> {
+    pub async fn get(
+        &self,
+        pool: &dyn RecordPort,
+        pos: u64,
+    ) -> Result<Option<Vec<u8>>, ProtocolError> {
         let spine = self.read_spine(pool).await?;
         if pos >= spine.total_count {
             return Ok(None);
@@ -174,7 +174,7 @@ impl DHTLog {
     ///
     /// # Errors
     /// The spine could not be read.
-    pub async fn len(&self, pool: &RecordPool) -> Result<u64, ProtocolError> {
+    pub async fn len(&self, pool: &dyn RecordPort) -> Result<u64, ProtocolError> {
         Ok(self.read_spine(pool).await?.total_count)
     }
 
@@ -182,7 +182,7 @@ impl DHTLog {
     ///
     /// # Errors
     /// The spine could not be read.
-    pub async fn is_empty(&self, pool: &RecordPool) -> Result<bool, ProtocolError> {
+    pub async fn is_empty(&self, pool: &dyn RecordPort) -> Result<bool, ProtocolError> {
         Ok(self.len(pool).await? == 0)
     }
 
@@ -190,7 +190,11 @@ impl DHTLog {
     ///
     /// # Errors
     /// The spine or a segment could not be read.
-    pub async fn tail(&self, pool: &RecordPool, count: u32) -> Result<Vec<Vec<u8>>, ProtocolError> {
+    pub async fn tail(
+        &self,
+        pool: &dyn RecordPort,
+        count: u32,
+    ) -> Result<Vec<Vec<u8>>, ProtocolError> {
         let spine = self.read_spine(pool).await?;
         let total = spine.total_count;
         if total == 0 || count == 0 {
@@ -234,8 +238,8 @@ impl DHTLog {
     ///
     /// # Errors
     /// Veilid refused the watch request.
-    pub async fn watch(&self, pool: &RecordPool) -> Result<(), ProtocolError> {
-        pool.watch(self.spine, SubkeySet::from([0])).await
+    pub async fn watch(&self, pool: &dyn RecordPort) -> Result<(), ProtocolError> {
+        Ok(pool.watch(self.spine, &[0]).await?)
     }
 
     /// Get the spine record key as a string.
@@ -244,20 +248,25 @@ impl DHTLog {
         &self.spine_key
     }
 
-    async fn read_spine(&self, pool: &RecordPool) -> Result<LogSpine, ProtocolError> {
+    async fn read_spine(&self, pool: &dyn RecordPort) -> Result<LogSpine, ProtocolError> {
         match pool.get(self.spine, 0, false).await? {
-            Some(v) => serde_json::from_slice(v.data())
+            Some(v) => serde_json::from_slice(&v.data)
                 .map_err(|e| ProtocolError::Deserialization(format!("spine parse: {e}"))),
             None => Err(ProtocolError::DhtError("spine subkey not set".into())),
         }
     }
 
-    async fn write_spine(&self, pool: &RecordPool, spine: &LogSpine) -> Result<(), ProtocolError> {
+    async fn write_spine(
+        &self,
+        pool: &dyn RecordPort,
+        spine: &LogSpine,
+    ) -> Result<(), ProtocolError> {
         let bytes =
             serde_json::to_vec(spine).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-        pool.set(self.spine, 0, bytes, None)
+        Ok(pool
+            .set(self.spine, 0, bytes, None)
             .await?
-            .require_stored(0)
+            .require_stored(0)?)
     }
 }
 

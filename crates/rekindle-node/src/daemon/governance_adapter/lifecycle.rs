@@ -130,11 +130,7 @@ impl DaemonGovernanceAdapter<'_> {
                 // writes the registry and its channel slots with its derived
                 // slot keypair.
                 let slot_writer = m.slot_seed.as_ref().and_then(|seed| {
-                    rekindle_transport::broadcast::dht_writes::derive_slot_keypair_str(
-                        seed,
-                        m.slot_index,
-                    )
-                    .ok()
+                    rekindle_crypto::keypair_text::slot_keypair_text(seed, m.slot_index).ok()
                 });
                 CommunityDhtOpenSetup {
                     id: m.governance_key.clone(),

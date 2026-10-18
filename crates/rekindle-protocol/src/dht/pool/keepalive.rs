@@ -12,10 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rand::Rng;
+use rekindle_records::port::RecordPort;
 use tokio_util::sync::CancellationToken;
-use veilid_core::RecordKey;
-
-use super::RecordPool;
 
 /// The base interval between warmings.
 pub const BASE_INTERVAL: Duration = Duration::from_secs(300);
@@ -39,11 +37,8 @@ pub fn initial_offset() -> Duration {
 /// trigger for rehydration (`open_record.rs:27-44`), and the pool re-opens
 /// with the record's sticky writer, so nothing is downgraded; then it pulls
 /// any subkey the network holds newer. A table hit while the record is held.
-async fn rehydrate(pool: &RecordPool, key: &str) {
-    let Ok(parsed) = key.parse::<RecordKey>() else {
-        return;
-    };
-    let lease = match pool.acquire(&parsed, None).await {
+async fn rehydrate(pool: &dyn RecordPort, key: &str) {
+    let lease = match pool.acquire(key, None).await {
         Ok(lease) => lease,
         Err(e) => {
             tracing::debug!(key, error = %e, "keepalive: record not open");
@@ -63,7 +58,7 @@ async fn rehydrate(pool: &RecordPool, key: &str) {
 /// `stop`; the pool runs each Veilid call on its own scope, so leaving
 /// mid-cycle drops none (plan C4.L1).
 pub async fn run(
-    pool: impl Fn() -> Option<Arc<RecordPool>>,
+    pool: impl Fn() -> Option<Arc<dyn RecordPort>>,
     keys: impl Fn() -> Option<Vec<String>>,
     stop: CancellationToken,
 ) {
@@ -82,7 +77,7 @@ pub async fn run(
             let count = keys.len();
             for key in keys {
                 if stop
-                    .run_until_cancelled(rehydrate(&pool, &key))
+                    .run_until_cancelled(rehydrate(&*pool, &key))
                     .await
                     .is_none()
                 {

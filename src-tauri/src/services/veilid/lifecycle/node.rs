@@ -65,43 +65,51 @@ pub async fn initialize_node(
     // Our routes, allocated as soon as the node is ready, before any login,
     // so a login is reachable at once (plan C7.9b; owner: login and
     // "Connected" are paired).
-    let own_routes = rekindle_protocol::own_routes::OwnRoutes::new(
+    let own_routes = rekindle_route::own_routes::OwnRoutes::new(
         rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
         state.network_ready.subscribe(),
     );
-    own_routes.want(rekindle_protocol::own_routes::RouteClass::General);
-    own_routes.want(rekindle_protocol::own_routes::RouteClass::Media);
-    *state.own_routes.write() = Some(own_routes);
+    own_routes.want(rekindle_records::port::RouteClass::General);
+    own_routes.want(rekindle_records::port::RouteClass::Media);
+    // The process's one route importer (plan C7.3): routes are imported
+    // before login too (invites, inbound app_message).
+    let route_imports = Arc::new(rekindle_protocol::dht::route_imports::RouteImports::new(
+        api.clone(),
+    ));
 
-    // W16.9b — adopt the running VeilidAPI into a TransportNode in
-    // outbound-only mode. Provides Sender / Caller / record pool / peer
-    // registry to W16.10's `operations::friend::send_friend_request`
-    // (and future W16.10c/.10b/.10d migrations) without consuming the
-    // host's `update_rx` (the existing `lifecycle::dispatch::run_dispatch_loop`
-    // keeps that). The transport's own dispatch is dormant — incoming
-    // events stay on the legacy code path until each flow migrates.
-    let transport_session = Arc::clone(&state.transport_session);
-    let transport_api = state
-        .node
-        .read()
-        .as_ref()
-        .map(|nh| nh.api.clone())
-        .ok_or("node handle missing immediately after creation — internal bug")?;
+    // The desktop's ports (plan C9.1e), built once over the node it owns.
+    // `lifecycle` is `None`: the desktop still starts and stops
+    // `RekindleNode` itself until E5.7. The typed `RouteImports` and
+    // `OwnRoutes` handles kept on `AppState` serve the direct Veilid sends
+    // the E-ports move onto `AppMessagePort` (ADR 0014's desktop exception).
     let transport_config = rekindle_transport::config::TransportConfig {
         storage_dir: storage_dir.to_string_lossy().into_owned(),
         ..Default::default()
     };
-    let tn = rekindle_transport::TransportNode::adopt_outbound(
-        transport_config,
-        transport_api,
-        &transport_session,
-    );
-    // The process's one route importer is the transport node's (plan
-    // C7.3): routes are imported before login too (invites, inbound
-    // app_message).
-    *state.route_imports.write() = Some(tn.route_imports());
+    let ports = rekindle_records::port::PortSet {
+        records: Arc::new(rekindle_protocol::ports::VeilidRecords::new(
+            api.clone(),
+            transport_config.safety.dht.clone(),
+            state.network_ready.subscribe(),
+            rekindle_protocol::dht::pool::RecordCloser::new(),
+        )),
+        routes: Arc::new(rekindle_protocol::ports::VeilidRoutes::new(
+            Arc::clone(&route_imports),
+            Arc::clone(&own_routes),
+        )),
+        messages: Arc::new(rekindle_protocol::ports::VeilidMessages::new(api.clone())),
+        lifecycle: None,
+    };
+    *state.own_routes.write() = Some(own_routes);
+    *state.route_imports.write() = Some(route_imports);
+
+    // W16.9b — an outbound-only TransportNode over the desktop's ports:
+    // Sender / Caller / record sessions / peer registry for the transport's
+    // send paths, without consuming the host's `update_rx` (the existing
+    // `lifecycle::dispatch::run_dispatch_loop` keeps that) until E5.7.
+    let tn = rekindle_transport::TransportNode::adopt_outbound(transport_config, ports);
     *state.transport.write() = Some(Arc::new(tn));
-    tracing::info!("transport node adopted (outbound-only) for W16 send paths");
+    tracing::info!("transport node adopted (outbound-only) on the desktop's ports");
 
     tracing::info!("rekindle node started and attached");
     Ok(update_rx)

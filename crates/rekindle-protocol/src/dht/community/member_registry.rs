@@ -10,54 +10,12 @@
 //! Presence reads/writes address slots RAW — the v1.0 coordinator-era
 //! `+REGISTRY_OWNER_SUBKEY_COUNT` offset is gone. Record creation
 //! lives in the governance runtime (`create_smpl_record` with
-//! `community_smpl_schema`); this module keeps the slot-keypair
-//! derivation and the index/MEK-vault accessors still consumed by the
-//! governance + MEK rotation adapters.
-//!
-//! The index and MEK-vault accessors below still address subkeys 0 and
-//! 1, which under `o_cnt:0` are member slots — there is no owner
-//! credential that can write them. They are v1.0 leftovers; see
-//! `.claude/plans/` for the migration.
+//! `rekindle_records::schema::community_smpl`); this module keeps only
+//! the layout's tests.
 
-use crate::error::ProtocolError;
-
-// ── Pre-allocated SMPL slots (slot seed derivation) ──
-
-/// Derive a deterministic Ed25519 keypair for a SMPL member slot.
-///
-/// Delegates to `rekindle_secrets::derive::derive_slot_keypair` — the
-/// single implementation shared by every track
-/// (HKDF-SHA256(seed, "rekindle-slot-{index}") → 32 bytes → Ed25519).
-/// Any admin with the slot seed can derive keypairs for all 256 slots.
-pub fn derive_slot_keypair(
-    seed: &[u8; 32],
-    slot: u32,
-) -> Result<ed25519_dalek::SigningKey, ProtocolError> {
-    rekindle_secrets::derive::derive_slot_keypair(seed, slot)
-        .map_err(|e| ProtocolError::CryptoError(e.to_string()))
-}
-
-/// Derive the Veilid `KeyPair` for a SMPL member slot.
-///
-/// Converts the Ed25519 keypair into a Veilid-compatible format for use
-/// as a SMPL record writer.
-pub fn derive_slot_veilid_keypair(
-    seed: &[u8; 32],
-    slot: u32,
-) -> Result<veilid_core::KeyPair, ProtocolError> {
-    let signing_key = derive_slot_keypair(seed, slot)?;
-    let secret_bytes = signing_key.to_bytes();
-    let public_bytes = signing_key.verifying_key().to_bytes();
-
-    let bare_pub = veilid_core::BarePublicKey::new(&public_bytes);
-    let bare_secret = veilid_core::BareSecretKey::new(&secret_bytes);
-    let veilid_pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
-
-    Ok(veilid_core::KeyPair::new_from_parts(
-        veilid_pubkey,
-        bare_secret,
-    ))
-}
+// The slot keypairs derive from the slot seed through
+// `rekindle_secrets::derive::derive_slot_keypair`; a slot writer's keypair
+// text is `rekindle_crypto::keypair_text::slot_keypair_text` (plan C9.1b).
 
 #[cfg(test)]
 mod layout_invariants {
@@ -100,7 +58,7 @@ mod layout_invariants {
             })
             .collect();
 
-        let schema = crate::dht::schema::community_smpl_schema(&keys)
+        let schema = crate::dht::pool::dht_schema(&rekindle_records::schema::community_smpl(&keys))
             .expect("o_cnt: 0 with 255 single-subkey members must be a legal SMPL schema");
 
         // 255 members × 1 subkey each, and the discarded creation

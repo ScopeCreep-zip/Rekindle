@@ -1,12 +1,12 @@
 //! Channel record writes: record creation and per-member entry appends.
 
-use crate::dht::parse_record_key;
-use crate::dht::pool::{RecordPool, SetOutcome};
+use rekindle_records::port::{RecordPort, SetOutcome};
+
 use crate::error::ProtocolError;
 use rekindle_codec::community::channel_record::{
     decode_own_page, encode_page_entries, ChannelAttachmentCached, ChannelForward,
     ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-    ChannelReaction, ChannelRecordEntry, CHANNEL_MEMBER_SUBKEY_COUNT, CHANNEL_OWNER_SUBKEY_COUNT,
+    ChannelReaction, ChannelRecordEntry, CHANNEL_OWNER_SUBKEY_COUNT,
 };
 
 /// Maximum serialized size for a member's message page (~30KB, leaving DHT overhead room).
@@ -15,58 +15,46 @@ const MAX_PAGE_SIZE: usize = 30_000;
 /// Create a new SMPL channel record with pre-allocated member slots.
 ///
 /// Uses the same slot seed as the member registry so members derive their
-/// writer keypair independently via `derive_slot_veilid_keypair(seed, slot_index)`.
-/// Returns `(creator lease, record_key, owner_keypair)`.
+/// writer keypair independently (`rekindle_crypto::keypair_text::slot_keypair_text`).
+/// Returns `(creator lease, record_key, owner keypair text)`.
 pub async fn create_smpl_channel_record(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     slot_seed: &[u8; 32],
-) -> Result<
-    (
-        rekindle_records::lease::LeaseId,
-        String,
-        veilid_core::KeyPair,
-    ),
-    ProtocolError,
-> {
-    use crate::dht::community::member_registry;
-
-    let mut members = Vec::with_capacity(rekindle_types::dht_layout::SLOTS_PER_SEGMENT as usize);
-    for i in 0..rekindle_types::dht_layout::SLOTS_PER_SEGMENT {
-        let signing_key = member_registry::derive_slot_keypair(slot_seed, i)?;
-        let public_bytes = signing_key.verifying_key().to_bytes();
-        members.push(veilid_core::DHTSchemaSMPLMember {
-            m_key: veilid_core::BareMemberId::new(&public_bytes),
-            m_cnt: CHANNEL_MEMBER_SUBKEY_COUNT,
-        });
+) -> Result<(rekindle_records::lease::LeaseId, String, String), ProtocolError> {
+    let slots = rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+    let mut slot_keys = Vec::with_capacity(slots as usize);
+    for i in 0..slots {
+        let signing_key = rekindle_secrets::derive::derive_slot_keypair(slot_seed, i)
+            .map_err(|e| ProtocolError::CryptoError(e.to_string()))?;
+        slot_keys.push(signing_key.verifying_key().to_bytes());
     }
-
-    let schema = veilid_core::DHTSchema::smpl(CHANNEL_OWNER_SUBKEY_COUNT, members)
-        .map_err(|e| ProtocolError::DhtError(format!("invalid channel schema: {e}")))?;
     // The creator's lease is returned for the caller to hand to its
     // community, so the record stays open for the watch and writes that
     // follow.
-    let (lease, key, owner_keypair) = pool.create(schema, None).await?;
+    let (lease, key, owner_keypair) = pool
+        .create(&rekindle_records::schema::channel(&slot_keys), None)
+        .await?;
     // A create is local only; the network learns the record from its first
     // set (`storage_manager/create_record.rs`). Publish it now with an empty
     // value in the last slot, under that slot's writer from the shared seed:
     // readers treat an empty page as no entries, and a joiner takes that
     // slot last (plan C7.6d).
-    let last = rekindle_types::dht_layout::SLOTS_PER_SEGMENT - 1;
-    let writer = member_registry::derive_slot_veilid_keypair(slot_seed, last)?;
+    let last = slots - 1;
+    let writer = rekindle_crypto::keypair_text::slot_keypair_text(slot_seed, last)?;
     let published = pool
         .set(
             lease,
             u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + last,
             Vec::new(),
-            Some(writer),
+            Some(&writer),
         )
         .await
-        .and_then(|outcome| outcome.require_stored(last));
+        .map_err(ProtocolError::from)
+        .and_then(|outcome| Ok(outcome.require_stored(last)?));
     if let Err(e) = published {
         pool.release(lease).await;
         return Err(e);
     }
-    let key = key.to_string();
     tracing::debug!(key = %key, "SMPL channel record created and published");
     Ok((lease, key, owner_keypair))
 }
@@ -77,10 +65,10 @@ pub async fn create_smpl_channel_record(
 /// If the page exceeds MAX_PAGE_SIZE, oldest messages are dropped from DHT
 /// (they're still in SQLite locally).
 pub async fn write_member_message(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     message: &ChannelMessage,
@@ -99,10 +87,10 @@ pub async fn write_member_message(
 
 /// Write a reaction entry to a member's subkey in the channel SMPL record.
 pub async fn write_member_reaction(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     reaction: &ChannelReaction,
@@ -121,10 +109,10 @@ pub async fn write_member_reaction(
 
 /// Write a poll create entry to a member's subkey in the channel SMPL record.
 pub async fn write_member_poll_create(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     poll_create: &ChannelPollCreate,
@@ -143,10 +131,10 @@ pub async fn write_member_poll_create(
 
 /// Write a poll vote entry to a member's subkey in the channel SMPL record.
 pub async fn write_member_poll_vote(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     poll_vote: &ChannelPollVote,
@@ -165,10 +153,10 @@ pub async fn write_member_poll_vote(
 
 /// Write a poll close entry to a member's subkey in the channel SMPL record.
 pub async fn write_member_poll_close(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     poll_close: &ChannelPollClose,
@@ -187,10 +175,10 @@ pub async fn write_member_poll_close(
 
 /// Write a hand-raise entry to a member's subkey in the channel SMPL record.
 pub async fn write_member_hand_raise(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     hand_raise: &ChannelHandRaise,
@@ -210,10 +198,10 @@ pub async fn write_member_hand_raise(
 /// Write an `AttachmentCached` entry to a member's subkey in the channel SMPL
 /// record (Lost Cargo source advertisement, architecture §28.9 line 3268).
 pub async fn write_member_attachment_cached(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     cached: &ChannelAttachmentCached,
@@ -236,10 +224,10 @@ pub async fn write_member_attachment_cached(
 /// destination channel's UI can render the "Forwarded from" attribution
 /// without re-parsing message bodies.
 pub async fn write_member_forward(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     forward: &ChannelForward,
@@ -257,10 +245,10 @@ pub async fn write_member_forward(
 }
 
 async fn write_member_entry(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_index: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     entry: ChannelRecordEntry,
@@ -273,9 +261,7 @@ async fn write_member_entry(
     // every subsequent legitimate write we make.
     // Borrowed writable with our slot writer, so a write restored after a
     // re-login (which keeps no writer) re-pushes as us (plan C7.13).
-    let lease = pool
-        .acquire(&parse_record_key(channel_key)?, Some(writer.clone()))
-        .await?;
+    let lease = pool.acquire(channel_key, Some(writer)).await?;
     let written = append_entry(
         pool,
         lease,
@@ -346,7 +332,7 @@ pub enum AppendOutcome {
     /// The page is stored at consensus.
     Stored,
     /// The page missed consensus; the record pool holds it, re-pushes it
-    /// until it lands, and publishes the settle (`RecordPool::settled`).
+    /// until it lands, and publishes the settle (`RecordPort::settled`).
     Held,
 }
 
@@ -361,10 +347,10 @@ pub enum AppendOutcome {
 /// A write that failed outright, or a slot still superseded after
 /// `CAS_ROUNDS` merges (`NotStored`).
 async fn append_entry(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     lease: rekindle_records::lease::LeaseId,
     subkey: u32,
-    writer: veilid_core::KeyPair,
+    writer: &str,
     author_pseudonym: rekindle_types::id::PseudonymKey,
     pseudonym_signing_key: &ed25519_dalek::SigningKey,
     entry: ChannelRecordEntry,
@@ -373,7 +359,7 @@ async fn append_entry(
     // key wrote into our slot (anyone holding the shared slot_seed can) is
     // neither re-signed as ours nor kept.
     let mut entries = match pool.get(lease, subkey, false).await? {
-        Some(data) => decode_own_page(data.data(), &author_pseudonym).unwrap_or_default(),
+        Some(value) => decode_own_page(&value.data, &author_pseudonym).unwrap_or_default(),
         None => Vec::new(),
     };
     if !contains_entry(&entries, &entry) {
@@ -382,14 +368,11 @@ async fn append_entry(
 
     for _ in 0..crate::dht::pool::CAS_ROUNDS {
         let bytes = encode_trimmed(&author_pseudonym, pseudonym_signing_key, &mut entries)?;
-        match pool
-            .set_durable_as(lease, subkey, bytes, Some(writer.clone()))
-            .await?
-        {
+        match pool.set_durable(lease, subkey, bytes, Some(writer)).await? {
             SetOutcome::Landed | SetOutcome::Unchanged => return Ok(AppendOutcome::Stored),
             SetOutcome::BelowConsensus | SetOutcome::Offline => return Ok(AppendOutcome::Held),
             SetOutcome::Superseded(newer) => {
-                let theirs = decode_own_page(newer.data(), &author_pseudonym).unwrap_or_default();
+                let theirs = decode_own_page(&newer.data, &author_pseudonym).unwrap_or_default();
                 entries = merge_entries(theirs, entries);
             }
         }

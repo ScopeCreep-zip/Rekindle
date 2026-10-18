@@ -40,7 +40,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
     let record_pool = state_helpers::record_pool(state)?;
     let (new_lease, new_key, new_keypair, outcome) =
         rekindle_protocol::dht::profile::create_profile(
-            &record_pool,
+            record_pool.as_ref(),
             rekindle_protocol::dht::profile::ProfileFields {
                 display_name: &display_name,
                 status_message: &status_message,
@@ -72,7 +72,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
     state_helpers::persist_owner_keypair(
         state,
         rekindle_vault::typed::owner_keys::OwnerKey::Profile,
-        &new_keypair.to_string(),
+        &new_keypair,
     )?;
     let nk = new_key.clone();
     let owner_key = state_helpers::owner_key_or_default(state);

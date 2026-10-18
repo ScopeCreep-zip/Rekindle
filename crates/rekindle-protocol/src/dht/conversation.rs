@@ -1,5 +1,5 @@
-use super::parse_record_key;
-use super::pool::RecordPool;
+use rekindle_records::port::RecordPort;
+
 use crate::error::ProtocolError;
 use rekindle_codec::capnp_codec::conversation::{decode_conversation_header, ConversationHeader};
 use rekindle_crypto::DhtRecordKey;
@@ -18,16 +18,13 @@ use rekindle_crypto::DhtRecordKey;
 /// The record could not be opened or read, or its header does not decrypt
 /// or decode.
 pub async fn read_conversation_header(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     key: &str,
     encryption_key: &DhtRecordKey,
 ) -> Result<Option<ConversationHeader>, ProtocolError> {
-    let lease = pool.acquire(&parse_record_key(key)?, None).await?;
-    let value = pool.get(lease, 0, false).await;
-    pool.release(lease).await;
-    match value? {
+    match pool.read_once(key, 0, false).await? {
         Some(v) => {
-            let plaintext = encryption_key.decrypt(v.data())?;
+            let plaintext = encryption_key.decrypt(&v.data)?;
             Ok(Some(decode_conversation_header(&plaintext)?))
         }
         None => Ok(None),

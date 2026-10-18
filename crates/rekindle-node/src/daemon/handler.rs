@@ -91,16 +91,16 @@ impl DaemonHandler {
     /// (plan C7.9c): the route facts the network status carries. Route
     /// state lives on the transport's route owner, not the manager.
     fn route_status(&self) -> (bool, rekindle_types::subscription_events::RouteAvailability) {
-        use rekindle_protocol::own_routes::RouteClass;
-        let routes = self.transport.read().as_ref().and_then(|t| t.own_routes());
+        use rekindle_records::port::RouteClass;
+        let routes = self.transport.read().as_ref().map(|t| t.routes());
         let Some(routes) = routes else {
             return (
                 false,
                 rekindle_types::subscription_events::RouteAvailability::Idle,
             );
         };
-        let media = routes.state(RouteClass::Media).borrow().availability();
-        (routes.blob(RouteClass::General).is_some(), media)
+        let media = routes.own_state(RouteClass::Media).borrow().availability();
+        (routes.own_blob(RouteClass::General).is_some(), media)
     }
 
     /// Record a friend request before forwarding to SubscriptionManager: the

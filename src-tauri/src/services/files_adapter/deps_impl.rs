@@ -325,17 +325,22 @@ impl FilesDeps for FilesAdapter {
         &self,
         channel_log_key: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError> {
-        let record_key = channel_log_key
-            .parse::<veilid_core::RecordKey>()
-            .map_err(|e| FilesError::Transport(format!("invalid channel record key: {e}")))?;
         let pool = state_helpers::record_pool(&self.state).map_err(FilesError::Transport)?;
+        // One borrow, one inspect, and a read of only the subkeys that hold
+        // a value (plan C9.1e), not 255 sequential reads.
+        let lease = pool
+            .acquire(channel_log_key, None)
+            .await
+            .map_err(|e| FilesError::Transport(format!("open channel record: {e}")))?;
+        let subkeys: Vec<u32> = (0u32..255).collect();
+        let values = pool.read_changed(lease, &subkeys).await;
+        pool.release(lease).await;
+        let values =
+            values.map_err(|e| FilesError::Transport(format!("read channel record: {e}")))?;
         let mut all = Vec::new();
-        for subkey in 0u32..255 {
-            let Ok(Some(value)) = pool.read_once(&record_key, subkey, false).await else {
-                continue;
-            };
+        for (_, value) in values {
             let Ok(entries) =
-                rekindle_codec::community::channel_record::decode_channel_entries(value.data())
+                rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
             else {
                 continue;
             };

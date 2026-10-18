@@ -108,15 +108,19 @@ builds it), `serde`, `serde_json`, `thiserror`, `tracing`.
 ### rekindle-records
 
 DHT record lifecycle management for the v2.0 universal SMPL schema
-(`o_cnt: 0`, 255 member slots — the "Q-pid equation"). Houses the
-durable write retry queue. Modules: `lifecycle` (open / close /
-republish / refresh), `retry` (`WriteQueueHandle` — durable SMPL write
-retry with backoff), `schema` (universal SMPL schema constants +
-helpers).
+(`o_cnt: 0`, 255 member slots — the "Q-pid equation"), and the Veilid-free
+ports. Modules: `lease` (lease ids, subkey sets, community leases),
+`lifecycle` (open / close / republish / refresh), `port` (plan C9.1: the
+`RecordPort`/`RecordStore`, `RoutePort` and `AppMessagePort` traits, with
+keys, keypairs and route ids as Veilid's text, `PortEvent`, `PortSet` and
+`PortError`; `rekindle-protocol` implements them over Veilid), `retry`
+(`WriteQueueHandle` — durable SMPL write retry with backoff), `schema`
+(the named record schemas as `RecordSchema` builders, and the universal
+SMPL constants).
 
-Dependencies: `rekindle-types`, `rekindle-secrets`. **No `veilid-core`** —
-this crate wraps Veilid abstractions but never calls `veilid_core` directly;
-concrete I/O is plumbed in by the integration layer.
+Dependencies: `rekindle-types`, `async-trait`, `serde`, `serde_json`,
+`thiserror`, `tokio` (`sync`). **No `veilid-core`**, and no `veilid_core`
+named anywhere in it (`cargo xtask check-veilid-dht-calls`).
 
 ### rekindle-events
 
@@ -200,15 +204,20 @@ Dependencies: `rekindle-types`, `rusqlite`.
 
 ### rekindle-route
 
-Route policy and the peer route cache. Our own routes are allocated,
-healed and released by `rekindle_protocol::own_routes::OwnRoutes` (plan
-C7.9: one owner per node, a general and a media class, no fallback between
-them). Modules: `cache` (`RouteCache` — per-peer route blob + TTL eviction),
-`contexts` (per-purpose `RoutingContext` factories), `lifecycle` (the
-watchdog cadence and the peer-cache TTL).
+Route policy, the peer route cache and the owner of our own routes.
+Modules: `cache` (`RouteCache` — per-peer route blob + TTL eviction),
+`contexts` (per-purpose routing-context factories), `lifecycle` (the
+watchdog cadence and the peer-cache TTL), `own_routes` (`OwnRoutes`: our
+routes are allocated, healed and released here, plan C7.9 — one owner per
+node, a general and a media class, no fallback between them, single-flight
+and ready-gated allocation with backoff; generic over a `RouteAllocator`,
+which `rekindle_protocol::own_routes::VeilidRouteAllocator` implements over
+Veilid and a simulator can fake, plan C9.1), `profile` and `relay`.
 
-Dependencies: `rekindle-types`, `blake3`, `tokio`. **No `veilid-core`** —
-contexts are passed in from above.
+Dependencies: `rekindle-types`, `rekindle-records` (`RouteClass`,
+`RouteState`), `rekindle-lifecycle` (`SessionScope`), `async-trait`,
+`blake3`, `parking_lot`, `tokio`, `tokio-util`, `tracing`. **No
+`veilid-core`** — the allocator is passed in from above.
 
 ### rekindle-lifecycle
 
@@ -489,20 +498,22 @@ webview. Used when `VITE_E2E=true`. Single binary `e2e_server`.
 One of the four crates allowed to link veilid-core (ADR 0014:
 `rekindle-protocol`, `rekindle-transport`, `rekindle-node`, and
 `rekindle-desktop` until F1), checked transitively by
-`cargo xtask check-boundaries`. The daemon track's other crates reach
-Veilid through it. The crate is split into two `veilid_core`-aware
-modules and a body of pure logic:
+`cargo xtask check-boundaries`. It links Veilid only through
+`rekindle-protocol` and names no Veilid type (plan C9.1): `TransportNode`
+is built from a `PortSet` (`rekindle_records::port`) — started by
+`TransportNode::start` over `rekindle_protocol::ports::VeilidPorts`, handed
+the desktop's ports by `adopt_outbound`, or a simulator's by `from_ports`.
 
-- `broadcast/` — outbound: sends, DHT writes, route management, node
-  lifecycle. The only outbound module that imports `veilid_core`.
-- `subscriptions/` — inbound: event dispatch, DHT watches, value-change
-  routing. The only inbound module that imports `veilid_core`.
+- `broadcast/` — outbound: sends (`AppMessagePort`), DHT writes
+  (`RecordPort`), route management (`RoutePort`), node lifecycle.
+- `subscriptions/` — inbound: dispatch of `PortEvent`s, DHT watches,
+  value-change routing.
 - Everything else (`operations/`, `payload/`, `crypto/`, `session/`,
-  `community/`, `gossip.rs`, `frame.rs`, `query.rs`, `handler.rs`, …)
-  contains zero `veilid_core` imports.
+  `community/`, `gossip.rs`, `frame.rs`, `query.rs`, `handler.rs`, …) is
+  business logic over those two.
 
 Public API re-exports include `TransportNode` (its routes via
-`TransportNode::own_routes`), `Sender`,
+`TransportNode::routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `InboundHandler`, `GossipMesh`,
 `SignalSessionManager`, `Session`, `QueryEngine`, plus per-feature
 operation modules (`operations::{community, channel, dm, friend, voice,
@@ -510,7 +521,7 @@ mek, presence, roles, moderation, invites, identity}`).
 
 Dependencies: `rekindle-types`, `rekindle-utils`, `rekindle-events`,
 `rekindle-secrets`, `rekindle-crypto`, `rekindle-calls`, `rekindle-route`,
-`veilid-core`, `ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `hkdf`,
+`rekindle-protocol`, `rekindle-records`, `ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `hkdf`,
 `blake3`, `bitflags`, `postcard`.
 
 ### rekindle-node

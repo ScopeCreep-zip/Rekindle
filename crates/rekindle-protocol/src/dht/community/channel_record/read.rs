@@ -1,14 +1,14 @@
 //! Channel record reads: watching and merged multi-writer history.
 
-use crate::dht::parse_record_key;
-use crate::dht::pool::RecordPool;
+use rekindle_records::port::RecordPort;
+
 use crate::error::ProtocolError;
 use rekindle_codec::community::channel_record::{
     decode_channel_entries, message_from_entry, ChannelMessage, ChannelRecordItem,
     CHANNEL_OWNER_SUBKEY_COUNT,
 };
 
-// A channel watch is the record pool's (`RecordPool::watch` on a lease,
+// A channel watch is the record port's (`RecordPort::watch` on a lease,
 // plan C7.4); nothing here watches.
 
 // ── SMPL multi-writer channel persistence ──
@@ -16,10 +16,10 @@ use rekindle_codec::community::channel_record::{
 /// Decode the durable entries of the members in `member_slots` (slot
 /// indices, the writer index the caller's membership state vouches for).
 /// One inspect over those slots, then a read of each slot that holds a
-/// value, from the network only when it changed (`RecordPool::read_changed`,
+/// value, from the network only when it changed (`RecordPort::read_changed`,
 /// plan C7.12); a slot outside the index is never read.
 pub async fn read_all_channel_entries(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_slots: &[u32],
 ) -> Result<Vec<ChannelRecordItem>, ProtocolError> {
@@ -27,13 +27,13 @@ pub async fn read_all_channel_entries(
         .iter()
         .map(|slot| u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + slot)
         .collect();
-    let lease = pool.acquire(&parse_record_key(channel_key)?, None).await?;
+    let lease = pool.acquire(channel_key, None).await?;
     let read = pool.read_changed(lease, &subkeys).await;
     pool.release(lease).await;
 
     let mut items = Vec::new();
-    for (subkey_index, data) in read? {
-        if let Ok(entries) = decode_channel_entries(data.data()) {
+    for (subkey_index, value) in read? {
+        if let Ok(entries) = decode_channel_entries(&value.data) {
             items.extend(entries.into_iter().map(|entry| ChannelRecordItem {
                 subkey_index,
                 entry,
@@ -54,7 +54,7 @@ pub async fn read_all_channel_entries(
 /// Returns messages sorted by (lamport_ts, sender_pseudonym) for deterministic
 /// ordering. Reads as [`read_all_channel_entries`].
 pub async fn read_all_channel_messages(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     channel_key: &str,
     member_slots: &[u32],
 ) -> Result<Vec<ChannelMessage>, ProtocolError> {

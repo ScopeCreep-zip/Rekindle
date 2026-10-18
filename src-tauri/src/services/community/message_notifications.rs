@@ -138,14 +138,7 @@ pub(super) async fn fetch_channel_message(
     }
     let pool = state_helpers::record_pool(state)?;
     let mut last_error: Option<String> = None;
-    for (_segment_index, record_key_str) in segment_records {
-        let record_key = match record_key_str.parse::<veilid_core::RecordKey>() {
-            Ok(key) => key,
-            Err(e) => {
-                last_error = Some(format!("invalid channel record key: {e}"));
-                continue;
-            }
-        };
+    for (_segment_index, record_key) in segment_records {
         let value = match pool.read_once(&record_key, subkey_index, true).await {
             Ok(Some(v)) => v,
             Ok(None) => {
@@ -156,7 +149,7 @@ pub(super) async fn fetch_channel_message(
                 continue;
             }
         };
-        let entries = match decode_channel_entries(value.data()) {
+        let entries = match decode_channel_entries(&value.data) {
             Ok(entries) => entries,
             Err(e) => {
                 last_error = Some(format!("invalid channel page payload: {e}"));
@@ -169,7 +162,7 @@ pub(super) async fn fetch_channel_message(
             {
                 Some(FetchedChannelEntry {
                     message,
-                    record_key: record_key_str.clone(),
+                    record_key: record_key.clone(),
                     forwarded_from_author: None,
                 })
             }
@@ -198,7 +191,7 @@ pub(super) async fn fetch_channel_message(
                         mentioned_pseudonyms: Vec::new(),
                         mentioned_roles: Vec::new(),
                     },
-                    record_key: record_key_str.clone(),
+                    record_key: record_key.clone(),
                     forwarded_from_author: Some(original_author),
                 })
             }

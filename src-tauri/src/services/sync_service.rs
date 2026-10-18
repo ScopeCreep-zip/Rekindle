@@ -213,7 +213,7 @@ async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> 
         }
         sync_single_conversation(
             state,
-            &record_pool,
+            record_pool.as_ref(),
             &secret_bytes,
             friend_key,
             remote_conv_key,
@@ -234,7 +234,7 @@ async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> 
 /// Sync a single friend's conversation record from DHT.
 async fn sync_single_conversation(
     state: &Arc<AppState>,
-    record_pool: &rekindle_protocol::dht::pool::RecordPool,
+    record_pool: &dyn rekindle_records::port::RecordPort,
     my_secret_bytes: &[u8; 32],
     friend_key: &str,
     remote_conv_key: &str,

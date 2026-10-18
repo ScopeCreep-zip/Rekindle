@@ -52,7 +52,7 @@ impl QueryEngine {
                 .map(|(_, slot)| *slot)
                 .collect();
             match crate::broadcast::dht::channel_smpl::read_message_items(
-                &self.records,
+                self.records.as_ref(),
                 record_key,
                 &slots,
             )

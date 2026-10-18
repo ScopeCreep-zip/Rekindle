@@ -169,7 +169,7 @@ fn writes(deps: &MockCommunityDeps) -> usize {
 async fn superseded_by_our_own_row_is_rewritten() {
     let deps = MockCommunityDeps::new(MockState::default());
     let (ours, me) = signed_row(1);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(184), &ours).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 184, &ours).await;
     assert_eq!(writes(&deps), 1, "one rewrite");
 }
 
@@ -179,7 +179,7 @@ async fn superseded_by_another_member_is_not_overwritten() {
     let deps = MockCommunityDeps::new(MockState::default());
     let (theirs, _) = signed_row(2);
     let (_, me) = signed_row(1);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), &theirs).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 9, &theirs).await;
     assert_eq!(writes(&deps), 0);
 }
 
@@ -194,8 +194,8 @@ async fn superseded_by_an_unverified_value_is_not_overwritten() {
         .replacen("\"status\":\"online\"", "\"status\":\"away\"", 1)
         .into_bytes();
     assert_ne!(forged, ours);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), &forged).await;
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(9), b"not json").await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 9, &forged).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 9, b"not json").await;
     assert_eq!(writes(&deps), 0);
 }
 
@@ -205,10 +205,10 @@ async fn a_rewrite_is_attempted_once() {
     let (ours, me) = signed_row(1);
     let mut state = MockState::default();
     state.write_outcomes.push_back(RowWrite::Superseded {
-        seq: Some(185),
+        seq: 185,
         data: ours.clone(),
     });
     let deps = MockCommunityDeps::new(state);
-    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), Some(184), &ours).await;
+    resolve_superseded(&deps, &target(&me), b"{}".to_vec(), 184, &ours).await;
     assert_eq!(writes(&deps), 1);
 }

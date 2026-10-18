@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rekindle_records::lease::{LeaseId, SubkeySet, WatchPlan};
-use veilid_core::{RecordKey, ValueData, VeilidValueChange};
+use veilid_core::{RecordKey, VeilidValueChange};
 
 use super::{range, to_protocol, RecordPool};
 use crate::ProtocolError;
@@ -21,21 +21,17 @@ pub(super) struct Rearm {
     last: Instant,
 }
 
-/// What a `ValueChange` update meant, for the caller that dispatches it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValueChangeReport {
-    /// The pool holds the record. When it does, a dead watch is the pool's
-    /// to re-arm; nothing else re-watches it.
-    pub held: bool,
-    /// The watch ended (`count == 0`) or died (no subkeys). Held and still
-    /// wanted, it is being re-armed.
-    pub watch_died: bool,
-    /// Subkeys that changed. A watch's last notification can carry changes
-    /// too, so these are reported even when `watch_died` is set.
-    pub subkeys: Vec<u32>,
-    /// The first changed subkey's value when Veilid sent one; otherwise the
-    /// caller force-refreshes each subkey (R12).
-    pub value: Option<ValueData>,
+use rekindle_records::port::{ValueChange, ValueChangeReport};
+
+/// A Veilid value change as the port carries it.
+#[must_use]
+pub fn value_change(change: &VeilidValueChange) -> ValueChange {
+    ValueChange {
+        key: change.key.to_string(),
+        subkeys: change.subkeys.iter().collect(),
+        count: change.count,
+        value: change.value.as_ref().map(super::record_value),
+    }
 }
 
 impl RecordPool {
@@ -90,8 +86,8 @@ impl RecordPool {
 
     /// Classify a `ValueChange` update and, for a dead watch on a record a
     /// lease still watches, re-arm it with backoff (the only re-arm path).
-    pub fn on_value_change(self: &Arc<Self>, change: &VeilidValueChange) -> ValueChangeReport {
-        let name = change.key.to_string();
+    pub fn on_value_change(self: &Arc<Self>, change: &ValueChange) -> ValueChangeReport {
+        let name = change.key.clone();
         let (held, watched) = {
             let table = self.table.lock();
             (table.is_held(&name), table.watched(&name))
@@ -99,12 +95,17 @@ impl RecordPool {
         let report = ValueChangeReport {
             held,
             watch_died: change.count == 0 || change.subkeys.is_empty(),
-            subkeys: change.subkeys.iter().collect(),
+            subkeys: change.subkeys.clone(),
             value: change.value.clone(),
         };
         if !report.held || !report.watch_died || watched.is_empty() {
             return report;
         }
+        // Parsed before the re-arm is counted or logged; the key came from
+        // `RecordKey::to_string`, so this holds.
+        let Ok(key) = crate::dht::parse_record_key(&change.key) else {
+            return report;
+        };
         let delay = {
             let now = Instant::now();
             let mut rearm = self.rearm.lock();
@@ -123,7 +124,6 @@ impl RecordPool {
         };
         tracing::info!(record = %name, delay_ms = delay.as_millis(), "DHT watch died; re-arming");
         let pool = Arc::clone(self);
-        let key = change.key.clone();
         self.scope
             .spawn_with_token_or_drop("dht watch re-arm", move |stop| async move {
                 if stop

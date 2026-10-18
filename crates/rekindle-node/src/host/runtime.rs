@@ -90,6 +90,14 @@ pub enum TransportSource {
     /// `rekindled`: start a node with this configuration (admin policy is
     /// applied to it in [`Host::start`]).
     Start(TransportConfig),
+    /// A node on ports the caller built and runs (the network simulator):
+    /// the host runs every domain task over them, as `Start` does (admin
+    /// policy is applied to `config` too).
+    Ports {
+        config: TransportConfig,
+        ports: rekindle_records::port::PortSet,
+        events: tokio::sync::mpsc::Receiver<rekindle_records::port::PortEvent>,
+    },
     /// The GUI's outbound-only node (`TransportNode::adopt_outbound`). The GUI
     /// keeps the Veilid update stream and its receive paths until E5.7.
     Adopted(Arc<TransportNode>),
@@ -171,6 +179,21 @@ impl Host {
         let (presence_start_tx, presence_start_rx) =
             crate::daemon::presence_adapter::supervisor::channel();
 
+        let daemon_handler = || {
+            let handler_transport = Arc::new(RwLock::new(None));
+            let handler = Arc::new(DaemonHandler::new(
+                Arc::new(RwLock::new(None)),
+                Arc::clone(&stores.session),
+                Arc::clone(&stores.db),
+                Arc::clone(&mek_cache),
+                Arc::clone(&signing_key),
+                Arc::clone(&handler_transport),
+                Arc::clone(&pending_joins),
+                mek_rotation_tx.clone(),
+                gossip_tx.clone(),
+            ));
+            (handler, handler_transport)
+        };
         let (mode, node): (HostMode, Option<Arc<TransportNode>>) = match transport {
             TransportSource::Start(transport_config) => {
                 let transport_config = apply_policy(
@@ -180,19 +203,7 @@ impl Host {
                     },
                     &policy,
                 );
-                let subscriptions = Arc::new(RwLock::new(None));
-                let handler_transport = Arc::new(RwLock::new(None));
-                let handler = Arc::new(DaemonHandler::new(
-                    subscriptions,
-                    Arc::clone(&stores.session),
-                    Arc::clone(&stores.db),
-                    Arc::clone(&mek_cache),
-                    Arc::clone(&signing_key),
-                    Arc::clone(&handler_transport),
-                    Arc::clone(&pending_joins),
-                    mek_rotation_tx.clone(),
-                    gossip_tx.clone(),
-                ));
+                let (handler, handler_transport) = daemon_handler();
                 // A daemon without its transport cannot do anything it
                 // exists for; it exits non-zero and its supervisor retries.
                 let node =
@@ -202,6 +213,23 @@ impl Host {
                 let node = Arc::new(node);
                 *handler_transport.write() = Some(Arc::clone(&node));
                 tracing::info!("transport node started");
+                (HostMode::Daemon, Some(node))
+            }
+            TransportSource::Ports {
+                config,
+                ports,
+                events,
+            } => {
+                let (handler, handler_transport) = daemon_handler();
+                let node = Arc::new(TransportNode::from_ports(
+                    apply_policy(config, &policy),
+                    ports,
+                    events,
+                    handler,
+                    Arc::clone(&stores.session),
+                ));
+                *handler_transport.write() = Some(Arc::clone(&node));
+                tracing::info!("transport node on supplied ports");
                 (HostMode::Daemon, Some(node))
             }
             TransportSource::Adopted(node) => (HostMode::Shell, Some(node)),

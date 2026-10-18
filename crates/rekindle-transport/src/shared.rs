@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use parking_lot::RwLock;
+use rekindle_records::port::RecordPort;
 use tokio::sync::mpsc;
 
 // Re-export from rekindle-types — the single source of truth for IPC-boundary types.
@@ -53,7 +54,7 @@ pub struct SharedState {
     ready: tokio::sync::watch::Sender<bool>,
     /// The unlocked session's record pool (plan C7.3), seen by the dispatch
     /// loop so dead watches reach their one owner.
-    records: RwLock<Option<Arc<rekindle_protocol::dht::pool::RecordPool>>>,
+    records: RwLock<Option<Arc<dyn RecordPort>>>,
     /// Broadcast subscribers. Each subscriber gets a clone of every notification.
     /// Dead subscribers (receiver dropped) are cleaned up on the next `notify()`.
     subscribers: RwLock<Vec<mpsc::UnboundedSender<TransportNotification>>>,
@@ -81,7 +82,7 @@ impl SharedState {
 
     /// Update attachment state and notify all subscribers.
     ///
-    /// Called by the dispatch loop when a `VeilidUpdate::Attachment` arrives.
+    /// Called by the dispatch loop when a `PortEvent::Attachment` arrives.
     pub fn set_attachment(&self, state: AttachmentState, attached: bool, pir: bool) {
         self.attachment.store(state as u8, Ordering::Release);
         self.is_attached.store(attached, Ordering::Release);
@@ -145,12 +146,12 @@ impl SharedState {
     }
 
     /// The session's record pool, when one is running.
-    pub fn records(&self) -> Option<Arc<rekindle_protocol::dht::pool::RecordPool>> {
+    pub fn records(&self) -> Option<Arc<dyn RecordPort>> {
         self.records.read().clone()
     }
 
     /// Install or remove the session's record pool.
-    pub fn set_records(&self, pool: Option<Arc<rekindle_protocol::dht::pool::RecordPool>>) {
+    pub fn set_records(&self, pool: Option<Arc<dyn RecordPort>>) {
         *self.records.write() = pool;
     }
 
@@ -230,55 +231,6 @@ mod tests {
         }
         // Out of range falls back to Detached
         assert_eq!(AttachmentState::from_u8(255), AttachmentState::Detached);
-    }
-
-    /// Every attached state veilid-core can actually emit must map to an
-    /// attached state on our side.
-    ///
-    /// `from_veilid_string` fails closed to `Detached`, so an upstream
-    /// rename or a new variant does not break the build — it silently
-    /// reports a healthy node as detached. veilid-core 0.5.4 did both at
-    /// once (added `attached_fair`, renamed `FullyAttached` ->
-    /// `AttachedFull`) and the changelog mentioned neither. This walks
-    /// upstream's own enum so the next one fails here instead.
-    #[test]
-    /// Stays in this crate, not beside the enum in `rekindle-types`:
-    /// it walks `veilid_core`'s own enum, and Tier 1 must not depend on
-    /// veilid-core (rule B2). The two pure-logic tests that used to sit
-    /// here were verbatim copies of ones in
-    /// `rekindle_types::notification`, where the type actually lives.
-    fn every_veilid_attachment_string_is_understood() {
-        use veilid_core::AttachmentState as Upstream;
-
-        for upstream in [
-            Upstream::Detached,
-            Upstream::Attaching,
-            Upstream::AttachedWeak,
-            Upstream::AttachedFair,
-            Upstream::AttachedGood,
-            Upstream::AttachedStrong,
-            Upstream::AttachedFull,
-            Upstream::Detaching,
-        ] {
-            let rendered = upstream.to_string();
-            let ours = AttachmentState::from_veilid_string(&rendered);
-
-            assert_eq!(
-                ours.is_attached(),
-                upstream.is_attached(),
-                "{rendered:?} parsed to {ours:?}, whose is_attached() \
-                 disagrees with veilid-core"
-            );
-
-            if !matches!(upstream, Upstream::Detached) {
-                assert_ne!(
-                    ours,
-                    AttachmentState::Detached,
-                    "{rendered:?} fell through to the fail-closed Detached \
-                     arm — add it to from_veilid_string"
-                );
-            }
-        }
     }
 
     #[tokio::test]

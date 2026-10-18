@@ -106,11 +106,7 @@ impl DaemonPresenceAdapter {
             // seed is the durable secret and the keypair is a pure
             // function of it plus the slot.
             slot_keypair_str: membership.slot_seed.and_then(|seed| {
-                rekindle_transport::broadcast::dht_writes::derive_slot_keypair_str(
-                    &seed,
-                    membership.slot_index,
-                )
-                .ok()
+                rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
             }),
             slot_seed_hex: membership.slot_seed.map(hex::encode),
             my_segment_index: membership.segment_index.unwrap_or(0),

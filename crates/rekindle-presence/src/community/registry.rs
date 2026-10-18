@@ -260,7 +260,7 @@ async fn resolve_superseded<D: CommunityPresenceDeps>(
     deps: &D,
     target: &RowTarget<'_>,
     presence_json: Vec<u8>,
-    seq: Option<u32>,
+    seq: u32,
     data: &[u8],
 ) {
     let RowTarget {
@@ -279,14 +279,14 @@ async fn resolve_superseded<D: CommunityPresenceDeps>(
                 Ok(RowWrite::Stored) => tracing::info!(
                     community = %community_id,
                     subkey,
-                    superseding_seq = ?seq,
+                    superseding_seq = seq,
                     "presence row was behind our own newer copy on the network; rewritten above it",
                 ),
                 Ok(RowWrite::Superseded { seq: again, .. }) => tracing::warn!(
                     community = %community_id,
                     subkey,
-                    superseding_seq = ?seq,
-                    again_seq = ?again,
+                    superseding_seq = seq,
+                    again_seq = again,
                     "presence row superseded again after the rewrite; the next tick writes",
                 ),
                 Err(error) => tracing::warn!(
@@ -300,14 +300,14 @@ async fn resolve_superseded<D: CommunityPresenceDeps>(
         SupersedingRow::Member(author) => tracing::warn!(
             community = %community_id,
             subkey,
-            superseding_seq = ?seq,
+            superseding_seq = seq,
             author = %author,
             "another member's row holds our presence slot (slot collision); not overwritten",
         ),
         SupersedingRow::Unverified(reason) => tracing::warn!(
             community = %community_id,
             subkey,
-            superseding_seq = ?seq,
+            superseding_seq = seq,
             reason,
             "an unverified value holds our presence slot; not overwritten",
         ),

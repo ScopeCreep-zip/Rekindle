@@ -40,32 +40,28 @@ pub(super) async fn scan_segment_raw(
         tracing::trace!(registry_key, "scan_segment_raw: logged out — skipping");
         return Vec::new();
     };
-    let Ok(reg_key) = registry_key.parse::<veilid_core::RecordKey>() else {
-        tracing::warn!(registry_key, "scan_segment_raw: invalid registry key");
-        return Vec::new();
-    };
 
     // One borrow for the whole scan (a table hit: the community holds its
     // registry), then one authoritative network-fanout inspect over the
     // segment range, which yields the local-vs-network seq vectors we diff
     // below.
-    let lease = match pool.acquire(&reg_key, None).await {
+    let lease = match pool.acquire(registry_key, None).await {
         Ok(lease) => lease,
         Err(error) => {
             tracing::debug!(registry_key, %error, "scan_segment_raw: registry not open — skipping");
             return Vec::new();
         }
     };
-    let out = scan_leased(&pool, lease, registry_key, max_subkey, skip_subkey).await;
+    let out = scan_leased(pool.as_ref(), lease, registry_key, max_subkey, skip_subkey).await;
     pool.release(lease).await;
     out
 }
 
 /// [`scan_segment_raw`] on the registry's lease: the registry is the
 /// membership index itself, so its whole range is the read
-/// (`RecordPool::read_changed`, plan C7.12).
+/// (`RecordPort::read_changed`, plan C7.12).
 async fn scan_leased(
-    pool: &rekindle_protocol::dht::pool::RecordPool,
+    pool: &dyn rekindle_records::port::RecordPort,
     lease: rekindle_records::lease::LeaseId,
     registry_key: &str,
     max_subkey: u32,
@@ -77,8 +73,8 @@ async fn scan_leased(
     match pool.read_changed(lease, &subkeys).await {
         Ok(values) => values
             .into_iter()
-            .filter(|(_, value)| !value.data().is_empty())
-            .map(|(subkey, value)| (subkey, value.data().to_vec()))
+            .filter(|(_, value)| !value.data.is_empty())
+            .map(|(subkey, value)| (subkey, value.data))
             .collect(),
         Err(error) => {
             tracing::debug!(

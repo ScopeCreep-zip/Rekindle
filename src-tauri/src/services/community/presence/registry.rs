@@ -49,12 +49,8 @@ pub(crate) async fn ensure_registry_open(
     if held {
         return Ok(());
     }
-    let key = registry_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("presence_poll: bad registry key: {e}"))?;
-    let writer = writer.and_then(|w| w.parse::<veilid_core::KeyPair>().ok());
     let lease = state_helpers::record_pool(state)?
-        .acquire(&key, writer)
+        .acquire(registry_key, writer.as_deref())
         .await
         .map_err(|e| format!("presence_poll: failed to open registry: {e}"))?;
     if let Some(cs) = state.communities.write().get_mut(community_id) {

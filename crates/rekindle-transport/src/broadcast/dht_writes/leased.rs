@@ -1,24 +1,18 @@
-//! Leased records (record pool), string-typed.
-//!
-//! The daemon cannot name Veilid types (see the string-typed surface in
-//! the parent module), so it borrows records through these: every record
-//! operation names a lease from the unlocked session's record pool (plan
-//! C7.5).
+//! Leased records over the session's record port: every record operation
+//! names a lease from the unlocked session's pool (plan C7.5), with keys
+//! and keypairs as text (plan C9.1).
+
+use std::sync::Arc;
+
+use rekindle_records::port::{RecordPort, ReportScope};
 
 use super::super::node::TransportNode;
-use super::{parse_writer, seqs_as_opt_u64};
+use super::seqs_as_opt_u64;
 use crate::error::{Result, TransportError};
 
 pub use rekindle_records::lease::LeaseId;
 
-/// Parse a DHT record key string into a Veilid `RecordKey`.
-fn parse_key(key: &str) -> Result<veilid_core::RecordKey> {
-    key.parse().map_err(|e| TransportError::DhtError {
-        reason: format!("invalid record key '{key}': {e}"),
-    })
-}
-
-fn pool(node: &TransportNode) -> Result<std::sync::Arc<rekindle_protocol::dht::pool::RecordPool>> {
+fn pool(node: &TransportNode) -> Result<Arc<dyn RecordPort>> {
     node.require_records()
 }
 
@@ -29,9 +23,7 @@ pub async fn acquire_str(
     record_key: &str,
     writer: Option<&str>,
 ) -> Result<LeaseId> {
-    let key = parse_key(record_key)?;
-    let writer = writer.map(parse_writer).transpose()?;
-    Ok(pool(node)?.acquire(&key, writer).await?)
+    Ok(pool(node)?.acquire(record_key, writer).await?)
 }
 
 /// End a borrow; the record closes when it was the last. A no-op once the
@@ -54,14 +46,8 @@ pub async fn create_smpl_leased(
     node: &TransportNode,
     member_pubkeys: &[[u8; 32]],
 ) -> Result<(LeaseId, String, String)> {
-    let schema =
-        rekindle_protocol::dht::schema::community_smpl_schema(member_pubkeys).map_err(|e| {
-            TransportError::RecordCreateFailed {
-                reason: format!("SMPL schema: {e}"),
-            }
-        })?;
-    let (lease, key, keypair) = pool(node)?.create(schema, None).await?;
-    Ok((lease, key.to_string(), keypair.to_string()))
+    let schema = rekindle_records::schema::community_smpl(member_pubkeys);
+    Ok(pool(node)?.create(&schema, None).await?)
 }
 
 /// Create a single-owner DFLT(1) record owned by `owner` (a fresh key when
@@ -71,14 +57,8 @@ pub async fn create_dflt_leased(
     node: &TransportNode,
     owner: Option<&str>,
 ) -> Result<(LeaseId, String, String)> {
-    let owner = owner.map(parse_writer).transpose()?;
-    let schema = rekindle_protocol::dht::schema::invite_secrets_dflt_schema().map_err(|e| {
-        TransportError::RecordCreateFailed {
-            reason: format!("DFLT schema: {e}"),
-        }
-    })?;
-    let (lease, key, keypair) = pool(node)?.create(schema, owner).await?;
-    Ok((lease, key.to_string(), keypair.to_string()))
+    let schema = rekindle_records::schema::invite_secrets();
+    Ok(pool(node)?.create(&schema, owner).await?)
 }
 
 /// Read a subkey of a leased record.
@@ -89,14 +69,13 @@ pub async fn get_leased(
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>> {
     let value = pool(node)?.get(lease, subkey, force_refresh).await?;
-    Ok(value.map(|v| v.data().to_vec()))
+    Ok(value.map(|v| v.data))
 }
 
 /// The value the network held instead of ours when a write was superseded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewerValue {
-    /// `None` only if Veilid returned a value without a sequence number.
-    pub seq: Option<u32>,
+    pub seq: u32,
     pub data: Vec<u8>,
 }
 
@@ -111,12 +90,11 @@ pub async fn set_leased_str(
     data: Vec<u8>,
     writer: Option<&str>,
 ) -> Result<Option<NewerValue>> {
-    use rekindle_protocol::dht::pool::SetOutcome;
-    let writer = writer.map(parse_writer).transpose()?;
+    use rekindle_records::port::SetOutcome;
     match pool(node)?.set(lease, subkey, data, writer).await? {
         SetOutcome::Superseded(newer) => Ok(Some(NewerValue {
-            seq: newer.seq().to_option(),
-            data: newer.data().to_vec(),
+            seq: newer.seq,
+            data: newer.data,
         })),
         SetOutcome::Landed | SetOutcome::Unchanged => Ok(None),
         missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => {
@@ -132,10 +110,8 @@ pub async fn inspect_leased_local_seqs(
     node: &TransportNode,
     lease: LeaseId,
 ) -> Result<Vec<Option<u64>>> {
-    let report = pool(node)?
-        .inspect(lease, None, veilid_core::DHTReportScope::Local)
-        .await?;
-    Ok(seqs_as_opt_u64(report.local_seqs()))
+    let report = pool(node)?.inspect(lease, None, ReportScope::Local).await?;
+    Ok(seqs_as_opt_u64(&report.local_seqs))
 }
 
 /// Network-confirmed sequence numbers of a leased record.
@@ -144,9 +120,9 @@ pub async fn inspect_leased_network_seqs(
     lease: LeaseId,
 ) -> Result<Vec<Option<u64>>> {
     let report = pool(node)?
-        .inspect(lease, None, veilid_core::DHTReportScope::UpdateGet)
+        .inspect(lease, None, ReportScope::UpdateGet)
         .await?;
-    Ok(seqs_as_opt_u64(report.network_seqs()))
+    Ok(seqs_as_opt_u64(&report.network_seqs))
 }
 
 /// Indices of a leased record's subkeys that hold a value,
@@ -156,14 +132,14 @@ pub async fn inspect_leased_present_subkeys(
     lease: LeaseId,
 ) -> Result<Vec<u32>> {
     let report = pool(node)?
-        .inspect(lease, None, veilid_core::DHTReportScope::UpdateGet)
+        .inspect(lease, None, ReportScope::UpdateGet)
         .await?;
     Ok(report
-        .network_seqs()
+        .subkeys
         .iter()
-        .enumerate()
+        .zip(&report.network_seqs)
         .filter(|(_, seq)| seq.is_some())
-        .map(|(i, _)| u32::try_from(i).unwrap_or(u32::MAX))
+        .map(|(subkey, _)| *subkey)
         .collect())
 }
 
@@ -176,26 +152,22 @@ pub async fn inspect_leased_local_present(
     lease: LeaseId,
     subkeys: &[u32],
 ) -> Result<Vec<u32>> {
-    let range: rekindle_records::lease::SubkeySet = subkeys.iter().copied().collect();
     let report = pool(node)?
-        .inspect(lease, Some(range), veilid_core::DHTReportScope::UpdateGet)
+        .inspect(lease, Some(subkeys), ReportScope::UpdateGet)
         .await?;
-    let listed = report.subkeys();
     Ok(report
-        .local_seqs()
+        .subkeys
         .iter()
-        .enumerate()
-        .filter(|(_, seq)| seq.to_option().is_some())
-        .filter_map(|(i, _)| listed.nth_subkey(i))
+        .zip(&report.local_seqs)
+        .filter(|(_, seq)| seq.is_some())
+        .map(|(subkey, _)| *subkey)
         .collect())
 }
 
 /// Watch `subkeys` of a leased record; the pool watches the union of every
 /// borrower's subkeys and re-arms a dead watch while one is held.
 pub async fn watch_leased(node: &TransportNode, lease: LeaseId, subkeys: &[u32]) -> Result<()> {
-    Ok(pool(node)?
-        .watch(lease, subkeys.iter().copied().collect())
-        .await?)
+    Ok(pool(node)?.watch(lease, subkeys).await?)
 }
 
 /// Watch every subkey of a leased record (its schema's count).
@@ -211,7 +183,8 @@ pub async fn read_once_str(
     subkey: u32,
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>> {
-    let key = parse_key(record_key)?;
-    let value = pool(node)?.read_once(&key, subkey, force_refresh).await?;
-    Ok(value.map(|v| v.data().to_vec()))
+    let value = pool(node)?
+        .read_once(record_key, subkey, force_refresh)
+        .await?;
+    Ok(value.map(|v| v.data))
 }

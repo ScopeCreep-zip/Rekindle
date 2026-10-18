@@ -124,7 +124,7 @@ pub async fn prepare_chat_session_inner(
         return Ok(());
     };
     if let Ok(Some(route_blob)) = rekindle_protocol::dht::profile::read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         &dht_key_str,
         rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
         true,

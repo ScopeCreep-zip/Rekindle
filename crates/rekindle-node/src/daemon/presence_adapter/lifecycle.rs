@@ -56,7 +56,7 @@ impl DaemonPresenceAdapter {
             .require_records()
             .map_err(|_| PresenceError::NotAttached)?;
         rekindle_transport::broadcast::dht::channel_smpl::read_message_items(
-            &pool,
+            pool.as_ref(),
             record_key,
             member_slots,
         )

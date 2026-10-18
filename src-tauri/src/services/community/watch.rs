@@ -128,21 +128,17 @@ pub async fn hold_unheld_records(
             cs.member_registry_key.clone(),
             cs.registry_owner_keypair
                 .clone()
-                .or_else(|| cs.slot_keypair.clone())
-                .and_then(|w| w.parse::<veilid_core::KeyPair>().ok()),
+                .or_else(|| cs.slot_keypair.clone()),
         )
     };
     let mut leases = rekindle_records::lease::CommunityLeases::default();
     for record_key in pending {
         // Leaving the community stops this before the next borrow; a borrow
         // in flight runs on the pool's scope, so none is dropped (C4.L1).
-        let Ok(parsed) = record_key.parse::<veilid_core::RecordKey>() else {
-            continue;
-        };
         let is_registry = registry_key.as_deref() == Some(record_key.as_str());
         let writer = is_registry.then(|| registry_writer.clone()).flatten();
         let Some(acquired) = stop
-            .run_until_cancelled(pool.acquire(&parsed, writer))
+            .run_until_cancelled(pool.acquire(&record_key, writer.as_deref()))
             .await
         else {
             break;

@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use rekindle_secrets::sync_key::{decrypt_subkey, SyncKey};
 use rekindle_types::cross_device_sync::{ReadState, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST};
-use veilid_core::{RecordKey, ValueSubkey};
 
 use super::record::{open_personal_sync_record, PersonalSyncRecordHandle};
 use crate::db_helpers::db_fire;
@@ -31,20 +30,15 @@ pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &Db) -> Resu
         return Ok(());
     }
     let record_pool = state_helpers::record_pool(state)?;
-    let key: RecordKey = handle
-        .record_key
-        .parse()
-        .map_err(|e| format!("invalid sync record key: {e}"))?;
-    let owner_kp: veilid_core::KeyPair = handle
-        .owner_keypair_hex
-        .parse()
-        .map_err(|e| format!("invalid sync owner keypair: {e}"))?;
     let lease = record_pool
-        .acquire(&key, Some(owner_kp))
+        .acquire(&handle.record_key, Some(&handle.owner_keypair_hex))
         .await
         .map_err(|e| format!("open personal sync record: {e}"))?;
     if let Err(e) = record_pool
-        .watch(lease, (SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).collect())
+        .watch(
+            lease,
+            &(SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).collect::<Vec<u32>>(),
+        )
         .await
     {
         record_pool.release(lease).await;
@@ -64,7 +58,7 @@ pub async fn try_handle_personal_sync_change(
     state: &Arc<AppState>,
     pool: &Db,
     record_key: &str,
-    subkeys: &[ValueSubkey],
+    subkeys: &[u32],
     inline_value: Option<&[u8]>,
 ) -> bool {
     let Some(handle) = open_personal_sync_record(state, pool).await else {
@@ -88,11 +82,11 @@ pub async fn try_handle_personal_sync_change(
             let Ok(record_pool) = state_helpers::record_pool(state) else {
                 return true;
             };
-            let Ok(key) = handle.record_key.parse::<RecordKey>() else {
-                return true;
-            };
-            match record_pool.read_once(&key, subkey, true).await {
-                Ok(Some(v)) => v.data().to_vec(),
+            match record_pool
+                .read_once(&handle.record_key, subkey, true)
+                .await
+            {
+                Ok(Some(v)) => v.data,
                 Ok(None) | Err(_) => continue,
             }
         };
@@ -111,7 +105,7 @@ pub async fn try_handle_personal_sync_change(
 fn apply_remote_subkey(
     pool: &Db,
     handle: &PersonalSyncRecordHandle,
-    subkey: ValueSubkey,
+    subkey: u32,
     plaintext: &[u8],
 ) {
     // Pure decode via the crate; this function owns the per-variant

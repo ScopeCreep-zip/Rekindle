@@ -518,25 +518,22 @@ async fn handle_relayed_envelope(
             }
 
             if let Ok(pool) = state_helpers::record_pool(state) {
-                let parsed = record_key.parse::<veilid_core::RecordKey>();
-                if let Ok(parsed) = parsed {
-                    if let Ok(Some(value)) = pool.read_once(&parsed, subkey, true).await {
-                        let actual = blake3::hash(value.data()).to_hex().to_string();
-                        if actual == content_hash {
-                            crate::services::presence_service::handle_value_change(
-                                app_handle,
-                                state,
-                                &record_key,
-                                &[subkey],
-                                value.data(),
-                            );
-                        } else {
-                            tracing::debug!(
-                                record_key = %record_key,
-                                subkey,
-                                "WatchRelay content hash mismatch — dropping"
-                            );
-                        }
+                if let Ok(Some(value)) = pool.read_once(&record_key, subkey, true).await {
+                    let actual = blake3::hash(&value.data).to_hex().to_string();
+                    if actual == content_hash {
+                        crate::services::presence_service::handle_value_change(
+                            app_handle,
+                            state,
+                            &record_key,
+                            &[subkey],
+                            &value.data,
+                        );
+                    } else {
+                        tracing::debug!(
+                            record_key = %record_key,
+                            subkey,
+                            "WatchRelay content hash mismatch — dropping"
+                        );
                     }
                 }
             }

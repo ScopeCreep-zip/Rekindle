@@ -45,9 +45,9 @@ use rekindle_records::lease::LeaseId;
 use tokio::time::Instant;
 use veilid_core::{KeyPair, RecordKey};
 
-use super::io::SetOutcome;
 use super::RecordPool;
 use crate::ProtocolError;
+use rekindle_records::port::SetOutcome;
 
 /// First and longest wait before re-pushing a held write.
 const REPUSH_MIN: Duration = Duration::from_secs(2);
@@ -73,22 +73,7 @@ struct DuePush {
     writer: Option<KeyPair>,
 }
 
-/// A durable write that settled: it landed (or the network already held
-/// it), or the network held a newer value and this one was dropped.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Settled {
-    pub record_key: String,
-    pub subkey: u32,
-    pub landed: bool,
-}
-
-/// A held write handed to the host at logout, or back to the next session.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnsentWrite {
-    pub record_key: String,
-    pub subkey: u32,
-    pub data: Vec<u8>,
-}
+use rekindle_records::port::{Settled, UnsentWrite};
 
 /// Held writes by (record key, subkey).
 pub(super) type HeldWrites = HashMap<(String, u32), HeldWrite>;

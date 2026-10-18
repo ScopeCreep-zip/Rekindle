@@ -7,14 +7,13 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::pool::RecordPool;
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::RecordPort;
 use rekindle_secrets::sync_key::{decrypt_subkey, encrypt_subkey, SyncKey};
 use rekindle_types::cross_device_sync::{
     DeviceList, ReadState, SyncManifest, SyncPreferences, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST,
     SUBKEY_PREFERENCES, SUBKEY_READ_STATE,
 };
-use veilid_core::{KeyPair, RecordKey, ValueSubkey};
 
 use super::merge::{merge_device_list, merge_preferences, merge_read_state};
 use super::record::PersonalSyncRecordHandle;
@@ -22,39 +21,52 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 /// Borrow the personal sync record (writable with its owner key) for one
-/// read/write transaction, then release it. The release closes the record
-/// only when nothing else holds it, so the session's watch lease survives
-/// (the old `close_dht_record` here cancelled that watch node-wide).
-async fn with_record<F, T>(
+/// read or write, then release it. The release closes the record only when
+/// nothing else holds it, so the session's watch lease survives (the old
+/// `close_dht_record` here cancelled that watch node-wide).
+async fn borrow(
     state: &Arc<AppState>,
     handle: &PersonalSyncRecordHandle,
-    f: F,
-) -> Result<T, String>
-where
-    F: AsyncFnOnce(&RecordPool, LeaseId) -> Result<T, String>,
-{
+) -> Result<(Arc<dyn RecordPort>, LeaseId), String> {
     let pool = state_helpers::record_pool(state)?;
-    let key: RecordKey = handle
-        .record_key
-        .parse()
-        .map_err(|e| format!("invalid sync record key: {e}"))?;
-    let owner_kp: KeyPair = handle
-        .owner_keypair_hex
-        .parse()
-        .map_err(|e| format!("invalid sync owner keypair: {e}"))?;
     let lease = pool
-        .acquire(&key, Some(owner_kp))
+        .acquire(&handle.record_key, Some(&handle.owner_keypair_hex))
         .await
         .map_err(|e| format!("open personal sync record: {e}"))?;
-    let result = f(&pool, lease).await;
+    Ok((pool, lease))
+}
+
+/// One subkey, decrypted, on a borrow of its own.
+async fn read_subkey(
+    state: &Arc<AppState>,
+    handle: &PersonalSyncRecordHandle,
+    subkey: u32,
+    sync_key: &SyncKey,
+) -> Result<Option<Vec<u8>>, String> {
+    let (pool, lease) = borrow(state, handle).await?;
+    let read = read_decrypted_subkey(pool.as_ref(), lease, subkey, sync_key).await;
     pool.release(lease).await;
-    result
+    read
+}
+
+/// Encrypt and write one subkey, on a borrow of its own.
+async fn write_subkey(
+    state: &Arc<AppState>,
+    handle: &PersonalSyncRecordHandle,
+    subkey: u32,
+    sync_key: &SyncKey,
+    plaintext: &[u8],
+) -> Result<(), String> {
+    let (pool, lease) = borrow(state, handle).await?;
+    let written = write_encrypted_subkey(pool.as_ref(), lease, subkey, sync_key, plaintext).await;
+    pool.release(lease).await;
+    written
 }
 
 async fn read_decrypted_subkey(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     lease: LeaseId,
-    subkey: ValueSubkey,
+    subkey: u32,
     sync_key: &SyncKey,
 ) -> Result<Option<Vec<u8>>, String> {
     let value = pool
@@ -64,14 +76,14 @@ async fn read_decrypted_subkey(
     let Some(value) = value else {
         return Ok(None);
     };
-    let plaintext = decrypt_subkey(sync_key, subkey, value.data())?;
+    let plaintext = decrypt_subkey(sync_key, subkey, &value.data)?;
     Ok(Some(plaintext))
 }
 
 async fn write_encrypted_subkey(
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     lease: LeaseId,
-    subkey: ValueSubkey,
+    subkey: u32,
     sync_key: &SyncKey,
     plaintext: &[u8],
 ) -> Result<(), String> {
@@ -91,19 +103,12 @@ pub async fn read_sync_manifest(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<Option<SyncManifest>, String> {
-    with_record(
-        state,
-        handle,
-        async |pool, lease| match read_decrypted_subkey(pool, lease, SUBKEY_MANIFEST, sync_key)
-            .await?
-        {
-            Some(bytes) => serde_json::from_slice(&bytes)
-                .map(Some)
-                .map_err(|e| format!("manifest decode: {e}")),
-            None => Ok(None),
-        },
-    )
-    .await
+    match read_subkey(state, handle, SUBKEY_MANIFEST, sync_key).await? {
+        Some(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| format!("manifest decode: {e}")),
+        None => Ok(None),
+    }
 }
 
 pub async fn write_sync_manifest(
@@ -113,10 +118,7 @@ pub async fn write_sync_manifest(
     manifest: &SyncManifest,
 ) -> Result<(), String> {
     let encoded = serde_json::to_vec(manifest).map_err(|e| format!("manifest encode: {e}"))?;
-    with_record(state, handle, async |pool, lease| {
-        write_encrypted_subkey(pool, lease, SUBKEY_MANIFEST, sync_key, &encoded).await
-    })
-    .await
+    write_subkey(state, handle, SUBKEY_MANIFEST, sync_key, &encoded).await
 }
 
 pub async fn read_read_state(
@@ -124,18 +126,11 @@ pub async fn read_read_state(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<ReadState, String> {
-    with_record(
-        state,
-        handle,
-        async |pool, lease| match read_decrypted_subkey(pool, lease, SUBKEY_READ_STATE, sync_key)
-            .await?
-        {
-            Some(bytes) => serde_json::from_slice::<ReadState>(&bytes)
-                .map_err(|e| format!("read state decode: {e}")),
-            None => Ok(ReadState::default()),
-        },
-    )
-    .await
+    match read_subkey(state, handle, SUBKEY_READ_STATE, sync_key).await? {
+        Some(bytes) => serde_json::from_slice::<ReadState>(&bytes)
+            .map_err(|e| format!("read state decode: {e}")),
+        None => Ok(ReadState::default()),
+    }
 }
 
 pub async fn write_read_state(
@@ -149,10 +144,7 @@ pub async fn write_read_state(
         .unwrap_or_default();
     let merged = merge_read_state(local, remote);
     let encoded = serde_json::to_vec(&merged).map_err(|e| format!("read state encode: {e}"))?;
-    with_record(state, handle, async |pool, lease| {
-        write_encrypted_subkey(pool, lease, SUBKEY_READ_STATE, sync_key, &encoded).await
-    })
-    .await?;
+    write_subkey(state, handle, SUBKEY_READ_STATE, sync_key, &encoded).await?;
     Ok(merged)
 }
 
@@ -161,18 +153,11 @@ pub async fn read_preferences(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<SyncPreferences, String> {
-    with_record(
-        state,
-        handle,
-        async |pool, lease| match read_decrypted_subkey(pool, lease, SUBKEY_PREFERENCES, sync_key)
-            .await?
-        {
-            Some(bytes) => serde_json::from_slice::<SyncPreferences>(&bytes)
-                .map_err(|e| format!("prefs decode: {e}")),
-            None => Ok(SyncPreferences::default()),
-        },
-    )
-    .await
+    match read_subkey(state, handle, SUBKEY_PREFERENCES, sync_key).await? {
+        Some(bytes) => serde_json::from_slice::<SyncPreferences>(&bytes)
+            .map_err(|e| format!("prefs decode: {e}")),
+        None => Ok(SyncPreferences::default()),
+    }
 }
 
 pub async fn write_preferences(
@@ -186,10 +171,7 @@ pub async fn write_preferences(
         .unwrap_or_default();
     let merged = merge_preferences(local, remote);
     let encoded = serde_json::to_vec(&merged).map_err(|e| format!("prefs encode: {e}"))?;
-    with_record(state, handle, async |pool, lease| {
-        write_encrypted_subkey(pool, lease, SUBKEY_PREFERENCES, sync_key, &encoded).await
-    })
-    .await?;
+    write_subkey(state, handle, SUBKEY_PREFERENCES, sync_key, &encoded).await?;
     Ok(merged)
 }
 
@@ -198,18 +180,11 @@ pub async fn read_device_list(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<DeviceList, String> {
-    with_record(
-        state,
-        handle,
-        async |pool, lease| match read_decrypted_subkey(pool, lease, SUBKEY_DEVICE_LIST, sync_key)
-            .await?
-        {
-            Some(bytes) => serde_json::from_slice::<DeviceList>(&bytes)
-                .map_err(|e| format!("device list decode: {e}")),
-            None => Ok(DeviceList::default()),
-        },
-    )
-    .await
+    match read_subkey(state, handle, SUBKEY_DEVICE_LIST, sync_key).await? {
+        Some(bytes) => serde_json::from_slice::<DeviceList>(&bytes)
+            .map_err(|e| format!("device list decode: {e}")),
+        None => Ok(DeviceList::default()),
+    }
 }
 
 pub async fn write_device_list(
@@ -223,9 +198,6 @@ pub async fn write_device_list(
         .unwrap_or_default();
     let merged = merge_device_list(local, remote);
     let encoded = serde_json::to_vec(&merged).map_err(|e| format!("device list encode: {e}"))?;
-    with_record(state, handle, async |pool, lease| {
-        write_encrypted_subkey(pool, lease, SUBKEY_DEVICE_LIST, sync_key, &encoded).await
-    })
-    .await?;
+    write_subkey(state, handle, SUBKEY_DEVICE_LIST, sync_key, &encoded).await?;
     Ok(merged)
 }

@@ -74,7 +74,7 @@ async fn scan_leased(
     start: Instant,
 ) {
     // Step 1: Inspect — one network call to get all subkey sequence numbers.
-    let all_subkeys: Vec<u32> = (0..FRIEND_INBOX_SUBKEY_COUNT).collect();
+    let all_subkeys: Vec<u32> = (0..u32::from(FRIEND_INBOX_SUBKEY_COUNT)).collect();
     let inspect_start = Instant::now();
     let populated = match rekindle_transport::broadcast::dht_writes::inspect_leased_local_present(
         transport_node,
@@ -112,10 +112,10 @@ async fn scan_leased(
     info!(
         populated = populated.len(),
         total = FRIEND_INBOX_SUBKEY_COUNT,
-        skipped = FRIEND_INBOX_SUBKEY_COUNT as usize - populated.len(),
+        skipped = usize::from(FRIEND_INBOX_SUBKEY_COUNT) - populated.len(),
         "friend inbox scan: inspect found {} populated subkeys, skipping {} empty",
         populated.len(),
-        FRIEND_INBOX_SUBKEY_COUNT as usize - populated.len()
+        usize::from(FRIEND_INBOX_SUBKEY_COUNT) - populated.len()
     );
 
     // Step 3: Read only populated subkeys

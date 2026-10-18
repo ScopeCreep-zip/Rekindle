@@ -211,9 +211,6 @@ impl MembershipEventDeps for GovernanceAdapter {
                 let Ok(pool) = state_helpers::record_pool(&state) else {
                     return;
                 };
-                let Ok(reg_typed_key) = rk.parse::<veilid_core::RecordKey>() else {
-                    return;
-                };
 
                 let mut found_peers = 0u32;
                 for member in &members {
@@ -224,16 +221,13 @@ impl MembershipEventDeps for GovernanceAdapter {
                     if stop.run_until_cancelled(pace).await.is_none() {
                         return;
                     }
-                    if let Ok(Some(val)) = pool
-                        .read_once(&reg_typed_key, member.subkey_index, false)
-                        .await
-                    {
-                        if val.data().is_empty() {
+                    if let Ok(Some(val)) = pool.read_once(&rk, member.subkey_index, false).await {
+                        if val.data.is_empty() {
                             continue;
                         }
                         if let Ok(presence) = serde_json::from_slice::<
                             rekindle_types::presence::MemberPresence,
-                        >(val.data())
+                        >(&val.data)
                         {
                             // Architecture §26 W26 — verify the presence row was
                             // signed by the claimed pseudonym before treating it

@@ -37,12 +37,22 @@ pub struct PresenceAdapter {
     pub(super) pool: Db,
 }
 
+/// A record port failure as presence reports it: a key or keypair text that
+/// does not parse is `InvalidDhtKey`, anything else a DHT failure.
+fn presence_error(e: rekindle_records::port::PortError) -> rekindle_presence::PresenceError {
+    match e {
+        rekindle_records::port::PortError::KeyText(reason) => {
+            rekindle_presence::PresenceError::InvalidDhtKey(reason)
+        }
+        other => rekindle_presence::PresenceError::Dht(other.to_string()),
+    }
+}
+
 impl PresenceAdapter {
     /// The session's record pool; `NotAttached` while logged out.
     pub(super) fn record_pool(
         &self,
-    ) -> Result<Arc<rekindle_protocol::dht::pool::RecordPool>, rekindle_presence::PresenceError>
-    {
+    ) -> Result<Arc<dyn rekindle_records::port::RecordPort>, rekindle_presence::PresenceError> {
         crate::state_helpers::record_pool(&self.state)
             .map_err(|_| rekindle_presence::PresenceError::NotAttached)
     }

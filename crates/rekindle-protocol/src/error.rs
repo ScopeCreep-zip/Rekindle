@@ -96,7 +96,7 @@ pub enum ProtocolError {
 
     /// A write that a structure depends on did not reach consensus (or lost
     /// to a newer value), so the structure was not updated
-    /// ([`SetOutcome::missed`](crate::dht::pool::SetOutcome::missed)).
+    /// ([`SetOutcome::missed`](rekindle_records::port::SetOutcome::missed)).
     #[error("subkey {subkey} not stored: {outcome}")]
     NotStored { subkey: u32, outcome: String },
 }
@@ -116,5 +116,80 @@ impl From<rekindle_codec::CodecError> for ProtocolError {
 impl From<rekindle_crypto::CryptoError> for ProtocolError {
     fn from(e: rekindle_crypto::CryptoError) -> Self {
         Self::CryptoError(e.to_string())
+    }
+}
+
+impl From<rekindle_records::port::PortError> for ProtocolError {
+    fn from(e: rekindle_records::port::PortError) -> Self {
+        use rekindle_records::port::PortError;
+        match e {
+            PortError::Dht(m) => Self::DhtError(m),
+            PortError::Unreachable(m) => Self::DhtRecordUnreachable(m),
+            PortError::Routing(m) => Self::RoutingError(m),
+            PortError::Send(m) => Self::SendFailed(m),
+            PortError::RouteUnusable(m) => Self::RouteUnusable(m),
+            PortError::MessageTooLarge { len, max } => Self::MessageTooLarge { len, max },
+            PortError::SubkeyTooLarge { subkey, len, cap } => {
+                Self::SubkeyTooLarge { subkey, len, cap }
+            }
+            PortError::LeaseNotHeld(id) => Self::LeaseNotHeld(id),
+            PortError::Closed => Self::PoolClosed,
+            PortError::NotWritable(key) => Self::NotWritable(key),
+            PortError::NotStored { subkey, outcome } => Self::NotStored { subkey, outcome },
+            PortError::KeyText(m) => Self::DhtError(format!("bad key text: {m}")),
+            PortError::Node(m) => Self::Internal(m),
+            PortError::Codec(m) => Self::Deserialization(m),
+            PortError::Crypto(m) => Self::CryptoError(m),
+        }
+    }
+}
+
+impl From<ProtocolError> for rekindle_records::port::PortError {
+    fn from(e: ProtocolError) -> Self {
+        match e {
+            ProtocolError::DhtError(m) => Self::Dht(m),
+            ProtocolError::DhtRecordUnreachable(m) => Self::Unreachable(m),
+            ProtocolError::RoutingError(m) => Self::Routing(m),
+            ProtocolError::SendFailed(m) | ProtocolError::ReceiveFailed(m) => Self::Send(m),
+            ProtocolError::RouteUnusable(m) => Self::RouteUnusable(m),
+            ProtocolError::MessageTooLarge { len, max } => Self::MessageTooLarge { len, max },
+            ProtocolError::SubkeyTooLarge { subkey, len, cap } => {
+                Self::SubkeyTooLarge { subkey, len, cap }
+            }
+            ProtocolError::LeaseNotHeld(id) => Self::LeaseNotHeld(id),
+            ProtocolError::PoolClosed => Self::Closed,
+            ProtocolError::NotWritable(key) => Self::NotWritable(key),
+            ProtocolError::NotStored { subkey, outcome } => Self::NotStored { subkey, outcome },
+            ProtocolError::PeerNotFound(m) => Self::Routing(format!("peer not found: {m}")),
+            ProtocolError::NodeStartup(m)
+            | ProtocolError::AttachFailed(m)
+            | ProtocolError::Network(m)
+            | ProtocolError::Internal(m) => Self::Node(m),
+            ProtocolError::NodeNotInitialized => Self::Node("node not initialized".into()),
+            ProtocolError::Serialization(m) => Self::Codec(format!("serialization: {m}")),
+            ProtocolError::Deserialization(m) => Self::Codec(format!("deserialization: {m}")),
+            ProtocolError::UnknownVariant(m) => Self::Codec(format!("unknown variant: {m}")),
+            ProtocolError::Verification(m) => Self::Crypto(format!("verification: {m}")),
+            ProtocolError::CryptoError(m) => Self::Crypto(m),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rekindle_records::port::PortError;
+
+    use super::ProtocolError;
+
+    /// A route-unusable failure keeps its class both ways: the importer
+    /// must still forget the route.
+    #[test]
+    fn route_unusable_survives_the_port_round_trip() {
+        let port = PortError::from(ProtocolError::RouteUnusable("no connection".into()));
+        assert_eq!(port, PortError::RouteUnusable("no connection".into()));
+        assert!(matches!(
+            ProtocolError::from(port),
+            ProtocolError::RouteUnusable(m) if m == "no connection"
+        ));
     }
 }

@@ -320,7 +320,7 @@ pub(crate) async fn load_channel_messages_from_smpl(
             .into_iter()
             .collect();
     let slots: Vec<u32> = subkey_pseudonyms.keys().copied().collect();
-    let channel_entries = read_all_channel_entries(&record_pool, &channel_key, &slots)
+    let channel_entries = read_all_channel_entries(record_pool.as_ref(), &channel_key, &slots)
         .await
         .map_err(|e| format!("read SMPL channel history: {e}"))?;
     let reaction_groups = build_reaction_groups(&channel_entries, &subkey_pseudonyms);

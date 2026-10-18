@@ -117,9 +117,13 @@ The Veilid boundary is **transitive linkage**
 link `veilid-core`:
 
 - `rekindle-protocol` — every Veilid call: the record pool (`dht::pool`),
-  `RouteImports`, `OwnRoutes`, node startup. Rule B22
+  `RouteImports`, the own-route allocator (`VeilidRouteAllocator`), node
+  startup, and the ports' Veilid implementation (`ports`). Rule B22
   (`cargo xtask check-veilid-dht-calls`) keeps each call in its owner.
-- `rekindle-transport` — the daemon's adapter over `rekindle-protocol`.
+- `rekindle-transport` — the daemon's transport. It links Veilid only through
+  `rekindle-protocol` and names no Veilid type: it runs on the
+  `rekindle_records::port` traits (plan C9.1; the same xtask keeps
+  `veilid_core` out of it and out of `rekindle-records`).
 - `rekindle-node` — the host, through `rekindle-transport`.
 - `rekindle-desktop` — until F1 makes it a thin client.
 

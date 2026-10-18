@@ -124,15 +124,16 @@ pub struct AppState {
     /// The login session's scope; every post-login task runs in it
     /// (`services::session`, plan C4). `None` while logged out.
     pub login_scope: RwLock<Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>>,
-    /// The session's DHT record pool (plan C7.3): the only opener of
-    /// records. Created when login services start, shut down at logout.
-    pub record_pool: RwLock<Option<Arc<rekindle_protocol::dht::pool::RecordPool>>>,
+    /// The session's DHT records (plan C7.3, C9.1): the only opener of
+    /// records, the transport node's session pool as its port. Started when
+    /// login services start, ended at logout.
+    pub record_pool: RwLock<Option<Arc<dyn rekindle_records::port::RecordPort>>>,
     /// The node's own routes (plan C7.9a): allocated at readiness, renewed
     /// at logout, released at exit.
     pub own_routes: RwLock<
         Option<
             Arc<
-                rekindle_protocol::own_routes::OwnRoutes<
+                rekindle_route::own_routes::OwnRoutes<
                     rekindle_protocol::own_routes::VeilidRouteAllocator,
                 >,
             >,

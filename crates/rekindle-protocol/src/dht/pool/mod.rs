@@ -43,6 +43,7 @@ mod closer;
 mod durable;
 mod io;
 pub mod keepalive;
+mod port;
 mod read;
 mod safety;
 mod watch;
@@ -54,10 +55,9 @@ mod watch;
 pub const CAS_ROUNDS: usize = 3;
 
 pub use closer::RecordCloser;
-pub use durable::UnsentWrite;
-pub use io::SetOutcome;
+pub use port::{as_port, dht_schema, parse_keypair, record_report};
 pub use safety::safety_selection;
-pub use watch::ValueChangeReport;
+pub use watch::value_change;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -130,7 +130,7 @@ pub struct RecordPool {
     held: Mutex<durable::HeldWrites>,
     held_changed: tokio::sync::Notify,
     /// Every durable write that settled (`durable.rs`, plan C7.13).
-    settled: tokio::sync::broadcast::Sender<durable::Settled>,
+    settled: tokio::sync::broadcast::Sender<rekindle_records::port::Settled>,
     repush_started: std::sync::atomic::AtomicBool,
     admit: Mutex<Admit>,
     /// Cancelled by [`drain`](Self::drain): every wait then returns.
@@ -168,6 +168,15 @@ pub(super) fn to_protocol(e: &VeilidAPIError) -> ProtocolError {
         ProtocolError::DhtRecordUnreachable(e.to_string())
     } else {
         ProtocolError::DhtError(e.to_string())
+    }
+}
+
+/// A Veilid value as the port carries it.
+pub(crate) fn record_value(value: &veilid_core::ValueData) -> rekindle_records::port::RecordValue {
+    rekindle_records::port::RecordValue {
+        seq: u32::from(value.seq()),
+        data: value.data().to_vec(),
+        writer: value.writer().to_string(),
     }
 }
 

@@ -10,7 +10,9 @@ pub async fn handle_value_change(
     state: &Arc<AppState>,
     change: veilid_core::VeilidValueChange,
 ) {
-    let key = change.key.to_string();
+    // The port's form of the change (plan C9.1): keys as text, seqs whole.
+    let change = rekindle_protocol::dht::pool::value_change(&change);
+    let key = change.key.clone();
 
     // Phase 7 — watch-tier trigger. If the ValueChange is on the
     // local user's mailbox key (where peers write friend requests),
@@ -49,9 +51,9 @@ pub async fn handle_value_change(
         crate::services::community::mark_watch_inactive(state, &key);
     }
 
-    let subkeys: Vec<u32> = change.subkeys.iter().collect();
+    let subkeys: Vec<u32> = change.subkeys.clone();
     let first_subkey = subkeys.first().copied();
-    let inline_value = change.value.as_ref().map(|v| v.data().to_vec());
+    let inline_value = change.value.as_ref().map(|v| v.data.clone());
     let Ok(pool) = state.db.current() else {
         tracing::debug!("DHT value change: no identity database — dropped");
         return;
@@ -99,8 +101,8 @@ pub async fn handle_value_change(
         let value = if use_inline && inline_value.is_some() {
             inline_value.clone().unwrap_or_default()
         } else if let Some(ref record_pool) = record_pool {
-            match record_pool.read_once(&change.key, subkey, true).await {
-                Ok(Some(v)) => v.data().to_vec(),
+            match record_pool.read_once(&key, subkey, true).await {
+                Ok(Some(v)) => v.data,
                 Ok(None) => {
                     tracing::debug!(subkey, key = %key, "subkey has no value");
                     continue;
@@ -128,7 +130,7 @@ async fn try_handle_dm_change(
     pool: &rekindle_db::Db,
     record_key: &str,
     subkeys: &[u32],
-    record_pool: Option<&rekindle_protocol::dht::pool::RecordPool>,
+    record_pool: Option<&dyn rekindle_records::port::RecordPort>,
 ) -> bool {
     use crate::db_helpers::db_call;
     use crate::state_helpers;
@@ -163,17 +165,14 @@ async fn try_handle_dm_change(
     let Some(record_pool) = record_pool else {
         return true;
     };
-    let Ok(parsed) = record_key.parse::<veilid_core::RecordKey>() else {
-        return true;
-    };
     for &subkey in subkeys {
-        if let Ok(Some(value)) = record_pool.read_once(&parsed, subkey, true).await {
+        if let Ok(Some(value)) = record_pool.read_once(record_key, subkey, true).await {
             if let Err(e) = crate::services::dm::handle_dm_subkey_change(
                 state,
                 pool,
                 record_key,
                 subkey,
-                value.data(),
+                &value.data,
             )
             .await
             {

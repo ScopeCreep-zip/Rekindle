@@ -1,7 +1,6 @@
 //! Inbound message dispatcher — the single entry point for all network data.
 //!
-//! Receives raw `VeilidUpdate` events from the node's update channel and
-//! performs deterministic routing:
+//! Receives the node's [`PortEvent`]s and performs deterministic routing:
 //!
 //! 1. Parse frame header (4 bytes: version, type, length)
 //! 2. Reject unknown versions (fail closed)
@@ -17,9 +16,9 @@ pub use crate::handler::TransportEvent;
 
 use std::sync::Arc;
 
+use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortEvent, RoutePort};
 use tokio::sync::mpsc;
-use tracing::{info, trace, warn};
-use veilid_core::VeilidUpdate;
+use tracing::{info, warn};
 
 use crate::config::TransportConfig;
 use crate::crypto::envelope::{Addressing, SignedPayload};
@@ -30,14 +29,8 @@ use crate::shared::{AttachmentState, SharedState};
 
 /// The route owners the dispatch loop reports `RouteChange` to.
 pub(crate) struct RouteOwners {
-    /// Our own routes.
-    pub own: Arc<
-        rekindle_protocol::own_routes::OwnRoutes<
-            rekindle_protocol::own_routes::VeilidRouteAllocator,
-        >,
-    >,
-    /// The process's importer of peers' routes.
-    pub imports: Arc<rekindle_protocol::dht::route_imports::RouteImports>,
+    /// Peers' routes and our own.
+    pub routes: Arc<dyn RoutePort>,
     /// The peers' cached route blobs.
     pub peers: Arc<parking_lot::RwLock<crate::broadcast::peer_registry::PeerRegistry>>,
 }
@@ -46,9 +39,9 @@ pub(crate) struct RouteOwners {
 pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     handler: Arc<H>,
     config: Arc<TransportConfig>,
-    mut update_rx: mpsc::Receiver<VeilidUpdate>,
+    mut events: mpsc::Receiver<PortEvent>,
     mut shutdown_rx: mpsc::Receiver<()>,
-    api: veilid_core::VeilidAPI,
+    messages: Arc<dyn AppMessagePort>,
     shared: Arc<SharedState>,
     routes: RouteOwners,
 ) {
@@ -57,8 +50,8 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
 
     loop {
         tokio::select! {
-            Some(update) = update_rx.recv() => {
-                dispatch_update(&handler, &config, &mut dedup, &api, &shared, &routes, update).await;
+            Some(event) = events.recv() => {
+                dispatch_event(&handler, &mut dedup, messages.as_ref(), &shared, &routes, event).await;
             }
             _ = shutdown_rx.recv() => {
                 info!("transport dispatch loop shutting down");
@@ -68,70 +61,60 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     }
 }
 
-async fn dispatch_update<H: InboundHandler>(
+async fn dispatch_event<H: InboundHandler>(
     handler: &Arc<H>,
-    config: &TransportConfig,
     dedup: &mut DedupCache,
-    api: &veilid_core::VeilidAPI,
+    messages: &dyn AppMessagePort,
     shared: &SharedState,
     routes: &RouteOwners,
-    update: VeilidUpdate,
+    event: PortEvent,
 ) {
-    match update {
-        VeilidUpdate::AppMessage(msg) => {
-            dispatch_app_message(handler, config, dedup, msg.message(), api, shared).await;
+    match event {
+        PortEvent::AppMessage { message } => {
+            dispatch_app_message(handler, dedup, &message).await;
         }
-        VeilidUpdate::AppCall(call) => {
-            dispatch_app_call(handler, config, api, &call).await;
+        PortEvent::AppCall { call_id, message } => {
+            dispatch_app_call(handler, messages, call_id, &message).await;
         }
-        VeilidUpdate::ValueChange(change) => {
-            dispatch_value_change(handler, shared, &change).await;
+        PortEvent::ValueChange(change) => {
+            dispatch_value_change(handler, shared, change).await;
         }
-        VeilidUpdate::Attachment(attachment) => {
-            let state_str = attachment.state.to_string();
-            let attached = attachment.state.is_attached();
-            let pir = attachment.public_internet_ready;
-            let att_state = AttachmentState::from_veilid_string(&state_str);
-            shared.set_attachment(att_state, attached, pir);
+        PortEvent::Attachment {
+            state,
+            is_attached,
+            public_internet_ready,
+            reliable_peers,
+            live_peers,
+            network_size,
+            median_latency_us,
+        } => {
+            let att_state = AttachmentState::from_veilid_string(&state);
+            shared.set_attachment(att_state, is_attached, public_internet_ready);
             // 0.5.7's richer attachment signal — recorded so readiness
             // checks and status surfaces can use real peer counts instead
             // of inferring health from the attachment enum alone.
-            shared.set_network_health(
-                attachment.reliable_peer_count.as_u64(),
-                attachment.live_peer_count.as_u64(),
-                attachment.estimated_network_size.as_u64(),
-                attachment
-                    .median_latency
-                    .map(veilid_core::TimestampDuration::as_u64)
-                    .unwrap_or_default(),
-            );
+            shared.set_network_health(reliable_peers, live_peers, network_size, median_latency_us);
             handler
                 .on_event(TransportEvent::AttachmentChanged {
-                    state: state_str,
-                    is_attached: attached,
-                    public_internet_ready: pir,
+                    state,
+                    is_attached,
+                    public_internet_ready,
                 })
                 .await;
         }
-        VeilidUpdate::RouteChange(change) => {
-            dispatch_route_change(handler, routes, &change).await;
+        PortEvent::RouteChange { dead, dead_remote } => {
+            dispatch_route_change(handler, routes, &dead, dead_remote).await;
         }
-        VeilidUpdate::Shutdown => {
-            info!("veilid shutdown event received");
-        }
-        _ => {
-            trace!("ignoring unhandled VeilidUpdate variant");
+        PortEvent::Shutdown => {
+            info!("network shutdown event received");
         }
     }
 }
 
 async fn dispatch_app_message<H: InboundHandler>(
     handler: &Arc<H>,
-    _config: &TransportConfig,
     dedup: &mut DedupCache,
     raw: &[u8],
-    _api: &veilid_core::VeilidAPI,
-    shared: &SharedState,
 ) {
     let (type_id, payload) = match frame::decode(raw) {
         Ok(result) => result,
@@ -167,7 +150,7 @@ async fn dispatch_app_message<H: InboundHandler>(
         // track and no peer could read it. Falls through to the
         // "unexpected type" arm if one ever arrives.
         tid if !tid.is_rpc() => {
-            dispatch_dm(handler, tid, payload, shared).await;
+            dispatch_dm(handler, tid, payload).await;
         }
         other => {
             warn!(
@@ -182,13 +165,10 @@ const APP_CALL_HANDLER_DEADLINE: std::time::Duration = std::time::Duration::from
 
 async fn dispatch_app_call<H: InboundHandler>(
     handler: &Arc<H>,
-    _config: &TransportConfig,
-    api: &veilid_core::VeilidAPI,
-    call: &veilid_core::VeilidAppCall,
+    messages: &dyn AppMessagePort,
+    call_id: AppCallId,
+    raw: &[u8],
 ) {
-    let call_id = call.id();
-    let raw = call.message();
-
     let (type_id, payload) = match frame::decode(raw) {
         Ok(r) => r,
         Err(e) => {
@@ -200,11 +180,11 @@ async fn dispatch_app_call<H: InboundHandler>(
             // desktop rotator could never deliver a rotated key to a
             // daemon member — they would each NAK the other's format.
             if let Some(transfer) = super::bare_envelope::decode_bare_mek_transfer(raw) {
-                dispatch_bare_mek_transfer(handler, api, call_id, transfer).await;
+                dispatch_bare_mek_transfer(handler, messages, call_id, transfer).await;
                 return;
             }
             warn!(error = %e, "dropping app_call: frame decode failed");
-            reply_nak(api, call_id).await;
+            reply_nak(messages, call_id).await;
             return;
         }
     };
@@ -214,7 +194,7 @@ async fn dispatch_app_call<H: InboundHandler>(
             type_id = type_id as u8,
             "non-RPC type in app_call, dropping"
         );
-        reply_nak(api, call_id).await;
+        reply_nak(messages, call_id).await;
         return;
     }
 
@@ -222,14 +202,14 @@ async fn dispatch_app_call<H: InboundHandler>(
         Ok(s) => s,
         Err(e) => {
             warn!(error = %e, "dropping app_call: deserialization failed");
-            reply_nak(api, call_id).await;
+            reply_nak(messages, call_id).await;
             return;
         }
     };
 
     let Some(me) = handler.local_identity() else {
         warn!("dropping app_call: no unlocked identity");
-        reply_nak(api, call_id).await;
+        reply_nak(messages, call_id).await;
         return;
     };
     let to_me = Addressing {
@@ -238,7 +218,7 @@ async fn dispatch_app_call<H: InboundHandler>(
     };
     if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed, to_me) {
         warn!(error = %e, sender = %signed.sender_key_hex, "dropping app_call: bad signature");
-        reply_nak(api, call_id).await;
+        reply_nak(messages, call_id).await;
         return;
     }
 
@@ -246,7 +226,7 @@ async fn dispatch_app_call<H: InboundHandler>(
         Ok(r) => r,
         Err(e) => {
             warn!(error = %e, "dropping app_call: payload parse failed");
-            reply_nak(api, call_id).await;
+            reply_nak(messages, call_id).await;
             return;
         }
     };
@@ -273,7 +253,7 @@ async fn dispatch_app_call<H: InboundHandler>(
         b"NAK".to_vec()
     };
 
-    if let Err(e) = api.app_call_reply(call_id, response_bytes).await {
+    if let Err(e) = messages.reply(call_id, response_bytes).await {
         warn!(error = %e, "failed to send app_call reply");
     }
 }
@@ -289,8 +269,8 @@ async fn dispatch_app_call<H: InboundHandler>(
 /// that actually succeeded.
 async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     handler: &Arc<H>,
-    api: &veilid_core::VeilidAPI,
-    call_id: veilid_core::OperationId,
+    messages: &dyn AppMessagePort,
+    call_id: AppCallId,
     transfer: rekindle_codec::community::envelope::MekTransferPayload,
 ) {
     use rekindle_codec::community::envelope::{
@@ -351,17 +331,12 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
         }
     };
 
-    if let Err(e) = api.app_call_reply(call_id, response_bytes).await {
+    if let Err(e) = messages.reply(call_id, response_bytes).await {
         warn!(error = %e, "failed to send MEK transfer reply");
     }
 }
 
-async fn dispatch_dm<H: InboundHandler>(
-    handler: &Arc<H>,
-    type_id: TypeId,
-    payload: &[u8],
-    _shared: &SharedState,
-) {
+async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, payload: &[u8]) {
     let signed: SignedPayload = match postcard::from_bytes(payload) {
         Ok(s) => s,
         Err(e) => {
@@ -414,43 +389,46 @@ async fn dispatch_dm<H: InboundHandler>(
 async fn dispatch_value_change<H: InboundHandler>(
     handler: &Arc<H>,
     shared: &SharedState,
-    change: &veilid_core::VeilidValueChange,
+    change: rekindle_records::port::ValueChange,
 ) {
-    let key = change.key.to_string();
-    let subkeys: Vec<u32> = change.subkeys.iter().collect();
-    let first_value = change.value.as_ref().map(|v| v.data().to_vec());
     // The pool is the one owner of watch death (plan C7.8): it re-arms the
     // watch of a record it holds, and a record it does not hold was
     // released, so its watch ends by design.
     if let Some(pool) = shared.records() {
-        pool.on_value_change(change);
+        pool.on_value_change(&change);
     }
 
     // A watch's last notification (`count == 0`) can still carry changes.
-    if !subkeys.is_empty() {
-        handler.on_value_change(&key, subkeys, first_value).await;
+    if !change.subkeys.is_empty() {
+        let first_value = change.value.map(|v| v.data);
+        handler
+            .on_value_change(&change.key, change.subkeys, first_value)
+            .await;
     }
 }
 
 async fn dispatch_route_change<H: InboundHandler>(
     handler: &Arc<H>,
     routes: &RouteOwners,
-    change: &veilid_core::VeilidRouteChange,
+    dead: &[String],
+    dead_remote: Vec<String>,
 ) {
-    if !change.dead_routes.is_empty() {
-        // Ours among the dead are forgotten (never released: Veilid already
-        // dropped them) and reallocated by their owner, off this loop.
-        routes.own.on_dead(&change.dead_routes);
-        let count = change.dead_routes.len();
+    if !dead.is_empty() {
+        // Ours among the dead are forgotten (never released: the network
+        // already dropped them) and reallocated by their owner, off this
+        // loop.
+        routes.routes.on_dead_own(dead);
+        let count = dead.len();
         handler
             .on_event(TransportEvent::LocalRoutesDied { count })
             .await;
     }
-    if !change.dead_remote_routes.is_empty() {
-        // The importer forgets them (Veilid already released them) and the
-        // peers holding one of those blobs lose it, so their next send
+    if !dead_remote.is_empty() {
+        // The importer forgets them (the network already released them) and
+        // the peers holding one of those blobs lose it, so their next send
         // fetches a fresh route (plan C7.9e).
-        let blobs = routes.imports.on_dead_remote(&change.dead_remote_routes);
+        let dead_remote: Vec<PeerTarget> = dead_remote.into_iter().map(PeerTarget::new).collect();
+        let blobs = routes.routes.on_dead_remote(&dead_remote);
         let peer_keys = routes.peers.write().invalidate_blobs(&blobs);
         handler
             .on_event(TransportEvent::RemoteRoutesDied { peer_keys })
@@ -458,8 +436,8 @@ async fn dispatch_route_change<H: InboundHandler>(
     }
 }
 
-async fn reply_nak(api: &veilid_core::VeilidAPI, call_id: veilid_core::OperationId) {
-    if let Err(e) = api.app_call_reply(call_id, b"NAK".to_vec()).await {
+async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
+    if let Err(e) = messages.reply(call_id, b"NAK".to_vec()).await {
         warn!(error = %e, "failed to send NAK reply");
     }
 }

@@ -343,13 +343,11 @@ pub(crate) async fn handle_send(
             "no slot seed for this community — cannot derive a channel writer key",
         );
     };
-    let slot_keypair_str = match rekindle_transport::broadcast::dht_writes::derive_slot_keypair_str(
-        &slot_seed,
-        membership.slot_index,
-    ) {
-        Ok(kp) => kp,
-        Err(e) => return IpcResponse::error(500, format!("derive slot keypair: {e}")),
-    };
+    let slot_keypair_str =
+        match rekindle_crypto::keypair_text::slot_keypair_text(&slot_seed, membership.slot_index) {
+            Ok(kp) => kp,
+            Err(e) => return IpcResponse::error(500, format!("derive slot keypair: {e}")),
+        };
     let signing_key = match ctx.require_signing_key() {
         Ok(k) => k,
         Err(e) => return e,

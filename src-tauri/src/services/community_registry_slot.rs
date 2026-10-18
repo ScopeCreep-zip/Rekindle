@@ -58,12 +58,9 @@ pub async fn clear_registry_presence_slot(
     let slot_keypair =
         rekindle_secrets::derive::derive_slot_keypair(&slot_seed_bytes, subkey_index)
             .map_err(|e| format!("slot keypair derivation failed: {e}"))?;
-    let writer = crate::services::community::create::slot_signing_to_veilid(&slot_keypair);
-    let record_key = registry_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("invalid registry key: {e}"))?;
+    let writer = rekindle_crypto::keypair_text::keypair_text_from_signing(&slot_keypair);
     let outcome = state_helpers::record_pool(state)?
-        .write_once(&record_key, subkey_index, Vec::new(), Some(writer))
+        .write_once(&registry_key, subkey_index, Vec::new(), Some(&writer))
         .await
         .map_err(|e| format!("registry slot clear failed: {e}"))?;
     if outcome.missed() {
@@ -87,7 +84,7 @@ pub async fn write_departure_tombstone(
     community_id: &str,
 ) -> Result<(), String> {
     use rekindle_codec::presence_row::{classify_superseding_row, departure_row, SupersedingRow};
-    use rekindle_protocol::dht::pool::SetOutcome;
+    use rekindle_records::port::SetOutcome;
 
     let (registry_key, slot_seed_hex, subkey_index) = {
         let communities = state.communities.read();
@@ -115,17 +112,14 @@ pub async fn write_departure_tombstone(
     let slot_keypair =
         rekindle_secrets::derive::derive_slot_keypair(&slot_seed_bytes, subkey_index)
             .map_err(|e| format!("slot keypair derivation failed: {e}"))?;
-    let writer = crate::services::community::create::slot_signing_to_veilid(&slot_keypair);
-    let record_key = registry_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("invalid registry key: {e}"))?;
+    let writer = rekindle_crypto::keypair_text::keypair_text_from_signing(&slot_keypair);
     let pool = state_helpers::record_pool(state)?;
     let write = |data: Vec<u8>| {
         let pool = pool.clone();
-        let record_key = record_key.clone();
+        let record_key = registry_key.clone();
         let writer = writer.clone();
         async move {
-            pool.write_once(&record_key, subkey_index, data, Some(writer))
+            pool.write_once(&record_key, subkey_index, data, Some(&writer))
                 .await
                 .map_err(|e| format!("departure tombstone write failed: {e}"))
         }
@@ -136,7 +130,7 @@ pub async fn write_departure_tombstone(
         missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => {
             Err(format!("departure tombstone not stored ({missed:?})"))
         }
-        SetOutcome::Superseded(newer) => match classify_superseding_row(newer.data(), &me) {
+        SetOutcome::Superseded(newer) => match classify_superseding_row(&newer.data, &me) {
             SupersedingRow::Ours => match write(bytes).await? {
                 SetOutcome::Landed | SetOutcome::Unchanged => Ok(()),
                 again => Err(format!(

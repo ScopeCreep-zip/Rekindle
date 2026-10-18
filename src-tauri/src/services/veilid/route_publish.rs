@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::own_routes::{RouteClass, RouteState};
+use rekindle_records::port::{RouteClass, RouteState};
 use tokio_util::sync::CancellationToken;
 
 use crate::state::AppState;
@@ -77,7 +77,12 @@ async fn republish_general(app_handle: &tauri::AppHandle, state: &Arc<AppState>,
         .as_ref()
         .and_then(|nh| nh.mailbox_dht_key.clone());
     if let (Some(mailbox_key), Ok(pool)) = (mailbox_key, state_helpers::record_pool(state)) {
-        match rekindle_protocol::dht::mailbox::update_mailbox_route(&pool, &mailbox_key, blob).await
+        match rekindle_protocol::dht::mailbox::update_mailbox_route(
+            pool.as_ref(),
+            &mailbox_key,
+            blob,
+        )
+        .await
         {
             Ok(outcome) if outcome.missed() => {
                 tracing::warn!(?outcome, "mailbox route blob not stored at consensus");

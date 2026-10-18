@@ -71,8 +71,7 @@ impl DaemonGovernanceAdapter<'_> {
         let global_slot =
             membership.segment_index.unwrap_or(0) * SLOTS_PER_SEGMENT + membership.slot_index;
         let slot_keypair = membership.slot_seed.as_ref().and_then(|seed| {
-            rekindle_transport::broadcast::dht_writes::derive_slot_keypair_str(seed, global_slot)
-                .ok()
+            rekindle_crypto::keypair_text::slot_keypair_text(seed, global_slot).ok()
         });
 
         Some(CommunityMembership {

@@ -50,7 +50,7 @@ pub enum ControlPayload {
         #[serde(default)]
         slot_index: Option<u32>,
         /// Wrapped slot seed (ECDH-encrypted) — allows the joiner to derive
-        /// their own slot keypair locally via `derive_slot_veilid_keypair(seed, slot_index)`.
+        /// their own slot keypair locally via `rekindle_crypto::keypair_text::slot_keypair_text(seed, slot_index)`.
         /// This eliminates any coordinator dependency for presence writing.
         #[serde(default)]
         wrapped_slot_seed: Option<Vec<u8>>,

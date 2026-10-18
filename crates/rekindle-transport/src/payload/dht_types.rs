@@ -25,7 +25,7 @@ pub use rekindle_types::dht_layout::profile::{
 pub const STATUS_INVISIBLE: u8 = 4;
 
 /// Number of subkeys in the friend inbox DHT record (DFLT).
-pub const FRIEND_INBOX_SUBKEY_COUNT: u32 = 32;
+pub use rekindle_types::dht_layout::friend_inbox::SUBKEY_COUNT as FRIEND_INBOX_SUBKEY_COUNT;
 
 // ── Friend list record (DFLT, 1 subkey) ─────────────────────────────
 //

@@ -1,7 +1,7 @@
 //! DHT watch lifecycle — create, renew, route ValueChange events.
 //!
 //! The watch registry maps DHT record keys to their purpose so that
-//! when `VeilidUpdate::ValueChange` arrives, we know whether the changed
+//! when `PortEvent::ValueChange` arrives, we know whether the changed
 //! record is a friend inbox, a community registry, a channel log, etc.
 //!
 //! Every watch rides a lease on the session's record pool (plan C7.7): the
@@ -222,7 +222,8 @@ pub async fn setup_identity_watches(
 ) {
     // Watch friend inbox (all subkeys)
     if !session.identity.friend_inbox_key.is_empty() {
-        let subkeys: Vec<u32> = (0..crate::payload::dht_types::FRIEND_INBOX_SUBKEY_COUNT).collect();
+        let subkeys: Vec<u32> =
+            (0..u32::from(crate::payload::dht_types::FRIEND_INBOX_SUBKEY_COUNT)).collect();
         establish_watch(
             node,
             registry,
@@ -270,7 +271,7 @@ pub async fn setup_community_watches(
     // the registry and channel records.
     let gov_subkeys: Vec<u32> = (0..dht_types::SLOTS_PER_SEGMENT).collect();
     let slot_writer = membership.slot_seed.and_then(|seed| {
-        crate::broadcast::dht_writes::derive_slot_keypair_str(&seed, membership.slot_index).ok()
+        rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
     });
     establish_watch_as(
         node,
@@ -306,7 +307,7 @@ pub async fn setup_community_watches(
     // and peers that did get a slot relay what they see over gossip
     // (`CommunityEnvelope::WatchRelay`, architecture §14.3).
     let slot_writer = membership.slot_seed.and_then(|seed| {
-        crate::broadcast::dht_writes::derive_slot_keypair_str(&seed, membership.slot_index).ok()
+        rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
     });
     let segment_index = membership.segment_index.unwrap_or(0);
     let channel_subkeys: Vec<u32> = (0..dht_types::SLOTS_PER_SEGMENT).collect();

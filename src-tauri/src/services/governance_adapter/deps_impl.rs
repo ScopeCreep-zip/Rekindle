@@ -16,7 +16,6 @@ use rekindle_governance_runtime::{
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use crate::services::community::create::slot_signing_to_veilid;
 use crate::state::UserStatus;
 use crate::state_helpers;
 
@@ -107,7 +106,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         let sk = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&ed_secret);
         debug_assert_eq!(sk.verifying_key().to_bytes(), ed_public);
-        slot_signing_to_veilid(&sk).to_string()
+        rekindle_crypto::keypair_text::keypair_text_from_signing(&sk)
     }
 
     async fn acquire_record(

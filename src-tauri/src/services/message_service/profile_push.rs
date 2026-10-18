@@ -25,10 +25,14 @@ pub async fn push_profile_update(
         .clone()
         .ok_or("no profile DHT key")?;
     let pool = state_helpers::record_pool(state)?;
-    let outcome =
-        rekindle_protocol::dht::profile::set_own_profile_subkey(&pool, &profile_key, subkey, value)
-            .await
-            .map_err(|e| format!("failed to push profile update: {e}"))?;
+    let outcome = rekindle_protocol::dht::profile::set_own_profile_subkey(
+        pool.as_ref(),
+        &profile_key,
+        subkey,
+        value,
+    )
+    .await
+    .map_err(|e| format!("failed to push profile update: {e}"))?;
     if outcome.missed() {
         tracing::warn!(subkey, ?outcome, "profile update not stored at consensus");
     }
@@ -51,9 +55,10 @@ pub async fn push_friend_list_update(state: &Arc<AppState>) -> Result<(), String
         .clone()
         .ok_or("no friend list DHT key")?;
     let pool = state_helpers::record_pool(state)?;
-    let current = rekindle_protocol::dht::friends::read_friend_list(&pool, &friend_list_key)
-        .await
-        .map_err(|e| format!("read friend list: {e}"))?;
+    let current =
+        rekindle_protocol::dht::friends::read_friend_list(pool.as_ref(), &friend_list_key)
+            .await
+            .map_err(|e| format!("read friend list: {e}"))?;
     let entries: Vec<FriendEntry> = {
         let friends = state.friends.read();
         friends
@@ -76,10 +81,13 @@ pub async fn push_friend_list_update(state: &Arc<AppState>) -> Result<(), String
             .collect()
     };
 
-    let outcome =
-        rekindle_protocol::dht::friends::write_friend_list(&pool, &friend_list_key, &entries)
-            .await
-            .map_err(|e| format!("failed to push friend list update: {e}"))?;
+    let outcome = rekindle_protocol::dht::friends::write_friend_list(
+        pool.as_ref(),
+        &friend_list_key,
+        &entries,
+    )
+    .await
+    .map_err(|e| format!("failed to push friend list update: {e}"))?;
     if outcome.missed() {
         tracing::warn!(?outcome, "friend list update not stored at consensus");
     }

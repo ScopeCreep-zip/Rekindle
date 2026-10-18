@@ -2,7 +2,7 @@
 //!
 //! Each function builds a typed `DmPayload`, serializes it, signs with
 //! the identity Ed25519 key, frames with the correct `TypeId`, and sends
-//! via `Sender::send_dm` (app_message) or writes to a DhtLog (persistent).
+//! via `Sender::send_dm` (an app message) or writes to a DhtLog (persistent).
 //!
 //! DM routing priority:
 //! 1. DhtLog (persistent, offline-safe) — if a shared DM log exists for this peer
@@ -28,7 +28,7 @@ pub async fn direct_message(
     body: &[u8],
     reply_to: Option<Vec<u8>>,
     signing_key: &[u8; 32],
-    dm_log_keypair: Option<veilid_core::KeyPair>,
+    dm_log_keypair: Option<String>,
 ) -> Result<()> {
     debug!(
         peer = %peer_key,
@@ -44,7 +44,7 @@ pub async fn direct_message(
     // DhtLog path
     if let (Some(log_key), Some(kp)) = (session.dm_log_keys.get(peer_key), dm_log_keypair) {
         let pool = node.require_records()?;
-        let log = DhtLog::open_write(&pool, log_key, kp).await?;
+        let log = DhtLog::open_write(pool.as_ref(), log_key, &kp).await?;
         let entry = serde_json::json!({
             "sender_key": session.identity.public_key_hex,
             "body": hex::encode(body),
@@ -55,8 +55,8 @@ pub async fn direct_message(
             serde_json::to_vec(&entry).map_err(|e| TransportError::SerializationFailed {
                 reason: e.to_string(),
             })?;
-        let appended = log.append(&pool, &entry_bytes).await;
-        log.release(&pool).await;
+        let appended = log.append(pool.as_ref(), &entry_bytes).await;
+        log.release(pool.as_ref()).await;
         appended?;
         info!(
             peer = %peer_key,

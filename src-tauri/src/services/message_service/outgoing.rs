@@ -102,7 +102,7 @@ pub async fn send_friend_request(
     let routes = state_helpers::own_routes(state).ok_or("node not initialized")?;
     let route_blob = tokio::time::timeout(
         ROUTE_WAIT,
-        routes.available(rekindle_protocol::own_routes::RouteClass::General),
+        routes.available(rekindle_records::port::RouteClass::General),
     )
     .await
     .map_err(|_| "Veilid private route not allocated yet — try again in a moment".to_string())?;

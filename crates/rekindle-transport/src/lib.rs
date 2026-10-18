@@ -5,23 +5,27 @@
 #![deny(clippy::string_slice)]
 //! Unified network transport layer for Rekindle.
 //!
-//! This crate is the **sole boundary** between Rekindle and the Veilid network.
-//! No other crate in the workspace imports `veilid_core`.
+//! The transport runs on the Veilid-free ports of `rekindle_records::port`
+//! (plan C9.1): records through `RecordPort`, peers' routes and our own
+//! through `RoutePort`, app messages and calls through `AppMessagePort`,
+//! and inbound network events as `PortEvent`s. It names no Veilid type;
+//! `rekindle_protocol::ports` implements the ports over Veilid, and a
+//! simulator can implement them in memory.
 //!
 //! # Module Boundaries
 //!
-//! - `broadcast/` — ALL outbound Veilid I/O: sends, DHT writes, route management,
-//!   node lifecycle. The only module that imports `veilid_core` for outbound ops.
-//! - `subscriptions/` — ALL inbound Veilid I/O: event dispatch, DHT watches,
-//!   value change routing. The only module that imports `veilid_core` for inbound ops.
-//! - Everything else (operations, payload, crypto, session, config, etc.) contains
-//!   zero `veilid_core` imports — pure business logic and type definitions.
+//! - `broadcast/` — all outbound I/O: sends, DHT writes, route management,
+//!   node lifecycle.
+//! - `subscriptions/` — all inbound I/O: event dispatch, DHT watches,
+//!   value change routing.
+//! - Everything else (operations, payload, crypto, session, config, etc.) is
+//!   business logic and type definitions over those two.
 
-// ── Veilid boundary modules (sole veilid_core importers) ───────────────
+// ── I/O modules (over the ports) ───────────────────────────────────────
 pub mod broadcast;
 pub mod subscriptions;
 
-// ── Business logic (zero veilid imports) ───────────────────────────────
+// ── Business logic ─────────────────────────────────────────────────────
 pub mod config;
 pub mod crypto;
 pub mod envelope_queue;
@@ -44,8 +48,9 @@ mod tests;
 
 // Core lifecycle (from broadcast/)
 pub use broadcast::node::TransportNode;
-pub use broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot, PeerTarget};
+pub use broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot};
 pub use broadcast::send::{BroadcastReport, Caller, Sender};
+pub use rekindle_records::port::PeerTarget;
 
 // Inbound handler trait
 pub use handler::{InboundHandler, TransportEvent, VerifiedSender};
@@ -115,6 +120,3 @@ pub use payload::rpc::{
     CallResponse, ChannelEntrySummary, CommunityLeaveNotification, InboundCall, MekTransferPayload,
     SyncRequest, SyncResponse,
 };
-
-// Re-export node::deserialize_keypair for daemon use
-pub use broadcast::node::deserialize_keypair;

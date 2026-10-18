@@ -47,7 +47,7 @@ pub async fn setup_invite_contact(
     // Try reading the peer's mailbox for a fresh route blob (invite may be stale)
     if let Ok(record_pool) = state_helpers::record_pool(state) {
         match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(
-            &record_pool,
+            record_pool.as_ref(),
             &blob.mailbox_dht_key,
         )
         .await

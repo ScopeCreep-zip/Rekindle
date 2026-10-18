@@ -2,7 +2,7 @@
 name = "rekindle-transport"
 version = "0.1.0"
 edition = "2021"
-description = "Unified network transport layer for Rekindle — sole Veilid boundary"
+description = "Unified network transport layer for Rekindle, over the Veilid-free record, route and message ports"
 license = "MIT"
 
 [lints]
@@ -31,15 +31,14 @@ rekindle-gossip = { path = "../rekindle-gossip" }
 # hand-rolled: a manual XOR/OR loop can be optimised back into an
 # early exit, which is the timing oracle it was meant to prevent.
 subtle = "2"
-# Shared VeilidConfig builder (`veilid_config::build_veilid_config`) —
-# one translation of startup tuning into veilid_core::VeilidConfig for
-# both node-startup tracks. Unidirectional edge; rekindle-protocol must
-# never depend on rekindle-transport.
+# The ports' Veilid implementation (`ports::VeilidPorts`, the one Veilid
+# startup path) and the typed record helpers over `RecordPort`. This crate
+# names no Veilid type (plan C9.1); it links Veilid only through this edge
+# (ADR 0014). Unidirectional; rekindle-protocol must never depend on
+# rekindle-transport.
 rekindle-protocol = { path = "../rekindle-protocol" }
+# The record, route and app-message ports (`rekindle_records::port`).
 rekindle-records = { path = "../rekindle-records" }
-
-# Veilid — the ONLY crate in the workspace that imports this
-veilid-core = { version = "0.5", default-features = true }
 
 # Async
 async-trait = "0.1"

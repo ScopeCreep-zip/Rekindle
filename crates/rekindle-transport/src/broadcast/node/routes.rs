@@ -1,15 +1,14 @@
-//! Our own routes on the daemon track (plan C7.9d): `OwnRoutes`
-//! (rekindle-protocol) allocates, heals and releases them; this module
-//! republishes a new personal route blob wherever peers read it, and
-//! backstops a class whose allocation failed for good.
+//! Our own routes on the daemon track (plan C7.9d): the route port
+//! allocates, heals and releases them; this module republishes a new
+//! personal route blob wherever peers read it, and backstops a class whose
+//! allocation failed for good.
 
 use std::sync::Arc;
 
-use rekindle_protocol::own_routes::{OwnRoutes, RouteClass, RouteState, VeilidRouteAllocator};
+use rekindle_records::port::{PeerTarget, RouteClass, RoutePort, RouteState};
 use tokio::sync::mpsc;
 
 use super::TransportNode;
-use crate::broadcast::peer_registry::PeerTarget;
 use crate::error::{Result, TransportError};
 use crate::handler::{InboundHandler, TransportEvent};
 use crate::shared::SharedState;
@@ -18,14 +17,17 @@ impl TransportNode {
     /// A send target for `route_blob`, imported through the process's one
     /// route importer (plan C7.3, D4): an already-imported blob is a cache
     /// hit, never a second import.
+    ///
+    /// # Errors
+    /// The blob does not decode or import.
     pub fn import_route(&self, route_blob: &[u8]) -> Result<PeerTarget> {
-        let route_id = self.route_imports.get_or_import(route_blob).map_err(|e| {
-            TransportError::RouteImportFailed {
+        self.ports
+            .routes
+            .import(route_blob)
+            .map_err(|e| TransportError::RouteImportFailed {
                 peer: String::new(),
-                reason: format!("{e}"),
-            }
-        })?;
-        Ok(PeerTarget { route_id })
+                reason: e.to_string(),
+            })
     }
 }
 
@@ -53,7 +55,7 @@ async fn publish_personal_route(
     };
     if !profile_key.is_empty() {
         match rekindle_protocol::dht::profile::set_own_profile_subkey(
-            &pool,
+            pool.as_ref(),
             &profile_key,
             crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
             blob.to_vec(),
@@ -71,7 +73,12 @@ async fn publish_personal_route(
         }
     }
     if !mailbox_key.is_empty() {
-        match rekindle_protocol::dht::mailbox::update_mailbox_route(&pool, &mailbox_key, blob).await
+        match rekindle_protocol::dht::mailbox::update_mailbox_route(
+            pool.as_ref(),
+            &mailbox_key,
+            blob,
+        )
+        .await
         {
             Ok(outcome) if !outcome.missed() => {}
             Ok(outcome) => {
@@ -94,14 +101,14 @@ async fn publish_personal_route(
 /// health and reports death in `RouteChange`).
 pub(super) async fn run_route_publisher<H: InboundHandler>(
     handler: Arc<H>,
-    own_routes: Arc<OwnRoutes<VeilidRouteAllocator>>,
+    routes: Arc<dyn RoutePort>,
     watchdog_secs: u64,
     mut shutdown_rx: mpsc::Receiver<()>,
     session: Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
     shared: Arc<SharedState>,
 ) {
-    let mut general = own_routes.state(RouteClass::General);
-    let mut media = own_routes.state(RouteClass::Media);
+    let mut general = routes.own_state(RouteClass::General);
+    let mut media = routes.own_state(RouteClass::Media);
     let mut interval =
         tokio::time::interval(tokio::time::Duration::from_secs(watchdog_secs.max(1)));
     interval.tick().await; // skip immediate first tick
@@ -127,8 +134,7 @@ pub(super) async fn run_route_publisher<H: InboundHandler>(
             _ = interval.tick() => {
                 // Only an unlocked session wants routes (plan C7.9d).
                 if session.read().is_some() && shared.records().is_some() {
-                    own_routes.want(RouteClass::General);
-                    own_routes.want(RouteClass::Media);
+                    routes.want_own();
                 }
             }
             _ = shutdown_rx.recv() => {

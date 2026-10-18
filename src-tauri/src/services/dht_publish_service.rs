@@ -24,7 +24,7 @@ async fn persist_owned_record(
     pool: &Db,
     public_key: &str,
     dht_key: &str,
-    new_keypair: Option<veilid_core::KeyPair>,
+    new_keypair: Option<String>,
     record: OwnedRecord,
 ) -> Result<(), String> {
     if let Some(keypair) = new_keypair {
@@ -33,7 +33,7 @@ async fn persist_owned_record(
             OwnedRecord::FriendList => OwnerKey::FriendList,
             OwnedRecord::Account => OwnerKey::Account,
         };
-        state_helpers::persist_owner_keypair(state, owner, &keypair.to_string())?;
+        state_helpers::persist_owner_keypair(state, owner, &keypair)?;
     }
     let pk = public_key.to_string();
     let dk = dht_key.to_string();
@@ -41,18 +41,6 @@ async fn persist_owned_record(
         rekindle_db::repo::identity::set_owned_record(conn, &pk, record, &dk)
     })
     .await
-}
-
-/// Parse an optional keypair string into a `KeyPair`, logging a warning on failure.
-fn parse_stored_keypair(keypair_str: Option<&String>, label: &str) -> Option<veilid_core::KeyPair> {
-    keypair_str.and_then(|s| {
-        s.parse()
-            .map_err(|e| {
-                tracing::warn!(error = %e, "failed to parse stored {label} owner keypair — will create new record");
-                e
-            })
-            .ok()
-    })
 }
 
 // ── Publish functions ───────────────────────────────────────────────────────
@@ -74,29 +62,26 @@ pub async fn publish_mailbox(
         *secret.as_ref().ok_or("identity secret not available")?
     };
 
-    // Build a Veilid KeyPair from our Ed25519 identity keys.
+    // Our Ed25519 identity keys as the mailbox's owner keypair text.
     let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
-    let pub_bytes = identity.public_key_bytes();
-    let bare_pub = veilid_core::BarePublicKey::new(&pub_bytes);
-    let bare_secret = veilid_core::BareSecretKey::new(&secret_bytes);
-    let veilid_pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
-    let veilid_keypair = veilid_core::KeyPair::new_from_parts(veilid_pubkey, bare_secret);
+    let identity_keypair =
+        rekindle_crypto::keypair_text::keypair_text(&identity.public_key_bytes(), &secret_bytes);
 
     // An existing mailbox is re-opened, never replaced: its key is random
     // per create (V4) and peers hold it. A failure is login's to report.
     let record_pool = state_helpers::record_pool(state)?;
     let mailbox_key = if let Some(existing_key) = existing_mailbox_key {
         rekindle_protocol::dht::mailbox::open_mailbox_writable(
-            &record_pool,
+            record_pool.as_ref(),
             existing_key,
-            veilid_keypair,
+            &identity_keypair,
         )
         .await
         .map_err(|e| format!("reopen mailbox: {e}"))?;
         tracing::info!(key = %existing_key, "reopened existing mailbox");
         existing_key.clone()
     } else {
-        rekindle_protocol::dht::mailbox::create_mailbox(&record_pool, veilid_keypair)
+        rekindle_protocol::dht::mailbox::create_mailbox(record_pool.as_ref(), &identity_keypair)
             .await
             .map_err(|e| format!("create mailbox: {e}"))?
             .1
@@ -106,7 +91,7 @@ pub async fn publish_mailbox(
     if let Some(blob) = route_blob {
         if !blob.is_empty() {
             let outcome = rekindle_protocol::dht::mailbox::update_mailbox_route(
-                &record_pool,
+                record_pool.as_ref(),
                 &mailbox_key,
                 blob,
             )
@@ -154,7 +139,7 @@ pub async fn publish_profile(
         prekey_bundle: &prekey_bundle_bytes,
         route_blob: &route_blob,
     };
-    let owner_keypair = parse_stored_keypair(dht_owner_keypair_str.as_ref(), "profile");
+    let owner_keypair = dht_owner_keypair_str;
 
     // An existing profile is re-opened, never replaced: its key is random
     // per create (V4), and peers know it. A failure, or a key stored
@@ -163,14 +148,14 @@ pub async fn publish_profile(
         match (existing_dht_key, owner_keypair) {
             (Some(key), Some(keypair)) => {
                 let lease = rekindle_protocol::dht::profile::open_profile(
-                    &record_pool,
+                    record_pool.as_ref(),
                     &key,
-                    keypair.clone(),
+                    &keypair,
                 )
                 .await
                 .map_err(|e| format!("reopen profile record: {e}"))?;
                 let outcome = rekindle_protocol::dht::profile::publish_profile_fields(
-                    &record_pool,
+                    record_pool.as_ref(),
                     &key,
                     fields,
                 )
@@ -183,14 +168,14 @@ pub async fn publish_profile(
             }
             (None, _) => {
                 let (lease, key, keypair, outcome) =
-                    rekindle_protocol::dht::profile::create_profile(&record_pool, fields)
+                    rekindle_protocol::dht::profile::create_profile(record_pool.as_ref(), fields)
                         .await
                         .map_err(|e| format!("create profile record: {e}"))?;
                 (lease, key, keypair.clone(), Some(keypair), outcome)
             }
         };
     match outcome {
-        rekindle_protocol::dht::pool::SetOutcome::Superseded(_) => {
+        rekindle_records::port::SetOutcome::Superseded(_) => {
             tracing::info!("profile publish: a field was already newer on the network");
         }
         missed if missed.missed() => {
@@ -234,11 +219,12 @@ pub async fn publish_friend_list(
     let public_key = state_helpers::current_owner_key(state)
         .map_err(|_| "identity not set before friend list publish".to_string())?;
     let record_pool = state_helpers::record_pool(state)?;
-    let owner_keypair = parse_stored_keypair(friend_list_owner_keypair_str.as_ref(), "friend list");
+    let owner_keypair = friend_list_owner_keypair_str;
 
     let (friend_list_key, keypair, new_keypair) = match (existing_friend_list_key, owner_keypair) {
         (Some(key), Some(keypair)) => {
-            rekindle_protocol::dht::friends::open_friend_list(&record_pool, &key, keypair.clone())
+            // The pool holds the session lease until the session ends.
+            rekindle_protocol::dht::friends::open_friend_list(record_pool.as_ref(), &key, &keypair)
                 .await
                 .map_err(|e| format!("reopen friend list record: {e}"))?;
             (key, keypair, None)
@@ -249,8 +235,8 @@ pub async fn publish_friend_list(
             ));
         }
         (None, _) => {
-            let (key, keypair, outcome) =
-                rekindle_protocol::dht::friends::create_friend_list(&record_pool)
+            let (_lease, key, keypair, outcome) =
+                rekindle_protocol::dht::friends::create_friend_list(record_pool.as_ref())
                     .await
                     .map_err(|e| format!("create friend list record: {e}"))?;
             if outcome.missed() {
@@ -302,7 +288,7 @@ pub async fn publish_account(
         .ok_or("identity secret not available for account key derivation")?;
     let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
 
-    let owner_keypair = parse_stored_keypair(account_owner_keypair_str.as_ref(), "account");
+    let owner_keypair = account_owner_keypair_str;
     let record_pool = state_helpers::record_pool(state)?;
 
     // An existing account record is re-opened, never replaced: its key is
@@ -312,9 +298,9 @@ pub async fn publish_account(
     let (account_key, new_keypair) = match (existing_account_key, owner_keypair) {
         (Some(existing_key), Some(keypair)) => {
             let record = rekindle_protocol::dht::account::AccountRecord::open(
-                &record_pool,
+                record_pool.as_ref(),
                 &existing_key,
-                keypair,
+                &keypair,
                 encryption_key,
             )
             .await
@@ -331,7 +317,7 @@ pub async fn publish_account(
         (None, _) => {
             let (record, keypair, outcome) =
                 rekindle_protocol::dht::account::AccountRecord::create(
-                    &record_pool,
+                    record_pool.as_ref(),
                     encryption_key,
                     &display_name,
                     &status_message,

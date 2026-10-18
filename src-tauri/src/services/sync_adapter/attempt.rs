@@ -99,17 +99,19 @@ async fn try_mailbox_route_fallback(
     let mailbox_key = state_helpers::friend_mailbox_key(state, recipient_key)?;
     let rc = state_helpers::safe_routing_context(state)?;
     let record_pool = state_helpers::record_pool(state).ok()?;
-    let route_blob =
-        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&record_pool, &mailbox_key)
-            .await
-        {
-            Ok(Some(blob)) if !blob.is_empty() => blob,
-            Ok(_) => return None,
-            Err(error) => {
-                tracing::trace!(to = %recipient_key, %error, "failed to read mailbox");
-                return None;
-            }
-        };
+    let route_blob = match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(
+        record_pool.as_ref(),
+        &mailbox_key,
+    )
+    .await
+    {
+        Ok(Some(blob)) if !blob.is_empty() => blob,
+        Ok(_) => return None,
+        Err(error) => {
+            tracing::trace!(to = %recipient_key, %error, "failed to read mailbox");
+            return None;
+        }
+    };
     state_helpers::cache_peer_route(state, recipient_key, route_blob.clone());
     match state_helpers::import_route_blob(state, &route_blob) {
         Ok(route_id) => {

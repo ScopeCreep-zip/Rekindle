@@ -9,5 +9,6 @@
 
 pub mod lease;
 pub mod lifecycle;
+pub mod port;
 pub mod retry;
 pub mod schema;

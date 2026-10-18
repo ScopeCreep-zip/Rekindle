@@ -8,8 +8,8 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::pool::RecordPool;
 use rekindle_records::lease::{CommunityLeases, HeldKind, LeaseId};
+use rekindle_records::port::RecordPort;
 
 use crate::state::AppState;
 use crate::state_helpers;
@@ -22,7 +22,7 @@ pub(crate) async fn hold(state: &Arc<AppState>, community_id: &str, incoming: Co
         // Logged out: the pool is gone and has closed every record.
         return;
     };
-    let surplus = merge(state, &pool, community_id, incoming);
+    let surplus = merge(state, pool.as_ref(), community_id, incoming);
     for lease in surplus {
         pool.release(lease).await;
     }
@@ -83,7 +83,7 @@ pub(crate) async fn release_all(state: &Arc<AppState>, community_id: &str) {
 /// paths read); returns the surplus to release.
 fn merge(
     state: &Arc<AppState>,
-    pool: &RecordPool,
+    pool: &dyn RecordPort,
     community_id: &str,
     incoming: CommunityLeases,
 ) -> Vec<LeaseId> {

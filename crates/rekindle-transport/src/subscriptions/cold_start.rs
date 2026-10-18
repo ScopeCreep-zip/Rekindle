@@ -22,8 +22,8 @@ pub const COLD_START_CAPACITY: usize = 4096;
 
 /// Generic over the event type `T` — the plan referenced a
 /// `TransportEvent` type that doesn't exist; the actual events flowing
-/// through dispatch are typically `veilid_core::VeilidUpdate`. Caller
-/// picks T to match the dispatch loop's event shape.
+/// through dispatch are the ports' `PortEvent`s. Caller picks T to match
+/// the dispatch loop's event shape.
 pub struct ColdStartBuffer<T> {
     /// `None` once `install_callback` has been called — any subsequent
     /// `record` returns false immediately. `Some(Vec)` until then.

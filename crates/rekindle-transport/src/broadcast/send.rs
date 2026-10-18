@@ -1,20 +1,37 @@
-//! Outbound send paths — fire-and-forget and request/response.
-//!
-//! Both [`Sender`] and [`Caller`] delegate routing context construction
-//! to [`node::build_routing_context`] — single source of truth for the
-//! safety-profile-to-Veilid mapping.
+//! Outbound send paths — fire-and-forget and request/response — over the
+//! app-message and route ports (plan C9.1). The port maps each
+//! [`SafetyProfile`](crate::config::SafetyProfile) to a Safe route, floor-clamped
+//! to the anonymity floor.
 
 use std::sync::Arc;
 
+use rekindle_records::port::{AppMessagePort, PeerTarget, PortError, RoutePort};
 use tracing::debug;
-use veilid_core::{Target, VeilidAPI};
 
-use super::node::build_routing_context;
-use super::peer_registry::PeerTarget;
 use crate::config::TransportConfig;
 use crate::crypto::envelope::{sign_payload, Addressing};
 use crate::error::{Result, TransportError};
 use crate::frame::{self, TypeId};
+
+/// A failed send as the transport reports it. An unusable route is
+/// forgotten first, so the next send imports the peer's current blob
+/// (plan C7.9e).
+fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> TransportError {
+    match e {
+        PortError::RouteUnusable(reason) => {
+            routes.invalidate_after_send_failure(target);
+            TransportError::RouteUnusable {
+                target: target.as_str().to_string(),
+                reason,
+            }
+        }
+        PortError::Send(reason) => TransportError::SendFailed {
+            target: target.as_str().to_string(),
+            reason,
+        },
+        other => other.into(),
+    }
+}
 
 /// Report of a broadcast operation.
 #[derive(Debug, Default)]
@@ -25,14 +42,15 @@ pub struct BroadcastReport {
     pub failures: Vec<(String, String)>,
 }
 
-/// Fire-and-forget message sender (wraps `app_message`).
+/// Fire-and-forget message sender (app messages).
 pub struct Sender {
-    api: VeilidAPI,
+    messages: Arc<dyn AppMessagePort>,
+    routes: Arc<dyn RoutePort>,
 }
 
 impl Sender {
-    pub(crate) fn new(api: VeilidAPI) -> Self {
-        Self { api }
+    pub(crate) fn new(messages: Arc<dyn AppMessagePort>, routes: Arc<dyn RoutePort>) -> Self {
+        Self { messages, routes }
     }
 
     /// Send a class-tagged message to a single peer.
@@ -74,13 +92,10 @@ impl Sender {
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;
 
         let profile = rekindle_route::profile::profile_for_class(class);
-        let rc = build_routing_context(&self.api, &profile)?;
-        rc.app_message(Target::RouteId(target.route_id.clone()), frame_bytes)
+        self.messages
+            .send(target, &profile, frame_bytes)
             .await
-            .map_err(|e| TransportError::SendFailed {
-                target: format!("{:?}", target.route_id),
-                reason: e.to_string(),
-            })?;
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))?;
 
         debug!(
             type_id = type_id as u8,
@@ -92,24 +107,23 @@ impl Sender {
     }
 }
 
-/// Request/response RPC caller (wraps `app_call`).
+/// Request/response RPC caller (app calls).
 pub struct Caller {
-    api: VeilidAPI,
+    messages: Arc<dyn AppMessagePort>,
+    routes: Arc<dyn RoutePort>,
     config: Arc<TransportConfig>,
-    /// The process's one route importer (plan C7.3, D4).
-    route_imports: Arc<rekindle_protocol::dht::route_imports::RouteImports>,
 }
 
 impl Caller {
     pub(crate) fn new(
-        api: VeilidAPI,
+        messages: Arc<dyn AppMessagePort>,
+        routes: Arc<dyn RoutePort>,
         config: Arc<TransportConfig>,
-        route_imports: Arc<rekindle_protocol::dht::route_imports::RouteImports>,
     ) -> Self {
         Self {
-            api,
+            messages,
+            routes,
             config,
-            route_imports,
         }
     }
 
@@ -148,15 +162,11 @@ impl Caller {
             })?;
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;
 
-        let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
-
-        let response = rc
-            .app_call(Target::RouteId(target.route_id.clone()), frame_bytes)
+        let response = self
+            .messages
+            .call(target, &self.config.safety.rpc, frame_bytes)
             .await
-            .map_err(|e| TransportError::SendFailed {
-                target: format!("{:?}", target.route_id),
-                reason: e.to_string(),
-            })?;
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))?;
 
         debug!(
             type_id = type_id as u8,
@@ -193,15 +203,11 @@ impl Caller {
         target: &PeerTarget,
         envelope_bytes: Vec<u8>,
     ) -> Result<Vec<u8>> {
-        let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
-
-        let response = rc
-            .app_call(Target::RouteId(target.route_id.clone()), envelope_bytes)
+        let response = self
+            .messages
+            .call(target, &self.config.safety.rpc, envelope_bytes)
             .await
-            .map_err(|e| TransportError::SendFailed {
-                target: format!("{:?}", target.route_id),
-                reason: e.to_string(),
-            })?;
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))?;
 
         debug!(
             response_len = response.len(),
@@ -223,32 +229,19 @@ impl Caller {
     /// the payload already has — the same argument that justifies
     /// `call_community_envelope` above.
     ///
-    /// Takes the route blob rather than an imported `PeerTarget` so the
-    /// caller never names a Veilid type; the import happens here.
+    /// Takes the route blob rather than an imported `PeerTarget`; the
+    /// import happens here.
     pub async fn send_unframed_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
-        let route_id = self.route_imports.get_or_import(route_blob).map_err(|e| {
-            TransportError::SendFailed {
-                target: "route-blob".to_string(),
-                reason: format!("import route: {e}"),
-            }
-        })?;
-        let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
-        rc.app_message(Target::RouteId(route_id.clone()), data)
-            .await
-            .map_err(|e| {
-                // An unusable route is forgotten, so the next send re-imports
-                // the peer's current blob (plan C7.9e).
-                if matches!(
-                    e,
-                    veilid_core::VeilidAPIError::NoConnection { .. }
-                        | veilid_core::VeilidAPIError::InvalidTarget { .. }
-                ) {
-                    self.route_imports.invalidate_after_send_failure(&route_id);
-                }
-                TransportError::SendFailed {
-                    target: "route-blob".to_string(),
+        let target =
+            self.routes
+                .import(route_blob)
+                .map_err(|e| TransportError::RouteImportFailed {
+                    peer: "route-blob".to_string(),
                     reason: e.to_string(),
-                }
-            })
+                })?;
+        self.messages
+            .send(&target, &self.config.safety.rpc, data)
+            .await
+            .map_err(|e| send_failure(self.routes.as_ref(), &target, e))
     }
 }

@@ -10,10 +10,11 @@
 
 use rekindle_db::repo::dht_outbox::OutboxWrite;
 use rekindle_db::Db;
-use rekindle_protocol::dht::pool::{RecordPool, UnsentWrite};
+use rekindle_records::port::{RecordPort, UnsentWrite};
 
-/// Hold the writes `owner`'s last lock left unsent.
-pub async fn restore_unsent(db: &Db, owner: &str, pool: &RecordPool) {
+/// Hold the writes `owner`'s last lock left unsent. The only
+/// `restore_unsent`: both hosts call it.
+pub async fn restore_unsent(db: &Db, owner: &str, pool: &dyn RecordPort) {
     let owner = owner.to_string();
     let taken = db
         .call(move |conn| rekindle_db::repo::dht_outbox::take(conn, &owner))

@@ -15,13 +15,11 @@ pub(super) fn classify_call_invite_error(e: &crate::error::TransportError) -> &'
     use crate::error::TransportError;
     match e {
         TransportError::Timeout { .. } => "timeout",
-        TransportError::NoRoute { .. } => "no_route",
+        // The message port types a route with no connection or an invalid
+        // target as unusable (plan C9.1).
+        TransportError::NoRoute { .. } | TransportError::RouteUnusable { .. } => "no_route",
         TransportError::SendFailed { reason, .. } => {
-            // Inspect the underlying Veilid error string. Veilid maps
-            // InvalidTarget / NoConnection through here.
-            if reason.contains("InvalidTarget") || reason.contains("NoConnection") {
-                "no_route"
-            } else if reason.to_ascii_lowercase().contains("service") {
+            if reason.to_ascii_lowercase().contains("service") {
                 "service_unavailable"
             } else {
                 "send_failed"

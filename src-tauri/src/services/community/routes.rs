@@ -47,10 +47,10 @@ pub async fn resolve_member_route(
 
     let pool_records = state_helpers::record_pool(state).ok()?;
     let read = pool_records
-        .read_once(&registry_key.parse().ok()?, subkey_index, true)
+        .read_once(&registry_key, subkey_index, true)
         .await;
     let raw = match read {
-        Ok(Some(value)) => value.data().to_vec(),
+        Ok(Some(value)) => value.data,
         Ok(None) => {
             tracing::debug!(community = %community_id, peer = %peer_pseudonym, subkey_index, "route resolve: the peer's slot holds no value");
             return None;

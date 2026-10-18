@@ -7,7 +7,6 @@ pub mod mailbox;
 pub mod pool;
 pub mod profile;
 pub mod route_imports;
-pub mod schema;
 pub mod short_array;
 
 use crate::error::ProtocolError;

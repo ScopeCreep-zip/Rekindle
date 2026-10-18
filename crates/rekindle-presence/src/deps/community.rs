@@ -438,7 +438,7 @@ pub enum RowWrite {
     Stored,
     /// The network held another value at our sequence number or above:
     /// Veilid adopted it and stored it locally (`set_value.rs:620-645`).
-    Superseded { seq: Option<u32>, data: Vec<u8> },
+    Superseded { seq: u32, data: Vec<u8> },
 }
 
 /// Presence-derived voice membership view of one community member,

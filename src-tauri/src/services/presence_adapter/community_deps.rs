@@ -111,9 +111,10 @@ impl CommunityPresenceDeps for PresenceAdapter {
     ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
         let pool =
             state_helpers::record_pool(&self.state).map_err(|_| PresenceError::NotAttached)?;
-        let items = channel_record::read_all_channel_entries(&pool, record_key, member_slots)
-            .await
-            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        let items =
+            channel_record::read_all_channel_entries(pool.as_ref(), record_key, member_slots)
+                .await
+                .map_err(|e| PresenceError::Dht(e.to_string()))?;
         Ok(items
             .into_iter()
             .filter_map(|item| match item.entry {
@@ -278,26 +279,25 @@ impl CommunityPresenceDeps for PresenceAdapter {
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
     ) -> Result<rekindle_presence::RowWrite, PresenceError> {
-        let writer_kp = writer_keypair_str
-            .parse::<veilid_core::KeyPair>()
-            .map_err(|e| PresenceError::InvalidDhtKey(format!("writer keypair: {e}")))?;
-        let reg_key = registry_key
-            .parse::<veilid_core::RecordKey>()
-            .map_err(|e| PresenceError::InvalidDhtKey(format!("registry key: {e}")))?;
         let outcome = self
             .record_pool()?
-            .write_once(&reg_key, subkey_index, presence_json, Some(writer_kp))
+            .write_once(
+                registry_key,
+                subkey_index,
+                presence_json,
+                Some(writer_keypair_str),
+            )
             .await
-            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+            .map_err(super::presence_error)?;
         // A presence row asserts the present: a miss is an error, never a
         // write queued to land later. A supersede goes back to the writer,
         // which decides from whose row it is (plan C7.16).
-        use rekindle_protocol::dht::pool::SetOutcome;
+        use rekindle_records::port::SetOutcome;
         match outcome {
             SetOutcome::Landed | SetOutcome::Unchanged => Ok(rekindle_presence::RowWrite::Stored),
             SetOutcome::Superseded(newer) => Ok(rekindle_presence::RowWrite::Superseded {
-                seq: newer.seq().to_option(),
-                data: newer.data().to_vec(),
+                seq: newer.seq,
+                data: newer.data,
             }),
             missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => Err(PresenceError::Dht(
                 format!("presence not stored ({missed:?})"),

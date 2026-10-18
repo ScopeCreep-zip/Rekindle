@@ -54,35 +54,30 @@ impl TransportNode {
         let pool = self.require_records()?;
         let owner_keypair = |stored: Option<&String>, record: &str| {
             stored
+                .cloned()
                 .ok_or_else(|| TransportError::Internal(format!("no {record} owner keypair")))
-                .and_then(|text| {
-                    text.parse::<veilid_core::KeyPair>().map_err(|e| {
-                        TransportError::Internal(format!("{record} owner keypair: {e}"))
-                    })
-                })
         };
-        let identity_keypair = {
-            let sk = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
-            super::ed25519_to_keypair(&sk)
-        };
+        let identity_keypair = rekindle_crypto::keypair_text::keypair_text_from_signing(
+            &ed25519_dalek::SigningKey::from_bytes(signing_key_bytes),
+        );
         let id = &session.identity;
 
         rekindle_protocol::dht::profile::open_profile(
-            &pool,
+            pool.as_ref(),
             &id.profile_dht_key,
-            owner_keypair(id.profile_owner_keypair.as_ref(), "profile")?,
+            &owner_keypair(id.profile_owner_keypair.as_ref(), "profile")?,
         )
         .await?;
         rekindle_protocol::dht::mailbox::open_mailbox_writable(
-            &pool,
+            pool.as_ref(),
             &id.mailbox_dht_key,
-            identity_keypair,
+            &identity_keypair,
         )
         .await?;
         rekindle_protocol::dht::friends::open_friend_list(
-            &pool,
+            pool.as_ref(),
             &id.friend_list_dht_key,
-            owner_keypair(id.friend_list_owner_keypair.as_ref(), "friend list")?,
+            &owner_keypair(id.friend_list_owner_keypair.as_ref(), "friend list")?,
         )
         .await?;
         info!("profile, mailbox and friend list reopened writable");
@@ -92,14 +87,14 @@ impl TransportNode {
         // landing after is the route publisher's.
         if let Some(route_blob) = self.personal_route_blob() {
             let profile = rekindle_protocol::dht::profile::set_own_profile_subkey(
-                &pool,
+                pool.as_ref(),
                 &id.profile_dht_key,
                 crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
                 route_blob.clone(),
             )
             .await?;
             let mailbox = rekindle_protocol::dht::mailbox::update_mailbox_route(
-                &pool,
+                pool.as_ref(),
                 &id.mailbox_dht_key,
                 &route_blob,
             )
@@ -123,8 +118,7 @@ impl TransportNode {
                 }
             }
             let slot_writer = membership.slot_seed.and_then(|seed| {
-                crate::broadcast::dht_writes::derive_slot_keypair_str(&seed, membership.slot_index)
-                    .ok()
+                rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
             });
             match crate::broadcast::dht_writes::acquire_str(
                 self,

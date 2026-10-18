@@ -38,21 +38,23 @@ pub async fn get_audit_log_inner(
             .clone()
             .ok_or("community has no governance key")?
     };
-    let gov_key: veilid_core::RecordKey = gov_key_str
-        .parse()
-        .map_err(|e| format!("invalid governance key: {e}"))?;
 
     // The occupied subkeys, network-confirmed. A failed inspect is an
     // error: there is no blind 0..255 scan (plan C7.5).
-    let occupied_subkeys: Vec<u32> = state_helpers::record_pool(state)?
-        .inspect_once(&gov_key, None, veilid_core::DHTReportScope::UpdateGet)
+    let report = state_helpers::record_pool(state)?
+        .inspect_once(
+            &gov_key_str,
+            None,
+            rekindle_records::port::ReportScope::UpdateGet,
+        )
         .await
-        .map_err(|e| format!("audit log inspect failed: {e}"))?
-        .network_seqs()
+        .map_err(|e| format!("audit log inspect failed: {e}"))?;
+    let occupied_subkeys: Vec<u32> = report
+        .subkeys
         .iter()
-        .enumerate()
-        .filter(|(_, seq)| seq.to_option().is_some())
-        .filter_map(|(i, _)| u32::try_from(i).ok())
+        .zip(&report.network_seqs)
+        .filter(|(_, seq)| seq.is_some())
+        .map(|(subkey, _)| *subkey)
         .collect();
 
     // The governance runtime's reader: W26-verifies every payload and

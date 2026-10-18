@@ -14,6 +14,11 @@
 //!   remote route is never released: Veilid releases a dead one itself
 //!   (`ping_validator.rs:610-628`, plan C7.9e).
 //!
+//! - `rekindle-transport` and `rekindle-records` name no `veilid_core` at
+//!   all, in code, comments or manifest (plan C9.1): the transport runs on
+//!   the Veilid-free ports of `rekindle_records::port`, which only
+//!   `rekindle-protocol` implements over Veilid.
+//!
 //! Only crates that depend on `veilid-core` can make these calls, so only
 //! they are scanned: a deps trait in a Veilid-free crate may reuse a method
 //! name (`get_dht_value` on governance-runtime's overflow seam) without
@@ -66,7 +71,8 @@ const RULES: &[Rule] = &[
             "crates/rekindle-protocol/src/own_routes.rs",
             "src-tauri/src/services/relay/offer.rs",
         ],
-        why: "own routes are allocated and released only by OwnRoutes or the relay offer",
+        why:
+            "own routes are allocated and released only by VeilidRouteAllocator or the relay offer",
     },
 ];
 
@@ -151,8 +157,57 @@ fn veilid_linked_sources(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(dirs)
 }
 
-pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
+/// The crates that run on the ports and must name no Veilid type (plan
+/// C9.1).
+const VEILID_FREE: &[&str] = &["rekindle-transport", "rekindle-records"];
+
+/// Every mention of `veilid_core` (or a `veilid-core` dependency) in a
+/// [`VEILID_FREE`] crate.
+fn veilid_free_hits(root: &Path) -> Result<Vec<String>> {
     let mut hits = Vec::new();
+    for name in VEILID_FREE {
+        let dir = root.join("crates").join(name);
+        let manifest = dir.join("Cargo.toml");
+        if let Ok(text) = std::fs::read_to_string(&manifest) {
+            let doc: toml_edit::DocumentMut = text.parse()?;
+            for table in ["dependencies", "dev-dependencies"] {
+                if doc.get(table).and_then(|t| t.get("veilid-core")).is_some() {
+                    hits.push(format!(
+                        "crates/{name}/Cargo.toml  [{table}] veilid-core — {name} runs on the ports (plan C9.1)"
+                    ));
+                }
+            }
+        }
+        for path in walk_source_files(&dir.join("src"), &["rs"])? {
+            let Ok(src) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            hits.extend(names_veilid_core(&rel, &src));
+        }
+    }
+    Ok(hits)
+}
+
+fn names_veilid_core(rel: &str, src: &str) -> Vec<String> {
+    src.lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("veilid_core"))
+        .map(|(i, _)| {
+            format!(
+                "{rel}:{}  veilid_core — this crate runs on the ports (plan C9.1)",
+                i + 1
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
+    let mut hits = veilid_free_hits(root)?;
     for dir in veilid_linked_sources(root)? {
         for path in walk_source_files(&dir, &["rs"])? {
             let rel = path
@@ -173,14 +228,23 @@ pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
         println!("  ✗ {h}");
     }
     Err(anyhow!(
-        "{} Veilid DHT/route call(s) outside their owner (plan C7.11).",
+        "{} Veilid DHT/route call(s) outside their owner, or Veilid in a port crate (plans C7.11, C9.1).",
         hits.len()
     ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::scan;
+    use super::{names_veilid_core, scan};
+
+    #[test]
+    fn flags_veilid_core_in_a_port_crate() {
+        let src = "use rekindle_records::port::RecordPort;\nfn f(_: veilid_core::KeyPair) {}\n";
+        let hits = names_veilid_core("crates/rekindle-transport/src/x.rs", src);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert!(hits[0].starts_with("crates/rekindle-transport/src/x.rs:2"));
+        assert!(names_veilid_core("crates/rekindle-records/src/y.rs", "fn g() {}").is_empty());
+    }
 
     #[test]
     fn flags_calls_outside_their_owner() {

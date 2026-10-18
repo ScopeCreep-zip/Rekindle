@@ -22,6 +22,7 @@ rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-records = { path = "../rekindle-records" }
+rekindle-route = { path = "../rekindle-route" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }

@@ -18,12 +18,10 @@ use crate::state_helpers;
 use rekindle_db::Db;
 
 /// Shared prep for `write_channel_message_to_smpl` and
-/// `write_attachment_cached_to_smpl`: parse the slot keypair string,
-/// borrow the record from the session's record pool, and look up
-/// `(pseudonym, signing_key)` for the community.
+/// `write_attachment_cached_to_smpl`: the session's record pool and the
+/// community's `(pseudonym, signing_key)`.
 pub(super) struct DhtWriterContext {
-    pub(super) writer: veilid_core::KeyPair,
-    pub(super) pool: std::sync::Arc<rekindle_protocol::dht::pool::RecordPool>,
+    pub(super) pool: Arc<dyn rekindle_records::port::RecordPort>,
     pub(super) author_pseudo: rekindle_types::id::PseudonymKey,
     pub(super) signing_key: ed25519_dalek::SigningKey,
 }
@@ -31,16 +29,11 @@ pub(super) struct DhtWriterContext {
 pub(super) fn build_dht_writer_context(
     state: &Arc<AppState>,
     community_id: &str,
-    slot_keypair: &str,
 ) -> Result<DhtWriterContext, FilesError> {
-    let writer = slot_keypair
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| FilesError::Transport(format!("invalid slot keypair: {e}")))?;
     let pool = state_helpers::record_pool(state).map_err(FilesError::Transport)?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(state, community_id).map_err(FilesError::Transport)?;
     Ok(DhtWriterContext {
-        writer,
         pool,
         author_pseudo,
         signing_key,
@@ -55,12 +48,12 @@ pub(super) async fn write_channel_message_impl(
     slot_keypair: &str,
     message: &ChannelMessage,
 ) -> Result<(), FilesError> {
-    let ctx = build_dht_writer_context(state, community_id, slot_keypair)?;
+    let ctx = build_dht_writer_context(state, community_id)?;
     let written = write_member_message(
-        &ctx.pool,
+        ctx.pool.as_ref(),
         channel_log_key,
         slot_index,
-        ctx.writer,
+        slot_keypair,
         ctx.author_pseudo,
         &ctx.signing_key,
         message,
@@ -77,12 +70,12 @@ pub(super) async fn write_attachment_cached_impl(
     slot_keypair: &str,
     cached: &ChannelAttachmentCached,
 ) -> Result<(), FilesError> {
-    let ctx = build_dht_writer_context(state, community_id, slot_keypair)?;
+    let ctx = build_dht_writer_context(state, community_id)?;
     let written = write_member_attachment_cached(
-        &ctx.pool,
+        ctx.pool.as_ref(),
         channel_log_key,
         slot_index,
-        ctx.writer,
+        slot_keypair,
         ctx.author_pseudo,
         &ctx.signing_key,
         cached,

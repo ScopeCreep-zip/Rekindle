@@ -51,26 +51,6 @@ impl GovernanceAdapter {
             pool,
         }
     }
-
-    pub(super) fn parse_writer_keypair(
-        s: &str,
-    ) -> Result<veilid_core::KeyPair, rekindle_governance_runtime::GovernanceRuntimeError> {
-        s.parse::<veilid_core::KeyPair>().map_err(|e| {
-            rekindle_governance_runtime::GovernanceRuntimeError::Adapter(format!(
-                "invalid writer keypair: {e}"
-            ))
-        })
-    }
-
-    pub(super) fn parse_record_key(
-        s: &str,
-    ) -> Result<veilid_core::RecordKey, rekindle_governance_runtime::GovernanceRuntimeError> {
-        s.parse::<veilid_core::RecordKey>().map_err(|e| {
-            rekindle_governance_runtime::GovernanceRuntimeError::Adapter(format!(
-                "invalid record key: {e}"
-            ))
-        })
-    }
 }
 
 /// Phase 23.C entry point — chiral-split `open_community_dht_records`.

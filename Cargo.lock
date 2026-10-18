@@ -7840,6 +7840,7 @@ dependencies = [
  "rekindle-crypto",
  "rekindle-lifecycle",
  "rekindle-records",
+ "rekindle-route",
  "rekindle-secrets",
  "rekindle-types",
  "rekindle-utils",
@@ -7857,19 +7858,27 @@ dependencies = [
 name = "rekindle-records"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "proptest",
  "rekindle-types",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
 name = "rekindle-route"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "blake3",
+ "parking_lot 0.12.5",
+ "rekindle-lifecycle",
+ "rekindle-records",
  "rekindle-types",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -7952,7 +7961,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
- "veilid-core",
  "x25519-dalek 2.0.1",
  "zeroize",
 ]

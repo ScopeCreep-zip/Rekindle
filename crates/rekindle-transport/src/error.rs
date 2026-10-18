@@ -60,6 +60,11 @@ pub enum TransportError {
     #[error("send to {target} failed: {reason}")]
     SendFailed { target: String, reason: String },
 
+    /// The target route has no connection or is invalid: the route port
+    /// forgets it, and the next send imports the peer's current blob.
+    #[error("route to {target} unusable: {reason}")]
+    RouteUnusable { target: String, reason: String },
+
     /// An RPC call (app_call) timed out waiting for a response.
     #[error("{operation} timed out after {duration_ms}ms")]
     Timeout { operation: String, duration_ms: u64 },
@@ -295,7 +300,11 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
             P::CryptoError(reason) => Self::DecryptionFailed { reason },
             P::Verification(sender) => Self::SignatureVerificationFailed { sender },
             P::UnknownVariant(reason) => Self::InvalidFrame { reason },
-            P::SendFailed(reason) | P::RouteUnusable(reason) => Self::SendFailed {
+            P::SendFailed(reason) => Self::SendFailed {
+                target: "<protocol>".into(),
+                reason,
+            },
+            P::RouteUnusable(reason) => Self::RouteUnusable {
                 target: "<protocol>".into(),
                 reason,
             },
@@ -318,6 +327,52 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
             P::LeaseNotHeld(lease) => Self::RecordNotOpen {
                 key: format!("<lease {lease}>"),
             },
+        }
+    }
+}
+
+/// Converts the record, route and message ports' failures (plan C9.1) into
+/// their transport counterparts, each to its specific variant.
+impl From<rekindle_records::port::PortError> for TransportError {
+    fn from(e: rekindle_records::port::PortError) -> Self {
+        use rekindle_records::port::PortError as P;
+        match e {
+            P::Dht(reason)
+            | P::NotStored {
+                outcome: reason, ..
+            } => Self::DhtError { reason },
+            P::NotWritable(key) => Self::DhtError {
+                reason: format!("record {key} is not held writable"),
+            },
+            P::Unreachable(key) => Self::RecordNotOpen { key },
+            P::LeaseNotHeld(lease) => Self::RecordNotOpen {
+                key: format!("<lease {lease}>"),
+            },
+            P::Routing(reason) => Self::RouteImportFailed {
+                peer: "<port>".into(),
+                reason,
+            },
+            P::Send(reason) => Self::SendFailed {
+                target: "<port>".into(),
+                reason,
+            },
+            P::RouteUnusable(reason) => Self::RouteUnusable {
+                target: "<port>".into(),
+                reason,
+            },
+            P::MessageTooLarge { len, max } => Self::PayloadTooLarge { size: len, max },
+            P::SubkeyTooLarge { subkey, len, cap } => Self::SubkeyTooLarge {
+                subkey,
+                size: len,
+                max: cap,
+            },
+            P::Closed => Self::NotStarted,
+            P::KeyText(reason) => Self::DhtError {
+                reason: format!("bad key text: {reason}"),
+            },
+            P::Node(reason) => Self::AttachFailed { reason },
+            P::Codec(reason) => Self::DeserializationFailed { type_id: 0, reason },
+            P::Crypto(reason) => Self::SignalProtocol { reason },
         }
     }
 }

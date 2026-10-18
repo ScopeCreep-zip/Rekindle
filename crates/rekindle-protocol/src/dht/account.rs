@@ -1,8 +1,6 @@
 use rekindle_records::lease::LeaseId;
-use veilid_core::{DHTSchema, KeyPair, RecordKey};
+use rekindle_records::port::{RecordPort, SetOutcome};
 
-use super::parse_record_key;
-use super::pool::{RecordPool, SetOutcome};
 use crate::error::ProtocolError;
 use rekindle_codec::capnp_codec::account::{
     decode_account_header, encode_account_header, AccountHeader,
@@ -25,7 +23,7 @@ use rekindle_crypto::DhtRecordKey;
 /// them writable.
 pub struct AccountRecord {
     lease: LeaseId,
-    record_key: RecordKey,
+    record_key: String,
     encryption_key: DhtRecordKey,
 }
 
@@ -37,14 +35,14 @@ impl AccountRecord {
     /// # Errors
     /// The record could not be created, or the header could not be written.
     pub async fn create(
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         encryption_key: DhtRecordKey,
         display_name: &str,
         status_message: &str,
-    ) -> Result<(Self, KeyPair, SetOutcome), ProtocolError> {
-        let schema = DHTSchema::dflt(1)
-            .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
-        let (lease, record_key, keypair) = pool.create(schema, None).await?;
+    ) -> Result<(Self, String, SetOutcome), ProtocolError> {
+        let (lease, record_key, keypair) = pool
+            .create(&rekindle_records::schema::single(), None)
+            .await?;
         let record = Self {
             lease,
             record_key,
@@ -72,17 +70,16 @@ impl AccountRecord {
     /// # Errors
     /// The record could not be opened within the pool's retry budget.
     pub async fn open(
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         key: &str,
-        owner_keypair: KeyPair,
+        owner_keypair: &str,
         encryption_key: DhtRecordKey,
     ) -> Result<Self, ProtocolError> {
-        let record_key = parse_record_key(key)?;
-        let lease = pool.acquire(&record_key, Some(owner_keypair)).await?;
+        let lease = pool.acquire(key, Some(owner_keypair)).await?;
         tracing::debug!(key, "AccountRecord opened");
         Ok(Self {
             lease,
-            record_key,
+            record_key: key.to_string(),
             encryption_key,
         })
     }
@@ -91,12 +88,12 @@ impl AccountRecord {
     ///
     /// # Errors
     /// The header is missing, unreadable, or does not decrypt.
-    pub async fn read_header(&self, pool: &RecordPool) -> Result<AccountHeader, ProtocolError> {
+    pub async fn read_header(&self, pool: &dyn RecordPort) -> Result<AccountHeader, ProtocolError> {
         let value = pool
             .get(self.lease, 0, false)
             .await?
             .ok_or_else(|| ProtocolError::DhtError("account header not set".into()))?;
-        let plaintext = self.encryption_key.decrypt(value.data())?;
+        let plaintext = self.encryption_key.decrypt(&value.data)?;
         Ok(decode_account_header(&plaintext)?)
     }
 
@@ -106,17 +103,17 @@ impl AccountRecord {
     /// The write failed outright (network outcomes come back as `SetOutcome`).
     pub async fn write_header(
         &self,
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         header: &AccountHeader,
     ) -> Result<SetOutcome, ProtocolError> {
         let ciphertext = self
             .encryption_key
             .encrypt(&encode_account_header(header))?;
-        pool.set_durable(self.lease, 0, ciphertext).await
+        Ok(pool.set_durable(self.lease, 0, ciphertext, None).await?)
     }
 
     /// The record key as a string.
     pub fn record_key(&self) -> String {
-        self.record_key.to_string()
+        self.record_key.clone()
     }
 }

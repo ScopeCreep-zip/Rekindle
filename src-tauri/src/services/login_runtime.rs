@@ -57,7 +57,7 @@ pub async fn start_background_services(
     // the writes the last logout left unsent (C7.6h) held before anything
     // writes.
     match services::record_pool::start(state) {
-        Ok(records) => services::record_pool::restore_unsent(state, &records).await,
+        Ok(records) => services::record_pool::restore_unsent(state, records.as_ref()).await,
         Err(e) => tracing::error!(error = %e, "record pool not started"),
     }
 

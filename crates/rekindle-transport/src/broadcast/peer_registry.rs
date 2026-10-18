@@ -7,13 +7,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// Opaque handle for a remote peer's route. Wraps a Veilid `RouteId`
-/// without exposing it as a Veilid type through the public API.
-#[derive(Debug, Clone)]
-pub struct PeerTarget {
-    pub(crate) route_id: veilid_core::RouteId,
-}
-
 /// Cached route blob with import timestamp for staleness detection.
 #[derive(Debug, Clone)]
 struct CachedRoute {

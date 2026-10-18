@@ -29,15 +29,17 @@ pub struct NodeHandle {
     pub routing_context: veilid_core::RoutingContext,
     /// Our DHT profile record key.
     pub profile_dht_key: Option<String>,
-    /// Owner keypair for our profile DHT record (needed to re-open with write access).
-    pub profile_owner_keypair: Option<veilid_core::KeyPair>,
+    /// Owner keypair text for our profile DHT record (needed to re-open
+    /// with write access).
+    pub profile_owner_keypair: Option<String>,
     /// The record pool's session lease on our profile, released when the
     /// profile is rotated to a new record (plan C7.4).
     pub profile_lease: Option<rekindle_records::lease::LeaseId>,
     /// Our DHT friend list record key.
     pub friend_list_dht_key: Option<String>,
-    /// Owner keypair for our friend list DHT record (needed to re-open with write access).
-    pub friend_list_owner_keypair: Option<veilid_core::KeyPair>,
+    /// Owner keypair text for our friend list DHT record (needed to re-open
+    /// with write access).
+    pub friend_list_owner_keypair: Option<String>,
     /// Our account DHT record key (Phase 3).
     pub account_dht_key: Option<String>,
     /// Our mailbox DHT record key (deterministic, permanent).
@@ -49,7 +51,7 @@ impl NodeHandle {
     pub fn set_profile_dht(
         &mut self,
         key: String,
-        keypair: veilid_core::KeyPair,
+        keypair: String,
         lease: rekindle_records::lease::LeaseId,
     ) {
         self.profile_dht_key = Some(key);
@@ -58,7 +60,7 @@ impl NodeHandle {
     }
 
     /// Store friend list DHT key and owner keypair after publishing.
-    pub fn set_friend_list_dht(&mut self, key: String, keypair: veilid_core::KeyPair) {
+    pub fn set_friend_list_dht(&mut self, key: String, keypair: String) {
         self.friend_list_dht_key = Some(key);
         self.friend_list_owner_keypair = Some(keypair);
     }

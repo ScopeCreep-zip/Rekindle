@@ -1,4 +1,4 @@
-//! Outbound RPC calls — request-response via Veilid app_call.
+//! Outbound RPC calls — request-response over app calls.
 //!
 //! RPC is used ONLY for operations requiring both parties online:
 //! - Community leave notification (best-effort cleanup + rekey trigger)
@@ -11,10 +11,10 @@
 use tracing::{debug, info};
 
 use super::node::TransportNode;
-use super::peer_registry::PeerTarget;
 use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
 use crate::payload::rpc::{CallResponse, CommunityLeaveNotification, SyncRequest, SyncResponse};
+use rekindle_records::port::PeerTarget;
 
 // ── Community leave ────────────────────────────────────────────────────
 
@@ -58,7 +58,13 @@ pub async fn community_leave(
         )
         .await?;
 
-    let response: CallResponse = postcard::from_bytes(&response_bytes).unwrap_or(CallResponse::Ack);
+    // An undecodable reply (a NAK among them) is an error, never an Ack.
+    let response: CallResponse = postcard::from_bytes(&response_bytes).map_err(|e| {
+        TransportError::DeserializationFailed {
+            type_id: TypeId::CommunityLeave as u8,
+            reason: e.to_string(),
+        }
+    })?;
 
     info!(governance = governance_key, "community leave RPC complete");
     Ok(response)

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use rekindle_sync::gap::GapDetector;
 use rekindle_sync::inspect::INSPECT_INTERVAL;
 
 use crate::state::AppState;
@@ -45,10 +44,25 @@ pub(crate) fn unwatched_record_keys(
     )
 }
 
-fn changed_subkeys_from_sequences(local_sequences: &[u64], network_sequences: &[u64]) -> Vec<u32> {
-    GapDetector::detect(local_sequences, network_sequences)
-        .into_iter()
-        .filter_map(|gap| u32::try_from(gap.subkey).ok())
+/// The subkeys of `subkeys` whose network sequence is newer than the one
+/// last seen (`local`, indexed by subkey). Never-written (`None`) is older
+/// than any write, a first write landing at seq 0 included.
+fn changed_subkeys_from_sequences(
+    subkeys: &[u32],
+    local: &[Option<u32>],
+    network: &[Option<u32>],
+) -> Vec<u32> {
+    subkeys
+        .iter()
+        .zip(network)
+        .filter(|(subkey, network)| {
+            let seen = usize::try_from(**subkey)
+                .ok()
+                .and_then(|i| local.get(i).copied())
+                .flatten();
+            **network > seen
+        })
+        .map(|(subkey, _)| *subkey)
         .collect()
 }
 
@@ -58,11 +72,12 @@ pub(crate) async fn inspect_record(
     record_key: &str,
 ) -> Result<(), String> {
     let record_pool = state_helpers::record_pool(state)?;
-    let parsed_key = record_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("invalid record key: {e}"))?;
     let report = record_pool
-        .inspect_once(&parsed_key, None, veilid_core::DHTReportScope::SyncGet)
+        .inspect_once(
+            record_key,
+            None,
+            rekindle_records::port::ReportScope::SyncGet,
+        )
         .await
         .map_err(|e| format!("inspect failed: {e}"))?;
 
@@ -75,16 +90,7 @@ pub(crate) async fn inspect_record(
             .record_sequences
             .entry(record_key.to_string())
             .or_insert_with(Vec::new);
-        let local_sequences: Vec<u64> = previous
-            .iter()
-            .map(|seq| u64::from(u32::from(*seq)))
-            .collect();
-        let network_sequences: Vec<u64> = report
-            .network_seqs()
-            .iter()
-            .map(|seq| u64::from(u32::from(*seq)))
-            .collect();
-        changed_subkeys_from_sequences(&local_sequences, &network_sequences)
+        changed_subkeys_from_sequences(&report.subkeys, previous, &report.network_seqs)
     };
 
     // A8 telemetry: how often does the poll surface something the watch
@@ -109,7 +115,7 @@ pub(crate) async fn inspect_record(
 
     for subkey in changed_subkeys {
         record_pool
-            .read_once(&parsed_key, subkey, true)
+            .read_once(record_key, subkey, true)
             .await
             .map_err(|e| format!("get_dht_value failed during inspect sync: {e}"))?;
         if !crate::services::sync_communities::handle_community_record_change(
@@ -121,10 +127,11 @@ pub(crate) async fn inspect_record(
         }
 
         let network_seq = report
-            .network_seqs()
-            .get(subkey as usize)
-            .copied()
-            .unwrap_or_default();
+            .subkeys
+            .iter()
+            .zip(&report.network_seqs)
+            .find_map(|(s, seq)| (*s == subkey).then_some(*seq))
+            .flatten();
         let mut communities = state.communities.write();
         let community = communities
             .get_mut(community_id)
@@ -134,7 +141,7 @@ pub(crate) async fn inspect_record(
             .entry(record_key.to_string())
             .or_insert_with(Vec::new);
         if previous.len() <= subkey as usize {
-            previous.resize(subkey as usize + 1, veilid_core::ValueSeqNum::default());
+            previous.resize(subkey as usize + 1, None);
         }
         previous[subkey as usize] = network_seq;
     }

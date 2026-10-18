@@ -1,25 +1,22 @@
-//! Consolidated outbound module — the sole Veilid boundary for all outgoing data.
-//!
-//! Every way data leaves the node to Veilid lives here. No other module
-//! in the workspace imports `veilid_core`. This is the strict outbound boundary.
+//! Consolidated outbound module: every way data leaves the node, over the
+//! record, route and app-message ports (plan C9.1).
 //!
 //! # Submodules
 //!
-//! ## Veilid lifecycle & infrastructure
-//! - `node` — VeilidAPI lifecycle (startup, shutdown, attach, detach, RoutingContext)
-//! - `send` — app_message / app_call outbound wrappers
+//! ## Node and infrastructure
+//! - `node` — the transport node over its `PortSet` (start, adopt, shutdown,
+//!   record sessions, own routes)
+//! - `send` — app message / app call senders
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
-//! - `dht/` — all DHT record CRUD (create, open, close, get, set, watch, inspect)
+//! - `dht/` — channel messages and the append-only log over the record port
 //!
 //! ## Application-level broadcast
-//! - `dht_writes` — thin primitive wrappers over dht/ for TransportNode callers
-//! - `gossip` — community mesh broadcast (all 52 GossipPayload + ControlPayload variants)
+//! - `dht_writes` — leased-record and own-profile operations for TransportNode callers
 //! - `dm` — peer-to-peer DM sends (all 10 DmPayload variants)
-//! - `rpc` — request-response RPC calls (governance, sync, leave)
-//! - `voice` — voice packet send (single peer + mesh)
-//! - `route` — route lifecycle convenience (allocate, refresh, publish)
+//! - `rpc` — request-response RPC calls (sync, leave)
+//! - `route` — peer route import
 
-// Veilid infrastructure (imports veilid_core)
+// Node and infrastructure
 pub mod dht;
 pub mod node;
 pub mod peer_registry;

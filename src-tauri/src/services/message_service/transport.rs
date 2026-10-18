@@ -25,7 +25,7 @@ pub(crate) async fn try_fetch_route_from_dht(
     let dht_key = state_helpers::friend_dht_key(state, peer_id)?;
     let pool = state_helpers::record_pool(state).ok()?;
     let route_blob = rekindle_protocol::dht::profile::read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         &dht_key,
         rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
         true,
@@ -110,7 +110,7 @@ async fn try_relay_fallback_send(
         return false;
     };
     let Ok(Some(pool_body)) = rekindle_protocol::dht::profile::read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         &dht_key,
         rekindle_protocol::dht::profile::SUBKEY_RELAY_POOL,
         true,

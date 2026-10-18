@@ -150,12 +150,9 @@ pub(crate) async fn handle_community_record_change(
     }
 }
 
-fn report_fingerprint(seqs: &[veilid_core::ValueSeqNum]) -> u64 {
+fn report_fingerprint(seqs: &[Option<u32>]) -> u64 {
     let mut hasher = DefaultHasher::new();
-    seqs.len().hash(&mut hasher);
-    for seq in seqs {
-        format!("{seq:?}").hash(&mut hasher);
-    }
+    seqs.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -167,11 +164,12 @@ async fn sync_community_governance(
     let Ok(pool) = state_helpers::record_pool(state) else {
         return;
     };
-    let Ok(record_key) = governance_key.parse::<veilid_core::RecordKey>() else {
-        return;
-    };
     let report = match pool
-        .inspect_once(&record_key, None, veilid_core::DHTReportScope::UpdateGet)
+        .inspect_once(
+            governance_key,
+            None,
+            rekindle_records::port::ReportScope::UpdateGet,
+        )
         .await
     {
         Ok(report) => report,
@@ -180,7 +178,7 @@ async fn sync_community_governance(
             return;
         }
     };
-    let fingerprint = report_fingerprint(report.network_seqs());
+    let fingerprint = report_fingerprint(&report.network_seqs);
     let needs_rebuild = {
         let mut communities = state.communities.write();
         let Some(cs) = communities.get_mut(community_id) else {
@@ -224,9 +222,7 @@ async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
             // Our slot writer: channel records share the registry's slot
             // seed, so a held channel write restored after a re-login
             // re-pushes as us (plan C7.13).
-            cs.slot_keypair
-                .as_deref()
-                .and_then(|kp| kp.parse::<veilid_core::KeyPair>().ok()),
+            cs.slot_keypair.clone(),
         )
     };
 
@@ -235,16 +231,14 @@ async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
         if opened_keys.contains(&record_key) {
             continue;
         }
-        let (Ok(parsed_key), Some(channel)) = (
-            record_key.parse::<veilid_core::RecordKey>(),
-            hex::decode(&channel_id)
-                .ok()
-                .and_then(|b| <[u8; 16]>::try_from(b).ok())
-                .map(rekindle_types::id::ChannelId),
-        ) else {
+        let Some(channel) = hex::decode(&channel_id)
+            .ok()
+            .and_then(|b| <[u8; 16]>::try_from(b).ok())
+            .map(rekindle_types::id::ChannelId)
+        else {
             continue;
         };
-        match pool.acquire(&parsed_key, slot_writer.clone()).await {
+        match pool.acquire(&record_key, slot_writer.as_deref()).await {
             Ok(lease) => {
                 leases.channels.insert(channel, lease);
             }
@@ -287,11 +281,12 @@ async fn sync_community_channels(
         if stop.is_cancelled() {
             return;
         }
-        let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
-            continue;
-        };
         let report = match record_pool
-            .inspect_once(&parsed_key, None, veilid_core::DHTReportScope::UpdateGet)
+            .inspect_once(
+                &record_key,
+                None,
+                rekindle_records::port::ReportScope::UpdateGet,
+            )
             .await
         {
             Ok(report) => report,
@@ -305,7 +300,7 @@ async fn sync_community_channels(
                 continue;
             }
         };
-        let fingerprint = report_fingerprint(report.network_seqs());
+        let fingerprint = report_fingerprint(&report.network_seqs);
         let should_request_sync = {
             let mut communities = state.communities.write();
             let Some(cs) = communities.get_mut(community_id) else {

@@ -65,7 +65,7 @@ pub mod profile {
     pub const FRIEND_INBOX_KEYPAIR: u32 = 10;
 
     /// Total subkeys to allocate when creating a profile record.
-    pub const SUBKEY_COUNT: u32 = 11;
+    pub const SUBKEY_COUNT: u16 = 11;
 
     /// Status byte encoding for [`STATUS`].
     pub const STATUS_ONLINE: u8 = 0;
@@ -112,6 +112,11 @@ pub mod manifest {
 /// (`rekindle_governance_runtime::roster`), the key is distributed
 /// peer-to-peer (`rekindle-mek-rotation`), and admission is a
 /// `GovernanceEntry`.
+/// Subkey layout for a friend-request inbox record (DFLT, one owner).
+pub mod friend_inbox {
+    pub const SUBKEY_COUNT: u16 = 32;
+}
+
 /// Subkey layout for a mailbox record.
 pub mod mailbox {
     pub const ROUTE_BLOB: u32 = 0;
@@ -176,7 +181,7 @@ mod tests {
         .max()
         .expect("non-empty");
         assert_eq!(
-            profile::SUBKEY_COUNT,
+            u32::from(profile::SUBKEY_COUNT),
             highest + 1,
             "SUBKEY_COUNT must be one past the highest index"
         );

@@ -7,8 +7,6 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::schema::personal_sync_dflt_schema;
-
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -40,16 +38,13 @@ pub async fn ensure_personal_sync_record(
     let owner_key = state_helpers::current_owner_key(state)?;
     let record_pool = state_helpers::record_pool(state)?;
     let (lease, key, owner) = record_pool
-        .create(
-            personal_sync_dflt_schema().map_err(|e| format!("schema: {e}"))?,
-            None,
-        )
+        .create(&rekindle_records::schema::personal_sync(), None)
         .await
         .map_err(|e| format!("personal sync record creation failed: {e}"))?;
     // The session's watch takes its own lease; the create's is not kept.
     record_pool.release(lease).await;
-    let record_key = key.to_string();
-    let owner_keypair_hex = owner.to_string();
+    let record_key = key;
+    let owner_keypair_hex = owner;
 
     let device_id = generate_device_id();
     persist_to_identity(

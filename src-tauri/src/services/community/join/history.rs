@@ -36,9 +36,6 @@ async fn request_history_catchup(
             .and_then(|community| community.member_registry_key.clone())
             .ok_or("missing registry key")?
     };
-    let record_key = registry_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("invalid registry key: {e}"))?;
 
     let local_oldest = load_local_oldest_lamports(state, community_id).await?;
     let channel_ids: Vec<String> = {
@@ -66,17 +63,17 @@ async fn request_history_catchup(
         .filter_map(|slot| u32::try_from(slot).ok())
         .collect();
     let lease = pool
-        .acquire(&record_key, None)
+        .acquire(&registry_key, None)
         .await
         .map_err(|e| format!("registry open failed: {e}"))?;
     let rows = pool.read_changed(lease, &all_slots).await;
     pool.release(lease).await;
     let rows = rows.map_err(|e| format!("registry read failed: {e}"))?;
     for (_, value) in rows {
-        if value.data().is_empty() {
+        if value.data.is_empty() {
             continue;
         }
-        let Ok(presence) = serde_json::from_slice::<MemberPresence>(value.data()) else {
+        let Ok(presence) = serde_json::from_slice::<MemberPresence>(&value.data) else {
             continue;
         };
         // Architecture §26 W26 — verify before trusting history_ranges,

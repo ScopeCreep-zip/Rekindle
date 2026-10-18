@@ -1,7 +1,7 @@
 //! Direct message operations — send via DhtLog, read inbox.
 //!
 //! All sends route through `broadcast::dm` and `broadcast::dht_writes`.
-//! Keypair bytes are deserialized inside the broadcast boundary.
+//! Keypairs travel as text (`rekindle_crypto::keypair_text`).
 
 use crate::broadcast::node::TransportNode;
 use crate::error::Result;
@@ -21,7 +21,7 @@ pub async fn send_dm(
     dm_log_keypair_bytes: Option<&[u8]>,
 ) -> Result<()> {
     let dm_log_keypair = dm_log_keypair_bytes
-        .map(crate::broadcast::node::deserialize_keypair)
+        .map(rekindle_crypto::keypair_text::keypair_text_from_wire)
         .transpose()?;
     crate::broadcast::dm::direct_message(
         node,

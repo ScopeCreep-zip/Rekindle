@@ -7,17 +7,15 @@
 use std::sync::Arc;
 
 use rekindle_governance_runtime::{DhtRecordInfo, GovernanceRuntimeError, RecentMessageRow};
-use rekindle_protocol::dht::pool::{RecordPool, SetOutcome};
-use rekindle_protocol::dht::schema;
 use rekindle_records::lease::LeaseId;
-use veilid_core::DHTSchema;
+use rekindle_records::port::{RecordPort, RecordSchema, ReportScope, SetOutcome};
 
 use crate::db_helpers::db_call;
 use crate::state_helpers;
 
 use super::GovernanceAdapter;
 
-fn pool(adapter: &GovernanceAdapter) -> Result<Arc<RecordPool>, GovernanceRuntimeError> {
+fn pool(adapter: &GovernanceAdapter) -> Result<Arc<dyn RecordPort>, GovernanceRuntimeError> {
     state_helpers::record_pool(&adapter.state).map_err(GovernanceRuntimeError::Adapter)
 }
 
@@ -27,16 +25,16 @@ fn adapter_err(what: &str, e: impl std::fmt::Display) -> GovernanceRuntimeError 
 
 async fn create(
     adapter: &GovernanceAdapter,
-    schema: DHTSchema,
-    owner: Option<veilid_core::KeyPair>,
+    schema: RecordSchema,
+    owner: Option<&str>,
 ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
     let (lease, key, keypair) = pool(adapter)?
-        .create(schema, owner)
+        .create(&schema, owner)
         .await
         .map_err(|e| adapter_err("create record", e))?;
     Ok(DhtRecordInfo {
-        record_key: key.to_string(),
-        owner_keypair: Some(keypair.to_string()),
+        record_key: key,
+        owner_keypair: Some(keypair),
         lease,
     })
 }
@@ -45,17 +43,18 @@ pub(super) async fn create_smpl_record_impl(
     adapter: &GovernanceAdapter,
     member_pubkeys: &[[u8; 32]],
 ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
-    let smpl_schema = schema::community_smpl_schema(member_pubkeys)
-        .map_err(|e| adapter_err("SMPL schema build failed", e))?;
-    create(adapter, smpl_schema, None).await
+    create(
+        adapter,
+        rekindle_records::schema::community_smpl(member_pubkeys),
+        None,
+    )
+    .await
 }
 
 pub(super) async fn create_dflt_record_impl(
     adapter: &GovernanceAdapter,
 ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
-    let dflt_schema = schema::invite_secrets_dflt_schema()
-        .map_err(|e| adapter_err("DFLT schema build failed", e))?;
-    create(adapter, dflt_schema, None).await
+    create(adapter, rekindle_records::schema::invite_secrets(), None).await
 }
 
 /// The HKDF-derived owner keypair (per identity, community, page) grants
@@ -68,12 +67,14 @@ pub(super) async fn create_overflow_record_impl(
     adapter: &GovernanceAdapter,
     owner_keypair: String,
 ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
-    let kp = GovernanceAdapter::parse_writer_keypair(&owner_keypair)?;
     // Reuse the single-owner DFLT(1) schema — an overflow record holds exactly
     // one author's spilled governance page in subkey 0.
-    let dflt_schema = schema::invite_secrets_dflt_schema()
-        .map_err(|e| adapter_err("overflow DFLT schema build failed", e))?;
-    create(adapter, dflt_schema, Some(kp)).await
+    create(
+        adapter,
+        rekindle_records::schema::invite_secrets(),
+        Some(&owner_keypair),
+    )
+    .await
 }
 
 pub(super) async fn acquire_record_impl(
@@ -81,12 +82,8 @@ pub(super) async fn acquire_record_impl(
     record_key: &str,
     writer: Option<String>,
 ) -> Result<LeaseId, GovernanceRuntimeError> {
-    let key = GovernanceAdapter::parse_record_key(record_key)?;
-    let writer = writer
-        .map(|w| GovernanceAdapter::parse_writer_keypair(&w))
-        .transpose()?;
     pool(adapter)?
-        .acquire(&key, writer)
+        .acquire(record_key, writer.as_deref())
         .await
         .map_err(|e| adapter_err("acquire record", e))
 }
@@ -108,7 +105,7 @@ pub(super) async fn get_dht_value_impl(
         .get(lease, subkey, force_refresh)
         .await
         .map_err(|e| adapter_err("get_dht_value", e))?;
-    Ok(value.map(|v| v.data().to_vec()))
+    Ok(value.map(|v| v.data))
 }
 
 /// `Ok(Some(newer))` when the network already held a newer value (M9.5);
@@ -121,15 +118,12 @@ pub(super) async fn set_dht_value_impl(
     value: Vec<u8>,
     writer: Option<String>,
 ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-    let writer = writer
-        .map(|w| GovernanceAdapter::parse_writer_keypair(&w))
-        .transpose()?;
     match pool(adapter)?
-        .set(lease, subkey, value, writer)
+        .set(lease, subkey, value, writer.as_deref())
         .await
         .map_err(|e| adapter_err("set_dht_value", e))?
     {
-        SetOutcome::Superseded(newer) => Ok(Some(newer.data().to_vec())),
+        SetOutcome::Superseded(newer) => Ok(Some(newer.data)),
         SetOutcome::Landed | SetOutcome::Unchanged => Ok(None),
         missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => Err(
             GovernanceRuntimeError::Adapter(format!("set_dht_value: not stored ({missed:?})")),
@@ -137,26 +131,23 @@ pub(super) async fn set_dht_value_impl(
     }
 }
 
-/// Reads `local_seqs()`, not `network_seqs()`: under
-/// `DHTReportScope::Local` veilid never consults the network, so the
-/// network half is all-`None` by construction.
+/// Reads `local_seqs`, not `network_seqs`: a `Local` inspect never
+/// consults the network, so the network half is all-`None` by construction.
 pub(super) async fn inspect_dht_record_local_seqs_impl(
     adapter: &GovernanceAdapter,
     lease: LeaseId,
 ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
     let report = pool(adapter)?
-        .inspect(lease, None, veilid_core::DHTReportScope::Local)
+        .inspect(lease, None, ReportScope::Local)
         .await
         .map_err(|e| adapter_err("inspect Local", e))?;
-    Ok(seqs_as_opt_u64(report.local_seqs()))
+    Ok(seqs_as_opt_u64(&report.local_seqs))
 }
 
-/// Preserve `ValueSeqNum`'s never-written sentinel as `None`.
-///
-/// `Some(0)` is a subkey written exactly once, which is why this cannot
-/// collapse to a plain `u64`.
-fn seqs_as_opt_u64(seqs: &[veilid_core::ValueSeqNum]) -> Vec<Option<u64>> {
-    seqs.iter().map(|s| s.to_option().map(u64::from)).collect()
+/// Keep never-written as `None`: `Some(0)` is a subkey written exactly
+/// once, which is why this cannot collapse to a plain `u64`.
+fn seqs_as_opt_u64(seqs: &[Option<u32>]) -> Vec<Option<u64>> {
+    seqs.iter().map(|s| s.map(u64::from)).collect()
 }
 
 pub(super) async fn inspect_dht_record_update_get_seqs_impl(
@@ -164,10 +155,10 @@ pub(super) async fn inspect_dht_record_update_get_seqs_impl(
     lease: LeaseId,
 ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
     let report = pool(adapter)?
-        .inspect(lease, None, veilid_core::DHTReportScope::UpdateGet)
+        .inspect(lease, None, ReportScope::UpdateGet)
         .await
         .map_err(|e| adapter_err("inspect UpdateGet", e))?;
-    Ok(seqs_as_opt_u64(report.network_seqs()))
+    Ok(seqs_as_opt_u64(&report.network_seqs))
 }
 
 pub(super) async fn inspect_dht_record_present_subkeys_impl(
@@ -175,16 +166,16 @@ pub(super) async fn inspect_dht_record_present_subkeys_impl(
     lease: LeaseId,
 ) -> Result<Vec<u32>, GovernanceRuntimeError> {
     let report = pool(adapter)?
-        .inspect(lease, None, veilid_core::DHTReportScope::UpdateGet)
+        .inspect(lease, None, ReportScope::UpdateGet)
         .await
         .map_err(|e| adapter_err("inspect UpdateGet", e))?;
-    // `ValueSeqNum` is `Option<u32>`: `None` => subkey empty, `Some(_)` =>
-    // value present (including seq 0). Keep only the populated indices.
+    // `None` => subkey empty, `Some(_)` => value present (including seq 0).
     Ok(report
-        .network_seqs()
+        .subkeys
         .iter()
-        .enumerate()
-        .filter_map(|(i, s)| s.to_option().and_then(|_| u32::try_from(i).ok()))
+        .zip(&report.network_seqs)
+        .filter(|(_, seq)| seq.is_some())
+        .map(|(subkey, _)| *subkey)
         .collect())
 }
 

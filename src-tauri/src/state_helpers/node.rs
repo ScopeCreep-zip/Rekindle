@@ -71,7 +71,7 @@ pub fn safe_api_and_routing_context(
 /// services have started it.
 pub fn record_pool(
     state: &Arc<AppState>,
-) -> Result<Arc<rekindle_protocol::dht::pool::RecordPool>, String> {
+) -> Result<Arc<dyn rekindle_records::port::RecordPort>, String> {
     state
         .record_pool
         .read()
@@ -98,7 +98,7 @@ pub fn profile_dht_info(state: &Arc<AppState>) -> Result<(String, Vec<u8>, Strin
         .own_routes
         .read()
         .as_ref()
-        .and_then(|r| r.blob(rekindle_protocol::own_routes::RouteClass::General))
+        .and_then(|r| r.blob(rekindle_records::port::RouteClass::General))
         .ok_or("route blob not set")?;
     let mailbox_key = nh
         .mailbox_dht_key
@@ -111,25 +111,21 @@ pub fn profile_dht_info(state: &Arc<AppState>) -> Result<(String, Vec<u8>, Strin
 pub fn own_routes(
     state: &AppState,
 ) -> Option<
-    Arc<
-        rekindle_protocol::own_routes::OwnRoutes<
-            rekindle_protocol::own_routes::VeilidRouteAllocator,
-        >,
-    >,
+    Arc<rekindle_route::own_routes::OwnRoutes<rekindle_protocol::own_routes::VeilidRouteAllocator>>,
 > {
     state.own_routes.read().clone()
 }
 
 /// Our general route blob: what peers import to message us.
 pub fn our_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
-    own_routes(state)?.blob(rekindle_protocol::own_routes::RouteClass::General)
+    own_routes(state)?.blob(rekindle_records::port::RouteClass::General)
 }
 
 /// Our media-class route blob: what peers import to send us voice and
 /// video. Never substituted by the general route (plan C7.9c): without one,
 /// media is unavailable and the window says so.
 pub fn our_media_route_blob(state: &Arc<AppState>) -> Option<Vec<u8>> {
-    own_routes(state)?.blob(rekindle_protocol::own_routes::RouteClass::Media)
+    own_routes(state)?.blob(rekindle_records::port::RouteClass::Media)
 }
 
 /// Friend list DHT key.
@@ -142,7 +138,7 @@ pub fn friend_list_dht_key(state: &Arc<AppState>) -> Option<String> {
 }
 
 /// Friend list owner keypair.
-pub fn friend_list_owner_keypair(state: &Arc<AppState>) -> Option<veilid_core::KeyPair> {
+pub fn friend_list_owner_keypair(state: &Arc<AppState>) -> Option<String> {
     state
         .node
         .read()

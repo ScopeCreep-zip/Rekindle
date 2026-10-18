@@ -1,9 +1,7 @@
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::RecordPort;
 use serde::{Deserialize, Serialize};
-use veilid_core::{DHTSchema, KeyPair};
 
-use super::parse_record_key;
-use super::pool::RecordPool;
 use crate::error::ProtocolError;
 
 /// Internal metadata stored in subkey 0 of the `DHTShortArray` record.
@@ -30,7 +28,7 @@ struct ShortArrayHead {
 /// The head record maps logical indices to physical subkey slots, enabling
 /// O(1) removal without shifting data in DHT.
 ///
-/// The handle holds a lease in the session's [`RecordPool`] (plan C7.4):
+/// The handle holds a lease in the session's [`RecordPort`] (plan C7.4):
 /// writes are signed by the lease's writer, and [`release`](Self::release)
 /// ends the borrow. A write the structure depends on that does not reach
 /// consensus is an error ([`ProtocolError::NotStored`]).
@@ -50,19 +48,16 @@ impl DHTShortArray {
     /// # Errors
     /// The record could not be created, or its empty head not stored.
     pub async fn create(
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         capacity: u16,
-        owner: Option<KeyPair>,
-    ) -> Result<(Self, KeyPair), ProtocolError> {
-        let total_subkeys = capacity
-            .checked_add(1)
+        owner: Option<&str>,
+    ) -> Result<(Self, String), ProtocolError> {
+        let schema = rekindle_records::schema::short_array(capacity)
             .ok_or_else(|| ProtocolError::DhtError("capacity overflow (max 65534)".into()))?;
-        let schema = DHTSchema::dflt(total_subkeys)
-            .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
-        let (lease, key, keypair) = pool.create(schema, owner).await?;
+        let (lease, key, keypair) = pool.create(&schema, owner).await?;
         let array = Self {
             lease,
-            record_key: key.to_string(),
+            record_key: key,
             stride: capacity,
         };
         array
@@ -84,11 +79,11 @@ impl DHTShortArray {
     /// # Errors
     /// The record could not be opened, or its head read.
     pub async fn open(
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         key: &str,
-        writer: Option<KeyPair>,
+        writer: Option<&str>,
     ) -> Result<Self, ProtocolError> {
-        let lease = pool.acquire(&parse_record_key(key)?, writer).await?;
+        let lease = pool.acquire(key, writer).await?;
         let head = match read_head(pool, lease).await {
             Ok(head) => head,
             Err(e) => {
@@ -110,7 +105,7 @@ impl DHTShortArray {
     }
 
     /// End this handle's borrow of the record.
-    pub async fn release(self, pool: &RecordPool) {
+    pub async fn release(self, pool: &dyn RecordPort) {
         pool.release(self.lease).await;
     }
 
@@ -120,7 +115,7 @@ impl DHTShortArray {
     ///
     /// # Errors
     /// The array is full, or a write was not stored.
-    pub async fn add(&self, pool: &RecordPool, data: &[u8]) -> Result<u32, ProtocolError> {
+    pub async fn add(&self, pool: &dyn RecordPort, data: &[u8]) -> Result<u32, ProtocolError> {
         let mut head = read_head(pool, self.lease).await?;
         if head.slots.len() >= usize::from(self.stride) {
             return Err(ProtocolError::DhtError("short array is full".into()));
@@ -144,7 +139,7 @@ impl DHTShortArray {
     /// The head or the slot could not be read.
     pub async fn get(
         &self,
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         index: u32,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         let head = read_head(pool, self.lease).await?;
@@ -152,7 +147,7 @@ impl DHTShortArray {
             return Ok(None);
         };
         let value = pool.get(self.lease, u32::from(slot) + 1, false).await?;
-        Ok(value.map(|v| v.data().to_vec()))
+        Ok(value.map(|v| v.data))
     }
 
     /// Remove the element at the given logical index. Subsequent elements
@@ -160,7 +155,7 @@ impl DHTShortArray {
     ///
     /// # Errors
     /// The index is out of bounds, or a write was not stored.
-    pub async fn remove(&self, pool: &RecordPool, index: u32) -> Result<(), ProtocolError> {
+    pub async fn remove(&self, pool: &dyn RecordPort, index: u32) -> Result<(), ProtocolError> {
         let mut head = read_head(pool, self.lease).await?;
         let idx = index as usize;
         let Some(&slot) = head.slots.get(idx) else {
@@ -181,7 +176,7 @@ impl DHTShortArray {
     ///
     /// # Errors
     /// The head could not be read.
-    pub async fn len(&self, pool: &RecordPool) -> Result<u32, ProtocolError> {
+    pub async fn len(&self, pool: &dyn RecordPort) -> Result<u32, ProtocolError> {
         let head = read_head(pool, self.lease).await?;
         u32::try_from(head.slots.len())
             .map_err(|e| ProtocolError::DhtError(format!("len overflow: {e}")))
@@ -191,7 +186,7 @@ impl DHTShortArray {
     ///
     /// # Errors
     /// The head could not be read.
-    pub async fn is_empty(&self, pool: &RecordPool) -> Result<bool, ProtocolError> {
+    pub async fn is_empty(&self, pool: &dyn RecordPort) -> Result<bool, ProtocolError> {
         Ok(self.len(pool).await? == 0)
     }
 
@@ -199,13 +194,14 @@ impl DHTShortArray {
     ///
     /// # Errors
     /// A write was not stored.
-    pub async fn clear(&self, pool: &RecordPool) -> Result<(), ProtocolError> {
+    pub async fn clear(&self, pool: &dyn RecordPort) -> Result<(), ProtocolError> {
         let head = read_head(pool, self.lease).await?;
         for &slot in &head.slots {
             let subkey = u32::from(slot) + 1;
             pool.set(self.lease, subkey, Vec::new(), None)
                 .await?
-                .require_stored(subkey)?;
+                .require_stored(subkey)
+                .map_err(ProtocolError::from)?;
         }
         self.write_head(
             pool,
@@ -221,12 +217,12 @@ impl DHTShortArray {
     ///
     /// # Errors
     /// The head or a slot could not be read.
-    pub async fn get_all(&self, pool: &RecordPool) -> Result<Vec<Vec<u8>>, ProtocolError> {
+    pub async fn get_all(&self, pool: &dyn RecordPort) -> Result<Vec<Vec<u8>>, ProtocolError> {
         let head = read_head(pool, self.lease).await?;
         let mut results = Vec::with_capacity(head.slots.len());
         for &slot in &head.slots {
             let value = pool.get(self.lease, u32::from(slot) + 1, false).await?;
-            results.push(value.map(|v| v.data().to_vec()).unwrap_or_default());
+            results.push(value.map(|v| v.data).unwrap_or_default());
         }
         Ok(results)
     }
@@ -245,21 +241,22 @@ impl DHTShortArray {
 
     async fn write_head(
         &self,
-        pool: &RecordPool,
+        pool: &dyn RecordPort,
         head: &ShortArrayHead,
     ) -> Result<(), ProtocolError> {
         let bytes =
             serde_json::to_vec(head).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-        pool.set(self.lease, 0, bytes, None)
+        Ok(pool
+            .set(self.lease, 0, bytes, None)
             .await?
-            .require_stored(0)
+            .require_stored(0)?)
     }
 }
 
 /// Read the head metadata of a leased array record.
-async fn read_head(pool: &RecordPool, lease: LeaseId) -> Result<ShortArrayHead, ProtocolError> {
+async fn read_head(pool: &dyn RecordPort, lease: LeaseId) -> Result<ShortArrayHead, ProtocolError> {
     match pool.get(lease, 0, false).await? {
-        Some(v) => serde_json::from_slice(v.data())
+        Some(v) => serde_json::from_slice(&v.data)
             .map_err(|e| ProtocolError::Deserialization(format!("head parse: {e}"))),
         None => Err(ProtocolError::DhtError("head subkey not set".into())),
     }

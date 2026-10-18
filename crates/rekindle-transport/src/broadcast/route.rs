@@ -5,8 +5,8 @@
 use tracing::{debug, warn};
 
 use super::node::TransportNode;
-use super::peer_registry::PeerTarget;
 use crate::error::Result;
+use rekindle_records::port::PeerTarget;
 
 /// Import a remote peer's route blob, returning a `PeerTarget` handle.
 pub fn import_peer_route(node: &TransportNode, route_blob: &[u8]) -> Result<PeerTarget> {

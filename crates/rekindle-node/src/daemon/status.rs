@@ -40,10 +40,13 @@ impl StatusPublisherDeps for DaemonStatusDeps {
             .node
             .records()
             .ok_or_else(|| PresenceError::Dht("record pool not running".into()))?;
-        let outcome =
-            rekindle_protocol::dht::profile::set_own_profile_status(&pool, profile_key, payload)
-                .await
-                .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        let outcome = rekindle_protocol::dht::profile::set_own_profile_status(
+            pool.as_ref(),
+            profile_key,
+            payload,
+        )
+        .await
+        .map_err(|e| PresenceError::Dht(e.to_string()))?;
         if outcome.missed() {
             return Err(PresenceError::Dht(format!(
                 "status not stored ({outcome:?})"

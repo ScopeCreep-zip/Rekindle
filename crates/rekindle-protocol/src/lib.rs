@@ -3,6 +3,7 @@ pub mod error;
 pub mod messaging;
 pub mod node;
 pub mod own_routes;
+pub mod ports;
 pub mod veilid_config;
 
 pub use dht::log::DHTLog;

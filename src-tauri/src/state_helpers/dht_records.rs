@@ -9,8 +9,8 @@ use crate::state::AppState;
 /// `Profile` and `FriendList` carry their owner keypair (and the profile its
 /// session lease). Account and Mailbox never carry a keypair.
 pub enum DhtRecordType {
-    Profile(veilid_core::KeyPair, rekindle_records::lease::LeaseId),
-    FriendList(veilid_core::KeyPair),
+    Profile(String, rekindle_records::lease::LeaseId),
+    FriendList(String),
     Account,
     Mailbox,
 }

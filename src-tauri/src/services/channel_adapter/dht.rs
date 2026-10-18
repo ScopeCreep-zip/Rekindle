@@ -27,18 +27,14 @@ pub(super) async fn write_channel_message_smpl_impl(
     channel_msg: &ChannelMessage,
 ) -> Result<DhtWrite, ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_message(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         channel_msg,
@@ -53,18 +49,14 @@ pub(super) async fn write_channel_forward_smpl_impl(
     forward: &ChannelForward,
 ) -> Result<DhtWrite, ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_forward(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         forward,
@@ -79,18 +71,14 @@ pub(super) async fn write_channel_poll_create_smpl_impl(
     entry: &ChannelPollCreate,
 ) -> Result<(), ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_poll_create(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         entry,
@@ -105,18 +93,14 @@ pub(super) async fn write_channel_poll_vote_smpl_impl(
     entry: &ChannelPollVote,
 ) -> Result<(), ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_poll_vote(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         entry,
@@ -131,18 +115,14 @@ pub(super) async fn write_channel_hand_raise_smpl_impl(
     entry: &ChannelHandRaise,
 ) -> Result<(), ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_hand_raise(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         entry,
@@ -157,18 +137,14 @@ pub(super) async fn write_channel_poll_close_smpl_impl(
     entry: &ChannelPollClose,
 ) -> Result<(), ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_poll_close(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         entry,
@@ -183,18 +159,14 @@ pub(super) async fn write_member_reaction_smpl_impl(
     reaction: &ChannelReaction,
 ) -> Result<(), ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let writer = context
-        .slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| ChannelError::Adapter(format!("invalid slot keypair: {e}")))?;
     let (author_pseudo, signing_key) =
         state_helpers::pseudonym_credentials(&adapter.state, &context.community_id)
             .map_err(ChannelError::Adapter)?;
     let written = write_member_reaction(
-        &pool,
+        pool.as_ref(),
         &context.channel_key,
         context.slot_index,
-        writer,
+        &context.slot_keypair_str,
         author_pseudo,
         &signing_key,
         reaction,
@@ -208,7 +180,7 @@ pub(super) async fn create_smpl_thread_record_impl(
     slot_seed_bytes: &[u8; 32],
 ) -> Result<(rekindle_records::lease::LeaseId, String), ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
-    let (lease, record_key, _) = create_smpl_channel_record(&pool, slot_seed_bytes)
+    let (lease, record_key, _) = create_smpl_channel_record(pool.as_ref(), slot_seed_bytes)
         .await
         .map_err(|e| ChannelError::Adapter(format!("create lazy thread record failed: {e}")))?;
     Ok((lease, record_key))
@@ -221,7 +193,7 @@ pub(super) async fn read_all_channel_entries_impl(
 ) -> Result<Vec<ChannelEntryItem>, ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
     let slots = writer_slot_list(adapter, community_id).await?;
-    let items = read_all_channel_entries(&pool, record_key, &slots)
+    let items = read_all_channel_entries(pool.as_ref(), record_key, &slots)
         .await
         .map_err(|e| ChannelError::Adapter(format!("read channel entries failed: {e}")))?;
     Ok(items
@@ -240,7 +212,7 @@ pub(super) async fn read_all_channel_messages_impl(
 ) -> Result<Vec<ChannelMessage>, ChannelError> {
     let pool = state_helpers::record_pool(&adapter.state).map_err(ChannelError::Adapter)?;
     let slots = writer_slot_list(adapter, community_id).await?;
-    read_all_channel_messages(&pool, record_key, &slots)
+    read_all_channel_messages(pool.as_ref(), record_key, &slots)
         .await
         .map_err(|e| ChannelError::Adapter(format!("read channel messages failed: {e}")))
 }

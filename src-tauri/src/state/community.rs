@@ -127,7 +127,7 @@ pub struct CommunityState {
     /// Last known network sequence numbers per record key, used by the 60-second
     /// inspect loop to detect changed subkeys without fetching the entire record.
     #[serde(skip)]
-    pub record_sequences: HashMap<String, Vec<veilid_core::ValueSeqNum>>,
+    pub record_sequences: HashMap<String, Vec<Option<u32>>>,
 
     /// Per-sender per-channel sequence tracking for gap detection (Briar-inspired).
     /// Key: (sender_pseudonym, channel_id), Value: last received sequence number.

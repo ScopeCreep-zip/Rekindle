@@ -1,8 +1,8 @@
 //! The append-only `DhtLog` (spine + segments) used for per-peer DM logs.
 //!
 //! `ChannelLogOps` used to live here: a second implementation of the
-//! per-channel SMPL record's member reads and writes, over this crate's
-//! raw `RoutingContext`. It had no caller, and its wire format diverged:
+//! per-channel SMPL record's member reads and writes, over a raw Veilid
+//! routing context. It had no caller, and its wire format diverged:
 //! it wrote a bare JSON `ChannelMessage` into a member subkey, where
 //! `rekindle_protocol::dht::community::channel_record` writes W26-signed
 //! pages, so any write through it would have corrupted that member's page.

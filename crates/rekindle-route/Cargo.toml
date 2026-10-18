@@ -8,7 +8,12 @@ description = "Route lifecycle and cache primitives for Rekindle v2.0"
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
 blake3 = "1"
+parking_lot = { workspace = true }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-records = { path = "../rekindle-records" }
 rekindle-types = { path = "../rekindle-types" }
 tokio = { workspace = true }
+tokio-util = { version = "0.7", features = [ "rt" ] }
 tracing = { workspace = true }

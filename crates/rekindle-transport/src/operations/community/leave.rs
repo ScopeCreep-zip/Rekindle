@@ -107,7 +107,7 @@ async fn write_tombstone(
                 None => Ok(()),
                 Some(again) => Err(TransportError::DhtError {
                     reason: format!(
-                        "departure tombstone superseded twice (seq {:?}, then {:?})",
+                        "departure tombstone superseded twice (seq {}, then {})",
                         newer.seq, again.seq
                     ),
                 }),
@@ -138,11 +138,11 @@ async fn release_registry_slot(
         ));
     };
 
-    let slot_kp = rekindle_protocol::dht::community::member_registry::derive_slot_veilid_keypair(
-        &slot_seed,
-        membership.slot_index,
-    )
-    .map_err(|e| TransportError::Internal(format!("slot keypair derivation failed: {e}")))?;
+    let slot_kp =
+        rekindle_crypto::keypair_text::slot_keypair_text(&slot_seed, membership.slot_index)
+            .map_err(|e| {
+                TransportError::Internal(format!("slot keypair derivation failed: {e}"))
+            })?;
 
     let pseudonym = crate::crypto::pseudonym::derive_community_pseudonym(
         signing_key_bytes,
@@ -155,18 +155,15 @@ async fn release_registry_slot(
     // A table hit while the community holds its registry (the slot writer
     // is already its sticky writer); the write names the slot keypair
     // either way, and a miss is an error, never a queued write.
-    let lease = crate::broadcast::dht_writes::acquire_str(
-        node,
-        &membership.registry_key,
-        Some(&slot_kp.to_string()),
-    )
-    .await?;
+    let lease =
+        crate::broadcast::dht_writes::acquire_str(node, &membership.registry_key, Some(&slot_kp))
+            .await?;
     let written = write_tombstone(
         node,
         lease,
         membership.slot_index,
         bytes,
-        &slot_kp.to_string(),
+        &slot_kp,
         &my_pseudonym_hex,
     )
     .await;

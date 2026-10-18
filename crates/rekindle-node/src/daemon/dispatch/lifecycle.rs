@@ -80,7 +80,7 @@ pub(crate) async fn handle_unlock(
         // holding the writes the last lock left unsent (C7.6h).
         let records = transport.start_records();
         if let (Ok(pool), Ok(db)) = (&records, ctx.db.current()) {
-            crate::host::dht_outbox::restore_unsent(&db, identity, pool).await;
+            crate::host::dht_outbox::restore_unsent(&db, identity, pool.as_ref()).await;
         }
         if let Err(e) = records {
             tracing::warn!(error = %e, "record pool not started — staying locked");

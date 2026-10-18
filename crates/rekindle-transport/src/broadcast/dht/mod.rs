@@ -1,7 +1,7 @@
 //! Typed DHT record helpers over the session's record pool.
 //!
-//! Every record operation goes through `rekindle_protocol`'s `RecordPool`
-//! (plan C7). Our own profile, mailbox and friend list are
+//! Every record operation goes through the session's `RecordPort` (plans
+//! C7, C9.1). Our own profile, mailbox and friend list are
 //! `rekindle_protocol::dht::{profile, mailbox, friends}`; channel messages
 //! are [`channel_smpl`]; the append-only log is [`channel_log`].
 

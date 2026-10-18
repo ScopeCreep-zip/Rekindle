@@ -105,8 +105,7 @@ pub(crate) fn try_derive_slot_keypair(
     let seed_array: [u8; 32] = seed_bytes.as_slice().try_into().ok()?;
     match derive::derive_slot_keypair(&seed_array, subkey_idx) {
         Ok(sk) => {
-            let kp = super::super::create::slot_signing_to_veilid(&sk);
-            let kp_str = kp.to_string();
+            let kp_str = rekindle_crypto::keypair_text::keypair_text_from_signing(&sk);
             {
                 let mut communities = state.communities.write();
                 if let Some(c) = communities.get_mut(community_id) {

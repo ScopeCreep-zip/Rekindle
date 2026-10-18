@@ -9,56 +9,7 @@ use veilid_core::{
 use super::{range, to_protocol, RecordPool};
 use crate::ProtocolError;
 
-/// What a write did on the network.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SetOutcome {
-    /// Stored at consensus.
-    Landed,
-    /// The fanout finished below consensus; nothing was stored or queued.
-    BelowConsensus,
-    /// The node is offline; nothing was stored or queued.
-    Offline,
-    /// The network already holds a newer value, returned here.
-    Superseded(ValueData),
-    /// The value equals the local copy (same data and writer), so Veilid
-    /// kept its seq and re-pushed it, and no newer value came back. Veilid
-    /// answers this the same whether the re-push reached consensus or not
-    /// (`set_value.rs:212-218`, `:170`), so the write itself proves nothing
-    /// about the network copy; `rehydrate` owns re-pushing a record.
-    Unchanged,
-}
-
-impl SetOutcome {
-    /// `Ok` unless the write [`missed`](Self::missed): for a write that a
-    /// structure's next step depends on (a head, a spine, a slot).
-    ///
-    /// # Errors
-    /// [`ProtocolError::NotStored`] for a missed write.
-    pub fn require_stored(self, subkey: u32) -> Result<(), ProtocolError> {
-        if self.missed() {
-            return Err(ProtocolError::NotStored {
-                subkey,
-                outcome: match self {
-                    Self::Superseded(_) => "superseded by a newer value".into(),
-                    other => format!("{other:?}"),
-                },
-            });
-        }
-        Ok(())
-    }
-
-    /// The write did not reach consensus, or lost to a newer value. An
-    /// `Unchanged` re-push is not a miss: it re-sent a value already held
-    /// locally, an idempotent republish, whose network copy is
-    /// `rehydrate`'s to keep alive.
-    #[must_use]
-    pub fn missed(&self) -> bool {
-        matches!(
-            self,
-            Self::BelowConsensus | Self::Offline | Self::Superseded(_)
-        )
-    }
-}
+use rekindle_records::port::SetOutcome;
 
 impl RecordPool {
     /// Read a subkey; `force_refresh` asks the network rather than the local
@@ -98,26 +49,6 @@ impl RecordPool {
         })
         .await
         .map_err(|e| to_protocol(&e))
-    }
-
-    /// Subkeys the network holds newer than the local copy
-    /// (`UpdateGet` inspect).
-    ///
-    /// # Errors
-    /// As [`inspect`](Self::inspect).
-    pub async fn inspect_present(&self, id: LeaseId) -> Result<Vec<u32>, ProtocolError> {
-        let report = self.inspect(id, None, DHTReportScope::UpdateGet).await?;
-        Ok(newer_on_network(&report))
-    }
-
-    /// Subkeys written while offline that Veilid has not yet flushed: show
-    /// them as pending (R6).
-    ///
-    /// # Errors
-    /// As [`inspect`](Self::inspect).
-    pub async fn pending_writes(&self, id: LeaseId) -> Result<Vec<u32>, ProtocolError> {
-        let report = self.inspect(id, None, DHTReportScope::Local).await?;
-        Ok(report.offline_subkeys().iter().collect())
     }
 
     async fn local_seq(&self, key: &RecordKey, subkey: u32) -> Result<Option<u32>, VeilidAPIError> {
@@ -212,7 +143,7 @@ impl RecordPool {
             })
             .await;
         match result {
-            Ok(Some(newer)) => Ok(SetOutcome::Superseded(newer)),
+            Ok(Some(newer)) => Ok(SetOutcome::Superseded(super::record_value(&newer))),
             Ok(None) => {
                 let after = self
                     .local_seq(&key, subkey)
@@ -234,96 +165,26 @@ impl RecordPool {
         }
     }
 
-    /// Re-push the leased record to the network and pull anything newer.
-    /// A re-open of a local record is what queues Veilid's rehydration
-    /// (`open_record.rs:27-44`); it re-opens with the sticky writer, so
-    /// nothing is downgraded and the watch survives.
+    /// Re-open the leased record with its sticky writer: a re-open of a
+    /// local record is what queues Veilid's rehydration
+    /// (`open_record.rs:27-44`), so nothing is downgraded and the watch
+    /// survives. The port's `rehydrate` then pulls what the network holds
+    /// newer.
     ///
     /// # Errors
-    /// The lease is not held, or a step failed within the retry budget.
-    pub async fn rehydrate(&self, id: LeaseId) -> Result<(), ProtocolError> {
+    /// The lease is not held, or the open failed within the retry budget.
+    pub(super) async fn reopen_with_writer(&self, id: LeaseId) -> Result<(), ProtocolError> {
         let (key, _) = self.lookup(id)?;
         let name = key.to_string();
         let writer = self.table.lock().writer(&name).cloned();
-        {
-            let lock = self.key_lock(&name);
-            let _serial = lock.lock().await;
-            let k = key.clone();
-            self.run_retrying("dht rehydrate open", move |rc| {
-                let (k, w) = (k.clone(), writer.clone());
-                async move { rc.open_dht_record(k, w).await }
-            })
-            .await
-            .map(drop)
-            .map_err(|e| to_protocol(&e))?;
-        }
-        for subkey in self.inspect_present(id).await? {
-            self.get(id, subkey, true).await?;
-        }
-        Ok(())
-    }
-}
-
-/// Subkeys whose network seq is ahead of the local one in `report`.
-fn newer_on_network(report: &DHTRecordReport) -> Vec<u32> {
-    report
-        .subkeys()
-        .iter()
-        .zip(report.local_seqs().iter().zip(report.network_seqs()))
-        .filter(|(_, (local, network))| network.to_option() > local.to_option())
-        .map(|(subkey, _)| subkey)
-        .collect()
-}
-
-impl RecordPool {
-    /// Read one subkey of `key` on a borrow of its own (acquire, get,
-    /// release). While the session holds the record the borrow is a table
-    /// hit with no Veilid call.
-    ///
-    /// # Errors
-    /// The record could not be opened or read.
-    pub async fn read_once(
-        &self,
-        key: &RecordKey,
-        subkey: u32,
-        force_refresh: bool,
-    ) -> Result<Option<ValueData>, ProtocolError> {
-        let lease = self.acquire(key, None).await?;
-        let value = self.get(lease, subkey, force_refresh).await;
-        self.release(lease).await;
-        value
-    }
-
-    /// Write one subkey of `key` as `writer` on a borrow of its own.
-    ///
-    /// # Errors
-    /// The record could not be opened, or the write failed outright.
-    pub async fn write_once(
-        &self,
-        key: &RecordKey,
-        subkey: u32,
-        data: Vec<u8>,
-        writer: Option<KeyPair>,
-    ) -> Result<SetOutcome, ProtocolError> {
-        let lease = self.acquire(key, None).await?;
-        let outcome = self.set(lease, subkey, data, writer).await;
-        self.release(lease).await;
-        outcome
-    }
-
-    /// Inspect `key` on a borrow of its own.
-    ///
-    /// # Errors
-    /// The record could not be opened or inspected.
-    pub async fn inspect_once(
-        &self,
-        key: &RecordKey,
-        subkeys: Option<SubkeySet>,
-        scope: DHTReportScope,
-    ) -> Result<DHTRecordReport, ProtocolError> {
-        let lease = self.acquire(key, None).await?;
-        let report = self.inspect(lease, subkeys, scope).await;
-        self.release(lease).await;
-        report
+        let lock = self.key_lock(&name);
+        let _serial = lock.lock().await;
+        self.run_retrying("dht rehydrate open", move |rc| {
+            let (k, w) = (key.clone(), writer.clone());
+            async move { rc.open_dht_record(k, w).await }
+        })
+        .await
+        .map(drop)
+        .map_err(|e| to_protocol(&e))
     }
 }

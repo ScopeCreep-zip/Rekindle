@@ -37,7 +37,7 @@ pub async fn send_friend_request(
     // reach the profile at all is the request's failure.
     let pool = node.require_records()?;
     let inbox_key_data = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         target_mailbox_key,
         PROFILE_SUBKEY_FRIEND_INBOX_KEY,
         true,
@@ -48,7 +48,7 @@ pub async fn send_friend_request(
         reason: format!("cannot open target profile: {e}"),
     })?;
     let inbox_keypair_data = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         target_mailbox_key,
         PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
         true,
@@ -77,7 +77,7 @@ pub async fn send_friend_request(
             target: target_mailbox_key.to_string(),
             reason: format!("invalid inbox keypair: {e}"),
         })?;
-    let inbox_kp = crate::broadcast::node::deserialize_keypair(&inbox_kp_bytes)?;
+    let inbox_kp = rekindle_crypto::keypair_text::keypair_text_from_wire(&inbox_kp_bytes)?;
 
     let request = FriendRequestEntry {
         sender_public_key: session.identity.public_key_hex.clone(),
@@ -98,7 +98,7 @@ pub async fn send_friend_request(
     write_inbox_entry(
         node,
         &inbox_key,
-        inbox_kp,
+        &inbox_kp,
         subkey,
         &request,
         "friend request",
@@ -117,7 +117,7 @@ pub async fn send_friend_request(
     // and the DHT tiers deliver the request alone.
     let pool = node.require_records()?;
     let target_identity = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         target_mailbox_key,
         PROFILE_SUBKEY_PREKEY_BUNDLE,
         true,
@@ -129,7 +129,7 @@ pub async fn send_friend_request(
     .and_then(|bundle| <[u8; 32]>::try_from(bundle.identity_key.as_slice()).ok());
     if let (Some(recipient), Ok(Some(route_blob))) = (
         target_identity,
-        read_peer_mailbox_route(&pool, target_mailbox_key).await,
+        read_peer_mailbox_route(pool.as_ref(), target_mailbox_key).await,
     ) {
         if !route_blob.is_empty() {
             if let Ok(target) = node.import_route(&route_blob) {
@@ -183,7 +183,7 @@ pub async fn accept_friend_request(
     let (dm_log, dm_log_kp) = crate::broadcast::dht_writes::create_dht_log(node).await?;
     let dm_log_key = dm_log.spine_key().to_string();
     dm_log.release(&*node.require_records()?).await;
-    let dm_log_keypair_bytes = super::identity::serialize_keypair(&dm_log_kp);
+    let dm_log_keypair_bytes = rekindle_crypto::keypair_text::keypair_wire(&dm_log_kp)?.to_vec();
     let dm_log_keypair_hex = hex::encode(&dm_log_keypair_bytes);
 
     // Add to friend list DHT
@@ -224,7 +224,7 @@ pub async fn accept_friend_request(
     // shape, applied here too.
     let pool = node.require_records()?;
     let req_inbox_key = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         requester_profile_dht_key,
         PROFILE_SUBKEY_FRIEND_INBOX_KEY,
         true,
@@ -232,7 +232,7 @@ pub async fn accept_friend_request(
     .await
     .unwrap_or(None);
     let req_inbox_kp = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         requester_profile_dht_key,
         PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
         true,
@@ -252,7 +252,7 @@ pub async fn accept_friend_request(
         requester: requester_public_key.to_string(),
         reason: format!("invalid inbox keypair: {e}"),
     })?;
-    let kp = crate::broadcast::node::deserialize_keypair(&kp_raw).map_err(|e| {
+    let kp = rekindle_crypto::keypair_text::keypair_text_from_wire(&kp_raw).map_err(|e| {
         TransportError::FriendAcceptFailed {
             requester: requester_public_key.to_string(),
             reason: format!("inbox keypair deserialize: {e}"),
@@ -281,14 +281,13 @@ pub async fn accept_friend_request(
         requester_profile_dht_key,
         32,
     );
-    write_inbox_entry(node, &inbox_key, kp, subkey, &response, "acceptance")
+    write_inbox_entry(node, &inbox_key, &kp, subkey, &response, "acceptance")
         .await
         .map_err(|reason| TransportError::FriendAcceptFailed {
             requester: requester_public_key.to_string(),
             reason,
         })?;
 
-    let dm_log_keypair_bytes = super::identity::serialize_keypair(&dm_log_kp);
     info!(requester = %requester_public_key, dm_log = %dm_log_key, "friend request accepted");
     Ok(FriendAccepted {
         dm_log_key,
@@ -314,7 +313,7 @@ pub async fn reject_friend_request(
 
     let pool = node.require_records()?;
     let inbox_key_data = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         &req.profile_dht_key,
         PROFILE_SUBKEY_FRIEND_INBOX_KEY,
         true,
@@ -322,7 +321,7 @@ pub async fn reject_friend_request(
     .await
     .unwrap_or(None);
     let inbox_kp_data = read_profile_subkey(
-        &pool,
+        pool.as_ref(),
         &req.profile_dht_key,
         PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
         true,
@@ -346,7 +345,7 @@ pub async fn reject_friend_request(
         requester: requester_public_key.to_string(),
         reason: format!("invalid inbox keypair: {e}"),
     })?;
-    let kp = crate::broadcast::node::deserialize_keypair(&kp_raw).map_err(|e| {
+    let kp = rekindle_crypto::keypair_text::keypair_text_from_wire(&kp_raw).map_err(|e| {
         TransportError::FriendRejectFailed {
             requester: requester_public_key.to_string(),
             reason: format!("inbox keypair deserialize: {e}"),
@@ -367,7 +366,7 @@ pub async fn reject_friend_request(
         },
     };
     let subkey = blake3_hash_mod(&session.identity.public_key_hex, &req.profile_dht_key, 32);
-    write_inbox_entry(node, &inbox_key, kp, subkey, &response, "rejection")
+    write_inbox_entry(node, &inbox_key, &kp, subkey, &response, "rejection")
         .await
         .map_err(|reason| TransportError::FriendRejectFailed {
             requester: requester_public_key.to_string(),
@@ -414,18 +413,14 @@ fn blake3_hash_mod(sender: &str, recipient: &str, n: u32) -> u32 {
 async fn write_inbox_entry(
     node: &TransportNode,
     inbox_key: &str,
-    inbox_keypair: veilid_core::KeyPair,
+    inbox_keypair: &str,
     subkey: u32,
     entry: &FriendRequestEntry,
     what: &'static str,
 ) -> std::result::Result<(), String> {
-    let lease = crate::broadcast::dht_writes::acquire_str(
-        node,
-        inbox_key,
-        Some(&inbox_keypair.to_string()),
-    )
-    .await
-    .map_err(|e| format!("cannot open inbox: {e}"))?;
+    let lease = crate::broadcast::dht_writes::acquire_str(node, inbox_key, Some(inbox_keypair))
+        .await
+        .map_err(|e| format!("cannot open inbox: {e}"))?;
     let written = write_and_verify(node, lease, subkey, entry, what).await;
     crate::broadcast::dht_writes::release(node, lease).await;
     written

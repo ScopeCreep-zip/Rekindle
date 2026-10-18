@@ -139,18 +139,12 @@ impl FriendPresenceDeps for PresenceAdapter {
     }
 
     async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError> {
-        let record_key: veilid_core::RecordKey =
-            dht_record_key
-                .parse()
-                .map_err(|e: veilid_core::VeilidAPIError| {
-                    PresenceError::InvalidDhtKey(e.to_string())
-                })?;
         self.record_pool()?
-            .acquire(&record_key, None)
+            .acquire(dht_record_key, None)
             .await
             .map_err(|e| {
                 tracing::warn!(error = %e, dht_key = %dht_record_key, "failed to open DHT record");
-                PresenceError::Dht(e.to_string())
+                super::presence_error(e)
             })
     }
 
@@ -173,7 +167,7 @@ impl FriendPresenceDeps for PresenceAdapter {
         subkeys: &[u32],
     ) -> Result<(), PresenceError> {
         self.record_pool()?
-            .watch(lease, subkeys.iter().copied().collect())
+            .watch(lease, subkeys)
             .await
             .map_err(|e| PresenceError::Dht(e.to_string()))
     }
@@ -208,7 +202,7 @@ impl FriendPresenceDeps for PresenceAdapter {
     ) -> Option<Vec<u8>> {
         let pool = self.record_pool().ok()?;
         let bytes = rekindle_protocol::dht::profile::read_profile_subkey(
-            &pool,
+            pool.as_ref(),
             dht_record_key,
             subkey,
             force_refresh,

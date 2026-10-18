@@ -6,7 +6,7 @@ use rekindle_lifecycle::LifecycleState;
 /// Whether we hold a general route, and what the media route is doing
 /// (plan C7.9c): the two route facts a status indicator shows.
 pub fn route_status(state: &AppState) -> (bool, RouteAvailability) {
-    use rekindle_protocol::own_routes::RouteClass;
+    use rekindle_records::port::RouteClass;
     let Some(routes) = state.own_routes.read().clone() else {
         return (false, RouteAvailability::Idle);
     };

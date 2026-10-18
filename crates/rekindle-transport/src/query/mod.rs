@@ -37,7 +37,7 @@ pub use rekindle_types::display::{
 /// into display-ready types.
 pub struct QueryEngine {
     /// The unlocked session's record pool: every query's DHT reads.
-    records: Arc<rekindle_protocol::dht::pool::RecordPool>,
+    records: Arc<dyn rekindle_records::port::RecordPort>,
     mek_cache: Arc<RwLock<MekCache>>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
 }
@@ -45,7 +45,7 @@ pub struct QueryEngine {
 impl QueryEngine {
     /// Create a new query engine.
     pub fn new(
-        records: Arc<rekindle_protocol::dht::pool::RecordPool>,
+        records: Arc<dyn rekindle_records::port::RecordPort>,
         mek_cache: Arc<RwLock<MekCache>>,
         peer_registry: Arc<RwLock<PeerRegistry>>,
     ) -> Self {

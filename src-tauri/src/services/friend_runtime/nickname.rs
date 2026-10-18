@@ -54,7 +54,7 @@ pub async fn set_friend_nickname_inner(
         // between groups are separate user actions, and `update_friend`
         // already treats `None` as "leave this field alone".
         match rekindle_protocol::dht::friends::update_friend(
-            &pool,
+            pool.as_ref(),
             &key,
             &public_key,
             nickname.clone(),
