@@ -27,7 +27,6 @@ mod keepalive;
 pub mod mek_rotation;
 pub mod presence_adapter;
 pub mod shutdown;
-mod status;
 mod watch_relay;
 
 pub use rekindle_lifecycle::{

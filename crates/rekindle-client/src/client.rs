@@ -32,6 +32,8 @@ const LONG_TIMEOUT: Duration = Duration::from_secs(180);
 pub struct Ran {
     pub data: serde_json::Value,
     pub reversibility: Option<Reversibility>,
+    /// How to take the action back while the offer lasts (`IpcRequest::Undo`).
+    pub undo: Option<rekindle_types::intent::UndoOffer>,
 }
 
 /// A connection to the daemon.
@@ -154,9 +156,11 @@ impl DaemonClient {
             IpcResponse::Ok {
                 data,
                 reversibility,
+                undo,
             } => Ok(Ran {
                 data,
                 reversibility,
+                undo,
             }),
             IpcResponse::IntentRequired(review) => {
                 Err(ClientError::IntentRequired(Box::new(review)))

@@ -44,6 +44,8 @@ export interface PresenceSnapshot {
   status: string | null;
   statusMessage: string | null;
   game: GameActivity | null;
+  /** What the Host makes of our input activity (`selfChanged` only). */
+  idle: "unavailable" | "active" | "autoAway" | null;
 }
 
 export type PresenceEvent =
@@ -55,7 +57,14 @@ export type PresenceEvent =
       };
     }
   | { friendChanged: { peerKey: string; snapshot: PresenceSnapshot } }
-  | { selfChanged: { publicKey: string; snapshot: PresenceSnapshot } };
+  | { selfChanged: { publicKey: string; snapshot: PresenceSnapshot } }
+  | {
+      selfProfileChanged: {
+        publicKey: string;
+        displayName: string | null;
+        avatarChanged: boolean;
+      };
+    };
 
 /** The full subscription event as emitted on every channel. */
 export type PresenceSubscriptionEvent = { presence: PresenceEvent };

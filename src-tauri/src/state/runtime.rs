@@ -1,11 +1,8 @@
-//! Phase 23.B — extracted from `state.rs`. Veilid + Signal + Voice +
-//! Game runtime handles owned by `AppState`. Each is an `Option<T>`
-//! field set on the relevant lifecycle hook (login, voice join,
-//! game-detect spawn).
+//! Phase 23.B — extracted from `state.rs`. Veilid + Signal + Voice
+//! runtime handles owned by `AppState`. Each is an `Option<T>` field set on
+//! the relevant lifecycle hook (node start, login, voice join).
 
 use std::collections::HashMap;
-
-use super::friend::GameInfoState;
 
 /// Handle to the Veilid node.
 pub struct NodeHandle {
@@ -81,12 +78,6 @@ pub struct SignalManagerHandle {
     /// The unlock's one Signal manager, shared with the in-process host
     /// (plan D3.1), so a bus request and the window use one session state.
     pub manager: std::sync::Arc<rekindle_crypto::SignalSessionManager>,
-}
-
-/// Handle to the game detector.
-pub struct GameDetectorHandle {
-    /// Current detected game info.
-    pub current_game: Option<GameInfoState>,
 }
 
 /// Handle to the voice engine.

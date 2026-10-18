@@ -169,10 +169,6 @@ pub enum TransportError {
     SerializationFailed { reason: String },
 
     // ── Operations (high-level orchestrators) ─────────────────────────
-    /// Identity creation ceremony failed at a named step.
-    #[error("identity creation failed at '{step}': {reason}")]
-    IdentityCreationFailed { step: String, reason: String },
-
     /// Community creation failed.
     #[error("community creation failed: {reason}")]
     CommunityCreationFailed { reason: String },

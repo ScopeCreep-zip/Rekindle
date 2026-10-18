@@ -10,8 +10,9 @@
 //! When the MEK is missing from Stronghold (vault loss), this does NOT
 //! mint a replacement — minting forks the community key. The slot is left
 //! absent and re-acquired from a peer by the architecture §7.3 login
-//! catch-up in `login_runtime::spawn_dht_publish` (owner mints a
-//! superseding key only as a last resort if no peer responds).
+//! catch-up, `mek_rotation::recover_behind_meks`, once our route is up
+//! (owner mints a superseding key only as a last resort if no peer
+//! responds).
 
 use rekindle_types::channel_keys::KeyScope;
 
@@ -56,7 +57,7 @@ pub fn restore_community_pseudonyms_and_meks(
                 // key; a local mint diverges and the convergence rule can't
                 // reconcile two untagged same-generation keys). Leave the slot
                 // ABSENT; the architecture §7.3 login catch-up in
-                // `login_runtime::spawn_dht_publish` re-acquires the canonical
+                // `mek_rotation::recover_behind_meks` re-acquires the canonical
                 // key from an online peer, and (owner-only) mints a SUPERSEDING
                 // key as a last resort if no peer can serve it. `c.mek_generation`
                 // is left untouched so it remains the acquisition target.

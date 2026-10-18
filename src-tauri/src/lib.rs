@@ -15,6 +15,7 @@ pub mod envelope_store_sqlite;
 pub mod event_dispatch;
 pub mod event_router;
 pub mod friend_repo;
+pub mod host_call;
 pub mod invite_helpers;
 mod invoke;
 pub mod keystore;
@@ -25,6 +26,11 @@ mod platform;
 pub mod serde_helpers;
 mod services;
 mod setup;
+/// The port ledger: which Tauri commands are Host calls, the shell's own,
+/// or waiting for their port (plan E1, recipe step 6). Its test is the
+/// check, so it builds with the tests.
+#[cfg(test)]
+mod shell_commands;
 mod shortcuts;
 mod shutdown;
 pub mod state;
@@ -35,6 +41,8 @@ mod tray;
 pub mod video_channels;
 pub mod window_labels;
 mod windows;
+
+pub use services::shell_session::ShellSession;
 
 use std::sync::Arc;
 

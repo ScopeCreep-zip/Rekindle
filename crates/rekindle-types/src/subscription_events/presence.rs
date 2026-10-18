@@ -108,6 +108,9 @@ pub struct PresenceSnapshot {
 
     /// Game activity, when the emitter looked at it.
     pub game: Option<GameActivity>,
+
+    /// What the host makes of our input activity (`SelfChanged` only).
+    pub idle: Option<crate::presence::IdleState>,
 }
 
 impl PresenceSnapshot {
@@ -133,6 +136,13 @@ impl PresenceSnapshot {
     #[must_use]
     pub fn with_status_message(mut self, message: Option<String>) -> Self {
         self.status_message = message;
+        self
+    }
+
+    /// Attach an idle observation.
+    #[must_use]
+    pub fn with_idle(mut self, idle: crate::presence::IdleState) -> Self {
+        self.idle = Some(idle);
         self
     }
 
@@ -189,16 +199,28 @@ pub enum PresenceEvent {
         public_key: String,
         snapshot: PresenceSnapshot,
     },
+
+    /// **Our own** profile changed: the name we show, or our avatar (plan
+    /// E1.1). Windows re-read the avatar with `AvatarGet`.
+    SelfProfileChanged {
+        /// Our own identity public key, hex.
+        public_key: String,
+        /// The new display name, when it changed.
+        display_name: Option<String>,
+        avatar_changed: bool,
+    },
 }
 
 impl PresenceEvent {
-    /// The observation carried by any variant.
+    /// The presence observation a variant carries; `None` for a profile
+    /// change.
     #[must_use]
-    pub fn snapshot(&self) -> &PresenceSnapshot {
+    pub fn snapshot(&self) -> Option<&PresenceSnapshot> {
         match self {
             Self::CommunityMemberChanged { snapshot, .. }
             | Self::FriendChanged { snapshot, .. }
-            | Self::SelfChanged { snapshot, .. } => snapshot,
+            | Self::SelfChanged { snapshot, .. } => Some(snapshot),
+            Self::SelfProfileChanged { .. } => None,
         }
     }
 }
@@ -255,7 +277,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&playing).unwrap(),
-            r#"{"selfChanged":{"publicKey":"abc","snapshot":{"status":null,"statusMessage":null,"game":{"playing":{"gameName":"BF2","gameId":7,"elapsedSeconds":12,"serverAddress":null}}}}}"#
+            r#"{"selfChanged":{"publicKey":"abc","snapshot":{"status":null,"statusMessage":null,"game":{"playing":{"gameName":"BF2","gameId":7,"elapsedSeconds":12,"serverAddress":null}},"idle":null}}}"#
         );
 
         let member = PresenceEvent::CommunityMemberChanged {
@@ -265,14 +287,14 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&member).unwrap(),
-            r#"{"communityMemberChanged":{"community":"c","pseudonym":"p","snapshot":{"status":"away","statusMessage":null,"game":null}}}"#
+            r#"{"communityMemberChanged":{"community":"c","pseudonym":"p","snapshot":{"status":"away","statusMessage":null,"game":null,"idle":null}}}"#
         );
 
         // A unit variant is a bare string, not an object — the TS union
         // has to accept `"idle"` alongside `{ playing: {...} }`.
         assert_eq!(
             serde_json::to_string(&PresenceSnapshot::game(GameActivity::Idle)).unwrap(),
-            r#"{"status":null,"statusMessage":null,"game":"idle"}"#
+            r#"{"status":null,"statusMessage":null,"game":"idle","idle":null}"#
         );
     }
 
@@ -299,7 +321,13 @@ mod tests {
             },
             PresenceEvent::SelfChanged {
                 public_key: "me".into(),
-                snapshot: PresenceSnapshot::default(),
+                snapshot: PresenceSnapshot::status("away")
+                    .with_idle(crate::presence::IdleState::AutoAway),
+            },
+            PresenceEvent::SelfProfileChanged {
+                public_key: "me".into(),
+                display_name: Some("Kali".into()),
+                avatar_changed: true,
             },
         ] {
             let bytes = postcard::to_allocvec(&event).expect("postcard encode");
@@ -330,8 +358,9 @@ mod tests {
                 snapshot: snap.clone(),
             },
         ] {
-            assert_eq!(event.snapshot().status.as_deref(), Some("away"));
-            assert_eq!(event.snapshot().status_message.as_deref(), Some("brb"));
+            let snapshot = event.snapshot().expect("a presence observation");
+            assert_eq!(snapshot.status.as_deref(), Some("away"));
+            assert_eq!(snapshot.status_message.as_deref(), Some("brb"));
         }
     }
 }

@@ -2,7 +2,9 @@
 //!
 //! Exposes Tauri IPC commands over HTTP so Playwright can test the real
 //! `SolidJS` frontend against the real identity store (vault, SQLCipher
-//! database, registry) and Ed25519, in a temp data root.
+//! database, registry) and Ed25519, in a temp data root. Host calls go
+//! through the same `host_call::call` the window uses, against an Offline
+//! Host with the GUI's `ShellSession` hooks (plan E1.1).
 //!
 //! ```bash
 //! cargo run -p rekindle --bin e2e-server --features e2e-server
@@ -21,11 +23,10 @@ use serde_json::{json, Value};
 use tower_http::cors::{Any, CorsLayer};
 
 use rekindle_db::paths::DataRoot;
-use rekindle_lib::commands::auth::{
-    create_identity_core, delete_identity_core, list_identities_inner, lock_identity, login_core,
-    verify_identity_passphrase_core, LoginResult,
-};
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_lib::host_call;
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
+use rekindle_types::dto::{CommandError, Done};
 
 /// Shared server state passed to every axum handler.
 struct ServerState {
@@ -61,7 +62,8 @@ async fn main() {
         data,
     };
     // The host claims the temp root (its lock and layout check) and runs
-    // with no node: the E2E suite drives the identity lifecycle only.
+    // with no node, with the GUI's shell hooks: the E2E suite drives the
+    // identity lifecycle through the same Host calls the window makes.
     let claimed = rekindle_node::host::claim(root.clone()).expect("claim of the temp data root");
 
     tracing::info!(dir = %dir.display(), "E2E server starting");
@@ -74,6 +76,7 @@ async fn main() {
         serve_bus: false,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        shell: Some(rekindle_lib::ShellSession::new(Arc::clone(&state), None) as _),
     })
     .await
     .expect("the E2E host did not start");
@@ -107,8 +110,14 @@ async fn handle_invoke(
 ) -> impl IntoResponse {
     tracing::debug!(cmd = %req.cmd, "invoke");
 
+    // A Host call answers `{ result, undo }` or `{ error: CommandError }`,
+    // the shapes the Tauri path resolves and rejects with.
     match dispatch(&server, &req.cmd, &req.args).await {
-        Ok(result) => (StatusCode::OK, Json(json!({ "result": result }))),
+        Ok(Answer::Host(done)) => (
+            StatusCode::OK,
+            Json(json!({ "result": done.value, "undo": done.undo })),
+        ),
+        Ok(Answer::Local(value)) => (StatusCode::OK, Json(json!({ "result": value }))),
         Err(e) => {
             tracing::warn!(cmd = %req.cmd, error = %e, "command failed");
             (StatusCode::BAD_REQUEST, Json(json!({ "error": e })))
@@ -120,9 +129,9 @@ async fn handle_invoke(
 async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoResponse {
     tracing::info!("resetting server state");
 
-    lock_identity(&server.state).await;
-    server.state.friends.write().clear();
-    server.state.communities.write().clear();
+    // A logout when one is unlocked; while locked the Host refuses it,
+    // which is fine here.
+    let _ = host_call::call::<Value>(&server.state, IpcRequest::Logout).await;
 
     // Every identity's files and the registry.
     if rekindle_db::reset::run(&[rekindle_db::reset::ResetDir {
@@ -137,67 +146,117 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
     StatusCode::OK
 }
 
-/// Route commands to the appropriate core function.
-async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value, String> {
+/// A command's answer: a Host call's `Done`, or the server's own value for
+/// the commands not yet ported.
+enum Answer {
+    Host(Done<Value>),
+    Local(Value),
+}
+
+/// Route a command: a Host call, or the server's own answer.
+async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Answer, CommandError> {
+    match local(server, cmd) {
+        Some(answer) => answer.map(Answer::Local),
+        None => host(server, cmd, args).await.map(Answer::Host),
+    }
+}
+
+/// The Host calls (plan E1.1).
+async fn host(server: &ServerState, cmd: &str, args: &Value) -> Result<Done<Value>, CommandError> {
+    let state = &server.state;
     match cmd {
-        // ── Auth ─────────────────────────────────────────────────────
+        // ── Host calls (plan E1.1) ───────────────────────────────────
         "create_identity" => {
-            let passphrase = arg_str(args, "passphrase")?;
-            let display_name = arg_str_opt(args, "displayName");
-            let (result, _) =
-                create_identity_core(&server.root, &passphrase, display_name, &server.state, None)
-                    .await?;
-            Ok(serde_json::to_value(result).unwrap())
+            let request = IpcRequest::IdentityCreate {
+                display_name: arg_str_opt(args, "displayName"),
+                passphrase: arg_str(args, "passphrase")?,
+            };
+            host_call::call(state, request).await
         }
         "login" => {
-            let public_key = arg_str(args, "publicKey")?;
-            let passphrase = arg_str(args, "passphrase")?;
-            let (result, _, _) =
-                login_core(&server.root, &public_key, &passphrase, &server.state, None).await?;
-            Ok(serde_json::to_value(result).unwrap())
+            let request = IpcRequest::Unlock {
+                identity: arg_str(args, "publicKey")?,
+                passphrase: arg_str(args, "passphrase")?,
+            };
+            host_call::call(state, request).await
         }
-        "list_identities" => {
-            let summaries = list_identities_inner(&server.root)?;
-            Ok(serde_json::to_value(summaries).unwrap())
-        }
+        "list_identities" => host_call::call(state, IpcRequest::IdentityList).await,
         "delete_identity" => {
-            let public_key = arg_str(args, "publicKey")?;
-            let passphrase = arg_str(args, "passphrase")?;
-
-            verify_identity_passphrase_core(&server.root, &server.state, &public_key, &passphrase)
-                .await?;
-            let is_active = server
-                .state
-                .identity
-                .read()
-                .as_ref()
-                .is_some_and(|id| id.public_key == public_key);
-            if is_active {
-                lock_identity(&server.state).await;
-                server.state.friends.write().clear();
-                server.state.communities.write().clear();
-            }
-            delete_identity_core(&server.root, &server.state, &public_key, &passphrase).await?;
-            Ok(Value::Null)
+            let request = IpcRequest::IdentityDelete {
+                identity: arg_str(args, "publicKey")?,
+            };
+            host_call::call(state, request).await
         }
-        "get_identity" => {
-            let identity = server.state.identity.read();
-            Ok(match identity.as_ref() {
-                Some(id) => serde_json::to_value(LoginResult {
-                    public_key: id.public_key.clone(),
-                    display_name: id.display_name.clone(),
-                })
-                .unwrap(),
-                None => Value::Null,
+        "get_identity" => host_call::call(state, IpcRequest::IdentityShow).await,
+        "logout" => host_call::call(state, IpcRequest::Logout).await,
+        "set_status" => {
+            let request = IpcRequest::PresenceSet {
+                status: arg_parse(args, "status")?,
+            };
+            host_call::call(state, request).await
+        }
+        "set_status_message" => {
+            let request = IpcRequest::PresenceSetMessage {
+                message: arg_str(args, "message")?,
+            };
+            host_call::call(state, request).await
+        }
+        "set_nickname" => {
+            let request = IpcRequest::ProfileSetNickname {
+                display_name: arg_str(args, "nickname")?,
+            };
+            host_call::call(state, request).await
+        }
+        "set_avatar" => {
+            let request = IpcRequest::ProfileSetAvatar {
+                image: arg_parse(args, "avatarData")?,
+            };
+            host_call::call(state, request).await
+        }
+        "get_avatar" => {
+            let request = IpcRequest::AvatarGet {
+                public_key: arg_str(args, "publicKey")?,
+            };
+            host_call::call(state, request).await
+        }
+        "get_game_status" => {
+            let presence: Done<rekindle_types::dto::presence::OwnPresenceView> =
+                host_call::call(state, IpcRequest::PresenceGet).await?;
+            Ok(Done {
+                value: serde_json::to_value(presence.value.game)
+                    .map_err(|e| CommandError::internal(e.to_string()))?,
+                undo: presence.undo,
             })
         }
-        "logout" => {
-            lock_identity(&server.state).await;
-            server.state.friends.write().clear();
-            server.state.communities.write().clear();
-            Ok(Value::Null)
+        "lifecycle_current" => {
+            let status: Done<rekindle_types::display::StatusSnapshot> =
+                host_call::call(state, IpcRequest::Status).await?;
+            Ok(Done {
+                value: Value::String(status.value.state),
+                undo: status.undo,
+            })
         }
+        "intent_commit" => {
+            let request = IpcRequest::IntentCommit {
+                intent_id: arg_parse(args, "intentId")?,
+                proof: arg_parse(args, "proof")?,
+            };
+            host_call::call(state, request).await
+        }
+        "intent_cancel" => {
+            let request = IpcRequest::IntentCancel {
+                intent_id: arg_parse(args, "intentId")?,
+            };
+            host_call::call(state, request).await
+        }
+        other => Err(bad_request(format!("unknown command: {other}"))),
+    }
+}
 
+/// The commands not yet ported to the Host (the window's mount reads), or
+/// `None` for a Host call.
+fn local(server: &ServerState, cmd: &str) -> Option<Result<Value, CommandError>> {
+    let value = match cmd {
         // ── Friends ──────────────────────────────────────────────────
         "get_friends" => {
             let friends = server.state.friends.read();
@@ -222,63 +281,68 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                     })
                 })
                 .collect();
-            Ok(Value::Array(list))
+            Value::Array(list)
         }
 
         // ── Communities ──────────────────────────────────────────────
-        "get_community_details" | "get_communities" => Ok(json!([])),
+        "get_community_details" | "get_communities" => json!([]),
 
         // ── Settings ─────────────────────────────────────────────────
-        "get_preferences" => Ok(json!({
+        "get_preferences" => json!({
             "notificationsEnabled": true,
             "notificationSound": true,
             "startMinimized": false,
             "autoStart": false,
             "gameDetectionEnabled": true,
             "gameScanIntervalSecs": 30
-        })),
+        }),
 
         // ── Game / Network ───────────────────────────────────────────
-        "get_network_status" => Ok(json!({
+        "get_network_status" => json!({
             "isAttached": false,
             "publicInternetReady": false,
             "hasRoute": false,
             "mediaRoute": "idle",
             "profileDhtKey": Value::Null,
             "friendListDhtKey": Value::Null,
-        })),
+        }),
 
-        // ── Lifecycle ────────────────────────────────────────────────
-        // The frontend lifecycle store seeds from this on mount and gates
-        // the login button on `canUnlock()` (state == "locked"). The test
-        // double models readiness so the button is enabled in the harness;
-        // keeps "one lifecycle" — no VITE_E2E branch in product code.
-        "lifecycle_current" => Ok(json!("locked")),
-
-        // ── No-op commands (window management, status, etc.) ─────────
-        "get_game_status"
-        | "show_buddy_list"
+        // ── No-op commands (windows, voice, the updater) ─────────────
+        "show_buddy_list"
         | "open_chat_window"
         | "open_settings_window"
         | "open_community_window"
         | "open_profile_window"
-        | "set_status"
-        | "set_nickname"
-        | "set_avatar"
-        | "set_status_message"
         | "set_mute"
         | "set_deafen"
-        | "check_for_updates" => Ok(Value::Null),
+        | "check_for_updates" => Value::Null,
 
-        _ => Err(format!("unknown command: {cmd}")),
+        _ => return None,
+    };
+    Some(Ok(value))
+}
+
+fn bad_request(message: String) -> CommandError {
+    CommandError::Failed {
+        code: 400,
+        message,
+        remediation: None,
     }
 }
 
-fn arg_str(args: &Value, key: &str) -> Result<String, String> {
+fn arg_str(args: &Value, key: &str) -> Result<String, CommandError> {
     args.get(key)
         .and_then(Value::as_str)
         .map(String::from)
-        .ok_or_else(|| format!("missing required argument: {key}"))
+        .ok_or_else(|| bad_request(format!("missing required argument: {key}")))
+}
+
+fn arg_parse<T: serde::de::DeserializeOwned>(args: &Value, key: &str) -> Result<T, CommandError> {
+    let value = args
+        .get(key)
+        .cloned()
+        .ok_or_else(|| bad_request(format!("missing required argument: {key}")))?;
+    serde_json::from_value(value).map_err(|e| bad_request(format!("argument {key}: {e}")))
 }
 
 fn arg_str_opt(args: &Value, key: &str) -> Option<String> {

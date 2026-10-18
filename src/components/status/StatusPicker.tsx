@@ -14,7 +14,8 @@ const statusOptions: StatusOption[] = [
   { value: "online", label: "Online" },
   { value: "away", label: "Away" },
   { value: "busy", label: "Busy" },
-  { value: "offline", label: "Appear Offline" },
+  // Invisible: peers see offline; only logging out sets offline.
+  { value: "invisible", label: "Appear Offline" },
 ];
 
 interface StatusPickerProps {
@@ -23,9 +24,11 @@ interface StatusPickerProps {
 
 const StatusPicker: Component<StatusPickerProps> = (props) => {
   function handleSelect(value: string): void {
-    const status = value as UserStatus;
-    commands.setStatus(status);
-    setAuthState("status", status);
+    // The Host owns our status: show what it answers.
+    void commands
+      .setStatus(value as Exclude<UserStatus, "offline">)
+      .then((view) => setAuthState("status", view.status))
+      .catch((e: unknown) => console.error("status change failed", e));
   }
 
   return (

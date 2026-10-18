@@ -357,7 +357,8 @@
     border: none;
     height: 100%;
   }
-  .active-call-panel-header {
+  .active-call-panel-header,
+  .toast-undo {
     display: flex;
     align-items: center;
     gap: 10px;

@@ -4,7 +4,7 @@ use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::*;
-use crate::host::identity;
+use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
 
 fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
@@ -18,6 +18,13 @@ fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
 }
 
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
+    offline_host_with(dir, None).await
+}
+
+async fn offline_host_with(
+    dir: &tempfile::TempDir,
+    shell: Option<Arc<dyn shell_hooks::ShellHooks>>,
+) -> Arc<Host> {
     Host::start(HostConfig {
         root: claim(temp_root(dir)).unwrap(),
         stores: HostStores::default(),
@@ -25,6 +32,7 @@ async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
         serve_bus: false,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        shell,
     })
     .await
     .unwrap()
@@ -37,30 +45,148 @@ fn status_of(response: &IpcResponse) -> Option<u32> {
     }
 }
 
-/// The shell's login installs the identity in the host, so a request
-/// reaches the same identity; its logout takes it out again.
+/// Create Ann through the window, which unlocks her.
+async fn create_ann(host: &Host) -> rekindle_types::dto::identity::IdentityView {
+    let answer = host
+        .call(
+            Caller::shell(),
+            IpcRequest::IdentityCreate {
+                display_name: Some("Ann".into()),
+                passphrase: "pass".into(),
+            },
+        )
+        .await;
+    match answer {
+        IpcResponse::Ok { data, .. } => serde_json::from_value(data).unwrap(),
+        other => panic!("create refused: {other:?}"),
+    }
+}
+
+/// One create makes the identity and unlocks it (plan E1.1), offline: a
+/// request then reaches that identity, and a logout takes it out again.
 #[tokio::test]
-async fn an_installed_identity_is_the_hosts_until_released() {
+async fn a_create_unlocks_until_logout() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     assert_eq!(host.mode(), HostMode::Shell);
 
-    let created = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
-    let installed = host.install(created).await.unwrap();
+    let view = create_ann(&host).await;
+    assert_eq!(view.display_name, "Ann");
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Operational);
     assert_eq!(
         host.ctx.require_owner().ok().as_deref(),
-        Some(installed.public_key.as_str())
+        Some(view.public_key.as_str())
     );
     let shown = host.call(Caller::shell(), IpcRequest::IdentityShow).await;
-    assert!(status_of(&shown).is_none(), "{shown:?}");
+    let IpcResponse::Ok { data, .. } = shown else {
+        panic!("{shown:?}")
+    };
+    let shown: Option<rekindle_types::dto::identity::IdentityShown> =
+        serde_json::from_value(data).unwrap();
+    assert_eq!(shown.map(|s| s.public_key), Some(view.public_key));
 
-    host.release_identity().await;
+    let out = host.call(Caller::shell(), IpcRequest::Logout).await;
+    assert!(status_of(&out).is_none(), "{out:?}");
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Locked);
     assert!(host.ctx.session.read().is_none());
     assert!(host.ctx.db.current().is_err());
+    let shown = host.call(Caller::shell(), IpcRequest::IdentityShow).await;
+    assert!(matches!(shown, IpcResponse::Ok { data, .. } if data.is_null()));
+}
+
+/// The hooks a test shell records, in order.
+#[derive(Default)]
+struct Recorder(parking_lot::Mutex<Vec<String>>);
+
+#[async_trait::async_trait]
+impl shell_hooks::ShellHooks for Recorder {
+    async fn unlocked(
+        &self,
+        view: &shell_hooks::UnlockedView,
+        _scope: &Arc<rekindle_lifecycle::SessionScope>,
+    ) -> Result<(), String> {
+        self.0.lock().push(format!("unlocked {}", view.created));
+        Ok(())
+    }
+    fn own_records(&self, _keys: &shell_hooks::OwnRecordKeys) {
+        self.0.lock().push("own records".into());
+    }
+    async fn ending(&self) {
+        self.0.lock().push("ending".into());
+    }
+    async fn ended(&self, reason: shell_hooks::EndReason) {
+        self.0.lock().push(format!("ended {reason:?}"));
+    }
+}
+
+/// The Host calls the shell at its fixed points: after its own stages,
+/// before the scope is cancelled, and once the identity is out.
+#[tokio::test]
+async fn the_shell_hears_the_unlock_and_its_end_in_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let host = offline_host_with(&dir, Some(recorder.clone())).await;
+    let view = create_ann(&host).await;
+    let lock = host.call(Caller::shell(), IpcRequest::Lock).await;
+    assert!(status_of(&lock).is_none(), "{lock:?}");
+    let again = host
+        .call(
+            Caller::shell(),
+            IpcRequest::Unlock {
+                identity: view.public_key,
+                passphrase: "pass".into(),
+            },
+        )
+        .await;
+    assert!(status_of(&again).is_none(), "{again:?}");
+    host.shutdown().await.unwrap();
+    assert_eq!(
+        *recorder.0.lock(),
+        [
+            "unlocked true",
+            "ending",
+            "ended Lock",
+            "unlocked false",
+            "ending",
+            "ended Exit",
+        ]
+    );
+}
+
+/// A shell stage that cannot start aborts the unlock: the identity is out
+/// and the host is Locked.
+#[tokio::test]
+async fn a_failed_shell_stage_leaves_nothing_unlocked() {
+    struct Refuses;
+    #[async_trait::async_trait]
+    impl shell_hooks::ShellHooks for Refuses {
+        async fn unlocked(
+            &self,
+            _view: &shell_hooks::UnlockedView,
+            _scope: &Arc<rekindle_lifecycle::SessionScope>,
+        ) -> Result<(), String> {
+            Err("no".into())
+        }
+        fn own_records(&self, _keys: &shell_hooks::OwnRecordKeys) {}
+        async fn ending(&self) {}
+        async fn ended(&self, _reason: shell_hooks::EndReason) {}
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host_with(&dir, Some(Arc::new(Refuses))).await;
+    let answer = host
+        .call(
+            Caller::shell(),
+            IpcRequest::IdentityCreate {
+                display_name: None,
+                passphrase: "pass".into(),
+            },
+        )
+        .await;
+    assert_eq!(status_of(&answer), Some(500), "{answer:?}");
+    assert_eq!(host.ctx.lifecycle.state(), DaemonState::Locked);
+    assert!(host.ctx.session.read().is_none());
+    assert!(host.ctx.db.current().is_err());
+    assert!(host.ctx.unlock_scope.read().is_none());
 }
 
 /// In the shell the window owns the identity lifecycle and the process: a
@@ -69,10 +195,7 @@ async fn an_installed_identity_is_the_hosts_until_released() {
 async fn the_shell_refuses_the_requests_the_window_owns() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
-    let created = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
-    host.install(created).await.unwrap();
+    create_ann(&host).await;
     let bus = Caller {
         conn: ConnId::Bus(7),
         clearance: SecurityLevel::Admin,
@@ -92,10 +215,7 @@ async fn the_shell_refuses_the_requests_the_window_owns() {
 async fn the_shell_does_not_refuse_its_own_calls() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
-    let created = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
-    host.install(created).await.unwrap();
+    create_ann(&host).await;
     let answer = host.call(Caller::shell(), IpcRequest::Lock).await;
     assert!(status_of(&answer).is_none(), "{answer:?}");
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Locked);

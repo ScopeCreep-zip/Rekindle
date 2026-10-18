@@ -2,7 +2,7 @@
 @source "../";
 /* The Xfire skin, split into ordered parts. It was one 7,926-line file,
  * which the 600-line ceiling could not cover. Import order IS cascade
- * order, so these must stay sorted: parts `00`-`14` each re-open
+ * order, so these must stay sorted: parts `00`-`15` each re-open
  * `@layer components`, and CSS concatenates them in source order.
  *
  * `00-primitives.css` comes first and holds the declaration sets that
@@ -35,6 +35,7 @@
 @import "./theme/12-channel-settings-inline-slowmode-t.css";
 @import "./theme/13-bulk-message-delete-mod-selection-.css";
 @import "./theme/14-sidebar-sections-servers-events.css";
+@import "./theme/15-intent-dialog.css";
 @import "./theme/90-top-level.css";
 @import "./theme/91-top-level.css";
 @import "./animations.css";

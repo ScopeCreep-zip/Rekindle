@@ -1,37 +1,16 @@
 //! Phase 21 REDO — adapter-side type-shape mapping helpers.
 //!
-//! Bridges the crate's veilid-free DTOs (`UserStatusKind`,
-//! `GameInfoSnapshot`, `FriendPresenceEvent`) to the src-tauri
-//! channel + state shapes (`UserStatus`, `GameInfoState`,
-//! `crate::channels::PresenceEvent`). Sole consumer is
+//! Bridges the crate's veilid-free DTOs (`GameInfoSnapshot`,
+//! `FriendPresenceEvent`) to the src-tauri state and event shapes
+//! (`GameInfoState`, `PresenceEvent`). Sole consumer is
 //! `friend_deps.rs`; lifted here so the per-trait impl files stay
 //! under the 500-LoC cap and focused on one trait.
 
-use rekindle_presence::{FriendPresenceEvent, GameInfoSnapshot, UserStatusKind};
+use rekindle_presence::{FriendPresenceEvent, GameInfoSnapshot};
 
 use rekindle_types::subscription_events::{GameActivity, PresenceEvent, PresenceSnapshot};
 
-use crate::state::{GameInfoState, UserStatus};
-
-pub(super) fn to_crate_status(status: UserStatus) -> UserStatusKind {
-    match status {
-        UserStatus::Online => UserStatusKind::Online,
-        UserStatus::Away => UserStatusKind::Away,
-        UserStatus::Busy => UserStatusKind::Busy,
-        UserStatus::Offline => UserStatusKind::Offline,
-        UserStatus::Invisible => UserStatusKind::Invisible,
-    }
-}
-
-pub(super) fn from_crate_status(status: UserStatusKind) -> UserStatus {
-    match status {
-        UserStatusKind::Online => UserStatus::Online,
-        UserStatusKind::Away => UserStatus::Away,
-        UserStatusKind::Busy => UserStatus::Busy,
-        UserStatusKind::Offline => UserStatus::Offline,
-        UserStatusKind::Invisible => UserStatus::Invisible,
-    }
-}
+use crate::state::GameInfoState;
 
 pub(super) fn from_crate_game_info(snapshot: GameInfoSnapshot) -> GameInfoState {
     GameInfoState {

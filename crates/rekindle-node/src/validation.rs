@@ -1,8 +1,9 @@
 //! Input validation for the daemon security boundary.
 //!
 //! [`validate_request`] checks every string and bounded number of an
-//! [`IpcRequest`] once, in `router::dispatch`, before any handler runs:
-//! handlers receive only well-formed input. The match is exhaustive, so a
+//! [`IpcRequest`] once, in the host's gate (`host/gate.rs`) for every
+//! frontend, before any handler runs: handlers receive only well-formed
+//! input. The match is exhaustive, so a
 //! new variant cannot reach a handler unvalidated. The CLI may also
 //! validate for UX; the daemon enforces.
 
@@ -10,7 +11,7 @@ use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{
     self, KeyFormatError, MAX_DESCRIPTION_LEN, MAX_MESSAGE_LEN, MAX_NAME_LEN, MAX_NOTE_LEN,
-    MAX_SERVER_ADDRESS_LEN, MAX_STATUS_LEN, MAX_TOPIC_LEN,
+    MAX_STATUS_LEN, MAX_TOPIC_LEN,
 };
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
@@ -133,15 +134,28 @@ fn proof(proof: &rekindle_types::intent::IntentProof) -> Checked {
     }
 }
 
-/// Validate a presence status string: online, away, busy or invisible.
-fn status(status: &str) -> Checked {
-    match status {
-        "online" | "away" | "busy" | "invisible" => Ok(()),
-        other => Err(IpcResponse::error(
+/// A status a user may pick: Offline is the host's teardown's alone;
+/// "Appear Offline" is Invisible, which peers cannot tell from it.
+fn presence_status(status: rekindle_types::presence::SessionStatus) -> Checked {
+    if status == rekindle_types::presence::SessionStatus::Offline {
+        return Err(IpcResponse::error_with_remediation(
             400,
-            format!("invalid status '{other}' — expected: online, away, busy, invisible"),
-        )),
+            "offline is set by locking or logging out",
+            "pick invisible to appear offline",
+        ));
     }
+    Ok(())
+}
+
+/// An avatar image: not empty, within the bus's frame.
+fn avatar(image: &[u8]) -> Checked {
+    if image.is_empty() || image.len() > MAX_ARCHIVE_LEN {
+        return Err(IpcResponse::error(
+            400,
+            format!("invalid avatar: 1 to {MAX_ARCHIVE_LEN} bytes"),
+        ));
+    }
+    Ok(())
 }
 
 /// Validate a channel kind string.
@@ -186,9 +200,13 @@ fn capabilities(capabilities: &[String]) -> Checked {
 }
 
 /// A new identity's display name, and a passphrase that is not empty.
-fn new_identity(display_name: &str, passphrase: &str) -> Checked {
-    rekindle_types::presence::limits::display_name(display_name)
-        .map_err(|e| reject("display name", &e))?;
+/// A new identity: a name, when given, is a valid display name (a blank one
+/// is refused, not taken for none); the passphrase is not empty.
+fn new_identity(display_name: Option<&str>, passphrase: &str) -> Checked {
+    if let Some(name) = display_name {
+        rekindle_types::presence::limits::display_name(name)
+            .map_err(|e| reject("display name", &e))?;
+    }
     if passphrase.is_empty() {
         return Err(IpcResponse::error(400, "invalid passphrase: empty"));
     }
@@ -204,6 +222,29 @@ fn identity_archive(archive: &str) -> Checked {
         ));
     }
     Ok(())
+}
+
+/// Our own presence, profile and links.
+fn own(request: &IpcRequest) -> Checked {
+    match request {
+        IpcRequest::PresenceSet { status } => presence_status(*status),
+        IpcRequest::PresenceSetMessage { message } => {
+            if message.is_empty() {
+                return Ok(());
+            }
+            text(message, MAX_STATUS_LEN, "status message")
+        }
+        IpcRequest::ProfileSetNickname { display_name } => {
+            rekindle_types::presence::limits::display_name(display_name)
+                .map(drop)
+                .map_err(|e| reject("display name", &e))
+        }
+        IpcRequest::ProfileSetAvatar { image } => avatar(image),
+        IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
+            .map(drop)
+            .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
+        other => unreachable!("{} is not one of our own requests", other.name()),
+    }
 }
 
 /// Validate every field of `request`. The first malformed field answers
@@ -224,6 +265,10 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendRequests
         | IpcRequest::CommunityList
         | IpcRequest::PrekeyReplenish
+        | IpcRequest::PresenceGet
+        | IpcRequest::Undo { id: _ }
+        | IpcRequest::AuditVerify
+        | IpcRequest::AuditExport { since: _ }
         | IpcRequest::GamePresenceClear
         | IpcRequest::VoiceLeave
         | IpcRequest::NetworkStatus
@@ -243,7 +288,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::IdentityCreate {
             display_name,
             passphrase,
-        } => new_identity(display_name, passphrase),
+        } => new_identity(display_name.as_deref(), passphrase),
         IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
         IpcRequest::IntentCommit { proof: given, .. } => proof(given),
 
@@ -253,7 +298,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         }
         IpcRequest::FriendAccept { public_key: key }
         | IpcRequest::FriendReject { public_key: key }
-        | IpcRequest::FriendRemove { public_key: key } => public_key(key, "public key"),
+        | IpcRequest::FriendRemove { public_key: key }
+        | IpcRequest::AvatarGet { public_key: key } => public_key(key, "public key"),
 
         IpcRequest::CommunityCreate {
             name: community_name,
@@ -393,10 +439,11 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
             key_scope(ch)
         }
 
-        IpcRequest::PresenceSet { status: s, message } => {
-            status(s)?;
-            opt(message.as_deref(), |m| text(m, MAX_STATUS_LEN, "status message"))
-        }
+        IpcRequest::PresenceSet { .. }
+        | IpcRequest::PresenceSetMessage { .. }
+        | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::ProfileSetAvatar { .. }
+        | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::GamePresenceSet {
             game_name,
             game_id: _,
@@ -405,9 +452,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         } => {
             name(game_name, "game")?;
             opt(server_address.as_deref(), |a| {
-                key_format::name(a, MAX_SERVER_ADDRESS_LEN)
+                rekindle_types::game_server::ServerAddress::parse(a)
                     .map(drop)
-                    .map_err(|e| reject("server address", &e))
+                    .map_err(|e| IpcResponse::error(400, format!("invalid server address: {e}")))
             })
         }
 

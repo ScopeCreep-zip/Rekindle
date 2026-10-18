@@ -155,6 +155,9 @@ fn login_window_is_pre_auth_only() {
         "create_identity",
         "delete_identity",
         "get_avatar",
+        // The review of the delete it issues (its passphrase proof).
+        "intent_cancel",
+        "intent_commit",
         "lifecycle_current",
         "list_identities",
         "login",

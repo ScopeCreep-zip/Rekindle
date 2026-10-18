@@ -54,6 +54,13 @@ rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-vault = { path = "../rekindle-vault" }
 rekindle-idempotency = { path = "../rekindle-idempotency" }
+# Our own presence's stages (plan E1.1): OS idle time for auto-away, the
+# game detector, and the https check `LinkOpen` validates with.
+rekindle-idle = { path = "../rekindle-idle" }
+rekindle-game-detect = { path = "../rekindle-game-detect" }
+rekindle-link-preview = { path = "../rekindle-link-preview" }
+# Avatars become a 128 px WebP (plan E1.1), as the desktop's do.
+image = { version = "0.25", default-features = false, features = [ "webp", "png", "jpeg", "gif" ] }
 
 # Async runtime
 futures = { workspace = true }

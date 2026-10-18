@@ -1,6 +1,5 @@
 import { Component, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
-import ToastContainer from "../components/common/Toast";
 import { setCommunityState } from "../stores/community.store";
 import { useCommunityWindow } from "./community_window/useCommunityWindow";
 import CommunitySidebar from "./community_window/CommunitySidebar";
@@ -51,7 +50,6 @@ const CommunityWindow: Component = () => {
       </div>
 
       <CommunityModals vm={vm} />
-      <ToastContainer />
     </div>
   );
 };

@@ -49,9 +49,9 @@ pub(super) async fn serve(ctx: &Arc<DaemonContext>) -> anyhow::Result<Bus> {
     )?);
     tracing::info!(path = %socket_path.display(), "IPC bus server bound");
     server.start_event_delivery(Arc::clone(&ctx.journal));
-    let intents = Arc::clone(&ctx.intents);
+    let gated = Arc::clone(ctx);
     server.on_disconnect(Arc::new(move |conn| {
-        super::gate::clear_connection(&intents, conn);
+        super::gate::clear_connection(&gated, conn);
     }));
 
     let accept = spawn_accept(&server, &ctx.shutdown);

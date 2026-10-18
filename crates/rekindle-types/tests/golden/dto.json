@@ -1,0 +1,108 @@
+{
+  "audit.entry": {
+    "actorPub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "atMs": 1700000000000,
+    "cursor": 7,
+    "kind": "VaultUnlocked",
+    "mac": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+    "payload": {
+      "first_time": false
+    },
+    "prevMac": "abababababababababababababababababababababababababababababababab"
+  },
+  "audit.verified.broken": {
+    "at": 7,
+    "detail": "entry 7: recomputed MAC does not match",
+    "length": 12,
+    "state": "broken"
+  },
+  "audit.verified.intact": {
+    "length": 12,
+    "state": "intact"
+  },
+  "command.done": {
+    "undo": null,
+    "value": null
+  },
+  "command.done.undo": {
+    "undo": {
+      "expiresAtMs": 1700000010000,
+      "id": "01900000-0000-7000-8000-000000000001",
+      "inverse": "clearGamePresence"
+    },
+    "value": {
+      "elapsedSeconds": 90,
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "serverAddress": "10.0.0.1:27015"
+    }
+  },
+  "command.error.failed": {
+    "data": {
+      "code": 401,
+      "message": "Wrong passphrase",
+      "remediation": null
+    },
+    "type": "failed"
+  },
+  "command.error.intentRequired": {
+    "data": {
+      "class": "protected",
+      "escalations": [],
+      "expiresAtMs": 1700000300000,
+      "facts": [],
+      "intentId": "01900000-0000-7000-8000-000000000001",
+      "kind": "deleteIdentity",
+      "notifies": "nobody",
+      "proof": "passphrase",
+      "reversibility": "never",
+      "subject": {
+        "ownIdentity": {
+          "name": "Me"
+        }
+      }
+    },
+    "type": "intentRequired"
+  },
+  "identity.shown": {
+    "communities": 2,
+    "displayName": "Ann",
+    "friendListDhtKey": "VLD0:fffffffffffffffffffffffffffffffffffffffffff",
+    "mailboxDhtKey": "VLD0:mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "profileDhtKey": "VLD0:ppppppppppppppppppppppppppppppppppppppppppp",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "identity.shown.locked": null,
+  "identity.summary": {
+    "createdAt": 1700000000000,
+    "displayName": "Ann",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "identity.view": {
+    "displayName": "Ann",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "presence.view.autoAway": {
+    "game": null,
+    "idle": "autoAway",
+    "status": "away",
+    "statusMessage": ""
+  },
+  "presence.view.invisible": {
+    "game": null,
+    "idle": "unavailable",
+    "status": "invisible",
+    "statusMessage": ""
+  },
+  "presence.view.playing": {
+    "game": {
+      "elapsedSeconds": 90,
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "serverAddress": "10.0.0.1:27015"
+    },
+    "idle": "active",
+    "status": "busy",
+    "statusMessage": "fragging"
+  }
+}

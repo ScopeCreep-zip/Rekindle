@@ -192,27 +192,10 @@ mod tests {
     }
 
     #[async_trait]
-    impl crate::deps::StatusPublisherDeps for MockDeps {
-        fn profile_dht_info(&self) -> Option<String> {
-            None
-        }
-        async fn write_profile_status_subkey(
-            &self,
-            _: &str,
-            _: Vec<u8>,
-        ) -> Result<(), PresenceError> {
-            Ok(())
-        }
-        fn current_identity_status(&self) -> Option<UserStatusKind> {
-            None
-        }
+    impl FriendPresenceDeps for MockDeps {
         fn now_ms(&self) -> i64 {
             1_000_000
         }
-    }
-
-    #[async_trait]
-    impl FriendPresenceDeps for MockDeps {
         fn friend_for_dht_key(&self, dht_key: &str) -> Option<String> {
             self.state
                 .lock()

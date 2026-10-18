@@ -107,4 +107,21 @@ mod tests {
         let entry = db.lookup_by_process("CS2.EXE").unwrap();
         assert_eq!(entry.id, 4181);
     }
+
+    /// A launcher substitutes the address once: a template with no
+    /// `{addr}`, or two, would launch somewhere the user did not pick.
+    #[test]
+    fn every_connect_template_holds_one_address() {
+        let db = GameDatabase::bundled();
+        for entry in db.by_process.values() {
+            if let Some(template) = &entry.connect_template {
+                assert_eq!(
+                    template.matches("{addr}").count(),
+                    1,
+                    "{}: {template}",
+                    entry.name
+                );
+            }
+        }
+    }
 }

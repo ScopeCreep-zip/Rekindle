@@ -1,19 +1,22 @@
-import { invoke } from "../invoke";
-import type {
-  FriendInfo, IdentitySummary, LoginResult, Message,
-} from "./types";
+import { hostInvoke, invoke } from "../invoke";
+import type { FriendInfo, Message } from "./types";
+import type { IdentityShown, IdentitySummary, IdentityView } from "./dto";
 
 export const accountCommands = {
-  // Auth
+  // Identity: Host calls (plan E1.1). A blank name is no name: the Host
+  // names the identity `User_` and its key's first characters.
   createIdentity: (passphrase: string, displayName?: string) =>
-    invoke<LoginResult>("create_identity", { passphrase, displayName: displayName ?? null }),
+    hostInvoke<IdentityView>("create_identity", {
+      passphrase,
+      displayName: displayName?.trim() ? displayName.trim() : null,
+    }),
   login: (publicKey: string, passphrase: string) =>
-    invoke<LoginResult>("login", { publicKey, passphrase }),
-  getIdentity: () => invoke<LoginResult | null>("get_identity"),
-  logout: () => invoke<void>("logout"),
-  listIdentities: () => invoke<IdentitySummary[]>("list_identities"),
-  deleteIdentity: (publicKey: string, passphrase: string) =>
-    invoke<void>("delete_identity", { publicKey, passphrase }),
+    hostInvoke<IdentityView>("login", { publicKey, passphrase }),
+  getIdentity: () => hostInvoke<IdentityShown | null>("get_identity"),
+  logout: () => hostInvoke<unknown>("logout"),
+  listIdentities: () => hostInvoke<IdentitySummary[]>("list_identities"),
+  /** Protected: the Host asks for the identity's passphrase in the review. */
+  deleteIdentity: (publicKey: string) => hostInvoke<unknown>("delete_identity", { publicKey }),
 
   // Chat
   prepareChatSession: (peerId: string) =>

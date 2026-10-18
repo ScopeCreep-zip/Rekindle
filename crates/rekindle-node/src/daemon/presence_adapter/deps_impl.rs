@@ -268,7 +268,12 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     }
 
     fn self_session(&self, _community_id: &str) -> MemberSession {
-        MemberSession::default()
+        // Our status, from the host's own presence (plan E1.1); location
+        // and activity stay unshared (the default policy below).
+        MemberSession {
+            status: self.ctx.own_presence.status(),
+            ..MemberSession::default()
+        }
     }
 
     fn presence_policy(&self, _community_id: &str) -> PresenceSharingPolicy {

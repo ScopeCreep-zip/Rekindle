@@ -165,6 +165,7 @@ impl App {
                 self.search.close();
             }
             Action::ShowIntent(review) => self.intent.show(*review),
+            Action::OwnPresence(snapshot) => self.nav.dashboard_mut().apply_own_presence(&snapshot),
             Action::CommitIntent { review, proof } => self.spawn_commit_intent(*review, proof),
             Action::CancelIntent { intent_id } => self.spawn_cancel_intent(intent_id),
             Action::LeaveVoice => self.spawn_leave_voice(),
@@ -240,6 +241,9 @@ impl App {
                 self.nav
                     .dashboard_mut()
                     .set_identity(public_key, display_name);
+            }
+            CommandResult::OwnPresenceLoaded { view } => {
+                self.nav.dashboard_mut().set_own_presence(view);
             }
             CommandResult::CommunityListLoaded { communities } => {
                 self.cached_communities = communities

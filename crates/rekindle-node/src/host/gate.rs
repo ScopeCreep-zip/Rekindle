@@ -10,8 +10,6 @@
 //! demands; a passphrase is checked off the executor before the gate's
 //! lock, against the same attempt limiter the unlock counts on.
 
-use std::sync::Arc;
-
 use rekindle_idempotency::intent_gate::{Committed, Gate, GateError, GateOwner, IntentGate};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::intent::{
@@ -61,6 +59,15 @@ pub(crate) async fn run(ctx: &DaemonContext, request: IpcRequest, caller: &Calle
         IpcRequest::IntentCommit { intent_id, proof } => {
             commit(ctx, caller, intent_id, proof).await
         }
+        IpcRequest::Undo { id } => {
+            let caller_owner = provisional_owner(ctx, caller);
+            match ctx.undo.take(id, &caller_owner, ctx.clock.now_ms()) {
+                // The inverse is a request of its own: selected, classified
+                // and run (or held) as if the user had sent it.
+                Some(inverse) => Box::pin(begin(ctx, caller, inverse)).await,
+                None => IpcResponse::error(404, "nothing to undo: the offer expired or was used"),
+            }
+        }
         IpcRequest::IntentCancel { intent_id } => {
             if ctx
                 .intents
@@ -93,13 +100,15 @@ async fn begin(ctx: &DaemonContext, caller: &Caller, request: IpcRequest) -> Ipc
         Err(refused) => return refused,
     };
     let reversibility = selection.reversibility;
+    let inverse = super::intent_select::inverse(ctx, &request, reversibility);
     let owner = owner_of(ctx, caller, &request);
     match ctx
         .intents
-        .begin(owner, selection, request, ctx.clock.now_ms())
+        .begin(owner.clone(), selection, request, ctx.clock.now_ms())
     {
         Ok(Gate::Run(request)) => {
-            with_reversibility(ctx.dispatch_in_lane(request, caller).await, reversibility)
+            let response = ctx.dispatch_in_lane(request, caller).await;
+            ran(ctx, response, reversibility, owner, inverse)
         }
         Ok(Gate::Review(review)) => IpcResponse::IntentRequired(review),
         Err(e) => gate_error(&e),
@@ -142,7 +151,9 @@ async fn commit(
         _ => false,
     };
     let reversibility = fresh.reversibility;
-    let ran = ctx
+    let inverse = super::intent_select::inverse(ctx, &held, reversibility);
+    let undo_owner = owner.clone();
+    let outcome = ctx
         .intents
         .commit_and_run(
             intent_id,
@@ -152,11 +163,12 @@ async fn commit(
             move |_| passphrase_ok,
             now_ms,
             |request| async move {
-                with_reversibility(ctx.dispatch_in_lane(request, caller).await, reversibility)
+                let response = ctx.dispatch_in_lane(request, caller).await;
+                ran(ctx, response, reversibility, undo_owner, inverse)
             },
         )
         .await;
-    match ran {
+    match outcome {
         Ok(Committed::Ran(response)) => response,
         Ok(Committed::Review(review)) => IpcResponse::IntentRequired(review),
         Err(e) => gate_error(&e),
@@ -222,12 +234,31 @@ async fn passphrase_opens(
     checked.unwrap_or(false)
 }
 
-fn with_reversibility(response: IpcResponse, reversibility: Reversibility) -> IpcResponse {
+/// An action that ran: answered with its reversibility and, when it is
+/// undoable and its inverse was computed, the undo offer for it.
+fn ran(
+    ctx: &DaemonContext,
+    response: IpcResponse,
+    reversibility: Reversibility,
+    owner: IntentOwner,
+    inverse: Option<IpcRequest>,
+) -> IpcResponse {
     match response {
-        IpcResponse::Ok { data, .. } => IpcResponse::Ok {
-            data,
-            reversibility: Some(reversibility),
-        },
+        IpcResponse::Ok { data, .. } => {
+            let undo = inverse
+                .filter(|_| reversibility == Reversibility::Undoable)
+                .and_then(|inverse| {
+                    let Some(Classified::Intent(kind)) = kind_of(inverse.name()) else {
+                        return None;
+                    };
+                    Some(ctx.undo.offer(owner, inverse, kind, ctx.clock.now_ms()))
+                });
+            IpcResponse::Ok {
+                data,
+                reversibility: Some(reversibility),
+                undo,
+            }
+        }
         other => other,
     }
 }
@@ -241,9 +272,12 @@ fn gate_error(e: &GateError) -> IpcResponse {
     IpcResponse::error(code, e.to_string())
 }
 
-/// Drop every action held by connection `conn` (it closed).
-pub(crate) fn clear_connection(gate: &Arc<HostGate>, conn: u64) {
-    gate.clear_matching(|owner| owner.conn == Some(ConnId::Bus(conn)));
+/// Drop every action held and every undo offered for connection `conn`
+/// (it closed).
+pub(crate) fn clear_connection(ctx: &DaemonContext, conn: u64) {
+    let closed = |owner: &IntentOwner| owner.conn == Some(ConnId::Bus(conn));
+    ctx.intents.clear_matching(closed);
+    ctx.undo.clear_matching(closed);
 }
 
 #[cfg(test)]

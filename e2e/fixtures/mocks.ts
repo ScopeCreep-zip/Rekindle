@@ -1,6 +1,18 @@
 import type { Page } from "@playwright/test";
 
 /**
+ * The Tauri commands that are Host calls (`src-tauri/src/shell_commands.rs`
+ * `HOST_CALLS`): they answer `Done<T>` (`{ value, undo }`), which the mocks
+ * build from a handler's plain value.
+ */
+const HOST_CALLS = [
+  "create_identity", "login", "get_identity", "logout", "list_identities",
+  "delete_identity", "audit_verify", "audit_export", "lifecycle_current",
+  "intent_commit", "intent_cancel", "undo", "set_status", "set_status_message",
+  "set_nickname", "set_avatar", "get_avatar", "get_game_status", "open_external_url",
+];
+
+/**
  * Set up Tauri IPC mocks in the browser page context.
  * Must be called after page.goto() since the mock functions are
  * injected by index.html when VITE_PLAYWRIGHT=true.
@@ -22,7 +34,7 @@ export async function setupMocks(
   // may not exist yet when `goto` resolves.
   await page.waitForFunction(() => typeof (window as any).__mockIPC === "function");
   await page.evaluate(
-    ({ label, handler, cmdOverrides }) => {
+    ({ label, handler, cmdOverrides, hostCalls }) => {
       // Mock window labels so getCurrent() works
       (window as any).__mockWindows(label, "buddy-list", "login");
 
@@ -30,17 +42,20 @@ export async function setupMocks(
       const handlerFn = new Function("cmd", "args", handler);
       (window as any).__mockIPC(
         (cmd: string, args: Record<string, unknown>) => {
-          if (
-            cmdOverrides &&
-            Object.prototype.hasOwnProperty.call(cmdOverrides, cmd)
-          ) {
-            return cmdOverrides[cmd];
-          }
-          return handlerFn(cmd, args);
+          const value =
+            cmdOverrides && Object.prototype.hasOwnProperty.call(cmdOverrides, cmd)
+              ? cmdOverrides[cmd]
+              : handlerFn(cmd, args);
+          return hostCalls.includes(cmd) ? { value, undo: null } : value;
         },
       );
     },
-    { label: windowLabel, handler: ipcHandler, cmdOverrides: overrides ?? null },
+    {
+      label: windowLabel,
+      handler: ipcHandler,
+      cmdOverrides: overrides ?? null,
+      hostCalls: HOST_CALLS,
+    },
   );
 }
 
@@ -58,7 +73,7 @@ export async function setupMocks(
  */
 export async function preloadMocks(page: Page, windowLabel: string, ipcHandler: string) {
   await page.addInitScript(
-    ({ label, handler }) => {
+    ({ label, handler, hostCalls }) => {
       const w = window as any;
       const handlerFn = new Function("cmd", "args", handler);
       const callbacks = new Map<number, (data: unknown) => void>();
@@ -69,8 +84,8 @@ export async function preloadMocks(page: Page, windowLabel: string, ipcHandler: 
         },
         invoke: async (cmd: string, args: Record<string, unknown>) => {
           (w.__ipcCalls ??= []).push({ cmd, args });
-          if (cmd === "lifecycle_current") return "locked";
-          return handlerFn(cmd, args);
+          const value = cmd === "lifecycle_current" ? "locked" : await handlerFn(cmd, args);
+          return hostCalls.includes(cmd) ? { value, undo: null } : value;
         },
         transformCallback: (cb: (data: unknown) => void) => {
           const id = window.crypto.getRandomValues(new Uint32Array(1))[0];
@@ -85,7 +100,7 @@ export async function preloadMocks(page: Page, windowLabel: string, ipcHandler: 
         unregisterListener: (_event: string, id: number) => callbacks.delete(id),
       };
     },
-    { label: windowLabel, handler: ipcHandler },
+    { label: windowLabel, handler: ipcHandler, hostCalls: HOST_CALLS },
   );
 }
 
@@ -104,6 +119,25 @@ export const LOGIN_SUCCESS_HANDLER = `
   switch (cmd) {
     case "list_identities":
       return [{ publicKey: "abc123def456", displayName: "TestUser", createdAt: 1000 }];
+    case "delete_identity":
+      // Protected: the Host holds it for the identity's passphrase.
+      throw {
+        type: "intentRequired",
+        data: {
+          intentId: "01900000-0000-7000-8000-000000000001",
+          kind: "deleteIdentity",
+          class: "protected",
+          subject: { ownIdentity: { name: "TestUser" } },
+          facts: [],
+          escalations: [],
+          reversibility: "never",
+          notifies: "nobody",
+          proof: "passphrase",
+          expiresAtMs: Date.now() + 60000,
+        },
+      };
+    case "intent_commit":
+      return { deleted: args.intentId };
     case "login":
       return { publicKey: "abc123def456", displayName: "TestUser" };
     case "create_identity":

@@ -103,6 +103,13 @@ pub(super) fn handle_game_server_payload(
 
     match payload {
         ControlPayload::GameServerAdded { server } => {
+            // A launcher substitutes this address into a URI the OS opens:
+            // an entry whose address is not `host:port` is dropped on
+            // ingest (plan E1.1).
+            if let Err(e) = rekindle_types::game_server::ServerAddress::parse(&server.address) {
+                tracing::warn!(community = %community_id, error = %e, "game server entry dropped");
+                return;
+            }
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
             let cid = community_id.to_string();
             let persisted = server.clone();

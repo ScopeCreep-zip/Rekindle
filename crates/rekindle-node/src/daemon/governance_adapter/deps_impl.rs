@@ -46,7 +46,7 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
     }
 
     fn identity_status(&self) -> UserStatusKind {
-        Self::identity_status_impl()
+        self.identity_status_impl()
     }
 
     fn our_route_blob(&self) -> Vec<u8> {

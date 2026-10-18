@@ -93,7 +93,9 @@ impl IpcRequest {
     pub fn agent_capability(&self) -> Option<AgentCapability> {
         use AgentCapability as C;
         match self {
-            Self::IdentityShow => Some(C::IdentityRead),
+            Self::IdentityShow | Self::PresenceGet | Self::AvatarGet { .. } => {
+                Some(C::IdentityRead)
+            }
             Self::NetworkStatus | Self::NetworkPeers => Some(C::NetworkRead),
             Self::Subscribe { .. } | Self::Unsubscribe { .. } => Some(C::EventsRead),
             Self::FriendList | Self::FriendRequests => Some(C::FriendsRead),
@@ -131,9 +133,10 @@ impl IpcRequest {
             Self::ChannelSend { .. } => Some(C::ChatWrite),
             Self::DmInbox { .. } => Some(C::ImHistory),
             Self::DmSend { .. } | Self::DmTyping { .. } => Some(C::ImWrite),
-            Self::PresenceSet { .. } | Self::GamePresenceSet { .. } | Self::GamePresenceClear => {
-                Some(C::PresenceWrite)
-            }
+            Self::PresenceSet { .. }
+            | Self::PresenceSetMessage { .. }
+            | Self::GamePresenceSet { .. }
+            | Self::GamePresenceClear => Some(C::PresenceWrite),
             Self::VoiceJoin { .. } | Self::VoiceLeave => Some(C::VoiceWrite),
             Self::Unlock { .. }
             | Self::Lock
@@ -151,10 +154,19 @@ impl IpcRequest {
             // caller's capability check when it was selected.
             | Self::IntentCommit { .. }
             | Self::IntentCancel { .. }
+            // An undo's inverse passes this check on its own at the gate.
+            | Self::Undo { .. }
             | Self::MekList { .. }
             | Self::MekRotate { .. }
             | Self::MekRequest { .. }
             | Self::PrekeyReplenish
+            // Our name, our picture, the audit log and the system browser
+            // are the user's own, never an agent's.
+            | Self::ProfileSetNickname { .. }
+            | Self::ProfileSetAvatar { .. }
+            | Self::AuditVerify
+            | Self::AuditExport { .. }
+            | Self::LinkOpen { .. }
             | Self::CommunityTransferOwnership { .. }
             | Self::AgentRegister { .. }
             | Self::AgentRevoke { .. }

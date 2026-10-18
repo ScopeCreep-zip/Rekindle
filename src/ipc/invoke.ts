@@ -6,9 +6,17 @@
  *
  * Window navigation commands (show_buddy_list, etc.) trigger browser
  * navigation in E2E mode since there's no Tauri window manager.
+ *
+ * `hostInvoke` is the wrapper for Host-call commands (plan E1.1): they
+ * answer `Done<T>` or reject with a `CommandError`. A review the Host holds
+ * is rendered by the registered intent presenter (the router root's
+ * `IntentDialog`) and the call resolves with its commit; an undo offer is
+ * shown by the registered undo presenter (a toast with Undo).
  */
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type { CommandError, Done, IntentReview, UndoOffer } from "./commands/dto";
+import { isCommandError } from "./commands/dto";
 
 const E2E_SERVER = "http://127.0.0.1:3001";
 
@@ -33,6 +41,53 @@ export async function invoke<T>(
   return tauriInvoke<T>(cmd, args);
 }
 
+/** Renders a held action and resolves with its commit's `Done`, or rejects
+ *  (cancelled, expired). Registered by `stores/intent.store.ts`. */
+type IntentPresenter = (review: IntentReview) => Promise<Done<unknown>>;
+/** Shows an undo offer. Registered by `stores/intent.store.ts`. */
+type UndoPresenter = (offer: UndoOffer) => void;
+
+let intentPresenter: IntentPresenter | null = null;
+let undoPresenter: UndoPresenter | null = null;
+
+export function registerIntentPresenter(presenter: IntentPresenter): void {
+  intentPresenter = presenter;
+}
+
+export function registerUndoPresenter(presenter: UndoPresenter): void {
+  undoPresenter = presenter;
+}
+
+/**
+ * Call a Host-call command: its value, after the review it needed (if
+ * any) was committed. Rejects with the `CommandError` the Host answered,
+ * or a cancelled one.
+ */
+export async function hostInvoke<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  let done: Done<T>;
+  try {
+    done = await invoke<Done<T>>(cmd, args);
+  } catch (e) {
+    if (!isCommandError(e) || e.type !== "intentRequired") throw e;
+    if (intentPresenter === null) {
+      throw e;
+    }
+    done = (await intentPresenter(e.data)) as Done<T>;
+  }
+  if (done.undo !== null && undoPresenter !== null) {
+    undoPresenter(done.undo);
+  }
+  return done.value;
+}
+
+/** The error a cancelled review rejects its call with. */
+export function cancelledError(): CommandError {
+  return { type: "failed", data: { code: 499, message: "Cancelled", remediation: null } };
+}
+
 async function invokeViaHttp<T>(
   cmd: string,
   args?: Record<string, unknown>,
@@ -46,7 +101,11 @@ async function invokeViaHttp<T>(
   const body = await res.json();
 
   if (!res.ok) {
-    throw new Error(body.error || `Command ${cmd} failed`);
+    // The same `CommandError` object the Tauri path rejects with.
+    throw body.error ?? {
+      type: "failed",
+      data: { code: res.status, message: `Command ${cmd} failed`, remediation: null },
+    };
   }
 
   // Navigate for window commands in E2E mode
@@ -54,5 +113,7 @@ async function invokeViaHttp<T>(
     window.location.href = E2E_NAVIGATIONS[cmd];
   }
 
-  return body.result as T;
+  // A Host call answers `{ result, undo }`: the `Done` the Tauri path
+  // resolves with.
+  return ("undo" in body ? { value: body.result, undo: body.undo } : body.result) as T;
 }

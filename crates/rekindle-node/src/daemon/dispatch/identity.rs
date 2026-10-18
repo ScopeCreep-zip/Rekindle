@@ -1,6 +1,6 @@
 //! Identity dispatch handlers: Create, List, Show, Export, Import, Rotate,
 //! Delete, Wipe. Every identity's storage is `host::identity`'s (plan D1);
-//! these handlers add the daemon's lifecycle and the DHT ceremony.
+//! these handlers add the lifecycle (`host::unlock`).
 
 use base64::Engine as _;
 use zeroize::Zeroize;
@@ -10,11 +10,14 @@ use rekindle_transport::operations::identity;
 use crate::daemon::DaemonState;
 use crate::host::identity as host_identity;
 use crate::host::identity::IdentityError;
+use crate::host::shell_hooks::EndReason;
 use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::Caller;
+use rekindle_types::dto::identity::{IdentityShown, IdentitySummary};
 
 use crate::daemon::shutdown::ExitReason;
 
-use super::{state_error, store_error, teardown_unlocked, transition, DaemonContext};
+use super::{state_error, transition, DaemonContext};
 
 /// An identity failure as the IPC caller sees it: 404 unknown, 401 wrong
 /// passphrase, 429 locked out (with the wait), 409 already here, 400 a
@@ -26,7 +29,7 @@ pub(crate) fn identity_error(e: &IdentityError) -> IpcResponse {
             "no such identity on this device",
             "list them with `rekindle identity list`",
         ),
-        IdentityError::WrongPassphrase => IpcResponse::error(401, "wrong passphrase"),
+        IdentityError::WrongPassphrase => IpcResponse::error(401, "Wrong passphrase"),
         IdentityError::Locked { retry_after_ms } => IpcResponse::error(
             429,
             format!(
@@ -41,28 +44,26 @@ pub(crate) fn identity_error(e: &IdentityError) -> IpcResponse {
 }
 
 /// Handle IdentityCreate: the identity's vault and database
-/// (`host::identity::create`), then its DHT records, published with the
-/// new identity's own prekey bundle. The daemon stays locked; `Unlock`
-/// opens the identity. A failure removes everything the creation wrote.
+/// (`host::identity::create`), then the one unlock pipeline
+/// (`host::unlock::run`), whose own-records stage creates its DHT records
+/// once the network has a route. No transport is needed: an identity made
+/// offline publishes when the network comes. A failure before the unlock
+/// removes everything the creation wrote.
 pub(crate) async fn handle_create(
     ctx: &DaemonContext,
     state: DaemonState,
-    display_name: &str,
+    caller: &Caller,
+    display_name: Option<&str>,
     passphrase: &str,
 ) -> IpcResponse {
     if state != DaemonState::Locked {
         return state_error(state, "identity creation (lock first)");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let display_name = display_name.trim().to_owned();
-    let stores = ctx.identity_stores();
+    let display_name = display_name.map(str::trim);
     let created = match host_identity::create(
         &ctx.root,
-        &stores,
-        Some(&display_name),
+        &ctx.identity_stores(),
+        display_name,
         passphrase,
         ctx.clock.now_ms_i64(),
     )
@@ -71,117 +72,39 @@ pub(crate) async fn handle_create(
         Ok(c) => c,
         Err(e) => return identity_error(&e),
     };
-    let public_key = created.public_key.clone();
-    let published = publish_new_identity(ctx, &transport, &created).await;
-    drop(created);
-    host_identity::lock(&stores).await;
-    match published {
-        Ok(records) => IpcResponse::ok(&serde_json::json!({
-            "status": "created",
-            "public_key": public_key,
-            "display_name": display_name,
-            "profile_dht_key": records.profile_dht_key,
-            "mailbox_dht_key": records.mailbox_dht_key,
-            "friend_list_dht_key": records.friend_list_dht_key,
-        })),
-        Err(failed) => {
-            if let Err(e) = host_identity::remove(&ctx.root, &public_key) {
-                tracing::warn!(error = %e, "a failed identity creation left files behind");
-            }
-            failed
-        }
-    }
+    crate::host::unlock::run(ctx, caller, created, true).await
 }
 
-/// The creation ceremony's records, written to the new identity's stores:
-/// owner keypairs into the vault first, then the record keys.
-async fn publish_new_identity(
-    ctx: &DaemonContext,
-    transport: &rekindle_transport::TransportNode,
-    created: &host_identity::Unlocked,
-) -> Result<identity::IdentityCreated, IpcResponse> {
-    let bundle = created
-        .signal
-        .current_bundle()
-        .map_err(|e| store_error("prekey bundle", e))?
-        .to_wire();
-    // The ceremony creates our records in a record pool of its own, ended
-    // with it: they are re-opened by the unlock that follows (plan C7.4).
-    transport
-        .start_records()
-        .map_err(|e| IpcResponse::error(503, format!("record pool: {e}")))?;
-    let ceremony = identity::create_identity(
-        transport,
-        &created.secret,
-        &created.display_name,
-        "Hello from Rekindle!",
-        &bundle,
-    )
-    .await;
-    transport.end_records();
-    let records =
-        ceremony.map_err(|e| IpcResponse::error(500, format!("identity creation failed: {e}")))?;
-
-    {
-        use rekindle_vault::typed::owner_keys::{persist_owner_keypair, OwnerKey};
-        let guard = ctx.vault.lock();
-        let vault = guard
-            .as_ref()
-            .ok_or_else(|| IpcResponse::error(500, "the new identity's vault closed"))?;
-        persist_owner_keypair(vault, OwnerKey::Profile, &records.profile_owner_keypair)
-            .and_then(|()| {
-                persist_owner_keypair(
-                    vault,
-                    OwnerKey::FriendList,
-                    &records.friend_list_owner_keypair,
-                )
-            })
-            .map_err(|e| store_error("owner keypairs", e))?;
-    }
-    let db = ctx.require_db()?;
-    let pk = created.public_key.clone();
-    let (profile, friend_list, mailbox, inbox, inbox_keypair) = (
-        records.profile_dht_key.clone(),
-        records.friend_list_dht_key.clone(),
-        records.mailbox_dht_key.clone(),
-        records.friend_inbox_key.clone(),
-        records.friend_inbox_keypair_hex.clone(),
-    );
-    db.call(move |conn| {
-        use rekindle_db::repo::identity::{
-            set_friend_inbox, set_mailbox_key, set_owned_record, OwnedRecord,
-        };
-        set_owned_record(conn, &pk, OwnedRecord::Profile, &profile)?;
-        set_owned_record(conn, &pk, OwnedRecord::FriendList, &friend_list)?;
-        set_mailbox_key(conn, &pk, &mailbox)?;
-        set_friend_inbox(conn, &pk, &inbox, &inbox_keypair)
-    })
-    .await
-    .map_err(|e| store_error("record keys", e))?;
-    Ok(records)
-}
-
-/// Handle IdentityList: the registry, in any state (it holds no secret).
+/// Handle IdentityList: the registry, oldest first, in any state (it holds
+/// no secret).
 pub(crate) fn handle_list(ctx: &DaemonContext) -> IpcResponse {
     match host_identity::list(&ctx.root) {
-        Ok(entries) => IpcResponse::ok(&serde_json::json!({ "identities": entries })),
+        Ok(entries) => IpcResponse::ok(
+            &entries
+                .into_iter()
+                .map(|entry| IdentitySummary {
+                    public_key: entry.public_key,
+                    display_name: entry.display_name,
+                    created_at: entry.created_at,
+                })
+                .collect::<Vec<_>>(),
+        ),
         Err(e) => identity_error(&e),
     }
 }
 
-/// Handle IdentityShow — the unlocked identity's public data.
-pub(crate) fn handle_show(ctx: &DaemonContext, _state: DaemonState) -> IpcResponse {
-    ctx.require_session(|session| {
-        IpcResponse::ok(&serde_json::json!({
-            "public_key": session.identity.public_key_hex,
-            "display_name": session.identity.display_name,
-            "profile_dht_key": session.identity.profile_dht_key,
-            "mailbox_dht_key": session.identity.mailbox_dht_key,
-            "friend_list_dht_key": session.identity.friend_list_dht_key,
-            "communities": session.communities.len(),
-        }))
-    })
-    .unwrap_or_else(|e| e)
+/// Handle IdentityShow — the unlocked identity's public data, `None` while
+/// locked.
+pub(crate) fn handle_show(ctx: &DaemonContext) -> IpcResponse {
+    let shown = ctx.session.read().as_ref().map(|session| IdentityShown {
+        public_key: session.identity.public_key_hex.clone(),
+        display_name: session.identity.display_name.clone(),
+        profile_dht_key: session.identity.profile_dht_key.clone(),
+        mailbox_dht_key: session.identity.mailbox_dht_key.clone(),
+        friend_list_dht_key: session.identity.friend_list_dht_key.clone(),
+        communities: session.communities.len(),
+    });
+    IpcResponse::ok(&shown)
 }
 
 /// Handle IdentityExport — the unlocked identity's archive (base64), after
@@ -280,7 +203,7 @@ pub(crate) async fn handle_rotate(
         Ok(r) => r,
         Err(e) => return IpcResponse::error(500, format!("identity rotation failed: {e}")),
     };
-    if let Err(refused) = release_unlock(ctx).await {
+    if let Err(refused) = release_unlock(ctx, EndReason::Logout).await {
         result.new_signing_key_bytes.zeroize();
         return refused;
     }
@@ -324,7 +247,7 @@ pub(crate) async fn handle_delete(
     if unlocked {
         // Ending the unlock ends the session's records: the pool hands them
         // to the node's closer (plan C7.6i, C7.7e).
-        if let Err(refused) = release_unlock(ctx).await {
+        if let Err(refused) = release_unlock(ctx, EndReason::Deleted).await {
             return refused;
         }
     }
@@ -342,7 +265,7 @@ pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcR
         return state_error(state, "wipe");
     }
     if state.can_write() {
-        if let Err(refused) = release_unlock(ctx).await {
+        if let Err(refused) = release_unlock(ctx, EndReason::Deleted).await {
             return refused;
         }
     }
@@ -363,8 +286,8 @@ pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcR
 }
 
 /// Operational → Locking → Locked, releasing everything the unlock created.
-async fn release_unlock(ctx: &DaemonContext) -> Result<(), IpcResponse> {
+async fn release_unlock(ctx: &DaemonContext, reason: EndReason) -> Result<(), IpcResponse> {
     transition(ctx, DaemonState::Locking)?;
-    teardown_unlocked(ctx).await;
+    crate::host::unlock::teardown(ctx, reason).await;
     transition(ctx, DaemonState::Locked)
 }

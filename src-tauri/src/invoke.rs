@@ -24,6 +24,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         #[cfg(debug_assertions)]
         commands::auth::dev_disable_watch,
         commands::event::subscribe_events,
+        // the intent gate
+        commands::intent::intent_commit,
+        commands::intent::intent_cancel,
+        commands::intent::undo,
         // chat
         commands::chat::prepare_chat_session,
         commands::chat::send_message,

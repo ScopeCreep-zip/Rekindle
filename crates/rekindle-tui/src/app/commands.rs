@@ -76,24 +76,28 @@ impl App {
 
             // Identity (for dashboard identity panel)
             if let Ok(value) = client.request_ok(IpcRequest::IdentityShow).await {
-                let public_key = value
-                    .get("public_key")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let display_name = value
-                    .get("display_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if !public_key.is_empty() {
+                if let Ok(Some(shown)) = serde_json::from_value::<
+                    Option<rekindle_types::dto::identity::IdentityShown>,
+                >(value)
+                {
                     let _ = tx.send(Action::CommandComplete(Box::new(
                         CommandResult::IdentityLoaded {
-                            public_key,
-                            display_name,
+                            public_key: shown.public_key,
+                            display_name: shown.display_name,
                         },
                     )));
                 }
+            }
+
+            // Our own presence (plan E1.2), live after this from `SelfChanged`.
+            if let Ok(Ok(view)) = client
+                .request_ok(IpcRequest::PresenceGet)
+                .await
+                .map(serde_json::from_value::<rekindle_types::dto::presence::OwnPresenceView>)
+            {
+                let _ = tx.send(Action::CommandComplete(Box::new(
+                    CommandResult::OwnPresenceLoaded { view },
+                )));
             }
 
             // Friend list (for dashboard friends panel)

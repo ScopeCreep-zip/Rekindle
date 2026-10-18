@@ -70,8 +70,9 @@ impl FriendshipHandle {
 
     /// Drop the direct-trigger sender and clear the watch trigger's
     /// sender + dev-disable deadline, so triggers fired while logged out
-    /// reach no coordinator. Called by `logout_cleanup`; the coordinator
-    /// task itself already stopped with the login scope.
+    /// reach no coordinator. Called when the session ends
+    /// (`shell_session::ended`); the coordinator task itself already
+    /// stopped with the unlock scope.
     pub fn clear(&self) {
         *self.direct_tx.lock() = None;
         self.watch_trigger.clear();

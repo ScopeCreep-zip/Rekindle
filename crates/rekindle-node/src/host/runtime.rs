@@ -3,11 +3,11 @@
 //! [`claim`] takes the data root's `NodeLock` and runs the layout check;
 //! [`Host::start`] builds the `DaemonContext` over the identity stores the
 //! caller shares with it, takes the transport ([`TransportSource`]) and, when
-//! asked, serves the IPC bus. `rekindled` starts its own node and runs every
-//! domain task ([`HostMode::Daemon`]); the GUI hands over its outbound-only
-//! node and keeps its login pipeline, which owns the identity lifecycle and
-//! the domain tasks until each Phase E port moves its stage into the host
-//! ([`HostMode::Shell`]).
+//! asked, serves the IPC bus. Both run the one unlock pipeline
+//! (`host::unlock`). `rekindled` starts its own node and runs every domain
+//! task ([`HostMode::Daemon`]); the GUI hands over its outbound-only node and
+//! runs the stages not yet ported through its `ShellHooks`, until each
+//! Phase E port moves its stage into the host ([`HostMode::Shell`]).
 
 use std::sync::Arc;
 
@@ -71,6 +71,9 @@ pub struct HostStores {
     pub audit_chain: Arc<super::audit::ChainSlot>,
     /// The unlocked identity's session projection (`host::session`).
     pub session: Arc<RwLock<Option<Session>>>,
+    /// The one lifecycle FSM (plan E1.1): the Host makes every identity
+    /// transition on it, and the GUI's login button reads it.
+    pub lifecycle: Arc<DaemonLifecycle>,
 }
 
 impl Default for HostStores {
@@ -81,6 +84,7 @@ impl Default for HostStores {
             attempts: Arc::new(AttemptLimiter::default()),
             audit_chain: Arc::new(super::audit::ChainSlot::new(None)),
             session: Arc::new(RwLock::new(None)),
+            lifecycle: Arc::new(DaemonLifecycle::new()),
         }
     }
 }
@@ -111,8 +115,8 @@ pub enum TransportSource {
 pub enum HostMode {
     /// `rekindled`: the host started the node and runs every domain task.
     Daemon,
-    /// The GUI: the host serves requests over the GUI's adopted node; the
-    /// GUI's login pipeline owns the identity lifecycle and the domain tasks.
+    /// The GUI: the host runs the identity lifecycle over the GUI's adopted
+    /// node and calls its `ShellHooks` for the stages the GUI still runs.
     Shell,
 }
 
@@ -129,6 +133,9 @@ pub struct HostConfig {
     /// The generator the host and its engines mint ids, keys and jitter
     /// from (plan C9.2): `OsRandom`, or the simulator's seeded one.
     pub rng: Arc<dyn rekindle_utils::RandomSource>,
+    /// The GUI's side of an unlock (`ShellHooks`); `None` for `rekindled`,
+    /// the E2E server and the simulator.
+    pub shell: Option<Arc<dyn super::shell_hooks::ShellHooks>>,
 }
 
 /// The bus this host serves, and its own subscriber connection.
@@ -164,12 +171,16 @@ impl Host {
             serve_bus,
             clock,
             rng,
+            shell,
         } = config;
         let root = claimed.root().clone();
         let veilid_dir = root.create_veilid_dir()?;
 
-        let lifecycle = Arc::new(DaemonLifecycle::new());
-        lifecycle.transition(DaemonState::Starting)?;
+        // The shared FSM: the GUI may have moved it to Starting already.
+        let lifecycle = Arc::clone(&stores.lifecycle);
+        if lifecycle.state() == DaemonState::Stopped {
+            lifecycle.transition(DaemonState::Starting)?;
+        }
 
         // Admin policy, from the same loader `PolicyReload` uses. A policy
         // file that exists but does not parse stops startup: running
@@ -249,12 +260,14 @@ impl Host {
 
         let keepalive = watchdog::keepalive_interval();
         let (event_watch_tx, _) = tokio::sync::watch::channel(None);
+        let (unlock_panics, unlock_panics_rx) = tokio::sync::mpsc::unbounded_channel();
+        let journal = Arc::new(rekindle_events::SessionJournal::default());
         let ctx = Arc::new(DaemonContext {
             mode,
             community_runtime: Arc::new(
                 crate::daemon::community_runtime::CommunityRuntimeMap::new(),
             ),
-            transport: RwLock::new(node),
+            transport: RwLock::new(node.clone()),
             session: Arc::clone(&stores.session),
             root: root.clone(),
             db: Arc::clone(&stores.db),
@@ -278,10 +291,11 @@ impl Host {
                 keepalive.map_or(crate::daemon::heartbeat::DEFAULT_TICK, |ping| ping / 2),
             ),
             shutdown: Arc::new(crate::daemon::shutdown::Shutdown::new()),
-            journal: Arc::new(rekindle_events::SessionJournal::default()),
-            clock,
+            journal: Arc::clone(&journal),
+            clock: Arc::clone(&clock),
             rng,
             intents: Arc::new(super::gate::HostGate::new(Arc::clone(&stores.attempts))),
+            undo: super::undo::UndoCache::default(),
             event_watch_tx,
             pending_joins,
             gossip_tx,
@@ -289,8 +303,14 @@ impl Host {
             unlock_scope: RwLock::new(None),
             community_scopes: parking_lot::Mutex::new(std::collections::HashMap::new()),
             presence_start_tx,
-            status: Arc::new(RwLock::new(rekindle_presence::UserStatusKind::Online)),
-            status_wake: Arc::new(tokio::sync::Notify::new()),
+            own_presence: super::own_presence::OwnPresence::new(
+                Arc::clone(&stores.session),
+                node.clone(),
+                Arc::clone(&journal),
+                Arc::clone(&clock),
+            ),
+            shell,
+            unlock_panics,
         });
 
         // The domain workers each own an `Arc<DaemonContext>`. In the shell
@@ -314,6 +334,12 @@ impl Host {
                 &ctx,
             )));
             workers.spawn(crate::daemon::event_forward::run_consumer(Arc::clone(&ctx)));
+        } else {
+            // A panicked unlock task ends the session (`host::unlock`).
+            workers.spawn(super::unlock::run_panic_teardowns(
+                Arc::clone(&ctx),
+                unlock_panics_rx,
+            ));
         }
 
         let bus = if serve_bus {
@@ -366,60 +392,25 @@ impl Host {
         &self.ctx.root
     }
 
+    /// The unlock's scope while an identity is unlocked: the shell's
+    /// unported stages run in it (`ShellHooks::unlocked`), and its other
+    /// session work spawns there too, so a lock stops all of it.
+    #[must_use]
+    pub fn unlock_scope(&self) -> Option<Arc<rekindle_lifecycle::SessionScope>> {
+        self.ctx.unlock_scope.read().clone()
+    }
+
+    /// The shell's profile rotation (a block, → the E2 friend port) moved
+    /// our profile to a new record and named it in the session projection:
+    /// have our status written there now.
+    pub fn own_profile_moved(&self) {
+        self.ctx.own_presence.republish();
+    }
+
     /// The host's identity slots, for `host::identity`.
     #[must_use]
     pub fn identity_stores(&self) -> super::identity::Stores<'_> {
         self.ctx.identity_stores()
-    }
-
-    /// The shell's login: install the identity `host::identity::{create,
-    /// unlock}` opened into the host's stores (Locked → Resuming →
-    /// Operational), so a bus client sees the same identity.
-    ///
-    /// # Errors
-    /// The lifecycle refuses (an identity is already installed), or the
-    /// session projection cannot be loaded (nothing stays installed).
-    pub async fn install(
-        &self,
-        unlocked: super::identity::Unlocked,
-    ) -> Result<super::unlocked::Installed, String> {
-        self.ctx
-            .lifecycle
-            .transition(DaemonState::Resuming)
-            .map_err(|e| e.to_string())?;
-        match super::unlocked::install(&self.ctx, unlocked).await {
-            Ok(installed) => {
-                self.ctx
-                    .lifecycle
-                    .transition(DaemonState::Operational)
-                    .map_err(|e| e.to_string())?;
-                Ok(installed)
-            }
-            Err(e) => {
-                settle(&self.ctx.lifecycle, DaemonState::Locked);
-                Err(e)
-            }
-        }
-    }
-
-    /// The shell's logout: take the identity out of the host (its clients
-    /// lose their clearance, so an attached TUI is locked with the window).
-    /// Nothing happens while nothing is installed.
-    pub async fn release_identity(&self) {
-        match self.ctx.lifecycle.state() {
-            DaemonState::Operational => settle(&self.ctx.lifecycle, DaemonState::Locking),
-            DaemonState::Locked | DaemonState::ShuttingDown | DaemonState::Stopped => {
-                // A failed install already took itself out.
-                if self.ctx.session.read().is_none() {
-                    return;
-                }
-            }
-            _ => {}
-        }
-        super::unlocked::release(&self.ctx).await;
-        if self.ctx.lifecycle.state() == DaemonState::Locking {
-            settle(&self.ctx.lifecycle, DaemonState::Locked);
-        }
     }
 
     /// Wait until the daemon is asked to stop: a stop signal, an IPC
@@ -467,7 +458,9 @@ impl Host {
         } else {
             settle(&self.ctx.lifecycle, DaemonState::ShuttingDown);
         }
-        crate::daemon::dispatch::teardown_unlocked(&self.ctx).await;
+        if self.ctx.session.read().is_some() || self.ctx.unlock_scope.read().is_some() {
+            super::unlock::teardown(&self.ctx, super::shell_hooks::EndReason::Exit).await;
+        }
         self.workers.close();
         if tokio::time::timeout(WORKER_STOP_DEADLINE, self.workers.wait())
             .await

@@ -191,7 +191,9 @@ impl SubscriptionEvent {
                 PresenceEvent::CommunityMemberChanged { community, .. } => Some(community),
                 // Neither is community-scoped: a DM peer's presence and
                 // our own belong to the device, not to one community.
-                PresenceEvent::FriendChanged { .. } | PresenceEvent::SelfChanged { .. } => None,
+                PresenceEvent::FriendChanged { .. }
+                | PresenceEvent::SelfChanged { .. }
+                | PresenceEvent::SelfProfileChanged { .. } => None,
             },
             Self::Membership(e) => Some(match e {
                 MembershipEvent::JoinRequested { community, .. }

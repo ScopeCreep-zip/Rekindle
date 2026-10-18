@@ -171,28 +171,32 @@ fn handle_route_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value:
     }
 }
 
+/// A friend's profile subkey 4: the schema's packed Cap'n Proto
+/// `GameStatus` (`schemas/presence.capnp`), empty when no game (plan
+/// E1.1). A server address that is not a valid `host:port` is dropped on
+/// ingest, so no peer can hand our launcher a URI of its making.
 fn parse_game_info(data: &[u8]) -> Option<GameInfoSnapshot> {
     if data.is_empty() {
         return None;
     }
-    // Same provisional shape as src-tauri's `parse_game_info`: try a
-    // direct JSON deserialization against the on-wire game-info
-    // record. The capnp-encoded path lands when the rest of the
-    // game-presence pipeline moves to a stricter wire format.
-    #[derive(serde::Deserialize)]
-    struct WireGameInfo {
-        game_id: u32,
-        game_name: String,
-        elapsed_seconds: u32,
-        #[serde(default)]
-        server_address: Option<String>,
-    }
-    let parsed: WireGameInfo = serde_json::from_slice(data).ok()?;
+    let game = match rekindle_codec::capnp_codec::message::decode_game_info(data) {
+        Ok(game) => game,
+        Err(e) => {
+            tracing::debug!(error = %e, "friend game info does not decode");
+            return None;
+        }
+    };
+    let server_address = game.server_address.and_then(|text| {
+        rekindle_types::game_server::ServerAddress::parse(&text)
+            .map_err(|e| tracing::debug!(error = %e, "friend game server address dropped"))
+            .ok()
+            .map(String::from)
+    });
     Some(GameInfoSnapshot {
-        game_id: parsed.game_id,
-        game_name: parsed.game_name,
-        elapsed_seconds: parsed.elapsed_seconds,
-        server_address: parsed.server_address,
+        game_id: game.game_id,
+        game_name: game.game_name,
+        elapsed_seconds: game.elapsed_seconds,
+        server_address,
     })
 }
 
@@ -307,5 +311,35 @@ mod tests {
         assert_eq!(status_to_wire_byte(UserStatusKind::Busy), 2);
         assert_eq!(status_to_wire_byte(UserStatusKind::Offline), 3);
         assert_eq!(status_to_wire_byte(UserStatusKind::Invisible), 3);
+    }
+
+    /// Subkey 4 is the capnp `GameStatus`; an address that is not
+    /// `host:port` is dropped, the game kept; empty is no game.
+    #[test]
+    fn game_info_decodes_the_capnp_game_status() {
+        use rekindle_codec::capnp_codec::message::encode_game_info;
+        use rekindle_codec::message::envelope::GameInfo;
+        let game = |server_address: &str| GameInfo {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            server_info: None,
+            elapsed_seconds: 90,
+            server_address: Some(server_address.into()),
+        };
+        let parsed = parse_game_info(&encode_game_info(&game("1.2.3.4:27015"))).unwrap();
+        assert_eq!(parsed.game_id, 4181);
+        assert_eq!(parsed.game_name, "Counter-Strike 2");
+        assert_eq!(parsed.elapsed_seconds, 90);
+        assert_eq!(parsed.server_address.as_deref(), Some("1.2.3.4:27015"));
+
+        let hostile = parse_game_info(&encode_game_info(&game("1.2.3.4:27015 +exec x"))).unwrap();
+        assert_eq!(hostile.server_address, None);
+        assert_eq!(hostile.game_name, "Counter-Strike 2");
+
+        assert!(parse_game_info(&[]).is_none());
+        assert!(
+            parse_game_info(br#"{"game_id":1}"#).is_none(),
+            "JSON is not the wire"
+        );
     }
 }

@@ -15,6 +15,9 @@ pub enum IpcResponse {
     Ok {
         data: serde_json::Value,
         reversibility: Option<rekindle_types::intent::Reversibility>,
+        /// How to take this action back while the offer lasts (plan E1.1):
+        /// `IpcRequest::Undo { id }` runs the inverse the host stored.
+        undo: Option<rekindle_types::intent::UndoOffer>,
     },
     /// The request is held by the host's intent gate (plan D3.3, ADR 0019):
     /// render this review and commit it with the proof it asks for.
@@ -36,6 +39,7 @@ impl IpcResponse {
             std::result::Result::Ok(data) => Self::Ok {
                 data,
                 reversibility: None,
+                undo: None,
             },
             Err(e) => Self::Error {
                 code: 500,

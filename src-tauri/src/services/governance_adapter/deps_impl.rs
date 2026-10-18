@@ -16,7 +16,6 @@ use rekindle_governance_runtime::{
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use crate::state::UserStatus;
 use crate::state_helpers;
 
 use super::state_builder::insert_community_into_state;
@@ -47,13 +46,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn identity_status(&self) -> UserStatusKind {
-        match state_helpers::identity_status(&self.state).unwrap_or_default() {
-            UserStatus::Online => UserStatusKind::Online,
-            UserStatus::Away => UserStatusKind::Away,
-            UserStatus::Busy => UserStatusKind::Busy,
-            UserStatus::Offline => UserStatusKind::Offline,
-            UserStatus::Invisible => UserStatusKind::Invisible,
-        }
+        state_helpers::identity_status(&self.state).unwrap_or_default()
     }
 
     fn our_route_blob(&self) -> Vec<u8> {

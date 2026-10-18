@@ -1,61 +1,26 @@
 //! Phase 21 REDO — `FriendPresenceDeps` impl for `PresenceAdapter`.
 //!
-//! Owns the 20-method friend-presence surface (lookup, status
-//! mutations, DHT IO, profile publish, heartbeat). Community
+//! Owns the friend-presence surface (lookup, status mutations, DHT IO). Community
 //! presence lives in the sibling `community_deps.rs` module.
 
 use async_trait::async_trait;
 use rekindle_presence::{
     FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, PresenceError,
-    SetFriendStatusOutcome, StatusPublisherDeps, UserStatusKind,
+    SetFriendStatusOutcome, UserStatusKind,
 };
 use rekindle_records::lease::LeaseId;
 
-use crate::services::presence_adapter::mapping::{
-    from_crate_game_info, from_crate_status, map_event, to_crate_status,
-};
+use crate::services::presence_adapter::mapping::{from_crate_game_info, map_event};
 use crate::services::presence_adapter::PresenceAdapter;
 use crate::state::UserStatus;
 use crate::state_helpers;
 
 #[async_trait]
-impl StatusPublisherDeps for PresenceAdapter {
-    fn profile_dht_info(&self) -> Option<String> {
-        self.state.node.read().as_ref()?.profile_dht_key.clone()
-    }
-
-    async fn write_profile_status_subkey(
-        &self,
-        profile_key: &str,
-        payload: Vec<u8>,
-    ) -> Result<(), PresenceError> {
-        // Present-tense: a plain write, never re-pushed late (plan C7.7j).
-        let outcome = rekindle_protocol::dht::profile::set_own_profile_status(
-            &*self.record_pool()?,
-            profile_key,
-            payload,
-        )
-        .await
-        .map_err(|e| PresenceError::Dht(e.to_string()))?;
-        if outcome.missed() {
-            return Err(PresenceError::Dht(format!(
-                "status not stored ({outcome:?})"
-            )));
-        }
-        Ok(())
-    }
-
-    fn current_identity_status(&self) -> Option<UserStatusKind> {
-        state_helpers::identity_status(&self.state).map(to_crate_status)
-    }
-
+impl FriendPresenceDeps for PresenceAdapter {
     fn now_ms(&self) -> i64 {
         crate::db::timestamp_now()
     }
-}
 
-#[async_trait]
-impl FriendPresenceDeps for PresenceAdapter {
     fn friend_for_dht_key(&self, dht_key: &str) -> Option<String> {
         state_helpers::friend_for_dht_key(&self.state, dht_key)
     }
@@ -72,7 +37,7 @@ impl FriendPresenceDeps for PresenceAdapter {
         let mut friends = self.state.friends.write();
         if let Some(friend) = friends.get_mut(friend_key) {
             let was_offline = friend.status == UserStatus::Offline;
-            friend.status = from_crate_status(status);
+            friend.status = status;
             SetFriendStatusOutcome {
                 was_offline,
                 friend_existed: true,

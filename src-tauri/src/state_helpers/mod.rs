@@ -53,7 +53,7 @@ pub use governance::{
 pub use governance_persist::persist_governance_snapshot_to_sqlite;
 pub use identity::{
     current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,
-    owner_key_or_default, pseudonym_credentials, voice_self_identity,
+    owner_key_or_default, project_own, pseudonym_credentials, voice_self_identity,
 };
 pub use meks::{
     clear_meks, current_mek, forget_community_keys, install_mek, key_provider, text_scope, LiveMek,

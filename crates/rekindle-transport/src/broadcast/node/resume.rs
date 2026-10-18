@@ -1,6 +1,5 @@
-//! Session resume — reopens DHT records and republishes routes after
-//! login, restoring the operational state that `start()` alone doesn't
-//! establish.
+//! Community resume: the daemon re-borrows its communities' records after
+//! an unlock (plan C7.7c). The identity's own records are the Host's.
 
 use std::collections::HashMap;
 
@@ -8,101 +7,31 @@ use rekindle_records::lease::CommunityLeases;
 use tracing::{info, warn};
 
 use super::TransportNode;
-use crate::error::{Result, TransportError};
+use crate::error::Result;
 
 impl TransportNode {
-    /// Resume operational state from a persisted session.
+    /// Borrow every community's governance record (read-only) and registry
+    /// (writable with our slot keypair) from the session's pool, and return
+    /// those leases by governance key for the host to hold (plan C7.7c).
+    /// The identity's own records are the Host's own-records stage (plan
+    /// E1.1). Daemon-only until E3.1 ports community resume into the Host.
     ///
-    /// This is the Rekindle bootstrap — the complement to `start()` which
-    /// only bootstraps Veilid. Every time the node starts (CLI one-shot,
-    /// TUI launch, daemon restart), this method must be called with the
-    /// session loaded from disk. It:
-    ///
-    /// 1. Wants our routes (nothing is allocated while locked; plan C7.9d)
-    /// 2. Holds our profile, mailbox and friend list writable in the
-    ///    session's record pool, and publishes the personal route blob to
-    ///    the profile and mailbox if one is live; one that lands later is
-    ///    published by the route publisher
-    /// 3. Borrows every community's governance record (read-only) and
-    ///    registry (writable with our slot keypair) from the pool, and
-    ///    returns those leases by governance key for the host to hold
-    ///    (plan C7.7c)
-    ///
-    /// Without this, the node is a blank Veilid peer with no Rekindle
-    /// identity. DHT reads fail with "record not open", friend requests
-    /// fail with "no route allocated", and the TUI shows empty data.
+    /// Without this a resumed daemon's communities have no open records:
+    /// presence and leave writes would re-open them per call. A community
+    /// whose records do not open is logged and resumed without them.
     ///
     /// # Errors
-    /// One of our own records could not be opened writable (step 2): the
-    /// unlock stays locked rather than run unreachable. Community steps
-    /// are logged and do not fail the resume.
-    pub async fn resume(
+    /// No session is unlocked (no record pool).
+    pub async fn resume_communities(
         &self,
         session: &crate::session::Session,
-        signing_key_bytes: &[u8; 32],
     ) -> Result<HashMap<String, CommunityLeases>> {
-        info!("resuming session for {}", &session.identity.display_name);
-
-        // Step 1: want our routes; their owner allocates once the network
-        // is ready, off this path.
-        self.want_routes();
-
-        // Steps 2-4: hold our own records writable in the session's record
-        // pool and publish the route blob. Each opens writable or fails the
-        // resume: there is no readonly fallback, since a session that cannot
-        // write its profile or mailbox is unreachable (plan C7.4).
-        let pool = self.require_records()?;
-        let owner_keypair = |stored: Option<&String>, record: &str| {
-            stored
-                .cloned()
-                .ok_or_else(|| TransportError::Internal(format!("no {record} owner keypair")))
-        };
-        let identity_keypair = rekindle_crypto::keypair_text::keypair_text_from_signing(
-            &ed25519_dalek::SigningKey::from_bytes(signing_key_bytes),
+        info!(
+            "resuming communities for {}",
+            &session.identity.display_name
         );
-        let id = &session.identity;
-
-        rekindle_protocol::dht::profile::open_profile(
-            pool.as_ref(),
-            &id.profile_dht_key,
-            &owner_keypair(id.profile_owner_keypair.as_ref(), "profile")?,
-        )
-        .await?;
-        rekindle_protocol::dht::mailbox::open_mailbox_writable(
-            pool.as_ref(),
-            &id.mailbox_dht_key,
-            &identity_keypair,
-        )
-        .await?;
-        rekindle_protocol::dht::friends::open_friend_list(
-            pool.as_ref(),
-            &id.friend_list_dht_key,
-            &owner_keypair(id.friend_list_owner_keypair.as_ref(), "friend list")?,
-        )
-        .await?;
-        info!("profile, mailbox and friend list reopened writable");
-
-        // Read after the records are held: a blob that landed before this
-        // found nothing writable to publish to, so it is published here; one
-        // landing after is the route publisher's.
-        if let Some(route_blob) = self.personal_route_blob() {
-            let profile = rekindle_protocol::dht::profile::set_own_profile_subkey(
-                pool.as_ref(),
-                &id.profile_dht_key,
-                crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
-                route_blob.clone(),
-            )
-            .await?;
-            let mailbox = rekindle_protocol::dht::mailbox::update_mailbox_route(
-                pool.as_ref(),
-                &id.mailbox_dht_key,
-                &route_blob,
-            )
-            .await?;
-            info!(?profile, ?mailbox, "route blob published");
-        }
-
-        // Step 3: borrow each community's governance and registry from the
+        self.require_records()?;
+        // Borrow each community's governance and registry from the
         // pool. The registry carries our slot keypair as its sticky writer,
         // so the presence heartbeat and a leave write through this lease
         // instead of re-opening the record (V5).

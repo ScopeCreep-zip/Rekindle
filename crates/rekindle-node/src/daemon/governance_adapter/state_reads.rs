@@ -25,13 +25,9 @@ impl DaemonGovernanceAdapter<'_> {
         self.ctx.identity_display_name()
     }
 
-    /// The daemon has no per-process status toggle the way the desktop
-    /// tray does — `presence::set_status` writes straight to the profile
-    /// record. A running daemon is by definition reachable, so it
-    /// reports `Online`; a locked one cannot answer at all, and callers
-    /// of this method have already passed the unlock gate.
-    pub(super) fn identity_status_impl() -> UserStatusKind {
-        UserStatusKind::Online
+    /// Our status: the host's own presence (plan E1.1).
+    pub(super) fn identity_status_impl(&self) -> UserStatusKind {
+        self.ctx.own_presence.status()
     }
 
     /// Our current private-route blob, or empty when no route is

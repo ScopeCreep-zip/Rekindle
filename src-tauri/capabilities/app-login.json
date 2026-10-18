@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-login",
-  "description": "App-command grants for the pre-authentication `login` window: identity list/create/delete, login itself, avatar lookup for the identity picker, opening the buddy list on success, the lifecycle snapshot, and its event stream (which carries only lifecycle transitions). Deliberately excludes every other command — this window is reachable before any identity/session exists.",
+  "description": "App-command grants for the pre-authentication `login` window: identity list/create/delete, login itself, the commit and cancel of the delete's review (its passphrase proof), avatar lookup for the identity picker, opening the buddy list on success, the lifecycle snapshot, and its event stream (which carries only lifecycle transitions). Deliberately excludes every other command — this window is reachable before any identity/session exists.",
   "windows": [
     "login"
   ],
@@ -9,6 +9,8 @@
     "allow-create-identity",
     "allow-delete-identity",
     "allow-get-avatar",
+    "allow-intent-cancel",
+    "allow-intent-commit",
     "allow-lifecycle-current",
     "allow-list-identities",
     "allow-login",

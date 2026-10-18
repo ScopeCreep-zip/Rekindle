@@ -1,101 +1,90 @@
+//! The identity commands are Host calls (plan E1.1): the Host runs create,
+//! unlock, logout and delete through its one pipeline and intent gate, and
+//! answers the DTOs every frontend renders.
+
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::services;
-pub use crate::services::auth_cores::LoginResult;
-pub use crate::services::auth_runtime::{list_identities_inner, IdentitySummary};
+use crate::host_call;
 use crate::state::SharedState;
 
-/// Create and unlock, separated from `AppHandle` for testability. Multiple
-/// identities coexist, each with its own vault and database; one is active
-/// at a time.
-pub use services::auth_cores::{
-    create_identity_core, delete_identity_core, login_core, verify_identity_passphrase_core,
-    DhtKeysConfig,
-};
-/// Take the unlocked identity out of the session (logout's last step).
-pub use services::session::lock_identity;
-
-/// Create a new identity (first-time setup).
-///
-/// Generates an Ed25519 keypair and creates the identity's vault and
-/// database (`host::identity::create`).
+/// Create a new identity and unlock it (`IpcRequest::IdentityCreate`).
+/// Without a name it is `User_` and its key's first eight characters.
 #[tauri::command]
 pub async fn create_identity(
     passphrase: String,
     display_name: Option<String>,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<LoginResult, String> {
-    services::auth_runtime::create_identity_inner(
-        passphrase,
-        display_name,
-        app,
-        state.inner().clone(),
+) -> Result<Done<IdentityView>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::IdentityCreate {
+            display_name,
+            passphrase,
+        },
     )
     .await
 }
 
-/// Unlock existing identity with passphrase.
-///
-/// Opens the identity's vault and database (`host::identity::unlock`) and
-/// restores friends and communities.
+/// Unlock an identity with its passphrase (`IpcRequest::Unlock`).
 #[tauri::command]
 pub async fn login(
     public_key: String,
     passphrase: String,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<LoginResult, String> {
-    services::auth_runtime::login_inner(public_key, passphrase, app, state.inner().clone()).await
+) -> Result<Done<IdentityView>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Unlock {
+            identity: public_key,
+            passphrase,
+        },
+    )
+    .await
 }
 
-/// Get the current identity state.
-///
-/// Used by newly opened windows to hydrate their local auth state
-/// from the shared Rust backend (each webview has isolated JS context).
+/// The unlocked identity, or `None` while locked (`IpcRequest::IdentityShow`):
+/// each window hydrates its auth state from it.
 #[tauri::command]
-pub async fn get_identity(state: State<'_, SharedState>) -> Result<Option<LoginResult>, String> {
-    let identity = state.identity.read();
-    Ok(identity.as_ref().map(|id| LoginResult {
-        public_key: id.public_key.clone(),
-        display_name: id.display_name.clone(),
-    }))
+pub async fn get_identity(
+    state: State<'_, SharedState>,
+) -> Result<Done<Option<IdentityShown>>, CommandError> {
+    host_call::call(&state, IpcRequest::IdentityShow).await
 }
 
-/// Log out: end the session and lock the identity; the node stays up.
+/// Log out: the Host ends the session and locks the identity; the node
+/// stays up, and the login window opens (`IpcRequest::Logout`).
 #[tauri::command]
-pub async fn logout(app: tauri::AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
-    services::auth_runtime::logout_inner(app, state.inner().clone()).await
+pub async fn logout(
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::Logout).await
 }
 
-/// List all persisted identities (for the account picker).
-///
-/// Reads the identity registry, oldest first. No unlock needed: the login
-/// window calls it on mount.
+/// The identities on this device, oldest first, for the account picker
+/// (`IpcRequest::IdentityList`; no unlock needed).
 #[tauri::command]
 pub async fn list_identities(
-    root: State<'_, rekindle_db::paths::DataRoot>,
-) -> Result<Vec<IdentitySummary>, String> {
-    services::auth_runtime::list_identities_inner(root.inner())
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<IdentitySummary>>, CommandError> {
+    host_call::call(&state, IpcRequest::IdentityList).await
 }
 
-/// Delete a specific identity after verifying the passphrase.
-///
-/// The passphrase is checked first (a wrong one counts against the
-/// identity); an active identity is logged out; then its vault, database
-/// and registry entry go (`host::identity::delete`).
+/// Delete an identity (`IpcRequest::IdentityDelete`). It is Protected: the
+/// Host holds it for the identity's passphrase, which the intent dialog
+/// asks for, and ends its session first when it is the unlocked one.
 #[tauri::command]
 pub async fn delete_identity(
     public_key: String,
-    passphrase: String,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    services::auth_runtime::delete_identity_inner(
-        public_key,
-        passphrase,
-        app,
-        state.inner().clone(),
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::IdentityDelete {
+            identity: public_key,
+        },
     )
     .await
 }
@@ -112,45 +101,43 @@ pub async fn delete_identity(
 pub async fn pqxdh_bundle_info(
     state: State<'_, SharedState>,
 ) -> Result<crate::services::auth_runtime::PqxdhBundleInfo, String> {
-    services::auth_runtime::pqxdh_bundle_info_inner(state.inner())
+    crate::services::auth_runtime::pqxdh_bundle_info_inner(state.inner())
 }
 
-/// Phase 4 — verify the local audit hash chain end-to-end.
-///
-/// Returns `rekindle_audit::Verified` (`{ state: "intact", length }` or
-/// `{ state: "broken", length, at, detail }`). A broken chain also emits
-/// `SystemEvent::AuditChainBroken` and a system alert.
+/// Verify the identity's tamper-evident audit log end to end
+/// (`IpcRequest::AuditVerify`); a broken chain also raises the tamper alert.
 #[tauri::command]
 pub async fn audit_verify(
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<rekindle_audit::Verified, String> {
-    let pool = state.db.current()?;
-    services::auth_runtime::audit_verify_inner(app, state.inner(), &pool).await
+) -> Result<Done<rekindle_types::dto::audit::AuditVerified>, CommandError> {
+    host_call::call(&state, IpcRequest::AuditVerify).await
 }
 
-/// Phase 4 — export audit entries with `cursor > since`. Used by dev tooling
-/// and any future "download my audit trail" feature.
+/// The audit log's entries after `since` (`IpcRequest::AuditExport`, a
+/// Protected action the intent dialog proves).
 #[tauri::command]
 pub async fn audit_export(
     state: State<'_, SharedState>,
     since: u64,
-) -> Result<Vec<rekindle_audit::AuditEntry>, String> {
-    let pool = state.db.current()?;
-    services::auth_runtime::audit_export_inner(state.inner(), &pool, since).await
+) -> Result<Done<Vec<rekindle_types::dto::audit::AuditEntryView>>, CommandError> {
+    host_call::call(&state, IpcRequest::AuditExport { since }).await
 }
 
-/// Phase 5 — read the current lifecycle state.
-///
-/// Frontend uses this to disable buttons when the FSM doesn't accept
-/// writes (e.g. show "Reconnecting…" badge in `Detached`, gate the send
-/// button while `Resuming`). The richer `lifecycle-event` channel
-/// pushes transitions live; this command is the cold-start fallback.
+/// The Host's lifecycle state (`IpcRequest::Status`): the cold-start read
+/// the login button and the state badges seed from; the `lifecycle-event`
+/// channel pushes transitions live.
 #[tauri::command]
 pub async fn lifecycle_current(
     state: State<'_, SharedState>,
-) -> Result<rekindle_lifecycle::LifecycleState, String> {
-    Ok(state.lifecycle.state())
+) -> Result<Done<rekindle_lifecycle::LifecycleState>, CommandError> {
+    let status: Done<rekindle_types::display::StatusSnapshot> =
+        host_call::call(&state, IpcRequest::Status).await?;
+    let value = serde_json::from_value(serde_json::Value::String(status.value.state))
+        .map_err(|e| CommandError::internal(format!("the host's lifecycle state: {e}")))?;
+    Ok(Done {
+        value,
+        undo: status.undo,
+    })
 }
 
 /// Phase 7 — fire an immediate friend-inbox scan via the coordinator's

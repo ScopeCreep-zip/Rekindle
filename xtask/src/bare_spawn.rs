@@ -49,11 +49,6 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "app-lifetime webview event queue",
     ),
     (
-        "src-tauri/src/services/session.rs",
-        "begin",
-        "the panic hook ends the login scope itself, so it cannot run in it",
-    ),
-    (
         "src-tauri/src/services/veilid/lifecycle/dispatch.rs",
         "start_dispatch_loop",
         "the app-lifetime dispatch loop's ingress workers; joined when the loop stops",
@@ -274,9 +269,9 @@ mod tests {
 
     #[test]
     fn allowlist_is_per_function() {
-        let src = "fn begin() { tauri::async_runtime::spawn(async {}); }
+        let src = "fn start_dispatch_loop() { tauri::async_runtime::spawn(async {}); }
                    fn other() { tauri::async_runtime::spawn(async {}); }";
-        let (hits, used) = scan("src-tauri/src/services/session.rs", src);
+        let (hits, used) = scan("src-tauri/src/services/veilid/lifecycle/dispatch.rs", src);
         assert_eq!(hits.len(), 1);
         assert_eq!(used.len(), 1);
         assert!(hits[0].contains("`other`"));

@@ -6,16 +6,25 @@
 pub mod adapters;
 pub mod api;
 pub mod audit;
+pub(crate) mod audit_alert;
 pub mod bus_key;
 pub mod dht_outbox;
+mod game;
 pub mod gate;
 pub mod identity;
+mod idle;
 mod intent_select;
+pub(crate) mod own_presence;
+pub(crate) mod own_profile;
+mod own_records;
 pub mod policy;
 pub mod runtime;
 mod serve;
 pub mod session;
-pub mod unlocked;
+pub mod shell_hooks;
+pub mod undo;
+pub(crate) mod unlock;
+pub(crate) mod unlocked;
 
 #[cfg(test)]
 pub(crate) mod fixture;
@@ -28,7 +37,7 @@ pub use runtime::{
     claim, user_transport_config, ClaimedRoot, Host, HostConfig, HostMode, HostStores,
     TransportSource,
 };
-pub use unlocked::Installed;
+pub use shell_hooks::{EndReason, OwnRecordKeys, ShellHooks, UnlockedView};
 
 /// `rekindled`'s command line. The host takes no options yet; parsing still
 /// answers `--help` and `--version`.

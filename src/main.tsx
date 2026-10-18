@@ -3,6 +3,8 @@ import { render } from "solid-js/web";
 import { createSignal, onMount, Match, Switch, lazy, Suspense } from "solid-js";
 import "./styles/global.css";
 import AnnounceRegion from "./components/common/AnnounceRegion";
+import IntentDialog from "./components/common/IntentDialog";
+import ToastContainer from "./components/common/Toast";
 
 // Lazy-load window components so each webview only compiles
 // the module tree it actually renders (login → 1 tree, not 6).
@@ -35,6 +37,10 @@ function App() {
        * live region to write into, regardless of which window is
        * currently rendered by the route Switch. */}
       <AnnounceRegion />
+      {/* Every window renders the review of its own Host calls (ADR 0019)
+       * and the undo offer of what ran, so both mount once here. */}
+      <IntentDialog />
+      <ToastContainer />
       <Suspense>
         <Switch fallback={<UnknownRoute />}>
           <Match when={route() === "/login"}>

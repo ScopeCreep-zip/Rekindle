@@ -1,11 +1,13 @@
-//! Republish our own routes when they change (plan C7.9b).
+//! The desktop's reaction to our own routes (plan C7.9b, E1.1).
 //!
-//! `OwnRoutes` (rekindle-protocol) owns allocation, death and release; this
-//! login-scoped task is the one place that reacts to a new blob. A
-//! reallocated route has a new id and a new blob (`route_allocate.rs`), so
-//! every surface that carries it is rewritten:
-//! - General: the profile route subkey, the mailbox route, each community's
-//!   presence row, and a voice re-announce;
+//! `OwnRoutes` (rekindle-protocol) owns allocation, death and release, and
+//! the transport's one route republisher writes a new general blob to our
+//! profile and mailbox. This task, in the unlock scope, rewrites the
+//! surfaces the shell still owns, since a reallocated route has a new id and
+//! a new blob (`route_allocate.rs`):
+//! - General: each community's presence row and its initial-sync flag
+//!   (→ E3.1/E3.4), a voice re-announce (→ E4.1) and the MEK recovery a
+//!   routeless key request missed (→ E3.1);
 //! - Media: a voice re-announce only. The media route is connection data
 //!   for a call, so it rides the call's signaling, never the presence row
 //!   (plan C7.15).
@@ -21,7 +23,7 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 /// Follow both route classes until `stop`. Changes already seen when this
-/// starts are the login publish's (it reads the current blob).
+/// starts are the unlock's (its own-records stage reads the current blob).
 pub(crate) async fn run(
     app_handle: tauri::AppHandle,
     state: Arc<AppState>,
@@ -62,35 +64,6 @@ pub(crate) async fn run(
 }
 
 async fn republish_general(app_handle: &tauri::AppHandle, state: &Arc<AppState>, blob: &[u8]) {
-    if let Err(e) = crate::services::message_service::push_profile_update(
-        state,
-        rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
-        blob.to_vec(),
-    )
-    .await
-    {
-        tracing::warn!(error = %e, "failed to republish the route blob to the profile");
-    }
-    let mailbox_key = state
-        .node
-        .read()
-        .as_ref()
-        .and_then(|nh| nh.mailbox_dht_key.clone());
-    if let (Some(mailbox_key), Ok(pool)) = (mailbox_key, state_helpers::record_pool(state)) {
-        match rekindle_protocol::dht::mailbox::update_mailbox_route(
-            pool.as_ref(),
-            &mailbox_key,
-            blob,
-        )
-        .await
-        {
-            Ok(outcome) if outcome.missed() => {
-                tracing::warn!(?outcome, "mailbox route blob not stored at consensus");
-            }
-            Ok(_) => {}
-            Err(e) => tracing::warn!(error = %e, "failed to update the mailbox route blob"),
-        }
-    }
     // Gossip peers re-learn our route from the presence rows and the next
     // PresenceUpdate, which the initial-sync flag re-broadcasts.
     {
@@ -104,7 +77,7 @@ async fn republish_general(app_handle: &tauri::AppHandle, state: &Arc<AppState>,
     rewrite_presence_rows(state).await;
     crate::services::voice_adapter::reannounce_voice_route(state);
     // A key request sent while routeless had no way back to us.
-    crate::services::login_runtime::recover_behind_meks(app_handle, state);
+    crate::services::community::mek_rotation::recover_behind_meks(app_handle, state);
     tracing::info!(blob_len = blob.len(), "own route republished");
 }
 

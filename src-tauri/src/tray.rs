@@ -5,15 +5,16 @@ use tauri::{
     Manager,
 };
 
-use crate::services;
-use crate::state::{SharedState, UserStatus};
+use rekindle_types::presence::SessionStatus;
+
+use crate::state::SharedState;
 use crate::windows;
 
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let online = MenuItem::with_id(app, "status-online", "Online", true, None::<&str>)?;
     let away = MenuItem::with_id(app, "status-away", "Away", true, None::<&str>)?;
     let busy = MenuItem::with_id(app, "status-busy", "Busy", true, None::<&str>)?;
-    let offline = MenuItem::with_id(app, "status-offline", "Offline", true, None::<&str>)?;
+    let offline = MenuItem::with_id(app, "status-offline", "Appear Offline", true, None::<&str>)?;
     let status_menu = Submenu::with_items(app, "Status", true, &[&online, &away, &busy, &offline])?;
 
     let sep = PredefinedMenuItem::separator(app)?;
@@ -34,10 +35,12 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "settings" => {
                 let _ = windows::open_settings(app, None);
             }
-            "status-online" => set_status_from_tray(app, UserStatus::Online),
-            "status-away" => set_status_from_tray(app, UserStatus::Away),
-            "status-busy" => set_status_from_tray(app, UserStatus::Busy),
-            "status-offline" => set_status_from_tray(app, UserStatus::Offline),
+            "status-online" => set_status_from_tray(app, SessionStatus::Online),
+            "status-away" => set_status_from_tray(app, SessionStatus::Away),
+            "status-busy" => set_status_from_tray(app, SessionStatus::Busy),
+            // Appear Offline: invisible, which peers cannot tell from
+            // offline (only a lock or logout writes offline).
+            "status-offline" => set_status_from_tray(app, SessionStatus::Invisible),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -54,22 +57,17 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Update the user's status directly from the tray menu and publish to DHT.
-fn set_status_from_tray(app: &tauri::AppHandle, status: UserStatus) {
-    let state: tauri::State<'_, SharedState> = app.state();
-
-    // Update in-memory state (brief lock, no .await while held)
-    {
-        let mut identity = state.identity.write();
-        if let Some(ref mut id) = *identity {
-            id.status = status;
+/// Set our status from the tray: the same Host call as the status picker
+/// (`IpcRequest::PresenceSet`).
+fn set_status_from_tray(app: &tauri::AppHandle, status: SessionStatus) {
+    let state = app.state::<SharedState>().inner().clone();
+    // A status is the session's: logged out, there is none to set.
+    let task_state = std::sync::Arc::clone(&state);
+    crate::state_helpers::spawn_in_login(&task_state, "status from tray", async move {
+        let request = rekindle_ipc::protocol::IpcRequest::PresenceSet { status };
+        match crate::host_call::call::<serde_json::Value>(&state, request).await {
+            Ok(_) => tracing::info!(?status, "status changed from tray"),
+            Err(e) => tracing::warn!(error = %e, "status from tray refused"),
         }
-    }
-
-    // Clear auto-away state — user is manually setting status from tray
-    state.pre_away_status.write().take();
-
-    tracing::info!(status = ?status, "status changed from tray");
-
-    services::presence_service::request_status_publish(state.inner());
+    });
 }

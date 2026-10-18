@@ -15,7 +15,8 @@
 //! - `social.rs`    — Friend*, Dm*
 //! - `governance.rs` — Role*, moderation (Kick/Ban/Unban/Timeout), invites
 //! - `keys.rs`      — Mek*, PrekeyReplenish
-//! - `presence.rs`  — PresenceSet, GamePresence*, VoiceJoin, VoiceLeave
+//! - `own.rs`       — our presence, profile, game, audit log, links
+//! - `voice.rs`     — VoiceJoin, VoiceLeave
 //! - `admin.rs`     — Agent*, Policy, Subscribe, Unsubscribe, Network*
 
 mod admin;
@@ -27,11 +28,12 @@ mod identity;
 mod in_flight;
 mod keys;
 mod lifecycle;
-mod presence;
+mod own;
 mod router;
 pub(crate) mod shell;
 mod social;
 mod status;
+mod voice;
 
 use std::sync::Arc;
 
@@ -43,7 +45,7 @@ use crate::state::signing_key::SigningKeyHandle;
 use rekindle_ipc::registry::ClearanceRegistry;
 
 pub(crate) use context::{state_error, store_error, transition};
-pub(crate) use lifecycle::teardown_unlocked;
+pub(crate) use lifecycle::{daemon_stages, daemon_teardown};
 pub use router::dispatch;
 
 use crate::host::policy::PolicyConfig;
@@ -135,6 +137,8 @@ pub struct DaemonContext {
     /// The host's one intent gate (plan D3.3), counting wrong passphrase
     /// proofs on `identity_attempts`.
     pub intents: std::sync::Arc<crate::host::gate::HostGate>,
+    /// The undo offers of actions that ran (plan E1.1).
+    pub undo: crate::host::undo::UndoCache,
     /// The host's one event journal (plan D3.2): every event a frontend
     /// observes is published here, and every subscriber reads from it.
     pub journal: std::sync::Arc<rekindle_events::SessionJournal>,
@@ -185,9 +189,9 @@ pub struct DaemonContext {
     pub gossip_tx: crate::daemon::gossip::GossipSender,
     pub mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
     /// The unlock's scope (plan C4): every task that needs the unlocked
-    /// identity runs in it, and `teardown_unlocked` shuts it down first.
-    /// `None` while locked. A panic in one of its tasks exits the daemon
-    /// (`ExitReason::HandlerPanic`), as a handler panic does.
+    /// identity runs in it, and `host::unlock::teardown` shuts it down
+    /// first. `None` while locked. A panic in one of its tasks exits the
+    /// daemon (`ExitReason::HandlerPanic`) and ends the GUI's session.
     pub unlock_scope: RwLock<Option<Arc<rekindle_lifecycle::SessionScope>>>,
     /// Per-community children of the unlock scope (the presence poll),
     /// keyed by governance key. The polls hold an `Arc<DaemonContext>` and
@@ -199,11 +203,9 @@ pub struct DaemonContext {
     /// Asks the presence supervisor to start polls. Sent on unlock,
     /// once the signing key and broadcast manager exist.
     pub presence_start_tx: crate::daemon::presence_adapter::supervisor::PresenceStartSender,
-    /// The unlock's own status, written by its one STATUS publisher
-    /// (plan C7.8c); Online at unlock.
-    pub status: Arc<RwLock<rekindle_presence::UserStatusKind>>,
-    /// Wakes that publisher.
-    pub status_wake: Arc<tokio::sync::Notify>,
+    /// Our own presence, one owner on both hosts (plan E1.1): status,
+    /// message, game and idle state, and the unlock's STATUS publisher.
+    pub(crate) own_presence: crate::host::own_presence::OwnPresence,
     /// The dispatch lane (`IpcRequest::lane`): `Write` requests hold it
     /// shared, `Exclusive` ones alone. A lock, unlock or identity change
     /// therefore never overlaps a write that may hold the signing key.
@@ -213,6 +215,12 @@ pub struct DaemonContext {
     /// The daemon-wide shutdown signal and the reason it was raised.
     /// Shared with the unlock scope's panic hook.
     pub shutdown: Arc<crate::daemon::shutdown::Shutdown>,
+    /// The GUI's side of an unlock (`host::shell_hooks`); `None` in
+    /// `rekindled`.
+    pub shell: Option<Arc<dyn crate::host::shell_hooks::ShellHooks>>,
+    /// A panicked unlock task's name, for the shell's teardown worker
+    /// (`host::unlock::run_panic_teardowns`).
+    pub unlock_panics: tokio::sync::mpsc::UnboundedSender<String>,
 }
 
 impl DaemonContext {

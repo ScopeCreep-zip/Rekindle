@@ -1,24 +1,28 @@
-import { invoke } from "../invoke";
+import { hostInvoke, invoke } from "../invoke";
 import type {
-  DeepLinkOutcome, DeepLinkRequest, GameStatus, NetworkStatus, Preferences, SettingsTab,
+  DeepLinkOutcome, DeepLinkRequest, NetworkStatus, Preferences, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
-import type { LifecycleState } from "./dto";
+import type {
+  AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
+} from "./dto";
 
 export const systemCommands = {
-  // Status
-  setStatus: (status: string) => invoke<void>("set_status", { status }),
-  setNickname: (nickname: string) =>
-    invoke<void>("set_nickname", { nickname }),
-  setAvatar: (avatarData: number[]) =>
-    invoke<void>("set_avatar", { avatarData }),
-  getAvatar: (publicKey: string) =>
-    invoke<number[] | null>("get_avatar", { publicKey }),
+  // Our presence and profile: Host calls (plan E1.1). "Appear Offline" is
+  // `invisible`; offline is set only by logging out.
+  setStatus: (status: SessionStatus) => hostInvoke<OwnPresenceView>("set_status", { status }),
+  setNickname: (nickname: string) => hostInvoke<string>("set_nickname", { nickname }),
+  setAvatar: (avatarData: number[]) => hostInvoke<unknown>("set_avatar", { avatarData }),
+  getAvatar: (publicKey: string) => hostInvoke<number[] | null>("get_avatar", { publicKey }),
   setStatusMessage: (message: string) =>
-    invoke<void>("set_status_message", { message }),
+    hostInvoke<OwnPresenceView>("set_status_message", { message }),
+
+  // The audit log: Host calls.
+  auditVerify: () => hostInvoke<AuditVerified>("audit_verify"),
+  auditExport: (since: number) => hostInvoke<AuditEntryView[]>("audit_export", { since }),
 
   // Game
-  getGameStatus: () => invoke<GameStatus | null>("get_game_status"),
+  getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),
   getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
   launchGameToServer: (gameId: number, serverAddress: string) =>
     invoke<void>("launch_game_to_server", { gameId, serverAddress }),
@@ -46,15 +50,16 @@ export const systemCommands = {
   openCallWindow: (callId: string) =>
     invoke<void>("open_call_window", { callId }),
   getNetworkStatus: () => invoke<NetworkStatus>("get_network_status"),
-  /// Open an https link after a native confirmation; false if declined.
-  openExternalUrl: (url: string) => invoke<boolean>("open_external_url", { url }),
+  /// Open an https link: the Host's review says the site will see our IP
+  /// address; its commit opens the link. Resolves with the normalized URL.
+  openExternalUrl: (url: string) => hostInvoke<string>("open_external_url", { url }),
   // OS deep links — consent flow (src-tauri/src/deep_links.rs)
   getPendingDeepLink: () => invoke<DeepLinkRequest | null>("get_pending_deep_link"),
   confirmDeepLink: (requestId: string) =>
     invoke<DeepLinkOutcome>("confirm_deep_link", { requestId }),
   dismissDeepLink: (requestId: string) => invoke<void>("dismiss_deep_link", { requestId }),
   // Lifecycle — current FSM state, used to seed the derived lifecycle store.
-  lifecycleCurrent: () => invoke<LifecycleState>("lifecycle_current"),
+  lifecycleCurrent: () => hostInvoke<LifecycleState>("lifecycle_current"),
 
   // Onboarding & Welcome Screen
   getOnboardingConfig: (communityId: string) =>

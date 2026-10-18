@@ -6,7 +6,7 @@ use rekindle_records::port::{PortEvent, PortSet};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use super::routes::run_route_publisher;
+use super::routes::{notify_handler, run_route_publisher, OnRoutesChanged};
 use super::TransportNode;
 use crate::broadcast::peer_registry::PeerRegistry;
 use crate::config::TransportConfig;
@@ -83,14 +83,18 @@ impl TransportNode {
     /// W16.9b — a node for OUTBOUND-ONLY use over the host's ports.
     ///
     /// The host keeps its own dispatch loop (src-tauri's
-    /// `lifecycle::dispatch::run_dispatch_loop`) and its own route
-    /// publishing. This mode gives the caller `Sender`, `AppCaller`, the record
-    /// sessions, and the peer registry — everything needed for outbound app
-    /// messages, app calls, and DHT operations — without consuming inbound
-    /// events. Deleted at E5.7, when the GUI's Host starts its own node.
-    pub fn adopt_outbound(config: TransportConfig, ports: PortSet) -> Self {
+    /// `lifecycle::dispatch::run_dispatch_loop`). This mode gives the caller
+    /// `Sender`, `AppCaller`, the record sessions, the peer registry and the
+    /// one route republisher (plan E1.1), over `session` (the Host's) —
+    /// everything needed for outbound app messages, app calls, DHT
+    /// operations and our routes — without consuming inbound events. The
+    /// republisher has no handler to tell of route changes until E5.7,
+    /// which deletes this mode when the GUI's Host starts its own node.
+    pub fn adopt_outbound(config: TransportConfig, ports: PortSet, session: SharedSession) -> Self {
         info!(namespace = %config.namespace, "transport node (outbound-only) on the host's ports");
-        Self::outbound(config, ports, SharedState::new()).0
+        let mut node = Self::outbound(config, ports, SharedState::new()).0;
+        node.spawn_route_publisher(None, session);
+        node
     }
 
     /// The node without dispatch: senders, records, routes and peers.
@@ -106,6 +110,9 @@ impl TransportNode {
             config.circuit_breaker_cooldown_secs,
         )));
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+        // Our routes are wanted from node-ready, before any login (C7.9b):
+        // a login is reachable at once. Their owner waits for readiness.
+        ports.routes.want_own();
         let node = Self {
             ports,
             config,
@@ -140,9 +147,19 @@ impl TransportNode {
             },
         )));
 
+        self.spawn_route_publisher(Some(notify_handler(handler)), session);
+        self
+    }
+
+    /// Run the one route republisher over `session`.
+    fn spawn_route_publisher(
+        &mut self,
+        on_change: Option<OnRoutesChanged>,
+        session: SharedSession,
+    ) {
         let (ra_tx, ra_rx) = mpsc::channel(1);
         self.route_publisher_handle = Some(tokio::spawn(run_route_publisher(
-            handler,
+            on_change,
             Arc::clone(&self.ports.routes),
             self.config.route_watchdog_secs,
             ra_rx,
@@ -150,7 +167,6 @@ impl TransportNode {
             Arc::clone(&self.shared_state),
         )));
         self.route_publisher_shutdown_tx = Some(ra_tx);
-        self
     }
 
     /// Graceful shutdown: stop the route publisher and dispatch, release

@@ -62,14 +62,14 @@ pub async fn initialize_node(
             rekindle_route::lifecycle::PEER_ROUTE_CACHE_MAX_AGE,
         ),
     });
-    // Our routes, allocated as soon as the node is ready, before any login,
-    // so a login is reachable at once (plan C7.9b; owner: login and
-    // "Connected" are paired).
+    // Our routes. The transport wants them as soon as its ports are up, so
+    // they are allocated at node-ready, before any login, and a login is
+    // reachable at once (plan C7.9b, E1.1; owner: login and "Connected" are
+    // paired).
     let own_routes = rekindle_route::own_routes::OwnRoutes::new(
         rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
         state.network_ready.subscribe(),
     );
-    own_routes.want_all();
     // The process's one route importer (plan C7.3): routes are imported
     // before login too (invites, inbound app_message).
     let route_imports = Arc::new(rekindle_protocol::dht::route_imports::RouteImports::new(
@@ -103,10 +103,15 @@ pub async fn initialize_node(
     *state.route_imports.write() = Some(route_imports);
 
     // W16.9b — an outbound-only TransportNode over the desktop's ports:
-    // Sender / Caller / record sessions / peer registry for the transport's
-    // send paths, without consuming the host's `update_rx` (the existing
-    // `lifecycle::dispatch::run_dispatch_loop` keeps that) until E5.7.
-    let tn = rekindle_transport::TransportNode::adopt_outbound(transport_config, ports);
+    // senders, record sessions, peer registry and the one route republisher
+    // (over the Host's session projection), without consuming the host's
+    // `update_rx` (the existing `lifecycle::dispatch::run_dispatch_loop`
+    // keeps that) until E5.7.
+    let tn = rekindle_transport::TransportNode::adopt_outbound(
+        transport_config,
+        ports,
+        Arc::clone(&state.transport_session),
+    );
     *state.transport.write() = Some(Arc::new(tn));
     tracing::info!("transport node adopted (outbound-only) on the desktop's ports");
 

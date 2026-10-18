@@ -84,6 +84,22 @@ impl SessionStatus {
     }
 }
 
+/// What the host makes of the user's input activity (plan E1.1): whether it
+/// can see it at all, and whether auto-away is holding the status.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum IdleState {
+    /// No compositor or display reports idle time here (a headless
+    /// `rekindled`, a Wayland compositor without `ext-idle-notify-v1`):
+    /// auto-away cannot arm.
+    Unavailable,
+    /// Idle time is readable and auto-away is not holding the status.
+    Active,
+    /// Auto-away set the status to Away; activity restores the status it
+    /// replaced.
+    AutoAway,
+}
+
 /// Where a member is focused right now. One field for both text and
 /// voice so the roster aggregates location uniformly. `channel_id` is
 /// the string id the frontend + community wire envelopes already use

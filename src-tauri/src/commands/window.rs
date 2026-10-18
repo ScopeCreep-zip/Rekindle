@@ -1,6 +1,5 @@
 use serde::Serialize;
 use tauri::{Manager, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::state::SharedState;
@@ -97,38 +96,34 @@ pub async fn open_call_window(call_id: String, app: tauri::AppHandle) -> Result<
     windows::open_call_window(&app, &call_id)
 }
 
-/// Open an https link in the system browser after a native confirmation
-/// naming the host (in punycode for international names). Returns `false`
-/// if the user declined. This is the only way the webview opens a link:
-/// the opener plugin's own link interception is off.
+/// Open an https link in the system browser (`IpcRequest::LinkOpen`): the
+/// Host holds it for review, an `OpenExternalUrl` whose proof states that
+/// the site will see our IP address, and once committed answers the
+/// normalized URL, which this opens. This is the only way the webview opens
+/// a link: the opener plugin's own link interception is off.
 #[tauri::command]
-pub async fn open_external_url(url: String, window: tauri::WebviewWindow) -> Result<bool, String> {
-    let url = rekindle_link_preview::https_url(&url).map_err(|e| e.to_string())?;
-    let host = url.host_str().unwrap_or_default().to_owned();
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    window
-        .dialog()
-        .message(format!(
-            "Open {host} in your browser?\n\nThe site will see your IP address."
-        ))
-        .title("Open link")
-        .buttons(MessageDialogButtons::OkCancel)
-        .parent(&window)
-        .show(move |confirmed| {
-            let _ = tx.send(confirmed);
-        });
-    if !rx
-        .await
-        .map_err(|_| "link dialog closed unexpectedly".to_string())?
-    {
-        return Ok(false);
-    }
+pub async fn open_external_url(
+    url: String,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, crate::state::SharedState>,
+) -> Result<rekindle_types::dto::Done<String>, rekindle_types::dto::CommandError> {
+    let request = rekindle_ipc::protocol::IpcRequest::LinkOpen { url };
+    let done: rekindle_types::dto::Done<String> =
+        match crate::host_call::call(&state, request).await {
+            Ok(done) => done,
+            Err(rekindle_types::dto::CommandError::IntentRequired(review)) => {
+                // Its commit opens the URL (`commands::intent::intent_commit`).
+                state.pending_link_opens.lock().insert(review.intent_id);
+                return Err(rekindle_types::dto::CommandError::IntentRequired(review));
+            }
+            Err(e) => return Err(e),
+        };
     window
         .app_handle()
         .opener()
-        .open_url(url.as_str(), None::<&str>)
-        .map_err(|e| e.to_string())?;
-    Ok(true)
+        .open_url(done.value.as_str(), None::<&str>)
+        .map_err(|e| rekindle_types::dto::CommandError::internal(e.to_string()))?;
+    Ok(done)
 }
 
 /// Get the current Veilid network status.

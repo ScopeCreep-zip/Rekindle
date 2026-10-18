@@ -90,7 +90,7 @@
 
   /* Architecture §32 a11y — toast slide-in only for motion-tolerant users. */
   @media (prefers-reduced-motion: no-preference) {
-    .toast-message {
+    .toast-item {
       animation: toast-slide-in var(--motion-duration-base) ease-out;
     }
   }

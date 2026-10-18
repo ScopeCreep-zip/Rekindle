@@ -1,53 +1,9 @@
-//! Phase 23.B — extracted from `state.rs`. Per-friend state +
-//! identity + status enums.
+//! Phase 23.B — extracted from `state.rs`. Per-friend state; our identity
+//! and the status vocabulary are `rekindle_types::friend`'s (plan E1.1).
 
 use serde::{Deserialize, Serialize};
 
-/// The logged-in user's identity state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdentityState {
-    pub public_key: String,
-    pub display_name: String,
-    pub status: UserStatus,
-    pub status_message: String,
-}
-
-/// Online status enum matching Xfire's status system.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum UserStatus {
-    #[default]
-    Online,
-    Away,
-    Busy,
-    Offline,
-    /// Invisible: the user is online but appears offline to others.
-    /// They can still receive messages and see who's online.
-    Invisible,
-}
-
-impl UserStatus {
-    /// The wire string the presence layer and the join flow both send.
-    ///
-    /// `Invisible` maps to `"offline"` deliberately: the point of
-    /// invisible is that peers cannot distinguish it from being offline,
-    /// so it must not leak a distinct value onto the wire.
-    ///
-    /// This match lived in `community/join/state.rs` and
-    /// `community/presence/mod.rs` as two copies. A third status would
-    /// have had to be added to both, and the one that was missed would
-    /// have silently reported the wrong presence.
-    #[must_use]
-    pub fn as_wire_str(self) -> &'static str {
-        match self {
-            Self::Online => "online",
-            Self::Away => "away",
-            Self::Busy => "busy",
-            Self::Offline | Self::Invisible => "offline",
-        }
-    }
-}
+pub use rekindle_types::friend::{IdentityState, UserStatus};
 
 pub use rekindle_types::friend_store::FriendshipState;
 

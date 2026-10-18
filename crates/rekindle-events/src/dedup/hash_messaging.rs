@@ -127,7 +127,26 @@ pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
                                                             // scan, so folding it in would give each tick a distinct hash and
                                                             // dedup would never fire. Game *identity* is what makes a new
                                                             // event; the elapsed count rides along on whichever emission wins.
-    let snapshot = p.snapshot();
+    let snapshot = match p {
+        // Our own profile change is published once, by the host, and never
+        // arrives over a peer path, so nothing repeats it to dedup.
+        PresenceEvent::SelfProfileChanged {
+            public_key,
+            display_name,
+            avatar_changed,
+        } => {
+            h.update(b"self-profile|");
+            h.update(public_key.as_bytes());
+            h.update(b"|");
+            h.update(display_name.as_deref().unwrap_or("").as_bytes());
+            h.update(&[u8::from(*avatar_changed)]);
+            h.update(&now_bucket.to_le_bytes());
+            return;
+        }
+        PresenceEvent::CommunityMemberChanged { snapshot, .. }
+        | PresenceEvent::FriendChanged { snapshot, .. }
+        | PresenceEvent::SelfChanged { snapshot, .. } => snapshot,
+    };
     match p {
         PresenceEvent::CommunityMemberChanged {
             community,
@@ -147,6 +166,7 @@ pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
             h.update(b"friend|");
             h.update(peer_key.as_bytes());
         }
+        PresenceEvent::SelfProfileChanged { .. } => {}
     }
     h.update(b"|");
     h.update(snapshot.status.as_deref().unwrap_or("").as_bytes());

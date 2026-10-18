@@ -56,11 +56,13 @@ pub enum IpcRequest {
     Shutdown,
 
     // ── Identity ──────────────────────────────────────────────────
-    /// Create a new identity (init ceremony): its vault and database
-    /// under `passphrase`, then its DHT records. The daemon stays locked;
-    /// `Unlock` opens it.
+    /// Create a new identity and unlock it (plan E1.1): its vault and
+    /// database under `passphrase`, then the unlock, whose own-records stage
+    /// publishes its DHT records once the network has a route. Without a
+    /// name it is `User_` and its key's first eight characters. Answers the
+    /// opened identity (`dto::identity::IdentityView`).
     IdentityCreate {
-        display_name: String,
+        display_name: Option<String>,
         passphrase: String,
     },
     /// The identities on this device (the registry; no unlock needed).
@@ -195,6 +197,12 @@ pub enum IpcRequest {
     IntentCancel {
         intent_id: rekindle_types::intent::IntentId,
     },
+    /// Take back an action that ran, while its offer lasts (plan E1.1):
+    /// the inverse the host stored goes through the gate as a request of
+    /// its own.
+    Undo {
+        id: rekindle_types::intent::IntentId,
+    },
 
     // ── Subscriptions ─────────────────────────────────────────────
     /// Subscribe to events matching filters. `from` is the last cursor this
@@ -222,12 +230,26 @@ pub enum IpcRequest {
     /// Replenish prekeys and publish to profile DHT.
     PrekeyReplenish,
 
-    // ── Presence ──────────────────────────────────────────────────
-    /// Set presence status (online, away, busy, invisible).
+    // ── Presence and profile (plan E1.1) ──────────────────────────
+    /// Set our status. `Offline` is refused: only the host's teardown
+    /// writes it; "Appear Offline" is `Invisible`, which peers cannot tell
+    /// from it.
     PresenceSet {
-        status: String,
-        message: Option<String>,
+        status: rekindle_types::presence::SessionStatus,
     },
+    /// Set our status message (`MAX_STATUS_LEN`).
+    PresenceSetMessage { message: String },
+    /// Our own status, message, game and idle state
+    /// (`dto::presence::OwnPresenceView`).
+    PresenceGet,
+    /// Change the name we show: the identity's database, the registry and
+    /// profile subkey 0.
+    ProfileSetNickname { display_name: String },
+    /// Change our avatar: the image is made a 128 px WebP, saved and
+    /// published to profile subkey 3.
+    ProfileSetAvatar { image: Vec<u8> },
+    /// Our own or a friend's avatar (WebP bytes), from the database.
+    AvatarGet { public_key: String },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,
@@ -237,6 +259,19 @@ pub enum IpcRequest {
     },
     /// Clear game presence.
     GamePresenceClear,
+
+    // ── Audit (plan E1.1) ─────────────────────────────────────────
+    /// Verify the identity's tamper-evident log end to end
+    /// (`dto::audit::AuditVerified`).
+    AuditVerify,
+    /// The log's entries after `since` (`dto::audit::AuditEntryView`).
+    AuditExport { since: u64 },
+
+    // ── Links (plan E1.1) ─────────────────────────────────────────
+    /// Open an https link in the system browser: reviewed as
+    /// `OpenExternalUrl` (the IP address leaves), answered with the
+    /// normalized URL, which the shell opens.
+    LinkOpen { url: String },
 
     // ── Roles ─────────────────────────────────────────────────────
     /// List all roles in a community.

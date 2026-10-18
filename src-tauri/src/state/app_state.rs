@@ -13,10 +13,9 @@ use tokio::sync::mpsc;
 
 use super::circuit::CircuitBreakerState;
 use super::community::CommunityState;
-use super::friend::{FriendState, IdentityState, OutgoingReset, UserStatus};
+use super::friend::{FriendState, IdentityState, OutgoingReset};
 use super::runtime::{
-    DHTManagerHandle, GameDetectorHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle,
-    VoiceEngineHandle,
+    DHTManagerHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle, VoiceEngineHandle,
 };
 use rekindle_channel::AutoModCompiledCache;
 
@@ -77,8 +76,6 @@ pub struct AppState {
     /// inner `Arc<SignalManagerHandle>` is cloned out under the
     /// read-guard and the guard is dropped before any `.await`.
     pub signal_manager: Arc<RwLock<Option<Arc<SignalManagerHandle>>>>,
-    /// Game detector state.
-    pub game_detector: Arc<Mutex<Option<GameDetectorHandle>>>,
     /// Voice engine state. `pub(crate)` so the Tauri-runtime adapters
     /// keep direct access while external callers go through the typed
     /// `AppState` helpers below.
@@ -98,7 +95,8 @@ pub struct AppState {
     /// Phase 4 — shared keystore handle so background services that
     /// only have `&AppState` can reach the vault.
     pub keystore: rekindle_vault::VaultHandle,
-    /// Phase 5 — 9-state lifecycle FSM.
+    /// The one lifecycle FSM (plan E1.1), the Host's (`HostStores`): the
+    /// Host makes every identity transition on it.
     pub lifecycle: std::sync::Arc<rekindle_lifecycle::AppLifecycle>,
     /// Phase 7 — friendship inbox-scan handle (direct_tx + shutdown_tx +
     /// watch_disabled_until + watch_tx + watch_counter consolidated).
@@ -121,15 +119,9 @@ pub struct AppState {
     pub event_router: crate::event_router::WebviewRouter,
     /// The in-process host (plan D3.1), set once it has started.
     pub host: super::host_slot::HostSlot,
-    /// The login session's scope; every post-login task runs in it
-    /// (`services::session`, plan C4). `None` while logged out.
-    pub login_scope: RwLock<Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>>,
-    /// The session's DHT records (plan C7.3, C9.1): the only opener of
-    /// records, the transport node's session pool as its port. Started when
-    /// login services start, ended at logout.
-    pub record_pool: RwLock<Option<Arc<dyn rekindle_records::port::RecordPort>>>,
-    /// The node's own routes (plan C7.9a): allocated at readiness, renewed
-    /// at logout, released at exit.
+    /// The node's own routes (plan C7.9a): allocated at readiness, released
+    /// and wanted again at every lock (the Host's teardown), released for
+    /// good at exit.
     pub own_routes: RwLock<
         Option<
             Arc<
@@ -139,8 +131,6 @@ pub struct AppState {
             >,
         >,
     >,
-    /// Wakes the session's one STATUS publisher (plan C7.8c).
-    pub status_wake: Arc<tokio::sync::Notify>,
     /// The process's wall clock (plan C9.2), shared with the in-process
     /// host: the governance, gossip and MEK adapters read it.
     pub clock: Arc<dyn rekindle_utils::Clock>,
@@ -149,7 +139,7 @@ pub struct AppState {
     pub rng: Arc<dyn rekindle_utils::RandomSource>,
     /// Each DM's watch lease in the record pool, by record key, kept for
     /// the session (`DmDeps::dht_hold_session`). The pool's shutdown at
-    /// logout closes them; `record_pool::end` clears the map.
+    /// logout closes them; the session's end clears the map.
     pub dm_leases: Mutex<HashMap<String, rekindle_records::lease::LeaseId>>,
     /// Each watched friend's profile lease in the record pool, by friend
     /// key (`FriendPresenceDeps::hold_friend_record`); released when the
@@ -173,8 +163,9 @@ pub struct AppState {
     pub unwatched_friends: RwLock<HashSet<String>>,
     /// `JoinHandle` for the Veilid dispatch loop.
     pub dispatch_loop_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
-    /// The status the user had before auto-away kicked in.
-    pub pre_away_status: RwLock<Option<UserStatus>>,
+    /// `LinkOpen` reviews this shell asked for: their commit opens the URL
+    /// the Host answers (`commands::intent::intent_commit`).
+    pub pending_link_opens: Mutex<HashSet<rekindle_types::intent::IntentId>>,
     /// OS deep link awaiting the user's consent (`deep_links`).
     pub pending_deep_link: Mutex<Option<crate::deep_links::PendingDeepLink>>,
     /// Per-community circuit breaker for remote Veilid RPCs.
@@ -322,7 +313,6 @@ impl Default for AppState {
             identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
             signal_manager: Arc::new(RwLock::new(None)),
-            game_detector: Arc::new(Mutex::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),
             shutdown_tx: Arc::new(RwLock::new(None)),
             network_ready_tx: Arc::new(network_ready_tx),
@@ -344,10 +334,7 @@ impl Default for AppState {
             event_dispatch: std::sync::Arc::new(crate::event_dispatch::EventDispatch::new()),
             event_router: crate::event_router::WebviewRouter::default(),
             host: super::host_slot::HostSlot::default(),
-            login_scope: RwLock::new(None),
-            record_pool: RwLock::new(None),
             own_routes: RwLock::new(None),
-            status_wake: Arc::new(tokio::sync::Notify::new()),
             clock: Arc::new(rekindle_utils::SystemClock),
             rng: Arc::new(rekindle_utils::OsRandom),
             dm_leases: Mutex::new(HashMap::new()),
@@ -358,7 +345,7 @@ impl Default for AppState {
             meks: Mutex::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
-            pre_away_status: RwLock::new(None),
+            pending_link_opens: Mutex::new(HashSet::new()),
             pending_deep_link: Mutex::new(None),
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
@@ -425,6 +412,7 @@ impl AppState {
             attempts: Arc::clone(&self.identity_attempts),
             audit_chain: Arc::clone(&self.audit_chain),
             session: Arc::clone(&self.transport_session),
+            lifecycle: Arc::clone(&self.lifecycle),
         }
     }
 

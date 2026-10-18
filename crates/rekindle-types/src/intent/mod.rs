@@ -301,6 +301,27 @@ pub enum Notifies {
     Members(u32),
 }
 
+/// How an action that ran can be taken back for a short while (plan E1.1):
+/// `IpcRequest::Undo { id }` runs the inverse the host stored, classified on
+/// its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoOffer {
+    pub id: IntentId,
+    /// The action the undo runs.
+    pub inverse: IntentKind,
+    /// After this the offer is gone, ms since the epoch.
+    pub expires_at_ms: u64,
+}
+
+impl UndoOffer {
+    /// Whole seconds left at `now_ms` (0 once it expired).
+    #[must_use]
+    pub fn seconds_left(&self, now_ms: u64) -> u64 {
+        self.expires_at_ms.saturating_sub(now_ms) / 1000
+    }
+}
+
 /// A held action, as every frontend renders it (step 2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

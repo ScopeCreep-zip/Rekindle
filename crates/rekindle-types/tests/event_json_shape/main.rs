@@ -15,6 +15,9 @@
 //!    payload carries a free-form map (`HashMap`/`BTreeMap<String, _>`),
 //!    so every key is schema and none is exempt.
 
+#[path = "../common/json.rs"]
+mod json;
+
 mod call;
 mod channel;
 mod crypto;
@@ -375,31 +378,6 @@ fn serialized_samples() -> Map<String, Value> {
     out
 }
 
-fn is_camel_case(key: &str) -> bool {
-    let mut chars = key.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase()) && chars.all(|c| c.is_ascii_alphanumeric())
-}
-
-fn collect_bad_keys(value: &Value, path: &str, bad: &mut Vec<String>) {
-    match value {
-        Value::Object(map) => {
-            for (k, v) in map {
-                let here = format!("{path}.{k}");
-                if !is_camel_case(k) {
-                    bad.push(here.clone());
-                }
-                collect_bad_keys(v, &here, bad);
-            }
-        }
-        Value::Array(items) => {
-            for (i, v) in items.iter().enumerate() {
-                collect_bad_keys(v, &format!("{path}[{i}]"), bad);
-            }
-        }
-        _ => {}
-    }
-}
-
 fn golden_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/subscription_events.json")
 }
@@ -467,7 +445,7 @@ fn variant_names_match_the_serde_tags() {
 fn every_key_is_camel_case() {
     let mut bad = Vec::new();
     for (id, value) in serialized_samples() {
-        collect_bad_keys(&value, &format!("[{id}] $"), &mut bad);
+        json::collect_bad_keys(&value, &format!("[{id}] $"), &mut bad);
     }
     assert!(
         bad.is_empty(),
@@ -478,42 +456,7 @@ fn every_key_is_camel_case() {
 
 #[test]
 fn json_matches_the_golden_file() {
-    let actual = serialized_samples();
-    let mut rendered =
-        serde_json::to_string_pretty(&Value::Object(actual.clone())).expect("render golden");
-    rendered.push('\n');
-    let path = golden_path();
-    if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| v == "1") {
-        std::fs::write(&path, rendered).expect("write golden file");
-        return;
-    }
-    let on_disk = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e} (run with UPDATE_GOLDEN=1)", path.display()));
-    if on_disk == rendered {
-        return;
-    }
-    let golden: Map<String, Value> = serde_json::from_str(&on_disk).expect("golden file is JSON");
-    let mut report = Vec::new();
-    for (id, value) in &actual {
-        match golden.get(id) {
-            None => report.push(format!("added:   {id}")),
-            Some(old) if old != value => {
-                report.push(format!("changed: {id}\n  golden: {old}\n  actual: {value}"));
-            }
-            Some(_) => {}
-        }
-    }
-    for id in golden.keys().filter(|id| !actual.contains_key(*id)) {
-        report.push(format!("removed: {id}"));
-    }
-    if report.is_empty() {
-        report.push("formatting differs (re-run with UPDATE_GOLDEN=1)".to_owned());
-    }
-    panic!(
-        "subscription event JSON differs from {}:\n{}",
-        path.display(),
-        report.join("\n")
-    );
+    json::check_golden(&golden_path(), &serialized_samples(), "subscription event");
 }
 
 #[test]

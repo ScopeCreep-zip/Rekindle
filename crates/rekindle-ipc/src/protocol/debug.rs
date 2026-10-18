@@ -238,6 +238,15 @@ impl std::fmt::Debug for IpcRequest {
             // method under the clippy::too_many_lines limit. They are listed
             // explicitly rather than via `_` so adding an `IpcRequest` variant
             // remains a compile error here — exhaustiveness is preserved.
+            Self::Undo { .. }
+            | Self::PresenceSetMessage { .. }
+            | Self::PresenceGet
+            | Self::ProfileSetNickname { .. }
+            | Self::ProfileSetAvatar { .. }
+            | Self::AvatarGet { .. }
+            | Self::AuditVerify
+            | Self::AuditExport { .. }
+            | Self::LinkOpen { .. } => self.fmt_own(f),
             Self::PrekeyReplenish
             | Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
@@ -269,16 +278,49 @@ impl std::fmt::Debug for IpcRequest {
 }
 
 impl IpcRequest {
+    /// Our own profile, presence, audit log and links: text the user wrote
+    /// and a URL that may carry a token are logged by length only.
+    fn fmt_own(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PresenceSetMessage { message } => f
+                .debug_struct("PresenceSetMessage")
+                .field("message_len", &message.len())
+                .finish(),
+            Self::PresenceGet => write!(f, "PresenceGet"),
+            Self::Undo { id } => f.debug_struct("Undo").field("id", id).finish(),
+            Self::ProfileSetNickname { display_name } => f
+                .debug_struct("ProfileSetNickname")
+                .field("display_name_len", &display_name.len())
+                .finish(),
+            Self::ProfileSetAvatar { image } => f
+                .debug_struct("ProfileSetAvatar")
+                .field("image_len", &image.len())
+                .finish(),
+            Self::AvatarGet { public_key } => f
+                .debug_struct("AvatarGet")
+                .field("public_key", public_key)
+                .finish(),
+            Self::AuditVerify => write!(f, "AuditVerify"),
+            Self::AuditExport { since } => {
+                f.debug_struct("AuditExport").field("since", since).finish()
+            }
+            Self::LinkOpen { url } => f
+                .debug_struct("LinkOpen")
+                .field("url_len", &url.len())
+                .finish(),
+            other => unreachable!("{} is formatted by fmt", other.name()),
+        }
+    }
+
     /// Tail of the [`std::fmt::Debug`] impl — formats the variants not handled
     /// inline by `fmt`. See that impl for the split rationale. Variants handled
     /// by `fmt` are routed there and never reach the `unreachable!` arm below.
     fn fmt_rest(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::PrekeyReplenish => write!(f, "PrekeyReplenish"),
-            Self::PresenceSet { status, message } => f
+            Self::PresenceSet { status } => f
                 .debug_struct("PresenceSet")
                 .field("status", status)
-                .field("message", message)
                 .finish(),
             Self::GamePresenceSet {
                 game_name,
@@ -466,7 +508,7 @@ mod tests {
                 passphrase: secret.into(),
             },
             IpcRequest::IdentityCreate {
-                display_name: "Name".into(),
+                display_name: Some("Name".into()),
                 passphrase: secret.into(),
             },
             IpcRequest::IdentityExport {

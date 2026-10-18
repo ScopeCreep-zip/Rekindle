@@ -17,5 +17,4 @@ pub mod dm;
 pub mod friend;
 pub mod identity;
 pub mod mek;
-pub mod presence;
 pub mod voice;

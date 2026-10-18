@@ -183,18 +183,9 @@ impl CommunityPresenceDeps for PresenceAdapter {
     }
 
     fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
-        use rekindle_types::presence::SessionStatus;
-        // Map the identity-level UserStatus onto the typed session
-        // vocabulary so friends + community presence speak one language.
-        let status = match state_helpers::identity_status(&self.state)
-            .unwrap_or(crate::state::UserStatus::Online)
-        {
-            crate::state::UserStatus::Online => SessionStatus::Online,
-            crate::state::UserStatus::Away => SessionStatus::Away,
-            crate::state::UserStatus::Busy => SessionStatus::Busy,
-            crate::state::UserStatus::Offline => SessionStatus::Offline,
-            crate::state::UserStatus::Invisible => SessionStatus::Invisible,
-        };
+        // The identity's status is the session vocabulary (one language
+        // for friends and community presence).
+        let status = state_helpers::identity_status(&self.state).unwrap_or_default();
         let location = {
             let communities = self.state.communities.read();
             communities

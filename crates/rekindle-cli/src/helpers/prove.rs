@@ -176,6 +176,18 @@ fn render(review: &IntentReview) -> anyhow::Result<()> {
 /// an undo.
 fn render_reversibility(ran: &Ran, reviewed: bool) {
     use std::io::Write as _;
+    // An undo the host offers: the command that takes it, while it lasts.
+    if let Some(undo) = &ran.undo {
+        if !with_flags(|flags| flags.structured) {
+            let _ = writeln!(
+                std::io::stderr(),
+                "undo within {} s: rekindle undo {}",
+                undo.seconds_left(rekindle_utils::timestamp_ms()),
+                undo.id.0
+            );
+        }
+        return;
+    }
     let Some(reversibility) = ran.reversibility else {
         return;
     };

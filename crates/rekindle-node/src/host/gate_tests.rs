@@ -36,6 +36,7 @@ async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, S
         serve_bus: false,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        shell: None,
     })
     .await
     .unwrap();
@@ -127,7 +128,7 @@ async fn cancelled_and_disconnected_actions_are_gone() {
     );
 
     let second = review(host.call(bus(3), delete()).await);
-    crate::host::gate::clear_connection(&host.ctx.intents, 3);
+    crate::host::gate::clear_connection(&host.ctx, 3);
     assert_eq!(
         code(&host.call(bus(3), commit(second.intent_id)).await),
         Some(404)

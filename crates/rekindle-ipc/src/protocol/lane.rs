@@ -96,6 +96,7 @@ impl IpcRequest {
             Self::DmTyping { .. } => ("DmTyping", Write, Authenticated),
             Self::DmInbox { .. } => ("DmInbox", Query, Authenticated),
 
+            Self::Undo { .. } => ("Undo", Write, Authenticated),
             Self::Subscribe { .. } => ("Subscribe", Query, Authenticated),
             Self::Unsubscribe { .. } => ("Unsubscribe", Query, Authenticated),
 
@@ -105,8 +106,17 @@ impl IpcRequest {
             Self::PrekeyReplenish => ("PrekeyReplenish", Write, Authenticated),
 
             Self::PresenceSet { .. } => ("PresenceSet", Write, Authenticated),
+            Self::PresenceSetMessage { .. } => ("PresenceSetMessage", Write, Authenticated),
+            Self::PresenceGet => ("PresenceGet", Query, Authenticated),
+            Self::ProfileSetNickname { .. } => ("ProfileSetNickname", Write, Authenticated),
+            Self::ProfileSetAvatar { .. } => ("ProfileSetAvatar", Write, Authenticated),
+            Self::AvatarGet { .. } => ("AvatarGet", Query, Authenticated),
             Self::GamePresenceSet { .. } => ("GamePresenceSet", Write, Authenticated),
             Self::GamePresenceClear => ("GamePresenceClear", Write, Authenticated),
+
+            Self::AuditVerify => ("AuditVerify", Query, Authenticated),
+            Self::AuditExport { .. } => ("AuditExport", Query, Authenticated),
+            Self::LinkOpen { .. } => ("LinkOpen", Query, Authenticated),
 
             Self::RoleList { .. } => ("RoleList", Query, Authenticated),
             Self::RoleCreate { .. } => ("RoleCreate", Write, Authenticated),

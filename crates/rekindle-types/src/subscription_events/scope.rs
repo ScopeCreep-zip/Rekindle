@@ -74,7 +74,9 @@ impl SubscriptionEvent {
                     EventScope::Community(community.clone())
                 }
                 PresenceEvent::FriendChanged { peer_key, .. } => EventScope::Peer(peer_key.clone()),
-                PresenceEvent::SelfChanged { .. } => EventScope::Device,
+                PresenceEvent::SelfChanged { .. } | PresenceEvent::SelfProfileChanged { .. } => {
+                    EventScope::Device
+                }
             },
             Self::Membership(e) => match e {
                 MembershipEvent::JoinProgress { community, .. } => {

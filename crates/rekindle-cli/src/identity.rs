@@ -31,34 +31,28 @@ pub async fn cmd_init(
         args.passphrase_file.as_deref(),
     )?;
 
-    format::step_header(1, 2, "Creating identity via daemon")?;
+    // One request creates the identity and unlocks it (plan E1.1).
+    format::step_header(1, 1, "Creating and unlocking the identity")?;
     let value = helpers::send(
         client,
         IpcRequest::IdentityCreate {
-            display_name: display_name.clone(),
+            display_name: Some(display_name),
             passphrase: passphrase.as_str().to_owned(),
         },
     )
     .await?;
-    format::step_done("identity created")?;
-    let public_key = value
-        .get("public_key")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("the daemon did not name the new identity"))?
-        .to_owned();
-
-    format::step_header(2, 2, "Unlocking daemon")?;
-    unlock(client, &public_key, &passphrase).await?;
     format::step_done("daemon operational")?;
 
     if mode.is_structured() {
         format::print_structured(&value, mode)
     } else {
         format::print_text("\nIdentity created successfully.")?;
-        if let Some(pk) = value.get("public_key").and_then(|v| v.as_str()) {
+        if let Some(pk) = value.get("publicKey").and_then(|v| v.as_str()) {
             format::print_text(&format!("  Public key: {pk}"))?;
         }
-        format::print_text(&format!("  Display name: {display_name}"))?;
+        if let Some(name) = value.get("displayName").and_then(|v| v.as_str()) {
+            format::print_text(&format!("  Display name: {name}"))?;
+        }
         format::print_text("\nNext steps:")?;
         format::print_text(concat!(
             "  ",
@@ -97,16 +91,9 @@ pub async fn cmd_unlock(
 /// The device's one identity, or an error that says what to do.
 async fn only_identity(client: &DaemonClient) -> anyhow::Result<String> {
     let value = helpers::send(client, IpcRequest::IdentityList).await?;
-    let keys: Vec<String> = value
-        .get("identities")
-        .and_then(|v| v.as_array())
-        .map(|list| {
-            list.iter()
-                .filter_map(|e| e.get("publicKey").and_then(|k| k.as_str()))
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
+    let listed: Vec<rekindle_types::dto::identity::IdentitySummary> = serde_json::from_value(value)
+        .map_err(|e| anyhow::anyhow!("the daemon's identity list: {e}"))?;
+    let keys: Vec<String> = listed.into_iter().map(|e| e.public_key).collect();
     match keys.as_slice() {
         [only] => Ok(only.clone()),
         [] => Err(anyhow::anyhow!(concat!(

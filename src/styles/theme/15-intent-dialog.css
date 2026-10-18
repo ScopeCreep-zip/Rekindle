@@ -1,0 +1,53 @@
+@layer components {
+
+  /* The intent review (ADR 0019, plan U1.6). No animation: the dialog
+   * appears in place, so reduced-motion users get the same view. */
+  .intent-dialog-subject {
+    font-weight: 600;
+    color: var(--color-xfire-text);
+    word-break: break-word;
+  }
+
+  .intent-dialog-facts {
+    margin: 0;
+    padding-left: 16px;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .intent-dialog-escalation {
+    color: var(--color-xfire-busy);
+  }
+
+  .intent-dialog-meta {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .intent-dialog-acknowledge {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .intent-dialog-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  /* The undo offer's one action (its row layout is grouped with
+   * `.active-call-panel-header`). The dialog's body and action row are
+   * grouped with the add-friend panel's. */
+  .toast-undo-button {
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    color: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+}

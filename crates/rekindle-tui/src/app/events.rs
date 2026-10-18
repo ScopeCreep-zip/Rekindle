@@ -100,6 +100,10 @@ impl App {
             // An action the backend began, waiting for this identity's
             // review (plan D3.4).
             SubscriptionEvent::IntentPending(review) => Some(Action::ShowIntent(Box::new(review))),
+            // Our own presence (plan E1.2): the dashboard shows it live.
+            SubscriptionEvent::Presence(
+                rekindle_types::subscription_events::PresenceEvent::SelfChanged { snapshot, .. },
+            ) => Some(Action::OwnPresence(Box::new(snapshot))),
             // ── Events forwarded to active view (real-time data push) ─────
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { .. }) => {
                 if self.nav.tab_bar.selected_id() != Some("communities") {

@@ -1,3 +1,4 @@
+import { subscribeBackendIntents } from "../handlers/intent.handlers";
 import { Component, onMount, onCleanup, createSignal, Show } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
@@ -85,6 +86,8 @@ const BuddyListWindow: Component = () => {
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     unlisteners.push(subscribeDeepLinkHandler());
+    // Reviews of actions the backend began, in the router root's dialog.
+    unlisteners.push(subscribeBackendIntents());
     unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
     void startEventStream(() => void hydrateState());
     void refreshMissedCalls();

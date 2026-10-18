@@ -34,11 +34,8 @@ pub async fn handle_value_change(
     // (so the inspect tick does not take it over). A record it does not
     // hold was released (a left community, a removed friend), so its watch
     // ends by design.
-    let held = state
-        .record_pool
-        .read()
-        .clone()
-        .is_some_and(|pool| pool.on_value_change(&change).held);
+    let held = crate::state_helpers::record_pool(state)
+        .is_ok_and(|pool| pool.on_value_change(&change).held);
 
     if change.subkeys.is_empty() {
         if !held {

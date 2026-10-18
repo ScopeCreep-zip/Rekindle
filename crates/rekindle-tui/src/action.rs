@@ -116,6 +116,8 @@ pub enum Action {
     // ─── Intent reviews (plan D3.4) ─────────────────────────────
     /// The host holds an action for review: show it.
     ShowIntent(Box<rekindle_types::intent::IntentReview>),
+    /// Our own presence changed (the host's `SelfChanged`).
+    OwnPresence(Box<rekindle_types::subscription_events::PresenceSnapshot>),
     /// Commit the reviewed action with this proof.
     CommitIntent {
         review: Box<rekindle_types::intent::IntentReview>,
@@ -198,5 +200,9 @@ pub enum CommandResult {
     IdentityLoaded {
         public_key: String,
         display_name: String,
+    },
+    /// Our own status, message, game and idle state (`PresenceGet`).
+    OwnPresenceLoaded {
+        view: rekindle_types::dto::presence::OwnPresenceView,
     },
 }

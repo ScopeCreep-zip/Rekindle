@@ -4,9 +4,8 @@
 //! `docs/research/2026-10-harvest-security-infra-audit.md`) — this crate
 //! holds exactly the platform FFI that file used to carry inline, with
 //! zero `AppState`/Tauri dependency, mirroring `rekindle-game-detect`'s
-//! `platform/` module shape. The orchestration that polls this on a
-//! timer and flips presence status to Away/back stays in src-tauri; see
-//! `services::idle_service::start_idle_service`.
+//! `platform/` module shape. The host's idle stage polls it and runs
+//! auto-away on both hosts (`rekindle_node::host::idle`, plan E1.1).
 
 mod platform;
 

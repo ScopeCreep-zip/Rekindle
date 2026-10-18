@@ -63,9 +63,16 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &Db) -> Result<(), 
     if let Some(lease) = old_lease {
         record_pool.release(lease).await;
     }
-    // The publisher writes the status to the new profile (it reads the
-    // profile key at write time).
-    services::presence_service::request_status_publish(state);
+    // The Host's status publisher reads the profile from the session
+    // projection at write time: name the new record there, then have it
+    // write our status to it.
+    if let Some(session) = state.transport_session.write().as_mut() {
+        session.identity.profile_dht_key.clone_from(&new_key);
+        session.identity.profile_owner_keypair = Some(new_keypair.clone());
+    }
+    if let Some(host) = state.host.current() {
+        host.own_profile_moved();
+    }
 
     // The new keypair into the vault first, then the key into the
     // database, so a stored key always has its keypair.

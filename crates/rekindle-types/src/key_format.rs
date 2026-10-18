@@ -151,10 +151,6 @@ pub const MAX_NOTE_LEN: usize = 512;
 /// Longest status message: Slack's custom status text (`status_text`, up
 /// to 100 characters).
 pub const MAX_STATUS_LEN: usize = 100;
-/// Longest game-server address: a DNS name (RFC 1035 §2.3.4, at most 255
-/// octets on the wire, so 253 characters as text) plus `:` and a
-/// five-digit port.
-pub const MAX_SERVER_ADDRESS_LEN: usize = 259;
 
 fn is_b64url(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'

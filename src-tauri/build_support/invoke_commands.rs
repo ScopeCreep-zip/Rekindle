@@ -34,10 +34,9 @@ const DEBUG_GATE: &str = "#[cfg(debug_assertions)]";
 
 /// Parse every entry of the `generate_handler![…]` list in `src`.
 pub fn parse(src: &str) -> Result<Vec<InvokeCommand>, String> {
-    let start = src
-        .find("generate_handler![")
+    let (_, body) = src
+        .split_once("generate_handler![")
         .ok_or("no `generate_handler![` in invoke.rs")?;
-    let body = &src[start + "generate_handler![".len()..];
 
     let mut out: Vec<InvokeCommand> = Vec::new();
     let mut gated = false;

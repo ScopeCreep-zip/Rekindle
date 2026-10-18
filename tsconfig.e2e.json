@@ -21,8 +21,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     // The app config narrows `types` to vite/client, which would hide
-    // Playwright's globals here.
-    "types": ["@playwright/test"],
+    // Playwright's globals here. The suites run in Node (events.spec.ts
+    // reads the Rust golden file), so they see Node's types; src/** never
+    // does.
+    "types": ["@playwright/test", "node"],
     "noEmit": true
   },
   "include": ["e2e/**/*.ts"]

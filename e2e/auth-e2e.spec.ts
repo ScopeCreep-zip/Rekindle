@@ -356,13 +356,15 @@ test.describe("Multi-Account", () => {
     // Click delete button on the card
     await page.locator(".account-bubble-delete").click();
 
-    // Delete confirmation modal should appear
-    await expect(page.locator(".modal-container")).toBeVisible();
-    await expect(page.locator(".delete-confirm-text")).toContainText("DeleteMe");
+    // The Host holds the delete for review: the intent dialog asks for
+    // the identity's passphrase, the one prompt (ADR 0019).
+    const review = page.locator(".intent-dialog");
+    await expect(review).toBeVisible();
+    await expect(review.locator(".intent-dialog-subject")).toContainText("DeleteMe");
 
-    // Enter passphrase and confirm deletion
-    await page.locator(".modal-container input[type='password']").fill("delete-me-pass");
-    await page.locator(".modal-container .form-btn-danger").click();
+    // Enter passphrase and commit the deletion
+    await review.locator("input[type='password']").fill("delete-me-pass");
+    await review.locator("button[type='submit']").click();
 
     // Should transition to create mode (no identities left)
     await expect(page.locator(".login-subtitle")).toContainText(

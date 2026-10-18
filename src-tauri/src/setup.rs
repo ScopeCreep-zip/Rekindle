@@ -103,9 +103,9 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // every callsite.
     app.manage(state.keystore.clone());
 
-    // Phase 5 — drive the lifecycle FSM through boot. Stopped → Starting
-    // marks "Veilid attach beginning"; the dispatch loop transitions to
-    // Locked once attach completes (see services/veilid/lifecycle/status.rs).
+    // The one lifecycle FSM through boot: Stopped → Starting marks "Veilid
+    // starting"; the Host moves it to Locked once it has started over the
+    // node, so the login button waits for the Host (plan E1.1).
     let _ = state
         .lifecycle
         .transition(rekindle_lifecycle::LifecycleState::Starting);
@@ -208,6 +208,9 @@ async fn start_host(
         .read()
         .clone()
         .ok_or("transport node not adopted")?;
+    // The GUI's unported unlock stages, which the Host calls (plan E1.1).
+    let app = state.app_handle.read().clone();
+    let shell = services::shell_session::ShellSession::new(Arc::clone(state), app);
     let host = rekindle_node::host::Host::start(rekindle_node::host::HostConfig {
         root: claimed,
         stores: state.host_stores(),
@@ -215,6 +218,7 @@ async fn start_host(
         serve_bus: true,
         clock: Arc::clone(&state.clock),
         rng: Arc::clone(&state.rng),
+        shell: Some(shell),
     })
     .await
     .map_err(|e| format!("{e:#}"))?;

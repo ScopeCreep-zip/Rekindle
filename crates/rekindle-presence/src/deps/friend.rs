@@ -58,8 +58,7 @@ pub enum FriendPresenceEvent {
 /// acquisition, watch subscriptions, set_dht_value) are hidden behind
 /// adapter-side methods that exchange only strings + byte vectors.
 /// What publishing our own STATUS needs (plan C7.8c): the one publisher
-/// per session runs over this, so a host that has no friend-presence
-/// surface (the daemon) implements only it.
+/// per session runs over this, the host's own presence (plan E1.1).
 #[async_trait]
 pub trait StatusPublisherDeps: Send + Sync + 'static {
     /// Our profile record key, or `None` before the profile is published.
@@ -80,7 +79,10 @@ pub trait StatusPublisherDeps: Send + Sync + 'static {
 }
 
 #[async_trait]
-pub trait FriendPresenceDeps: StatusPublisherDeps {
+pub trait FriendPresenceDeps: Send + Sync + 'static {
+    /// Wall-clock now in milliseconds since the unix epoch (staleness).
+    fn now_ms(&self) -> i64;
+
     // === Friend lookup ===
     fn friend_for_dht_key(&self, dht_key: &str) -> Option<String>;
     fn is_friend_accepted(&self, friend_key: &str) -> bool;

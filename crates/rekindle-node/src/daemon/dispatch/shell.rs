@@ -1,8 +1,9 @@
 //! The requests the GUI's window owns while the host runs in the shell
-//! (plan D3.1): the identity lifecycle and the process. The GUI's login
-//! pipeline unlocks, locks and changes identities until E1.1 moves it into
-//! the host, and it owns the process, so a bus client cannot pull either out
-//! from under the window. The window's own calls are never refused.
+//! (plan D3.1, E1.1): the identity lifecycle and the process. The Host runs
+//! every unlock and lock (`host::unlock`), but in the shell the session is
+//! the window's: the user opened it there, and the window owns the process,
+//! so a bus client cannot lock, change or remove that identity, nor stop the
+//! process, from under it. The window's own calls are never refused.
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 

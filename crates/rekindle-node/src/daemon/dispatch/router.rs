@@ -1,10 +1,11 @@
 //! The `dispatch()` router: matches every `IpcRequest` variant to its
 //! domain handler, plus the audit-logging helper it calls before routing.
 
+use crate::host::shell_hooks::EndReason;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::{
-    admin, channel, community, governance, identity, keys, lifecycle, presence, social, status,
+    admin, channel, community, governance, identity, keys, lifecycle, own, social, status, voice,
     Caller, DaemonContext,
 };
 
@@ -37,18 +38,21 @@ async fn route(
             identity,
             passphrase,
         } => lifecycle::handle_unlock(ctx, state, caller, &identity, &passphrase).await,
-        // The daemon keeps no selected identity across a lock, so a
-        // logout is a lock (its teardown announces offline first).
-        IpcRequest::Lock | IpcRequest::Logout => lifecycle::handle_lock(ctx, state).await,
+        // Both end the unlock (its teardown announces offline first); the
+        // reason tells the shell which window to show.
+        IpcRequest::Lock => lifecycle::handle_lock(ctx, state, EndReason::Lock).await,
+        IpcRequest::Logout => lifecycle::handle_lock(ctx, state, EndReason::Logout).await,
         IpcRequest::Shutdown => lifecycle::handle_shutdown(ctx),
 
         // ── Identity ─────────────────────────────────────────────
         IpcRequest::IdentityCreate {
             display_name,
             passphrase,
-        } => identity::handle_create(ctx, state, &display_name, &passphrase).await,
+        } => {
+            identity::handle_create(ctx, state, caller, display_name.as_deref(), &passphrase).await
+        }
         IpcRequest::IdentityList => identity::handle_list(ctx),
-        IpcRequest::IdentityShow => identity::handle_show(ctx, state),
+        IpcRequest::IdentityShow => identity::handle_show(ctx),
         IpcRequest::IdentityExport { passphrase } => {
             identity::handle_export(ctx, state, &passphrase)
         }
@@ -65,9 +69,12 @@ async fn route(
         }
         IpcRequest::IdentityWipe => identity::handle_wipe(ctx, state).await,
         // The gate answers these in `HostApi::call`; they never route.
-        IpcRequest::IntentCommit { .. } | IpcRequest::IntentCancel { .. } => {
-            IpcResponse::error(400, "intent commits are answered by the host's gate")
-        }
+        IpcRequest::IntentCommit { .. }
+        | IpcRequest::IntentCancel { .. }
+        | IpcRequest::Undo { .. } => IpcResponse::error(
+            400,
+            "intent commits and undos are answered by the host's gate",
+        ),
 
         // ── Community ────────────────────────────────────────────
         IpcRequest::CommunityCreate {
@@ -305,34 +312,27 @@ async fn route(
         } => keys::handle_mek_request(ctx, state, &community, &channel, generation),
         IpcRequest::PrekeyReplenish => keys::handle_prekey_replenish(ctx, state).await,
 
-        // ── Presence + Voice ─────────────────────────────────────
-        IpcRequest::PresenceSet { status, message } => {
-            presence::handle_set(ctx, state, &status, message.as_deref()).await
-        }
-        IpcRequest::GamePresenceSet {
-            game_name,
-            game_id,
-            elapsed_seconds,
-            server_address,
-        } => {
-            presence::handle_game_set(
-                ctx,
-                state,
-                &game_name,
-                game_id,
-                elapsed_seconds,
-                server_address.as_deref(),
-            )
-            .await
-        }
-        IpcRequest::GamePresenceClear => presence::handle_game_clear(ctx, state).await,
+        // ── Our presence, profile, game, audit log, links ────────
+        request @ (IpcRequest::PresenceSet { .. }
+        | IpcRequest::PresenceSetMessage { .. }
+        | IpcRequest::PresenceGet
+        | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::ProfileSetAvatar { .. }
+        | IpcRequest::AvatarGet { .. }
+        | IpcRequest::GamePresenceSet { .. }
+        | IpcRequest::GamePresenceClear
+        | IpcRequest::AuditVerify
+        | IpcRequest::AuditExport { .. }
+        | IpcRequest::LinkOpen { .. }) => own::route(ctx, state, request).await,
+
+        // ── Voice ────────────────────────────────────────────────
         IpcRequest::VoiceJoin {
             community,
             channel,
             muted,
             deafened,
-        } => presence::handle_voice_join(ctx, state, &community, &channel, muted, deafened),
-        IpcRequest::VoiceLeave => presence::handle_voice_leave(ctx, state),
+        } => voice::handle_voice_join(ctx, state, &community, &channel, muted, deafened),
+        IpcRequest::VoiceLeave => voice::handle_voice_leave(ctx, state),
 
         // ── Admin / Network ──────────────────────────────────────
         // Subscribe/Unsubscribe are handled server-side in the IPC bus router.

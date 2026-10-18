@@ -16,8 +16,9 @@ pub fn route_status(state: &AppState) -> (bool, RouteAvailability) {
 
 /// Build and emit a network attachment event from current `NodeHandle` state.
 ///
-/// Phase 5 — also drives lifecycle transitions reactive to attachment:
-///   - first attach: `Starting → Locked` (so login becomes available)
+/// Also drives the lifecycle's attachment edges (until E5.7 moves
+/// attachment handling into the transport handler; Starting → Locked is
+/// the Host's, at its start):
 ///   - lose network mid-session: `Operational/Degraded → Detached`
 ///   - recover network: `Detached → Operational`
 ///
@@ -56,9 +57,6 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
         }
     );
     match (is_attached, cur) {
-        (true, LifecycleState::Starting) => {
-            let _ = state.lifecycle.transition(LifecycleState::Locked);
-        }
         (false, LifecycleState::Operational | LifecycleState::Degraded) => {
             let _ = state.lifecycle.transition(LifecycleState::Detached);
         }

@@ -1,10 +1,10 @@
 import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
-import Modal from "../components/common/Modal";
 import LoadingButton from "../components/common/LoadingButton";
 import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
 import { commands, IdentitySummary } from "../ipc/commands";
+import { isCommandError } from "../ipc/commands/dto";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
@@ -21,11 +21,6 @@ const LoginWindow: Component = () => {
   const [displayName, setDisplayName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
-
-  // Delete confirmation state
-  const [deleteTarget, setDeleteTarget] = createSignal<IdentitySummary | null>(null);
-  const [deletePass, setDeletePass] = createSignal("");
-  const [deleteError, setDeleteError] = createSignal<string | null>(null);
 
   async function loadIdentities(): Promise<void> {
     try {
@@ -136,29 +131,18 @@ const LoginWindow: Component = () => {
     }
   }
 
-  function confirmDelete(id: IdentitySummary, e: Event): void {
+  /** Delete an identity: Protected, so the Host's review asks for its
+   *  passphrase in the `IntentDialog` — the one prompt (ADR 0019). */
+  async function deleteIdentity(id: IdentitySummary, e: Event): Promise<void> {
     e.stopPropagation();
-    setDeleteTarget(id);
-    setDeletePass("");
-    setDeleteError(null);
-  }
-
-  function cancelDelete(): void {
-    setDeleteTarget(null);
-    setDeletePass("");
-    setDeleteError(null);
-  }
-
-  async function executeDelete(): Promise<void> {
-    const target = deleteTarget();
-    if (!target || !deletePass().trim()) return;
-
+    setError(null);
     try {
-      await commands.deleteIdentity(target.publicKey, deletePass());
-      cancelDelete();
+      await commands.deleteIdentity(id.publicKey);
       await loadIdentities();
     } catch (err) {
-      setDeleteError(errorMessage(err));
+      // A cancelled review is the user's choice, not a failure.
+      if (isCommandError(err) && err.type === "failed" && err.data.code === 499) return;
+      setError(errorMessage(err));
     }
   }
 
@@ -179,7 +163,8 @@ const LoginWindow: Component = () => {
                   <div class="account-bubble-name">{id.displayName}</div>
                   <button
                     class="account-bubble-delete"
-                    onClick={(e: MouseEvent) => confirmDelete(id, e)}
+                    aria-label={`Delete ${id.displayName}`}
+                    onClick={(e: MouseEvent) => void deleteIdentity(id, e)}
                   >
                     ✕
                   </button>
@@ -187,6 +172,9 @@ const LoginWindow: Component = () => {
               )}
             </For>
           </div>
+          <Show when={error() !== null}>
+            <div class="form-error" role="alert">{error()}</div>
+          </Show>
           <button class="account-create-btn" onClick={() => { setPassphrase(""); setDisplayName(""); setError(null); setMode("create"); }}>
             + Create New Identity
           </button>
@@ -265,36 +253,6 @@ const LoginWindow: Component = () => {
         </form>
       </Show>
 
-      {/* Delete confirmation modal */}
-      <Modal
-        isOpen={deleteTarget() !== null}
-        title="Delete Account"
-        onClose={cancelDelete}
-      >
-        <div class="delete-confirm-text">
-          Enter passphrase for "{deleteTarget()?.displayName}" to confirm deletion.
-        </div>
-        <input
-          class="form-input"
-          type="password"
-          placeholder="Passphrase"
-          value={deletePass()}
-          onInput={(e: InputEvent) => setDeletePass((e.target as HTMLInputElement).value)}
-        />
-        <Show when={deleteError() !== null}>
-          <div class="form-error">{deleteError()}</div>
-        </Show>
-        <button
-          class="form-btn-danger"
-          onClick={executeDelete}
-          disabled={!deletePass().trim()}
-        >
-          Delete Forever
-        </button>
-        <button class="form-btn-secondary" onClick={cancelDelete}>
-          Cancel
-        </button>
-      </Modal>
     </div>
   );
 };

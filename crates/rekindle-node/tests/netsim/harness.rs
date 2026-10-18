@@ -83,6 +83,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
             serve_bus: false,
             clock: Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>,
             rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,
+            shell: None,
         })
         .await
         .expect("host starts");
@@ -139,24 +140,17 @@ impl SimNode {
         }
     }
 
-    /// Create an identity named `name` and unlock it.
+    /// Create an identity named `name`; the create unlocks it.
     pub async fn unlock_new_identity(&mut self, name: &str) {
         let created = self
             .ok(IpcRequest::IdentityCreate {
-                display_name: name.into(),
+                display_name: Some(name.into()),
                 passphrase: PASSPHRASE.into(),
             })
             .await;
-        let public_key = created["public_key"]
-            .as_str()
-            .expect("a public key")
-            .to_string();
-        self.ok(IpcRequest::Unlock {
-            identity: public_key.clone(),
-            passphrase: PASSPHRASE.into(),
-        })
-        .await;
-        self.public_key = Some(public_key);
+        let view: rekindle_types::dto::identity::IdentityView =
+            serde_json::from_value(created).expect("the opened identity");
+        self.public_key = Some(view.public_key);
     }
 }
 

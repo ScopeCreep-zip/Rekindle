@@ -10,6 +10,7 @@ mod config;
 mod identity;
 mod keys;
 mod network;
+mod own;
 mod social;
 
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.
@@ -19,7 +20,8 @@ pub use config::{ConfigCmd, ExportCmd, ImportCmd};
 pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
-pub use social::{DmCmd, FriendCmd, PresenceCmd};
+pub use own::{AuditCmd, GameCmd, ProfileCmd};
+pub use social::{DmCmd, FriendCmd, PresenceCmd, PresenceStatus};
 
 use std::path::PathBuf;
 
@@ -151,6 +153,24 @@ pub enum Command {
     /// Presence management.
     #[command(subcommand)]
     Presence(PresenceCmd),
+
+    /// Our profile: name and avatar.
+    #[command(subcommand)]
+    Profile(ProfileCmd),
+
+    /// The game we show.
+    #[command(subcommand)]
+    Game(GameCmd),
+
+    /// The tamper-evident audit log.
+    #[command(subcommand)]
+    Audit(AuditCmd),
+
+    /// Take back an action while its offer lasts (the id an answer prints).
+    Undo {
+        /// The undo offer's id.
+        id: String,
+    },
 
     /// Configuration inspection.
     #[command(subcommand)]

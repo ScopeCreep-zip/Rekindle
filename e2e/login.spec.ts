@@ -87,6 +87,56 @@ test.describe("Account Picker", () => {
     );
   });
 
+  test("deleting an identity asks for its passphrase in the review", async ({
+    page,
+  }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
+    await page.goto("/login");
+    await page.waitForSelector(".account-bubble", { timeout: 10_000 });
+
+    await page.locator(".account-bubble-delete").click();
+
+    // The Host held the delete: the dialog names the identity and asks for
+    // its passphrase; the warning style is only on the final button.
+    const review = page.locator(".intent-dialog");
+    await expect(review).toBeVisible();
+    await expect(review.locator(".intent-dialog-subject")).toHaveText("TestUser");
+    const commit = review.locator("button[type='submit']");
+    await expect(commit).toHaveClass(/form-btn-danger/);
+    await expect(commit).toBeDisabled();
+
+    await review.locator("input[type='password']").fill("secret");
+    await commit.click();
+    await expect(review).toBeHidden();
+
+    const calls: Array<{ cmd: string; args: Record<string, unknown> }> =
+      await page.evaluate(() => (window as any).__ipcCalls);
+    expect(calls.find((c) => c.cmd === "delete_identity")?.args).toEqual({
+      publicKey: "abc123def456",
+    });
+    expect(calls.find((c) => c.cmd === "intent_commit")?.args).toEqual({
+      intentId: "01900000-0000-7000-8000-000000000001",
+      proof: { passphrase: "secret" },
+    });
+  });
+
+  test("cancelling the review leaves the identity", async ({ page }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
+    await page.goto("/login");
+    await page.waitForSelector(".account-bubble", { timeout: 10_000 });
+
+    await page.locator(".account-bubble-delete").click();
+    const review = page.locator(".intent-dialog");
+    await expect(review).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(review).toBeHidden();
+
+    await expect(page.locator(".account-bubble")).toHaveCount(1);
+    await expect(page.locator(".form-error")).toHaveCount(0);
+    const calls: Array<{ cmd: string }> = await page.evaluate(() => (window as any).__ipcCalls);
+    expect(calls.some((c) => c.cmd === "intent_cancel")).toBe(true);
+  });
+
   test("clicking account card transitions to login mode", async ({
     page,
   }) => {

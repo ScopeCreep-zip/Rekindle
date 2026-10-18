@@ -122,21 +122,34 @@ pub enum DmCmd {
     },
 }
 
+/// A status the user may pick (offline is locking or logging out;
+/// invisible appears offline to peers).
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum PresenceStatus {
+    Online,
+    Away,
+    Busy,
+    Invisible,
+}
+
 /// Presence management subcommands.
 #[derive(Subcommand)]
 pub enum PresenceCmd {
     /// Set status: online, away, busy, invisible.
     Set {
         /// Status value.
-        #[arg(long, short = 's')]
-        status: String,
-        /// Status message.
-        #[arg(long, short = 'm')]
-        message: Option<String>,
-        /// Game activity name.
-        #[arg(long)]
-        game: Option<String>,
+        #[arg(long, short = 's', value_enum)]
+        status: PresenceStatus,
     },
+
+    /// Set the status message; an empty one clears it.
+    Message {
+        /// The message.
+        text: String,
+    },
+
+    /// Show our own status, message, game and idle state.
+    Show,
 
     /// Watch friend/community presence updates.
     Watch {

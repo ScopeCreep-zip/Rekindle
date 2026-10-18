@@ -129,3 +129,175 @@ export type LifecycleState =
   | "detached"
   | "locking"
   | "shutting_down";
+
+// ── Host calls (plan E1.1) ──
+//
+// Every Host-call command answers `Done<T>` or rejects with a
+// `CommandError` (`rekindle_types::dto::command`). `CommandError` is
+// adjacently tagged (`{ type, data }`); the `IntentReview` inside it is
+// externally tagged like every `rekindle_types::intent` enum
+// (`{ variant: {...} }` or a bare string), pinned by the Rust golden files.
+
+export type IntentKind = string;
+
+type IntentClass =
+  | "routine"
+  | "consequential"
+  | "trustChanging"
+  | "destructive"
+  | "protected";
+
+type ProofRequired = "none" | "commit" | "acknowledge" | "typeSubject" | "passphrase";
+
+export type Subject =
+  | { person: { localNickname: string | null; displayName: string | null; fingerprint: string } }
+  | { community: { id: string; name: string } }
+  | { channel: { communityName: string; id: string; name: string } }
+  | { role: { id: string; name: string } }
+  | { file: { name: string } }
+  | { link: { host: string } }
+  | { ownIdentity: { name: string } }
+  | { named: { name: string } };
+
+export type Fact =
+  | "subjectNotTold"
+  | "pendingMessagesDropped"
+  | "sessionDeleted"
+  | "presenceVisible"
+  | "ipAddressLeaves"
+  | "rejoinNeedsInvite"
+  | { fingerprint: { fingerprint: string } }
+  | { safetyNumber: { safetyNumber: string } }
+  | { membersAffected: { count: number } }
+  | { messagesDeleted: { count: number } };
+
+export type Escalation =
+  | "firstMediaInCall"
+  | "lastAdmin"
+  | "soleMember"
+  | "startsMekBallot"
+  | { attachment: { fileName: string; metadataRemoved: boolean; sizeBytes: number } }
+  | { containerNotEmpty: { members: number; messages: number } }
+  | { crossAudience: { fromMembers: number; toMembers: number } }
+  | { massMention: { notified: number } }
+  | { pendingWork: { inCall: boolean; unsent: number; uploading: boolean } }
+  | { verifiedKeyChanged: { oldSafetyNumber: string; newSafetyNumber: string } };
+
+export type Reversibility =
+  | "undoable"
+  | "needsOthers"
+  | "never"
+  | { reversibleByInverse: IntentKind };
+
+export type Notifies = "nobody" | "subject" | { members: number };
+
+/** A held action, as every frontend renders it (ADR 0019). */
+export interface IntentReview {
+  intentId: string;
+  kind: IntentKind;
+  class: IntentClass;
+  subject: Subject;
+  facts: Fact[];
+  escalations: Escalation[];
+  reversibility: Reversibility;
+  notifies: Notifies;
+  proof: ProofRequired;
+  expiresAtMs: number;
+}
+
+/** The proof a commit carries. */
+export type IntentProof =
+  | "commit"
+  | "acknowledged"
+  | { typed: string }
+  | { passphrase: string };
+
+/** How an action that ran can be taken back while it lasts. */
+export interface UndoOffer {
+  id: string;
+  inverse: IntentKind;
+  expiresAtMs: number;
+}
+
+/** A Host call that ran. */
+export interface Done<T> {
+  value: T;
+  undo: UndoOffer | null;
+}
+
+/** A Host call that did not run. */
+export type CommandError =
+  | { type: "failed"; data: { code: number; message: string; remediation: string | null } }
+  | { type: "intentRequired"; data: IntentReview };
+
+/** Whether `e` is a `CommandError` (the shape a Host call rejects with). */
+export function isCommandError(e: unknown): e is CommandError {
+  return (
+    typeof e === "object" && e !== null && "type" in e && "data" in e &&
+    ((e as { type: unknown }).type === "failed" ||
+      (e as { type: unknown }).type === "intentRequired")
+  );
+}
+
+// ── Identity (rekindle_types::dto::identity) ──
+
+/** One identity on this device, for the login picker. */
+export interface IdentitySummary {
+  publicKey: string;
+  displayName: string;
+  createdAt: number;
+}
+
+/** The identity a create or an unlock opened. */
+export interface IdentityView {
+  publicKey: string;
+  displayName: string;
+}
+
+/** The unlocked identity's public data. */
+export interface IdentityShown {
+  publicKey: string;
+  displayName: string;
+  profileDhtKey: string;
+  mailboxDhtKey: string;
+  friendListDhtKey: string;
+  communities: number;
+}
+
+// ── Our presence (rekindle_types::dto::presence) ──
+
+export type SessionStatus = "online" | "away" | "busy" | "offline" | "invisible";
+
+type IdleState = "unavailable" | "active" | "autoAway";
+
+/** The game we play, detected or set by hand. */
+export interface OwnGame {
+  gameId: number;
+  gameName: string;
+  elapsedSeconds: number;
+  serverAddress: string | null;
+}
+
+/** What `PresenceGet` answers. */
+export interface OwnPresenceView {
+  status: SessionStatus;
+  statusMessage: string;
+  game: OwnGame | null;
+  idle: IdleState;
+}
+
+// ── The audit log (rekindle_types::dto::audit) ──
+
+export type AuditVerified =
+  | { state: "intact"; length: number }
+  | { state: "broken"; length: number; at: number | null; detail: string };
+
+export interface AuditEntryView {
+  cursor: number;
+  prevMac: string;
+  mac: string;
+  atMs: number;
+  actorPub: string;
+  kind: string;
+  payload: unknown;
+}

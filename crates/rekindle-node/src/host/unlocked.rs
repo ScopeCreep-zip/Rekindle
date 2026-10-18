@@ -84,6 +84,7 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     // Every action held for this identity goes with it (plan D3.3).
     if let Ok(owner) = ctx.require_owner() {
         ctx.intents.clear_matching(|held| held.identity == owner);
+        ctx.undo.clear_matching(|held| held.identity == owner);
     }
     crate::daemon::clients::unload(ctx).await;
     ctx.mek_cache.write().clear();

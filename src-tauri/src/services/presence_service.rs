@@ -1,27 +1,14 @@
 //! Phase 21 REDO — thin facade.
 //!
 //! Friend-presence orchestrators (DHT value-change dispatch +
-//! `watch_friend` + `publish_status` + heartbeat loop) live in
-//! `rekindle_presence::{friend, heartbeat}`. This module constructs a
-//! `PresenceAdapter` per call and delegates.
+//! `watch_friend`) live in `rekindle_presence::friend`. This module
+//! constructs a `PresenceAdapter` per call and delegates. Our own status
+//! is the Host's (`host::own_presence`, plan E1.1).
 
 use std::sync::Arc;
 
-use tokio_util::sync::CancellationToken;
-
 use crate::services::presence_adapter::build_adapter;
-use crate::state::{AppState, UserStatus};
-
-/// Map src-tauri's [`UserStatus`] to the crate's wire-clean enum.
-fn to_crate_status(status: UserStatus) -> rekindle_presence::UserStatusKind {
-    match status {
-        UserStatus::Online => rekindle_presence::UserStatusKind::Online,
-        UserStatus::Away => rekindle_presence::UserStatusKind::Away,
-        UserStatus::Busy => rekindle_presence::UserStatusKind::Busy,
-        UserStatus::Offline => rekindle_presence::UserStatusKind::Offline,
-        UserStatus::Invisible => rekindle_presence::UserStatusKind::Invisible,
-    }
-}
+use crate::state::AppState;
 
 /// Handle a DHT value change for a watched friend (or a community
 /// record — falls through to a debug trace today; future Phase 21
@@ -53,33 +40,4 @@ pub async fn watch_friend(
     rekindle_presence::watch_friend(adapter, friend_key, dht_record_key)
         .await
         .map_err(|e| e.to_string())
-}
-
-/// Publish our own status to profile subkey 2.
-pub async fn publish_status(state: &Arc<AppState>, status: UserStatus) -> Result<(), String> {
-    let Some(adapter) = build_adapter(state) else {
-        return Err("app handle / db pool unavailable".to_string());
-    };
-    let adapter = Arc::new(adapter);
-    rekindle_presence::publish_status(adapter, to_crate_status(status))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Ask the session's STATUS publisher to write the current status now
-/// (plan C7.8c). Every status change goes through it, so a stale status
-/// read can never land after a newer one.
-pub fn request_status_publish(state: &AppState) {
-    state.status_wake.notify_one();
-}
-
-/// Run the session's one STATUS publisher (status changes and the
-/// heartbeat) until `stop` is cancelled.
-pub async fn run_status_publisher(state: Arc<AppState>, stop: CancellationToken) {
-    let Some(adapter) = build_adapter(&state) else {
-        tracing::warn!("status publisher: adapter unavailable — not started");
-        return;
-    };
-    let wake = Arc::clone(&state.status_wake);
-    rekindle_presence::run_status_publisher(Arc::new(adapter), wake, stop).await;
 }

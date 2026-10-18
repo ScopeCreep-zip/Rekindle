@@ -65,7 +65,9 @@ pub(crate) async fn select(
         }
         IpcRequest::IdentityCreate { display_name, .. } => {
             s.subject = Subject::OwnIdentity {
-                name: display_name.clone(),
+                name: display_name
+                    .clone()
+                    .unwrap_or_else(|| "a new identity".into()),
             };
         }
         IpcRequest::FriendAdd { target, .. } => {
@@ -156,10 +158,28 @@ pub(crate) async fn select(
         | IpcRequest::InviteCreate { .. }
         | IpcRequest::InviteRevoke { .. } => community_selection(ctx, request, &mut s)?,
         IpcRequest::PresenceSet { .. }
+        | IpcRequest::PresenceSetMessage { .. }
+        | IpcRequest::ProfileSetNickname { .. }
         | IpcRequest::GamePresenceSet { .. }
         | IpcRequest::GamePresenceClear => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::Undoable;
+        }
+        IpcRequest::ProfileSetAvatar { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // The old picture is not kept: another one replaces it.
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetAvatar);
+        }
+        IpcRequest::AuditExport { .. } => s.subject = unlocked_identity(ctx),
+        IpcRequest::LinkOpen { url } => {
+            // `validate_request` passed it; the host as the browser will
+            // ask for it (punycode for an international name).
+            let host = rekindle_link_preview::https_url(url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_owned))
+                .ok_or_else(|| IpcResponse::error(400, "invalid link"))?;
+            s.subject = Subject::Link { host };
+            s.facts.push(Fact::IpAddressLeaves);
         }
         IpcRequest::VoiceJoin { channel, .. } => {
             s.subject = Subject::Named {
@@ -186,6 +206,9 @@ pub(crate) async fn select(
         | IpcRequest::Status
         | IpcRequest::IdentityList
         | IpcRequest::IdentityShow
+        | IpcRequest::PresenceGet
+        | IpcRequest::AvatarGet { .. }
+        | IpcRequest::AuditVerify
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
         | IpcRequest::CommunityList
@@ -197,6 +220,7 @@ pub(crate) async fn select(
         | IpcRequest::DmInbox { .. }
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::IntentCancel { .. }
+        | IpcRequest::Undo { .. }
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. }
         | IpcRequest::MekList { .. }
@@ -373,6 +397,42 @@ fn unavailable(what: &str, e: impl std::fmt::Display) -> IpcResponse {
         format!("{what} cannot be read for review: {e}"),
         "retry once the identity's state has loaded",
     )
+}
+
+/// The request that takes `request` back, computed from live state when
+/// the action is selected (plan E1.1): the status, message, name or game it
+/// replaces. `None` for an action that offers no undo.
+pub(crate) fn inverse(
+    ctx: &DaemonContext,
+    request: &IpcRequest,
+    reversibility: Reversibility,
+) -> Option<IpcRequest> {
+    if reversibility != Reversibility::Undoable {
+        return None;
+    }
+    let presence = ctx.own_presence.view();
+    match request {
+        IpcRequest::PresenceSet { .. } => Some(IpcRequest::PresenceSet {
+            status: presence.status,
+        }),
+        IpcRequest::PresenceSetMessage { .. } => Some(IpcRequest::PresenceSetMessage {
+            message: presence.status_message,
+        }),
+        IpcRequest::ProfileSetNickname { .. } => Some(IpcRequest::ProfileSetNickname {
+            display_name: ctx.identity_display_name(),
+        }),
+        IpcRequest::GamePresenceSet { .. } | IpcRequest::GamePresenceClear => {
+            Some(presence.game.map_or(IpcRequest::GamePresenceClear, |game| {
+                IpcRequest::GamePresenceSet {
+                    game_name: game.game_name,
+                    game_id: (game.game_id != 0).then_some(game.game_id),
+                    elapsed_seconds: game.elapsed_seconds,
+                    server_address: game.server_address,
+                }
+            }))
+        }
+        _ => None,
+    }
 }
 
 /// The unlocked identity, by its own name.

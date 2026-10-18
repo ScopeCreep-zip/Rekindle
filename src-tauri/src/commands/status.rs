@@ -1,54 +1,64 @@
+//! Our status, message, name and avatar are Host calls (plan E1.1): the
+//! Host owns our presence and profile and publishes every change.
+
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::presence::OwnPresenceView;
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::presence::SessionStatus;
 use tauri::State;
 
-use crate::services::status_runtime::{
-    get_avatar_inner, set_avatar_inner, set_nickname_inner, set_status_inner,
-    set_status_message_inner,
-};
+use crate::host_call;
 use crate::state::SharedState;
 
-/// Set online status and publish to DHT.
+/// Set our status (`IpcRequest::PresenceSet`); "Appear Offline" is
+/// `invisible`.
 #[tauri::command]
-pub async fn set_status(status: String, state: State<'_, SharedState>) -> Result<(), String> {
-    set_status_inner(state.inner(), status).await
+pub async fn set_status(
+    status: SessionStatus,
+    state: State<'_, SharedState>,
+) -> Result<Done<OwnPresenceView>, CommandError> {
+    host_call::call(&state, IpcRequest::PresenceSet { status }).await
 }
 
-/// Set display name, persist to `SQLite`, and push update to DHT.
+/// Change the name we show (`IpcRequest::ProfileSetNickname`).
 #[tauri::command]
 pub async fn set_nickname(
     nickname: String,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    set_nickname_inner(state.inner(), &pool, &app, nickname).await
+) -> Result<Done<String>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::ProfileSetNickname {
+            display_name: nickname,
+        },
+    )
+    .await
 }
 
-/// Set avatar image: compress to WebP, persist to `SQLite`, and push update to DHT.
+/// Change our avatar (`IpcRequest::ProfileSetAvatar`): the Host makes it a
+/// 128 px WebP.
 #[tauri::command]
 pub async fn set_avatar(
     avatar_data: Vec<u8>,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    set_avatar_inner(state.inner(), &pool, &app, avatar_data).await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::ProfileSetAvatar { image: avatar_data }).await
 }
 
-/// Retrieve a user's avatar as WebP bytes.
+/// Our own or a friend's avatar as WebP bytes (`IpcRequest::AvatarGet`).
 #[tauri::command]
 pub async fn get_avatar(
     public_key: String,
     state: State<'_, SharedState>,
-) -> Result<Option<Vec<u8>>, String> {
-    let pool = state.db.current()?;
-    get_avatar_inner(state.inner(), &pool, public_key).await
+) -> Result<Done<Option<Vec<u8>>>, CommandError> {
+    host_call::call(&state, IpcRequest::AvatarGet { public_key }).await
 }
 
-/// Set status message and push update to DHT.
+/// Set our status message (`IpcRequest::PresenceSetMessage`).
 #[tauri::command]
 pub async fn set_status_message(
     message: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    set_status_message_inner(state.inner(), message).await
+) -> Result<Done<OwnPresenceView>, CommandError> {
+    host_call::call(&state, IpcRequest::PresenceSetMessage { message }).await
 }

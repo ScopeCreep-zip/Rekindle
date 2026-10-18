@@ -50,7 +50,7 @@ const BuddyList: Component = () => {
       if (!groups[group]) groups[group] = [];
       groups[group].push(friend);
     }
-    const statusOrder = { online: 0, away: 1, busy: 2, offline: 3 };
+    const statusOrder = { online: 0, away: 1, busy: 2, offline: 3, invisible: 3 };
     for (const group of Object.values(groups)) {
       group.sort(
         (a, b) =>

@@ -104,3 +104,44 @@ pub fn identity_display_name(state: &Arc<AppState>) -> String {
 pub fn identity_status(state: &Arc<AppState>) -> Option<UserStatus> {
     state.identity.read().as_ref().map(|id| id.status)
 }
+
+/// Keep the `AppState.identity` projection in step with our own presence
+/// and profile as the Host publishes them (plan E1.1): the shell's
+/// remaining readers of our status and name read it, and no shell code
+/// writes it otherwise (E3.4 and E2.1 delete those readers).
+pub fn project_own(
+    state: &AppState,
+    event: &rekindle_types::subscription_events::SubscriptionEvent,
+) {
+    use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
+    let SubscriptionEvent::Presence(presence) = event else {
+        return;
+    };
+    let mut identity = state.identity.write();
+    let Some(id) = identity.as_mut() else {
+        return;
+    };
+    match presence {
+        PresenceEvent::SelfChanged {
+            public_key,
+            snapshot,
+        } if *public_key == id.public_key => {
+            if let Some(status) = snapshot
+                .status
+                .as_deref()
+                .and_then(|s| serde_json::from_value::<UserStatus>(s.into()).ok())
+            {
+                id.status = status;
+            }
+            if let Some(message) = &snapshot.status_message {
+                id.status_message.clone_from(message);
+            }
+        }
+        PresenceEvent::SelfProfileChanged {
+            public_key,
+            display_name: Some(name),
+            ..
+        } if *public_key == id.public_key => id.display_name.clone_from(name),
+        _ => {}
+    }
+}

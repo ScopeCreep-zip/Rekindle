@@ -2,11 +2,11 @@
 
 use tauri::Manager;
 
+use crate::services;
 use crate::state::SharedState;
-use crate::{services, state_helpers};
 
 /// Handle the `RunEvent::Exit` event: run [`graceful_shutdown`] to the end
-/// (the session's end checkpoints and closes the identity database).
+/// (the Host's teardown checkpoints and closes the identity database).
 ///
 /// Not under a timeout. The session teardown is bounded by its own
 /// deadlines (`SESSION_STOP_DEADLINE`, the Offline write wait). Veilid's
@@ -33,26 +33,23 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
     });
 }
 
-/// Shut down all background services before the process exits: end the
-/// login session (`services::session::end_session`), then stop the
+/// Shut down all background services before the process exits: the Host
+/// (its bus, then the session's teardown with `EndReason::Exit`), then the
 /// app-lifetime dispatch loop and the Veilid node.
 pub async fn graceful_shutdown(state: &SharedState) {
     tracing::info!("graceful shutdown: stopping background services");
 
-    // 1. The login session: its tasks, devices, offline status, records,
-    //    state and keys. No app handle — the app is exiting.
-    services::session::end_session(services::session::SessionEnd::Exit, state).await;
-    state_helpers::clear_meks(state);
-
-    // 2. The in-process host: its bus drains (every request in flight is
-    //    answered) before the node it serves over stops.
+    // 1. The in-process host: its bus drains (every request in flight is
+    //    answered), then it ends the session (its tasks, the Offline
+    //    status, the records, our routes, the keys) before the node it
+    //    serves over stops.
     if let Some(host) = state.host.current() {
         if let Err(e) = host.shutdown().await {
             tracing::warn!(error = %format!("{e:#}"), "host shutdown");
         }
     }
 
-    // 3. The app-lifetime dispatch loop.
+    // 2. The app-lifetime dispatch loop.
     let shutdown_tx = state.shutdown_tx.read().clone();
     if let Some(tx) = shutdown_tx {
         let _ = tx.send(()).await;
@@ -62,7 +59,7 @@ pub async fn graceful_shutdown(state: &SharedState) {
         let _ = h.await;
     }
 
-    // 4. The Veilid node itself.
+    // 3. The Veilid node itself.
     services::veilid::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");

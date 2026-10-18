@@ -1,6 +1,5 @@
 //! Phase 23.C — friend-handler Tauri-runtime orchestration lifted
-//! from `commands/friends.rs`. Same pattern as `login_runtime.rs`:
-//! the actual `#[tauri::command]` handler stays in `commands/` as a
+//! from `commands/friends.rs`: the actual `#[tauri::command]` handler stays in `commands/` as a
 //! ≤20-LoC delegation, and the wiring (DB writes + AppState mutation
 //! + Veilid IO + Signal session establishment + audit-chain append)
 //! lives here.

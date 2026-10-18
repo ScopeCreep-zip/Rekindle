@@ -32,8 +32,7 @@ pub use friend::{
 pub use gossip::{GossipOverlay, OnlineMember};
 pub use rekindle_channel::{AutoModCompiledCache, CompiledAutoModRule};
 pub use runtime::{
-    DHTManagerHandle, GameDetectorHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle,
-    VoiceEngineHandle,
+    DHTManagerHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle, VoiceEngineHandle,
 };
 
 /// Shared reference to `AppState`, used by both Tauri commands and background services.

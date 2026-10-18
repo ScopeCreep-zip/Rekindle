@@ -3,7 +3,8 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
   }
 
-  .add-friend-invite-actions {
+  .add-friend-invite-actions,
+  .intent-dialog-actions {
     display: flex;
     gap: 6px;
     justify-content: flex-end;

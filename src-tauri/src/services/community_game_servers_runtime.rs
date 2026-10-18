@@ -18,9 +18,12 @@ pub fn add_game_server_inner(
     community_id: &str,
     game_id: String,
     label: String,
-    address: String,
+    address: &str,
 ) -> Result<String, String> {
     require_permission(state, community_id, permissions::MANAGE_CHANNELS)?;
+    let address = rekindle_types::game_server::ServerAddress::parse(address)
+        .map_err(|e| format!("server address: {e}"))?
+        .to_string();
     let server_id = format!("gs_{}", hex::encode(random_nonce(8)));
     let added_by = state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default();
     let server = GameServerInfoDto {

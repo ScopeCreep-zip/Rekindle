@@ -11,6 +11,7 @@ const statusClassMap: Record<string, string> = {
   busy: "status-dot status-dot-busy",
   ingame: "status-dot status-dot-ingame",
   offline: "status-dot status-dot-offline",
+  invisible: "status-dot status-dot-offline",
 };
 
 const statusLabels: Record<string, string> = {
@@ -19,6 +20,7 @@ const statusLabels: Record<string, string> = {
   busy: "Do not disturb",
   ingame: "In game",
   offline: "Offline",
+  invisible: "Appear offline",
 };
 
 /**

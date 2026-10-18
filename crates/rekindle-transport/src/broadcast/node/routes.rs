@@ -1,7 +1,7 @@
-//! Our own routes on the daemon track (plan C7.9d): the route port
-//! allocates, heals and releases them; this module republishes a new
-//! personal route blob wherever peers read it, and backstops a class whose
-//! allocation failed for good.
+//! Our own routes on both hosts (plan C7.9d, E1.1): the route port
+//! allocates, heals and releases them; this module is the one republisher
+//! of a new personal route blob wherever peers read it, and backstops a
+//! class whose allocation failed for good.
 
 use std::sync::Arc;
 
@@ -32,9 +32,9 @@ impl TransportNode {
 }
 
 /// Republish our personal route blob to the profile's route subkey and
-/// the mailbox. Without an unlocked session there is nothing to write to:
-/// the next unlock's resume publishes the then-current blob (it reads it
-/// after holding the records, so a blob landing mid-resume is not lost).
+/// the mailbox. Without an unlocked session, or before its own-records
+/// stage has the keys, there is nothing to write to: that stage publishes
+/// the then-current blob itself (`rekindle_node::host::own_records`).
 async fn publish_personal_route(
     session: &Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
     shared: &Arc<SharedState>,
@@ -93,14 +93,28 @@ async fn publish_personal_route(
     tracing::info!(blob_len = blob.len(), "personal route republished");
 }
 
-/// Follow our routes until shutdown: every change is reported to the
-/// handler (the window's network status), a new general blob is republished;
-/// the watchdog tick wants both classes again, a no-op while a route is
-/// live or allocating, so a class whose allocation failed for good is
-/// retried. Routes are never rotated on a timer (veilid-core tests their
-/// health and reports death in `RouteChange`).
-pub(super) async fn run_route_publisher<H: InboundHandler>(
-    handler: Arc<H>,
+/// Told when a route changed (the handler's network status), when the node
+/// dispatches its own events; the adopted node has no handler until E5.7.
+pub(super) type OnRoutesChanged =
+    Box<dyn Fn() -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
+
+/// [`OnRoutesChanged`] for `handler`.
+pub(super) fn notify_handler<H: InboundHandler>(handler: Arc<H>) -> OnRoutesChanged {
+    Box::new(move || {
+        let handler = Arc::clone(&handler);
+        Box::pin(async move { handler.on_event(TransportEvent::RoutesChanged).await })
+    })
+}
+
+/// Follow our routes until shutdown, on both hosts (plan E1.1: the one
+/// republisher): every change is reported, a new general blob is
+/// republished to the session's profile and mailbox; the watchdog tick wants
+/// both classes again, a no-op while a route is live or allocating, so a
+/// class whose allocation failed for good is retried. Routes are wanted from
+/// node-ready, unlocked or not (C7.9b). They are never rotated on a timer
+/// (veilid-core tests their health and reports death in `RouteChange`).
+pub(super) async fn run_route_publisher(
+    on_change: Option<OnRoutesChanged>,
     routes: Arc<dyn RoutePort>,
     watchdog_secs: u64,
     mut shutdown_rx: mpsc::Receiver<()>,
@@ -119,7 +133,9 @@ pub(super) async fn run_route_publisher<H: InboundHandler>(
                     break;
                 }
                 let state = general.borrow_and_update().clone();
-                handler.on_event(TransportEvent::RoutesChanged).await;
+                if let Some(on_change) = &on_change {
+                    on_change().await;
+                }
                 if let RouteState::Available { blob } = state {
                     publish_personal_route(&session, &shared, &blob).await;
                 }
@@ -129,14 +145,11 @@ pub(super) async fn run_route_publisher<H: InboundHandler>(
                     break;
                 }
                 media.borrow_and_update();
-                handler.on_event(TransportEvent::RoutesChanged).await;
-            }
-            _ = interval.tick() => {
-                // Only an unlocked session wants routes (plan C7.9d).
-                if session.read().is_some() && shared.records().is_some() {
-                    routes.want_own();
+                if let Some(on_change) = &on_change {
+                    on_change().await;
                 }
             }
+            _ = interval.tick() => routes.want_own(),
             _ = shutdown_rx.recv() => {
                 tracing::info!("route publisher shutting down");
                 break;

@@ -998,6 +998,7 @@
               "serverAddress": "10.0.0.1:16567"
             }
           },
+          "idle": null,
           "status": "online",
           "statusMessage": "fragging"
         }
@@ -1010,6 +1011,7 @@
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "snapshot": {
           "game": "idle",
+          "idle": null,
           "status": "away",
           "statusMessage": "brb"
         }
@@ -1029,9 +1031,45 @@
               "serverAddress": "10.0.0.1:16567"
             }
           },
+          "idle": "active",
           "status": "online",
           "statusMessage": "fragging"
         }
+      }
+    }
+  },
+  "presence.selfChanged.autoAway": {
+    "presence": {
+      "selfChanged": {
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshot": {
+          "game": null,
+          "idle": "autoAway",
+          "status": "away",
+          "statusMessage": null
+        }
+      }
+    }
+  },
+  "presence.selfChanged.idleUnavailable": {
+    "presence": {
+      "selfChanged": {
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshot": {
+          "game": null,
+          "idle": "unavailable",
+          "status": null,
+          "statusMessage": null
+        }
+      }
+    }
+  },
+  "presence.selfProfileChanged": {
+    "presence": {
+      "selfProfileChanged": {
+        "avatarChanged": false,
+        "displayName": "Kali",
+        "publicKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
       }
     }
   },

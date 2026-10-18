@@ -17,7 +17,7 @@ import type {
   NotificationEvent,
   NotificationSubscriptionEvent,
 } from "./notification_events";
-import type { LifecycleState } from "../commands/dto";
+import type { IntentReview, LifecycleState } from "../commands/dto";
 import type { DeepLinkRequest, SettingsTab } from "../commands/types";
 
 /// Where this window is in the host's event stream
@@ -236,11 +236,22 @@ export function subscribeLifecycleEvents(
   );
 }
 
+/// Our own profile (name, avatar) changed: the Host's
+/// `PresenceEvent::SelfProfileChanged` on the presence channel.
 export function subscribeProfileUpdates(
   onUpdate: () => void,
 ): Promise<UnlistenFn> {
-  return on<null>("profile-updated", () => {
-    onUpdate();
+  return on<PresenceSubscriptionEvent>("presence-event", (payload) => {
+    if ("selfProfileChanged" in payload.presence) onUpdate();
+  });
+}
+
+/// A review of an action the backend began (`SubscriptionEvent::IntentPending`).
+export function subscribeIntentEvents(
+  onReview: (review: IntentReview) => void,
+): Promise<UnlistenFn> {
+  return on<{ intentPending: IntentReview }>("intent-event", (payload) => {
+    onReview(payload.intentPending);
   });
 }
 

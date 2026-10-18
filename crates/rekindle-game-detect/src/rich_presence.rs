@@ -36,13 +36,16 @@ impl RichPresence {
         }
     }
 
-    /// Return the combined server address as `"ip:port"`, if both are present.
-    pub fn server_address(&self) -> Option<String> {
-        match (&self.server_ip, self.server_port) {
-            (Some(ip), Some(port)) => Some(format!("{ip}:{port}")),
-            (Some(ip), None) => Some(ip.clone()),
-            _ => None,
-        }
+    /// The server to join, when both halves are known and form a valid
+    /// `host:port` (plan E1.1: a launcher substitutes only a parsed one).
+    pub fn server_address(&self) -> Option<crate::launcher::ServerAddress> {
+        let (ip, port) = (self.server_ip.as_ref()?, self.server_port?);
+        let text = if ip.contains(':') {
+            format!("[{ip}]:{port}")
+        } else {
+            format!("{ip}:{port}")
+        };
+        crate::launcher::ServerAddress::parse(&text).ok()
     }
 
     /// Serialize to JSON bytes for DHT publication.

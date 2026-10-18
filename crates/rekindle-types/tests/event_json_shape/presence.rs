@@ -1,20 +1,33 @@
 //! `PresenceEvent` samples, covering both `GameActivity` variants.
 
+use rekindle_types::presence::IdleState;
 use rekindle_types::subscription_events::{
     GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
 };
 
 use crate::{community, pk, text, Sample};
 
-pub const NAMES: &[&str] = &["communityMemberChanged", "friendChanged", "selfChanged"];
+pub const NAMES: &[&str] = &[
+    "communityMemberChanged",
+    "friendChanged",
+    "selfChanged",
+    "selfProfileChanged",
+];
 
-pub const NESTED: &[&str] = &["GameActivity.idle", "GameActivity.playing"];
+pub const NESTED: &[&str] = &[
+    "GameActivity.idle",
+    "GameActivity.playing",
+    "IdleState.unavailable",
+    "IdleState.active",
+    "IdleState.autoAway",
+];
 
 pub fn variant_name(e: &PresenceEvent) -> &'static str {
     match e {
         PresenceEvent::CommunityMemberChanged { .. } => "communityMemberChanged",
         PresenceEvent::FriendChanged { .. } => "friendChanged",
         PresenceEvent::SelfChanged { .. } => "selfChanged",
+        PresenceEvent::SelfProfileChanged { .. } => "selfProfileChanged",
     }
 }
 
@@ -25,8 +38,24 @@ fn game_name(game: &GameActivity) -> &'static str {
     }
 }
 
+fn idle_name(idle: IdleState) -> &'static str {
+    match idle {
+        IdleState::Unavailable => "IdleState.unavailable",
+        IdleState::Active => "IdleState.active",
+        IdleState::AutoAway => "IdleState.autoAway",
+    }
+}
+
 pub fn nested_names(e: &PresenceEvent) -> Vec<&'static str> {
-    e.snapshot().game.iter().map(game_name).collect()
+    let Some(snapshot) = e.snapshot() else {
+        return Vec::new();
+    };
+    snapshot
+        .game
+        .iter()
+        .map(game_name)
+        .chain(snapshot.idle.map(idle_name))
+        .collect()
 }
 
 fn ev(name: &str, e: PresenceEvent) -> Sample {
@@ -67,7 +96,29 @@ pub fn samples() -> Vec<Sample> {
             "selfChanged",
             PresenceEvent::SelfChanged {
                 public_key: pk('f'),
-                snapshot: playing(),
+                snapshot: playing().with_idle(IdleState::Active),
+            },
+        ),
+        ev(
+            "selfChanged.autoAway",
+            PresenceEvent::SelfChanged {
+                public_key: pk('f'),
+                snapshot: PresenceSnapshot::status("away").with_idle(IdleState::AutoAway),
+            },
+        ),
+        ev(
+            "selfChanged.idleUnavailable",
+            PresenceEvent::SelfChanged {
+                public_key: pk('f'),
+                snapshot: PresenceSnapshot::default().with_idle(IdleState::Unavailable),
+            },
+        ),
+        ev(
+            "selfProfileChanged",
+            PresenceEvent::SelfProfileChanged {
+                public_key: pk('f'),
+                display_name: Some(text("Kali")),
+                avatar_changed: false,
             },
         ),
     ]

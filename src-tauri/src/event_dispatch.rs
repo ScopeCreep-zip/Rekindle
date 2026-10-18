@@ -17,7 +17,7 @@
 //! D3.2), which gives it a cursor; [`spawn_host_stream`] delivers the
 //! host's stream to the windows, and a window that reloads asks the host
 //! for what followed its last cursor (`subscribe_events`). The shell-only
-//! variants (`Lifecycle`, `DeepLink`, `ProfileUpdated`, `SettingsSwitchTab`)
+//! variants (`Lifecycle`, `DeepLink`, `SettingsSwitchTab`)
 //! and the legacy `ChannelChat`/`Community` shapes are delivered live from
 //! the local queue and never replayed; a reloading window reads that
 //! history through `hydrateState()`.
@@ -50,8 +50,6 @@ pub enum WebviewEvent {
     },
     /// An OS deep link is waiting for the user's consent.
     DeepLink(DeepLinkRequest),
-    /// Our own profile (name, avatar) changed.
-    ProfileUpdated,
     /// Switch the open settings window to a tab.
     SettingsSwitchTab(SettingsTab),
     /// A community channel message in the desktop's legacy shape, with the
@@ -80,7 +78,6 @@ impl WebviewEvent {
             Self::Subscription(e) => subscription_channel(e),
             Self::Lifecycle { .. } => "lifecycle-event",
             Self::DeepLink(_) => "deep-link-action",
-            Self::ProfileUpdated => "profile-updated",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
             Self::ChannelChat { .. } => "chat-event",
             Self::Community(_) => "community-event",
@@ -95,7 +92,6 @@ impl WebviewEvent {
                 at_ms: *at_ms,
             }),
             Self::DeepLink(r) => serde_json::to_value(r),
-            Self::ProfileUpdated => Ok(serde_json::Value::Null),
             Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
             Self::ChannelChat { event, .. } => serde_json::to_value(event),
             Self::Community(e) => serde_json::to_value(e),
@@ -109,7 +105,6 @@ impl WebviewEvent {
             Self::Subscription(e) => subscription_audience(e),
             Self::Lifecycle { .. } => Audience::kinds(&WindowKind::ALL),
             Self::DeepLink(_) => Audience::labels([labels::BUDDY_LIST.to_owned()]),
-            Self::ProfileUpdated => Audience::post_auth(),
             Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
             // Community windows switch between communities in place, so a
             // community's events go to every one of them (each filters by
@@ -327,6 +322,18 @@ pub fn spawn_host_stream(
             while let Some(frame) = stream.next().await {
                 match frame {
                     StreamFrame::Event(sequenced) => {
+                        crate::state_helpers::project_own(&state, &sequenced.event);
+                        if let rekindle_types::subscription_events::SubscriptionEvent::Presence(
+                            rekindle_types::subscription_events::PresenceEvent::SelfChanged {
+                                snapshot,
+                                ..
+                            },
+                        ) = &sequenced.event
+                        {
+                            crate::services::community_presence_runtime::fan_out_own_presence(
+                                &state, snapshot,
+                            );
+                        }
                         crate::os_notify::notify(&app, &state, &sequenced.event);
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
@@ -544,6 +551,19 @@ mod tests {
         }));
         assert!(a.includes("settings"));
         assert!(!a.includes("login"));
+        // Our profile too, on the presence channel (it replaced the
+        // shell's `profile-updated`).
+        let profile = SubscriptionEvent::Presence(PresenceEvent::SelfProfileChanged {
+            public_key: PK.into(),
+            display_name: None,
+            avatar_changed: true,
+        });
+        assert!(sub(profile.clone()).includes("settings"));
+        assert!(!sub(profile.clone()).includes("login"));
+        assert_eq!(
+            WebviewEvent::Subscription(profile).channel(),
+            "presence-event"
+        );
     }
 
     #[test]

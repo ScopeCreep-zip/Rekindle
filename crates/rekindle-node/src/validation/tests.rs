@@ -164,14 +164,20 @@ fn numeric_bounds() {
 
 #[test]
 fn closed_vocabularies() {
-    let presence = |status: &str| IpcRequest::PresenceSet {
-        status: status.into(),
-        message: None,
-    };
-    for ok in ["online", "away", "busy", "invisible"] {
+    use rekindle_types::presence::SessionStatus;
+    let presence = |status| IpcRequest::PresenceSet { status };
+    for ok in [
+        SessionStatus::Online,
+        SessionStatus::Away,
+        SessionStatus::Busy,
+        SessionStatus::Invisible,
+    ] {
         assert!(!rejected(&presence(ok)));
     }
-    assert!(rejected(&presence("unknown")));
+    assert!(
+        rejected(&presence(SessionStatus::Offline)),
+        "only the teardown writes offline"
+    );
     let create = |kind: &str| IpcRequest::ChannelCreate {
         community: "c".into(),
         name: "general".into(),
@@ -186,11 +192,12 @@ fn closed_vocabularies() {
 
 #[test]
 fn status_and_description_caps() {
-    let presence = |message: String| IpcRequest::PresenceSet {
-        status: "online".into(),
-        message: Some(message),
-    };
+    let presence = |message: String| IpcRequest::PresenceSetMessage { message };
     assert!(!rejected(&presence("é".repeat(MAX_STATUS_LEN))));
+    assert!(
+        !rejected(&presence(String::new())),
+        "an empty message clears it"
+    );
     assert!(rejected(&presence("a".repeat(MAX_STATUS_LEN + 1))));
     let create = |description: String| IpcRequest::CommunityCreate {
         name: "Rekindle".into(),
@@ -220,7 +227,7 @@ fn deletes_name_a_key_and_typed_proofs_are_bounded() {
 #[test]
 fn display_names() {
     let create = |name: &str| IpcRequest::IdentityCreate {
-        display_name: name.into(),
+        display_name: Some(name.into()),
         passphrase: "pass".into(),
     };
     assert!(!rejected(&create("  alice  ")));
@@ -231,6 +238,11 @@ fn display_names() {
         rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN + 1
     ))));
     assert!(rejected(&create("")));
+    assert!(rejected(&create("   ")));
+    assert!(!rejected(&IpcRequest::IdentityCreate {
+        display_name: None,
+        passphrase: "pass".into(),
+    }));
     assert!(rejected(&create("hello\x00world")));
 }
 
@@ -245,7 +257,7 @@ fn identity_requests_name_a_key_and_a_new_passphrase_is_not_empty() {
         passphrase: String::new(),
     }));
     assert!(rejected(&IpcRequest::IdentityCreate {
-        display_name: "Alice".into(),
+        display_name: Some("Alice".into()),
         passphrase: String::new(),
     }));
     assert!(rejected(&IpcRequest::IdentityImport {
@@ -286,4 +298,38 @@ fn agents() {
         agent_type: rekindle_ipc::message::AgentType::Bot,
         capabilities: vec!["has space".into()],
     }));
+}
+
+#[test]
+fn profile_links_and_game_servers_are_checked() {
+    assert!(!rejected(&IpcRequest::ProfileSetNickname {
+        display_name: "Kali".into()
+    }));
+    assert!(rejected(&IpcRequest::ProfileSetNickname {
+        display_name: "  ".into()
+    }));
+    assert!(rejected(&IpcRequest::ProfileSetAvatar {
+        image: Vec::new()
+    }));
+    assert!(!rejected(&IpcRequest::ProfileSetAvatar {
+        image: vec![1, 2, 3]
+    }));
+    assert!(!rejected(&IpcRequest::LinkOpen {
+        url: "https://example.com/a?b=c".into()
+    }));
+    for bad in [
+        "http://example.com",
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+    ] {
+        assert!(rejected(&IpcRequest::LinkOpen { url: bad.into() }), "{bad}");
+    }
+    let game = |server_address: &str| IpcRequest::GamePresenceSet {
+        game_name: "Counter-Strike 2".into(),
+        game_id: Some(4181),
+        elapsed_seconds: 0,
+        server_address: Some(server_address.into()),
+    };
+    assert!(!rejected(&game("1.2.3.4:27015")));
+    assert!(rejected(&game("1.2.3.4:27015 +exec x")));
 }

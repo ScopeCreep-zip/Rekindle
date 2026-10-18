@@ -20,7 +20,7 @@ pub async fn add_game_server(
     label: String,
     address: String,
 ) -> Result<String, String> {
-    add_game_server_inner(state.inner(), &community_id, game_id, label, address)
+    add_game_server_inner(state.inner(), &community_id, game_id, label, &address)
 }
 
 #[tauri::command]

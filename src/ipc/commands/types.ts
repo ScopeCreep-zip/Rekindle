@@ -4,16 +4,7 @@
 
 import type { RouteAvailability } from "../channels/notification_events";
 
-export interface LoginResult {
-  publicKey: string;
-  displayName: string;
-}
-
-export interface IdentitySummary {
-  publicKey: string;
-  displayName: string;
-  createdAt: number;
-}
+export type { IdentitySummary } from "./dto";
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
 export type SendState = "queued" | "sent" | "delivered" | "read" | "failed";

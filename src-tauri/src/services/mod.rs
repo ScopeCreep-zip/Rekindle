@@ -2,8 +2,8 @@
 // All voice / call protocol logic lives in `rekindle-voice` /
 // `rekindle-calls` crates; the adapters below bridge AppState ↔ crate.
 pub mod audit; // Plan D1 — the desktop over host::audit.
-pub mod auth_cores; // Phase 23.C — create_identity_core + login_core helpers lifted from commands/auth.rs.
-pub mod auth_runtime; // Phase 23.C — logout + delete_identity orchestration lifted from commands/auth.rs.
+#[cfg(debug_assertions)]
+pub mod auth_runtime; // The PQXDH bundle diagnostic (→ E2.4).
 pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted from commands/calls.rs.
 pub mod calls_adapter; // Phase 14 — CallSignalingDeps impl + calls free-fn facades.
 pub mod channel_adapter; // Phase 19.h-REDO — ChannelMessagingDeps impl for channel messaging ops.
@@ -39,7 +39,6 @@ pub mod community_unread_runtime; // Phase 23.C — unread mark/get bodies lifte
 pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchestration lifted from commands/community/video.rs.
 pub mod community_views_runtime; // Phase 23.C — community list/detail DTO mappers lifted from commands/community/crud.rs.
 pub mod cross_device_sync;
-pub mod dht_publish_service;
 pub mod dm;
 pub mod dm_adapter; // Phase 13 — DmDeps + DmMekCache impls.
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
@@ -47,13 +46,8 @@ pub mod files_adapter; // Phase 15 — FilesDeps impl + Tier-9 facades.
 pub mod friend_runtime; // Phase 23.C — friend-handler runtime orchestration lifted from commands/friends.rs.
 pub mod friendship;
 pub mod friendship_deps;
-pub mod game_publisher;
-pub mod game_service;
 pub mod gossip_adapter; // Phase 20.e-REDO — GossipDeps impl for mesh broadcast.
 pub mod governance_adapter; // Phase 18 — GovernanceRuntimeDeps impl for community lifecycle ops.
-pub mod idle_service;
-pub mod login_runtime;
-mod login_spawn;
 pub mod mek_adapter; // Phase 17 — MekDistributeDeps impl + ChannelMekCache wrapper + Stronghold persist.
 pub mod message_service;
 pub mod messaging_runtime; // Phase 23.C — channel-messaging runtime orchestration lifted from commands/community/messaging.rs.
@@ -62,11 +56,9 @@ pub mod preferences; // Plan D1 — the unlocked identity's preferences.
 pub mod presence_adapter; // Phase 21.e-REDO — FriendPresenceDeps impl for friend presence.
 pub mod presence_service;
 pub mod push_relay;
-pub mod record_pool; // Plan C7.3 — the session's RecordPool (start at login, end at logout).
 pub mod relay;
 pub mod search;
-pub mod session; // Plan C4 — the login scope and the one session teardown.
-pub mod status_runtime; // Phase 23.C — status-handler runtime orchestration lifted from commands/status.rs.
+pub mod shell_session; // Plan E1.1 — the GUI's ShellHooks: its unported unlock stages.
 pub mod sync_adapter; // Phase 22.f-REDO — SyncDeps impl for pending-message retry.
 pub mod sync_communities;
 pub mod sync_runtime; // Phase 23.C — sync-handler runtime orchestration lifted from commands/sync.rs.

@@ -22,8 +22,7 @@ pub(crate) mod route_publish;
 
 pub(crate) use lifecycle::route_watchdog_loop;
 pub use lifecycle::{
-    emit_network_status, initialize_node, logout_cleanup, route_status, shutdown_app,
-    start_dispatch_loop,
+    emit_network_status, initialize_node, route_status, shutdown_app, start_dispatch_loop,
 };
 
 pub async fn handle_veilid_update(
