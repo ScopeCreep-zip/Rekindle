@@ -192,9 +192,9 @@
     justify-content: space-between;
     gap: 12px;
     padding: 10px 12px;
-    border: 1px solid var(--color-xfire-border-subtle);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     border-radius: 4px;
-    background: var(--color-xfire-bg-elevated);
+    background: var(--color-xfire-bg-secondary);
   }
 
 
@@ -209,9 +209,9 @@
   }
 
   .dm-invite-key {
-    color: var(--color-xfire-text-tertiary);
+    color: var(--color-xfire-text-secondary);
     font-size: 11px;
-    font-family: var(--font-mono, monospace);
+    font-family: monospace;
     text-overflow: ellipsis;
     overflow: hidden;
     white-space: nowrap;
@@ -247,7 +247,7 @@
 
   .consent-dialog-key code {
     color: var(--color-xfire-text-primary);
-    font-family: var(--font-mono, monospace);
+    font-family: monospace;
     font-size: 14px;
     letter-spacing: 0.08em;
   }
@@ -273,7 +273,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--color-xfire-border-subtle);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
   }
 
   .relay-row:last-of-type {
@@ -284,7 +284,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-xfire-accent, #4a90e2);
+    color: var(--color-xfire-accent-text);
   }
 
   .push-relay-row {
@@ -292,7 +292,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--color-xfire-border-subtle);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     gap: 12px;
   }
 
@@ -310,7 +310,7 @@
 
   .push-relay-watch-count {
     font-size: 11px;
-    color: var(--color-xfire-text-tertiary);
+    color: var(--color-xfire-text-secondary);
   }
 
   /* Architecture §28.5 mention rendering. Privileged classes
@@ -321,25 +321,25 @@
   .chat-mention {
     padding: 0 4px;
     border-radius: 3px;
-    background: rgba(74, 144, 226, 0.18);
-    color: var(--color-xfire-accent, #4a90e2);
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    color: var(--color-xfire-accent-text);
     font-weight: 500;
   }
 
   .chat-mention-everyone,
   .chat-mention-here {
-    background: rgba(255, 184, 108, 0.22);
-    color: #c2570a;
+    background: color-mix(in srgb, var(--color-xfire-mention-everyone) 22%, transparent);
+    color: var(--color-xfire-mention-everyone);
   }
 
   .chat-mention-role {
-    background: rgba(140, 99, 197, 0.2);
-    color: #6f42c1;
+    background: color-mix(in srgb, var(--color-xfire-mention-role) 20%, transparent);
+    color: var(--color-xfire-mention-role);
   }
 
   .chat-mention-self {
-    background: rgba(255, 96, 96, 0.28);
-    color: #b3261e;
+    background: color-mix(in srgb, var(--color-xfire-mention-self) 28%, transparent);
+    color: var(--color-xfire-mention-self);
   }
 
   /* Shared LoadingButton component — async submit + aria-busy. */
@@ -433,13 +433,12 @@
     }
   }
 
-  @media (prefers-contrast: more) {
-    :root {
-      --color-xfire-border: rgba(255, 255, 255, 0.55);
-      --color-xfire-text-dim: rgba(255, 255, 255, 0.85);
-      --color-xfire-text-status: rgba(255, 255, 255, 0.85);
-    }
+}
 
+/* `prefers-contrast: more` beats any skin: its token overrides are in
+ * `global.css`'s `@layer a11y` block, these rules beside them. */
+@layer a11y {
+  @media (prefers-contrast: more) {
     .form-btn-primary,
     .form-btn-secondary,
     .form-btn-danger {

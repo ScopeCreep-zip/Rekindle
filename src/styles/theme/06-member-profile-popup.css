@@ -83,7 +83,7 @@
   }
 
   .role-picker-item-active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-weight: 600;
   }
 
@@ -95,7 +95,7 @@
   }
 
   .role-picker-item-active .role-picker-check {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* Timeout indicator badge on members */
@@ -184,8 +184,8 @@
     height: 16px;
     padding: 0 4px;
     border-radius: 8px;
-    background: var(--color-xfire-busy);
-    color: white;
+    background: var(--color-xfire-danger);
+    color: var(--color-xfire-danger-fg);
     font-size: 10px;
     font-weight: 700;
     line-height: 16px;
@@ -272,7 +272,7 @@
   .action-bar-icon-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 16px;
     cursor: pointer;
     padding: 4px 8px;

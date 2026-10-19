@@ -31,7 +31,9 @@ const statusLabels: Record<string, string> = {
  * is an open ring with no fill. Each variant is announced by screen
  * readers via `role="img"` + `aria-label`. The same color tokens
  * carry over from the previous color-only implementation so the
- * dense Xfire visual identity is unchanged for sighted users.
+ * dense Xfire visual identity is unchanged for sighted users. The
+ * cutouts paint with `.status-dot-cutout`, a fixed `@layer sec` token
+ * (plan E7.7.0), so no skin can erase the shape.
  */
 const StatusDot: Component<StatusDotProps> = (props) => {
   const status = (): string => props.status as string;
@@ -49,17 +51,17 @@ const StatusDot: Component<StatusDotProps> = (props) => {
           <Match when={status() === "away"}>
             {/* Filled circle with a crescent cutout (clock/moon glyph). */}
             <circle cx="6" cy="6" r="4.5" fill="currentColor" />
-            <circle cx="8" cy="5" r="3" fill="var(--color-xfire-bg-dark)" />
+            <circle cx="8" cy="5" r="3" class="status-dot-cutout" />
           </Match>
           <Match when={status() === "busy"}>
             {/* Filled circle with a horizontal "do not enter" bar. */}
             <circle cx="6" cy="6" r="4.5" fill="currentColor" />
-            <rect x="2.5" y="5.25" width="7" height="1.5" fill="var(--color-xfire-bg-dark)" rx="0.5" />
+            <rect x="2.5" y="5.25" width="7" height="1.5" class="status-dot-cutout" rx="0.5" />
           </Match>
           <Match when={status() === "ingame"}>
             {/* Filled circle with a play-triangle glyph. */}
             <circle cx="6" cy="6" r="4.5" fill="currentColor" />
-            <polygon points="4.5,3.5 4.5,8.5 9,6" fill="var(--color-xfire-bg-dark)" />
+            <polygon points="4.5,3.5 4.5,8.5 9,6" class="status-dot-cutout" />
           </Match>
         </Switch>
       </svg>

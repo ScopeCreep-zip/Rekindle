@@ -19,6 +19,14 @@
 //!     cargo xtask check-duplicate-constants
 //!                                      One SCREAMING_CASE name must not hold
 //!                                      different values in different crates.
+//!     cargo xtask check-theme-literals Colours under src/styles are tokens.
+//!     cargo xtask check-sec-surfaces   Security surfaces are unskinnable.
+//!     cargo xtask check-destructive-controls
+//!                                      Destructive controls carry a
+//!                                      non-colour cue (rule D0).
+//!     cargo xtask check-declared-grounds
+//!                                      Every token-coloured text selector
+//!                                      declares its ground.
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -45,6 +53,9 @@ use ignore::WalkBuilder;
 use quote::ToTokens as _;
 
 mod bare_spawn;
+mod css;
+mod declared_grounds;
+mod destructive_controls;
 mod domain_literals;
 mod duplication;
 mod frontend_boundaries;
@@ -52,7 +63,9 @@ mod intent_table;
 mod literals;
 mod no_emitter;
 mod no_managed_db;
+mod sec_surfaces;
 mod sqlite;
+mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
 
@@ -96,6 +109,14 @@ enum Command {
     CheckBareSpawn,
     /// Verify every command and IPC request is classified in the intent table.
     CheckIntentTable,
+    /// Verify every colour under src/styles is a token (no hex or rgb() literal).
+    CheckThemeLiterals,
+    /// Verify security surfaces use only the reserved `--sec-*` tokens and classes.
+    CheckSecSurfaces,
+    /// Verify destructive controls have a non-colour cue, are never default, one per view.
+    CheckDestructiveControls,
+    /// Verify every token-coloured text selector declares its ground in the region map.
+    CheckDeclaredGrounds,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
     /// Verify no type name is declared in two crates.
@@ -172,6 +193,22 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| intent_table::check_intent_table(&root)),
                 ),
                 (
+                    "theme-literals",
+                    Box::new(|| theme_literals::check_theme_literals(&root)),
+                ),
+                (
+                    "sec-surfaces",
+                    Box::new(|| sec_surfaces::check_sec_surfaces(&root)),
+                ),
+                (
+                    "destructive-controls",
+                    Box::new(|| destructive_controls::check_destructive_controls(&root)),
+                ),
+                (
+                    "declared-grounds",
+                    Box::new(|| declared_grounds::check_declared_grounds(&root)),
+                ),
+                (
                     "duplicate-bodies",
                     Box::new(|| check_duplicate_bodies(&root)),
                 ),
@@ -213,6 +250,12 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),
         Command::CheckBareSpawn => bare_spawn::check_bare_spawn(&root),
         Command::CheckIntentTable => intent_table::check_intent_table(&root),
+        Command::CheckThemeLiterals => theme_literals::check_theme_literals(&root),
+        Command::CheckSecSurfaces => sec_surfaces::check_sec_surfaces(&root),
+        Command::CheckDestructiveControls => {
+            destructive_controls::check_destructive_controls(&root)
+        }
+        Command::CheckDeclaredGrounds => declared_grounds::check_declared_grounds(&root),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),

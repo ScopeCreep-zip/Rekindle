@@ -40,7 +40,7 @@
     .pairing-qr-display {
       display: inline-block;
       padding: 12px;
-      background: #f8fafc;
+      background: var(--sec-qr-backing);
       border: 1px solid var(--color-xfire-border);
       border-radius: 6px;
       line-height: 0;
@@ -62,7 +62,7 @@
     .qr-scanner-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.85);
+      background: color-mix(in srgb, var(--color-xfire-scrim) 85%, transparent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -86,7 +86,7 @@
     .qr-scanner-video {
       width: 100%;
       aspect-ratio: 1 / 1;
-      background: #000;
+      background: var(--color-xfire-scrim);
       border-radius: 4px;
       object-fit: cover;
     }
@@ -278,7 +278,7 @@
 
   .onboarding-option.selected {
     border-color: var(--color-xfire-accent);
-    background: rgba(23, 124, 193, 0.15);
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
   }
 
   .onboarding-option-title {
@@ -317,7 +317,7 @@
 
   .onboarding-error {
     padding: 0 20px;
-    color: #e74c3c;
+    color: var(--color-xfire-busy);
     font-size: 12px;
   }
 

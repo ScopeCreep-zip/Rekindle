@@ -109,8 +109,8 @@
     gap: 6px;
     margin: 8px 0;
     padding: 8px;
-    background: color-mix(in srgb, var(--xf-accent) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--xf-accent) 30%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
     border-radius: 4px;
   }
 
@@ -167,7 +167,7 @@
   }
 
   .audit-log-actor {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .audit-log-target {
@@ -219,7 +219,7 @@
   }
 
   .event-countdown {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-weight: 600;
   }
 
@@ -285,12 +285,12 @@
 
   .event-status-scheduled {
     background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .event-status-active {
-    background: color-mix(in srgb, #4caf50 20%, transparent);
-    color: #4caf50;
+    background: color-mix(in srgb, var(--color-xfire-success) 20%, transparent);
+    color: var(--color-xfire-success);
   }
 
   .event-status-completed {
@@ -299,8 +299,8 @@
   }
 
   .event-status-cancelled {
-    background: color-mix(in srgb, #f44336 20%, transparent);
-    color: #f44336;
+    background: color-mix(in srgb, var(--color-xfire-busy) 20%, transparent);
+    color: var(--color-xfire-busy);
   }
 
   .event-filter-row {
@@ -376,7 +376,7 @@
     top: 1px;
     width: 4px;
     height: 8px;
-    border: solid white;
+    border: solid var(--color-xfire-accent-fg);
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
   }
@@ -402,7 +402,7 @@
     border: none;
     border-radius: 3px;
     background: color-mix(in srgb, var(--color-xfire-online) 60%, transparent);
-    color: white;
+    color: var(--color-xfire-text-on-fill);
     cursor: pointer;
     font-family: var(--font-family-xfire);
     opacity: 0;

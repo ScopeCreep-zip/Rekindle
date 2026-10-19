@@ -151,6 +151,10 @@ deliberate future exception would require editing the check in
 | F14 | Window roots are `display: flex; flex-direction: column;` with one `flex: 1` child | Project convention; tested via Playwright visual regression | Review |
 | F15 | New `innerHTML` exceptions require a `// SAFETY (XSS):` block + audit table entry in [`../security/frontend-rendering.md`](../security/frontend-rendering.md) | Code review + Semgrep | Active |
 | F16 | Peer-rendered content (markdown bodies, link previews, custom emoji names, etc.) goes through DOMPurify | Code review + Playwright XSS suite (`e2e/security/xss.spec.ts`) | Active for shipped paths; gate doc at [`../security/frontend-rendering.md`](../security/frontend-rendering.md) |
+| F17 | Every colour under `src/styles/` is a token: no hex or colour-function literal in any rule; literals live only in the custom-property declarations of `global.css` (the defaults, the per-base values, the reserved `--sec-*` set) | `cargo xtask check-theme-literals` | Active (plan E7.7.0) |
+| F18 | Security surfaces are unskinnable: `IntentDialog`, `DeepLinkConsentDialog` and `AddDeviceModal` use the `.sec-btn-*` classes and read no themeable token; `@layer sec` reads and declares only `--sec-*` tokens, which are declared nowhere else | `cargo xtask check-sec-surfaces` | Active (plan E7.7.0) |
+| F19 | A destructive control in a component that renders a Destructive or Protected intent carries a non-colour cue (verb label, or reserved glyph plus `aria-label`), is never the default (`type="submit"`, `autofocus`), and appears at most once per view; its styling is a static class on an element marked `data-role="destructive"`. A component that commits an intent review is in the gate's list | `cargo xtask check-destructive-controls` | Active (plan E7.7.0, rule D0) |
+| F20 | Every selector that colours text with a themeable token declares its ground(s) in `src/styles/regions.toml` (`on = [...]`, a `@theme` token or `<token> N% over <ground>`); no stale entries | `cargo xtask check-declared-grounds` | Active (plan E7.7.0; E7.7.1's validator measures each pair) |
 
 ### Frontend file-size ceiling
 

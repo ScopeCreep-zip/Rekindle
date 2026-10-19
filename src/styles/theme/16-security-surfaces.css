@@ -1,0 +1,86 @@
+/* Security surfaces (plan E7.7.0). `@layer sec` is last in the cascade, and
+ * these rules read only the reserved `--sec-*` tokens (`global.css`), so no
+ * skin can restyle them (`cargo xtask check-sec-surfaces`).
+ *
+ * The commit controls of the components that ask for a deliberate decision:
+ * the intent review, the deep-link consent and device pairing. A skin can
+ * recolour the dialog around them, never the choice itself: the
+ * destructive commit always looks destructive, the safe one never does.
+ * Their metrics are the `.form-btn-*` ones they replace. */
+@layer sec {
+  .sec-btn-commit,
+  .sec-btn-commit-danger,
+  .sec-btn-secondary {
+    border: 1px solid;
+    border-radius: 0.25rem;
+    font-family: var(--sec-font-family);
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+
+  /* Commit and destructive commit share one size and place, so a review
+   * that turns destructive changes the button's colour and its verb, not
+   * where it sits. */
+  .sec-btn-commit,
+  .sec-btn-commit-danger {
+    width: 100%;
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  .sec-btn-commit {
+    background: var(--sec-commit-bg);
+    border-color: var(--sec-commit-border);
+    color: var(--sec-commit-fg);
+  }
+
+  .sec-btn-commit-danger {
+    background: var(--sec-danger-bg);
+    border-color: var(--sec-danger-border);
+    color: var(--sec-danger-fg);
+  }
+
+  .sec-btn-secondary {
+    padding: 8px 16px;
+    font-size: 12px;
+    background: var(--sec-secondary-bg);
+    border-color: var(--sec-secondary-border);
+    color: var(--sec-secondary-fg);
+  }
+
+  .sec-btn-commit:hover:not(:disabled),
+  .sec-btn-commit-danger:hover:not(:disabled),
+  .sec-btn-secondary:hover:not(:disabled) {
+    filter: brightness(1.12);
+  }
+
+  .sec-btn-commit:disabled,
+  .sec-btn-commit-danger:disabled,
+  .sec-btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sec-btn-commit:focus-visible,
+  .sec-btn-commit-danger:focus-visible,
+  .sec-btn-secondary:focus-visible {
+    outline: 2px solid var(--sec-focus);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-contrast: more) {
+    .sec-btn-commit,
+    .sec-btn-commit-danger,
+    .sec-btn-secondary {
+      border-width: 2px;
+    }
+  }
+
+  /* StatusDot's shape cutouts (WCAG 1.4.1): a fixed ground per base, so a
+   * skin that sets a status colour equal to its own background cannot
+   * erase the crescent, bar or triangle. */
+  .status-dot-cutout {
+    fill: var(--sec-status-cutout);
+  }
+}

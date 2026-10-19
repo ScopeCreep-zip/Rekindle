@@ -1,0 +1,525 @@
+# The region map (plan E7.7.0; regions and the validator are E7.7.1).
+#
+# One entry per selector that colours text with a themeable token: `on`
+# names every ground that text is drawn on, so E7.7.1's validator can measure
+# each text-on-ground pair under every skin. A ground is a `@theme` colour
+# token, or `<token> <N>% over <ground>` for a tint, composited in
+# gamma-encoded sRGB like `color-mix(in srgb, …)`. The ground of a text rule
+# usually comes from an ancestor (`.reply-preview-icon` sits on
+# `.reply-preview`'s tint), so it is authored here from the component tree,
+# never inferred from the CSS.
+#
+# Hover overlays of white or black (`color-mix(in srgb, white 5%,
+# transparent)`) are not grounds: they are a few percent over the ground named.
+# A video tile's text sits on a 60% scrim over arbitrary frames; its worst
+# case, a white frame, is written `scrim 60% over text-on-fill`.
+#
+# `cargo xtask check-declared-grounds` fails on a token-coloured text selector
+# without an entry, on an entry for any other selector, and on a malformed
+# ground.
+
+[selectors]
+'html' = { on = ["--color-xfire-bg-dark"] }
+'body' = { on = ["--color-xfire-bg-dark"] }
+'.attachment-card-filename' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
+'.settings-list-name' = { on = ["--color-xfire-bg-panel"] }
+'.chat-message-sender-other' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.reaction-chip-count' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.voice-panel-status-disconnected' = { on = ["--color-xfire-bg-status"] }
+'.settings-hint-inline' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.chat-message-sender-self' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.xfire-titlebar-text' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
+'.form-input' = { on = ["--color-xfire-bg-input"] }
+'.form-select' = { on = ["--color-xfire-bg-input"] }
+'.analytics-sparkline-label' = { on = ["--color-xfire-bg-panel"] }
+'.profile-section-label' = { on = ["--color-xfire-bg-dark"] }
+'.profile-game-elapsed' = { on = ["--color-xfire-bg-dark"] }
+'.profile-game-server' = { on = ["--color-xfire-bg-dark"] }
+'.channel-section-header' = { on = ["--color-xfire-bg-dark"] }
+'.member-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.channel-icon' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.channel-manage-icon' = { on = ["--color-xfire-bg-panel"] }
+'.event-card-title' = { on = ["--color-xfire-bg-secondary"] }
+'.profile-popup-name' = { on = ["--color-xfire-bg-primary"] }
+'.game-server-address' = { on = ["--color-xfire-bg-dark"] }
+'.profile-popup-key' = { on = ["--color-xfire-bg-primary"] }
+'.update-status-available' = { on = ["--color-xfire-bg-dark"] }
+'.voice-panel-status' = { on = ["--color-xfire-bg-status"] }
+'.call-waiting-banner-kind' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.outgoing-call-panel-kind' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.notification-body' = { on = ["--color-xfire-bg-panel"] }
+'.reply-preview-body' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
+'.group-submenu-item' = { on = ["--color-xfire-bg-panel"] }
+'.role-picker-item' = { on = ["--color-xfire-bg-panel"] }
+'.avatar-upload-hint' = { on = ["--color-xfire-bg-dark"] }
+'.forward-dialog-hint' = { on = ["--color-xfire-bg"] }
+'.channel-manage-name' = { on = ["--color-xfire-bg-panel"] }
+'.settings-role-name' = { on = ["--color-xfire-bg-panel"] }
+'.event-filter-active' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }
+'.event-rsvp-active' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-secondary"] }
+'.buddy-search-input' = { on = ["--color-xfire-bg-input"] }
+'.member-search-input' = { on = ["--color-xfire-bg-input"] }
+'.pin-panel-header' = { on = ["--color-xfire-bg-dark"] }
+'.thread-panel-header' = { on = ["--color-xfire-bg-dark"] }
+'.analytics-card-label' = { on = ["--color-xfire-bg-secondary"] }
+'.message-link-preview-site' = { on = ["--color-xfire-bg-secondary"] }
+'.mention-popover-tag' = { on = ["--color-xfire-bg-secondary"] }
+'.search-panel-hit-scope' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-action-btn' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-primary"] }
+'.profile-popup-edit-btn' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-primary"] }
+'.sidebar-event-row' = { on = ["--color-xfire-bg-dark"] }
+'.sidebar-server-row' = { on = ["--color-xfire-bg-dark"] }
+'.poll-card-close' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
+'.poll-create-remove-btn' = { on = ["--color-xfire-bg-panel"] }
+'.skip-link' = { on = ["--color-xfire-accent"] }
+'.xfire-titlebar-btn' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
+'.xfire-titlebar-btn:hover' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
+'.xfire-titlebar-btn-close:hover' = { on = ["--color-xfire-danger 80% over --color-xfire-titlebar-start", "--color-xfire-danger 80% over --color-xfire-titlebar-end"] }
+'.form-textarea' = { on = ["--color-xfire-bg-input"] }
+'.form-error' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-btn-primary' = { on = ["--color-xfire-accent"] }
+'.form-btn-secondary' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-panel", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-secondary", "--color-xfire-bg-secondary 96% over --color-xfire-bg-dark", "--color-xfire-busy 30% over --color-xfire-bg-dark"] }
+'.form-btn-danger' = { on = ["--color-xfire-danger 60% over --color-xfire-bg-dark", "--color-xfire-danger 60% over --color-xfire-bg-panel"] }
+'.form-field-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-tabs-equal .form-tab' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-tab' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-tab:hover:not(.form-tab-active)' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-tab-active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-tab.active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-name-offline' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
+'.buddy-game-info' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.buddy-status-message' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.buddy-last-seen' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.buddy-handshake-error' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
+'.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.status-dot-online' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.status-dot-away' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.status-dot-busy' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.status-dot-ingame' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.status-dot-offline' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.chat-message-body' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.chat-message-timestamp' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-input' = { on = ["--color-xfire-bg-input"] }
+'.message-input::placeholder' = { on = ["--color-xfire-bg-input"] }
+'.status-bar' = { on = ["--color-xfire-bg-status"] }
+'.context-menu-item' = { on = ["--color-xfire-bg-panel"] }
+'.context-menu-item-danger' = { on = ["--color-xfire-bg-panel"] }
+'.login-title' = { on = ["--color-xfire-bg-dark"] }
+'.login-subtitle' = { on = ["--color-xfire-bg-dark"] }
+'.login-toggle-btn' = { on = ["--color-xfire-bg-dark"] }
+'.login-toggle-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.account-picker-subtitle' = { on = ["--color-xfire-bg-dark"] }
+'.account-bubble-name' = { on = ["--color-xfire-bg-dark"] }
+'.account-bubble-delete' = { on = ["--color-xfire-bg-dark"] }
+'.account-bubble-delete:hover' = { on = ["--color-xfire-bg-dark"] }
+'.account-card-key' = { on = ["--color-xfire-bg-dark"] }
+'.lock-name' = { on = ["--color-xfire-bg-dark"] }
+'.account-create-btn' = { on = ["--color-xfire-bg-dark"] }
+'.delete-confirm-text' = { on = ["--color-xfire-bg-dark"] }
+'.settings-section-title' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.settings-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
+'.settings-category-label' = { on = ["--color-xfire-bg-panel"] }
+'.settings-about-text' = { on = ["--color-xfire-bg-dark"] }
+'.settings-about-value' = { on = ["--color-xfire-bg-dark"] }
+'.profile-display-name' = { on = ["--color-xfire-bg-dark"] }
+'.profile-status-label' = { on = ["--color-xfire-bg-dark"] }
+'.profile-key-display' = { on = ["--color-xfire-bg-input"] }
+'.profile-game-name' = { on = ["--color-xfire-bg-dark"] }
+'.profile-status-message' = { on = ["--color-xfire-bg-dark"] }
+'.profile-empty-hint' = { on = ["--color-xfire-bg-dark"] }
+'.profile-mutual-item' = { on = ["--color-xfire-bg-dark"] }
+'.typing-label' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-emoji-btn' = { on = ["--color-xfire-bg-input"] }
+'.message-input-emoji-btn:hover' = { on = ["--color-xfire-bg-input"] }
+'.community-sidebar-header' = { on = ["--color-xfire-bg-dark"] }
+'.community-item' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.community-icon' = { on = ["--color-xfire-accent"] }
+'.channel-item' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.channel-item:hover' = { on = ["--color-xfire-bg-dark"] }
+'.channel-item-selected' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark"] }
+'.channel-unread-badge' = { on = ["--color-xfire-accent"] }
+'.channel-presence-badge' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.channel-presence-dot' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.member-list-header' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.role-tag-default' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-accent 25% over --color-xfire-bg-panel", "--color-xfire-accent 25% over --color-xfire-bg-primary"] }
+'.profile-popup-status' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-lastseen' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-self-roles-title' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-self-role-btn' = { on = ["--color-xfire-bg-secondary"] }
+'.profile-popup-timeout' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-game-name' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-game-server' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-join-btn' = { on = ["--color-xfire-ingame"] }
+'.member-game-info' = { on = ["--color-xfire-bg-dark"] }
+'.member-game-server' = { on = ["--color-xfire-bg-dark"] }
+'.avatar' = { on = ["--color-xfire-accent"] }
+'.community-channel-header' = { on = ["--color-xfire-bg-dark"] }
+'.community-channel-header-icon' = { on = ["--color-xfire-bg-dark"] }
+'.voice-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-status"] }
+'.voice-btn-active' = { on = ["--color-xfire-danger 60% over --color-xfire-bg-dark", "--color-xfire-danger 60% over --color-xfire-bg-status"] }
+'.voice-btn-disconnect' = { on = ["--color-xfire-danger 50% over --color-xfire-bg-dark", "--color-xfire-danger 50% over --color-xfire-bg-status"] }
+'.voice-participant' = { on = ["--color-xfire-bg-dark"] }
+'.forum-tag-chip' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-input"] }
+'.forum-tag-chip-remove' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-input"] }
+'.forum-tag-chip-input-field' = { on = ["--color-xfire-bg-input"] }
+'.soundboard-panel-header' = { on = ["--color-xfire-bg-dark"] }
+'.soundboard-panel-header:hover' = { on = ["--color-xfire-bg-dark"] }
+'.soundboard-panel-count' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
+'.soundboard-panel-clip' = { on = ["--color-xfire-bg-input"] }
+'.dm-call-bar-label' = { on = ["--color-xfire-bg-panel"] }
+'.incoming-call-title' = { on = ["--color-xfire-bg-panel"] }
+'.incoming-call-display-name' = { on = ["--color-xfire-bg-panel"] }
+'.incoming-call-timer' = { on = ["--color-xfire-bg-panel"] }
+'.call-waiting-banner-name' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.outgoing-call-panel-name' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.outgoing-call-panel-timer' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.active-call-peer-avatar' = { on = ["--color-xfire-accent"] }
+'.active-call-peer-name' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-peer-meta' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-status-online' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-status-away' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-status-busy' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-status-offline' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.call-control-btn' = { on = ["--color-xfire-bg-tertiary 80% over --color-xfire-bg-dark", "--color-xfire-bg-tertiary 80% over --color-xfire-bg-secondary 92% over --color-xfire-bg-dark", "--color-xfire-bg-tertiary 80% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.call-control-btn-active' = { on = ["--color-xfire-accent"] }
+'.call-control-btn-hangup' = { on = ["--color-xfire-danger"] }
+'.active-call-devices-summary' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-device-row label' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.active-call-device-row select' = { on = ["--color-xfire-bg-secondary 92% over --color-xfire-bg-dark"] }
+'.video-call-pip-btn' = { on = ["--color-xfire-bg-tertiary 70% over --color-xfire-bg-secondary"] }
+'.group-call-banner-title' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.group-call-banner-meta' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.group-call-panel-title' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
+'.group-call-tile-avatar' = { on = ["--color-xfire-accent"] }
+'.group-call-tile-name' = { on = ["--color-xfire-bg-tertiary"] }
+'.group-call-tile-status' = { on = ["--color-xfire-bg-tertiary"] }
+'.modal-title' = { on = ["--color-xfire-bg-panel"] }
+'.modal-close-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.modal-close-btn:hover' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.tooltip-bubble' = { on = ["--color-xfire-bg-panel"] }
+'.identity-bar-name' = { on = ["--color-xfire-bg-dark"] }
+'.identity-bar-edit' = { on = ["--color-xfire-bg-dark"] }
+'.identity-bar-key' = { on = ["--color-xfire-bg-dark"] }
+'.identity-bar-key:hover' = { on = ["--color-xfire-bg-dark"] }
+'.identity-bar-game' = { on = ["--color-xfire-bg-dark"] }
+'.pending-header' = { on = ["--color-xfire-bg-dark"] }
+'.pending-message' = { on = ["--color-xfire-bg-dark"] }
+'.pending-btn-accept' = { on = ["--color-xfire-online 60% over --color-xfire-bg-dark"] }
+'.pending-btn-reject' = { on = ["--color-xfire-danger 50% over --color-xfire-bg-dark"] }
+'.pending-btn-block' = { on = ["--color-xfire-offline 60% over --color-xfire-bg-dark"] }
+'.add-friend-invite-text' = { on = ["--color-xfire-bg-input"] }
+'.add-friend-copy-btn' = { on = ["--color-xfire-accent"] }
+'.add-friend-cancel-btn' = { on = ["--color-xfire-danger 50% over --color-xfire-bg-panel"] }
+'.add-friend-invite-list-header' = { on = ["--color-xfire-bg-panel"] }
+'.invite-status-badge' = { on = ["--color-xfire-offline 30% over --color-xfire-bg-panel"] }
+'.invite-status-badge.responded' = { on = ["--color-xfire-success 30% over --color-xfire-bg-panel"] }
+'.invite-time' = { on = ["--color-xfire-bg-panel"] }
+'.invite-url-masked' = { on = ["--color-xfire-bg-panel"] }
+'.invite-url-masked:hover' = { on = ["--color-xfire-bg-panel"] }
+'.invite-copy-btn' = { on = ["--color-xfire-accent"] }
+'.invite-cancel-btn' = { on = ["--color-xfire-danger 50% over --color-xfire-bg-panel"] }
+'.add-friend-divider' = { on = ["--color-xfire-bg-panel"] }
+'.action-bar-btn' = { on = ["--color-xfire-bg-dark"] }
+'.notification-bell' = { on = ["--color-xfire-bg-dark"] }
+'.notification-bell:hover' = { on = ["--color-xfire-bg-dark"] }
+'.notification-badge' = { on = ["--color-xfire-danger"] }
+'.notification-panel-title' = { on = ["--color-xfire-bg-panel"] }
+'.notification-title' = { on = ["--color-xfire-bg-panel"] }
+'.notification-time' = { on = ["--color-xfire-bg-panel"] }
+'.notification-mark-read' = { on = ["--color-xfire-bg-panel"] }
+'.notification-mark-read:hover' = { on = ["--color-xfire-bg-panel"] }
+'.notification-mark-all' = { on = ["--color-xfire-bg-panel"] }
+'.notification-empty' = { on = ["--color-xfire-bg-panel"] }
+'.logout-btn' = { on = ["--color-xfire-bg-dark"] }
+'.logout-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.network-indicator' = { on = ["--color-xfire-bg-status"] }
+'.network-voice-note' = { on = ["--color-xfire-bg-status"] }
+'.join-stepper-row' = { on = ["--color-xfire-bg-dark"] }
+'.community-leave-btn' = { on = ["--color-xfire-bg-dark"] }
+'.community-leave-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.context-menu-header' = { on = ["--color-xfire-bg-panel"] }
+'.group-create-input' = { on = ["--color-xfire-bg-input"] }
+'.avatar-upload-btn' = { on = ["--color-xfire-bg-dark"] }
+'.update-status' = { on = ["--color-xfire-bg-dark"] }
+'.role-picker-item-active' = { on = ["--color-xfire-bg-panel"] }
+'.role-picker-check' = { on = ["--color-xfire-bg-panel"] }
+'.role-picker-item-active .role-picker-check' = { on = ["--color-xfire-bg-panel"] }
+'.timeout-indicator' = { on = ["--color-xfire-away 40% over --color-xfire-bg-dark", "--color-xfire-away 40% over --color-xfire-bg-panel"] }
+'.settings-role-position' = { on = ["--color-xfire-bg-panel"] }
+'.empty-placeholder' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-unread-badge' = { on = ["--color-xfire-danger"] }
+'.chat-peer-status' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.message-status-sending' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-status-sent' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-status-queued' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-status-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.network-banner' = { on = ["--color-xfire-away 30% over --color-xfire-bg-dark"] }
+'.action-bar-icon-btn' = { on = ["--color-xfire-bg-dark"] }
+'.chat-call-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.chat-call-btn-active' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.message-retry-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-retry-btn:hover' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.settings-value' = { on = ["--color-xfire-bg-panel"] }
+'.settings-value-mono' = { on = ["--color-xfire-bg-panel"] }
+'.settings-copy-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.channel-manage-type' = { on = ["--color-xfire-bg-panel"] }
+'.settings-subsection-title' = { on = ["--color-xfire-bg-panel"] }
+'.channel-create-category-btn' = { on = ["--color-xfire-bg-dark"] }
+'.channel-create-category-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.settings-list-date' = { on = ["--color-xfire-bg-panel"] }
+'.audit-log-action' = { on = ["--color-xfire-bg-secondary"] }
+'.audit-log-meta' = { on = ["--color-xfire-bg-secondary"] }
+'.audit-log-actor' = { on = ["--color-xfire-bg-secondary"] }
+'.audit-log-target' = { on = ["--color-xfire-bg-secondary"] }
+'.audit-log-details' = { on = ["--color-xfire-bg-secondary"] }
+'.event-card-description' = { on = ["--color-xfire-bg-secondary"] }
+'.event-card-meta' = { on = ["--color-xfire-bg-secondary"] }
+'.event-countdown' = { on = ["--color-xfire-bg-secondary"] }
+'.event-rsvp-btn' = { on = ["--color-xfire-bg-secondary"] }
+'.event-rsvp-btn:hover' = { on = ["--color-xfire-bg-secondary"] }
+'.event-rsvp-count' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-secondary"] }
+'.event-empty' = { on = ["--color-xfire-bg-dark"] }
+'.event-status-scheduled' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-secondary"] }
+'.event-status-active' = { on = ["--color-xfire-success 20% over --color-xfire-bg-secondary"] }
+'.event-status-completed' = { on = ["--color-xfire-text-dim 20% over --color-xfire-bg-secondary"] }
+'.event-status-cancelled' = { on = ["--color-xfire-busy 20% over --color-xfire-bg-secondary"] }
+'.event-filter-btn' = { on = ["--color-xfire-bg-dark"] }
+'.event-filter-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.logout-icon-btn' = { on = ["--color-xfire-bg-dark"] }
+'.logout-icon-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.channel-voice-join-btn' = { on = ["--color-xfire-online 60% over --color-xfire-bg-dark"] }
+'.timeout-select' = { on = ["--color-xfire-bg-input"] }
+'.community-description-hint' = { on = ["--color-xfire-bg-dark"] }
+'.overwrite-perm-header' = { on = ["--color-xfire-bg-panel"] }
+'.toast-item' = { on = ["--color-xfire-online", "--color-xfire-busy", "--color-xfire-accent"] }
+'.confirm-dialog-body' = { on = ["--color-xfire-bg-panel"] }
+'.buddy-tab' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-tab:hover' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-tab-active' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-search-input::placeholder' = { on = ["--color-xfire-bg-input"] }
+'.menu-bar-item' = { on = ["--color-xfire-bg-dark"] }
+'.menu-bar-item:hover' = { on = ["--color-xfire-bg-dark"] }
+'.menu-bar-item:focus-visible' = { on = ["--color-xfire-bg-dark"] }
+'.menu-bar-item[data-expanded]' = { on = ["--color-xfire-bg-dark"] }
+'.menu-dropdown-item' = { on = ["--color-xfire-bg-panel"] }
+'.menu-dropdown-item-disabled' = { on = ["--color-xfire-bg-panel"] }
+'.menu-dropdown-item-danger' = { on = ["--color-xfire-bg-panel"] }
+'.identity-bar-status-msg' = { on = ["--color-xfire-bg-dark"] }
+'.identity-bar-status-msg:hover' = { on = ["--color-xfire-bg-dark"] }
+'.identity-bar-status-msg-edit' = { on = ["--color-xfire-bg-input"] }
+'.buddy-nickname' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.notification-override-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.notification-override-select' = { on = ["--color-xfire-bg-input"] }
+'.reply-preview-icon' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
+'.reply-preview-sender' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
+'.reply-preview-close' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
+'.reply-preview-close:hover' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
+'.reply-snippet' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.reply-snippet-sender' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.reaction-chip-active .reaction-chip-count' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.pin-panel-empty' = { on = ["--color-xfire-bg-dark"] }
+'.pin-panel-item-sender' = { on = ["--color-xfire-bg-dark"] }
+'.pin-panel-item-body' = { on = ["--color-xfire-bg-dark"] }
+'.pin-panel-item-meta' = { on = ["--color-xfire-bg-dark"] }
+'.pin-panel-unpin-btn' = { on = ["--color-xfire-bg-dark"] }
+'.pin-panel-unpin-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.category-header' = { on = ["--color-xfire-bg-dark"] }
+'.category-header:hover' = { on = ["--color-xfire-bg-dark"] }
+'.thread-panel-archive-btn' = { on = ["--color-xfire-bg-dark"] }
+'.thread-panel-archive-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.forum-channel-title' = { on = ["--color-xfire-bg-dark"] }
+'.forum-channel-topic' = { on = ["--color-xfire-bg-dark"] }
+'.forum-channel-tag' = { on = ["--color-xfire-bg-secondary"] }
+'.forum-channel-tag-active' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-secondary"] }
+'.forum-channel-composer-title' = { on = ["--color-xfire-bg-secondary"] }
+'.forum-channel-thread-name' = { on = ["--color-xfire-bg-secondary"] }
+'.forum-channel-thread-tag' = { on = ["--color-xfire-bg-tertiary"] }
+'.forum-channel-thread-meta' = { on = ["--color-xfire-bg-secondary"] }
+'.forum-channel-empty' = { on = ["--color-xfire-bg-dark"] }
+'.forum-channel-empty-title' = { on = ["--color-xfire-bg-dark"] }
+'.stage-panel-title' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-secondary", "--color-xfire-bg-secondary", "--color-xfire-online 10% over --color-xfire-bg-secondary"] }
+'.stage-panel-topic' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-secondary", "--color-xfire-bg-secondary", "--color-xfire-online 10% over --color-xfire-bg-secondary"] }
+'.stage-panel-join-btn' = { on = ["--color-xfire-online 18% over --color-xfire-bg-tertiary"] }
+'.stage-panel-leave-btn' = { on = ["--color-xfire-bg-tertiary"] }
+'.stage-panel-request-btn' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-tertiary"] }
+'.stage-panel-status' = { on = ["--color-xfire-bg-dark"] }
+'.stage-panel-section-title' = { on = ["--color-xfire-bg-secondary"] }
+'.stage-panel-member-name' = { on = ["--color-xfire-bg-tertiary"] }
+'.stage-panel-member-meta' = { on = ["--color-xfire-bg-tertiary"] }
+'.stage-panel-approve-btn' = { on = ["--color-xfire-online 18% over --color-xfire-bg-tertiary"] }
+'.stage-panel-deny-btn' = { on = ["--color-xfire-busy 16% over --color-xfire-bg-tertiary"] }
+'.stage-panel-empty' = { on = ["--color-xfire-bg-secondary"] }
+'.thread-list-item-name' = { on = ["--color-xfire-bg-dark"] }
+'.thread-list-item-meta' = { on = ["--color-xfire-bg-dark"] }
+'.thread-list-toggle-archived' = { on = ["--color-xfire-bg-dark"] }
+'.thread-list-toggle-archived:hover' = { on = ["--color-xfire-bg-dark"] }
+'.thread-starter-badge' = { on = ["--color-xfire-accent 12% over --color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-panel"] }
+'.message-action-btn' = { on = ["--color-xfire-bg-panel"] }
+'.message-action-btn:hover' = { on = ["--color-xfire-bg-panel"] }
+'.edit-indicator' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.edit-mode-header' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
+'.edit-mode-cancel' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
+'.edit-mode-cancel:hover' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
+'.messages-loading-spinner' = { on = ["--color-xfire-bg-panel"] }
+'.channel-topic' = { on = ["--color-xfire-bg-dark"] }
+'.announcement-icon' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.game-server-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.game-server-icon' = { on = ["--color-xfire-bg-dark"] }
+'.game-server-label' = { on = ["--color-xfire-bg-dark"] }
+'.game-server-remove-btn' = { on = ["--color-xfire-bg-dark"] }
+'.game-server-remove-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.game-server-join-btn' = { on = ["--color-xfire-ingame"] }
+'.channel-slowmode-label' = { on = ["--color-xfire-bg-panel"] }
+'.profile-popup-edit-image-placeholder' = { on = ["--color-xfire-bg-secondary"] }
+'.video-call-video' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.video-call-canvas' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.video-call-tile-label' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.call-stage-hero-icon' = { on = ["--color-xfire-bg-dark"] }
+'.call-stage-hero-title' = { on = ["--color-xfire-bg-dark"] }
+'.call-stage-hero-subtitle' = { on = ["--color-xfire-bg-dark"] }
+'.call-stage-join-btn' = { on = ["--color-xfire-online"] }
+'.call-stage-tile-name' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.call-stage-tile-badge' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.call-stage-tile-badge-muted' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.call-control-quality' = { on = ["--color-xfire-bg-dark"] }
+'.call-control-g114' = { on = ["--color-xfire-bg-dark"] }
+'.analytics-card-value' = { on = ["--color-xfire-bg-secondary"] }
+'.analytics-channel-name' = { on = ["--color-xfire-bg-panel"] }
+'.analytics-channel-stats' = { on = ["--color-xfire-bg-panel"] }
+'.analytics-hour-label' = { on = ["--color-xfire-bg-secondary"] }
+'.search-panel-header h3' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-close' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-pinned' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-chip' = { on = ["--color-xfire-bg-secondary"] }
+'.search-panel-chip-active' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-primary"] }
+'.search-panel-error' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-primary", "--color-xfire-bg-secondary"] }
+'.search-panel-empty' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-hit-scope-channel' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-primary"] }
+'.search-panel-hit-scope-thread' = { on = ["--color-xfire-thread-tag 25% over --color-xfire-bg-primary"] }
+'.search-panel-hit-time' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-hit-body' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-hit-context' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-hit-match' = { on = ["--color-xfire-bg-primary"] }
+'.search-panel-footer' = { on = ["--color-xfire-bg-primary"] }
+'.message-link-preview-title' = { on = ["--color-xfire-bg-secondary"] }
+'.message-link-preview-description' = { on = ["--color-xfire-bg-secondary"] }
+'.mention-popover-row' = { on = ["--color-xfire-bg-secondary"] }
+'.mention-popover-tag-special' = { on = ["--color-xfire-mention-everyone 25% over --color-xfire-bg-secondary"] }
+'.mention-popover-tag-role' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-secondary"] }
+'.channel-notif-label' = { on = ["--color-xfire-bg-panel"] }
+'.channel-topic-label' = { on = ["--color-xfire-bg-panel"] }
+'.channel-notification-select' = { on = ["--color-xfire-bg-input"] }
+'.community-unread-badge' = { on = ["--color-xfire-accent"] }
+'.channel-header-badge' = { on = ["--color-xfire-bg-dark"] }
+'.header-btn-active' = { on = ["--color-xfire-bg-dark"] }
+'.profile-popup-empty-hint' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-pronouns' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-bio' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-badge' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-edit-label' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-edit-input' = { on = ["--color-xfire-bg 80% over --color-xfire-bg-primary"] }
+'.profile-popup-edit-textarea' = { on = ["--color-xfire-bg 80% over --color-xfire-bg-primary"] }
+'.message-list-mod-btn' = { on = ["--color-xfire-bg-panel"] }
+'.message-list-mod-btn:hover' = { on = ["--color-xfire-bg-panel"] }
+'.message-list-selection-count' = { on = ["--color-xfire-accent 15% over --color-xfire-bg"] }
+'.message-list-selection-btn' = { on = ["--color-xfire-accent 15% over --color-xfire-accent 15% over --color-xfire-bg"] }
+'.attachment-card-icon' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.attachment-card-icon-ready' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.attachment-card-info' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.attachment-card-btn' = { on = ["--color-xfire-accent 18% over --color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-accent 18% over --color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.attachment-card-pin-btn' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.attachment-card-pin-btn:hover' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.attachment-card-pin-btn-active' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.message-input-attach-btn' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-mic-btn' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-attach-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-mic-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-mic-btn-active' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-mic-timer' = { on = ["--color-xfire-bg-dark"] }
+'.voice-message-play-btn' = { on = ["--color-xfire-accent"] }
+'.voice-message-duration' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
+'.raid-alert-banner' = { on = ["--color-xfire-busy 30% over --color-xfire-bg-dark"] }
+'.plate-gate-banner-text' = { on = ["--color-xfire-bg-panel"] }
+'.plate-gate-banner-btn' = { on = ["--color-xfire-accent"] }
+'.plate-gate-status' = { on = ["--color-xfire-bg-panel"] }
+'.message-forwarded-header' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-forwarded-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.forward-dialog-title' = { on = ["--color-xfire-bg"] }
+'.forward-dialog-close' = { on = ["--color-xfire-bg"] }
+'.forward-dialog-close:hover' = { on = ["--color-xfire-bg"] }
+'.forward-dialog-label' = { on = ["--color-xfire-bg"] }
+'.forward-dialog-select' = { on = ["--color-xfire-bg"] }
+'.forward-dialog-btn' = { on = ["--color-xfire-bg"] }
+'.pin-panel-jump-btn' = { on = ["--color-xfire-bg-dark"] }
+'.sidebar-server-join-btn' = { on = ["--color-xfire-bg-dark"] }
+'.sidebar-event-countdown' = { on = ["--color-xfire-bg-dark"] }
+'.sidebar-section-more' = { on = ["--color-xfire-bg-dark"] }
+'.sidebar-section-more:hover' = { on = ["--color-xfire-bg-dark"] }
+'.emoji-picker-search' = { on = ["--color-xfire-bg-input"] }
+'.emoji-picker-section-label' = { on = ["--color-xfire-bg-panel"] }
+'.emoji-picker-empty' = { on = ["--color-xfire-bg-panel"] }
+'.expression-picker-upload-btn' = { on = ["--color-xfire-bg-input"] }
+'.expression-picker-fallback' = { on = ["--color-xfire-bg-panel"] }
+'.expression-picker-tab' = { on = ["--color-xfire-bg-panel"] }
+'.expression-picker-tab-active' = { on = ["--color-xfire-bg-panel"] }
+'.expression-picker-soundboard-name' = { on = ["--color-xfire-bg-panel"] }
+'.event-timezone' = { on = ["--color-xfire-bg-secondary"] }
+'.settings-audit-collapsible summary:hover' = { on = ["--color-xfire-bg-panel"] }
+'.intent-dialog-subject' = { on = ["--color-xfire-bg-panel"] }
+'.intent-dialog-facts' = { on = ["--color-xfire-bg-panel"] }
+'.intent-dialog-escalation' = { on = ["--color-xfire-bg-panel"] }
+'.intent-dialog-meta' = { on = ["--color-xfire-bg-panel"] }
+'.automod-rule-name' = { on = ["--color-xfire-bg-panel"] }
+'.automod-rule-meta' = { on = ["--color-xfire-bg-panel"] }
+'.automod-enabled-toggle' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.channel-category-label' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-wizard-gated-banner' = { on = ["--color-xfire-accent 18% over --color-xfire-bg-panel"] }
+'.onboarding-progress' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-welcome p' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-rules h3' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-rules-text' = { on = ["--color-xfire-bg-secondary"] }
+'.onboarding-rules-ack' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-question h3' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-question-desc' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-option' = { on = ["--color-xfire-bg-secondary"] }
+'.onboarding-option-desc' = { on = ["--color-xfire-bg-secondary"] }
+'.onboarding-guide-step h3' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-guide-step p' = { on = ["--color-xfire-bg-panel"] }
+'.onboarding-error' = { on = ["--color-xfire-bg-panel"] }
+'.welcome-screen-header h2' = { on = ["--color-xfire-bg-dark"] }
+'.welcome-screen-description' = { on = ["--color-xfire-bg-dark"] }
+'.welcome-screen-channels h3' = { on = ["--color-xfire-bg-dark"] }
+'.welcome-channel-entry' = { on = ["--color-xfire-bg-secondary"] }
+'.welcome-channel-name' = { on = ["--color-xfire-bg-secondary"] }
+'.welcome-channel-desc' = { on = ["--color-xfire-bg-secondary"] }
+'.message-decrypt-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-decrypt-failed-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-automod-blur' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-automod-reveal-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.poll-card-question' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
+'.poll-card-status' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
+'.poll-card-meta' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
+'.poll-card-answer' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
+'.poll-card-answer-count' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
+'.poll-create-checkbox' = { on = ["--color-xfire-bg-panel"] }
+'.dm-invite-empty' = { on = ["--color-xfire-bg-panel"] }
+'.dm-invite-meta strong' = { on = ["--color-xfire-bg-secondary"] }
+'.dm-invite-kind' = { on = ["--color-xfire-bg-secondary"] }
+'.dm-invite-key' = { on = ["--color-xfire-bg-secondary"] }
+'.consent-dialog-text' = { on = ["--color-xfire-bg-panel"] }
+'.consent-dialog-key' = { on = ["--color-xfire-bg-panel"] }
+'.consent-dialog-key code' = { on = ["--color-xfire-bg-panel"] }
+'.consent-dialog-error' = { on = ["--color-xfire-bg-panel"] }
+'.relay-section-subtitle' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.relay-row-badge' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.push-relay-platform' = { on = ["--color-xfire-bg-dark"] }
+'.push-relay-watch-count' = { on = ["--color-xfire-bg-dark"] }
+'.chat-mention' = { on = ["--color-xfire-accent 18% over --color-xfire-bg-dark", "--color-xfire-accent 18% over --color-xfire-bg-panel"] }
+'.chat-mention-everyone' = { on = ["--color-xfire-mention-everyone 22% over --color-xfire-bg-dark", "--color-xfire-mention-everyone 22% over --color-xfire-bg-panel"] }
+'.chat-mention-here' = { on = ["--color-xfire-mention-everyone 22% over --color-xfire-bg-dark", "--color-xfire-mention-everyone 22% over --color-xfire-bg-panel"] }
+'.chat-mention-role' = { on = ["--color-xfire-mention-role 20% over --color-xfire-bg-dark", "--color-xfire-mention-role 20% over --color-xfire-bg-panel"] }
+'.chat-mention-self' = { on = ["--color-xfire-mention-self 28% over --color-xfire-bg-dark", "--color-xfire-mention-self 28% over --color-xfire-bg-panel"] }

@@ -1,6 +1,6 @@
 @layer components {
   .add-friend-copy-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, black);
   }
 
   .add-friend-invite-actions,
@@ -12,16 +12,16 @@
 
   .add-friend-cancel-btn {
     padding: 4px 12px;
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
     border: none;
     border-radius: 3px;
-    color: white;
+    color: var(--color-xfire-danger-fg);
     font-size: 11px;
     cursor: pointer;
   }
 
   .add-friend-cancel-btn:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .add-friend-invite-list {
@@ -57,8 +57,8 @@
   }
 
   .invite-status-badge.responded {
-    background: color-mix(in srgb, #22c55e 30%, transparent);
-    color: #4ade80;
+    background: color-mix(in srgb, var(--color-xfire-success) 30%, transparent);
+    color: var(--color-xfire-success);
   }
 
   .invite-time {
@@ -90,13 +90,13 @@
     border-radius: 3px;
     cursor: pointer;
     background: var(--color-xfire-accent);
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-family: var(--font-family-xfire);
     flex-shrink: 0;
   }
 
   .invite-copy-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, black);
   }
 
   .invite-cancel-btn {
@@ -107,13 +107,13 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
+    color: var(--color-xfire-danger-fg);
     font-family: var(--font-family-xfire);
   }
 
   .invite-cancel-btn:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .add-friend-divider {
@@ -135,7 +135,7 @@
   .action-bar-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
@@ -184,8 +184,8 @@
     height: 14px;
     padding: 0 3px;
     border-radius: 7px;
-    background: var(--color-xfire-busy);
-    color: white;
+    background: var(--color-xfire-danger);
+    color: var(--color-xfire-danger-fg);
     font-size: 9px;
     font-weight: 700;
     line-height: 14px;
@@ -203,7 +203,7 @@
     background: var(--color-xfire-bg-panel);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 6px;
-    box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.5);
+    box-shadow: 0 10px 25px -5px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
     display: flex;
     flex-direction: column;
     margin-top: 4px;
@@ -292,7 +292,7 @@
   .notification-mark-all {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 10px;
     font-weight: 600;
     cursor: pointer;

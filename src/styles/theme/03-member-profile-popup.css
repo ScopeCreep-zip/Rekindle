@@ -4,13 +4,13 @@
   }
 
   .voice-btn-active {
-    background: color-mix(in srgb, var(--color-xfire-busy) 60%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) 60%, transparent);
+    color: var(--color-xfire-danger-fg);
   }
 
   .voice-btn-disconnect {
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
+    color: var(--color-xfire-danger-fg);
   }
 
   .voice-participants {
@@ -104,7 +104,7 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.65);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 65%, transparent);
     z-index: var(--z-modal-backdrop);
   }
 
@@ -128,7 +128,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+    box-shadow: 0 25px 50px -12px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
   }
 
   .modal-container-sm { max-width: 360px; }
@@ -160,7 +160,7 @@
   .soundboard-panel-count {
     font-size: 10px;
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     padding: 1px 6px;
     border-radius: 8px;
   }
@@ -222,7 +222,10 @@
     text-transform: capitalize;
     margin-bottom: 6px;
   }
-  .incoming-call-display-name {
+  /* The forum title and thread name share these (they read the former
+   * undefined `--color-xfire-text-0`, now `text-primary`; plan E7.7.0). */
+  .incoming-call-display-name,
+  .forum-channel-title {
     font-size: 18px;
     font-weight: 700;
     color: var(--color-xfire-text-primary);
@@ -314,7 +317,8 @@
     box-shadow: var(--shadow-elevated);
     min-width: 200px;
   }
-  .outgoing-call-panel-name {
+  .outgoing-call-panel-name,
+  .forum-channel-thread-name {
     font-size: 15px;
     font-weight: 700;
     color: var(--color-xfire-text-primary);
@@ -369,7 +373,7 @@
     height: 36px;
     border-radius: 50%;
     background: var(--color-xfire-accent);
-    color: #fff;
+    color: var(--color-xfire-accent-fg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -449,12 +453,12 @@
   .call-control-btn-active {
     background: var(--color-xfire-accent);
     border-color: var(--color-xfire-accent);
-    color: #fff;
+    color: var(--color-xfire-accent-fg);
   }
   .call-control-btn-hangup {
-    background: var(--color-xfire-busy);
-    border-color: var(--color-xfire-busy);
-    color: #fff;
+    background: var(--color-xfire-danger);
+    border-color: var(--color-xfire-danger);
+    color: var(--color-xfire-danger-fg);
   }
   .call-control-btn-hangup:hover {
     filter: brightness(1.15);

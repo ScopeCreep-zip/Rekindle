@@ -79,7 +79,7 @@
     background: var(--color-xfire-bg-panel);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 0.25rem;
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+    box-shadow: 0 10px 15px -3px color-mix(in srgb, var(--color-xfire-shadow) 30%, transparent);
     padding: 4px 0;
     min-width: 144px;
   }
@@ -117,7 +117,7 @@
   .login-title {
     font-size: 26px;
     font-weight: 700;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .login-subtitle {
@@ -129,7 +129,7 @@
   .login-toggle-btn {
     background: none;
     border: none;
-    color: var(--color-xfire-link, var(--color-xfire-accent));
+    color: var(--color-xfire-link, var(--color-xfire-accent-text));
     font-size: 11px;
     cursor: pointer;
     font-family: var(--font-family-xfire);
@@ -258,7 +258,7 @@
     background: transparent;
     border: 1px dashed var(--color-xfire-accent);
     border-radius: 4px;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 12px;
     cursor: pointer;
     font-family: var(--font-family-xfire);

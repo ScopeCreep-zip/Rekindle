@@ -364,7 +364,7 @@ test.describe("Multi-Account", () => {
 
     // Enter passphrase and commit the deletion
     await review.locator("input[type='password']").fill("delete-me-pass");
-    await review.locator("button[type='submit']").click();
+    await review.locator("[data-role='destructive']").click();
 
     // Should transition to create mode (no identities left)
     await expect(page.locator(".login-subtitle")).toContainText(

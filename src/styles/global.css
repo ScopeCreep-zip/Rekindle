@@ -1,24 +1,33 @@
+/* The whole cascade, declared once and first (plan E7.7.0). CSS allows a
+ * `@layer` statement ahead of `@import`. Tailwind's own import emits
+ * `@layer theme, base, components, utilities;`
+ * (`node_modules/tailwindcss/index.css:1`); naming `utilities` here keeps it
+ * below `a11y` and `sec` instead of appended after them.
+ *   theme           Tailwind `@theme` tokens (the defaults below)
+ *   base            element resets
+ *   xfire-defaults  per-base default values that differ from the dark ones
+ *   skin            a skin's generated tokens (E7.7.2), never element styles
+ *   components      every app rule (`src/styles/theme/*`, scrollbars)
+ *   utilities       Tailwind utilities
+ *   a11y            user accessibility settings; beats any skin
+ *   sec             security surfaces; nothing overrides it */
+@layer theme, base, xfire-defaults, skin, components, utilities, a11y, sec;
 @import "tailwindcss" source(none);
 @source "../";
 /* The Xfire skin, split into ordered parts. It was one 7,926-line file,
  * which the 600-line ceiling could not cover. Import order IS cascade
- * order, so these must stay sorted: parts `00`-`15` each re-open
- * `@layer components`, and CSS concatenates them in source order.
+ * order within a layer, so these must stay sorted: parts `00`-`15`, `90`
+ * and `91` each re-open `@layer components`, and CSS concatenates them in
+ * source order. `16-security-surfaces.css` is `@layer sec`; `91` also
+ * closes with the `@layer a11y` contrast rules.
  *
  * `00-primitives.css` comes first and holds the declaration sets that
  * were written two-to-four times across the other parts. Same layer,
  * earliest source position, so any later rule of equal specificity
  * still wins — which is what makes hoisting them safe.
  *
- * NOTE: `90-` and `91-top-level.css` have no `@layer components`
- * wrapper, so their ~140 class rules sit OUTSIDE the layer and
- * therefore beat every layered rule regardless of specificity. This
- * comment used to say `99-top-level.css` held "the keyframes and media
- * queries that sat outside the layer"; there is no `99-`, and the two
- * files that exist hold 140 ordinary rules and 5 at-rules between them.
- * Whether that precedence is intentional or an artifact of the split
- * is unresolved, so those two parts were left untouched by the
- * primitives hoist — moving a rule out of them would demote it. */
+ * Every colour is a token. Hex and `rgb()` literals appear only in the
+ * custom-property declarations of this file (`cargo xtask check-theme-literals`). */
 @import "./theme/00-primitives.css";
 @import "./theme/00-rules.css";
 @import "./theme/01-form-primitives.css";
@@ -36,6 +45,7 @@
 @import "./theme/13-bulk-message-delete-mod-selection-.css";
 @import "./theme/14-sidebar-sections-servers-events.css";
 @import "./theme/15-intent-dialog.css";
+@import "./theme/16-security-surfaces.css";
 @import "./theme/90-top-level.css";
 @import "./theme/91-top-level.css";
 @import "./animations.css";
@@ -54,7 +64,6 @@
   --color-xfire-bg-panel: #1e1e1e;
   --color-xfire-bg-input: #1e1e1e;
   --color-xfire-bg-status: #181818;
-  --color-xfire-bg-tooltip: #282828;
   --color-xfire-bg: #0a0a0a;
   --color-xfire-bg-primary: #141414;
   --color-xfire-bg-secondary: #1a1a1a;
@@ -62,7 +71,21 @@
   --color-xfire-border: #2a2a2a;
   --color-xfire-text-primary: #e7e7e7;
   --color-xfire-text-secondary: #a0a0a0;
-  --color-xfire-accent: #177cc1;
+  /* Accent as a fill. #177cc1 carried white text at 4.48:1; the minimal
+   * Oklab-lightness step that reaches 4.5:1 is #167bc0 (4.54:1). */
+  --color-xfire-accent: #167bc0;
+  /* Accent as text on a ground (VS Code `textLink.foreground` vs
+   * `button.background`). 5.83 / 5.43 / 5.13 / 4.91 / 4.52 on bg-dark,
+   * bg-primary, bg-secondary, bg-panel, bg-tertiary. */
+  --color-xfire-accent-text: #3491d8;
+  /* Text and glyphs on an accent fill. */
+  --color-xfire-accent-fg: #ffffff;
+  /* Destructive and alert fills carrying text. #ef4444 (busy) carried white
+   * at 3.76:1; the minimal Oklab-lightness step to 4.5:1 is #df3337. */
+  --color-xfire-danger: #df3337;
+  --color-xfire-danger-fg: #ffffff;
+  /* Text on status fills, scrims and toasts. */
+  --color-xfire-text-on-fill: #ffffff;
   --color-xfire-text: #e7e7e7;
   --color-xfire-text-dim: #8fb9d7;
   --color-xfire-text-clan: #1ba1fd;
@@ -75,8 +98,104 @@
   --color-xfire-offline: #7d7d7d;
   --color-xfire-link: #5fa8d3;
   --color-xfire-focus-outline: #5fa8d3;
+  /* Positive state (invite answered, event live): text and its own tint.
+   * #4ade80 read 4.41:1 on its 30% tint over bg-tertiary; minimal step up. */
+  --color-xfire-success: #51e385;
+  --color-xfire-titlebar-start: #0f1a3a;
+  --color-xfire-titlebar-end: #1a2a5e;
+  /* Mixed with `transparent` at the alpha each use needs. */
+  --color-xfire-shadow: #000000;
+  --color-xfire-scrim: #000000;
+  --color-xfire-thread-tag: #ffd479;
+  /* Mention text, also mixed into its own tint. The old pairs read 2.2,
+   * 2.04 and 1.66:1 (dark-on-dark); each is the minimal Oklab-lightness
+   * step up from its old text colour to 4.5:1 on its tint over every
+   * ground (everyone #c2570a, role #6f42c1, self #b3261e). */
+  --color-xfire-mention-everyone: #ffa170;
+  --color-xfire-mention-role: #b59aff;
+  --color-xfire-mention-self: #ffaea1;
   --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
   --font-family-icons: "Symbols Nerd Font Mono";
+}
+
+/* Values that differ on a light base (registry defaults, E7.7.1). A light
+ * skin declares `base: light` and the apply step sets `data-skin-base` on
+ * the root (E7.7.2). The status colours are the minimal Oklab-lightness
+ * steps (gamut-mapped by chroma) to 3:1 on #ffffff: online #53d769 1.86 →
+ * #13ac3e 3.00, away #ffcc00 1.51 → #b59000 3.02, in-game #4fc3f7 2.00 →
+ * #1e9fd2 3.02; busy (3.76) and offline (4.12) already pass. */
+@layer xfire-defaults {
+  :root[data-skin-base="light"] {
+    --color-xfire-online: #13ac3e;
+    --color-xfire-away: #b59000;
+    --color-xfire-ingame: #1e9fd2;
+  }
+}
+
+/* Security surfaces (plan E7.7.0): reserved tokens, defined only here, in
+ * `@layer sec`, valued per base and never themeable. The commit controls of
+ * the intent review, the deep-link consent and device pairing use them, so a
+ * skin cannot disguise a destructive commit; StatusDot's cutouts paint with
+ * `--sec-status-cutout`, so a skin cannot erase the shape cue. */
+@layer sec {
+  :root {
+    --sec-font-family: "Segoe UI", "Tahoma", sans-serif;
+    --sec-commit-bg: #1565a8;
+    --sec-commit-fg: #ffffff;
+    --sec-commit-border: #1565a8;
+    --sec-danger-bg: #c62828;
+    --sec-danger-fg: #ffffff;
+    --sec-danger-border: #c62828;
+    --sec-secondary-bg: #2e2e2e;
+    --sec-secondary-fg: #e7e7e7;
+    --sec-secondary-border: #767676;
+    --sec-focus: #8cc4ff;
+    --sec-status-cutout: #0a0a0a;
+    --sec-qr-backing: #f8fafc;
+  }
+
+  :root[data-skin-base="light"] {
+    --sec-commit-bg: #0b5cad;
+    --sec-commit-fg: #ffffff;
+    --sec-commit-border: #0b5cad;
+    --sec-danger-bg: #b3261e;
+    --sec-danger-fg: #ffffff;
+    --sec-danger-border: #b3261e;
+    --sec-secondary-bg: #ececec;
+    --sec-secondary-fg: #1a1a1a;
+    --sec-secondary-border: #767676;
+    --sec-focus: #0b5cad;
+    --sec-status-cutout: #ffffff;
+  }
+
+  @media (prefers-contrast: more) {
+    :root,
+    :root[data-skin-base="light"] {
+      --sec-commit-bg: #000000;
+      --sec-commit-fg: #ffffff;
+      --sec-commit-border: #ffffff;
+      --sec-danger-bg: #7a0000;
+      --sec-danger-fg: #ffffff;
+      --sec-danger-border: #ffffff;
+      --sec-secondary-bg: #000000;
+      --sec-secondary-fg: #ffffff;
+      --sec-secondary-border: #ffffff;
+      --sec-focus: #ffffff;
+      --sec-status-cutout: #000000;
+    }
+  }
+}
+
+/* macOS "Increase Contrast" and the other `prefers-contrast: more` hosts.
+ * In `@layer a11y`, so a skin cannot undo it. */
+@layer a11y {
+  @media (prefers-contrast: more) {
+    :root {
+      --color-xfire-border: rgba(255, 255, 255, 0.55);
+      --color-xfire-text-dim: rgba(255, 255, 255, 0.85);
+      --color-xfire-text-status: rgba(255, 255, 255, 0.85);
+    }
+  }
 }
 
 /* Architecture §32 a11y — motion duration tokens.
@@ -122,7 +241,7 @@
  * the identical `0 4px 12px rgba(0, 0, 0, 0.4)` literal, so restyling
  * "things that float" meant finding all eight. */
 :root {
-  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 4px 12px color-mix(in srgb, var(--color-xfire-shadow) 40%, transparent);
 }
 
 /* Architecture §32 — single chrome-height token. Titlebar, status bar,

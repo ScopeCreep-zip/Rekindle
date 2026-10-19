@@ -255,7 +255,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
         </p>
         <div class="add-device-stage-actions">
           <button
-            class="form-btn-primary"
+            class="sec-btn-commit"
             type="button"
             onClick={() => void generatePairing()}
             disabled={generatingPairing()}
@@ -265,7 +265,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
               : "I'm the existing device — show pairing code"}
           </button>
           <button
-            class="form-btn-secondary"
+            class="sec-btn-secondary"
             type="button"
             onClick={() => setStage("scan-paste")}
           >
@@ -318,14 +318,14 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
               </div>
               <div class="settings-button-row">
                 <button
-                  class="form-btn-secondary"
+                  class="sec-btn-secondary"
                   type="button"
                   onClick={() => void copyPairingUri()}
                 >
                   Copy pairing link
                 </button>
                 <button
-                  class="form-btn-secondary"
+                  class="sec-btn-secondary"
                   type="button"
                   onClick={() => setStage("intro")}
                 >
@@ -359,21 +359,21 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
         </p>
         <div class="settings-button-row">
           <button
-            class="form-btn-secondary"
+            class="sec-btn-secondary"
             type="button"
             onClick={() => setScannerOpen(true)}
           >
             Scan QR code
           </button>
           <button
-            class="form-btn-secondary"
+            class="sec-btn-secondary"
             type="button"
             onClick={importPairingUri}
           >
             Paste pairing link
           </button>
           <button
-            class="form-btn-secondary"
+            class="sec-btn-secondary"
             type="button"
             onClick={importPairingBundle}
           >
@@ -427,7 +427,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
         </FormField>
         <div class="settings-button-row">
           <button
-            class="form-btn-primary"
+            class="sec-btn-commit"
             type="button"
             onClick={() => void acceptPairing()}
             disabled={
@@ -441,7 +441,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
             {accepting() ? "Accepting…" : "Accept pairing"}
           </button>
           <button
-            class="form-btn-secondary"
+            class="sec-btn-secondary"
             type="button"
             onClick={() => setStage("intro")}
           >
@@ -464,7 +464,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
           devices from the Devices tab.
         </p>
         <button
-          class="form-btn-primary"
+          class="sec-btn-commit"
           type="button"
           onClick={props.onClose}
         >

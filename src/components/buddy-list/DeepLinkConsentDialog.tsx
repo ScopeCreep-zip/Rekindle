@@ -93,15 +93,15 @@ const DeepLinkConsentDialog: Component = () => {
           <Show
             when={pendingDeepLink()?.kind !== "pairingRefused"}
             fallback={
-              <button class="form-btn-primary" onClick={dismiss}>
+              <button class="sec-btn-commit" onClick={dismiss}>
                 OK
               </button>
             }
           >
-            <button class="form-btn-secondary" disabled={busy()} onClick={dismiss}>
+            <button class="sec-btn-secondary" disabled={busy()} onClick={dismiss}>
               Cancel
             </button>
-            <button class="form-btn-primary" disabled={busy()} onClick={confirm}>
+            <button class="sec-btn-commit" disabled={busy()} onClick={confirm}>
               Join
             </button>
           </Show>

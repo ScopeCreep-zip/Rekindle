@@ -42,7 +42,7 @@
     background: var(--color-xfire-bg-secondary);
     border: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 25%, transparent);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-xfire-shadow) 30%, transparent);
     z-index: 10;
   }
   .call-reactions-grid-open { display: grid; }
@@ -169,7 +169,7 @@
     height: 32px;
     border-radius: 50%;
     background: var(--color-xfire-accent);
-    color: #fff;
+    color: var(--color-xfire-accent-fg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -289,7 +289,7 @@
     font-size: 12px;
     font-weight: 700;
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, var(--color-xfire-bg-darker, #000) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 50%, transparent);
     border: 1px solid var(--color-xfire-accent);
     border-radius: 2px;
     padding: 1px 4px;
@@ -309,12 +309,12 @@
   }
 
   .identity-bar-key:hover {
-    color: var(--color-xfire-link, var(--color-xfire-accent));
+    color: var(--color-xfire-link, var(--color-xfire-accent-text));
   }
 
   .identity-bar-game {
     font-size: 10px;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     margin-left: auto;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -371,7 +371,7 @@
     border-radius: 3px;
     cursor: pointer;
     background: color-mix(in srgb, var(--color-xfire-online) 60%, transparent);
-    color: white;
+    color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
     margin-left: auto;
   }
@@ -387,13 +387,13 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-busy) 50%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
+    color: var(--color-xfire-danger-fg);
     font-family: var(--font-family-xfire);
   }
 
   .pending-btn-reject:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .pending-btn-block {
@@ -404,7 +404,7 @@
     border-radius: 3px;
     cursor: pointer;
     background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
-    color: white;
+    color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
   }
 
@@ -446,7 +446,7 @@
     background: var(--color-xfire-accent);
     border: none;
     border-radius: 3px;
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-size: 11px;
     cursor: pointer;
   }

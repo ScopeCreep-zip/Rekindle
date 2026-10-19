@@ -37,7 +37,7 @@
   }
 
   .attachment-card-icon-ready {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
 
@@ -90,7 +90,7 @@
   }
 
   .attachment-card-pin-btn-active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     border-color: var(--color-xfire-accent);
   }
 
@@ -109,11 +109,11 @@
 
   .message-input-attach-btn:hover,
   .message-input-mic-btn:hover {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .message-input-mic-btn-active {
-    color: #c0392b;
+    color: var(--color-xfire-busy);
   }
 
   /* Architecture §32 a11y — opacity fade replaces the original
@@ -148,7 +148,7 @@
   .voice-message-play-btn {
     background: var(--color-xfire-accent);
     border: none;
-    color: white;
+    color: var(--color-xfire-accent-fg);
     width: 28px;
     height: 28px;
     border-radius: 50%;
@@ -243,7 +243,7 @@
   .plate-gate-banner-btn {
     background: var(--color-xfire-accent);
     border: none;
-    color: white;
+    color: var(--color-xfire-accent-fg);
     font-size: 11px;
     padding: 6px 14px;
     border-radius: 3px;
@@ -276,14 +276,14 @@
   }
 
   .message-forwarded-icon {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Forward message dialog ─── */
   .forward-dialog-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 55%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -296,7 +296,7 @@
     border-radius: 6px;
     width: 320px;
     max-width: 90vw;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--color-xfire-shadow) 50%, transparent);
   }
 
   .forward-dialog-header {
@@ -394,7 +394,7 @@
 
   /* ─── Message highlight (jump to pinned message) ─── */
   .message-highlight {
-    background: rgba(27, 161, 253, 0.2);
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
     transition: background 1.5s ease-out;
   }
 
@@ -407,7 +407,7 @@
   .pin-panel-jump-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     cursor: pointer;
     font-size: 10px;
     padding: 2px 6px;
@@ -430,7 +430,7 @@
   .sidebar-server-join-btn {
     background: transparent;
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 10px;
     cursor: pointer;
     padding: 1px 6px;

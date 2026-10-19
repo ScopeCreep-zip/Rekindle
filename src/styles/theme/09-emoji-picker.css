@@ -59,7 +59,7 @@
   .pin-panel-item-sender {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     margin-bottom: 2px;
   }
 
@@ -187,14 +187,8 @@
   }
 
 
-  .forum-channel-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--color-xfire-text-0);
-  }
-
   .forum-channel-topic {
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
     font-size: 13px;
   }
 
@@ -212,8 +206,8 @@
 
   .forum-channel-tag {
     border: 1px solid var(--color-xfire-border);
-    background: var(--color-xfire-bg-2);
-    color: var(--color-xfire-text-1);
+    background: var(--color-xfire-bg-secondary);
+    color: var(--color-xfire-text);
     border-radius: 999px;
     padding: 6px 12px;
     font-size: 12px;
@@ -221,8 +215,8 @@
 
   .forum-channel-tag-active {
     border-color: var(--color-xfire-accent);
-    color: var(--color-xfire-text-0);
-    background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-2));
+    color: var(--color-xfire-text-primary);
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-secondary));
   }
 
   .forum-channel-composer {
@@ -232,13 +226,13 @@
     padding: 16px;
     border: 1px solid var(--color-xfire-border);
     border-radius: 12px;
-    background: var(--color-xfire-bg-2);
+    background: var(--color-xfire-bg-secondary);
   }
 
 
   .forum-channel-composer-title {
     font-weight: 700;
-    color: var(--color-xfire-text-0);
+    color: var(--color-xfire-text-primary);
   }
 
   .forum-channel-composer-close {
@@ -276,33 +270,27 @@
     text-align: left;
     border: 1px solid var(--color-xfire-border);
     border-radius: 12px;
-    background: var(--color-xfire-bg-2);
+    background: var(--color-xfire-bg-secondary);
     padding: 14px 16px;
   }
 
   .forum-channel-thread-card:hover {
     border-color: var(--color-xfire-accent);
-    background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-2));
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-secondary));
   }
 
-
-  .forum-channel-thread-name {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--color-xfire-text-0);
-  }
 
   .forum-channel-thread-tag {
     border-radius: 999px;
     padding: 4px 10px;
     font-size: 11px;
-    color: var(--color-xfire-text-1);
-    background: var(--color-xfire-bg-3);
+    color: var(--color-xfire-text);
+    background: var(--color-xfire-bg-tertiary);
   }
 
   .forum-channel-thread-meta {
     font-size: 12px;
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
   }
 
   .forum-channel-empty {
@@ -314,13 +302,13 @@
     min-height: 220px;
     border: 1px dashed var(--color-xfire-border);
     border-radius: 12px;
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
   }
 
   .forum-channel-empty-title {
     font-size: 16px;
     font-weight: 700;
-    color: var(--color-xfire-text-1);
+    color: var(--color-xfire-text);
   }
 
   .forum-channel-empty-subtitle {
@@ -346,21 +334,21 @@
     border-radius: 14px;
     background:
       linear-gradient(135deg,
-        color-mix(in srgb, var(--color-xfire-accent) 16%, var(--color-xfire-bg-2)) 0%,
-        var(--color-xfire-bg-2) 58%,
-        color-mix(in srgb, var(--color-xfire-online) 10%, var(--color-xfire-bg-2)) 100%);
+        color-mix(in srgb, var(--color-xfire-accent) 16%, var(--color-xfire-bg-secondary)) 0%,
+        var(--color-xfire-bg-secondary) 58%,
+        color-mix(in srgb, var(--color-xfire-online) 10%, var(--color-xfire-bg-secondary)) 100%);
   }
 
 
   .stage-panel-title {
     font-size: 22px;
     font-weight: 800;
-    color: var(--color-xfire-text-0);
+    color: var(--color-xfire-text-primary);
   }
 
   .stage-panel-topic {
     font-size: 13px;
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
     max-width: 560px;
   }
 
@@ -387,18 +375,18 @@
   }
 
   .stage-panel-join-btn {
-    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-3));
-    color: var(--color-xfire-text-0);
+    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-tertiary));
+    color: var(--color-xfire-text-primary);
   }
 
   .stage-panel-leave-btn {
-    background: color-mix(in srgb, var(--color-xfire-bg-3) 85%, black);
-    color: var(--color-xfire-text-1);
+    background: color-mix(in srgb, var(--color-xfire-bg-tertiary) 85%, black);
+    color: var(--color-xfire-text);
   }
 
   .stage-panel-request-btn {
-    background: color-mix(in srgb, var(--color-xfire-accent) 16%, var(--color-xfire-bg-3));
-    color: var(--color-xfire-text-0);
+    background: color-mix(in srgb, var(--color-xfire-accent) 16%, var(--color-xfire-bg-tertiary));
+    color: var(--color-xfire-text-primary);
   }
 
   .stage-panel-request-btn:disabled {
@@ -411,7 +399,7 @@
     flex-wrap: wrap;
     gap: 12px;
     font-size: 13px;
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
   }
 
   .stage-panel-grid {
@@ -428,6 +416,6 @@
     padding: 16px;
     border: 1px solid var(--color-xfire-border);
     border-radius: 14px;
-    background: var(--color-xfire-bg-2);
+    background: var(--color-xfire-bg-secondary);
   }
 }

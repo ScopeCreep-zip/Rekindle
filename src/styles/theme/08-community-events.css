@@ -81,7 +81,7 @@
     padding: 8px 14px;
     border-radius: 4px;
     font-size: 12px;
-    color: white;
+    color: var(--color-xfire-text-on-fill);
     pointer-events: auto;
     cursor: pointer;
     max-width: 320px;
@@ -141,7 +141,7 @@
   }
 
   .buddy-tab-active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     border-bottom-color: var(--color-xfire-accent);
   }
 
@@ -333,7 +333,7 @@
   }
 
   .reply-preview-icon {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -349,7 +349,7 @@
   .reply-preview-sender {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
 
@@ -388,7 +388,7 @@
 
   .reply-snippet-sender {
     font-weight: 600;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Reactions ─── */
@@ -433,7 +433,7 @@
 
 
   .reaction-chip-active .reaction-chip-count {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Emoji picker ─── */

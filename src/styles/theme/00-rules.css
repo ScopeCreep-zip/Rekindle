@@ -25,7 +25,7 @@
     left: 0;
     z-index: var(--z-skip-link);
     background: var(--color-xfire-accent);
-    color: var(--color-xfire-text-primary);
+    color: var(--color-xfire-accent-fg);
     padding: 8px 16px;
     text-decoration: none;
     font-weight: 600;
@@ -102,7 +102,7 @@
     padding: 0 8px;
     gap: 6px;
     flex-shrink: 0;
-    background: linear-gradient(to right, #0f1a3a, #1a2a5e);
+    background: linear-gradient(to right, var(--color-xfire-titlebar-start), var(--color-xfire-titlebar-end));
   }
 
 
@@ -127,8 +127,8 @@
   }
 
   .xfire-titlebar-btn-close:hover {
-    background: color-mix(in srgb, var(--color-xfire-busy) 80%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) 80%, transparent);
+    color: var(--color-xfire-danger-fg);
   }
 
   .xfire-titlebar-spacer {
@@ -185,7 +185,7 @@
     width: 100%;
     padding: 8px;
     background: var(--color-xfire-accent);
-    color: white;
+    color: var(--color-xfire-accent-fg);
     border: none;
     border-radius: 0.25rem;
     font-size: 13px;
@@ -196,7 +196,7 @@
   }
 
   .form-btn-primary:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, black);
   }
 
   .form-btn-primary:disabled {
@@ -228,8 +228,8 @@
 
   .form-btn-danger {
     padding: 6px 12px;
-    background: color-mix(in srgb, var(--color-xfire-busy) 60%, transparent);
-    color: white;
+    background: color-mix(in srgb, var(--color-xfire-danger) 60%, transparent);
+    color: var(--color-xfire-danger-fg);
     border: none;
     border-radius: 0.25rem;
     font-size: 12px;
@@ -241,7 +241,7 @@
   }
 
   .form-btn-danger:hover {
-    background: var(--color-xfire-busy);
+    background: var(--color-xfire-danger);
   }
 
   .form-btn-danger:disabled {
@@ -319,7 +319,7 @@
 
   .form-tab-active,
   .form-tab.active {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     border-bottom-color: var(--color-xfire-accent);
   }
 

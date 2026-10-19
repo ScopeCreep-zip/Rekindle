@@ -286,7 +286,7 @@
   .event-rsvp-active {
     background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
     border-color: var(--color-xfire-accent);
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .event-list,

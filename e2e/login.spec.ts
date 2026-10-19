@@ -97,15 +97,22 @@ test.describe("Account Picker", () => {
     await page.locator(".account-bubble-delete").click();
 
     // The Host held the delete: the dialog names the identity and asks for
-    // its passphrase; the warning style is only on the final button.
+    // its passphrase; the warning style is only on the final button, which
+    // is the reserved destructive control and never the form's default.
     const review = page.locator(".intent-dialog");
     await expect(review).toBeVisible();
     await expect(review.locator(".intent-dialog-subject")).toHaveText("TestUser");
-    const commit = review.locator("button[type='submit']");
-    await expect(commit).toHaveClass(/form-btn-danger/);
+    const commit = review.locator("[data-role='destructive']");
+    await expect(commit).toHaveClass(/sec-btn-commit-danger/);
+    await expect(commit).toHaveAttribute("type", "button");
+    await expect(review.locator("button[type='submit']")).toHaveCount(0);
     await expect(commit).toBeDisabled();
 
-    await review.locator("input[type='password']").fill("secret");
+    const passphrase = review.locator("input[type='password']");
+    await passphrase.fill("secret");
+    // Return in the proof field does not press a destructive commit (D0).
+    await passphrase.press("Enter");
+    await expect(review).toBeVisible();
     await commit.click();
     await expect(review).toBeHidden();
 

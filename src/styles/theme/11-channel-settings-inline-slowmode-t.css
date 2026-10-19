@@ -38,7 +38,7 @@
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    color: white;
+    color: var(--color-xfire-text-on-fill);
     background: var(--color-xfire-online);
   }
 
@@ -162,8 +162,8 @@
   }
 
   .call-stage-tile-name {
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-xfire-scrim) 60%, transparent);
+    color: var(--color-xfire-text-on-fill);
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 3px;
@@ -173,8 +173,8 @@
   }
 
   .call-stage-tile-badge {
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-xfire-scrim) 60%, transparent);
+    color: var(--color-xfire-text-on-fill);
     font-size: 11px;
     padding: 1px 4px;
     border-radius: 3px;
@@ -207,7 +207,7 @@
     border-radius: 10px;
     background: color-mix(in srgb, var(--color-xfire-bg-dark) 88%, transparent);
     border: 1px solid var(--color-xfire-border);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--color-xfire-shadow) 35%, transparent);
   }
 
   .call-control-bar .voice-btn {
@@ -339,7 +339,7 @@
   .search-panel-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 50%, transparent);
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -356,7 +356,7 @@
     border-radius: 6px;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-xfire-shadow) 60%, transparent);
     overflow: hidden;
   }
 
@@ -429,13 +429,13 @@
 
   .search-panel-chip-active {
     background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     border-color: var(--color-xfire-accent);
   }
 
   .search-panel-error {
     padding: 10px 14px;
-    color: #ff7373;
+    color: var(--color-xfire-busy);
     font-size: 12px;
   }
 

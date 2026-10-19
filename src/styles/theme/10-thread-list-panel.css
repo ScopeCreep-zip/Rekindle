@@ -5,7 +5,7 @@
     gap: 8px;
     font-size: 14px;
     font-weight: 700;
-    color: var(--color-xfire-text-0);
+    color: var(--color-xfire-text-primary);
   }
 
 
@@ -17,32 +17,32 @@
     gap: 12px;
     padding: 12px 14px;
     border-radius: 12px;
-    background: var(--color-xfire-bg-3);
+    background: var(--color-xfire-bg-tertiary);
     border: 1px solid color-mix(in srgb, var(--color-xfire-border) 75%, transparent);
   }
 
   .stage-panel-member-name {
     font-size: 14px;
     font-weight: 700;
-    color: var(--color-xfire-text-0);
+    color: var(--color-xfire-text-primary);
   }
 
   .stage-panel-member-meta {
     font-size: 12px;
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
   }
 
 
   .stage-panel-approve-btn {
     padding: 9px 11px;
-    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-3));
-    color: var(--color-xfire-text-0);
+    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-tertiary));
+    color: var(--color-xfire-text-primary);
   }
 
   .stage-panel-deny-btn {
     padding: 9px 11px;
-    background: color-mix(in srgb, var(--color-xfire-busy) 16%, var(--color-xfire-bg-3));
-    color: var(--color-xfire-text-0);
+    background: color-mix(in srgb, var(--color-xfire-busy) 16%, var(--color-xfire-bg-tertiary));
+    color: var(--color-xfire-text-primary);
   }
 
   .stage-panel-empty {
@@ -52,7 +52,7 @@
     justify-content: center;
     border: 1px dashed var(--color-xfire-border);
     border-radius: 12px;
-    color: var(--color-xfire-text-2);
+    color: var(--color-xfire-text-secondary);
     font-size: 13px;
     text-align: center;
     padding: 16px;
@@ -120,7 +120,7 @@
     border-radius: 3px;
     background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
     border: none;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
     font-size: 11px;
     cursor: pointer;
     transition: background 0.15s;
@@ -185,7 +185,7 @@
     border-radius: 0 4px 4px 0;
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   .edit-mode-cancel {
@@ -231,7 +231,7 @@
 
   /* ─── Announcement channel icon ─── */
   .announcement-icon {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Game server list ─── */
@@ -418,8 +418,8 @@
     position: absolute;
     bottom: 4px;
     left: 4px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-xfire-scrim) 60%, transparent);
+    color: var(--color-xfire-text-on-fill);
     font-size: 10px;
     padding: 1px 5px;
     border-radius: 3px;

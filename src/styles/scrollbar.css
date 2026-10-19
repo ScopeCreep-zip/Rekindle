@@ -1,21 +1,24 @@
-/* Custom dark scrollbar matching Xfire */
-::-webkit-scrollbar {
-  width: 8px;
-}
+/* Custom dark scrollbar matching Xfire. In `@layer components` like every
+ * other app rule: unlayered, it beat every layer, `a11y` included. */
+@layer components {
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
 
-::-webkit-scrollbar-track {
-  background: var(--color-xfire-bg-dark);
-}
+  ::-webkit-scrollbar-track {
+    background: var(--color-xfire-bg-dark);
+  }
 
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
-  border-radius: 4px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    border-radius: 4px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
+  }
 
-::-webkit-scrollbar-thumb:active {
-  background: color-mix(in srgb, var(--color-xfire-offline) 80%, transparent);
+  ::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--color-xfire-offline) 80%, transparent);
+  }
 }

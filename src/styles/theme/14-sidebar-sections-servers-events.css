@@ -19,7 +19,7 @@
   }
 
   .sidebar-section-more:hover {
-    color: var(--color-xfire-accent);
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Emoji picker expanded ─── */

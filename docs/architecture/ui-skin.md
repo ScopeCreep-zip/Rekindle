@@ -8,8 +8,8 @@ is "the Xfire experience, on a P2P substrate."
 
 The implementation lives in:
 
-- **`src-tauri/src/windows.rs`** — Tauri `WebviewWindowBuilder` setup.
-- **`src-tauri/tauri.conf.json`** — declared windows + their defaults.
+- **`src-tauri/src/windows/mod.rs`** — Tauri `WebviewWindowBuilder` setup
+  for every window kind (`tauri.conf.json` declares none: `"windows": []`).
 - **`src/main.tsx`** — pathname-based router that picks the window
   component.
 - **`src/windows/`** — one component per top-level window.
@@ -48,15 +48,16 @@ flex-1 slot, and a footer (status bar, message input, action bar).
 
 ## Window catalogue
 
-Only the **login** window is declared statically in `tauri.conf.json`.
-Every other window is created at runtime by helpers in
-`src-tauri/src/windows.rs`. Each window carries a unique `label` and
+No window is declared statically (`tauri.conf.json` has
+`"windows": []`). Every window, the login one included, is created at
+runtime by helpers in `src-tauri/src/windows/mod.rs` (`open_login` runs
+at setup). Each window carries a unique `label` and
 URL path; the SolidJS `Switch` in `main.tsx` reads
 `window.location.pathname` and renders the matching component.
 
 | Window | Label | Path | Notes |
 |--------|-------|------|-------|
-| Login | `login` | `/login` | 380 × 480, declared in `tauri.conf.json` |
+| Login | `login` | `/login` | 380 × 480, opened by `open_login` at setup |
 | Buddy list | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
 | Chat | `chat-{pubkey}` | `/chat?peer={key}` | One per 1:1 friend conversation |
 | DM | `dm-{record-key}` | `/dm?record={key}` | One per DM / group DM |
@@ -77,8 +78,10 @@ nostalgia goal.
 
 `src/styles/global.css` declares the Xfire palette as Tailwind theme
 tokens. Every colour used by the app is one of these tokens — there
-are **no inline hex codes** in components. Component styles compose
-the tokens via `@apply` in `xfire-theme.css`.
+are **no inline hex codes** in components, and no colour literal in any
+rule under `src/styles/` (`cargo xtask check-theme-literals`). Component
+styles read the tokens with `var(--…)` in the ordered parts under
+`src/styles/theme/*.css`.
 
 ```css
 @theme {
@@ -87,7 +90,6 @@ the tokens via `@apply` in `xfire-theme.css`.
   --color-xfire-bg-panel:       #1e1e1e;   /* panel fill */
   --color-xfire-bg-input:       #1e1e1e;
   --color-xfire-bg-status:      #181818;
-  --color-xfire-bg-tooltip:     #282828;
   --color-xfire-bg:             #0a0a0a;
   --color-xfire-bg-primary:     #141414;
   --color-xfire-bg-secondary:   #1a1a1a;
@@ -104,7 +106,10 @@ the tokens via `@apply` in `xfire-theme.css`.
   --color-xfire-text-timestamp: #a0a0a0;
 
   /* Accent */
-  --color-xfire-accent:         #177cc1;   /* The Xfire blue */
+  --color-xfire-accent:         #167bc0;   /* The Xfire blue, as a fill */
+  --color-xfire-accent-text:    #3491d8;   /* the same blue as text */
+  --color-xfire-accent-fg:      #ffffff;   /* text on an accent fill */
+  --color-xfire-danger:         #df3337;   /* destructive fills */
   --color-xfire-link:           #5fa8d3;
   --color-xfire-focus-outline:  #5fa8d3;
 
@@ -117,8 +122,12 @@ the tokens via `@apply` in `xfire-theme.css`.
 }
 ```
 
-The blue (`#177cc1`) is the Xfire accent — used for selected items,
-focus rings, links, and the in-game status indicator. The grey
+The blue is the Xfire accent. As a fill (`accent`, selected items,
+buttons, badges) it carries white text at 4.54:1; as text on a ground it
+is `accent-text`, which reads ≥ 4.5:1 on every grey (plan E7.7.0; the
+original `#177cc1` failed both). This block is an excerpt: the full set,
+with the per-base values and the reserved `--sec-*` tokens, is
+`src/styles/global.css`. The grey
 hierarchy (`#0a → #14 → #1a → #1e → #25 → #2a`) gives subtle elevation
 without breaking the dark-mode-first aesthetic.
 
@@ -129,7 +138,7 @@ The project enforces three style rules in code review:
 1. **Global styles only.** Tailwind utilities live in `src/styles/`,
    not as inline class strings on components. Components compose
    semantic class names (`.buddy-item`, `.message-bubble`,
-   `.titlebar-button`) defined in `xfire-theme.css`. This keeps the
+   `.titlebar-button`) defined in `src/styles/theme/*.css`. This keeps the
    component tree readable and lets the skin be swapped without
    touching component code.
 2. **Window roots are flex columns.** Every top-level window is
@@ -217,9 +226,7 @@ are static assets only:
 | `sounds/{defaults,classic}.zip` | Notification sound banks |
 | `templates/*.html` | Original chat-bubble HTML templates |
 
-`legacy/intended_architecture/10-ui-skin-system.md` walks through how
-these assets map to current Tailwind classes. When implementing a new
-chrome component, the workflow is: open the relevant Symbiosis GIF and
+When implementing a new chrome component, the workflow is: open the relevant Symbiosis GIF and
 XML layout, identify the regions, port the colours into existing
 theme tokens, and compose the component using `@apply` semantics.
 
@@ -227,13 +234,13 @@ theme tokens, and compose the component using `@apply` semantics.
 
 | Concern | File |
 |---------|------|
-| Window builders (frameless + transparent) | `src-tauri/src/windows.rs` |
-| Static login window declaration | `src-tauri/tauri.conf.json` |
+| Window builders (frameless + transparent), login included | `src-tauri/src/windows/mod.rs` |
 | Pathname-based routing | `src/main.tsx` |
 | Per-window components | `src/windows/{LoginWindow,BuddyListWindow,ChatWindow,DmWindow,CommunityWindow,SettingsWindow,ProfileWindow}.tsx` |
 | Custom titlebar | `src/components/titlebar/Titlebar.tsx` |
 | Theme tokens (Tailwind 4 `@theme`) | `src/styles/global.css` |
-| Component skin classes | `src/styles/xfire-theme.css` |
+| Component skin classes | `src/styles/theme/*.css` (ordered parts; `16-security-surfaces.css` is `@layer sec`) |
+| Region map (text grounds) | `src/styles/regions.toml` |
 | Animations | `src/styles/animations.css` |
 | Custom scrollbars | `src/styles/scrollbar.css` |
 | Nerd Font icon set | `src/assets/fonts/SymbolsNerdFontMono-Regular.woff2`, `src/icons.ts` |
@@ -243,10 +250,10 @@ theme tokens, and compose the component using `@apply` semantics.
 
 ## Open work
 
-- **Skin selector** — the architecture allows multiple skins (Symbiosis
-  is the default), but the runtime selector + skin-pack format is not
-  yet shipped. The `legacy/unpacked/skins/` extraction tooling is in
-  place; the loader is pending.
+- **Skin selector** — the architecture allows multiple skins (plan E7.7),
+  but the runtime selector and the `.rkskin` format are not yet shipped.
+  Symbiosis becomes the default once E7.7.3 imports it; the Xfire
+  importer that extracts it from `legacy/unpacked/skins/` is E7.7.3 too.
 - **High-DPI asset scaling** — the original Symbiosis GIFs are 1× pixel
   art. Components currently composite Tailwind tokens on top of a
   small subset of the original assets; full skin-fidelity at 2× / 3×

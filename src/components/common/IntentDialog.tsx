@@ -14,6 +14,13 @@ import {
  * Passphrase a password field (paste allowed). Only the final button of a
  * Destructive or Protected review carries the warning style. Kobalte's
  * Dialog traps focus and returns it to the opener; Esc cancels.
+ *
+ * A security surface (plan E7.7.0): its buttons are the reserved
+ * `.sec-btn-*` controls, which no skin can restyle. The destructive commit
+ * is its own button, never the form's default: Return in the proof field
+ * does not press it (D0; Apple HIG "Don't assign the primary role to a
+ * button that performs a destructive action"). Its verb-and-object label is
+ * the non-colour cue.
  */
 const IntentDialog: Component = () => {
   const [acknowledged, setAcknowledged] = createSignal(false);
@@ -48,8 +55,13 @@ const IntentDialog: Component = () => {
     }
   };
 
-  function commit(e: Event): void {
+  // Return submits the form; it commits only a review that is not a warning.
+  function submit(e: Event): void {
     e.preventDefault();
+    if (!warning()) commit();
+  }
+
+  function commit(): void {
     const r = review();
     if (r === null || !ready()) return;
     switch (r.proof) {
@@ -84,7 +96,7 @@ const IntentDialog: Component = () => {
                 <div class="modal-header">
                   <Dialog.Title class="modal-title">{kindPhrase(r().kind)}</Dialog.Title>
                 </div>
-                <form class="modal-body intent-dialog-body" onSubmit={commit}>
+                <form class="modal-body intent-dialog-body" onSubmit={submit}>
                   <div class="intent-dialog-subject">{subjectLabel(r().subject)}</div>
                   <Show when={r().facts.length > 0 || r().escalations.length > 0}>
                     <ul class="intent-dialog-facts">
@@ -140,16 +152,27 @@ const IntentDialog: Component = () => {
                     <div class="form-error" role="alert">{intentState.error}</div>
                   </Show>
                   <div class="intent-dialog-actions">
-                    <button type="button" class="form-btn-secondary" onClick={() => void cancelReview()}>
+                    <button type="button" class="sec-btn-secondary" onClick={() => void cancelReview()}>
                       Cancel
                     </button>
-                    <button
-                      type="submit"
-                      class={warning() ? "form-btn-danger" : "form-btn-primary"}
-                      disabled={!ready()}
+                    <Show
+                      when={warning()}
+                      fallback={
+                        <button type="submit" class="sec-btn-commit" disabled={!ready()}>
+                          {commitLabel(r())}
+                        </button>
+                      }
                     >
-                      {commitLabel(r())}
-                    </button>
+                      <button
+                        type="button"
+                        class="sec-btn-commit-danger"
+                        data-role="destructive"
+                        disabled={!ready()}
+                        onClick={commit}
+                      >
+                        {commitLabel(r())}
+                      </button>
+                    </Show>
                   </div>
                 </form>
               </Dialog.Content>
