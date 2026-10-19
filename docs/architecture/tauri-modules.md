@@ -83,12 +83,6 @@ Message persistence against `messages` / `message_delivery` /
 Read-side message view helpers. Builds the paginated history payloads
 the chat windows consume.
 
-### `envelope_store_sqlite.rs`
-
-SQLite-backed implementation of
-`rekindle_transport::EnvelopeStore`. Provides the durable retry queue
-for `pending_envelopes` and the seen-set for `seen_envelopes`.
-
 ### `signal_stores.rs`
 
 The `rekindle_crypto` Signal store traits over the vault: an in-memory

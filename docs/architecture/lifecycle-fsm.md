@@ -34,8 +34,9 @@ source-compatible.
 | `ShuttingDown` | Graceful shutdown in progress | no | no | no |
 
 `Degraded` is deliberately writable: the protocol tolerates writes
-during route recovery (envelopes go into the
-`pending_envelopes` queue and replay when the route comes back). The
+during route recovery (DMs go into the `pending_messages` retry queue
+and record writes into the record pool, and both replay when the route
+comes back). The
 distinction between `Degraded` and `Detached` is whether the network
 is *technically* attached — `Detached` means Veilid has lost public
 internet reachability, so writes have no peer to go to.

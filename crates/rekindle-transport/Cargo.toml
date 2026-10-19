@@ -10,7 +10,6 @@ workspace = true
 
 [dependencies]
 # Workspace
-rekindle-calls = { path = "../rekindle-calls" }
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-events = { path = "../rekindle-events" }
@@ -64,7 +63,6 @@ ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hkdf = "0.12"
 rand = { workspace = true }
 sha2 = "0.10"
-x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
 
 # Data structures
@@ -82,5 +80,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
-tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

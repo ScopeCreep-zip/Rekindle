@@ -9,51 +9,7 @@
 
 pub mod mock_node;
 
-use crate::frame::TypeId;
-use crate::payload::dm::{deserialize_dm, dm_type_id, serialize_dm, DmPayload};
 use crate::payload::rpc::*;
-
-#[test]
-fn dm_roundtrip_direct_message() {
-    let payload = DmPayload::DirectMessage {
-        body: b"hello world".to_vec(),
-        reply_to: None,
-    };
-    assert_eq!(dm_type_id(&payload), TypeId::DmMessage);
-    let bytes = serialize_dm(&payload).unwrap();
-    let back = deserialize_dm(TypeId::DmMessage, &bytes).unwrap();
-    match back {
-        DmPayload::DirectMessage { body, .. } => assert_eq!(body, b"hello world"),
-        _ => panic!("wrong variant"),
-    }
-}
-
-#[test]
-fn dm_roundtrip_friend_request() {
-    let payload = DmPayload::FriendRequest {
-        display_name: "Alice".into(),
-        message: "Hi!".into(),
-        prekey_bundle: vec![1, 2, 3],
-        profile_dht_key: "VLD0:abc".into(),
-        route_blob: vec![4, 5, 6],
-        mailbox_dht_key: "VLD0:def".into(),
-        invite_id: Some("inv_01".into()),
-    };
-    assert_eq!(dm_type_id(&payload), TypeId::FriendRequest);
-    let bytes = serialize_dm(&payload).unwrap();
-    let back = deserialize_dm(TypeId::FriendRequest, &bytes).unwrap();
-    match back {
-        DmPayload::FriendRequest {
-            display_name,
-            invite_id,
-            ..
-        } => {
-            assert_eq!(display_name, "Alice");
-            assert_eq!(invite_id.as_deref(), Some("inv_01"));
-        }
-        _ => panic!("wrong variant"),
-    }
-}
 
 #[test]
 fn rpc_bootstrap_roundtrip() {

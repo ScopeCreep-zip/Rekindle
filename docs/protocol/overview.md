@@ -92,9 +92,11 @@ must arrive Signal-encrypted, `Plain` payloads (friend handshake, session
 reset, call signaling, relay, push and status probes) must arrive signed
 only. A payload that arrives in the other form is dropped.
 
-The daemon track's framed `SignedPayload` carries the same binding under
-`"rekindle-dm-frame-sig-v2"`, plus the frame `TypeId`, so signed bytes
-cannot be re-framed as another message type.
+The daemon's framed community RPCs (`SignedPayload`, `app_call`) carry
+the same recipient binding under `"rekindle-frame-sig-v3"`, plus the frame
+`TypeId`, so signed bytes cannot be re-framed as another message type. No
+1:1 message is framed: both tracks send 1:1 traffic as `'D'` envelopes
+(plan E2.1), and E2.3 deleted the framed DM kinds.
 
 Payload type discrimination uses an internally tagged serde enum
 (`#[serde(tag = "type")]`).
@@ -250,8 +252,8 @@ paths resolve.
 
 | Primitive | Usage |
 |-----------|-------|
-| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`. Used for DMs, friend-add, call signaling (W13/W16), DM invites, and voice/video frames. Reliability for envelopes that need it (signaling, friend-add, DMs) is layered on top via the W16 `pending_envelopes` SQLite primitive: per-recipient seq_ack, receiver dedup, route-aware retry up to 5 min, crash-survives recovery. |
-| `app_call(target, data)` | Request-response delivery. Reserved for operations that genuinely need an inline reply: MEK delivery, file chunk transfer, bootstrap bundles. **Not used for call signaling or DM invites** — Wave 13/16 superseded those with `app_message + W16 reliability layer` to avoid `app_call`'s connection-table exhaustion under bootstrap, ~25 s collapse under network churn, and signaling-vs-DM traffic-shape leakage. See `docs/architecture/voice.md` and the `.claude/docs/rekindle-communities-architecture.md` §10.10 / §27 for the design rationale. |
+| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`. Used for DMs, friend-add, call signaling (W13/W16), DM invites, and voice/video frames. DMs that need retry go through the `pending_messages` queue (E2.5 replaces it with the send log); the W16 `pending_envelopes` layer was never wired and was deleted (plan E2.3). |
+| `app_call(target, data)` | Request-response delivery. Reserved for operations that genuinely need an inline reply: MEK delivery, file chunk transfer, bootstrap bundles. **Not used for call signaling or DM invites** — Wave 13/16 superseded those with `app_message` to avoid `app_call`'s connection-table exhaustion under bootstrap, ~25 s collapse under network churn, and signaling-vs-DM traffic-shape leakage. See `docs/architecture/voice.md` and the `.claude/docs/rekindle-communities-architecture.md` §10.10 / §27 for the design rationale. |
 | DHT record calls (`create`/`open`/`close_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`) | Only through the record pool, `rekindle_protocol::dht::pool::RecordPool` (one per session, both tracks). It holds each record's lease, sticky writer and watch; serializes writes per subkey; re-pushes missed writes of records held writable and persists them to the `dht_outbox` table at logout; closes ended sessions' records through the node's `RecordCloser`, after their calls finish, never aborting one mid-commit; and rehydrates community records on a jittered keepalive. A multi-writer read consults an index (one inspect over the writer set) before fetching (plan C7.12). |
 | `new_private_route` / `new_custom_private_route` / `release_private_route` | Only through `rekindle_route::own_routes::OwnRoutes` (one per node, over `rekindle_protocol::own_routes::VeilidRouteAllocator`): a General route and a Media route (LowLatency, PreferUnordered; never substituted by General). Allocated at network readiness, single-flight per class, `TryAgain` retried with backoff; a route Veilid reports dead is forgotten, never released, and reallocated; logout releases and renews, so no route is shared between identities. The relay feature owns its dedicated relay routes (`services/relay/offer.rs`). |
 | `import_remote_private_route(blob)` | Only through `RouteImports` (one per node). A dead or failed peer route is forgotten, never released: Veilid releases a dead remote route itself. |

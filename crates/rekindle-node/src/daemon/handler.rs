@@ -255,43 +255,20 @@ impl InboundHandler for DaemonHandler {
         crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
     }
 
-    async fn on_call(&self, sender_pseudonym: Option<&str>, request: InboundCall) -> CallResponse {
-        let mek_cache = Arc::clone(&self.mek_cache);
-        let signing_key_arc = Arc::clone(&self.signing_key);
-        let session_arc = Arc::clone(&self.session);
-        let sender_ps = sender_pseudonym.map(String::from);
-
+    async fn on_call(&self, _sender_pseudonym: Option<&str>, request: InboundCall) -> CallResponse {
         match request {
             InboundCall::CommunityLeave(notif) => {
-                super::community_rpc::handle_leave(&notif, &session_arc, &self.mek_rotation_tx)
+                super::community_rpc::handle_leave(&notif, &self.session, &self.mek_rotation_tx)
             }
             InboundCall::CommunityMekTransfer(transfer) => {
                 super::community_rpc::handle_mek_transfer(
                     &transfer,
-                    &session_arc,
-                    &signing_key_arc,
-                    &mek_cache,
+                    &self.session,
+                    &self.signing_key,
+                    &self.mek_cache,
                 )
             }
-            InboundCall::Sync(_) | InboundCall::Dm(_) => CallResponse::Ack,
-            InboundCall::CallInvite(invite) => {
-                // W16.5b — the daemon shell doesn't yet host a
-                // `CallRuntime` (calls are GUI features wired via
-                // the Tauri shell). Reply with a typed Rejected so
-                // the caller's UI surfaces "Couldn't reach {peer}"
-                // via `CallUnreachable { reason: "send_failed" }`
-                // — equivalent to the receiver's call capability
-                // being absent. W16.18 wires the CallRuntime here
-                // for cross-shell parity.
-                debug!(
-                    call_id = %invite.call_id,
-                    sender = ?sender_ps,
-                    "InboundCall::CallInvite at daemon — no CallRuntime; rejecting"
-                );
-                CallResponse::Rejected {
-                    reason: "daemon has no call runtime".into(),
-                }
-            }
+            InboundCall::Sync(_) => CallResponse::Ack,
         }
     }
 

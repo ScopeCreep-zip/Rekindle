@@ -11,7 +11,6 @@ pub mod community_loader;
 pub mod db;
 pub mod db_helpers;
 mod deep_links;
-pub mod envelope_store_sqlite;
 pub mod event_dispatch;
 pub mod event_router;
 pub mod host_call;

@@ -92,17 +92,12 @@ mod tests {
 
 /// One participant in a group DM.
 ///
-/// Tier 1 because `rekindle-dm` (which mints the invite) and
-/// `rekindle-transport` (which carries it on the wire) both need it and
-/// neither depends on the other. They had a field-identical copy each —
-/// `pseudonym`, `subkey`, `public_key` — so the wire form and the
-/// domain form could drift with nothing to catch it.
-/// `camelCase` because `rekindle-dm` serialised it that way and
-/// `rekindle-transport` encodes its `DmPayload` with postcard, which is
-/// positional and ignores field names — so the union of the two
-/// contracts is safe for both. The copies differed here: dm's had
-/// `rename_all` and `PartialEq`, transport's had neither, and nothing
-/// would have caught the day one of them reached a JSON encoder.
+/// Tier 1 because `rekindle-dm` (which mints the invite) and the wire
+/// that carried it each had a field-identical copy — `pseudonym`,
+/// `subkey`, `public_key` — so the wire form and the domain form could
+/// drift with nothing to catch it. `camelCase` because `rekindle-dm`
+/// serialises it that way. (The transport's postcard copy went with its
+/// `GroupDmInviteRequest` frame, plan E2.3.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupDmParticipant {

@@ -48,7 +48,7 @@ pub enum ChannelMessageEvent {
     },
     /// A new DM was received from a peer.
     ///
-    /// Triggered by: `DmPayload::DirectMessage` via `InboundHandler::on_dm`.
+    /// Triggered by: an inbound 1:1 `DirectMessage` via `InboundHandler::on_direct`.
     /// DM bodies are always available because DMs are decrypted at the
     /// Signal session layer before reaching SubscriptionManager.
     DirectMessageReceived {

@@ -565,8 +565,8 @@ operation modules (`operations::{community, channel, dm, friend, voice,
 mek, presence, roles, moderation, invites, identity}`).
 
 Dependencies: `rekindle-types`, `rekindle-utils`, `rekindle-events`,
-`rekindle-secrets`, `rekindle-crypto`, `rekindle-calls`, `rekindle-route`,
-`rekindle-protocol`, `rekindle-records`, `ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `hkdf`,
+`rekindle-secrets`, `rekindle-crypto`, `rekindle-route`,
+`rekindle-protocol`, `rekindle-records`, `ed25519-dalek`, `aes-gcm`, `hkdf`,
 `blake3`, `bitflags`, `postcard`.
 
 ### rekindle-node

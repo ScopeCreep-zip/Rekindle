@@ -43,10 +43,6 @@ pub struct AppState {
     /// host's own (`HostStores::session`) and the adopted node's. `None`
     /// while locked.
     pub transport_session: Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
-    /// W16.9b — durable retry queue store. Used by `EnvelopeQueue` for
-    /// DM body sends + future expect-reply flows. `Some` after app
-    /// startup wires `SqliteEnvelopeStore`.
-    pub envelope_store: Arc<RwLock<Option<Arc<dyn rekindle_transport::EnvelopeStore>>>>,
     /// The logged-in identity's database (plan C6). Every command and
     /// service reaches SQLite through `db.current()`. Shared (`Arc`) with
     /// the friend store, which resolves it per call and so never holds
@@ -273,7 +269,6 @@ impl Default for AppState {
             node: Arc::new(RwLock::new(None)),
             transport: Arc::new(RwLock::new(None)),
             transport_session: Arc::new(parking_lot::RwLock::new(None)),
-            envelope_store: Arc::new(RwLock::new(None)),
             db: Arc::new(rekindle_db::DbHandle::default()),
             identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),

@@ -48,9 +48,6 @@ labels! {
     /// Ed25519 signature prefix: desktop `MessageEnvelope`, bound to the
     /// recipient's identity key.
     MSG_ENVELOPE_V2 = "rekindle-msg-envelope-v2";
-    /// Ed25519 signature prefix: daemon framed `SignedPayload`, bound to
-    /// the recipient's identity key and the frame `TypeId`.
-    DM_FRAME_SIG_V2 = "rekindle-dm-frame-sig-v2";
 
     // ── Communities ──────────────────────────────────────────────────
     /// HKDF salt: per-community pseudonym from the identity secret.
@@ -67,6 +64,11 @@ labels! {
     INVITE_SECRETS = "rekindle-invite-secrets-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
+    /// Ed25519 signature prefix: the daemon's framed community RPC
+    /// (`SignedPayload`), bound to the recipient's identity key and the
+    /// frame `TypeId`. v3 dropped `seq` and the correlation id with the
+    /// 1:1 frames (plan E2.3); v2 (`rekindle-dm-frame-sig-v2`) is retired.
+    FRAME_SIG_V3 = "rekindle-frame-sig-v3";
 
     // ── 1:1 and group DMs ────────────────────────────────────────────
     /// HKDF info: group-DM MEK from the pairwise shared secret.

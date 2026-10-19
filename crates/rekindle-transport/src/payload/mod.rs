@@ -4,6 +4,5 @@
 //! the types defined in these submodules. No `serde_json::Value` catch-alls.
 
 pub mod dht_types;
-pub mod dm;
 pub mod gossip;
 pub mod rpc;

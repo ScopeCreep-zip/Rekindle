@@ -174,10 +174,10 @@ with the route blob from the per-peer registry entry. **Voice frames are
 loss-tolerant** — Opus FEC + PLC handle small gaps; retransmission would
 add latency without benefit, so failed frame sends are dropped after
 warn-level telemetry (W14.4 `VoiceEvent::PacketsDropped` with reason).
-**Voice signaling envelopes are NOT loss-tolerant** — they flow through
-the W16 `pending_envelopes` reliability primitive (per-recipient seq_ack,
-receiver dedup, route-aware retry up to 5 min, crash recovery for
-Dialing/Incoming states); see §Signaling and session state below.
+**Voice signaling envelopes are NOT loss-tolerant**; their reliability is
+D8's call transactions (plan E4.2). The W16 `pending_envelopes` primitive
+meant for them was never wired and was deleted (plan E2.3); see
+§Signaling and session state below.
 
 `VoiceMode` lets a session prefer ordered delivery (`PreferOrdered`)
 when the network conditions warrant it; the default is
@@ -209,10 +209,10 @@ that hears plaintext (threat model I13).
 ## Signaling and session state
 
 **Wave 13 / Wave 16 supersession**: Voice and call signaling moved off
-Veilid `app_call` (synchronous RPC) to fire-and-forget `app_message`,
-layered with the W16 `pending_envelopes` reliability primitive
-(per-recipient seq_ack, receiver dedup, durable retry up to 5 min,
-crash-survives recovery). Reasons:
+Veilid `app_call` (synchronous RPC) to fire-and-forget `app_message`.
+(The W16 `pending_envelopes` reliability layer planned on top was never
+wired and was deleted, plan E2.3; E4.2's call transactions are the
+reliability.) Reasons:
 
 - `app_call`'s synchronous RPC layer collapses at ~25 s under network
   churn; a long ring window can lose the call mid-handshake.
@@ -226,8 +226,7 @@ The supersession applies to both 1:1 call signaling
 `CallMediaState`) and group call signaling
 (`GroupCallOffer`/`GroupCallAccept`/`GroupCallDecline`).
 Receiver-side reliability is "voice peer accepted" knowledge via the
-`ChatEvent::CallAccept`/`CallConnected` path; senders learn delivery
-outcomes via `ChatEvent::EnvelopeDelivered`/`EnvelopeDeliveryFailed`.
+`ChatEvent::CallAccept`/`CallConnected` path.
 
 `services/calls/mod.rs` owns the call state machine; `services/calls/
 state.rs` defines the per-call status (Outgoing, Incoming, Connecting,

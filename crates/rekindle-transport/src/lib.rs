@@ -28,8 +28,6 @@ pub mod subscriptions;
 // ── Business logic ─────────────────────────────────────────────────────
 pub mod config;
 pub mod crypto;
-pub mod envelope_queue;
-pub mod envelope_store;
 pub mod error;
 pub mod frame;
 pub mod gossip;
@@ -37,7 +35,6 @@ pub mod handler;
 pub mod operations;
 pub mod payload;
 pub mod query;
-pub mod seq_tracker;
 pub mod session;
 pub mod shared;
 
@@ -76,20 +73,6 @@ pub use crypto::pseudonym::derive_community_pseudonym;
 // Session state
 pub use session::{CommunityMembership, Session, SessionIdentity};
 
-// W16.1 — envelope reliability primitive contract + default impls
-pub use envelope_store::{
-    EnvelopeKind, EnvelopeStore, JsonEnvelopeStore, MemoryEnvelopeStore, PendingEnvelope,
-    PersistedCallState, StoreError,
-};
-
-// W16.2 — envelope retry queue (fire-and-forget + expect-reply)
-pub use envelope_queue::{EnvelopeQueue, QueueError, RetryConfig, DEFAULT_REPLY_TIMEOUT};
-
-// W16.3 — receiver-side dedup
-pub use seq_tracker::SeqTracker;
-
-// Track A.1 — Receive-path friend authority (Phase 2 DHT-Inbox Pivot)
-
 // Query engine
 pub use query::{
     community_detail, list_communities, ChannelOverviewDisplay, CommunityDetail,
@@ -114,7 +97,6 @@ pub use subscriptions::SubscriptionManager;
 pub use broadcast::BroadcastManager;
 
 // Payload types
-pub use payload::dm::DmPayload;
 pub use payload::rpc::{
     CallResponse, ChannelEntrySummary, CommunityLeaveNotification, InboundCall, MekTransferPayload,
     SyncRequest, SyncResponse,

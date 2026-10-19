@@ -10,7 +10,6 @@
 //! - Has explicit timeout handling on all network calls
 //! - Logs at `info` level on success, `warn` on recoverable failure
 
-pub mod calls;
 pub mod channel;
 pub mod community;
 pub mod direct;

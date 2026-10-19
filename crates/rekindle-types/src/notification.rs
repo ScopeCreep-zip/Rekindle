@@ -111,38 +111,12 @@ pub enum TransportNotification {
         participant_key: String,
     },
 
-    /// W16 — an envelope was successfully delivered after being queued.
-    /// Optional UI surface: "Sending…" → "Sent" indicator on a message
-    /// or call-state transition.
-    EnvelopeDelivered {
-        /// Wire-format string from `EnvelopeKind::as_str()`. UI maps to
-        /// its own categorization.
-        kind: String,
-        /// Optional grouping key (call_id for call envelopes,
-        /// conversation peer for DMs, etc.).
-        correlation_id: Option<String>,
-    },
-
-    /// W16 — an envelope hit max_retries and was dead-lettered. For call
-    /// envelopes, the call state machine consumes this and tears down
-    /// the call with a clear reason; for DMs the UI shows a
-    /// delivery-failed indicator on the message.
-    EnvelopeDeliveryFailed {
-        /// Wire-format string from `EnvelopeKind::as_str()`.
-        kind: String,
-        /// Optional grouping key.
-        correlation_id: Option<String>,
-        /// Last transport error (route lookup failure, network error,
-        /// peer offline, etc.).
-        last_error: String,
-    },
-
     // ── W16.4: Call lifecycle (1:1) ─────────────────────────────────
     //
-    // Emit sites land in W16.6 (operations::calls send paths) and
-    // W16.7 (receive dispatch + ring timer). Each frontend (Tauri,
-    // CLI, daemon) maps these to its own UI surface — Tauri emits
-    // chat-events; CLI prints typed lines; daemon forwards via IPC.
+    // Named by `rekindle_calls::Effect::Notify`; no host interprets the
+    // state machine's effects until E4.1 ports calls (the transport's
+    // `CallRuntime` was deleted in E2.3), and E4.1 deletes these with
+    // `Effect::Notify`.
     /// Caller-side: `start_dm_call` enqueued the CallInvite. UI seeds
     /// the OutgoingCallPanel from this payload.
     CallStarted {
@@ -409,20 +383,6 @@ pub enum TransportNotification {
         device_name: String,
         /// "hotswap" | "user_select" | "default_changed".
         reason: String,
-    },
-
-    // ── W16.4: DM invite reply (W16.10b) ────────────────────────────
-    /// Initiator-side: a `DmInviteReply` arrived for a request matched
-    /// by `correlation_id`. The expect-reply path in `EnvelopeQueue`
-    /// already wakes the awaiting future via `deliver_reply`; this
-    /// notification is for shells that want to log / display the
-    /// outcome separately.
-    DmInviteReplyReceived {
-        correlation_id: String,
-        /// "accepted" | "declined".
-        decision: String,
-        /// Present when accepted; carries the new DM record key.
-        dm_log_key: Option<String>,
     },
 }
 

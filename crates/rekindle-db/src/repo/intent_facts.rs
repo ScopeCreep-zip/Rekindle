@@ -43,8 +43,7 @@ pub fn community_members(
 }
 
 /// Messages queued for a retry, and record writes a logout left for the
-/// next login: what a logout or lock leaves undelivered. (`pending_envelopes`
-/// is not counted: nothing writes it in production, plan U1.9.)
+/// next login: what a logout or lock leaves undelivered.
 ///
 /// # Errors
 /// The query failed.

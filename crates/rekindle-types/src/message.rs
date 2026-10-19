@@ -126,9 +126,9 @@ pub const ENVELOPE_MAX_FUTURE_SKEW_MS: u64 = 60_000;
 
 // ── Phase 9 — Per-class message taxonomy for SafetyProfile selection ──
 
-/// Per-class message taxonomy. Carried alongside the payload through
-/// `Sender::send_dm(class, …)` so the transport layer can pick the
-/// appropriate `SafetyProfile` without reaching back into the call site.
+/// Per-class message taxonomy: the class selects the `SafetyProfile` a
+/// message is sent under, so the transport layer can pick it without
+/// reaching back into the call site.
 ///
 /// Different message categories want different privacy/latency trade-offs
 /// at the Veilid routing layer:

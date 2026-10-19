@@ -68,11 +68,6 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "*",
         "the TransportNode outlives every unlock; TransportNode::shutdown joins its loops",
     ),
-    (
-        "crates/rekindle-transport/src/operations/calls/mod.rs",
-        "spawn_timeout",
-        "per-call timer whose handle the timers map owns and aborts on replace or drop",
-    ),
 ];
 
 /// The free functions that spawn an unowned task.

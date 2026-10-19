@@ -113,7 +113,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 91: the daemon's friend inbox and DM logs go (plan E2.1):
 /// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` are
 /// dropped; friend requests and DMs travel as `'D'` envelopes on both hosts.
-pub const SCHEMA_VERSION: i64 = 91;
+///
+/// 92: the envelope-store family goes with the daemon's dead call
+/// orchestration (plan E2.3): `pending_envelopes`, `seen_envelopes`,
+/// `outbound_seqs` and `active_call_states` are dropped.
+pub const SCHEMA_VERSION: i64 = 92;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

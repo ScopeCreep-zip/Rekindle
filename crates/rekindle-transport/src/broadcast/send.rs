@@ -66,59 +66,6 @@ impl Sender {
             .await
             .map_err(|e| send_failure(self.routes.as_ref(), target, e))
     }
-
-    /// Send a class-tagged message to a single peer.
-    ///
-    /// `class` selects the [`rekindle_types::config::SafetyProfile`] via
-    /// [`rekindle_route::profile::profile_for_class`]. Every class —
-    /// voice included — takes a Safe/anonymous safety route at the
-    /// 3-hop Tor-class anonymity floor (sender hidden behind a route id,
-    /// never the node identity); classes differ only in
-    /// stability/sequencing. Threat model: see
-    /// `docs/security/threat-model.md` Z12 (social graph leakage) and
-    /// `docs/security/privacy-properties.md` § 1.2 (sender anonymity).
-    /// `recipient` is the peer's identity key; the signature is bound to
-    /// it and to `type_id`.
-    pub async fn send_dm(
-        &self,
-        target: &PeerTarget,
-        recipient: &[u8; 32],
-        class: rekindle_types::message::MessageClass,
-        type_id: TypeId,
-        sender_secret: &[u8; 32],
-        sender_public_hex: &str,
-        seq: u64,
-        correlation_id: Option<&str>,
-        payload: &[u8],
-    ) -> Result<()> {
-        let signed = sign_payload(
-            sender_secret,
-            sender_public_hex,
-            Addressing { recipient, type_id },
-            seq,
-            correlation_id,
-            payload,
-        );
-        let signed_bytes =
-            postcard::to_stdvec(&signed).map_err(|e| TransportError::SerializationFailed {
-                reason: e.to_string(),
-            })?;
-        let frame_bytes = frame::encode(type_id, &signed_bytes)?;
-
-        let profile = rekindle_route::profile::profile_for_class(class);
-        self.messages
-            .send(target, &profile, frame_bytes)
-            .await
-            .map_err(|e| send_failure(self.routes.as_ref(), target, e))?;
-
-        debug!(
-            type_id = type_id as u8,
-            class = class.as_str(),
-            hop_count = profile.hop_count,
-            "DM sent",
-        );
-        Ok(())
-    }
 }
 
 /// Request/response RPC caller (app calls).
@@ -158,16 +105,10 @@ impl AppCaller {
         sender_public_hex: &str,
         request_payload: &[u8],
     ) -> Result<Vec<u8>> {
-        // RPC paths don't go through envelope_queue's dedup (they're
-        // synchronous one-shots, not retry-driven). seq=0 / correlation=None
-        // is the convention for non-queued sends — receiver's
-        // SeqTracker only applies on the app_message dispatch path.
         let signed = sign_payload(
             sender_secret,
             sender_public_hex,
             Addressing { recipient, type_id },
-            0,
-            None,
             request_payload,
         );
         let signed_bytes =

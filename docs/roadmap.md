@@ -178,17 +178,16 @@ codec with acceptable latency.
 - [x] Voice mode switching (`set_voice_mode`)
 - [x] Voice session join / leave analytics
   (`voice_session_events`)
-- [~] Call signaling reliability layer (W13 fire-and-forget +
-  W16 `pending_envelopes` retry queue, per-recipient seq_ack,
-  receiver dedup): built; plan D22 deletes the queue and D8 replaces it with call transactions
+- [ ] Call signaling reliability layer: the W16 `pending_envelopes` retry queue and receiver
+  dedup were never wired and were deleted (plan E2.3); D8's call transactions replace them
   (E4.2)
 - [ ] Call crash recovery (Dialing / Incoming survive a restart): plan
   step E4.1
 - [ ] Group calls (multi-party call sessions): plan step E4.2
 - [~] Backend-owned call state machine and authoritative event
-  emit (W14 / W15): `rekindle-calls::CallStateMachine` exists and the daemon constructs it
-  (`rekindle-transport/src/operations/calls/mod.rs`), but the desktop does not use it; the GUI's
-  call lifecycle comes from `active_calls` and `calls.store.ts` (plan E4.1)
+  emit (W14 / W15): `rekindle-calls::CallStateMachine` exists, but no host runs it (the daemon's
+  unused `CallRuntime` was deleted, plan E2.3); the GUI's call lifecycle comes from
+  `active_calls` and `calls.store.ts` (plan E4.1)
 - [x] SFrame (RFC 9605) audio encryption with per-sender keys for calls
   and community voice, MCU mixes included (plan step B3; sender-owned keys, ADR 0016)
 - [ ] Media-key properties (joiner cannot read earlier media; a device seized later does not

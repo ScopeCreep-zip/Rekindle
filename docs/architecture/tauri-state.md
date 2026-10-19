@@ -40,7 +40,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | Field | Type | Purpose |
 |---|---|---|
 | `audit_chain` | `Mutex<Option<rekindle_audit::AuditChain>>` | Tamper-evident BLAKE3-keyed audit chain. MAC key lives in the vault under `("audit", "mac_key")`. See [`audit-chain.md`](audit-chain.md). |
-| `envelope_store` | `Arc<RwLock<Option<Arc<dyn rekindle_transport::EnvelopeStore>>>>` | SQLite-backed durable pending-envelope retry queue |
 | `friend_store` | `Arc<RwLock<Option<Arc<dyn rekindle_transport::FriendStore>>>>` | SQLite-backed friend authority used by `rekindle-transport`'s receive path |
 | `channel_write_retry_tx` | `Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>` | Queued SMPL channel-message write handle |
 

@@ -1,44 +1,29 @@
-//! Ed25519 envelope signing and verification.
-//!
-//! Used for all authenticated transport: gossip broadcasts, app_call RPCs,
-//! and DM messages. Every inbound message is verified here before dispatch.
-//! This is the fix for the unsigned app_call vulnerability.
+//! Ed25519 signing and verification of the daemon's framed community
+//! RPCs (`app_call`). Every inbound framed call is verified here before
+//! dispatch. 1:1 messages are not framed; they carry their own signed
+//! envelope (`operations::direct`).
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use rekindle_types::domains::DM_FRAME_SIG_V2;
+use rekindle_types::domains::FRAME_SIG_V3;
 use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_SKEW_MS};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
 
-/// A signed payload wrapper for DM and RPC messages.
+/// A signed payload wrapper for framed community RPCs.
 ///
-/// The signature covers [`build_signed_data`]: the `DM_FRAME_SIG_V2`
+/// The signature covers [`build_signed_data`]: the `FRAME_SIG_V3`
 /// domain, the recipient's identity key, the frame `TypeId`, the
-/// timestamp, `seq`, the correlation id and the payload. Binding the
-/// recipient keeps a captured envelope from being replayed to anyone else;
-/// binding the `TypeId` keeps signed bytes from being re-framed as another
-/// message type.
-///
-/// W16.3: `seq` and `correlation_id` are envelope-level metadata used by
-/// the receiver-side dedup primitive (`SeqTracker`). The signature
-/// covers them so they can't be forged after the wire — a peer can't
-/// inject a duplicate envelope with a fresh seq to bypass dedup.
+/// timestamp and the payload. Binding the recipient keeps a captured
+/// frame from being replayed to anyone else; binding the `TypeId` keeps
+/// signed bytes from being re-framed as another message type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignedPayload {
     /// Sender's Ed25519 public key (hex-encoded, 64 chars).
     pub sender_key_hex: String,
     /// Unix timestamp in milliseconds.
     pub timestamp: u64,
-    /// W16.3 — per-recipient sequence allocated by `EnvelopeQueue`.
-    /// Receiver tracks the last-seen seq per (sender, kind, correlation_id)
-    /// and drops envelopes with `seq <= last_seen` as duplicates.
-    pub seq: u64,
-    /// W16.3 — optional grouping key. For call envelopes this is the
-    /// `call_id`; for DM invites the request's correlation_id; `None`
-    /// for envelopes that aren't part of a logical group.
-    pub correlation_id: Option<String>,
     /// The serialized inner payload (type-specific).
     pub payload: Vec<u8>,
     /// Ed25519 signature over [`build_signed_data`].
@@ -59,21 +44,17 @@ pub fn sign_payload(
     sender_secret: &[u8; 32],
     sender_public_hex: &str,
     to: Addressing<'_>,
-    seq: u64,
-    correlation_id: Option<&str>,
     payload: &[u8],
 ) -> SignedPayload {
     let signing_key = SigningKey::from_bytes(sender_secret);
     let timestamp = rekindle_utils::timestamp_ms();
 
-    let signed_data = build_signed_data(to, timestamp, seq, correlation_id, payload);
+    let signed_data = build_signed_data(to, timestamp, payload);
     let signature = signing_key.sign(&signed_data);
 
     SignedPayload {
         sender_key_hex: sender_public_hex.to_string(),
         timestamp,
-        seq,
-        correlation_id: correlation_id.map(str::to_string),
         payload: payload.to_vec(),
         signature: signature.to_bytes().to_vec(),
     }
@@ -81,30 +62,14 @@ pub fn sign_payload(
 
 /// Build the byte sequence that the Ed25519 signature covers.
 ///
-/// Layout: `DM_FRAME_SIG_V2 || recipient(32) || type_id(1) ||
-/// timestamp(8 LE) || seq(8 LE) || correlation_id_len(4 LE) ||
-/// correlation_id_bytes || payload`. `None` and `Some("")` correlation ids
-/// sign identically; both mean "no group" for dedup.
-fn build_signed_data(
-    to: Addressing<'_>,
-    timestamp: u64,
-    seq: u64,
-    correlation_id: Option<&str>,
-    payload: &[u8],
-) -> Vec<u8> {
-    let correlation_bytes = correlation_id.map_or(&[][..], str::as_bytes);
-    let correlation_len = u32::try_from(correlation_bytes.len()).unwrap_or(u32::MAX);
-
-    let mut signed_data = Vec::with_capacity(
-        DM_FRAME_SIG_V2.len() + 32 + 1 + 8 + 8 + 4 + correlation_bytes.len() + payload.len(),
-    );
-    signed_data.extend_from_slice(DM_FRAME_SIG_V2.as_bytes());
+/// Layout: `FRAME_SIG_V3 || recipient(32) || type_id(1) ||
+/// timestamp(8 LE) || payload`.
+fn build_signed_data(to: Addressing<'_>, timestamp: u64, payload: &[u8]) -> Vec<u8> {
+    let mut signed_data = Vec::with_capacity(FRAME_SIG_V3.len() + 32 + 1 + 8 + payload.len());
+    signed_data.extend_from_slice(FRAME_SIG_V3.as_bytes());
     signed_data.extend_from_slice(to.recipient);
     signed_data.push(to.type_id as u8);
     signed_data.extend_from_slice(&timestamp.to_le_bytes());
-    signed_data.extend_from_slice(&seq.to_le_bytes());
-    signed_data.extend_from_slice(&correlation_len.to_le_bytes());
-    signed_data.extend_from_slice(correlation_bytes);
     signed_data.extend_from_slice(payload);
     signed_data
 }
@@ -115,13 +80,7 @@ fn build_signed_data(
 pub fn verify_signed_payload(signed: &SignedPayload, to: Addressing<'_>) -> Result<()> {
     let verifying_key = parse_verifying_key(&signed.sender_key_hex)?;
 
-    let signed_data = build_signed_data(
-        to,
-        signed.timestamp,
-        signed.seq,
-        signed.correlation_id.as_deref(),
-        &signed.payload,
-    );
+    let signed_data = build_signed_data(to, signed.timestamp, &signed.payload);
 
     let signature = parse_signature(&signed.signature)?;
 
@@ -207,30 +166,28 @@ mod tests {
         hex::encode(SigningKey::from_bytes(&SECRET).verifying_key().to_bytes())
     }
 
-    fn signed(seq: u64, correlation_id: Option<&str>, payload: &[u8]) -> SignedPayload {
+    fn signed(payload: &[u8]) -> SignedPayload {
         sign_payload(
             &SECRET,
             &signer_hex(),
-            to_bob(TypeId::Unfriend),
-            seq,
-            correlation_id,
+            to_bob(TypeId::CommunityLeave),
             payload,
         )
     }
 
     #[test]
     fn sign_verify_roundtrip() {
-        let s = signed(1, None, b"test payload");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_ok());
+        let s = signed(b"test payload");
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_ok());
     }
 
-    /// A captured envelope replayed to a third identity fails there.
+    /// A captured frame replayed to a third identity fails there.
     #[test]
     fn wrong_recipient_rejected() {
-        let s = signed(1, None, b"unfriend");
+        let s = signed(b"leave");
         let to_carol = Addressing {
             recipient: &CAROL,
-            type_id: TypeId::Unfriend,
+            type_id: TypeId::CommunityLeave,
         };
         assert!(verify_signed_payload(&s, to_carol).is_err());
     }
@@ -238,40 +195,41 @@ mod tests {
     /// Signed bytes re-framed under another `TypeId` fail.
     #[test]
     fn reframed_type_id_rejected() {
-        let s = signed(1, None, b"payload");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::FriendReject)).is_err());
+        let s = signed(b"payload");
+        assert!(verify_signed_payload(&s, to_bob(TypeId::SyncRequest)).is_err());
     }
 
-    /// A signature over the pre-v2 layout (no domain, recipient or type)
-    /// does not verify.
+    /// A signature over the v2 field layout (`seq` and a correlation-id
+    /// length after the timestamp) does not verify.
     #[test]
-    fn v1_signature_rejected() {
-        let mut s = signed(1, None, b"payload");
-        let mut v1 = Vec::new();
-        v1.extend_from_slice(&s.timestamp.to_le_bytes());
-        v1.extend_from_slice(&s.seq.to_le_bytes());
-        v1.extend_from_slice(&0u32.to_le_bytes());
-        v1.extend_from_slice(&s.payload);
+    fn v2_layout_rejected() {
+        let mut s = signed(b"payload");
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(FRAME_SIG_V3.as_bytes());
+        v2.extend_from_slice(&BOB);
+        v2.push(TypeId::CommunityLeave as u8);
+        v2.extend_from_slice(&s.timestamp.to_le_bytes());
+        v2.extend_from_slice(&0u64.to_le_bytes());
+        v2.extend_from_slice(&0u32.to_le_bytes());
+        v2.extend_from_slice(&s.payload);
         s.signature = SigningKey::from_bytes(&SECRET)
-            .sign(&v1)
+            .sign(&v2)
             .to_bytes()
             .to_vec();
-        assert!(verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
     }
 
     #[test]
     fn stale_timestamp_rejected() {
-        let to = to_bob(TypeId::Unfriend);
+        let to = to_bob(TypeId::CommunityLeave);
         let timestamp = rekindle_utils::timestamp_ms() - ENVELOPE_FRESHNESS_WINDOW_MS - 1_000;
         let signature = SigningKey::from_bytes(&SECRET)
-            .sign(&build_signed_data(to, timestamp, 1, None, b"old"))
+            .sign(&build_signed_data(to, timestamp, b"old"))
             .to_bytes()
             .to_vec();
         let s = SignedPayload {
             sender_key_hex: signer_hex(),
             timestamp,
-            seq: 1,
-            correlation_id: None,
             payload: b"old".to_vec(),
             signature,
         };
@@ -280,48 +238,26 @@ mod tests {
 
     #[test]
     fn tampered_payload_rejected() {
-        let mut s = signed(1, None, b"original");
+        let mut s = signed(b"original");
         s.payload = b"tampered".to_vec();
-        assert!(verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
+    }
+
+    #[test]
+    fn tampered_timestamp_rejected() {
+        let mut s = signed(b"original");
+        s.timestamp -= 1;
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
     }
 
     #[test]
     fn wrong_key_rejected() {
-        let mut s = signed(1, None, b"test");
+        let mut s = signed(b"test");
         s.sender_key_hex = hex::encode(
             SigningKey::from_bytes(&[99u8; 32])
                 .verifying_key()
                 .to_bytes(),
         );
-        assert!(verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_err());
-    }
-
-    #[test]
-    fn tampered_seq_rejected() {
-        let mut s = signed(5, None, b"original");
-        s.seq = 6; // forge a fresh seq to bypass dedup
-        assert!(
-            verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_err(),
-            "tampered seq must fail signature verify",
-        );
-    }
-
-    #[test]
-    fn tampered_correlation_id_rejected() {
-        let mut s = signed(1, Some("call-a"), b"original");
-        s.correlation_id = Some("call-b".into());
-        assert!(
-            verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_err(),
-            "tampered correlation_id must fail signature verify",
-        );
-    }
-
-    #[test]
-    fn correlation_id_round_trips() {
-        let cid = "call-abc-123";
-        let s = signed(7, Some(cid), b"x");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::Unfriend)).is_ok());
-        assert_eq!(s.correlation_id.as_deref(), Some(cid));
-        assert_eq!(s.seq, 7);
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
     }
 }

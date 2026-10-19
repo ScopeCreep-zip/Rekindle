@@ -183,7 +183,7 @@ pub enum PresenceEvent {
     },
 
     /// A DM peer's presence changed.
-    /// Triggered by: `DmPayload::PresenceUpdate`.
+    /// Triggered by: a `ValueChange` on the friend's profile record.
     FriendChanged {
         peer_key: String,
         snapshot: PresenceSnapshot,

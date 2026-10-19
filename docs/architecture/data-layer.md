@@ -166,26 +166,15 @@ groups them by concern.
 - **`governance_entries_cache`** — hydrated cache of merged
   `GovernanceEntry` rows so the CRDT merge does not need to re-fetch
   from the DHT on every command.
-- **`outbound_seqs`** — per-(community, channel) outbound sequence
-  counters for gap detection on the sender side.
 - **`audit_entries`** — tamper-evident audit log. Each row carries
   `prev_mac` + `mac` per [`audit-chain.md`](audit-chain.md). The MAC
   key lives in the vault; loss of the vault loses the chain.
 
 ### Calls
 
-- **`active_call_states`** — in-progress call state for crash recovery.
 - **`missed_calls`** — missed-call log surfaced in the buddy list.
 - **`voice_session_events`** — append-only join / leave log for
   computing peak-concurrent-voice metrics per channel.
-
-### Reliability and Retry
-
-- **`pending_envelopes`** — durable retry queue used by
-  `envelope_store_sqlite.rs` as `rekindle_transport`'s
-  `EnvelopeStore` implementation.
-- **`seen_envelopes`** — receive-side dedup window (envelope ID →
-  seen-at).
 
 ### Signal Protocol
 

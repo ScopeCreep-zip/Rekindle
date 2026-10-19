@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TypingEvent {
     /// Someone started typing.
-    /// Triggered by: gossip `TypingIndicator`, `DmPayload::Typing { typing: true }`.
+    /// Triggered by: gossip `TypingIndicator`, a 1:1 `TypingIndicator { typing: true }`.
     Started { context: TypingContext, who: String },
     /// Someone stopped typing (expired or explicit).
-    /// Triggered by: expiry timer, `DmPayload::Typing { typing: false }`.
+    /// Triggered by: expiry timer, a 1:1 `TypingIndicator { typing: false }`.
     Stopped { context: TypingContext, who: String },
 }
 

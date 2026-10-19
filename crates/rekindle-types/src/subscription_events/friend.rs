@@ -1,7 +1,7 @@
 //! Friend lifecycle events — request, accept, reject, remove, profile rotation.
 //!
-//! These are triggered by `DmPayload` variants arriving as `'D'`
-//! envelopes on the identity's own route.
+//! These are triggered by 1:1 kinds arriving as `'D'` envelopes on the
+//! identity's own route.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,17 +10,17 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum FriendEvent {
     /// An inbound friend request was received.
-    /// Triggered by: `DmPayload::FriendRequest`.
+    /// Triggered by: an inbound 1:1 `FriendRequest`.
     RequestReceived {
         from_key: String,
         display_name: String,
         message: String,
     },
     /// A friend request we sent was acknowledged (delivery confirmed).
-    /// Triggered by: `DmPayload::FriendRequestAck`.
+    /// Triggered by: the receipt for our 1:1 `FriendRequest`.
     RequestAcknowledged { peer_key: String },
     /// A friend request was accepted (friendship established).
-    /// Triggered by: `DmPayload::FriendAccept`.
+    /// Triggered by: an inbound 1:1 `FriendAccept`.
     Accepted {
         peer_key: String,
         /// The accepter's display name, when the acceptance carried it.
@@ -29,7 +29,7 @@ pub enum FriendEvent {
         display_name: Option<String>,
     },
     /// A friend request was rejected.
-    /// Triggered by: `DmPayload::FriendReject`.
+    /// Triggered by: an inbound 1:1 `FriendReject`.
     Rejected { peer_key: String },
     /// A friend row was added to our list — the point at which the
     /// friend becomes renderable, as distinct from [`Self::Accepted`],
@@ -40,13 +40,13 @@ pub enum FriendEvent {
         friendship_state: crate::friend_store::FriendshipState,
     },
     /// A friend removed us.
-    /// Triggered by: `DmPayload::Unfriend`.
+    /// Triggered by: an inbound 1:1 `Unfriended`.
     Removed { peer_key: String },
     /// Unfriend was acknowledged.
-    /// Triggered by: `DmPayload::UnfriendAck`.
+    /// Triggered by: an inbound 1:1 `UnfriendedAck`.
     RemoveAcknowledged { peer_key: String },
     /// A friend rotated their profile DHT key.
-    /// Triggered by: `DmPayload::ProfileKeyRotated`.
+    /// Triggered by: an inbound 1:1 `ProfileKeyRotated`.
     ProfileKeyRotated {
         peer_key: String,
         new_profile_dht_key: String,

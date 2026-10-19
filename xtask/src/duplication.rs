@@ -157,13 +157,6 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          own three. Before this branch both were in scope in that crate \
          at once, returned by different modules, with only one exported.",
     ),
-    (
-        &["rekindle-calls::CallError", "rekindle-transport::CallError"],
-        "rekindle-calls owns call-domain errors (key derivation, state \
-         machine); transport's covers its own call *operations* (queue, \
-         store, serialize). Neither is a superset of the other and \
-         neither crosses the other's boundary.",
-    ),
     // ── Same name, genuinely different concepts ──────────────────
     (
         &["rekindle-audit::AuditEntry", "rekindle-node::AuditEntry"],

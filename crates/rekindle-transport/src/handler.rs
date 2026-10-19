@@ -61,7 +61,7 @@ pub enum TransportEvent {
 /// decrypted payloads from the transport layer. The transport guarantees
 /// that every call to these methods has passed full authentication.
 pub trait InboundHandler: Send + Sync + 'static {
-    /// Our identity key while an identity is unlocked. Signed DMs and RPCs
+    /// Our identity key while an identity is unlocked. Signed framed RPCs
     /// are verified as addressed to it; with none, they are dropped.
     fn local_identity(&self) -> Option<[u8; 32]>;
 

@@ -7986,7 +7986,6 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rekindle-audit",
- "rekindle-calls",
  "rekindle-codec",
  "rekindle-crypto",
  "rekindle-db",
@@ -8003,13 +8002,11 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
- "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tracing",
  "uuid",
- "x25519-dalek 2.0.1",
  "zeroize",
 ]
 

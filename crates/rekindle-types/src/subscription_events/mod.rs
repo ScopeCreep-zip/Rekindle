@@ -4,7 +4,7 @@
 //! [`SubscriptionEvent`] wraps them all. Consumers pattern-match on the
 //! outer enum to route by domain, then on the inner enum to handle specifics.
 //!
-//! Every `ControlPayload` (rekindle-codec) and `DmPayload` (rekindle-transport) variant
+//! Every `ControlPayload` (rekindle-codec) variant and every inbound 1:1 kind
 //! maps to exactly one event. No Veilid types cross this boundary.
 
 mod call;

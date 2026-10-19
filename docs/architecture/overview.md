@@ -173,7 +173,6 @@ src-tauri/
 │   ├── audit_view.rs                 Audit log query / export
 │   ├── channel_materialize.rs        Channel state materialisation
 │   ├── community_loader/             Community state restore on startup
-│   ├── envelope_store_sqlite.rs      Durable pending-envelope queue
 │   ├── friend_repo.rs                Fire-and-forget friend-row writes
 │   ├── message_repo.rs               Message persistence
 │   ├── message_view.rs               Message read views

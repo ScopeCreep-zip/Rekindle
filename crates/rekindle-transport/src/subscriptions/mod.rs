@@ -11,7 +11,6 @@
 //! - `state` — mutable state: unread, typing, presence, voice
 //! - `watches` — DHT watch lifecycle: create, renew, route ValueChange
 //! - `gossip_handler` — inbound gossip processing (all 52 ControlPayload variants)
-//! - `dm_handler` — inbound DM processing (all 10 DmPayload variants)
 
 pub mod cold_start;
 pub mod events;
