@@ -209,17 +209,6 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          peer counts and latency. src-tauri's is \
          `type SharedState = Arc<AppState>`. Not comparable.",
     ),
-    (
-        &[
-            "rekindle-db::PendingFriendRequest",
-            "rekindle-transport::PendingFriendRequest",
-        ],
-        "Two stages of one flow. transport's is what arrives over the \
-         wire — profile DHT key and route blob, needed to answer. \
-         rekindle-db's is what the UI lists — public key, display name, \
-         message, `received_at`. Merging would put routing data in a \
-         view model.",
-    ),
     // ── Codec boundaries: domain type vs its wire DTO ─────────────
     (
         &[

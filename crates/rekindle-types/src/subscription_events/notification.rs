@@ -46,21 +46,6 @@ pub enum NotificationEvent {
     /// A newer release is available.
     UpdateAvailable { version: String },
 
-    /// A peer sent a `SessionResetRequest`.
-    ///
-    /// Needs a human decision: the user must compare `safety_number`
-    /// with the peer out-of-band before accepting, so a frontend has to
-    /// prompt rather than auto-accept.
-    SessionResetRequested {
-        peer_public_key: String,
-        peer_display_name: String,
-        /// Hex-encoded short safety number (8 hex chars = 32 bits) for
-        /// out-of-band comparison — bigger than a phone number, small
-        /// enough to read aloud. BLAKE3 of the sorted identity key pair,
-        /// so both sides compute the same value.
-        safety_number: String,
-    },
-
     /// An incoming call, on the ring channel.
     ///
     /// Distinct from the in-app modal that
@@ -99,11 +84,6 @@ mod tests {
             },
             NotificationEvent::UpdateAvailable {
                 version: "1.2.3".into(),
-            },
-            NotificationEvent::SessionResetRequested {
-                peer_public_key: "pk".into(),
-                peer_display_name: "Ada".into(),
-                safety_number: "deadbeef".into(),
             },
             NotificationEvent::CallIncoming {
                 call_id: "id".into(),

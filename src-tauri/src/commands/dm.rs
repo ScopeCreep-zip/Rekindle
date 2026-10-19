@@ -95,14 +95,8 @@ pub async fn send_dm_video_frame(
     request: SendDmVideoFrameRequest,
     state: State<'_, SharedState>,
 ) -> Result<u32, String> {
-    let pool = state.db.current()?;
-    crate::services::dm_runtime::send_dm_video_frame_inner(
-        state.inner(),
-        &pool,
-        peer_pubkey,
-        request,
-    )
-    .await
+    crate::services::dm_runtime::send_dm_video_frame_inner(state.inner(), peer_pubkey, request)
+        .await
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

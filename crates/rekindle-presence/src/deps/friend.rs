@@ -97,8 +97,7 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>);
     fn set_friend_dht_record_key(&self, friend_key: &str, dht_record_key: &str);
 
-    // === DHT manager mutations ===
-    fn register_friend_dht_key(&self, dht_key: &str, friend_key: &str);
+    // === Route and watch state ===
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>);
     fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool);
 

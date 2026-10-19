@@ -1,62 +1,33 @@
-//! Friend-state accessors.
+//! Friend-state accessors over the Host's projection (plan E2.1): the
+//! unported readers' one view of our friends, read-only, until each
+//! reader's own step moves it into the Host.
 
 use std::sync::Arc;
 
-use crate::state::{AppState, FriendState, FriendshipState};
+use crate::state::{AppState, FriendState};
 
-use super::identity::owner_key_or_default;
-
-/// Check if a friend has `Accepted` friendship state.
-pub fn is_friend_accepted(state: &Arc<AppState>, public_key: &str) -> bool {
+/// Every friend the Host holds, any friendship state.
+pub fn friends(state: &AppState) -> Vec<FriendState> {
     state
-        .friends
-        .read()
-        .get(public_key)
-        .is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
-}
-
-/// Check if a person is in the friends map at all.
-pub fn is_friend(state: &Arc<AppState>, public_key: &str) -> bool {
-    state.friends.read().contains_key(public_key)
-}
-
-/// The sender's friendship status from the authoritative store, or
-/// `None` for a stranger: the receive gate's input. It reads SQLite
-/// through `FriendStore`, not the in-memory `state.friends` map, so a
-/// message dispatched before hydration is judged on the stored row.
-/// Fails closed (`None`) before the store is wired up or on a store error.
-pub async fn friend_status_authoritative(
-    state: &Arc<AppState>,
-    public_key: &str,
-) -> Option<FriendshipState> {
-    let store = state.friend_store.read().as_ref().cloned()?;
-    let owner = owner_key_or_default(state);
-    match store.status_of(&owner, public_key).await {
-        Ok(status) => status,
-        Err(e) => {
-            tracing::warn!(
-                target: "friend_store",
-                error = %e,
-                pubkey = %public_key,
-                "friend_status_authoritative SQLite error; failing closed"
-            );
-            None
-        }
-    }
+        .host
+        .current()
+        .map(|host| host.friends())
+        .unwrap_or_default()
 }
 
 /// Generic friend field extractor.
 pub fn friend_field<T>(
-    state: &Arc<AppState>,
+    state: &AppState,
     key: &str,
     f: impl FnOnce(&FriendState) -> Option<T>,
 ) -> Option<T> {
-    state.friends.read().get(key).and_then(f)
+    let friend = state.host.current()?.friend(key)?;
+    f(&friend)
 }
 
-/// Friend's DHT record key.
-pub fn friend_dht_key(state: &Arc<AppState>, key: &str) -> Option<String> {
-    friend_field(state, key, |f| f.dht_record_key.clone())
+/// Check if a person is one of our friends, any friendship state.
+pub fn is_friend(state: &Arc<AppState>, public_key: &str) -> bool {
+    friend_field(state, public_key, |_| Some(())).is_some()
 }
 
 /// Friend's display name.
@@ -64,34 +35,15 @@ pub fn friend_display_name(state: &Arc<AppState>, key: &str) -> Option<String> {
     friend_field(state, key, |f| Some(f.display_name.clone()))
 }
 
-/// Friend's mailbox DHT key.
-pub fn friend_mailbox_key(state: &Arc<AppState>, key: &str) -> Option<String> {
-    friend_field(state, key, |f| f.mailbox_dht_key.clone())
-}
-
-/// Collect all accepted friend keys.
-pub fn accepted_friend_keys(state: &Arc<AppState>) -> Vec<String> {
-    state
-        .friends
-        .read()
-        .values()
-        .filter(|f| f.friendship_state == FriendshipState::Accepted)
-        .map(|f| f.public_key.clone())
-        .collect()
-}
-
-/// Collect friends with DHT record keys (for sync/presence); a friend we
-/// are removing is not watched.
-pub fn friends_with_dht_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
-    state
-        .friends
-        .read()
-        .values()
-        .filter(|f| f.friendship_state != FriendshipState::Removing)
-        .filter_map(|f| {
-            f.dht_record_key
-                .as_ref()
-                .map(|k| (f.public_key.clone(), k.clone()))
-        })
-        .collect()
+/// A watched record changed: when it is a friend's profile, the Host's
+/// friend presence applies it (plan E2.1).
+pub fn friend_presence_change(state: &AppState, record_key: &str, subkeys: &[u32], value: &[u8]) {
+    use rekindle_presence::FriendPresenceDeps as _;
+    let Some(host) = state.host.current() else {
+        return;
+    };
+    let presence = host.friend_presence();
+    if presence.friend_for_dht_key(record_key).is_some() {
+        rekindle_presence::handle_value_change(presence.as_ref(), record_key, subkeys, value);
+    }
 }

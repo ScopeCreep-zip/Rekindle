@@ -265,7 +265,6 @@
     "friend": {
       "accepted": {
         "displayName": "Bob",
-        "dmLogKey": "VLD0:lllllllllllllllllllllllllllllllllllllllllll",
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
@@ -275,6 +274,14 @@
       "added": {
         "displayName": "Bob",
         "friendshipState": "pendingOut",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.groupChanged": {
+    "friend": {
+      "groupChanged": {
+        "group": "Raid team",
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
@@ -957,15 +964,6 @@
         "communityId": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "soundRef": "ping",
         "title": "#general"
-      }
-    }
-  },
-  "notification.sessionResetRequested": {
-    "notification": {
-      "sessionResetRequested": {
-        "peerDisplayName": "Bob",
-        "peerPublicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "safetyNumber": "deadbeef"
       }
     }
   },

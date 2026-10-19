@@ -7,9 +7,11 @@
 //! 1. Frame-decoded (version + type validated)
 //! 2. Signature-verified (Ed25519, no exceptions)
 //! 3. Dedup-checked (gossip only)
-//! 4. Decrypted (if applicable: Signal for DM, MEK for channel/voice)
+//! 4. Decrypted (if applicable: MEK for channel/voice)
 //!
-//! The handler receives only authenticated, deserialized, plaintext payloads.
+//! The handler receives only authenticated, deserialized, plaintext payloads,
+//! except a 1:1 message (`on_direct`), which carries its own signed envelope
+//! and is opened by `operations::direct` on both hosts (plan E2.1).
 //!
 //! # Async trait design
 //!
@@ -22,7 +24,6 @@
 
 use std::future::Future;
 
-use crate::payload::dm::DmPayload;
 use crate::payload::rpc::{CallResponse, InboundCall};
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_codec::community::envelope::SignedEnvelope;
@@ -68,39 +69,14 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// dedup key.
     fn clock(&self) -> &dyn rekindle_utils::Clock;
 
-    /// An authenticated DM payload arrived from a verified peer.
-    ///
-    /// W16.4 — `DmPayload` includes call signaling variants
-    /// (`CallInvite`, `CallAccept`, `CallDecline`, `CallEnd`,
-    /// `CallRinging`, `CallMediaState`, `CallReaction`,
-    /// `GroupCallOffer`, `GroupCallAccept`, `GroupCallDecline`) and
-    /// DM invite request/reply variants
-    /// (`DmInviteRequest`, `DmInviteReply`, `GroupDmInviteRequest`,
-    /// `GroupDmInviteReply`).
-    ///
-    /// W16.7 — `seq` and `correlation_id` are envelope-level metadata
-    /// from the [`SignedPayload`](crate::crypto::envelope::SignedPayload)
-    /// wrapper. Implementers MUST dedup via
-    /// [`crate::SeqTracker::check_and_record`] before processing —
-    /// Veilid's `app_message` has no built-in dedup and a duplicate
-    /// CallInvite would mount a second IncomingCallModal, etc.
-    ///
-    /// Implementations are expected to pattern-match on the payload
-    /// variant and route to:
-    /// - **Call signaling** → [`crate::operations::calls::CallRuntime`]
-    ///   via [`crate::operations::calls::CallRuntime::route_dm_payload`].
-    /// - **DM invite reply** → [`crate::EnvelopeQueue::deliver_reply`]
-    ///   (the `correlation_id` parameter wakes the request-side oneshot).
-    /// - **DM body / friend-add / presence / etc.** → existing handler
-    ///   logic (subscription event, persisted history row, etc.).
-    fn on_dm(
-        &self,
-        sender: &VerifiedSender,
-        payload: DmPayload,
-        timestamp: u64,
-        seq: u64,
-        correlation_id: Option<&str>,
-    ) -> impl Future<Output = ()> + Send;
+    /// A 1:1 `app_message` arrived: `datagram` starts with the `'D'` tag
+    /// (`operations::dm::DIRECT_TAG`). The handler opens it with
+    /// `operations::direct::receive`, which verifies the envelope itself.
+    fn on_direct(&self, datagram: &[u8]) -> impl Future<Output = ()> + Send;
+
+    /// A 1:1 `app_call` arrived (tagged as for [`Self::on_direct`]): the
+    /// reply, or `None` for a NAK.
+    fn on_direct_call(&self, datagram: &[u8]) -> impl Future<Output = Option<Vec<u8>>> + Send;
 
     /// An authenticated gossip broadcast arrived from a community member.
     fn on_gossip(

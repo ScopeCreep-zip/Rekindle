@@ -14,6 +14,7 @@
 
 mod commands;
 mod events;
+mod friend_commands;
 mod reducer;
 mod render;
 mod stream;

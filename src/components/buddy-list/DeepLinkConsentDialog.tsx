@@ -3,12 +3,13 @@ import Modal from "../common/Modal";
 import { commands } from "../../ipc/commands";
 import { pendingDeepLink, setPendingDeepLink } from "../../stores/deep-link.store";
 import { loadJoinedCommunity } from "../../actions/community.actions";
-import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 
 /// Asks the user before acting on an OS deep link (`rekindle://`). The
 /// backend holds the link; this dialog shows only a fingerprint of the
-/// key it names and sends back the user's decision.
+/// key it names and sends back the user's decision. A friend invite link is
+/// the Host's review instead (the intent dialog's fingerprint card, plan
+/// E2.1).
 const DeepLinkConsentDialog: Component = () => {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -35,8 +36,6 @@ const DeepLinkConsentDialog: Component = () => {
       close();
       if (outcome.kind === "joinedCommunity") {
         await loadJoinedCommunity(outcome.communityId);
-      } else if (outcome.kind === "friendAdded") {
-        addToast("Friend request sent", "success");
       }
     } catch (e) {
       setError(errorMessage(e));
@@ -54,8 +53,6 @@ const DeepLinkConsentDialog: Component = () => {
     switch (pendingDeepLink()?.kind) {
       case "joinCommunity":
         return "Join community?";
-      case "addFriend":
-        return "Add friend?";
       default:
         return "Pairing link blocked";
     }
@@ -75,9 +72,8 @@ const DeepLinkConsentDialog: Component = () => {
             {(request) => (
               <>
                 <p class="consent-dialog-text">
-                  {request().kind === "joinCommunity"
-                    ? "A link wants you to join a community you have not seen before. Joining shares your community pseudonym and presence with its members."
-                    : "A link wants to add someone as a friend. Adding them shares your presence and lets them message you."}
+                  {request().kind === "joinCommunity" &&
+                    "A link wants you to join a community you have not seen before. Joining shares your community pseudonym and presence with its members."}
                 </p>
                 <Show when={fingerprint()}>
                   {(fp) => (
@@ -106,7 +102,7 @@ const DeepLinkConsentDialog: Component = () => {
               Cancel
             </button>
             <button class="form-btn-primary" disabled={busy()} onClick={confirm}>
-              {pendingDeepLink()?.kind === "joinCommunity" ? "Join" : "Add friend"}
+              Join
             </button>
           </Show>
         </div>

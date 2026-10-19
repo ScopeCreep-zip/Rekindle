@@ -104,7 +104,7 @@ impl App {
             if let Ok(Ok(friends)) = client
                 .request_ok(IpcRequest::FriendList)
                 .await
-                .map(serde_json::from_value::<Vec<dt::FriendDisplay>>)
+                .map(serde_json::from_value::<Vec<rekindle_types::dto::friends::Friend>>)
             {
                 let _ = tx.send(Action::CommandComplete(Box::new(
                     CommandResult::FriendListLoaded { friends },
@@ -147,53 +147,6 @@ impl App {
                     }
                 }
                 Err(e) => report_failure(&tx, "channel history", e),
-            }
-        });
-    }
-
-    pub(crate) fn load_dm_inbox(&self) {
-        let tx = self.action_tx.clone();
-        let client = Arc::clone(&self.client);
-        tokio::spawn(async move {
-            match client.request_ok(IpcRequest::DmInbox { limit: 50 }).await {
-                Ok(value) => match serde_json::from_value::<Vec<dt::DmThreadDisplay>>(value) {
-                    Ok(threads) => {
-                        let _ = tx.send(Action::CommandComplete(Box::new(
-                            CommandResult::DmInboxLoaded { threads },
-                        )));
-                    }
-                    Err(_) => {
-                        let _ = tx.send(Action::CommandComplete(Box::new(
-                            CommandResult::DmInboxLoaded {
-                                threads: Vec::new(),
-                            },
-                        )));
-                    }
-                },
-                Err(e) => report_failure(&tx, "dm inbox", e),
-            }
-        });
-    }
-
-    pub(crate) fn load_friend_list(&self) {
-        let tx = self.action_tx.clone();
-        let client = Arc::clone(&self.client);
-        tokio::spawn(async move {
-            match client.request_ok(IpcRequest::FriendList).await {
-                Ok(value) => match serde_json::from_value::<Vec<dt::FriendDisplay>>(value) {
-                    Ok(friends) => {
-                        let _ = tx.send(Action::CommandComplete(Box::new(
-                            CommandResult::FriendListLoaded { friends },
-                        )));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Action::CommandFailed {
-                            context: "friend list parse".into(),
-                            error: e.to_string(),
-                        });
-                    }
-                },
-                Err(e) => report_failure(&tx, "friend list", e),
             }
         });
     }
@@ -298,78 +251,6 @@ impl App {
         });
     }
 
-    pub(crate) fn spawn_accept_friend(&self, request_id: String) {
-        let tx = self.action_tx.clone();
-        let client = Arc::clone(&self.client);
-        tokio::spawn(async move {
-            match client
-                .request_ok(IpcRequest::FriendAccept {
-                    public_key: request_id.clone(),
-                })
-                .await
-            {
-                Ok(_) => {
-                    let _ = tx.send(Action::ShowToast {
-                        message: format!(
-                            "Accepted {}",
-                            crate::helpers::abbreviate_key(&request_id)
-                        ),
-                        level: ToastLevel::Success,
-                    });
-                }
-                Err(e) => report_failure(&tx, "accept friend", e),
-            }
-        });
-    }
-
-    pub(crate) fn spawn_reject_friend(&self, request_id: String) {
-        let tx = self.action_tx.clone();
-        let client = Arc::clone(&self.client);
-        tokio::spawn(async move {
-            match client
-                .request_ok(IpcRequest::FriendReject {
-                    public_key: request_id.clone(),
-                })
-                .await
-            {
-                Ok(_) => {
-                    let _ = tx.send(Action::ShowToast {
-                        message: format!(
-                            "Rejected {}",
-                            crate::helpers::abbreviate_key(&request_id)
-                        ),
-                        level: ToastLevel::Info,
-                    });
-                }
-                Err(e) => report_failure(&tx, "reject friend", e),
-            }
-        });
-    }
-
-    pub(crate) fn spawn_remove_friend(&self, peer_key: String) {
-        let tx = self.action_tx.clone();
-        let client = Arc::clone(&self.client);
-        tokio::spawn(async move {
-            match client
-                .request_ok(IpcRequest::FriendRemove {
-                    public_key: peer_key.clone(),
-                })
-                .await
-            {
-                Ok(_) => {
-                    let _ = tx.send(Action::ShowToast {
-                        message: format!(
-                            "Removed friend {}",
-                            crate::helpers::abbreviate_key(&peer_key)
-                        ),
-                        level: ToastLevel::Info,
-                    });
-                }
-                Err(e) => report_failure(&tx, "remove friend", e),
-            }
-        });
-    }
-
     pub(crate) fn spawn_leave_community(&self, governance_key: String, name: String) {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
@@ -458,7 +339,7 @@ impl App {
 
 /// A request that did not run: the host's review, shown in the overlay, or
 /// the error.
-fn report_failure(
+pub(super) fn report_failure(
     tx: &tokio::sync::mpsc::UnboundedSender<Action>,
     context: &str,
     error: rekindle_client::ClientError,

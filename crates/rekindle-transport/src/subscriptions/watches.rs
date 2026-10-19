@@ -17,15 +17,11 @@ use tracing::{info, warn};
 use crate::broadcast::dht_writes::LeaseId;
 use crate::broadcast::node::TransportNode;
 use crate::payload::dht_types;
-use crate::session::{CommunityMembership, Session};
+use crate::session::CommunityMembership;
 
 /// What kind of record a watch is tracking.
 #[derive(Debug, Clone)]
 pub enum WatchKind {
-    /// Our friend inbox (DFLT(32), subkeys 0-31).
-    FriendInbox,
-    /// A peer's DM DhtLog spine.
-    DmLog { peer_key: String },
     /// A community's SMPL governance record.
     ///
     /// One member's signed entry history per subkey, so a change means
@@ -109,13 +105,6 @@ impl WatchRegistry {
                 if c == community
             )
         })
-    }
-
-    /// Remove all watches for a DM peer; their leases, to release.
-    pub fn remove_dm_peer(&mut self, peer_key: &str) -> Vec<LeaseId> {
-        self.remove_where(
-            |kind| matches!(kind, WatchKind::DmLog { peer_key: pk } if pk == peer_key),
-        )
     }
 
     /// Total number of active watches.
@@ -214,41 +203,6 @@ pub async fn establish_watch_as(
 
 // ── Setup helpers ──────────────────────────────────────────────────────
 
-/// Establish all identity-level watches (friend inbox).
-pub async fn setup_identity_watches(
-    node: &TransportNode,
-    registry: &RwLock<WatchRegistry>,
-    session: &Session,
-) {
-    // Watch friend inbox (all subkeys)
-    if !session.identity.friend_inbox_key.is_empty() {
-        let subkeys: Vec<u32> =
-            (0..u32::from(crate::payload::dht_types::FRIEND_INBOX_SUBKEY_COUNT)).collect();
-        establish_watch(
-            node,
-            registry,
-            &session.identity.friend_inbox_key,
-            &subkeys,
-            WatchKind::FriendInbox,
-        )
-        .await;
-    }
-
-    // Watch each peer's DM log spine
-    for (peer_key, dm_log_key) in &session.dm_log_keys {
-        establish_watch(
-            node,
-            registry,
-            dm_log_key,
-            &[0], // spine subkey
-            WatchKind::DmLog {
-                peer_key: peer_key.clone(),
-            },
-        )
-        .await;
-    }
-}
-
 /// Establish all community-level watches.
 pub async fn setup_community_watches(
     node: &TransportNode,
@@ -333,23 +287,4 @@ pub async fn setup_community_watches(
         registry = %membership.registry_key,
         "community watches established"
     );
-}
-
-/// Set up a DM peer watch.
-pub async fn setup_dm_watch(
-    node: &TransportNode,
-    registry: &RwLock<WatchRegistry>,
-    peer_key: &str,
-    dm_log_key: &str,
-) {
-    establish_watch(
-        node,
-        registry,
-        dm_log_key,
-        &[0], // DhtLog spine subkey
-        WatchKind::DmLog {
-            peer_key: peer_key.to_string(),
-        },
-    )
-    .await;
 }

@@ -31,19 +31,6 @@ export type NotificationEvent =
   | { updateAvailable: { version: string } }
   | {
       /**
-       * P3.3 — peer requested a Signal session reset. The frontend MUST
-       * show a confirmation modal displaying `safetyNumber` for
-       * out-of-band verification before invoking
-       * `commands.acceptSessionReset`.
-       */
-      sessionResetRequested: {
-        peerPublicKey: string;
-        peerDisplayName: string;
-        safetyNumber: string;
-      };
-    }
-  | {
-      /**
        * Wave 12 W12.3 — sibling to `chat-event::incomingCall`, used as
        * the OS-level / CLI ring channel. Carries `callId` so ringtone
        * start/stop is correlatable to the call's lifecycle.

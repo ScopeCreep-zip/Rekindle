@@ -69,13 +69,22 @@ pub(crate) async fn run(ctx: &DaemonContext, request: IpcRequest, caller: &Calle
             }
         }
         IpcRequest::IntentCancel { intent_id } => {
-            if ctx
+            match ctx
                 .intents
                 .cancel(intent_id, &provisional_owner(ctx, caller))
             {
-                IpcResponse::ok(&serde_json::json!({ "cancelled": intent_id }))
-            } else {
-                gate_error(&GateError::UnknownIntent)
+                // A backend hold's Cancel is the user's answer (a session
+                // reset declined, plan E2.1): it runs, unreviewed, since
+                // the click is the user's act.
+                Ok(Some(on_cancel)) => {
+                    let answered = ctx.dispatch_in_lane(on_cancel, caller).await;
+                    if let IpcResponse::Error { message, .. } = &answered {
+                        tracing::warn!(error = %message, "a held action's cancel answer failed");
+                    }
+                    IpcResponse::ok(&serde_json::json!({ "cancelled": intent_id }))
+                }
+                Ok(None) => IpcResponse::ok(&serde_json::json!({ "cancelled": intent_id })),
+                Err(e) => gate_error(&e),
             }
         }
         other => begin(ctx, caller, other).await,

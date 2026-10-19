@@ -240,7 +240,6 @@ impl DmPayload {
             }),
             Self::FriendAccept { .. } => SubscriptionEvent::Friend(FriendEvent::Accepted {
                 peer_key: sender_key.into(),
-                dm_log_key: None,
                 // The DM payload carries no name; the desktop resolves
                 // it from its friend row instead.
                 display_name: None,

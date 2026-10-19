@@ -87,27 +87,6 @@ pub fn require_safe_routing_context(
     safe_routing_context(state).ok_or_else(|| "not attached to network".to_string())
 }
 
-/// Profile DHT info tuple: `(profile_dht_key, route_blob, mailbox_dht_key)`.
-pub fn profile_dht_info(state: &Arc<AppState>) -> Result<(String, Vec<u8>, String), String> {
-    let node = state.node.read();
-    let nh = node.as_ref().ok_or("node not initialized")?;
-    let profile_key = nh
-        .profile_dht_key
-        .clone()
-        .ok_or("profile DHT key not set")?;
-    let route_blob = state
-        .own_routes
-        .read()
-        .as_ref()
-        .and_then(|r| r.blob(rekindle_records::port::RouteClass::General))
-        .ok_or("route blob not set")?;
-    let mailbox_key = nh
-        .mailbox_dht_key
-        .clone()
-        .ok_or("mailbox DHT key not set")?;
-    Ok((profile_key, route_blob, mailbox_key))
-}
-
 /// The node's own routes (plan C7.9a).
 pub fn own_routes(
     state: &AppState,
@@ -136,15 +115,6 @@ pub fn friend_list_dht_key(state: &Arc<AppState>) -> Option<String> {
         .read()
         .as_ref()
         .and_then(|nh| nh.friend_list_dht_key.clone())
-}
-
-/// Friend list owner keypair.
-pub fn friend_list_owner_keypair(state: &Arc<AppState>) -> Option<String> {
-    state
-        .node
-        .read()
-        .as_ref()
-        .and_then(|nh| nh.friend_list_owner_keypair.clone())
 }
 
 /// Whether the node is attached to the network.

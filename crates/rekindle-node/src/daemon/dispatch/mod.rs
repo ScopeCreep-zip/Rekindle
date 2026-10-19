@@ -12,7 +12,7 @@
 //! - `identity.rs`  — IdentityCreate, Show, Export, Rotate, Destroy, Wipe
 //! - `community.rs` — CommunityCreate, Join, Leave, List, Info
 //! - `channel.rs`   — ChannelList, Create, Delete, Update, Send, History
-//! - `social.rs`    — Friend*, Dm*
+//! - `friends.rs`   — Friend*, Dm*, SessionReset* (over `operations::friend`/`dm`)
 //! - `governance.rs` — Role*, moderation (Kick/Ban/Unban/Timeout), invites
 //! - `keys.rs`      — Mek*, PrekeyReplenish
 //! - `own.rs`       — our presence, profile, game, audit log, links
@@ -23,6 +23,7 @@ mod admin;
 pub(crate) mod channel;
 pub(crate) mod community;
 mod context;
+mod friends;
 pub(crate) mod governance;
 mod identity;
 mod in_flight;
@@ -31,7 +32,6 @@ mod lifecycle;
 mod own;
 mod router;
 pub(crate) mod shell;
-mod social;
 mod status;
 mod voice;
 
@@ -44,7 +44,7 @@ use rekindle_transport::{crypto::mek::MekCache, Session, TransportNode};
 use crate::state::signing_key::SigningKeyHandle;
 use rekindle_ipc::registry::ClearanceRegistry;
 
-pub(crate) use context::{state_error, store_error, transition};
+pub(crate) use context::{state_error, transition};
 pub(crate) use lifecycle::{daemon_stages, daemon_teardown};
 pub use router::dispatch;
 
@@ -221,6 +221,19 @@ pub struct DaemonContext {
     /// A panicked unlock task's name, for the shell's teardown worker
     /// (`host::unlock::run_panic_teardowns`).
     pub unlock_panics: tokio::sync::mpsc::UnboundedSender<String>,
+    /// The receive gate's friend authority over the unlocked identity's
+    /// database (plan E2.1); `None` while locked.
+    pub friend_store: RwLock<Option<Arc<rekindle_db::SqliteFriendStore>>>,
+    /// The 1:1 replay guard and session-reset state of the unlocked
+    /// identity (plan E2.1), cleared at lock.
+    pub friend_stores: rekindle_transport::operations::friend::FriendStores,
+    /// Each watched friend's profile lease (it carries the watch), and the
+    /// friends whose watch failed, polled instead (plan E2.1).
+    pub(crate) friend_watches: crate::host::adapters::friends::FriendWatches,
+    /// Our profile record's session lease, so a rotation releases it.
+    pub(crate) own_profile_lease: Arc<parking_lot::Mutex<Option<rekindle_records::lease::LeaseId>>>,
+    /// This context, for work that outlives a call (`HostFriends::owned`).
+    pub(crate) this: std::sync::Weak<DaemonContext>,
 }
 
 impl DaemonContext {

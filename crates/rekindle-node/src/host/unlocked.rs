@@ -1,7 +1,8 @@
 //! The unlocked identity's host state, one implementation for the daemon's
 //! `Unlock` and the GUI's login (plan D3.1): what an unlock installs (the
 //! signing key, the one Signal manager, the session projection, the MEKs,
-//! the audit chain, the trusted clients) and what a lock takes out again.
+//! the audit chain, the trusted clients, the friend authority) and what a
+//! lock takes out again.
 
 use std::sync::Arc;
 
@@ -46,6 +47,7 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
     *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(*secret));
     let signal = Arc::new(signal);
     *ctx.signal.write() = Some(Arc::clone(&signal));
+    *ctx.friend_store.write() = Some(Arc::clone(&friend_store));
 
     // The session is projected from the identity's stores (plan D1).
     let loaded = match ctx.db.current() {
@@ -92,6 +94,14 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     super::audit::close(&ctx.audit_chain);
     *ctx.session.write() = None;
     *ctx.signal.write() = None;
+    // The 1:1 receive state is the identity's, and so are the probes and
+    // the profile lease (its pool ends with the unlock).
+    *ctx.friend_store.write() = None;
+    ctx.friend_stores.clear();
+    *ctx.own_profile_lease.lock() = None;
+    if let Some(transport) = ctx.transport.read().as_ref() {
+        transport.relay().clear_probes();
+    }
     super::identity::lock(&ctx.identity_stores()).await;
     // No event of this session replays into the next (plan D3.2).
     ctx.journal.begin();

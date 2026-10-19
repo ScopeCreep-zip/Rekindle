@@ -188,16 +188,6 @@ pub(super) fn hash_notification(h: &mut blake3::Hasher, n: &NotificationEvent) {
             h.update(b"update|");
             h.update(version.as_bytes());
         }
-        NotificationEvent::SessionResetRequested {
-            peer_public_key,
-            safety_number,
-            ..
-        } => {
-            h.update(b"reset|");
-            h.update(peer_public_key.as_bytes());
-            h.update(b"|");
-            h.update(safety_number.as_bytes());
-        }
         NotificationEvent::CallIncoming { call_id, .. } => {
             // `call_id` alone: a re-delivered ring for the same call is
             // the duplicate this exists to suppress, and `expires_at_ms`

@@ -26,14 +26,10 @@ pub use community::{
     display_role_name, CategoryInfo, ChannelInfo, ChannelType, CommunityRecords, CommunityState,
     MemberProfileSnapshot, RoleDefinition,
 };
-pub use friend::{
-    FriendState, FriendshipState, GameInfoState, IdentityState, OutgoingReset, UserStatus,
-};
+pub use friend::{FriendState, FriendshipState, GameInfoState, IdentityState, UserStatus};
 pub use gossip::{GossipOverlay, OnlineMember};
 pub use rekindle_channel::{AutoModCompiledCache, CompiledAutoModRule};
-pub use runtime::{
-    DHTManagerHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle, VoiceEngineHandle,
-};
+pub use runtime::{NodeHandle, SignalManagerHandle, VoiceEngineHandle};
 
 /// Shared reference to `AppState`, used by both Tauri commands and background services.
 pub type SharedState = Arc<AppState>;

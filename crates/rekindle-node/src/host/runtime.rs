@@ -200,12 +200,13 @@ impl Host {
         let (presence_start_tx, presence_start_rx) =
             crate::daemon::presence_adapter::supervisor::channel();
 
+        let friend_host: Arc<std::sync::OnceLock<std::sync::Weak<DaemonContext>>> =
+            Arc::new(std::sync::OnceLock::new());
         let daemon_handler = || {
             let handler_transport = Arc::new(RwLock::new(None));
             let handler = Arc::new(DaemonHandler::new(
                 Arc::new(RwLock::new(None)),
                 Arc::clone(&stores.session),
-                Arc::clone(&stores.db),
                 Arc::clone(&mek_cache),
                 Arc::clone(&signing_key),
                 Arc::clone(&handler_transport),
@@ -213,6 +214,7 @@ impl Host {
                 mek_rotation_tx.clone(),
                 gossip_tx.clone(),
                 Arc::clone(&clock),
+                Arc::clone(&friend_host),
             ));
             (handler, handler_transport)
         };
@@ -262,7 +264,12 @@ impl Host {
         let (event_watch_tx, _) = tokio::sync::watch::channel(None);
         let (unlock_panics, unlock_panics_rx) = tokio::sync::mpsc::unbounded_channel();
         let journal = Arc::new(rekindle_events::SessionJournal::default());
-        let ctx = Arc::new(DaemonContext {
+        let ctx = Arc::new_cyclic(|this| DaemonContext {
+            this: this.clone(),
+            friend_store: RwLock::new(None),
+            friend_stores: rekindle_transport::operations::friend::FriendStores::default(),
+            friend_watches: super::adapters::friends::FriendWatches::default(),
+            own_profile_lease: Arc::new(parking_lot::Mutex::new(None)),
             mode,
             community_runtime: Arc::new(
                 crate::daemon::community_runtime::CommunityRuntimeMap::new(),
@@ -312,6 +319,11 @@ impl Host {
             shell,
             unlock_panics,
         });
+        // The inbound handler reaches the friend operations through the
+        // context it was built before (plan E2.1).
+        if friend_host.set(Arc::downgrade(&ctx)).is_err() {
+            tracing::error!("the inbound handler's host was already set");
+        }
 
         // The domain workers each own an `Arc<DaemonContext>`. In the shell
         // the GUI's pipeline runs these stages (one owner per stage), so
@@ -333,7 +345,6 @@ impl Host {
             workers.spawn(crate::daemon::event_forward::run_forwarder(Arc::clone(
                 &ctx,
             )));
-            workers.spawn(crate::daemon::event_forward::run_consumer(Arc::clone(&ctx)));
         } else {
             // A panicked unlock task ends the session (`host::unlock`).
             workers.spawn(super::unlock::run_panic_teardowns(
@@ -398,13 +409,6 @@ impl Host {
     #[must_use]
     pub fn unlock_scope(&self) -> Option<Arc<rekindle_lifecycle::SessionScope>> {
         self.ctx.unlock_scope.read().clone()
-    }
-
-    /// The shell's profile rotation (a block, → the E2 friend port) moved
-    /// our profile to a new record and named it in the session projection:
-    /// have our status written there now.
-    pub fn own_profile_moved(&self) {
-        self.ctx.own_presence.republish();
     }
 
     /// The host's identity slots, for `host::identity`.

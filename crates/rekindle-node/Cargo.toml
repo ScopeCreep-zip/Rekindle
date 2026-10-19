@@ -46,6 +46,8 @@ rekindle-gossip = { path = "../rekindle-gossip" }
 # `CommunityPresenceDeps`, which is why the daemon had no roster and
 # read the v1.0 member index instead.
 rekindle-presence = { path = "../rekindle-presence" }
+# The pending-message retry's budget and loop (plan E2.1, until E2.5).
+rekindle-sync = { path = "../rekindle-sync" }
 # Deterministic-rotator MEK rotation (communities-channels.md). The
 # daemon implements its `MekDistributeDeps` so a departure rotates the
 # key on this track too; before this it only logged the intent.

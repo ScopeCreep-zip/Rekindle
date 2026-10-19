@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
 use rekindle_voice::{VoiceSessionDeps, VoiceShutdownOpts};
+pub use route_heal::heal_call_routes;
 
 use crate::state::AppState;
 use rekindle_db::Db;
@@ -38,6 +39,7 @@ pub mod io_helpers;
 pub mod media_egress;
 pub mod media_feedback;
 pub mod media_keys;
+mod route_heal;
 pub mod session_setup;
 pub mod video_allocation;
 

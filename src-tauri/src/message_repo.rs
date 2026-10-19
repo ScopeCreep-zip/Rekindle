@@ -1,25 +1,8 @@
-//! Message persistence helpers.
+//! Channel message persistence helpers (E3.1 moves them into `rekindle_db::repo`
+//! with their callers; DMs are `repo::messages`, plan E2.1).
 //!
 //! Pure `rusqlite` functions that encapsulate SQL for the `messages` table.
 //! Callers wrap these in `db_call` or `db_fire` as appropriate.
-
-/// Insert a direct message.
-pub fn insert_dm(
-    conn: &rusqlite::Connection,
-    owner_key: &str,
-    peer_key: &str,
-    sender_key: &str,
-    body: &str,
-    timestamp: i64,
-    is_read: bool,
-) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
-         VALUES (?, ?, 'dm', ?, ?, ?, ?)",
-        rusqlite::params![owner_key, peer_key, sender_key, body, timestamp, is_read],
-    )?;
-    Ok(())
-}
 
 /// Insert a channel message (community or legacy plaintext).
 pub fn insert_channel_message(

@@ -84,19 +84,68 @@ pub enum IpcRequest {
     /// Factory reset: delete every identity and Veilid storage. Protected.
     IdentityWipe,
 
-    // ── Friends ───────────────────────────────────────────────────
-    /// Send a friend request to a target (mailbox DHT key).
-    FriendAdd { target: String, message: String },
-    /// Accept a pending friend request.
-    FriendAccept { public_key: String },
-    /// Reject a pending friend request.
+    // ── Friends (plan E2.1) ───────────────────────────────────────
+    /// Send a friend request to `public_key` (they become a pending friend).
+    FriendAdd {
+        public_key: String,
+        display_name: String,
+        message: String,
+    },
+    /// Accept the pending request from `public_key`.
+    FriendAccept {
+        public_key: String,
+        display_name: String,
+    },
+    /// Reject the pending request from `public_key`.
     FriendReject { public_key: String },
     /// Remove a friend.
     FriendRemove { public_key: String },
-    /// List all friends with resolved display names and presence.
+    /// The buddy list (`dto::friends::Friend`).
     FriendList,
-    /// List pending inbound friend requests.
+    /// The requests waiting for our answer.
     FriendRequests,
+    /// Cancel the request we sent `public_key`.
+    FriendCancelRequest { public_key: String },
+    /// Add the friend an invite link names (reviewed with their key's
+    /// fingerprint).
+    FriendAddFromInvite { invite: String },
+    /// Make a tracked friend invite link.
+    FriendInviteCreate,
+    /// Our open invites.
+    FriendInviteList,
+    /// Cancel an open invite.
+    FriendInviteCancel { invite_id: String },
+    /// Block `public_key` (our profile moves to a new key).
+    FriendBlock {
+        public_key: String,
+        display_name: Option<String>,
+    },
+    /// Unblock `public_key`.
+    FriendUnblock { public_key: String },
+    /// Everyone we blocked.
+    FriendBlockedList,
+    /// Set (or clear) our nickname for a friend.
+    FriendSetNickname {
+        public_key: String,
+        nickname: Option<String>,
+    },
+    /// Create a friend group.
+    FriendGroupCreate { name: String },
+    /// Rename a friend group.
+    FriendGroupRename { group_id: i64, name: String },
+    /// Move a friend into a group, or out of any with `None`.
+    FriendGroupMove {
+        public_key: String,
+        group_id: Option<i64>,
+    },
+    /// Delete a friend group; its friends fall back to no group.
+    FriendGroupDelete { group_id: i64 },
+    /// Reset our secure session with a friend (safety-number checked).
+    SessionResetStart { public_key: String },
+    /// Accept the session reset a friend asked for.
+    SessionResetAccept { public_key: String },
+    /// Decline the session reset a friend asked for.
+    SessionResetDecline { public_key: String },
 
     // ── Communities ───────────────────────────────────────────────
     /// Create a new community.
@@ -184,8 +233,16 @@ pub enum IpcRequest {
     DmSend { peer_key: String, body: String },
     /// Send a typing indicator to a peer.
     DmTyping { peer_key: String, typing: bool },
-    /// List DM inbox.
+    /// The latest message of each direct conversation.
     DmInbox { limit: u32 },
+    /// The newest `limit` messages with `peer_key` before `before` (ms).
+    DmHistory {
+        peer_key: String,
+        limit: u32,
+        before: Option<i64>,
+    },
+    /// Mark everything from `peer_key` read.
+    DmMarkRead { peer_key: String },
 
     // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
     /// Commit a held action with the proof its review asked for.

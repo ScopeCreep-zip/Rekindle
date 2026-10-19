@@ -63,13 +63,7 @@ export type TypingEvent =
 export type FriendEvent =
   | { requestReceived: { fromKey: string; displayName: string; message: string } }
   | { requestAcknowledged: { peerKey: string } }
-  | {
-      accepted: {
-        peerKey: string;
-        dmLogKey: string | null;
-        displayName: string | null;
-      };
-    }
+  | { accepted: { peerKey: string; displayName: string | null } }
   | { rejected: { peerKey: string } }
   | {
       added: {
@@ -82,6 +76,7 @@ export type FriendEvent =
   | { removeAcknowledged: { peerKey: string } }
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
+  | { groupChanged: { peerKey: string; group: string | null } }
   | { handshakeFailed: { peerKey: string; reason: string } };
 
 /** Peer on the other end of a direct call; absent for a group call. */

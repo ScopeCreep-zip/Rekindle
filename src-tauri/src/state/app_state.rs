@@ -13,10 +13,8 @@ use tokio::sync::mpsc;
 
 use super::circuit::CircuitBreakerState;
 use super::community::CommunityState;
-use super::friend::{FriendState, IdentityState, OutgoingReset};
-use super::runtime::{
-    DHTManagerHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle, VoiceEngineHandle,
-};
+use super::friend::IdentityState;
+use super::runtime::{NodeHandle, SignalManagerHandle, VoiceEngineHandle};
 use rekindle_channel::AutoModCompiledCache;
 
 /// Central application state shared across all Tauri commands and services.
@@ -32,16 +30,10 @@ pub struct AppState {
         Arc<RwLock<Option<mpsc::Sender<rekindle_voice::receiver_report::VoiceReceiverReport>>>>,
     /// Identity (loaded after Stronghold unlock).
     pub identity: Arc<RwLock<Option<IdentityState>>>,
-    /// Friends list with presence info.
-    pub friends: Arc<RwLock<HashMap<String, FriendState>>>,
     /// Joined communities.
     pub communities: Arc<RwLock<HashMap<String, CommunityState>>>,
     /// Veilid node handle (set after login/attach).
     pub node: Arc<RwLock<Option<NodeHandle>>>,
-    /// DHT record manager for reading/writing distributed state.
-    pub dht_manager: Arc<RwLock<Option<DHTManagerHandle>>>,
-    /// Routing manager for private route lifecycle.
-    pub routing_manager: Arc<RwLock<Option<RoutingManagerHandle>>>,
     /// W16.9b — outbound-only `TransportNode` adopted against the host's
     /// running VeilidAPI. Send paths in transport's `operations::*` call
     /// into this; receive paths go through existing src-tauri services
@@ -55,10 +47,6 @@ pub struct AppState {
     /// DM body sends + future expect-reply flows. `Some` after app
     /// startup wires `SqliteEnvelopeStore`.
     pub envelope_store: Arc<RwLock<Option<Arc<dyn rekindle_transport::EnvelopeStore>>>>,
-    /// Receive-path friend authority over the unlocked identity's
-    /// database (`SqliteFriendStore`, built by `host::identity` at unlock,
-    /// plan D1). `None` while locked: inbound traffic is dropped.
-    pub friend_store: Arc<RwLock<Option<Arc<dyn rekindle_types::friend_store::FriendStore>>>>,
     /// The logged-in identity's database (plan C6). Every command and
     /// service reaches SQLite through `db.current()`. Shared (`Arc`) with
     /// the friend store, which resolves it per call and so never holds
@@ -141,10 +129,6 @@ pub struct AppState {
     /// the session (`DmDeps::dht_hold_session`). The pool's shutdown at
     /// logout closes them; the session's end clears the map.
     pub dm_leases: Mutex<HashMap<String, rekindle_records::lease::LeaseId>>,
-    /// Each watched friend's profile lease in the record pool, by friend
-    /// key (`FriendPresenceDeps::hold_friend_record`); released when the
-    /// friend is removed or blocked, closed by the pool at logout.
-    pub friend_leases: Mutex<HashMap<String, rekindle_records::lease::LeaseId>>,
     /// The personal sync record's watch lease, kept for the session
     /// (`cross_device_sync::watch`); closed by the pool at logout.
     pub personal_sync_lease: Mutex<Option<rekindle_records::lease::LeaseId>>,
@@ -158,9 +142,6 @@ pub struct AppState {
     /// Read and written only through `state_helpers::meks`; consumers read
     /// keys through the `ChannelKeyProvider` (`state_helpers::key_provider`).
     pub meks: Mutex<HashMap<(String, KeyScope), crate::state_helpers::LiveMek>>,
-    /// Friends whose DHT `watch_dht_values` returned false. The sync
-    /// service uses `force_refresh=true` for these friends.
-    pub unwatched_friends: RwLock<HashSet<String>>,
     /// `JoinHandle` for the Veilid dispatch loop.
     pub dispatch_loop_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     /// `LinkOpen` reviews this shell asked for: their commit opens the URL
@@ -168,6 +149,10 @@ pub struct AppState {
     pub pending_link_opens: Mutex<HashSet<rekindle_types::intent::IntentId>>,
     /// OS deep link awaiting the user's consent (`deep_links`).
     pub pending_deep_link: Mutex<Option<crate::deep_links::PendingDeepLink>>,
+    /// A friend invite link the OS handed us before unlock (unparsed; a
+    /// newer link replaces it), submitted for review by the unlock and
+    /// cleared at logout (plan E2.1).
+    pub held_friend_invite: Mutex<Option<String>>,
     /// Per-community circuit breaker for remote Veilid RPCs.
     pub community_circuit_breakers: RwLock<HashMap<String, CircuitBreakerState>>,
     /// Tauri app handle — set during `.setup()`.
@@ -179,18 +164,12 @@ pub struct AppState {
     /// transport rebuilds, ended with the channel session, cleared on
     /// logout.
     pub voice_sender_keys: rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore,
-    /// 1:1 envelopes already accepted, until they leave the freshness
-    /// window.
-    pub envelope_replay: Mutex<rekindle_protocol::messaging::replay::ReplayGuard>,
     /// M10.4 — receiver-side per-(community, sender) gossip rate floor.
     pub gossip_rate_limits:
         Mutex<HashMap<(String, String), rekindle_gossip::rate_limit::TokenBucket>>,
     /// M10.4 — receiver-side per-(community, channel, sender) last-send
     /// timestamps (unix seconds) for slowmode enforcement.
     pub channel_last_received: Mutex<HashMap<(String, String, String), u64>>,
-    /// Wave 7 P7.3 — per-relay circuit-breaker state.
-    pub relay_health:
-        Mutex<HashMap<rekindle_route::relay::RelayKey, rekindle_route::relay::RelayHealth>>,
     /// Sent channel messages whose write the record pool holds, by
     /// (record key, subkey), until that slot settles (plan C7.13).
     pub channel_pending_deliveries:
@@ -207,8 +186,6 @@ pub struct AppState {
     pub file_cache_root: RwLock<Option<std::path::PathBuf>>,
     /// DM MEK cache (architecture §27.1). SMPL record key → `DmMekChain`.
     pub dm_mek_cache: Mutex<HashMap<String, rekindle_dm::DmMekChain>>,
-    /// Strand Relay probe cooldown.
-    pub relay_probe_cooldown: Mutex<HashMap<String, u64>>,
     /// Mutual Aid §14.5 dirty set for per-peer reliability counters.
     pub relay_reliability_dirty: Mutex<HashSet<(String, String)>>,
     /// Push relay (architecture §17.3 Tier 3) wake-notify debounce.
@@ -232,14 +209,6 @@ pub struct AppState {
     >,
     /// Wave 12 W12.9 — group call state (1:N).
     pub group_calls: Arc<Mutex<HashMap<String, rekindle_calls::group_state::GroupCallState>>>,
-    /// P3.3 — incoming SessionResetRequest payloads awaiting user confirmation.
-    /// Held in memory only — never persisted before user explicit consent.
-    pub pending_session_resets: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    /// Session resets we requested, by peer: the keys our
-    /// SessionResetRequest's bundle offered. A SessionResetAccept installs
-    /// only against a matching entry, which it consumes; an accept we did
-    /// not ask for is dropped (plan C7.25). Memory only, cleared at logout.
-    pub outgoing_session_resets: Arc<Mutex<HashMap<String, OutgoingReset>>>,
     /// Phase 11 Tier 1 — frontend-registered `ipc::Channel` handles for
     /// the high-throughput video streams (DM + community). Frames bypass
     /// the `event_dispatch` bus and go straight to these channels.
@@ -300,15 +269,11 @@ impl Default for AppState {
             voice_packet_tx: Arc::new(RwLock::new(None)),
             voice_report_tx: Arc::new(RwLock::new(None)),
             identity: Arc::new(RwLock::new(None)),
-            friends: Arc::new(RwLock::new(HashMap::new())),
             communities: Arc::new(RwLock::new(HashMap::new())),
             node: Arc::new(RwLock::new(None)),
-            dht_manager: Arc::new(RwLock::new(None)),
-            routing_manager: Arc::new(RwLock::new(None)),
             transport: Arc::new(RwLock::new(None)),
             transport_session: Arc::new(parking_lot::RwLock::new(None)),
             envelope_store: Arc::new(RwLock::new(None)),
-            friend_store: Arc::new(RwLock::new(None)),
             db: Arc::new(rekindle_db::DbHandle::default()),
             identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
@@ -338,24 +303,21 @@ impl Default for AppState {
             clock: Arc::new(rekindle_utils::SystemClock),
             rng: Arc::new(rekindle_utils::OsRandom),
             dm_leases: Mutex::new(HashMap::new()),
-            friend_leases: Mutex::new(HashMap::new()),
             personal_sync_lease: Mutex::new(None),
             route_imports: RwLock::new(None),
             network_ready: tokio::sync::watch::Sender::new(false),
             meks: Mutex::new(HashMap::new()),
-            unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
             pending_link_opens: Mutex::new(HashSet::new()),
             pending_deep_link: Mutex::new(None),
+            held_friend_invite: Mutex::new(None),
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
             voice_sender_keys:
                 rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore::default(),
-            envelope_replay: Mutex::new(rekindle_protocol::messaging::replay::ReplayGuard::new()),
             gossip_rate_limits: Mutex::new(HashMap::new()),
             channel_last_received: Mutex::new(HashMap::new()),
-            relay_health: Mutex::new(HashMap::new()),
             channel_pending_deliveries: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             event_reminder_wake_tx: Arc::new(RwLock::new(None)),
@@ -363,7 +325,6 @@ impl Default for AppState {
             pinned_attachments: RwLock::new(HashMap::new()),
             file_cache_root: RwLock::new(None),
             dm_mek_cache: Mutex::new(HashMap::new()),
-            relay_probe_cooldown: Mutex::new(HashMap::new()),
             relay_reliability_dirty: Mutex::new(HashSet::new()),
             last_wake_notify_secs: Mutex::new(0),
             video_reassembly: rekindle_video::VideoReassemblyState::new(),
@@ -377,8 +338,6 @@ impl Default for AppState {
             voice_pkt_drops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             voice_packet_rx_staged: parking_lot::Mutex::new(None),
             group_calls: Arc::new(Mutex::new(HashMap::new())),
-            pending_session_resets: Arc::new(Mutex::new(HashMap::new())),
-            outgoing_session_resets: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
             video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
             media_ready: Mutex::new(rekindle_voice::media_ready::MediaReadyTracker::new()),

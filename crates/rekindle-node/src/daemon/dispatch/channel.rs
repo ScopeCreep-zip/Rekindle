@@ -7,9 +7,76 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::display::ChannelOverviewDisplay;
 
 use crate::daemon::DaemonState;
-use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::{state_error, DaemonContext};
+
+/// Route one channel request (the router's arm for them).
+pub(crate) async fn route(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: IpcRequest,
+) -> IpcResponse {
+    match request {
+        IpcRequest::ChannelList { community } => handle_list(ctx, state, &community),
+        IpcRequest::ChannelCreate {
+            community,
+            name,
+            kind,
+            category,
+            topic,
+            slowmode_seconds,
+        } => {
+            handle_create(
+                ctx,
+                state,
+                &community,
+                &name,
+                &kind,
+                category.as_deref(),
+                topic.as_deref(),
+                slowmode_seconds,
+            )
+            .await
+        }
+        IpcRequest::ChannelDelete {
+            community,
+            channel_id,
+        } => handle_delete(ctx, state, &community, &channel_id).await,
+        IpcRequest::ChannelUpdate {
+            community,
+            channel_id,
+            name,
+            topic,
+            slowmode_seconds,
+        } => {
+            handle_update(
+                ctx,
+                state,
+                &community,
+                &channel_id,
+                ChannelUpdate {
+                    name: name.as_deref(),
+                    topic: topic.as_deref(),
+                    slowmode_seconds,
+                },
+            )
+            .await
+        }
+        IpcRequest::ChannelSend {
+            community,
+            channel,
+            body,
+            reply_to,
+        } => handle_send(ctx, state, &community, &channel, &body, reply_to).await,
+        IpcRequest::ChannelHistory {
+            community,
+            channel,
+            limit,
+        } => handle_history(ctx, state, &community, &channel, limit).await,
+        other => unreachable!("{} is not a channel request", other.name()),
+    }
+}
 
 /// List a community's channels from merged governance.
 ///

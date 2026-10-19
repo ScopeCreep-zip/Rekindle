@@ -9,15 +9,19 @@
 //! `rusqlite::Connection`). The SQL lives here and nowhere else.
 
 pub mod audit;
+pub mod blocked;
 pub mod channels;
 pub mod communities;
 pub mod dht_outbox;
+pub mod friend_groups;
 pub mod friends;
 pub mod governance_cache;
 pub mod identity;
 pub mod intent_facts;
 pub mod members;
 pub mod messages;
+pub mod outgoing_invites;
+pub mod pending_messages;
 pub mod pending_requests;
 pub mod preferences;
 mod role_ids;

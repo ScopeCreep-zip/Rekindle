@@ -98,6 +98,7 @@ pub(crate) async fn run(
             signal: Arc::clone(&installed.signal),
             shell: ctx.shell.clone(),
             presence: ctx.own_presence.clone(),
+            profile_lease: Arc::clone(&ctx.own_profile_lease),
             public_key: installed.public_key.clone(),
             display_name: installed.display_name.clone(),
             secret: installed.secret.clone(),
@@ -128,7 +129,20 @@ pub(crate) async fn run(
             .await;
         }
     }
-    // 3c. The audit check.
+    // 3c. Friends (plan E2.1): the maintenance task on both hosts; on the
+    // daemon, the friends' presence watches too (the GUI's friend sync
+    // holds them until E2.5).
+    if let Err(e) = super::adapters::friends::start_maintenance(ctx, &scope) {
+        return fail(
+            ctx,
+            IpcResponse::error(500, format!("unlock interrupted: {e}")),
+        )
+        .await;
+    }
+    if ctx.mode == HostMode::Daemon {
+        super::adapters::friends::watch_friends(ctx, &scope);
+    }
+    // 3d. The audit check.
     audit(
         ctx,
         &installed.public_key,

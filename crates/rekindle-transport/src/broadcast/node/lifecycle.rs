@@ -121,6 +121,7 @@ impl TransportNode {
             route_publisher_handle: None,
             route_publisher_shutdown_tx: None,
             peer_registry,
+            relay: super::RelayState::default(),
             shared_state,
         };
         (node, shutdown_rx)

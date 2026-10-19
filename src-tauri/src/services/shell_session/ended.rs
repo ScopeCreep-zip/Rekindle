@@ -71,46 +71,32 @@ pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, r
 /// next one to log in.
 fn clear(state: &AppState) {
     *state.identity.write() = None;
-    *state.friend_store.write() = None;
     *state.signal_manager.write() = None;
     *state.identity_secret.lock() = None;
     services::preferences::reset(state);
-    // Session resets belong to the identity that requested or received
-    // them (plan C7.25), and a deep link to the user it reached.
-    state.pending_session_resets.lock().clear();
-    state.outgoing_session_resets.lock().clear();
+    // A deep link belongs to the user it reached (the Host's teardown
+    // cleared the identity's friend state, plan E2.1).
     *state.pending_deep_link.lock() = None;
+    *state.held_friend_invite.lock() = None;
     state.pending_link_opens.lock().clear();
-    if let Some(mgr) = state.dht_manager.write().as_mut() {
-        mgr.dht_key_to_friend.clear();
-        mgr.conversation_key_to_friend.clear();
-    }
     if let Some(nh) = state.node.write().as_mut() {
         nh.profile_dht_key = None;
-        nh.profile_owner_keypair = None;
-        nh.profile_lease = None;
         nh.friend_list_dht_key = None;
-        nh.friend_list_owner_keypair = None;
-        nh.account_dht_key = None;
         nh.mailbox_dht_key = None;
     }
     // The pool closed these records with the session.
     state.dm_leases.lock().clear();
-    state.friend_leases.lock().clear();
     *state.personal_sync_lease.lock() = None;
     // Pending deliveries belong to the session; its held writes went to the
     // outbox (C7.6h) and land with no status shown (C7.14).
     state.channel_pending_deliveries.lock().clear();
-    state.friends.write().clear();
     state.communities.write().clear();
     // The friendship coordinator stopped with the scope; the next unlock
     // installs fresh trigger senders.
     state.friendship_handle.clear();
     crate::state_helpers::clear_meks(state);
     state.dm_mek_cache.lock().clear();
-    state.relay_probe_cooldown.lock().clear();
     state.dedup_cache.lock().clear();
-    state.envelope_replay.lock().clear();
     state.voice_sender_keys.clear();
     tracing::info!("session state cleared — node still running");
 }

@@ -8,8 +8,6 @@ pub async fn shutdown_app(state: &AppState) {
     if let Some(routes) = routes {
         routes.shutdown().await;
     }
-    *state.routing_manager.write() = None;
-    *state.dht_manager.write() = None;
 
     let api = {
         let mut node = state.node.write();

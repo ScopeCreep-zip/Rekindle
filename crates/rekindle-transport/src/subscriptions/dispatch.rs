@@ -22,9 +22,9 @@ use tracing::{info, warn};
 
 use crate::config::TransportConfig;
 use crate::crypto::envelope::{Addressing, SignedPayload};
-use crate::frame::{self, TypeId};
+use crate::frame;
 use crate::gossip::DedupCache;
-use crate::handler::{InboundHandler, VerifiedSender};
+use crate::handler::InboundHandler;
 use crate::shared::{AttachmentState, SharedState};
 
 /// The route owners the dispatch loop reports `RouteChange` to.
@@ -116,7 +116,14 @@ async fn dispatch_app_message<H: InboundHandler>(
     dedup: &mut DedupCache,
     raw: &[u8],
 ) {
-    let (type_id, payload) = match frame::decode(raw) {
+    // A 1:1 message carries the `'D'` tag; frames start with their
+    // version (`0x01`) and gossip with a Cap'n Proto header, so the first
+    // byte decides without a trial decode (plan E2.1).
+    if raw.first() == Some(&crate::operations::dm::DIRECT_TAG) {
+        handler.on_direct(raw).await;
+        return;
+    }
+    let (type_id, _payload) = match frame::decode(raw) {
         Ok(result) => result,
         Err(e) => {
             // Not a transport frame. Before dropping it, try the
@@ -143,22 +150,12 @@ async fn dispatch_app_message<H: InboundHandler>(
         }
     };
 
-    match type_id {
-        // `TypeId::GossipBroadcast` is no longer produced. Gossip is the
-        // unframed Cap'n Proto `SignedEnvelope` handled above, matching
-        // the desktop; the framed postcard form existed only on this
-        // track and no peer could read it. Falls through to the
-        // "unexpected type" arm if one ever arrives.
-        tid if !tid.is_rpc() => {
-            dispatch_dm(handler, tid, payload).await;
-        }
-        other => {
-            warn!(
-                type_id = other as u8,
-                "unexpected RPC type in app_message, dropping"
-            );
-        }
-    }
+    // No framed type travels as an app message: 1:1 messages are `'D'`
+    // datagrams and gossip is the unframed `SignedEnvelope` above.
+    warn!(
+        type_id = type_id as u8,
+        "unexpected frame type in app_message, dropping"
+    );
 }
 
 const APP_CALL_HANDLER_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
@@ -169,6 +166,25 @@ async fn dispatch_app_call<H: InboundHandler>(
     call_id: AppCallId,
     raw: &[u8],
 ) {
+    if raw.first() == Some(&crate::operations::dm::DIRECT_TAG) {
+        let reply = match tokio::time::timeout(
+            APP_CALL_HANDLER_DEADLINE,
+            handler.on_direct_call(raw),
+        )
+        .await
+        {
+            Ok(Some(reply)) => reply,
+            Ok(None) => b"NAK".to_vec(),
+            Err(_) => {
+                warn!("1:1 app_call handler exceeded deadline — sending NAK");
+                b"NAK".to_vec()
+            }
+        };
+        if let Err(e) = messages.reply(call_id, reply).await {
+            warn!(error = %e, "failed to send 1:1 app_call reply");
+        }
+        return;
+    }
     let (type_id, payload) = match frame::decode(raw) {
         Ok(r) => r,
         Err(e) => {
@@ -334,56 +350,6 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     if let Err(e) = messages.reply(call_id, response_bytes).await {
         warn!(error = %e, "failed to send MEK transfer reply");
     }
-}
-
-async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, payload: &[u8]) {
-    let signed: SignedPayload = match postcard::from_bytes(payload) {
-        Ok(s) => s,
-        Err(e) => {
-            warn!(error = %e, type_id = type_id as u8, "dropping DM: deserialization failed");
-            return;
-        }
-    };
-
-    let Some(me) = handler.local_identity() else {
-        warn!(type_id = type_id as u8, "dropping DM: no unlocked identity");
-        return;
-    };
-    let to_me = Addressing {
-        recipient: &me,
-        type_id,
-    };
-    if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed, to_me) {
-        warn!(error = %e, sender = %signed.sender_key_hex, "dropping DM: bad signature");
-        return;
-    }
-
-    let dm_payload = match crate::payload::dm::deserialize_dm(type_id, &signed.payload) {
-        Ok(p) => p,
-        Err(e) => {
-            warn!(error = %e, type_id = type_id as u8, "dropping DM: payload parse failed");
-            return;
-        }
-    };
-
-    let sender = VerifiedSender {
-        public_key: signed.sender_key_hex,
-        display_name: String::new(),
-    };
-
-    // W16.7 — pass through seq + correlation_id from the wire envelope
-    // so the implementer can run SeqTracker dedup before processing.
-    // The fields are inside the Ed25519 signature scope (W16.3), so a
-    // peer can't forge them after the fact.
-    handler
-        .on_dm(
-            &sender,
-            dm_payload,
-            signed.timestamp,
-            signed.seq,
-            signed.correlation_id.as_deref(),
-        )
-        .await;
 }
 
 async fn dispatch_value_change<H: InboundHandler>(

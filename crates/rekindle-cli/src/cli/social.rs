@@ -10,9 +10,9 @@ use clap::Subcommand;
 /// Friend management subcommands.
 #[derive(Subcommand)]
 pub enum FriendCmd {
-    /// Send friend request.
+    /// Send a friend request to a public key.
     Add {
-        /// Public key hex, invite link, or display name search.
+        /// Their public key (64 hex characters).
         #[arg(long, short = 't')]
         target: String,
         /// Attach a message to the request.
@@ -20,18 +20,25 @@ pub enum FriendCmd {
         message: Option<String>,
     },
 
-    /// Accept pending friend request.
+    /// Accept a pending friend request.
     Accept {
-        /// Request ID (from `rekindle friend requests`).
+        /// The requester's public key (from `rekindle friend requests`).
         #[arg(long, short = 'r')]
         request_id: String,
     },
 
-    /// Reject pending friend request.
+    /// Reject a pending friend request.
     Reject {
-        /// Request ID.
+        /// The requester's public key.
         #[arg(long, short = 'r')]
         request_id: String,
+    },
+
+    /// Cancel a friend request we sent.
+    Cancel {
+        /// Their public key.
+        #[arg(long, short = 'f')]
+        friend: String,
     },
 
     /// List friends with presence.
@@ -46,26 +53,107 @@ pub enum FriendCmd {
 
     /// Remove a friend (the host asks to confirm).
     Remove {
-        /// Friend identifier (display name or public key).
+        /// The friend's public key.
         #[arg(long, short = 'f')]
         friend: String,
     },
 
-    /// List pending inbound/outbound requests.
+    /// List the requests waiting for our answer.
     Requests,
 
-    /// Block a peer (unfriend + suppress).
+    /// Block anyone by public key (our profile moves to a new key).
     Block {
-        /// Peer identifier.
+        /// Their public key.
         #[arg(long, short = 'f')]
         friend: String,
     },
 
     /// Remove a block.
     Unblock {
-        /// Peer identifier.
+        /// Their public key.
         #[arg(long, short = 'f')]
         friend: String,
+    },
+
+    /// List everyone we blocked.
+    Blocked,
+
+    /// Set (or clear, with no `--name`) our nickname for a friend.
+    Nickname {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+        /// The nickname; omit to clear it.
+        #[arg(long, short = 'n')]
+        name: Option<String>,
+    },
+
+    /// Friend invite links.
+    #[command(subcommand)]
+    Invite(FriendInviteCmd),
+
+    /// Friend groups.
+    #[command(subcommand)]
+    Group(GroupCmd),
+
+    /// Reset our secure session with a friend (compare safety numbers
+    /// out of band before resuming).
+    ResetSession {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+}
+
+/// Friend invite link subcommands.
+#[derive(Subcommand)]
+pub enum FriendInviteCmd {
+    /// Make a tracked invite link.
+    Create,
+    /// List our open invites.
+    List,
+    /// Cancel an open invite.
+    Cancel {
+        /// The invite's id (from `rekindle friend invite list`).
+        #[arg(long, short = 'i')]
+        invite_id: String,
+    },
+    /// Add the friend an invite link names (reviewed with their key's
+    /// fingerprint).
+    Redeem {
+        /// The invite link.
+        #[arg(long, short = 'l')]
+        link: String,
+    },
+}
+
+/// Friend group subcommands.
+#[derive(Subcommand)]
+pub enum GroupCmd {
+    /// Create a group.
+    Create {
+        #[arg(long, short = 'n')]
+        name: String,
+    },
+    /// Rename a group.
+    Rename {
+        #[arg(long, short = 'g')]
+        group_id: i64,
+        #[arg(long, short = 'n')]
+        name: String,
+    },
+    /// Delete a group; its friends fall back to no group.
+    Delete {
+        #[arg(long, short = 'g')]
+        group_id: i64,
+    },
+    /// Move a friend into a group, or out of any with no `--group-id`.
+    Move {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+        #[arg(long, short = 'g')]
+        group_id: Option<i64>,
     },
 }
 
@@ -108,17 +196,24 @@ pub enum DmCmd {
         friend: Option<String>,
     },
 
-    /// Read a full conversation.
-    Read {
-        /// Conversation ID (peer public key).
-        #[arg(long, short = 'i')]
-        conversation_id: String,
+    /// Read a conversation's history, newest last.
+    History {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
         /// Max messages.
         #[arg(long, default_value = "50")]
-        limit: usize,
-        /// Load messages before this message ID.
+        limit: u32,
+        /// Only messages sent before this time (epoch ms).
         #[arg(long)]
-        before: Option<String>,
+        before: Option<i64>,
+    },
+
+    /// Mark everything from a friend read.
+    Read {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
     },
 }
 

@@ -1,8 +1,5 @@
 use ed25519_dalek::{Signer, SigningKey};
-use veilid_core::{RoutingContext, Target};
 
-use crate::error::ProtocolError;
-use rekindle_codec::capnp_codec;
 use rekindle_codec::message::envelope::MessageEnvelope;
 use rekindle_codec::message::signing::envelope_signing_bytes;
 
@@ -43,86 +40,4 @@ pub fn build_envelope(
         payload,
         signature: signature.to_bytes().to_vec(),
     }
-}
-
-/// Send a message envelope to a peer via a pre-imported `RouteId`.
-///
-/// The message is already encrypted and wrapped in an envelope.
-/// The caller imports the route (through `RouteImports`) and passes the
-/// resolved `RouteId` here.
-pub async fn send_envelope(
-    routing_context: &RoutingContext,
-    route_id: veilid_core::RouteId,
-    envelope: &MessageEnvelope,
-) -> Result<(), ProtocolError> {
-    let data = encode_within_limit(envelope)?;
-
-    routing_context
-        .app_message(Target::RouteId(route_id), data)
-        .await
-        .map_err(|e| send_error("app_message", &e))?;
-
-    tracing::debug!(
-        sender = hex::encode(&envelope.sender_key),
-        payload_len = envelope.payload.len(),
-        "envelope sent via Veilid"
-    );
-
-    Ok(())
-}
-
-/// The envelope's wire bytes, or [`ProtocolError::MessageTooLarge`] when
-/// they exceed Veilid's message cap. Callers that queue or relay an
-/// envelope check it here first: an envelope that does not fit fails on
-/// every path.
-pub fn encode_within_limit(envelope: &MessageEnvelope) -> Result<Vec<u8>, ProtocolError> {
-    let data = capnp_codec::message::encode_envelope(envelope);
-    let max = rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
-    if data.len() > max {
-        return Err(ProtocolError::MessageTooLarge {
-            len: data.len(),
-            max,
-        });
-    }
-    Ok(data)
-}
-
-/// A send failure, typed so the caller releases a route only when the
-/// failure shows it unusable (`NoConnection`, `InvalidTarget`).
-fn send_error(what: &str, e: &veilid_core::VeilidAPIError) -> ProtocolError {
-    match e {
-        veilid_core::VeilidAPIError::NoConnection { .. }
-        | veilid_core::VeilidAPIError::InvalidTarget { .. } => {
-            ProtocolError::RouteUnusable(format!("{what}: {e}"))
-        }
-        _ => ProtocolError::SendFailed(format!("{what}: {e}")),
-    }
-}
-
-/// Send a request-response message (`app_call`) and wait for a reply.
-///
-/// The caller is responsible for importing the route (via the process's
-/// `RouteImports::get_or_import`) and passing the resolved `RouteId` here.
-pub async fn send_call(
-    routing_context: &RoutingContext,
-    route_id: veilid_core::RouteId,
-    envelope: &MessageEnvelope,
-) -> Result<Vec<u8>, ProtocolError> {
-    let data = capnp_codec::message::encode_envelope(envelope);
-
-    // Bounded by Veilid's own reply timeout for the route's hop count
-    // (`5 s + 0.5 s × max(0, 2·hops − 4)`, plan V21); an outer timeout would
-    // only drop the call, not cancel it (plan C4.L1b).
-    let response = routing_context
-        .app_call(Target::RouteId(route_id), data)
-        .await
-        .map_err(|e| send_error("app_call", &e))?;
-
-    tracing::debug!(
-        sender = hex::encode(&envelope.sender_key),
-        response_len = response.len(),
-        "app_call response received"
-    );
-
-    Ok(response)
 }

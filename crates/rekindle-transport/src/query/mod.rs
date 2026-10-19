@@ -25,7 +25,7 @@ use crate::shared::SharedState;
 
 pub use rekindle_types::display::{
     ChannelOverviewDisplay, CommunityDetail, CommunityOverview, DecryptedMessageDisplay,
-    DmMessageDisplay, DmThreadDisplay, FriendDisplay, RoleDisplay, TransportSnapshot,
+    RoleDisplay, TransportSnapshot,
 };
 
 // ── QueryEngine ─────────────────────────────────────────────────────────
@@ -93,4 +93,3 @@ mod communities;
 pub use communities::{community_detail, list_communities, CommunityMetaSummary};
 mod display_map;
 mod messages;
-mod social;

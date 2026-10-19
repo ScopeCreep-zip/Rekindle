@@ -98,11 +98,28 @@ impl IpcRequest {
             }
             Self::NetworkStatus | Self::NetworkPeers => Some(C::NetworkRead),
             Self::Subscribe { .. } | Self::Unsubscribe { .. } => Some(C::EventsRead),
-            Self::FriendList | Self::FriendRequests => Some(C::FriendsRead),
+            Self::FriendList
+            | Self::FriendRequests
+            | Self::FriendInviteList
+            | Self::FriendBlockedList => Some(C::FriendsRead),
             Self::FriendAdd { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }
-            | Self::FriendRemove { .. } => Some(C::FriendsWrite),
+            | Self::FriendRemove { .. }
+            | Self::FriendCancelRequest { .. }
+            | Self::FriendAddFromInvite { .. }
+            | Self::FriendInviteCreate
+            | Self::FriendInviteCancel { .. }
+            | Self::FriendBlock { .. }
+            | Self::FriendUnblock { .. }
+            | Self::FriendSetNickname { .. }
+            | Self::FriendGroupCreate { .. }
+            | Self::FriendGroupRename { .. }
+            | Self::FriendGroupMove { .. }
+            | Self::FriendGroupDelete { .. }
+            | Self::SessionResetStart { .. }
+            | Self::SessionResetAccept { .. }
+            | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
             Self::CommunityList
             | Self::CommunityInfo { .. }
             | Self::CommunityPendingMembers { .. }
@@ -131,8 +148,10 @@ impl IpcRequest {
             | Self::Timeout { .. } => Some(C::ModerationWrite),
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. } => Some(C::ChatWrite),
-            Self::DmInbox { .. } => Some(C::ImHistory),
-            Self::DmSend { .. } | Self::DmTyping { .. } => Some(C::ImWrite),
+            Self::DmInbox { .. } | Self::DmHistory { .. } => Some(C::ImHistory),
+            Self::DmSend { .. } | Self::DmTyping { .. } | Self::DmMarkRead { .. } => {
+                Some(C::ImWrite)
+            }
             Self::PresenceSet { .. }
             | Self::PresenceSetMessage { .. }
             | Self::GamePresenceSet { .. }

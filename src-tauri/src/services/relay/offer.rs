@@ -11,7 +11,6 @@ use rekindle_db::Db;
 use rusqlite::OptionalExtension as _;
 
 use crate::db_helpers::db_call;
-use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -145,7 +144,13 @@ async fn offer_relay(
     // reply. If the friend's pool persist failed (disk full, schema
     // mismatch) we surface the error rather than silently leaving the
     // friend without our route.
-    let reply = message_service::send_to_peer_call(state, friend_public_key, &payload).await?;
+    let reply = rekindle_transport::operations::dm::send_to_peer_call(
+        state_helpers::friend_host(state)?.as_ref(),
+        friend_public_key,
+        &payload,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     match reply {
         MessagePayload::RelayOfferAck { ok: true, .. } => Ok(()),
         MessagePayload::RelayOfferAck { ok: false, reason } => Err(if reason.is_empty() {
@@ -205,7 +210,17 @@ pub async fn revoke_relay(
     let payload = MessagePayload::RelayWithdraw {
         relay_pseudonym: pseudonym_for_payload,
     };
-    let _ = message_service::send_to_peer(state, pool, friend_public_key, &payload).await;
+    if let Ok(host) = state_helpers::friend_host(state) {
+        if let Err(e) = rekindle_transport::operations::dm::send_to_peer(
+            host.as_ref(),
+            friend_public_key,
+            &payload,
+        )
+        .await
+        {
+            tracing::debug!(to = %friend_public_key, error = %e, "relay notice not sent");
+        }
+    }
     Ok(())
 }
 

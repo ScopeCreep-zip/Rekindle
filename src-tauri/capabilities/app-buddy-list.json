@@ -17,7 +17,6 @@
     "allow-create-community",
     "allow-create-friend-group",
     "allow-decline-dm-invite",
-    "allow-emit-friends-presence",
     "allow-friendship-scan-now",
     "allow-generate-invite",
     "allow-get-communities",
@@ -44,6 +43,7 @@
     "allow-reject-request",
     "allow-remove-friend",
     "allow-rename-friend-group",
+    "allow-delete-friend-group",
     "allow-reset-signal-session",
     "allow-revoke-relay",
     "allow-set-friend-nickname",
@@ -62,8 +62,6 @@
     "allow-decline-group-call",
     "allow-end-group-call",
     "allow-get-missed-calls",
-    "allow-mute-caller-temp",
-    "allow-accept-session-reset",
-    "allow-decline-session-reset"
+    "allow-mute-caller-temp"
   ]
 }

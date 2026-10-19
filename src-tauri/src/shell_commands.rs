@@ -40,6 +40,52 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("get_avatar", HostCall::Request("AvatarGet")),
     ("get_game_status", HostCall::Request("PresenceGet")),
     ("open_external_url", HostCall::Request("LinkOpen")),
+    // Friends and the 1:1 paths (plan E2.1).
+    ("send_message", HostCall::Request("DmSend")),
+    ("send_typing", HostCall::Request("DmTyping")),
+    ("get_message_history", HostCall::Request("DmHistory")),
+    ("mark_read", HostCall::Request("DmMarkRead")),
+    ("add_friend", HostCall::Request("FriendAdd")),
+    ("remove_friend", HostCall::Request("FriendRemove")),
+    ("accept_request", HostCall::Request("FriendAccept")),
+    ("reject_request", HostCall::Request("FriendReject")),
+    ("cancel_request", HostCall::Request("FriendCancelRequest")),
+    ("get_friends", HostCall::Request("FriendList")),
+    ("get_pending_requests", HostCall::Request("FriendRequests")),
+    (
+        "create_friend_group",
+        HostCall::Request("FriendGroupCreate"),
+    ),
+    (
+        "rename_friend_group",
+        HostCall::Request("FriendGroupRename"),
+    ),
+    (
+        "delete_friend_group",
+        HostCall::Request("FriendGroupDelete"),
+    ),
+    ("move_friend_to_group", HostCall::Request("FriendGroupMove")),
+    (
+        "set_friend_nickname",
+        HostCall::Request("FriendSetNickname"),
+    ),
+    ("generate_invite", HostCall::Request("FriendInviteCreate")),
+    (
+        "add_friend_from_invite",
+        HostCall::Request("FriendAddFromInvite"),
+    ),
+    ("cancel_invite", HostCall::Request("FriendInviteCancel")),
+    (
+        "get_outgoing_invites",
+        HostCall::Request("FriendInviteList"),
+    ),
+    ("block_user", HostCall::Request("FriendBlock")),
+    ("unblock_user", HostCall::Request("FriendUnblock")),
+    ("get_blocked_users", HostCall::Request("FriendBlockedList")),
+    (
+        "reset_signal_session",
+        HostCall::Request("SessionResetStart"),
+    ),
 ];
 
 /// The shell's own commands.
@@ -58,40 +104,13 @@ pub const SHELL_LOCAL: &[&str] = &[
 
 /// `(Tauri command, the step that ports it)`.
 pub const PENDING_PORT: &[(&str, &str)] = &[
-    // E2.1 — friends and the 1:1 paths.
-    ("prepare_chat_session", "E2.1"),
-    ("send_message", "E2.1"),
-    ("send_typing", "E2.1"),
-    ("get_message_history", "E2.1"),
-    ("mark_read", "E2.1"),
-    ("add_friend", "E2.1"),
-    ("remove_friend", "E2.1"),
-    ("accept_request", "E2.1"),
-    ("reject_request", "E2.1"),
-    ("cancel_request", "E2.1"),
-    ("get_friends", "E2.1"),
-    ("get_pending_requests", "E2.1"),
-    ("create_friend_group", "E2.1"),
-    ("rename_friend_group", "E2.1"),
-    ("move_friend_to_group", "E2.1"),
-    ("set_friend_nickname", "E2.1"),
-    ("generate_invite", "E2.1"),
-    ("add_friend_from_invite", "E2.1"),
-    ("cancel_invite", "E2.1"),
-    ("get_outgoing_invites", "E2.1"),
-    ("block_user", "E2.1"),
-    ("unblock_user", "E2.1"),
-    ("get_blocked_users", "E2.1"),
-    ("emit_friends_presence", "E2.1"),
-    ("reset_signal_session", "E2.1"),
-    ("accept_session_reset", "E2.1"),
-    ("decline_session_reset", "E2.1"),
-    ("start_dm", "E2.1"),
-    ("accept_dm_invite", "E2.1"),
-    ("decline_dm_invite", "E2.1"),
-    ("list_dms", "E2.1"),
-    ("get_dm_messages", "E2.1"),
-    ("send_dm_message", "E2.1"),
+    // E2.3 — the SMPL DM path is deleted (1:1 DMs are the ratchet stream).
+    ("start_dm", "E2.3"),
+    ("accept_dm_invite", "E2.3"),
+    ("decline_dm_invite", "E2.3"),
+    ("list_dms", "E2.3"),
+    ("get_dm_messages", "E2.3"),
+    ("send_dm_message", "E2.3"),
     // E2.4 — the prekey record.
     ("pqxdh_bundle_info", "E2.4"),
     // E2.5 — the friendship coordinator is deleted.

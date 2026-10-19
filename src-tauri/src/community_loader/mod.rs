@@ -9,7 +9,6 @@
 //! single-file modules. The module-dir split here is
 //! by responsibility:
 //!
-//! - `friends` — `load_friends_from_db` (`friends` table → AppState).
 //! - `rows` — row DTOs + the seven `load_*_rows` query helpers + the
 //!   batched `fetch_community_loader_rows` call.
 //! - `assemble` — pure helpers that project the DTO rows into
@@ -22,11 +21,9 @@
 //! import via `crate::community_loader::*`.
 
 pub mod assemble;
-pub mod friends;
 pub mod restore;
 pub mod rows;
 
-pub use friends::load_friends_from_db;
 pub use restore::restore_community_pseudonyms_and_meks;
 
 use crate::db_helpers::db_call;

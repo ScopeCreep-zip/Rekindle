@@ -1,29 +1,12 @@
-//! `message_service` — incoming-message dispatch + friend-handshake
-//! handlers + outgoing-message public API + DHT push helpers. Phase
-//! 23.D split the original 2,255-LoC god module into focused
-//! submodules; this file is now a re-export shim + module declarations
-//! per Invariant 1 (≤500 LoC/file). All business logic lives in the
-//! submodules listed below.
+//! What is left of the desktop's 1:1 message service once friends and
+//! direct messages moved into the Host (plan E2.1): the unported payload
+//! families' handlers (`services::veilid::inbound_unported` calls them) and
+//! our own profile push for the relay pool (E5.2).
 
 mod call_signaling;
-mod dispatch;
 mod dm_dispatch;
-mod friend_handlers;
-#[cfg(test)]
-mod handshake_size_tests;
-mod outgoing;
 mod profile_push;
-mod seal;
-mod session_reset;
-mod transport;
 
-pub use dispatch::{handle_incoming_message, try_handle_dm_invite_app_call};
-pub(crate) use friend_handlers::delete_pending_messages_to_recipient;
-pub(crate) use outgoing::build_and_queue_envelope;
-pub use outgoing::{
-    send_friend_accept, send_friend_reject, send_friend_request, send_message, send_to_peer,
-    send_to_peer_call, send_typing,
-};
-pub use profile_push::{push_friend_list_update, push_profile_update};
-pub(crate) use seal::resign_for_retry;
-pub(crate) use transport::try_fetch_route_from_dht;
+pub(crate) use call_signaling::handle_call_signaling_payload;
+pub(crate) use dm_dispatch::handle_dm_payload;
+pub use profile_push::push_profile_update;

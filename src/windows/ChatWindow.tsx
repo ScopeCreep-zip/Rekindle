@@ -91,7 +91,6 @@ const ChatWindow: Component = () => {
   }
 
   const unlisteners: Promise<UnlistenFn>[] = [];
-  let refreshInterval: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
     // Register event listeners FIRST so no events are missed during hydration.
@@ -114,10 +113,8 @@ const ChatWindow: Component = () => {
     await handleLoadHistory(peerId, 50);
     handleResetUnread(peerId);
 
-    // Prepare chat session — ensure fresh route for this peer before sending
-    await commands.prepareChatSession(peerId).catch(() => {});
-
-    // Auto-retry any previously failed messages now that route is fresh
+    // Retry any previously failed messages: the Host's send refreshes the
+    // peer's route inline when it has no fresh one (plan E2.1).
     const convo = chatState.conversations[peerId];
     if (convo) {
       const failedMsgs = convo.messages.filter((m) => m.status === "failed");
@@ -125,19 +122,9 @@ const ChatWindow: Component = () => {
         handleRetrySendMessage(peerId, msg.id);
       }
     }
-
-    // Periodic route refresh (catches route rotations during long chats)
-    refreshInterval = setInterval(() => {
-      commands.prepareChatSession(peerId).catch(() => {});
-    }, 60_000);
-
-    // Catch up: sync presence from DHT — the memo will auto-update
-    // when emitFriendsPresence updates the global friendsState store.
-    await commands.emitFriendsPresence();
   });
 
   onCleanup(() => {
-    if (refreshInterval) clearInterval(refreshInterval);
     for (const p of unlisteners) {
       p.then((unlisten) => unlisten());
     }

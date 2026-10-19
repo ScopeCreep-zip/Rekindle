@@ -18,9 +18,8 @@ pub mod forward;
 pub mod offer;
 pub mod pool;
 pub mod presence;
-pub mod send;
 
 pub use forward::handle_relay_envelope;
 pub use offer::{list_volunteered_for, revoke_relay, volunteer_relay};
 pub use pool::{add_received_offer, list_received_offers, remove_received_offer};
-pub use presence::{handle_status_response, respond_to_status_request};
+pub use presence::respond_to_status_request;

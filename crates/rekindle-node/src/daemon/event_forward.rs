@@ -98,60 +98,6 @@ pub(crate) async fn run_forwarder(ctx: std::sync::Arc<crate::daemon::dispatch::D
     .await;
 }
 
-/// The daemon's tier-3 event consumer: each journaled `ValueChanged` that
-/// tier 1 missed triggers the matching inbox scan. Each new epoch (an
-/// unlock) or a lag ends its stream; it subscribes again, live.
-pub(crate) async fn run_consumer(ctx: std::sync::Arc<crate::daemon::dispatch::DaemonContext>) {
-    let stop = ctx.shutdown.token().clone();
-    loop {
-        let mut stream = ctx.journal.subscribe(None);
-        loop {
-            let frame = tokio::select! {
-                () = stop.cancelled() => return,
-                frame = stream.next() => frame,
-            };
-            match frame {
-                Some(rekindle_types::subscription_events::StreamFrame::Event(sequenced)) => {
-                    if let rekindle_types::subscription_events::SubscriptionEvent::Network(
-                        rekindle_types::subscription_events::NetworkEvent::ValueChanged {
-                            record_key,
-                            ..
-                        },
-                    ) = sequenced.event
-                    {
-                        handle_value_changed(&ctx, &record_key).await;
-                    }
-                }
-                Some(rekindle_types::subscription_events::StreamFrame::Resumed(_)) => {}
-                Some(rekindle_types::subscription_events::StreamFrame::InvalidSession) | None => {
-                    break
-                }
-            }
-        }
-    }
-}
-
-/// Route a tier-3 `ValueChanged` to our friend inbox scan when it names it.
-async fn handle_value_changed(
-    ctx: &std::sync::Arc<crate::daemon::dispatch::DaemonContext>,
-    record_key: &str,
-) {
-    let friend_inbox_key = ctx.session.read().as_ref().and_then(|s| {
-        (!s.identity.friend_inbox_key.is_empty() && s.identity.friend_inbox_key == *record_key)
-            .then(|| s.identity.friend_inbox_key.clone())
-    });
-    if let Some(inbox_key) = friend_inbox_key {
-        tracing::info!("tier 3 poll triggered friend inbox scan");
-        crate::daemon::friend_inbox::scan_friend_inbox(
-            &ctx.session,
-            &ctx.transport,
-            &ctx.db,
-            &inbox_key,
-        )
-        .await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

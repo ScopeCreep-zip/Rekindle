@@ -98,8 +98,6 @@ mod tests {
             profile_dht_key: String::new(),
             mailbox_dht_key: String::new(),
             friend_list_dht_key: String::new(),
-            friend_inbox_key: String::new(),
-            friend_inbox_keypair_hex: String::new(),
             profile_owner_keypair: None,
             friend_list_owner_keypair: None,
         }

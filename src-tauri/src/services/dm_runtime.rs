@@ -4,11 +4,9 @@
 
 use crate::services::dm;
 use crate::state::SharedState;
-use rekindle_db::Db;
 
 pub async fn send_dm_video_frame_inner(
     state: &SharedState,
-    pool: &Db,
     peer_pubkey: String,
     request: crate::commands::dm::SendDmVideoFrameRequest,
 ) -> Result<u32, String> {
@@ -24,7 +22,6 @@ pub async fn send_dm_video_frame_inner(
         .map_err(|e| format!("invalid base64 payload: {e}"))?;
     dm::video::send_dm_video_frame(
         state,
-        pool,
         &peer_pubkey,
         dm::video::DmVideoFrameSend {
             stream_id,

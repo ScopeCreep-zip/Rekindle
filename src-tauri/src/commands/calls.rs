@@ -153,8 +153,7 @@ pub async fn send_call_media_state(
     screen: bool,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    send_call_media_state_inner(state.inner(), &pool, call_id, audio, video, screen).await
+    send_call_media_state_inner(state.inner(), call_id, audio, video, screen).await
 }
 
 /// W12.11 — fire-and-forget emoji reaction.
@@ -164,8 +163,7 @@ pub async fn send_call_reaction(
     emoji: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    send_call_reaction_inner(state.inner(), &pool, call_id, emoji).await
+    send_call_reaction_inner(state.inner(), call_id, emoji).await
 }
 
 /// W12.12 — temp-mute a caller. Future invites from this peer

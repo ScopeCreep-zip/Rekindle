@@ -1,0 +1,90 @@
+//! Friend DTOs (plan E2.1): what `FriendList`, `FriendRequests`,
+//! `FriendBlockedList`, `FriendInviteList` and `FriendInviteCreate` answer.
+
+use serde::{Deserialize, Serialize};
+
+use crate::friend::{FriendshipState, GameInfoState, UserStatus};
+
+/// A friend on the buddy list. Presence is shown only for an accepted
+/// friend; a pending one reads offline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Friend {
+    pub public_key: String,
+    pub display_name: String,
+    pub nickname: Option<String>,
+    pub status: UserStatus,
+    pub status_message: Option<String>,
+    pub game_info: Option<GameInfoState>,
+    pub group: Option<String>,
+    pub unread_count: u32,
+    pub last_seen_at: Option<i64>,
+    pub friendship_state: FriendshipState,
+    /// Why the secure session could not be set up, while it is failed.
+    pub handshake_error: Option<String>,
+}
+
+impl Friend {
+    /// The buddy list's view of `friend`.
+    #[must_use]
+    pub fn of(friend: &crate::friend::FriendState) -> Self {
+        let accepted = friend.friendship_state == FriendshipState::Accepted;
+        Self {
+            public_key: friend.public_key.clone(),
+            display_name: friend.display_name.clone(),
+            nickname: friend.nickname.clone(),
+            status: if accepted {
+                friend.status
+            } else {
+                UserStatus::Offline
+            },
+            status_message: friend.status_message.clone().filter(|_| accepted),
+            game_info: friend.game_info.clone().filter(|_| accepted),
+            group: friend.group.clone(),
+            unread_count: friend.unread_count,
+            last_seen_at: friend.last_seen_at,
+            friendship_state: friend.friendship_state,
+            handshake_error: friend.handshake_error.clone(),
+        }
+    }
+}
+
+/// An incoming friend request, waiting for our answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingRequest {
+    pub public_key: String,
+    pub display_name: String,
+    pub message: String,
+    pub received_at: i64,
+}
+
+/// A blocked identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedUser {
+    pub public_key: String,
+    pub display_name: String,
+    pub blocked_at: i64,
+}
+
+/// A friend invite we made that is still open.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutgoingInvite {
+    pub invite_id: String,
+    pub url: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+    /// `pending`, or `responded` once someone's request answered it.
+    pub status: String,
+    pub accepted_by: Option<String>,
+}
+
+/// A new friend invite.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteCreated {
+    pub url: String,
+    pub invite_id: String,
+}

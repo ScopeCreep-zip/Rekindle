@@ -39,11 +39,13 @@ fn short_key(key: &str) -> String {
 /// A peer's name: friend nickname or display name, then a community member
 /// display name for a pseudonym key, then the short key.
 async fn peer_name(state: &Arc<AppState>, pool: &Db, key: &str) -> String {
-    let friend = state.friends.read().get(key).map(|f| {
-        f.nickname
-            .clone()
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| f.display_name.clone())
+    let friend = state_helpers::friend_field(state, key, |f| {
+        Some(
+            f.nickname
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| f.display_name.clone()),
+        )
     });
     if let Some(name) = friend.map(|n| title_text(&n)).filter(|n| !n.is_empty()) {
         return name;

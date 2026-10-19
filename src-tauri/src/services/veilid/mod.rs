@@ -15,12 +15,12 @@ mod control_membership;
 mod control_moderation;
 mod control_sync;
 mod dht_watch;
+mod inbound_unported;
 pub(crate) mod ingress_queue;
 mod lifecycle;
 mod network;
 pub(crate) mod route_publish;
 
-pub(crate) use lifecycle::route_watchdog_loop;
 pub use lifecycle::{
     emit_network_status, initialize_node, route_status, shutdown_app, start_dispatch_loop,
 };
@@ -34,7 +34,7 @@ pub async fn handle_veilid_update(
         VeilidUpdate::AppMessage(msg) => app_message::handle(app_handle, state, &msg),
         VeilidUpdate::AppCall(call) => network::handle_app_call(app_handle, state, *call).await,
         VeilidUpdate::ValueChange(change) => {
-            dht_watch::handle_value_change(app_handle, state, *change).await;
+            dht_watch::handle_value_change(state, *change).await;
         }
         VeilidUpdate::Attachment(attachment) => {
             network::handle_attachment(app_handle, state, &attachment);

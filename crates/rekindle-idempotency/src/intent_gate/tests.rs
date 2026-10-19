@@ -216,7 +216,7 @@ fn held_actions_belong_to_their_owner_expire_and_are_bounded() {
         GateError::UnknownIntent,
         "another owner cannot commit it"
     );
-    assert!(!gate.cancel(r.intent_id, &who(2)));
+    assert!(gate.cancel(r.intent_id, &who(2)).is_err());
     assert_eq!(
         gate.commit(
             r.intent_id,
@@ -418,4 +418,84 @@ fn clear_matching_drops_the_matching_owners_actions_only() {
             }
         )
         .is_some());
+}
+
+#[test]
+fn a_backend_hold_is_always_held_and_lives_a_day() {
+    let gate = gate();
+    // Routine would run at once if a user began it; a hold never does.
+    let s = selection(IntentKind::SetFriendNickname, vec![]);
+    let review = gate
+        .hold(
+            ME,
+            s.clone(),
+            "accept",
+            Some("decline"),
+            BACKEND_HOLD_TTL_MS,
+            0,
+        )
+        .unwrap();
+    assert_eq!(review.expires_at_ms, BACKEND_HOLD_TTL_MS);
+    assert!(gate.held_action(review.intent_id, &ME).is_some());
+    // Past the five-minute user TTL it is still committable.
+    let ran = gate
+        .commit(
+            review.intent_id,
+            &ME,
+            &IntentProof::Commit,
+            s,
+            no_passphrase,
+            INTENT_TTL_MS + 1,
+        )
+        .unwrap();
+    assert!(matches!(ran, Gate::Run("accept")));
+}
+
+#[test]
+fn cancelling_a_hold_hands_back_its_cancel_action() {
+    let gate = gate();
+    let s = selection(IntentKind::DeleteChannel, vec![]);
+    let hold = gate
+        .hold(
+            ME,
+            s.clone(),
+            "accept",
+            Some("decline"),
+            BACKEND_HOLD_TTL_MS,
+            0,
+        )
+        .unwrap();
+    assert_eq!(
+        gate.cancel(hold.intent_id, &who(2)),
+        Err(GateError::UnknownIntent),
+        "not theirs"
+    );
+    assert_eq!(gate.cancel(hold.intent_id, &ME), Ok(Some("decline")));
+    assert_eq!(
+        gate.cancel(hold.intent_id, &ME),
+        Err(GateError::UnknownIntent),
+        "gone"
+    );
+    let plain = held(&gate, s);
+    assert_eq!(gate.cancel(plain.intent_id, &ME), Ok(None));
+}
+
+#[test]
+fn retain_held_drops_what_it_rejects_without_its_cancel_action() {
+    let gate = gate();
+    let s = selection(IntentKind::DeleteChannel, vec![]);
+    let old = gate
+        .hold(
+            ME,
+            s.clone(),
+            "old",
+            Some("decline-old"),
+            BACKEND_HOLD_TTL_MS,
+            0,
+        )
+        .unwrap();
+    let kept = held(&gate, s);
+    gate.retain_held(|_, action| *action != "old");
+    assert!(gate.held_action(old.intent_id, &ME).is_none());
+    assert_eq!(gate.held_action(kept.intent_id, &ME), Some("act"));
 }

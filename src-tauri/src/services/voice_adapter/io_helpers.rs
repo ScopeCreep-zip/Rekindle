@@ -29,15 +29,12 @@ pub(super) async fn resolve_peer_route_impl(
     state: &Arc<AppState>,
     peer_pubkey_hex: &str,
 ) -> Option<Vec<u8>> {
-    if let Some(blob) = state_helpers::cached_route_blob(state, peer_pubkey_hex) {
+    if let Some(blob) = state_helpers::peer_route(state, peer_pubkey_hex) {
         return Some(blob);
     }
-    if let Some(blob) =
-        crate::services::message_service::try_fetch_route_from_dht(state, peer_pubkey_hex).await
-    {
-        return Some(blob);
-    }
-    None
+    let host = state_helpers::friend_host(state).ok()?;
+    rekindle_transport::operations::dm::route::fetch_from_profile(host.as_ref(), peer_pubkey_hex)
+        .await
 }
 
 pub(super) fn broadcast_media_capabilities_impl(

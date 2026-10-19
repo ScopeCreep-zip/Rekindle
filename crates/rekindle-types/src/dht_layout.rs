@@ -55,17 +55,8 @@ pub mod profile {
     /// with dummies for size privacy.
     pub const RELAY_POOL: u32 = 8;
 
-    /// Friend request inbox key — the DHT key of this user's friend
-    /// inbox record. Published so anyone can discover where to send
-    /// requests.
-    pub const FRIEND_INBOX_KEY: u32 = 9;
-
-    /// Hex-encoded keypair for the friend inbox. Published so anyone
-    /// can open the inbox for writing to submit friend requests.
-    pub const FRIEND_INBOX_KEYPAIR: u32 = 10;
-
     /// Total subkeys to allocate when creating a profile record.
-    pub const SUBKEY_COUNT: u16 = 11;
+    pub const SUBKEY_COUNT: u16 = 9;
 
     /// Status byte encoding for [`STATUS`].
     pub const STATUS_ONLINE: u8 = 0;
@@ -101,21 +92,17 @@ pub mod manifest {
     pub const SUBKEY_COUNT: u32 = 16;
 }
 
-/// The member registry record (SMPL, `o_cnt: 0`) has **no** layout
-/// module, and that absence is the v2.0 design rather than an omission.
-///
-/// Every subkey is a member slot addressed by its raw index. The three
-/// community-wide entries that used to live at 0, 1 and 5 —
-/// `MEMBER_INDEX`, `MEK_VAULT`, `MODERATION_QUEUE` — were v1.0 owner
-/// subkeys, and `o_cnt: 0` credentials nobody to write them. Each has
-/// a v2.0 home: membership is derived by scanning signed presence rows
-/// (`rekindle_governance_runtime::roster`), the key is distributed
-/// peer-to-peer (`rekindle-mek-rotation`), and admission is a
-/// `GovernanceEntry`.
-/// Subkey layout for a friend-request inbox record (DFLT, one owner).
-pub mod friend_inbox {
-    pub const SUBKEY_COUNT: u16 = 32;
-}
+// The member registry record (SMPL, `o_cnt: 0`) has **no** layout
+// module, and that absence is the v2.0 design rather than an omission.
+//
+// Every subkey is a member slot addressed by its raw index. The three
+// community-wide entries that used to live at 0, 1 and 5 —
+// `MEMBER_INDEX`, `MEK_VAULT`, `MODERATION_QUEUE` — were v1.0 owner
+// subkeys, and `o_cnt: 0` credentials nobody to write them. Each has
+// a v2.0 home: membership is derived by scanning signed presence rows
+// (`rekindle_governance_runtime::roster`), the key is distributed
+// peer-to-peer (`rekindle-mek-rotation`), and admission is a
+// `GovernanceEntry`.
 
 /// Subkey layout for a mailbox record.
 pub mod mailbox {
@@ -150,8 +137,6 @@ mod tests {
             ("ROUTE_BLOB", profile::ROUTE_BLOB),
             ("METADATA", profile::METADATA),
             ("RELAY_POOL", profile::RELAY_POOL),
-            ("FRIEND_INBOX_KEY", profile::FRIEND_INBOX_KEY),
-            ("FRIEND_INBOX_KEYPAIR", profile::FRIEND_INBOX_KEYPAIR),
         ];
         for (i, (name_a, a)) in all.iter().enumerate() {
             for (name_b, b) in &all[i + 1..] {
@@ -174,8 +159,6 @@ mod tests {
             profile::ROUTE_BLOB,
             profile::METADATA,
             profile::RELAY_POOL,
-            profile::FRIEND_INBOX_KEY,
-            profile::FRIEND_INBOX_KEYPAIR,
         ]
         .into_iter()
         .max()
@@ -202,9 +185,7 @@ mod tests {
         assert_eq!(profile::ROUTE_BLOB, 6);
         assert_eq!(profile::METADATA, 7);
         assert_eq!(profile::RELAY_POOL, 8);
-        assert_eq!(profile::FRIEND_INBOX_KEY, 9);
-        assert_eq!(profile::FRIEND_INBOX_KEYPAIR, 10);
-        assert_eq!(profile::SUBKEY_COUNT, 11);
+        assert_eq!(profile::SUBKEY_COUNT, 9);
     }
 
     /// The manifest table is duplicated nowhere now, but its indices are

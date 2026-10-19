@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::services::message_service;
 use crate::state::{AppState, OnlineMember};
 use crate::state_helpers;
 
@@ -41,6 +40,10 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
     // dispatch path and starve the voice fast path above. The worker
     // spawned by `lifecycle::dispatch` drains the queue in FIFO order.
     use crate::services::veilid::ingress_queue::IngressItem;
+    if rekindle_transport::operations::dm::unwire(&message).is_some() {
+        state.gossip_ingress.push(IngressItem::Direct(message));
+        return;
+    }
     if let Ok(signed) = decode_signed_envelope(&message) {
         let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
         state
@@ -48,8 +51,8 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
             .push(IngressItem::Gossip { signed, is_video });
         return;
     }
-
-    state.gossip_ingress.push(IngressItem::Legacy(message));
+    // Neither a media packet, a 1:1 message nor gossip (plan E2.1).
+    tracing::debug!(msg_len = message.len(), "untagged app_message dropped");
 }
 
 /// Worker-side processing of one queued ingress item. Lives here so the
@@ -65,12 +68,20 @@ pub(crate) async fn process_ingress_item(
         IngressItem::Gossip { signed, .. } => {
             handle_gossip_envelope(app_handle, state, signed).await;
         }
-        IngressItem::Legacy(message) => {
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("inbound message: no identity database — dropped");
+        IngressItem::Direct(message) => {
+            let Some(host) = state.host.current() else {
+                tracing::debug!("1:1 message before the host started — dropped");
                 return;
             };
-            message_service::handle_incoming_message(app_handle, state, &pool, &message).await;
+            if let rekindle_transport::operations::direct::Routed::Unported(prepared) =
+                host.receive_direct(&message).await
+            {
+                let Ok(pool) = state.db.current() else {
+                    tracing::debug!("unported 1:1 message: no identity database — dropped");
+                    return;
+                };
+                super::inbound_unported::handle(app_handle, state, &pool, *prepared).await;
+            }
         }
     }
 }
@@ -521,8 +532,7 @@ async fn handle_relayed_envelope(
                 if let Ok(Some(value)) = pool.read_once(&record_key, subkey, true).await {
                     let actual = blake3::hash(&value.data).to_hex().to_string();
                     if actual == content_hash {
-                        crate::services::presence_service::handle_value_change(
-                            app_handle,
+                        state_helpers::friend_presence_change(
                             state,
                             &record_key,
                             &[subkey],

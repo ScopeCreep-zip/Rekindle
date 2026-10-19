@@ -19,8 +19,6 @@ use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, Sql
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::RecordPort;
 
-use crate::services::message_service;
-
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -85,7 +83,6 @@ impl DmMekCache for AppStateMekCache {
 pub struct DmAdapter {
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
-    pool: Db,
     store: Arc<dyn DmStore>,
     mek_cache: Arc<dyn DmMekCache>,
 }
@@ -93,14 +90,13 @@ pub struct DmAdapter {
 impl DmAdapter {
     #[must_use]
     pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle, pool: Db) -> Arc<Self> {
-        let store: Arc<dyn DmStore> = Arc::new(SqliteDmStore::new(pool.clone()));
+        let store: Arc<dyn DmStore> = Arc::new(SqliteDmStore::new(pool));
         let mek_cache: Arc<dyn DmMekCache> = Arc::new(AppStateMekCache {
             state: Arc::clone(&state),
         });
         Arc::new(Self {
             state,
             app_handle,
-            pool,
             store,
             mek_cache,
         })
@@ -222,9 +218,14 @@ impl DmDeps for DmAdapter {
         peer_pubkey_hex: &str,
         payload: MessagePayload,
     ) -> Result<MessagePayload, DmError> {
-        message_service::send_to_peer_call(&self.state, peer_pubkey_hex, &payload)
-            .await
-            .map_err(DmError::transport)
+        let host = crate::state_helpers::friend_host(&self.state).map_err(DmError::transport)?;
+        rekindle_transport::operations::dm::send_to_peer_call(
+            host.as_ref(),
+            peer_pubkey_hex,
+            &payload,
+        )
+        .await
+        .map_err(|e| DmError::transport(e.to_string()))
     }
 
     async fn send_encrypted(
@@ -232,9 +233,10 @@ impl DmDeps for DmAdapter {
         peer_pubkey_hex: &str,
         payload: MessagePayload,
     ) -> Result<(), DmError> {
-        message_service::send_to_peer(&self.state, &self.pool, peer_pubkey_hex, &payload)
+        let host = crate::state_helpers::friend_host(&self.state).map_err(DmError::transport)?;
+        rekindle_transport::operations::dm::send_to_peer(host.as_ref(), peer_pubkey_hex, &payload)
             .await
-            .map_err(DmError::transport)
+            .map_err(|e| DmError::transport(e.to_string()))
     }
 
     fn emit_event(&self, event: DmEvent) {

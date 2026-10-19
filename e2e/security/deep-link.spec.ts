@@ -3,12 +3,13 @@ import { preloadMocks, LOGIN_SUCCESS_HANDLER } from "../fixtures/mocks";
 
 // Deep-link consent.
 //
-// OS deep links (`rekindle://invite/{VLD0:…}/{VLD0:…}/{32 hex}`, friend
-// invites `rekindle://<base64url blob>`, pairing `rekindle://pair?…`) are
-// parsed and validated in Rust (`rekindle_types::invite::{InviteLink,
+// OS deep links (`rekindle://invite/{VLD0:…}/{VLD0:…}/{32 hex}`, pairing
+// `rekindle://pair?…`) are parsed and validated in Rust (`rekindle_types::invite::{InviteLink,
 // DeepLink}`; the hostile-URL corpus is unit-tested there). The backend
 // holds a valid link and hands the webview only a request id and a key
-// fingerprint. These tests check the webview side of that contract:
+// fingerprint. A friend invite `rekindle://<base64url blob>` is not asked
+// here: the Host reviews it with the inviter's fingerprint (plan E2.1).
+// These tests check the webview side of that contract:
 //   * the buddy list pulls the pending request on mount and asks first;
 //   * nothing is joined until the user confirms;
 //   * Cancel dismisses the request in the backend;

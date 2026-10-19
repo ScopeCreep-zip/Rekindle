@@ -12,13 +12,10 @@ use rekindle_db::Db;
 /// Runs in the background, periodically syncing local `SQLite` cache with Veilid DHT.
 /// - Pull: Read latest from DHT -> update `SQLite`
 /// - Push: Send local changes to DHT
-/// - Retry: Attempt to deliver queued pending messages
-pub async fn start_sync_loop(
-    state: Arc<AppState>,
-    pool: Db,
-    app_handle: tauri::AppHandle,
-    stop: CancellationToken,
-) {
+///
+/// The pending-message retry, the forgetting of removed friends and the
+/// request and invite expiry are the Host's friend maintenance (plan E2.1).
+pub async fn start_sync_loop(state: Arc<AppState>, pool: Db, stop: CancellationToken) {
     tracing::info!("sync service started");
 
     // Start at 10s to give gossip overlay setup a chance to complete before
@@ -62,21 +59,6 @@ pub async fn start_sync_loop(
         if stop.is_cancelled() {
             break;
         }
-        if let Err(e) = retry_pending_messages(&state, &pool, &stop).await {
-            tracing::warn!(error = %e, "pending message retry failed");
-        }
-        if let Err(e) = crate::services::friend_runtime::forget_removed_friends(&state, &pool).await
-        {
-            tracing::warn!(error = %e, "forgetting removed friends failed");
-        }
-        // Every ~6th tick (~3 minutes) — expire stale pending requests + invites
-        if tick_count.is_multiple_of(6) && !stop.is_cancelled() {
-            expire_stale_requests(&state, &pool, &app_handle).await;
-            let owner_key = state_helpers::owner_key_or_default(&state);
-            if !owner_key.is_empty() {
-                crate::invite_helpers::expire_stale_invites(&pool, &owner_key);
-            }
-        }
     }
     tracing::info!("sync service shutting down");
 }
@@ -106,84 +88,30 @@ async fn sync_friends(
     force_all: bool,
     stop: &CancellationToken,
 ) -> Result<(), String> {
-    let Some(adapter) = crate::services::presence_adapter::build_adapter(state) else {
+    // The Host's one friend presence adapter (plan E2.1); this phase is
+    // deleted by name at E2.5 (D4).
+    let Some(host) = state.host.current() else {
         return Ok(());
     };
     // Friend sync is record-pool work only (the friend deps make no sends):
     // at logout the pool's drain releases it (plan C7.6g).
-    rekindle_presence::sync_friends(Arc::new(adapter), watched_keys, first_tick, force_all, stop)
-        .await;
+    rekindle_presence::sync_friends(
+        host.friend_presence(),
+        watched_keys,
+        first_tick,
+        force_all,
+        stop,
+    )
+    .await;
     Ok(())
-}
-
-/// Expire stale pending friend requests and pending-out friends.
-///
-/// - Pending incoming requests older than 30 days are deleted from
-///   `pending_friend_requests`.
-/// - Pending-out friends older than 30 days are removed from
-///   `friends` and the frontend is notified.
-///
-/// src-tauri-side cleanup: this isn't friend-sync (which lives in
-/// `rekindle_presence::sync_friends`) — it's pure SQLite + state
-/// pruning the periodic sync loop fires every 6th tick.
-async fn expire_stale_requests(state: &Arc<AppState>, pool: &Db, app_handle: &tauri::AppHandle) {
-    let owner_key = state_helpers::owner_key_or_default(state);
-    if owner_key.is_empty() {
-        return;
-    }
-
-    let thirty_days_ms: i64 = 30 * 24 * 60 * 60 * 1000;
-    let cutoff = crate::db::timestamp_now() - thirty_days_ms;
-
-    // 1. Delete expired pending_friend_requests (fire-and-forget).
-    let ok = owner_key.clone();
-    crate::db_helpers::db_fire(pool, "expire stale incoming requests", move |conn| {
-        let deleted =
-            rekindle_db::repo::pending_requests::delete_received_before(conn, &ok, cutoff)?;
-        if deleted > 0 {
-            tracing::info!(deleted, "expired stale incoming friend requests");
-        }
-        Ok(())
-    });
-
-    // 2. Find and remove expired pending_out friends.
-    let ok = owner_key;
-    let expired_pending: Vec<String> = match crate::db_helpers::db_call(pool, move |conn| {
-        rekindle_db::repo::friends::delete_pending_out_before(conn, &ok, cutoff)
-    })
-    .await
-    {
-        Ok(expired) => expired,
-        Err(e) => {
-            tracing::warn!(error = %e, "expiring stale pending-out friends failed");
-            return;
-        }
-    };
-
-    for pk in &expired_pending {
-        state.friends.write().remove(pk);
-        crate::event_dispatch::emit_subscription(
-            app_handle,
-            &rekindle_types::subscription_events::SubscriptionEvent::Friend(
-                rekindle_types::subscription_events::FriendEvent::Removed {
-                    peer_key: pk.clone(),
-                },
-            ),
-        );
-    }
-    if !expired_pending.is_empty() {
-        tracing::info!(
-            count = expired_pending.len(),
-            "expired stale pending-out friends",
-        );
-    }
 }
 
 /// Sync conversation records for friends that have remote conversation keys.
 ///
 /// For each friend with a `remote_conversation_key`, derives the DH shared secret,
 /// reads the conversation record's header through the record pool, and caches the
-/// route blob and profile snapshot.
+/// route blob when no fresher one is cached. The header's profile snapshot is
+/// not applied: friend state is the Host's, and their profile watch is newer.
 async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> Result<(), String> {
     let Ok(record_pool) = state_helpers::record_pool(state) else {
         return Ok(()); // Not logged in
@@ -193,19 +121,17 @@ async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> 
         return Ok(()); // Not logged in
     };
 
-    // Collect friends that have remote conversation keys
-    let friends_with_conversations: Vec<(String, String)> = {
-        let friends = state.friends.read();
-        friends
-            .values()
-            .filter(|f| f.friendship_state != FriendshipState::Removing)
-            .filter_map(|f| {
-                f.remote_conversation_key
-                    .as_ref()
-                    .map(|k| (f.public_key.clone(), k.clone()))
-            })
-            .collect()
-    };
+    // Friends that have remote conversation keys, from the Host's
+    // projection (plan E2.1; E2.4 deletes this phase).
+    let friends_with_conversations: Vec<(String, String)> = state
+        .host
+        .current()
+        .map(|host| host.friends())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|f| f.friendship_state != FriendshipState::Removing)
+        .filter_map(|f| f.remote_conversation_key.map(|k| (f.public_key, k)))
+        .collect();
 
     for (friend_key, remote_conv_key) in &friends_with_conversations {
         if stop.is_cancelled() {
@@ -271,24 +197,18 @@ async fn sync_single_conversation(
             // subkey 6 + mailbox, never conversation headers — so it
             // is a last-resort fallback only. It must not override
             // fresher route knowledge from the subkey-6 watch
-            // (cache_peer_route also heals an active call's voice
-            // roster, which a stale blob would poison every tick).
-            if !header.route_blob.is_empty()
-                && state_helpers::cached_route_blob(state, friend_key).is_none()
-            {
-                state_helpers::cache_peer_route(state, friend_key, header.route_blob);
-            }
-
-            // Update friend display name from conversation profile snapshot
-            {
-                let mut friends = state.friends.write();
-                if let Some(friend) = friends.get_mut(friend_key) {
-                    if !header.profile.display_name.is_empty() {
-                        friend.display_name = header.profile.display_name;
-                    }
-                    if !header.profile.status_message.is_empty() {
-                        friend.status_message = Some(header.profile.status_message);
-                    }
+            // (a cached route also heals an active call's voice roster,
+            // which a stale blob would poison every tick).
+            if let Some(node) = state.transport.read().clone() {
+                if !header.route_blob.is_empty()
+                    && rekindle_transport::operations::dm::route::cached(&node, friend_key)
+                        .is_none()
+                {
+                    rekindle_transport::operations::dm::route::cache(
+                        &node,
+                        friend_key,
+                        header.route_blob,
+                    );
                 }
             }
         }
@@ -340,22 +260,4 @@ pub(super) async fn request_channel_sync(
     if let Some(cs) = communities.get_mut(community_id) {
         cs.pending_syncs.insert(channel_id.to_string(), (now, 1));
     }
-}
-
-// Route blob publishing is handled by the presence poll loop.
-
-/// Retry sending queued pending messages.
-///
-/// Phase 22 REDO — the orchestrator (loop + retry-budget decision)
-/// lives in `rekindle_sync::process_pending_retry_queue`. The
-/// adapter parses the body, dispatches via the appropriate
-/// transport, and reports per-row outcomes. This facade just
-/// builds the adapter + delegates.
-async fn retry_pending_messages(
-    state: &Arc<AppState>,
-    pool: &Db,
-    stop: &CancellationToken,
-) -> Result<(), String> {
-    crate::services::sync_adapter::run_pending_retry_tick(state, pool, stop).await;
-    Ok(())
 }

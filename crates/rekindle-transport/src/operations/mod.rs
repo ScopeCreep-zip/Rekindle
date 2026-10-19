@@ -13,8 +13,10 @@
 pub mod calls;
 pub mod channel;
 pub mod community;
+pub mod direct;
 pub mod dm;
 pub mod friend;
 pub mod identity;
 pub mod mek;
+pub mod relay;
 pub mod voice;

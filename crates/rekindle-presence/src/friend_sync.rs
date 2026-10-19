@@ -70,18 +70,11 @@ pub async fn sync_friends<D, S>(
         if stop.is_cancelled() {
             return;
         }
-        if watched_keys.contains(dht_key) {
-            // Already watched — still re-register the mapping in case
-            // the DHT manager was rebuilt (e.g., after a Veilid attach
-            // cycle). Idempotent + cheap.
-            deps.register_friend_dht_key(dht_key, friend_key);
-        } else {
+        if !watched_keys.contains(dht_key) {
             // `watch_friend` returns `Ok(())` even when the underlying
             // watch couldn't be established (it adds the friend to the
             // unwatched set instead). Either way we mark this key as
             // attempted so we don't spam the watch call every tick.
-            // It also registers the friend↔dht-key mapping internally
-            // so the value-change handler can resolve incoming events.
             let _ = crate::watch_friend(Arc::clone(&deps), friend_key, dht_key).await;
             watched_keys.insert(dht_key.clone());
         }
@@ -165,7 +158,7 @@ mod tests {
         // Recorders
         calls_friends_with_dht: u32,
         calls_unwatched: u32,
-        calls_register_dht: Vec<(String, String)>,
+        calls_set_dht_key: Vec<(String, String)>,
         calls_open_friend: Vec<String>,
         calls_watch_subkeys: Vec<(u64, Vec<u32>)>,
         calls_fetch_subkey: Vec<(String, u32, bool)>,
@@ -225,11 +218,10 @@ mod tests {
         }
         fn set_friend_last_heartbeat(&self, _: &str, _: i64) {}
         fn set_friend_game_info(&self, _: &str, _: Option<GameInfoSnapshot>) {}
-        fn set_friend_dht_record_key(&self, _: &str, _: &str) {}
-        fn register_friend_dht_key(&self, dht_key: &str, friend_key: &str) {
+        fn set_friend_dht_record_key(&self, friend_key: &str, dht_key: &str) {
             self.state
                 .lock()
-                .calls_register_dht
+                .calls_set_dht_key
                 .push((dht_key.to_string(), friend_key.to_string()));
         }
         fn cache_route_blob(&self, _: &str, _: Vec<u8>) {}
@@ -317,7 +309,7 @@ mod tests {
         )
         .await;
         let st = deps.state.lock();
-        assert!(st.calls_register_dht.is_empty());
+        assert!(st.calls_set_dht_key.is_empty());
         assert!(st.calls_fetch_subkey.is_empty());
     }
 
@@ -340,7 +332,7 @@ mod tests {
         )
         .await;
         let st = deps.state.lock();
-        assert_eq!(st.calls_register_dht, vec![("dht1".into(), "alice".into())]);
+        assert_eq!(st.calls_set_dht_key, vec![("dht1".into(), "alice".into())]);
         assert_eq!(st.calls_open_friend, vec!["dht1".to_string()]);
         // The watch sits on the lease the host then keeps for the friend.
         assert_eq!(st.calls_watch_subkeys.first().map(|(l, _)| *l), Some(1));

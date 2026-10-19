@@ -84,11 +84,27 @@ pub enum Action {
     ToggleDeafen,
 
     // ─── Friend operations ──────────────────────────────────────
-    AcceptFriendRequest(String),
+    /// Accept a pending request (the name it arrived with).
+    AcceptFriendRequest {
+        public_key: String,
+        display_name: String,
+    },
     RejectFriendRequest(String),
     /// Remove a friend — destructive, requires confirmation.
     RemoveFriend {
         peer_key: String,
+    },
+    /// Block a friend or requester (the host asks to confirm).
+    BlockUser {
+        public_key: String,
+        display_name: String,
+    },
+    UnblockUser {
+        public_key: String,
+    },
+    /// Cancel one of our open friend invites.
+    CancelInvite {
+        invite_id: String,
     },
 
     // ─── Clipboard ───────────────────────────────────────────────
@@ -186,7 +202,14 @@ pub enum CommandResult {
         detail: rekindle_types::display::CommunityDetail,
     },
     FriendListLoaded {
-        friends: Vec<rekindle_types::display::FriendDisplay>,
+        friends: Vec<rekindle_types::dto::friends::Friend>,
+    },
+    /// The requests waiting for our answer, the people we blocked, and our
+    /// open invites (plan E2.1).
+    FriendExtrasLoaded {
+        requests: Vec<rekindle_types::dto::friends::PendingRequest>,
+        blocked: Vec<rekindle_types::dto::friends::BlockedUser>,
+        invites: Vec<rekindle_types::dto::friends::OutgoingInvite>,
     },
     DmInboxLoaded {
         threads: Vec<rekindle_types::display::DmThreadDisplay>,

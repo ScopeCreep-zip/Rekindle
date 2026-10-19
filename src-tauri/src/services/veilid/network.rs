@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::services::{message_service, sync_service};
+use crate::services::sync_service;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -56,8 +56,29 @@ pub async fn handle_app_call(
         return;
     }
 
-    let reply_bytes = match rekindle_codec::capnp_envelope::try_decode_community_envelope(&message)
-    {
+    // A 1:1 call (the `'D'` tag) is the Host's direct dispatch; its call
+    // payloads are unported, answered by the desktop's arms (plan E2.1).
+    let reply_bytes = if rekindle_transport::operations::dm::unwire(&message).is_some() {
+        direct_call(app_handle, state, &message).await
+    } else {
+        community_call(app_handle, state, call_id, &message).await
+    };
+
+    if let Some(api) = state_helpers::veilid_api(state) {
+        if let Err(e) = api.app_call_reply(call_id, reply_bytes).await {
+            tracing::warn!(error = %e, "failed to reply to app_call");
+        }
+    }
+}
+
+/// Answer a community-envelope `app_call`.
+async fn community_call(
+    app_handle: &AppHandle,
+    state: &Arc<AppState>,
+    call_id: veilid_core::OperationId,
+    message: &[u8],
+) -> Vec<u8> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(message) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
             joiner_pseudonym,
             governance_key,
@@ -196,29 +217,27 @@ pub async fn handle_app_call(
             }
         }
         _ => {
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("inbound app_call: no identity database — dropped");
-                return;
-            };
-            // Architecture §27.1: a DmInvite arriving via app_call must
-            // get a structured DmAccept/DmDecline reply, not a bare
-            // ACK. Try that path first; fall through to the generic
-            // handler for everything else.
-            if let Some(reply) =
-                message_service::try_handle_dm_invite_app_call(app_handle, state, &pool, &message)
-                    .await
-            {
-                reply
-            } else {
-                message_service::handle_incoming_message(app_handle, state, &pool, &message).await;
-                b"ACK".to_vec()
-            }
+            tracing::debug!(msg_len = message.len(), "untagged app_call — NAK");
+            b"NAK".to_vec()
         }
-    };
+    }
+}
 
-    if let Some(api) = state_helpers::veilid_api(state) {
-        if let Err(e) = api.app_call_reply(call_id, reply_bytes).await {
-            tracing::warn!(error = %e, "failed to reply to app_call");
+/// Answer a 1:1 `app_call` through the Host: a handled call has no reply
+/// of its own (ACK); an unported one is answered by the desktop's arm.
+async fn direct_call(app_handle: &AppHandle, state: &Arc<AppState>, message: &[u8]) -> Vec<u8> {
+    let Some(host) = state.host.current() else {
+        return b"NAK".to_vec();
+    };
+    match host.receive_direct_call(message).await {
+        rekindle_transport::operations::direct::Routed::Handled => b"ACK".to_vec(),
+        rekindle_transport::operations::direct::Routed::Unported(prepared) => {
+            let Ok(pool) = state.db.current() else {
+                return b"NAK".to_vec();
+            };
+            super::inbound_unported::handle_call(app_handle, state, &pool, *prepared)
+                .await
+                .unwrap_or_else(|| b"ACK".to_vec())
         }
     }
 }
@@ -338,22 +357,11 @@ pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRo
 }
 
 fn invalidate_all_watches(state: &Arc<AppState>) {
-    let friend_keys: Vec<String> = {
-        let friends = state.friends.read();
-        friends
-            .values()
-            .filter(|f| f.dht_record_key.is_some())
-            .map(|f| f.public_key.clone())
-            .collect()
-    };
-    if !friend_keys.is_empty() {
-        let mut unwatched = state.unwatched_friends.write();
-        for key in &friend_keys {
-            unwatched.insert(key.clone());
-        }
-        tracing::info!(
-            count = friend_keys.len(),
-            "invalidated all friend watches for re-establishment"
-        );
+    let count = state
+        .host
+        .current()
+        .map_or(0, |host| host.invalidate_friend_watches());
+    if count > 0 {
+        tracing::info!(count, "invalidated all friend watches for re-establishment");
     }
 }

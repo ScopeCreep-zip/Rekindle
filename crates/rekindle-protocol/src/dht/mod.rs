@@ -2,12 +2,10 @@ pub mod account;
 pub mod community;
 pub mod conversation;
 pub mod friends;
-pub mod log;
 pub mod mailbox;
 pub mod pool;
 pub mod profile;
 pub mod route_imports;
-pub mod short_array;
 
 use crate::error::ProtocolError;
 

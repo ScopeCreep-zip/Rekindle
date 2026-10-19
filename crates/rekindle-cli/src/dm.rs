@@ -1,4 +1,4 @@
-//! DM commands: send, inbox, watch, read.
+//! DM commands: send, inbox, watch, history, read marks.
 
 use rekindle_ipc::protocol::IpcRequest;
 
@@ -34,17 +34,27 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             format::print_structured(&value, mode)
         }
         DmCmd::Watch { friend } => watch_dms(client, friend.as_deref(), mode).await,
-        DmCmd::Read {
-            conversation_id,
+        DmCmd::History {
+            friend,
             limit,
-            ..
+            before,
         } => {
-            // DM read is inbox scoped to a conversation — daemon returns all, CLI filters
-            let _ = conversation_id;
             let value = helpers::send(
                 client,
-                IpcRequest::DmInbox {
-                    limit: u32::try_from(*limit).unwrap_or(u32::MAX),
+                IpcRequest::DmHistory {
+                    peer_key: friend.clone(),
+                    limit: *limit,
+                    before: *before,
+                },
+            )
+            .await?;
+            format::print_structured(&value, mode)
+        }
+        DmCmd::Read { friend } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::DmMarkRead {
+                    peer_key: friend.clone(),
                 },
             )
             .await?;

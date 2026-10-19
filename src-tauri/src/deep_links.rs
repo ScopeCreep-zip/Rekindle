@@ -15,6 +15,12 @@
 //!
 //! A new deep link replaces an unanswered one. Logout clears it, so a link
 //! received before user A logged out is never offered to user B.
+//!
+//! A friend invite is not held here (plan E2.1): it is the Host's
+//! `FriendAddFromInvite`, which the gate holds for review, and the buddy
+//! list shows the review as its fingerprint card (`IntentPending`). Before
+//! unlock the raw link waits in `AppState::held_friend_invite` (the newest
+//! wins) until the unlock submits it.
 
 use std::sync::Arc;
 
@@ -35,10 +41,6 @@ enum PendingAction {
         link: InviteLink,
         fingerprint: String,
     },
-    AddFriend {
-        invite_url: String,
-        fingerprint: String,
-    },
     PairingRefused,
 }
 
@@ -49,12 +51,6 @@ pub enum DeepLinkRequest {
     /// Join the community whose governance key has this fingerprint.
     #[serde(rename_all = "camelCase")]
     JoinCommunity {
-        request_id: String,
-        key_fingerprint: String,
-    },
-    /// Add the friend whose identity key has this fingerprint.
-    #[serde(rename_all = "camelCase")]
-    AddFriend {
         request_id: String,
         key_fingerprint: String,
     },
@@ -72,7 +68,6 @@ pub enum DeepLinkOutcome {
     JoinedCommunity {
         community_id: String,
     },
-    FriendAdded,
     Dismissed,
 }
 
@@ -88,28 +83,47 @@ impl PendingDeepLink {
                 request_id,
                 key_fingerprint: fingerprint.clone(),
             },
-            PendingAction::AddFriend { fingerprint, .. } => DeepLinkRequest::AddFriend {
-                request_id,
-                key_fingerprint: fingerprint.clone(),
-            },
             PendingAction::PairingRefused => DeepLinkRequest::PairingRefused { request_id },
         }
     }
 }
 
-/// Validate a friend invite locally (decode, signature, recency) and
-/// return the inviter's key fingerprint (U1.9: the one fingerprint form,
-/// `rekindle_crypto::identity::key_fingerprint`).
-fn friend_invite_fingerprint(invite_url: &str) -> Result<String, String> {
-    let blob = rekindle_codec::message::decode_invite_url(invite_url)?;
-    rekindle_codec::message::verify_invite_blob(&blob)?;
-    rekindle_codec::message::check_invite_recency(
-        &blob,
-        rekindle_utils::timestamp_ms(),
-        crate::services::friend_runtime::MAX_INVITE_AGE_SECS,
-    )?;
-    let key = hex::decode(&blob.public_key).map_err(|e| format!("invite key: {e}"))?;
-    Ok(rekindle_crypto::identity::key_fingerprint(&key))
+/// A friend invite from the OS: reviewed by the Host now while an identity
+/// is unlocked, else held until the unlock submits it.
+fn friend_invite(state: &Arc<AppState>, invite: String) {
+    if state.identity.read().is_some() {
+        let task_state = Arc::clone(state);
+        crate::state_helpers::spawn_in_login(state, "friend invite review", async move {
+            review_friend_invite(&task_state, invite).await;
+        });
+    } else {
+        *state.held_friend_invite.lock() = Some(invite);
+        tracing::info!("friend invite link held until login");
+    }
+}
+
+/// Ask the Host to add the friend `invite` names, as the window (only a GUI
+/// window commits it: OS input reached the GUI, not a bus client). The gate
+/// holds it for review; the review is published for the buddy list's
+/// fingerprint card.
+pub async fn review_friend_invite(state: &AppState, invite: String) {
+    let api = state.host.api().await;
+    let request = rekindle_ipc::protocol::IpcRequest::FriendAddFromInvite { invite };
+    match api.call(rekindle_ipc::Caller::shell(), request).await {
+        rekindle_ipc::protocol::IpcResponse::IntentRequired(review) => {
+            if let Some(host) = state.host.current() {
+                host.publish(
+                    rekindle_types::subscription_events::SubscriptionEvent::IntentPending(review),
+                );
+            }
+        }
+        rekindle_ipc::protocol::IpcResponse::Error { message, .. } => {
+            tracing::warn!(error = %message, "deep link: friend invite rejected");
+        }
+        rekindle_ipc::protocol::IpcResponse::Ok { .. } => {
+            tracing::warn!("deep link: a friend invite ran without review");
+        }
+    }
 }
 
 /// Classify and validate an OS deep link, hold it for consent, and tell the
@@ -128,16 +142,10 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
             };
             PendingAction::JoinCommunity { link, fingerprint }
         }
-        Ok(DeepLink::FriendInvite(invite_url)) => match friend_invite_fingerprint(&invite_url) {
-            Ok(fingerprint) => PendingAction::AddFriend {
-                invite_url,
-                fingerprint,
-            },
-            Err(e) => {
-                tracing::warn!(error = %e, "deep link: friend invite rejected");
-                return;
-            }
-        },
+        Ok(DeepLink::FriendInvite(invite_url)) => {
+            friend_invite(&state, invite_url);
+            return;
+        }
         Ok(DeepLink::Pairing) => PendingAction::PairingRefused,
         Err(e) => {
             tracing::warn!(error = %e, "deep link rejected");
@@ -182,7 +190,6 @@ fn take_matching(state: &AppState, request_id: &str) -> Result<PendingAction, St
 
 /// Act on the pending deep link the user confirmed.
 pub async fn confirm(
-    app: AppHandle,
     state: &Arc<AppState>,
     pool: &rekindle_db::Db,
     keystore: &rekindle_vault::VaultHandle,
@@ -199,16 +206,6 @@ pub async fn confirm(
             Ok(DeepLinkOutcome::JoinedCommunity {
                 community_id: link.governance_key.into_string(),
             })
-        }
-        PendingAction::AddFriend { invite_url, .. } => {
-            crate::services::friend_runtime::add_friend_from_invite_inner(
-                Arc::clone(state),
-                pool.clone(),
-                app,
-                invite_url,
-            )
-            .await?;
-            Ok(DeepLinkOutcome::FriendAdded)
         }
         PendingAction::PairingRefused => Ok(DeepLinkOutcome::Dismissed),
     }

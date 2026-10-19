@@ -2,7 +2,9 @@
 //!
 //! Thin forwarder: every inbound event is forwarded to the `SubscriptionManager`
 //! for three-tier processing (state effects → Blake3 dedup → emit). RPC calls
-//! are dispatched to community_rpc and governance_rpc handlers directly.
+//! are dispatched to community_rpc and governance_rpc handlers directly; 1:1
+//! messages and friend presence run through the Host's friend operations
+//! (`operations::direct`, plan E2.1), which publish to the journal.
 //!
 //! `SubscriptionManager` owns all event emission via `SubscriptionEvent`.
 //! Events flow through the IPC bus as `BusPayload::Event(SubscriptionEvent)`.
@@ -13,11 +15,10 @@ use parking_lot::RwLock;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, SignedEnvelope};
 use tracing::{debug, info};
 
+use rekindle_transport::operations::direct::{self, Routed};
 use rekindle_transport::{
-    payload::dm::DmPayload,
     payload::rpc::{CallResponse, InboundCall},
-    InboundHandler, PendingFriendRequest, Session, SubscriptionManager, TransportEvent,
-    VerifiedSender,
+    InboundHandler, Session, SubscriptionManager, TransportEvent,
 };
 
 /// The daemon's inbound handler — thin forwarder to SubscriptionManager.
@@ -27,9 +28,6 @@ pub struct DaemonHandler {
     pub(crate) subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
     /// Session state (shared with DaemonContext).
     pub(crate) session: Arc<RwLock<Option<Session>>>,
-    /// The unlocked identity's database (shared with DaemonContext), for
-    /// friend request persistence.
-    pub(crate) db: Arc<rekindle_db::DbHandle>,
     /// MEK cache (shared with DaemonContext, passed to RPC handlers).
     pub(crate) mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
     /// Signing key (shared with DaemonContext, passed to RPC handlers).
@@ -55,13 +53,17 @@ pub struct DaemonHandler {
     pub(crate) gossip_tx: crate::daemon::gossip::GossipSender,
     /// The host's wall clock (plan C9.2).
     pub(crate) clock: Arc<dyn rekindle_utils::Clock>,
+    /// The host this handler was built before, set once it exists: 1:1
+    /// messages and friend presence run through its friend operations
+    /// (plan E2.1).
+    pub(crate) host:
+        Arc<std::sync::OnceLock<std::sync::Weak<crate::daemon::dispatch::DaemonContext>>>,
 }
 
 impl DaemonHandler {
     pub fn new(
         subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
         session: Arc<RwLock<Option<Session>>>,
-        db: Arc<rekindle_db::DbHandle>,
         mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
         signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
         transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
@@ -76,11 +78,11 @@ impl DaemonHandler {
         mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
         gossip_tx: crate::daemon::gossip::GossipSender,
         clock: Arc<dyn rekindle_utils::Clock>,
+        host: Arc<std::sync::OnceLock<std::sync::Weak<crate::daemon::dispatch::DaemonContext>>>,
     ) -> Self {
         Self {
             subscriptions,
             session,
-            db,
             mek_cache,
             signing_key,
             transport,
@@ -88,7 +90,14 @@ impl DaemonHandler {
             mek_rotation_tx,
             gossip_tx,
             clock,
+            host,
         }
+    }
+
+    /// The friend operations' Host, once the host exists and while it lives.
+    fn friends(&self) -> Option<crate::host::adapters::friends::HostFriends> {
+        let ctx = self.host.get()?.upgrade()?;
+        Some(crate::host::adapters::friends::HostFriends::of(&ctx))
     }
 
     /// Whether we hold a personal route, and what the media route is doing
@@ -106,40 +115,6 @@ impl DaemonHandler {
         let media = routes.own_state(RouteClass::Media).borrow().availability();
         (routes.own_blob(RouteClass::General).is_some(), media)
     }
-
-    /// Record a friend request before forwarding to SubscriptionManager: the
-    /// projection is updated synchronously because the subscription
-    /// manager's state_effects read it next; the database write is queued.
-    fn persist_friend_request(
-        &self,
-        sender_key: &str,
-        display_name: &str,
-        message: &str,
-        profile_dht_key: &str,
-        route_blob: &[u8],
-        mailbox_dht_key: &str,
-        prekey_bundle: &[u8],
-        invite_id: Option<&String>,
-        timestamp: u64,
-    ) {
-        let pending = PendingFriendRequest {
-            public_key: sender_key.to_string(),
-            display_name: display_name.to_string(),
-            message: message.to_string(),
-            profile_dht_key: profile_dht_key.to_string(),
-            route_blob: route_blob.to_vec(),
-            mailbox_dht_key: mailbox_dht_key.to_string(),
-            prekey_bundle: prekey_bundle.to_vec(),
-            invite_id: invite_id.cloned(),
-            received_at: timestamp,
-        };
-        crate::host::session::record_pending_request(&self.session, &self.db, pending);
-        info!(
-            from = sender_key,
-            name = display_name,
-            "friend request recorded"
-        );
-    }
 }
 
 impl InboundHandler for DaemonHandler {
@@ -153,73 +128,24 @@ impl InboundHandler for DaemonHandler {
         self.clock.as_ref()
     }
 
-    async fn on_dm(
-        &self,
-        sender: &VerifiedSender,
-        payload: DmPayload,
-        timestamp: u64,
-        _seq: u64,
-        _correlation_id: Option<&str>,
-    ) {
-        debug!(
-            sender = %sender.public_key,
-            "handler: on_dm"
-        );
-
-        // Persist friend requests to session before event pipeline
-        if let DmPayload::FriendRequest {
-            ref display_name,
-            ref message,
-            ref prekey_bundle,
-            ref profile_dht_key,
-            ref route_blob,
-            ref mailbox_dht_key,
-            ref invite_id,
-        } = payload
-        {
-            self.persist_friend_request(
-                &sender.public_key,
-                display_name,
-                message,
-                profile_dht_key,
-                route_blob,
-                mailbox_dht_key,
-                prekey_bundle,
-                invite_id.as_ref(),
-                timestamp,
-            );
-        }
-
-        // If we receive a FriendRequestAck, it means someone wrote to our friend
-        // inbox. Trigger an immediate inbox scan to discover the new request.
-        let should_scan_inbox = matches!(payload, DmPayload::FriendRequestAck);
-
-        // Forward to SubscriptionManager: into_event → state_effects → dedup → emit
-        if let Some(ref sub_mgr) = *self.subscriptions.read() {
-            sub_mgr.on_dm(&sender.public_key, payload, timestamp);
-        }
-
-        let session = Arc::clone(&self.session);
-        let transport = Arc::clone(&self.transport);
-        let db = Arc::clone(&self.db);
-
-        if !should_scan_inbox {
+    async fn on_direct(&self, datagram: &[u8]) {
+        let Some(host) = self.friends() else {
+            debug!("1:1 message before the host is up — dropped");
             return;
-        }
-
-        let inbox_key = {
-            let guard = session.read();
-            guard
-                .as_ref()
-                .map(|s| s.identity.friend_inbox_key.clone())
-                .unwrap_or_default()
         };
-        if inbox_key.is_empty() {
-            return;
+        if let Routed::Unported(prepared) = direct::receive(&host, datagram).await {
+            // The daemon has none of the unported features (DM records,
+            // calls, relays) yet; their owner steps bring them.
+            debug!(from = %prepared.sender_hex, "unported 1:1 payload dropped at the daemon");
         }
+    }
 
-        debug!("FriendRequestAck received — scanning friend inbox");
-        super::friend_inbox::scan_friend_inbox(&session, &transport, &db, &inbox_key).await;
+    async fn on_direct_call(&self, datagram: &[u8]) -> Option<Vec<u8>> {
+        let host = self.friends()?;
+        if let Routed::Unported(prepared) = direct::receive_call(&host, datagram).await {
+            debug!(from = %prepared.sender_hex, "unported 1:1 call refused at the daemon");
+        }
+        None
     }
 
     async fn on_gossip(
@@ -391,29 +317,17 @@ impl InboundHandler for DaemonHandler {
         // re-relayed, or one change echoes around the mesh.
         self.relay_watch_change(record_key, &changed_subkeys, first_value.as_deref());
 
+        // A friend's profile changed: their presence (plan E2.1).
+        if let (Some(host), Some(value)) = (self.friends(), first_value.as_deref()) {
+            use rekindle_presence::FriendPresenceDeps as _;
+            if host.friend_for_dht_key(record_key).is_some() {
+                rekindle_presence::handle_value_change(&host, record_key, &changed_subkeys, value);
+            }
+        }
+
         // Forward to SubscriptionManager for event emission
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             sub_mgr.on_value_change(record_key, changed_subkeys, first_value);
-        }
-
-        // Check if this is our friend inbox.
-        let is_friend_inbox = {
-            let guard = self.session.read();
-            guard.as_ref().is_some_and(|s| {
-                !s.identity.friend_inbox_key.is_empty() && s.identity.friend_inbox_key == record_key
-            })
-        };
-
-        let session = Arc::clone(&self.session);
-        let transport = Arc::clone(&self.transport);
-        let db = Arc::clone(&self.db);
-        let record_key_owned = record_key.to_string();
-
-        // Process friend inbox — scan for new requests and persist to session
-        if is_friend_inbox {
-            debug!("friend inbox changed — scanning for new requests");
-            super::friend_inbox::scan_friend_inbox(&session, &transport, &db, &record_key_owned)
-                .await;
         }
     }
 

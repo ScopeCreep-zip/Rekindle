@@ -26,10 +26,8 @@ pub(super) async fn run(
     view: &UnlockedView,
     scope: &Arc<SessionScope>,
 ) -> Result<(), String> {
-    state.friends.write().clear();
     state.communities.write().clear();
-    // What the shell's unported code reads of the unlock (→ E2.1, E3.1).
-    *state.friend_store.write() = Some(Arc::clone(&view.friend_store) as _);
+    // What the shell's unported code reads of the unlock (→ E3.1, E4.1).
     *state.signal_manager.write() = Some(Arc::new(SignalManagerHandle {
         manager: Arc::clone(&view.signal),
     }));
@@ -43,10 +41,9 @@ pub(super) async fn run(
     let pool = state.db.current()?;
     let owner = view.public_key.as_str();
 
-    // Loaders: preferences (→ E4.1, E2.1/E5.5), friends (→ E2.1),
-    // communities and their keys and governance (→ E3.1).
+    // Loaders: preferences (→ E4.1, E5.5), communities and their keys and
+    // governance (→ E3.1). Friends are the Host's (plan E2.1).
     services::preferences::load(state, &pool, owner).await?;
-    crate::community_loader::load_friends_from_db(&pool, state, owner).await?;
     crate::community_loader::load_communities_from_db(&pool, state, owner).await?;
     services::community::hydrate_peer_reliability(state, &pool).await;
     crate::community_loader::restore_community_pseudonyms_and_meks(
@@ -63,6 +60,16 @@ pub(super) async fn run(
         tracing::warn!(%error, "failed to restore governance from local cache");
     }
     rewait_held_posts(state, &pool, owner).await;
+
+    // A friend invite link that arrived before the unlock is reviewed now,
+    // once the unlock is done (plan E2.1).
+    let held_invite = state.held_friend_invite.lock().take();
+    if let Some(invite) = held_invite {
+        let task_state = Arc::clone(state);
+        scope.spawn_or_drop("held friend invite", async move {
+            crate::deep_links::review_friend_invite(&task_state, invite).await;
+        });
+    }
 
     // The network stages need a window to report to and a node.
     let Some(app) = app else {
@@ -140,9 +147,9 @@ fn network_stages(
     services::community::start_event_reminders(Arc::clone(state), pool.clone(), scope)?;
 
     // The sync loop: its community phase → E3.1, its friend phase → E2.5.
-    let (sync_state, sync_pool, sync_app) = (Arc::clone(state), pool.clone(), app.clone());
+    let (sync_state, sync_pool) = (Arc::clone(state), pool.clone());
     scope.spawn_with_token("sync service", |stop| {
-        services::sync_service::start_sync_loop(sync_state, sync_pool, sync_app, stop)
+        services::sync_service::start_sync_loop(sync_state, sync_pool, stop)
     })?;
 
     // The login-time friend sync, once the network is up (→ E2.5).
@@ -165,16 +172,21 @@ fn network_stages(
     })?;
     services::friendship::spawn_coordinator(state, app.clone(), scope)?;
 
-    // The desktop's reaction to our routes (→ E2.1/E3.1/E3.4/E4.1), and
-    // the peer-route eviction (→ E2.1).
+    // The desktop's reaction to our routes (→ E3.1/E3.4/E4.1).
     let (route_app, route_state) = (app.clone(), Arc::clone(state));
     scope.spawn_with_token("route reaction", |stop| {
         services::veilid::route_publish::run(route_app, route_state, stop)
     })?;
-    let eviction_state = Arc::clone(state);
-    scope.spawn_with_token("peer route eviction", |stop| {
-        services::veilid::route_watchdog_loop(eviction_state, stop)
-    })?;
+    // A live 1:1 call's roster follows its peer's route: call signaling
+    // carries no routes, so the one route cache is their only source
+    // (→ E4.1, which moves the call FSM and this heal into the Host).
+    if let Some(node) = state.transport.read().clone() {
+        let updates = node.peers().read().updates();
+        let heal_state = Arc::clone(state);
+        scope.spawn_with_token("call route heal", |stop| {
+            services::voice_adapter::heal_call_routes(heal_state, node, updates, stop)
+        })?;
+    }
     Ok(())
 }
 
@@ -248,7 +260,6 @@ pub(super) fn own_records(
     if let Some(nh) = state.node.write().as_mut() {
         nh.profile_dht_key.clone_from(&keys.profile);
         nh.friend_list_dht_key.clone_from(&keys.friend_list);
-        nh.account_dht_key.clone_from(&keys.account);
         nh.mailbox_dht_key.clone_from(&keys.mailbox);
     }
     let Some(app) = app else {

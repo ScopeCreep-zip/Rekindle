@@ -2,6 +2,8 @@
 
 use super::IpcRequest;
 
+mod friend;
+
 const REDACTED: &str = "***REDACTED***";
 
 /// [RC-16] Custom Debug that redacts every passphrase and archive.
@@ -75,25 +77,28 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("IntentCancel")
                 .field("intent_id", intent_id)
                 .finish(),
-            Self::FriendAdd { target, message } => f
-                .debug_struct("FriendAdd")
-                .field("target", target)
-                .field("message", message)
-                .finish(),
-            Self::FriendAccept { public_key } => f
-                .debug_struct("FriendAccept")
-                .field("public_key", public_key)
-                .finish(),
-            Self::FriendReject { public_key } => f
-                .debug_struct("FriendReject")
-                .field("public_key", public_key)
-                .finish(),
-            Self::FriendRemove { public_key } => f
-                .debug_struct("FriendRemove")
-                .field("public_key", public_key)
-                .finish(),
-            Self::FriendList => write!(f, "FriendList"),
-            Self::FriendRequests => write!(f, "FriendRequests"),
+            Self::FriendAdd { .. }
+            | Self::FriendAccept { .. }
+            | Self::FriendReject { .. }
+            | Self::FriendRemove { .. }
+            | Self::FriendList
+            | Self::FriendRequests
+            | Self::FriendCancelRequest { .. }
+            | Self::FriendAddFromInvite { .. }
+            | Self::FriendInviteCreate
+            | Self::FriendInviteList
+            | Self::FriendInviteCancel { .. }
+            | Self::FriendBlock { .. }
+            | Self::FriendUnblock { .. }
+            | Self::FriendBlockedList
+            | Self::FriendSetNickname { .. }
+            | Self::FriendGroupCreate { .. }
+            | Self::FriendGroupRename { .. }
+            | Self::FriendGroupMove { .. }
+            | Self::FriendGroupDelete { .. }
+            | Self::SessionResetStart { .. }
+            | Self::SessionResetAccept { .. }
+            | Self::SessionResetDecline { .. } => self.fmt_friend(f),
             Self::CommunityCreate {
                 name,
                 description,
@@ -205,6 +210,20 @@ impl std::fmt::Debug for IpcRequest {
                 .field("typing", typing)
                 .finish(),
             Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
+            Self::DmHistory {
+                peer_key,
+                limit,
+                before,
+            } => f
+                .debug_struct("DmHistory")
+                .field("peer_key", peer_key)
+                .field("limit", limit)
+                .field("before", before)
+                .finish(),
+            Self::DmMarkRead { peer_key } => f
+                .debug_struct("DmMarkRead")
+                .field("peer_key", peer_key)
+                .finish(),
             Self::Subscribe { filters, from } => f
                 .debug_struct("Subscribe")
                 .field("filter_count", &filters.len())

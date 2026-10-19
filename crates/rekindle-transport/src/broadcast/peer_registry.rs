@@ -7,6 +7,11 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use tokio::sync::broadcast;
+
+/// How many route changes a slow subscriber may fall behind by.
+const UPDATES_CAPACITY: usize = 64;
+
 /// Cached route blob with import timestamp for staleness detection.
 #[derive(Debug, Clone)]
 struct CachedRoute {
@@ -33,6 +38,9 @@ pub struct PeerRegistry {
     circuit_threshold: u32,
     /// Cooldown period in seconds after the circuit trips.
     circuit_cooldown_secs: u64,
+    /// The peer whose cached route changed, for whoever follows routes
+    /// (a live call's roster heal).
+    updates: broadcast::Sender<String>,
 }
 
 impl PeerRegistry {
@@ -43,14 +51,20 @@ impl PeerRegistry {
             route_ttl_secs,
             circuit_threshold,
             circuit_cooldown_secs,
+            updates: broadcast::channel(UPDATES_CAPACITY).0,
         }
     }
 
-    /// Cache a peer's route blob.
+    /// Cache a peer's route blob; a new blob is announced on
+    /// [`updates`](Self::updates).
     pub fn cache_route(&mut self, peer_key: &str, blob: Vec<u8>) {
         if blob.is_empty() {
             return;
         }
+        let changed = self
+            .routes
+            .get(peer_key)
+            .is_none_or(|cached| cached.blob != blob);
         self.routes.insert(
             peer_key.to_string(),
             CachedRoute {
@@ -58,6 +72,15 @@ impl PeerRegistry {
                 imported_at: Instant::now(),
             },
         );
+        if changed {
+            // No subscriber is fine: nobody follows routes right now.
+            let _ = self.updates.send(peer_key.to_string());
+        }
+    }
+
+    /// The peers whose cached route changes from now on.
+    pub fn updates(&self) -> broadcast::Receiver<String> {
+        self.updates.subscribe()
     }
 
     /// Get a cached route blob if it's not stale.
@@ -227,6 +250,59 @@ impl PeerRegistry {
 
         peers.sort_by(|a, b| a.key.cmp(&b.key));
         peers
+    }
+}
+
+/// Strand Relay sender state beside the route cache (plan E2.1): each
+/// relay route's circuit breaker (Wave 7 P7.3) and the status-probe
+/// cooldown per target (§13.5).
+#[derive(Default)]
+pub struct RelayState {
+    health: parking_lot::Mutex<
+        HashMap<rekindle_route::relay::RelayKey, rekindle_route::relay::RelayHealth>,
+    >,
+    probe_cooldown: parking_lot::Mutex<HashMap<String, u64>>,
+}
+
+impl RelayState {
+    /// A relay route's breaker, if it has one.
+    pub fn health(
+        &self,
+        key: &rekindle_route::relay::RelayKey,
+    ) -> Option<rekindle_route::relay::RelayHealth> {
+        rekindle_route::relay::lookup(&self.health.lock(), key)
+    }
+
+    /// A send through the relay route `key` went out.
+    pub fn record_success(&self, key: rekindle_route::relay::RelayKey) {
+        rekindle_route::relay::record_success(&mut self.health.lock(), key);
+    }
+
+    /// A send through the relay route `key` failed.
+    pub fn record_failure(&self, key: rekindle_route::relay::RelayKey) {
+        rekindle_route::relay::record_failure(&mut self.health.lock(), key);
+    }
+
+    /// Whether a probe for `target` may go now (none in the last
+    /// `cooldown_secs`); taking the slot when it may. Entries older than
+    /// four cooldowns are dropped so the map stays small.
+    pub fn take_probe_slot(&self, target: &str, now_secs: u64, cooldown_secs: u64) -> bool {
+        let mut cooldown = self.probe_cooldown.lock();
+        if let Some(&last) = cooldown.get(target) {
+            if now_secs.saturating_sub(last) < cooldown_secs {
+                return false;
+            }
+        }
+        cooldown.insert(target.to_string(), now_secs);
+        let horizon = cooldown_secs.saturating_mul(4);
+        cooldown.retain(|_, &mut t| now_secs.saturating_sub(t) <= horizon);
+        true
+    }
+
+    /// Forget the probe cooldowns (lock): the next identity's probes are
+    /// its own.
+    pub fn clear_probes(&self) {
+        self.probe_cooldown.lock().clear();
     }
 }
 

@@ -97,7 +97,12 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
         dedup_suppressed,
         poll_loop_active,
         community_count: session.map_or(0, |s| s.communities.len()),
-        friend_count: session.map_or(0, |s| s.pending_friend_requests.len()),
+        friend_count: session.map_or(0, |s| {
+            s.friends
+                .values()
+                .filter(|f| f.friendship_state == rekindle_types::friend::FriendshipState::Accepted)
+                .count()
+        }),
         circuit_summary,
         checks,
     };

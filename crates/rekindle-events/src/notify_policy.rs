@@ -92,10 +92,6 @@ pub fn os_notification_for(
                 };
                 OsNotification::new(title, display_name)
             }),
-            // Answered in the app (the buddy list is brought forward),
-            // after an out-of-band safety-number check; a banner adds
-            // nothing the user can act on.
-            NotificationEvent::SessionResetRequested { .. } => None,
         },
         SubscriptionEvent::Social(SocialEvent::EventReminder {
             title,
@@ -191,17 +187,6 @@ mod tests {
         };
         assert_eq!(os_notification_for(&update, &busy), None);
         assert!(os_notification_for(&update, &on()).is_some());
-    }
-
-    #[test]
-    fn session_resets_are_answered_in_the_app() {
-        let reset = SubscriptionEvent::Notification(NotificationEvent::SessionResetRequested {
-            peer_public_key: "pk".into(),
-            peer_display_name: "Ada".into(),
-            safety_number: "0011aabb".into(),
-        });
-        assert!(is_candidate(&reset));
-        assert_eq!(os_notification_for(&reset, &on()), None);
     }
 
     #[test]

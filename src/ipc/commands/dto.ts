@@ -11,6 +11,8 @@
 // same reason: it is the FSM state `setup.rs` emits, and both
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
+import type { SendState } from "./types";
+
 export interface GameInfo {
   gameName: string;
   gameId: number | null;
@@ -35,6 +37,49 @@ export interface InviteDto {
   createdAt: number;
   /** The invite link, built by the backend — only for invites this node created. */
   url?: string;
+}
+
+// ── Friends and direct messages (plan E2.1; `rekindle_types::dto::{friends, dm}`) ──
+
+/** One direct message, as a chat window shows it. */
+export interface DmMessage {
+  id: number;
+  senderId: string;
+  body: string;
+  timestamp: number;
+  isOwn: boolean;
+  sendState: SendState;
+}
+
+/** An incoming friend request, waiting for our answer. */
+export interface PendingRequest {
+  publicKey: string;
+  displayName: string;
+  message: string;
+  receivedAt: number;
+}
+
+/** A blocked identity. */
+export interface BlockedUser {
+  publicKey: string;
+  displayName: string;
+  blockedAt: number;
+}
+
+/** A friend invite we made that is still open. */
+export interface OutgoingInvite {
+  inviteId: string;
+  url: string;
+  createdAt: number;
+  expiresAt: number;
+  status: string;
+  acceptedBy: string | null;
+}
+
+/** A new friend invite link. */
+export interface FriendInviteCreated {
+  url: string;
+  inviteId: string;
 }
 
 /** A freshly minted invite. */

@@ -8,11 +8,10 @@
 //!   record sessions, own routes)
 //! - `send` — app message / app call senders
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
-//! - `dht/` — channel messages and the append-only log over the record port
+//! - `dht/` — channel messages over the record port
 //!
 //! ## Application-level broadcast
 //! - `dht_writes` — leased-record and own-profile operations for TransportNode callers
-//! - `dm` — peer-to-peer DM sends (all 10 DmPayload variants)
 //! - `rpc` — request-response RPC calls (sync, leave)
 //! - `route` — peer route import
 
@@ -24,7 +23,6 @@ pub mod send;
 
 // Application-level broadcast (calls through infrastructure above)
 pub mod dht_writes;
-pub mod dm;
 pub mod route;
 pub mod rpc;
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::state::{AppState, DHTManagerHandle, NodeHandle, RoutingManagerHandle};
+use crate::state::{AppState, NodeHandle};
 use tauri::Manager;
 use tokio::sync::mpsc;
 use veilid_core::VeilidUpdate;
@@ -45,23 +45,11 @@ pub async fn initialize_node(
         api: api.clone(),
         routing_context: routing_context.clone(),
         profile_dht_key: None,
-        profile_owner_keypair: None,
-        profile_lease: None,
         friend_list_dht_key: None,
-        friend_list_owner_keypair: None,
-        account_dht_key: None,
         mailbox_dht_key: None,
     };
     *state.node.write() = Some(node_handle);
 
-    let dht_handle = DHTManagerHandle::default();
-    *state.dht_manager.write() = Some(dht_handle);
-
-    *state.routing_manager.write() = Some(RoutingManagerHandle {
-        peer_route_cache: rekindle_route::cache::RouteCache::new(
-            rekindle_route::lifecycle::PEER_ROUTE_CACHE_MAX_AGE,
-        ),
-    });
     // Our routes. The transport wants them as soon as its ports are up, so
     // they are allocated at node-ready, before any login, and a login is
     // reachable at once (plan C7.9b, E1.1; owner: login and "Connected" are

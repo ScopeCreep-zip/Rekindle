@@ -19,19 +19,11 @@ pub async fn get_pending_deep_link(
 #[tauri::command]
 pub async fn confirm_deep_link(
     request_id: String,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
     keystore_handle: State<'_, VaultHandle>,
 ) -> Result<DeepLinkOutcome, String> {
     let pool = state.db.current()?;
-    deep_links::confirm(
-        app,
-        state.inner(),
-        &pool,
-        keystore_handle.inner(),
-        &request_id,
-    )
-    .await
+    deep_links::confirm(state.inner(), &pool, keystore_handle.inner(), &request_id).await
 }
 
 /// Drop the pending deep link the user declined.

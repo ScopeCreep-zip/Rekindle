@@ -13,7 +13,6 @@ use std::sync::Arc;
 use rekindle_codec::message::envelope::MessagePayload;
 
 use crate::db_helpers::db_call;
-use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -59,7 +58,13 @@ pub async fn register_with_push_relay(
         platform: platform.to_string(),
         record_keys: record_keys.to_vec(),
     };
-    message_service::send_to_peer(state, pool, relay_pseudonym, &payload).await
+    rekindle_transport::operations::dm::send_to_peer(
+        state_helpers::friend_host(state)?.as_ref(),
+        relay_pseudonym,
+        &payload,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 pub async fn unregister_with_push_relay(
@@ -105,7 +110,17 @@ pub async fn unregister_with_push_relay(
         let payload = MessagePayload::UnregisterPushRelay {
             device_push_token: token,
         };
-        let _ = message_service::send_to_peer(state, pool, &pseudonym, &payload).await;
+        if let Ok(host) = state_helpers::friend_host(state) {
+            if let Err(e) = rekindle_transport::operations::dm::send_to_peer(
+                host.as_ref(),
+                &pseudonym,
+                &payload,
+            )
+            .await
+            {
+                tracing::debug!(error = %e, "push relay unregister not sent");
+            }
+        }
     }
     Ok(())
 }

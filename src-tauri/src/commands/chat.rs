@@ -1,8 +1,11 @@
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::dm::DmMessage;
+use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::message::SendState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::services;
+use crate::host_call;
 use crate::state::SharedState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,81 +133,59 @@ impl MessageAttachmentDto {
     }
 }
 
-/// Send a message to a friend (1:1 DM).
-///
-/// Phase 8 — `idempotency_key` (UUID v7) dedupes click-spam. Frontend
-/// generates one key per user gesture; rapid re-clicks within the same
-/// gesture reuse it and short-circuit to the cached response.
+/// Send a direct message (`IpcRequest::DmSend`); the stored message.
 #[tauri::command]
 pub async fn send_message(
     to: String,
     body: String,
-    idempotency_key: uuid::Uuid,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    let s = state.inner().clone();
-    let p = pool.clone();
-    state
-        .idempotency
-        .wrap(idempotency_key, || async move {
-            services::chat_runtime::send_dm_inner(s, p, app, to, body).await
-        })
-        .await
+) -> Result<Done<DmMessage>, CommandError> {
+    host_call::call(&state, IpcRequest::DmSend { peer_key: to, body }).await
 }
 
-/// Send a typing indicator to a peer.
-///
-/// Uses a structured `TypingIndicator` payload wrapped in a signed `MessageEnvelope`.
-/// Typing indicators are ephemeral — if no route exists, they are silently dropped.
+/// Send a typing indicator (`IpcRequest::DmTyping`); dropped, never queued,
+/// when there is no route.
 #[tauri::command]
 pub async fn send_typing(
     peer_id: String,
     typing: bool,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    // Verify identity is loaded
-    state.identity.read().as_ref().ok_or("not logged in")?;
-
-    services::message_service::send_typing(state.inner(), &pool, &peer_id, typing).await
-}
-
-/// Get chat history from `SQLite`.
-#[tauri::command]
-pub async fn get_message_history(
-    peer_id: String,
-    limit: u32,
-    state: State<'_, SharedState>,
-) -> Result<Vec<Message>, String> {
-    let pool = state.db.current()?;
-    services::chat_runtime::get_message_history_inner(
-        state.inner().clone(),
-        pool.clone(),
-        peer_id,
-        limit,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::DmTyping {
+            peer_key: peer_id,
+            typing,
+        },
     )
     .await
 }
 
-/// Proactively refresh a peer's route before sending messages.
-///
-/// Called when a chat window opens to ensure the cached route is fresh,
-/// reducing first-message delivery failures from stale routes.
+/// The newest `limit` messages with a friend before `before` (ms), oldest
+/// first (`IpcRequest::DmHistory`).
 #[tauri::command]
-pub async fn prepare_chat_session(
+pub async fn get_message_history(
     peer_id: String,
+    limit: u32,
+    before: Option<i64>,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    services::chat_runtime::prepare_chat_session_inner(state.inner().clone(), peer_id).await
+) -> Result<Done<Vec<DmMessage>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::DmHistory {
+            peer_key: peer_id,
+            limit,
+            before,
+        },
+    )
+    .await
 }
 
-/// Mark messages as read.
+/// Mark everything from a friend read (`IpcRequest::DmMarkRead`).
 #[tauri::command]
-pub async fn mark_read(peer_id: String, state: State<'_, SharedState>) -> Result<(), String> {
-    let pool = state.db.current()?;
-    services::chat_runtime::mark_read_inner(state.inner().clone(), pool.clone(), peer_id).await
+pub async fn mark_read(
+    peer_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::DmMarkRead { peer_key: peer_id }).await
 }

@@ -93,12 +93,8 @@ pub(crate) async fn daemon_stages(
         Arc::clone(&ctx.session),
         unlock_scope.child("subscriptions"),
     );
-    sub_mgr.setup_identity(&session).await;
     for membership in session.communities.values() {
         sub_mgr.setup_community(membership).await;
-    }
-    for (peer_key, dm_log_key) in &session.dm_log_keys {
-        sub_mgr.setup_dm_peer(peer_key, dm_log_key).await;
     }
     // Typing indicators expire and the dedup cache sheds by TTL only if the
     // maintenance loop sweeps them.
@@ -115,7 +111,6 @@ pub(crate) async fn daemon_stages(
     tracing::info!(
         watches = sub_mgr.watch_count(),
         communities = session.communities.len(),
-        dm_peers = session.dm_log_keys.len(),
         "subscription manager initialized"
     );
     // The bus server's delivery task forwards what the manager publishes.

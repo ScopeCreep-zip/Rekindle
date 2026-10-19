@@ -1,7 +1,7 @@
 //! Application-level session state.
 //!
-//! [`Session`] holds the local identity, community memberships, DM log keys
-//! and pending friend requests. It is an in-memory projection of the
+//! [`Session`] holds the local identity, community memberships and friends.
+//! It is an in-memory projection of the
 //! unlocked identity's stores (plan D1): the daemon builds it at unlock
 //! from the identity's database and vault (`rekindle_node::host::session`)
 //! and writes every change to those stores, not to this struct alone. It
@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use rekindle_types::friend::FriendState;
 
 // ── Session ─────────────────────────────────────────────────────────────
 
@@ -22,12 +22,9 @@ pub struct Session {
     /// Communities the user has joined, keyed by governance DHT key.
     pub communities: HashMap<String, CommunityMembership>,
 
-    /// Per-peer DM DhtLog spine keys. Maps peer_public_key → DhtLog spine key.
-    /// Created during friend accept. Both peers read/write their shared log.
-    pub dm_log_keys: HashMap<String, String>,
-
-    /// Pending inbound friend requests awaiting user action.
-    pub pending_friend_requests: Vec<PendingFriendRequest>,
+    /// Our friends by public key, every friendship state (plan E2.1): loaded
+    /// from `friends` at unlock and written after each repository write.
+    pub friends: HashMap<String, FriendState>,
 }
 
 impl Session {
@@ -36,8 +33,7 @@ impl Session {
         Self {
             identity,
             communities: HashMap::new(),
-            dm_log_keys: HashMap::new(),
-            pending_friend_requests: Vec::new(),
+            friends: HashMap::new(),
         }
     }
 
@@ -96,14 +92,6 @@ pub struct SessionIdentity {
 
     /// Friend list DHT record key.
     pub friend_list_dht_key: String,
-
-    /// Friend inbox DHT record key (DFLT(32), published keypair).
-    /// Other users write friend requests here. Our daemon polls it.
-    pub friend_inbox_key: String,
-
-    /// Hex-encoded keypair for the friend inbox. Published in our
-    /// profile so anyone can open the inbox for writing.
-    pub friend_inbox_keypair_hex: String,
 
     /// The profile record's owner keypair, in its string form (as the
     /// vault stores it), for re-opening the record writable.
@@ -166,67 +154,6 @@ pub struct CommunityMembership {
     pub mek_generation: u64,
 }
 
-// ── Pending friend requests ─────────────────────────────────────────────
-
-/// An inbound friend request awaiting the user's accept/reject decision.
-///
-/// Created when a `DmPayload::FriendRequest` is received via the
-/// InboundHandler. Stores all the data needed to call
-/// `operations::friend::accept_friend_request` when the user decides.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PendingFriendRequest {
-    /// Requester's Ed25519 public key (hex).
-    pub public_key: String,
-
-    /// Requester's display name.
-    pub display_name: String,
-
-    /// Message attached to the request.
-    pub message: String,
-
-    /// Requester's profile DHT record key (for watching presence after accept).
-    pub profile_dht_key: String,
-
-    /// Requester's route blob (for sending the accept response).
-    pub route_blob: Vec<u8>,
-
-    /// Requester's mailbox DHT key.
-    pub mailbox_dht_key: String,
-
-    /// Requester's prekey bundle (for Signal session establishment).
-    pub prekey_bundle: Vec<u8>,
-
-    /// Invite ID if the request came through an invite link.
-    pub invite_id: Option<String>,
-
-    /// Epoch ms when the request was received.
-    pub received_at: u64,
-}
-
-impl Session {
-    /// Record an inbound friend request. Deduplicates by public key —
-    /// if a request from the same peer already exists, it's replaced
-    /// (the peer may have re-sent with updated route/prekey data).
-    pub fn add_pending_friend_request(&mut self, request: PendingFriendRequest) {
-        self.pending_friend_requests
-            .retain(|r| r.public_key != request.public_key);
-        self.pending_friend_requests.push(request);
-    }
-
-    /// Look up a pending friend request by the requester's public key.
-    pub fn pending_request_by_key(&self, public_key: &str) -> Option<&PendingFriendRequest> {
-        self.pending_friend_requests
-            .iter()
-            .find(|r| r.public_key == public_key)
-    }
-
-    /// Remove a pending friend request (after accept or reject).
-    pub fn remove_pending_friend_request(&mut self, public_key: &str) {
-        self.pending_friend_requests
-            .retain(|r| r.public_key != public_key);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,8 +165,6 @@ mod tests {
             profile_dht_key: "VLD0:profile:key".into(),
             mailbox_dht_key: "VLD0:mailbox:key".into(),
             friend_list_dht_key: "VLD0:friends:key".into(),
-            friend_inbox_key: "VLD0:friend-inbox:key".into(),
-            friend_inbox_keypair_hex: String::new(),
             profile_owner_keypair: None,
             friend_list_owner_keypair: None,
         }

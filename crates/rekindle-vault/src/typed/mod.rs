@@ -4,7 +4,6 @@
 
 pub mod audit;
 pub mod community_keys;
-pub mod dm_log;
 pub mod mek;
 pub mod owner_keys;
 pub mod signal;

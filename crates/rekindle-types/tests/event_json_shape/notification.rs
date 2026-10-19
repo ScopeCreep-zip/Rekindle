@@ -8,7 +8,6 @@ pub const NAMES: &[&str] = &[
     "messageReceived",
     "systemAlert",
     "updateAvailable",
-    "sessionResetRequested",
     "callIncoming",
 ];
 
@@ -17,7 +16,6 @@ pub fn variant_name(e: &NotificationEvent) -> &'static str {
         NotificationEvent::MessageReceived { .. } => "messageReceived",
         NotificationEvent::SystemAlert { .. } => "systemAlert",
         NotificationEvent::UpdateAvailable { .. } => "updateAvailable",
-        NotificationEvent::SessionResetRequested { .. } => "sessionResetRequested",
         NotificationEvent::CallIncoming { .. } => "callIncoming",
     }
 }
@@ -52,14 +50,6 @@ pub fn samples() -> Vec<Sample> {
             "updateAvailable",
             NotificationEvent::UpdateAvailable {
                 version: text("1.2.3"),
-            },
-        ),
-        ev(
-            "sessionResetRequested",
-            NotificationEvent::SessionResetRequested {
-                peer_public_key: pk('b'),
-                peer_display_name: text("Bob"),
-                safety_number: text("deadbeef"),
             },
         ),
         ev(

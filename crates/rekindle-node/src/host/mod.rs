@@ -9,6 +9,7 @@ pub mod audit;
 pub(crate) mod audit_alert;
 pub mod bus_key;
 pub mod dht_outbox;
+mod friends;
 mod game;
 pub mod gate;
 pub mod identity;

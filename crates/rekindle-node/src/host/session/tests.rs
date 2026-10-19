@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use rekindle_transport::session::{CommunityMembership, PendingFriendRequest, Session};
+use rekindle_transport::session::{CommunityMembership, Session};
 
 use super::*;
 use crate::host::fixture::Fixture;
@@ -23,8 +23,7 @@ fn membership() -> CommunityMembership {
 
 /// Everything the daemon writes through these helpers comes back in the
 /// projection the next unlock loads: the identity, a membership with its
-/// slot seed and clock, a pending request, and a forgotten membership's
-/// absence.
+/// slot seed and clock, a friend, and a forgotten membership's absence.
 #[tokio::test]
 async fn writes_come_back_in_the_next_projection() {
     let f = Fixture::new();
@@ -54,21 +53,20 @@ async fn writes_come_back_in_the_next_projection() {
     .unwrap();
     assert_eq!(next_clock(&session, &f.db, "gov-key").unwrap(), 13);
     update_roles(&session, &f.db, "gov-key", |roles| roles.push(9));
-    crate::host::session::record_pending_request(
-        &session,
-        &f.db,
-        PendingFriendRequest {
-            public_key: "bob".into(),
-            display_name: "Bob".into(),
-            message: "hi".into(),
-            profile_dht_key: "bob-profile".into(),
-            route_blob: vec![1],
-            mailbox_dht_key: "bob-mailbox".into(),
-            prekey_bundle: vec![2],
-            invite_id: None,
-            received_at: 5,
-        },
-    );
+    let o = owner.clone();
+    db.call(move |conn| {
+        rekindle_db::repo::friends::replace_with_invited(
+            conn,
+            &o,
+            "bob",
+            "Bob",
+            5,
+            "bob-profile",
+            "bob-mailbox",
+        )
+    })
+    .await
+    .unwrap();
 
     let reloaded: Session = load(&db, &f.vault, &owner).await.unwrap();
     let m = reloaded.community("gov-key").unwrap();
@@ -78,10 +76,13 @@ async fn writes_come_back_in_the_next_projection() {
     assert_eq!(m.lamport_counter, 13);
     assert_eq!(m.role_ids, vec![0, 7, 9]);
     assert_eq!(m.community_name, "Team");
-    let pending = &reloaded.pending_friend_requests;
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].mailbox_dht_key, "bob-mailbox");
-    assert_eq!(pending[0].route_blob, vec![1]);
+    let bob = &reloaded.friends["bob"];
+    assert_eq!(bob.mailbox_dht_key.as_deref(), Some("bob-mailbox"));
+    assert_eq!(bob.dht_record_key.as_deref(), Some("bob-profile"));
+    assert_eq!(
+        bob.friendship_state,
+        rekindle_types::friend::FriendshipState::PendingOut
+    );
 
     forget_membership(&session, &f.db, &f.vault, "gov-key")
         .await

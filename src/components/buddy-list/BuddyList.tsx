@@ -237,7 +237,7 @@ const BuddyList: Component = () => {
             * the new session. */}
           <ContextMenu.Item
             class="context-menu-item"
-            onSelect={() => void handleResetSignalSession(key, name)}
+            onSelect={() => void handleResetSignalSession(key)}
           >
             Reset Secure Session
           </ContextMenu.Item>

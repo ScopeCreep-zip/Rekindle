@@ -33,12 +33,6 @@ fn reject(label: &str, e: &KeyFormatError) -> IpcResponse {
     IpcResponse::error(400, format!("invalid {label}: {e}"))
 }
 
-fn record_key(s: &str, label: &str) -> Checked {
-    key_format::record_key(s)
-        .map(drop)
-        .map_err(|e| reject(label, &e))
-}
-
 fn public_key(s: &str, label: &str) -> Checked {
     key_format::public_key_hex(s)
         .map(drop)
@@ -247,6 +241,67 @@ fn own(request: &IpcRequest) -> Checked {
     }
 }
 
+/// A community's channels: their names, kinds, topics and bodies.
+fn channels(request: &IpcRequest) -> Checked {
+    match request {
+        IpcRequest::ChannelCreate {
+            community: c,
+            name: channel_name,
+            kind,
+            category,
+            topic,
+            slowmode_seconds,
+        } => {
+            community(c)?;
+            name(channel_name, "channel")?;
+            channel_kind(kind)?;
+            opt(category.as_deref(), |n| name(n, "category"))?;
+            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
+            slowmode(*slowmode_seconds)
+        }
+        IpcRequest::ChannelDelete {
+            community: c,
+            channel_id,
+        } => {
+            community(c)?;
+            channel(channel_id)
+        }
+        IpcRequest::ChannelUpdate {
+            community: c,
+            channel_id,
+            name: new_name,
+            topic,
+            slowmode_seconds,
+        } => {
+            community(c)?;
+            channel(channel_id)?;
+            opt(new_name.as_deref(), |n| name(n, "channel"))?;
+            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
+            opt(slowmode_seconds.as_ref(), |s| slowmode(*s))
+        }
+        IpcRequest::ChannelSend {
+            community: c,
+            channel: ch,
+            body,
+            reply_to: _,
+        } => {
+            community(c)?;
+            channel(ch)?;
+            message_body(body)
+        }
+        IpcRequest::ChannelHistory {
+            community: c,
+            channel: ch,
+            limit,
+        } => {
+            community(c)?;
+            channel(ch)?;
+            page(*limit)
+        }
+        other => unreachable!("{} is not a channel request", other.name()),
+    }
+}
+
 /// Validate every field of `request`. The first malformed field answers
 /// 400; nothing past this point sees malformed input.
 pub fn validate_request(request: &IpcRequest) -> Checked {
@@ -263,6 +318,10 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityShow
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
+        | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendInviteList
+        | IpcRequest::FriendBlockedList
+        | IpcRequest::FriendGroupDelete { group_id: _ }
         | IpcRequest::CommunityList
         | IpcRequest::PrekeyReplenish
         | IpcRequest::PresenceGet
@@ -292,14 +351,28 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
         IpcRequest::IntentCommit { proof: given, .. } => proof(given),
 
-        IpcRequest::FriendAdd { target, message } => {
-            record_key(target, "target mailbox key")?;
-            text(message, MAX_NOTE_LEN, "message")
-        }
-        IpcRequest::FriendAccept { public_key: key }
-        | IpcRequest::FriendReject { public_key: key }
-        | IpcRequest::FriendRemove { public_key: key }
-        | IpcRequest::AvatarGet { public_key: key } => public_key(key, "public key"),
+        IpcRequest::FriendAdd { .. }
+        | IpcRequest::FriendAccept { .. }
+        | IpcRequest::FriendBlock { .. }
+        | IpcRequest::FriendSetNickname { .. }
+        | IpcRequest::FriendGroupMove { .. }
+        | IpcRequest::FriendReject { .. }
+        | IpcRequest::FriendRemove { .. }
+        | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendUnblock { .. }
+        | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionResetAccept { .. }
+        | IpcRequest::SessionResetDecline { .. }
+        | IpcRequest::FriendAddFromInvite { .. }
+        | IpcRequest::FriendInviteCancel { .. }
+        | IpcRequest::FriendGroupCreate { .. }
+        | IpcRequest::FriendGroupRename { .. }
+        | IpcRequest::DmSend { .. }
+        | IpcRequest::DmTyping { .. }
+        | IpcRequest::DmInbox { .. }
+        | IpcRequest::DmHistory { .. }
+        | IpcRequest::DmMarkRead { .. } => friends::check(request),
+        IpcRequest::AvatarGet { public_key: key } => public_key(key, "public key"),
 
         IpcRequest::CommunityCreate {
             name: community_name,
@@ -361,70 +434,11 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
             max_uses: _,
             expires_seconds: _,
         } => community(c),
-        IpcRequest::ChannelCreate {
-            community: c,
-            name: channel_name,
-            kind,
-            category,
-            topic,
-            slowmode_seconds,
-        } => {
-            community(c)?;
-            name(channel_name, "channel")?;
-            channel_kind(kind)?;
-            opt(category.as_deref(), |n| name(n, "category"))?;
-            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
-            slowmode(*slowmode_seconds)
-        }
-        IpcRequest::ChannelDelete {
-            community: c,
-            channel_id,
-        } => {
-            community(c)?;
-            channel(channel_id)
-        }
-        IpcRequest::ChannelUpdate {
-            community: c,
-            channel_id,
-            name: new_name,
-            topic,
-            slowmode_seconds,
-        } => {
-            community(c)?;
-            channel(channel_id)?;
-            opt(new_name.as_deref(), |n| name(n, "channel"))?;
-            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
-            opt(slowmode_seconds.as_ref(), |s| slowmode(*s))
-        }
-        IpcRequest::ChannelSend {
-            community: c,
-            channel: ch,
-            body,
-            reply_to: _,
-        } => {
-            community(c)?;
-            channel(ch)?;
-            message_body(body)
-        }
-        IpcRequest::ChannelHistory {
-            community: c,
-            channel: ch,
-            limit,
-        } => {
-            community(c)?;
-            channel(ch)?;
-            page(*limit)
-        }
-
-        IpcRequest::DmSend { peer_key, body } => {
-            public_key(peer_key, "peer key")?;
-            message_body(body)
-        }
-        IpcRequest::DmTyping {
-            peer_key,
-            typing: _,
-        } => public_key(peer_key, "peer key"),
-        IpcRequest::DmInbox { limit } => page(*limit),
+        IpcRequest::ChannelCreate { .. }
+        | IpcRequest::ChannelDelete { .. }
+        | IpcRequest::ChannelUpdate { .. }
+        | IpcRequest::ChannelSend { .. }
+        | IpcRequest::ChannelHistory { .. } => channels(request),
 
         IpcRequest::MekRotate {
             community: c,
@@ -569,5 +583,6 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
     }
 }
 
+mod friends;
 #[cfg(test)]
 mod tests;

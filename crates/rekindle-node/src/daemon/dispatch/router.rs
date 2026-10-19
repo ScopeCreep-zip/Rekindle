@@ -5,7 +5,7 @@ use crate::host::shell_hooks::EndReason;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::{
-    admin, channel, community, governance, identity, keys, lifecycle, own, social, status, voice,
+    admin, channel, community, friends, governance, identity, keys, lifecycle, own, status, voice,
     Caller, DaemonContext,
 };
 
@@ -113,85 +113,41 @@ async fn route(
         }
 
         // ── Channel ──────────────────────────────────────────────
-        IpcRequest::ChannelList { community } => channel::handle_list(ctx, state, &community),
-        IpcRequest::ChannelCreate {
-            community,
-            name,
-            kind,
-            category,
-            topic,
-            slowmode_seconds,
-        } => {
-            channel::handle_create(
-                ctx,
-                state,
-                &community,
-                &name,
-                &kind,
-                category.as_deref(),
-                topic.as_deref(),
-                slowmode_seconds,
-            )
-            .await
-        }
-        IpcRequest::ChannelDelete {
-            community,
-            channel_id,
-        } => channel::handle_delete(ctx, state, &community, &channel_id).await,
-        IpcRequest::ChannelUpdate {
-            community,
-            channel_id,
-            name,
-            topic,
-            slowmode_seconds,
-        } => {
-            channel::handle_update(
-                ctx,
-                state,
-                &community,
-                &channel_id,
-                channel::ChannelUpdate {
-                    name: name.as_deref(),
-                    topic: topic.as_deref(),
-                    slowmode_seconds,
-                },
-            )
-            .await
-        }
-        IpcRequest::ChannelSend {
-            community,
-            channel,
-            body,
-            reply_to,
-        } => channel::handle_send(ctx, state, &community, &channel, &body, reply_to).await,
-        IpcRequest::ChannelHistory {
-            community,
-            channel,
-            limit,
-        } => channel::handle_history(ctx, state, &community, &channel, limit).await,
+        request @ (IpcRequest::ChannelList { .. }
+        | IpcRequest::ChannelCreate { .. }
+        | IpcRequest::ChannelDelete { .. }
+        | IpcRequest::ChannelUpdate { .. }
+        | IpcRequest::ChannelSend { .. }
+        | IpcRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
 
-        // ── Social (friends + DMs) ───────────────────────────────
-        IpcRequest::FriendAdd { target, message } => {
-            social::handle_friend_add(ctx, state, &target, &message).await
-        }
-        IpcRequest::FriendAccept { public_key } => {
-            social::handle_friend_accept(ctx, state, &public_key).await
-        }
-        IpcRequest::FriendReject { public_key } => {
-            social::handle_friend_reject(ctx, state, &public_key).await
-        }
-        IpcRequest::FriendRemove { public_key } => {
-            social::handle_friend_remove(ctx, state, &public_key).await
-        }
-        IpcRequest::FriendList => social::handle_friend_list(ctx, state).await,
-        IpcRequest::FriendRequests => social::handle_friend_requests(ctx, state),
-        IpcRequest::DmSend { peer_key, body } => {
-            social::handle_dm_send(ctx, state, &peer_key, &body).await
-        }
-        IpcRequest::DmTyping { peer_key, typing } => {
-            social::handle_dm_typing(ctx, state, &peer_key, typing).await
-        }
-        IpcRequest::DmInbox { limit } => social::handle_dm_inbox(ctx, state, limit).await,
+        // ── Friends, DMs and session resets (plan E2.1) ─────────
+        request @ (IpcRequest::FriendAdd { .. }
+        | IpcRequest::FriendAccept { .. }
+        | IpcRequest::FriendReject { .. }
+        | IpcRequest::FriendRemove { .. }
+        | IpcRequest::FriendList
+        | IpcRequest::FriendRequests
+        | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendAddFromInvite { .. }
+        | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendInviteList
+        | IpcRequest::FriendInviteCancel { .. }
+        | IpcRequest::FriendBlock { .. }
+        | IpcRequest::FriendUnblock { .. }
+        | IpcRequest::FriendBlockedList
+        | IpcRequest::FriendSetNickname { .. }
+        | IpcRequest::FriendGroupCreate { .. }
+        | IpcRequest::FriendGroupRename { .. }
+        | IpcRequest::FriendGroupMove { .. }
+        | IpcRequest::FriendGroupDelete { .. }
+        | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionResetAccept { .. }
+        | IpcRequest::SessionResetDecline { .. }
+        | IpcRequest::DmSend { .. }
+        | IpcRequest::DmTyping { .. }
+        | IpcRequest::DmInbox { .. }
+        | IpcRequest::DmHistory { .. }
+        | IpcRequest::DmMarkRead { .. }) => friends::route(ctx, state, request).await,
 
         // ── Governance (roles, moderation, invites) ──────────────
         IpcRequest::RoleList { community } => governance::handle_role_list(ctx, state, &community),

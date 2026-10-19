@@ -51,12 +51,7 @@ impl CallSignalingDeps for CallsAdapter {
         // fallback using `initiator_pubkey` (which may differ from
         // `peer_pubkey_hex` in edge cases). Doing the fallback inside
         // the adapter would short-circuit that logic.
-        self.state
-            .friends
-            .read()
-            .get(peer_pubkey_hex)
-            .map(|f| f.display_name.clone())
-            .unwrap_or_default()
+        crate::state_helpers::friend_display_name(&self.state, peer_pubkey_hex).unwrap_or_default()
     }
 
     fn local_video_decode_codecs(&self) -> Vec<String> {
@@ -77,14 +72,10 @@ impl CallSignalingDeps for CallsAdapter {
         peer_pubkey_hex: &str,
         payload: MessagePayload,
     ) -> Result<(), CallError> {
-        crate::services::message_service::send_to_peer(
-            &self.state,
-            &self.pool,
-            peer_pubkey_hex,
-            &payload,
-        )
-        .await
-        .map_err(CallError::Transport)
+        let host = crate::state_helpers::friend_host(&self.state).map_err(CallError::Transport)?;
+        rekindle_transport::operations::dm::send_to_peer(host.as_ref(), peer_pubkey_hex, &payload)
+            .await
+            .map_err(|e| CallError::Transport(e.to_string()))
     }
 
     async fn start_voice_session(

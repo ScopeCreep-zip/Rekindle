@@ -30,7 +30,8 @@ use crate::action::{Action, CommandResult};
 use crate::focus::{FocusId, FocusRing};
 use crate::helpers;
 use crate::theme::ThemeManager;
-use rekindle_types::display::{CommunityOverview, FriendDisplay};
+use rekindle_types::display::CommunityOverview;
+use rekindle_types::dto::friends::Friend;
 
 /// Dashboard view state.
 pub struct DashboardView {
@@ -54,7 +55,7 @@ pub struct DashboardView {
     /// Cached community list.
     communities: Vec<CommunityOverview>,
     /// Cached friend list summary.
-    friends: Vec<FriendDisplay>,
+    friends: Vec<Friend>,
     /// Whether initial data has been loaded from the transport.
     /// When false, draw() shows a loading indicator instead of empty-state messages.
     loaded: bool,
@@ -269,12 +270,20 @@ impl DashboardView {
 
     /// Render the friends summary panel.
     fn render_friends(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
-        let online = self.friends.iter().filter(|f| f.status == "online").count();
-        let away = self.friends.iter().filter(|f| f.status == "away").count();
+        let online = self
+            .friends
+            .iter()
+            .filter(|f| f.status.as_wire_str() == "online")
+            .count();
+        let away = self
+            .friends
+            .iter()
+            .filter(|f| f.status.as_wire_str() == "away")
+            .count();
         let offline = self
             .friends
             .iter()
-            .filter(|f| f.status == "offline")
+            .filter(|f| f.status.as_wire_str() == "offline")
             .count();
         let total = self.friends.len();
 
@@ -311,7 +320,7 @@ impl DashboardView {
         let mut lines = vec![summary];
         let mut previews: Vec<Span<'_>> = vec![Span::raw("  ")];
         for f in self.friends.iter().take(preview_count) {
-            let glyph = match f.status.as_str() {
+            let glyph = match f.status.as_wire_str() {
                 "online" => {
                     if self.use_unicode {
                         "● "

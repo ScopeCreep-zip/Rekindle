@@ -14,14 +14,12 @@ import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
 import DmInviteModal from "../components/buddy-list/DmInviteModal";
 import DeepLinkConsentDialog from "../components/buddy-list/DeepLinkConsentDialog";
-import SessionResetDialog from "../components/buddy-list/SessionResetDialog";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
 import { authState, setAuthState } from "../stores/auth.store";
-import { friendsState } from "../stores/friends.store";
 import { buddyListUI, setBuddyListUI } from "../stores/buddylist-ui.store";
 import { switchTab } from "../stores/buddylist-ui.store";
 import { handleLoadPendingRequests } from "../actions/buddy.actions";
@@ -99,23 +97,6 @@ const BuddyListWindow: Component = () => {
     handleListDms();
     handleHydrateRelayState();
 
-    // Re-emit presence for already-online friends (listeners are now active).
-    // Awaited because emit_friends_presence now syncs from DHT first.
-    await commands.emitFriendsPresence();
-
-    // If all friends are still offline (e.g., login's 20s network timeout fired),
-    // schedule a single retry after 5s as a fallback.
-    const friends = friendsState.friends;
-    const friendKeys = Object.keys(friends);
-    const allOffline =
-      friendKeys.length > 0 &&
-      friendKeys.every((k) => friends[k].status === "offline");
-    if (allOffline) {
-      setTimeout(() => {
-        commands.emitFriendsPresence();
-      }, 5000);
-    }
-
     // Load persisted pending friend requests from SQLite
     handleLoadPendingRequests();
 
@@ -180,7 +161,6 @@ const BuddyListWindow: Component = () => {
       <CallController />
       <DmInviteModal />
       <DeepLinkConsentDialog />
-      <SessionResetDialog />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}

@@ -4,6 +4,7 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
+use rekindle_ipc::protocol::IpcRequest;
 
 impl App {
     /// Process a single action — the TEA reducer.
@@ -177,10 +178,32 @@ impl App {
             }
 
             // Friend operations
-            Action::AcceptFriendRequest(id) => self.spawn_accept_friend(id),
+            Action::AcceptFriendRequest {
+                public_key,
+                display_name,
+            } => self.spawn_accept_friend(public_key, display_name),
             Action::RejectFriendRequest(id) => self.spawn_reject_friend(id),
             // The host's gate asks for any confirmation (plan D3.4).
             Action::RemoveFriend { peer_key } => self.spawn_remove_friend(peer_key),
+            Action::BlockUser {
+                public_key,
+                display_name,
+            } => self.spawn_friend_request(
+                IpcRequest::FriendBlock {
+                    public_key,
+                    display_name: Some(display_name),
+                },
+                "block",
+            ),
+            Action::UnblockUser { public_key } => {
+                self.spawn_friend_request(IpcRequest::FriendUnblock { public_key }, "unblock");
+            }
+            Action::CancelInvite { invite_id } => {
+                self.spawn_friend_request(
+                    IpcRequest::FriendInviteCancel { invite_id },
+                    "cancel invite",
+                );
+            }
             Action::LeaveCommunity { community } => {
                 let name = self.community_name(&community).to_string();
                 self.spawn_leave_community(community, name);

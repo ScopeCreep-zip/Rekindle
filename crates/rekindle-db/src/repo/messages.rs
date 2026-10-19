@@ -1,5 +1,6 @@
-//! `messages`: the delivery state of our own sent messages (plan D1,
-//! C7.14). The inserts are still the desktop's (`message_repo`).
+//! `messages`: direct messages (plan E2.1) and the delivery state of our
+//! own sent messages (plan D1, C7.14). The channel inserts are still the
+//! desktop's (`message_repo`, until E3.1).
 
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};
@@ -95,6 +96,117 @@ pub fn send_state(
     .optional()
 }
 
+/// A direct message, as a chat window shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DmRow {
+    pub id: i64,
+    pub peer_key: String,
+    pub sender_key: String,
+    pub body: String,
+    pub timestamp: i64,
+    pub is_read: bool,
+    pub send_state: SendState,
+}
+
+/// Store a direct message with `peer_key`; its row id. Ours is read; a
+/// received one is unread until the window marks it.
+///
+/// # Errors
+/// The write failed.
+pub fn insert_dm(
+    conn: &Connection,
+    owner_key: &str,
+    peer_key: &str,
+    sender_key: &str,
+    body: &str,
+    timestamp: i64,
+    is_read: bool,
+) -> rusqlite::Result<i64> {
+    conn.execute(
+        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
+         timestamp, is_read) VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6)",
+        params![owner_key, peer_key, sender_key, body, timestamp, is_read],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
+    let stored: String = row.get(6)?;
+    Ok(DmRow {
+        id: row.get(0)?,
+        peer_key: row.get(1)?,
+        sender_key: row.get(2)?,
+        body: row.get(3)?,
+        timestamp: row.get(4)?,
+        is_read: row.get(5)?,
+        send_state: SendState::parse(&stored).ok_or_else(|| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Text,
+                format!("unknown send state {stored}").into(),
+            )
+        })?,
+    })
+}
+
+const DM_COLS: &str = "id, conversation_id, sender_key, body, timestamp, is_read, send_state";
+
+/// The newest `limit` messages with `peer_key` before `before` (a
+/// timestamp, ms; all when `None`), oldest first.
+///
+/// # Errors
+/// The query failed.
+pub fn dm_history(
+    conn: &Connection,
+    owner_key: &str,
+    peer_key: &str,
+    limit: u32,
+    before: Option<i64>,
+) -> rusqlite::Result<Vec<DmRow>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+         AND conversation_type = 'dm' AND timestamp < ?3 ORDER BY timestamp DESC, id DESC LIMIT ?4"
+    ))?;
+    let mut rows = stmt
+        .query_map(
+            params![owner_key, peer_key, before.unwrap_or(i64::MAX), limit],
+            dm_row,
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    rows.reverse();
+    Ok(rows)
+}
+
+/// Mark every message from `peer_key` read.
+///
+/// # Errors
+/// The write failed.
+pub fn mark_dm_read(conn: &Connection, owner_key: &str, peer_key: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET is_read = 1 WHERE owner_key = ?1 AND conversation_id = ?2 \
+         AND conversation_type = 'dm' AND is_read = 0",
+        params![owner_key, peer_key],
+    )?;
+    Ok(())
+}
+
+/// The latest message of each direct conversation, newest first, at most
+/// `limit`.
+///
+/// # Errors
+/// The query failed.
+pub fn dm_inbox(conn: &Connection, owner_key: &str, limit: u32) -> rusqlite::Result<Vec<DmRow>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {DM_COLS} FROM messages m WHERE owner_key = ?1 AND conversation_type = 'dm' \
+         AND id = (SELECT id FROM messages n WHERE n.owner_key = m.owner_key \
+                   AND n.conversation_id = m.conversation_id AND n.conversation_type = 'dm' \
+                   ORDER BY n.timestamp DESC, n.id DESC LIMIT 1) \
+         ORDER BY timestamp DESC LIMIT ?2"
+    ))?;
+    let rows = stmt.query_map(params![owner_key, limit], dm_row)?.collect();
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +256,48 @@ mod tests {
             [OWNER],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn dm_history_pages_back_and_the_inbox_shows_each_conversation_once() {
+        let conn = fixture::conn();
+        for (peer, sender, ts) in [("bob", "bob", 1), ("bob", OWNER, 2), ("bob", "bob", 3)] {
+            insert_dm(
+                &conn,
+                OWNER,
+                peer,
+                sender,
+                &format!("m{ts}"),
+                ts,
+                sender == OWNER,
+            )
+            .unwrap();
+        }
+        insert_dm(&conn, OWNER, "carol", "carol", "hey", 5, false).unwrap();
+        let newest: Vec<i64> = dm_history(&conn, OWNER, "bob", 2, None)
+            .unwrap()
+            .iter()
+            .map(|m| m.timestamp)
+            .collect();
+        assert_eq!(newest, [2, 3]);
+        let older = dm_history(&conn, OWNER, "bob", 2, Some(2)).unwrap();
+        assert_eq!(older.len(), 1);
+        assert_eq!(older[0].body, "m1");
+        assert!(!older[0].is_read);
+        mark_dm_read(&conn, OWNER, "bob").unwrap();
+        assert!(dm_history(&conn, OWNER, "bob", 10, None)
+            .unwrap()
+            .iter()
+            .all(|m| m.is_read));
+        let inbox: Vec<(String, String)> = dm_inbox(&conn, OWNER, 10)
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.peer_key, m.body))
+            .collect();
+        assert_eq!(
+            inbox,
+            [("carol".into(), "hey".into()), ("bob".into(), "m3".into())]
+        );
     }
 
     #[test]

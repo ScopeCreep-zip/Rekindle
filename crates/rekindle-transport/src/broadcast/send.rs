@@ -53,6 +53,20 @@ impl Sender {
         Self { messages, routes }
     }
 
+    /// Send an already-built 1:1 wire message (`operations::dm::wire`) to the
+    /// peer whose route is `target`, over the safe route profile every 1:1
+    /// message takes (`RouteContextSpec::rc_safe`, plan E2.1).
+    ///
+    /// # Errors
+    /// The send failed; an unusable route is forgotten first.
+    pub async fn send_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<()> {
+        let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        self.messages
+            .send(target, &profile, message)
+            .await
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))
+    }
+
     /// Send a class-tagged message to a single peer.
     ///
     /// `class` selects the [`rekindle_types::config::SafetyProfile`] via
@@ -174,6 +188,19 @@ impl AppCaller {
             "RPC complete"
         );
         Ok(response)
+    }
+
+    /// `app_call` an already-built 1:1 wire message (`operations::dm::wire`)
+    /// and await the reply, as [`Sender::send_direct`] sends one.
+    ///
+    /// # Errors
+    /// The call failed or timed out; an unusable route is forgotten first.
+    pub async fn call_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<Vec<u8>> {
+        let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        self.messages
+            .call(target, &profile, message)
+            .await
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))
     }
 
     /// `app_call` a bare, unframed Cap'n Proto `CommunityEnvelope`.

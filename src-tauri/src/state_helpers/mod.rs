@@ -23,7 +23,6 @@
 
 mod circuit_breaker;
 mod communities;
-mod dht_records;
 mod friends;
 mod governance;
 mod governance_persist;
@@ -40,11 +39,7 @@ pub use communities::{
     push_community_channel, set_community_channels, spawn_in_community,
     spawn_in_community_with_token,
 };
-pub use dht_records::{release_friend_record, store_dht_record, DhtRecordType};
-pub use friends::{
-    accepted_friend_keys, friend_dht_key, friend_display_name, friend_field, friend_mailbox_key,
-    friend_status_authoritative, friends_with_dht_keys, is_friend, is_friend_accepted,
-};
+pub use friends::{friend_display_name, friend_field, friend_presence_change, friends, is_friend};
 pub use governance::{
     governance_clock, governance_key, governance_state, merge_message_lamport, my_permissions,
     next_governance_lamport, next_message_lamport, observe_governance_lamport, permissions_for,
@@ -60,17 +55,15 @@ pub use meks::{
     LiveMekCache,
 };
 pub use node::{
-    app_context, app_handle, friend_list_dht_key, friend_list_owner_keypair, is_attached,
-    login_scope, login_scope_or_closed, our_media_route_blob, our_route_blob, own_routes,
-    profile_dht_info, record_pool, require_safe_routing_context, safe_api_and_routing_context,
-    safe_routing_context, spawn_in_login, spawn_in_login_with_token, veilid_api,
+    app_context, app_handle, friend_list_dht_key, is_attached, login_scope, login_scope_or_closed,
+    our_media_route_blob, our_route_blob, own_routes, record_pool, require_safe_routing_context,
+    safe_api_and_routing_context, safe_routing_context, spawn_in_login, spawn_in_login_with_token,
+    veilid_api,
 };
 pub use owner_keys::{load_owner_keypair, persist_owner_keypair};
 pub use routes::{
-    cache_peer_route, cached_route_blob, call_route_blob, evict_stale_peer_routes,
-    friend_for_dht_key, import_route_blob, invalidate_cached_peer_route, message_route_blob,
-    note_send_result, on_dead_remote_routes, route_imports, route_send_failed,
-    try_import_peer_route,
+    call_route_blob, friend_host, import_route_blob, message_route_blob, on_dead_remote_routes,
+    peer_route, route_imports, route_send_failed,
 };
 pub use voice::{
     current_voice_scope, media_live_peers, media_roster_for, note_media_live,

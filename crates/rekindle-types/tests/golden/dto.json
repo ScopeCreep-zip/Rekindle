@@ -64,6 +64,76 @@
     },
     "type": "intentRequired"
   },
+  "dm.inboxEntry": {
+    "body": "gg",
+    "isRead": false,
+    "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "senderKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timestamp": 1700000000000
+  },
+  "dm.message": {
+    "body": "gg",
+    "id": 9,
+    "isOwn": true,
+    "sendState": "delivered",
+    "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timestamp": 1700000000000
+  },
+  "friends.blockedUser": {
+    "blockedAt": 1700000000000,
+    "displayName": "Eve",
+    "publicKey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "friends.friend.accepted": {
+    "displayName": "Bob",
+    "friendshipState": "accepted",
+    "gameInfo": {
+      "elapsedSeconds": 90,
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "serverAddress": "10.0.0.1:27015",
+      "serverInfo": null
+    },
+    "group": "Raid team",
+    "handshakeError": null,
+    "lastSeenAt": 1700000000000,
+    "nickname": "Bobby",
+    "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "status": "busy",
+    "statusMessage": "raiding",
+    "unreadCount": 2
+  },
+  "friends.friend.pendingOut": {
+    "displayName": "Cy",
+    "friendshipState": "pendingOut",
+    "gameInfo": null,
+    "group": null,
+    "handshakeError": "their accept carried no session data",
+    "lastSeenAt": null,
+    "nickname": null,
+    "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "status": "offline",
+    "statusMessage": null,
+    "unreadCount": 0
+  },
+  "friends.inviteCreated": {
+    "inviteId": "3f2a7c1e-0000-4000-8000-000000000001",
+    "url": "rekindle://abc"
+  },
+  "friends.outgoingInvite": {
+    "acceptedBy": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "createdAt": 1700000000000,
+    "expiresAt": 1700172800000,
+    "inviteId": "3f2a7c1e-0000-4000-8000-000000000001",
+    "status": "responded",
+    "url": "rekindle://abc"
+  },
+  "friends.pendingRequest": {
+    "displayName": "Dee",
+    "message": "remember me from LAN night?",
+    "publicKey": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "receivedAt": 1700000000000
+  },
   "identity.shown": {
     "communities": 2,
     "displayName": "Ann",

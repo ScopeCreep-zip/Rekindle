@@ -185,50 +185,6 @@ pub fn rekey(conn: &mut Connection, old_key: &str, new_key: &str) -> rusqlite::R
     tx.commit()
 }
 
-/// Set the friend inbox and its (published) keypair.
-///
-/// # Errors
-/// The write failed.
-pub fn set_friend_inbox(
-    conn: &Connection,
-    public_key: &str,
-    inbox_key: &str,
-    inbox_keypair: &str,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE identity SET friend_inbox_key = ?1, friend_inbox_keypair = ?2 \
-         WHERE public_key = ?3",
-        params![inbox_key, inbox_keypair, public_key],
-    )?;
-    Ok(())
-}
-
-/// The friend inbox and its keypair, when both are set.
-///
-/// # Errors
-/// The query failed.
-pub fn friend_inbox(
-    conn: &Connection,
-    public_key: &str,
-) -> rusqlite::Result<Option<(String, String)>> {
-    let row = conn
-        .query_row(
-            "SELECT friend_inbox_key, friend_inbox_keypair FROM identity WHERE public_key = ?1",
-            params![public_key],
-            |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                ))
-            },
-        )
-        .optional()?;
-    Ok(match row {
-        Some((Some(k), Some(p))) if !k.is_empty() && !p.is_empty() => Some((k, p)),
-        _ => None,
-    })
-}
-
 /// The personal sync record: `(record key, device id)`, when both are set
 /// (its owner keypair is in the vault).
 ///
@@ -322,17 +278,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(violations, 0);
-    }
-
-    #[test]
-    fn the_friend_inbox_round_trips() {
-        let conn = fixture::conn();
-        assert_eq!(friend_inbox(&conn, OWNER).unwrap(), None);
-        set_friend_inbox(&conn, OWNER, "ik", "ikp").unwrap();
-        assert_eq!(
-            friend_inbox(&conn, OWNER).unwrap(),
-            Some(("ik".into(), "ikp".into()))
-        );
     }
 
     #[test]

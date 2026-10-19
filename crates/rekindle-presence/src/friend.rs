@@ -209,7 +209,6 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     friend_key: &str,
     dht_record_key: &str,
 ) -> Result<(), PresenceError> {
-    deps.register_friend_dht_key(dht_record_key, friend_key);
     deps.set_friend_dht_record_key(friend_key, dht_record_key);
 
     let lease = match deps.acquire_friend_record(dht_record_key).await {

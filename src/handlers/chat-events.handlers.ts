@@ -175,6 +175,13 @@ function applyFriendEvent(friend: FriendEvent): void {
     }
     return;
   }
+  if ("groupChanged" in friend) {
+    const { peerKey, group } = friend.groupChanged;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "group", group ?? "Friends");
+    }
+    return;
+  }
   // requestAcknowledged / removeAcknowledged / profileKeyRotated need no
   // store change: delivery receipts and key rotation are handled by the
   // backend, and the list already reflects the outcome.

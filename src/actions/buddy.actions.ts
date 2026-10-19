@@ -5,7 +5,6 @@ import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
 import { transformFriendMap } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
-import { withTimeout, DHT_WRITE_TIMEOUT_MS } from "../utils/request-timeout";
 
 export function handleDoubleClickFriend(publicKey: string): void {
   commands.openChatWindow(publicKey);
@@ -21,27 +20,11 @@ export async function handleRemoveFriend(publicKey: string): Promise<void> {
   }
 }
 
-/// B6 — explicit Signal session reset for a friend. The user must
-/// confirm because resetting the session means: (1) the next encrypted
-/// send to this peer will fail with "no session" until both sides
-/// re-handshake, (2) old undecryptable messages stay undecryptable,
-/// (3) the new session may be MitM'd if the peer's safety number isn't
-/// verified out-of-band first. Returns null on success, or the error
-/// string for the caller's toast.
-export async function handleResetSignalSession(
-  publicKey: string,
-  displayName?: string,
-): Promise<string | null> {
-  const name = displayName ?? publicKey.slice(0, 12);
-  const confirmed = window.confirm(
-    `Reset secure session with ${name}?\n\n` +
-      `This will delete the current Signal session. Both of you will need ` +
-      `to re-handshake on the next message exchange. Old undecryptable ` +
-      `messages stay lost.\n\n` +
-      `Verify their safety number out-of-band before resuming sensitive ` +
-      `conversations after the new session is established.`,
-  );
-  if (!confirmed) return null;
+/// B6 — explicit Signal session reset for a friend. The Host's review
+/// (TrustChanging, plan E2.1) is the confirmation: it names whose session
+/// it is, and the friend compares safety numbers before accepting. Returns
+/// null on success, or the error string for the caller's toast.
+export async function handleResetSignalSession(publicKey: string): Promise<string | null> {
   try {
     await commands.resetSignalSession(publicKey);
     return null;
@@ -56,16 +39,9 @@ export async function handleAddFriend(
 ): Promise<string | null> {
   try {
     const displayName = publicKey.slice(0, 12) + "...";
-    // Architecture §32 a11y — a friend request writes to the peer's
-    // inbox DHT record, which blocks on Veilid bootstrap or NAT punch
-    // retries. Without a bound the button spins forever with nothing
-    // to tell the user; `RequestTimeoutError` reaches them through the
-    // same `errorMessage` path as any other failure.
-    await withTimeout(
-      commands.addFriend(publicKey, displayName, message),
-      DHT_WRITE_TIMEOUT_MS,
-      "Friend request",
-    );
+    // Not time-bounded here: the Host's review may be on screen, and the
+    // Host bounds its own wait for our route (plan E2.1).
+    await commands.addFriend(publicKey, displayName, message);
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -125,7 +101,7 @@ export function handleToggleAddFriend(): void {
 
 export async function handleCreateFriendGroup(name: string): Promise<number> {
   try {
-    const groupId = await commands.createFriendGroup(name);
+    const { groupId } = await commands.createFriendGroup(name);
     return groupId;
   } catch (e) {
     console.error("Failed to create friend group:", e);
@@ -138,9 +114,8 @@ export async function handleRenameFriendGroup(
   name: string,
 ): Promise<void> {
   try {
+    // The Host announces each relabelled friend (`groupChanged`).
     await commands.renameFriendGroup(groupId, name);
-    // Refresh friends to update group names in the store
-    await handleRefreshFriends();
   } catch (e) {
     console.error("Failed to rename friend group:", e);
   }
@@ -151,9 +126,8 @@ export async function handleMoveFriendToGroup(
   groupId: number | null,
 ): Promise<void> {
   try {
+    // The Host announces the move (`groupChanged`).
     await commands.moveFriendToGroup(publicKey, groupId);
-    // Refresh friends to update the group assignment
-    await handleRefreshFriends();
   } catch (e) {
     console.error("Failed to move friend to group:", e);
   }
@@ -239,11 +213,8 @@ export async function handleLoadOutgoingInvites(): Promise<void> {
 
 export async function handleAddFriendFromInvite(inviteString: string): Promise<string | null> {
   try {
-    await withTimeout(
-      commands.addFriendFromInvite(inviteString),
-      DHT_WRITE_TIMEOUT_MS,
-      "Invite redemption",
-    );
+    // Reviewed with the inviter's fingerprint first: not time-bounded.
+    await commands.addFriendFromInvite(inviteString);
     return null;
   } catch (e) {
     return errorMessage(e);

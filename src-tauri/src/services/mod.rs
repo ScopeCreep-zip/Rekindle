@@ -7,7 +7,6 @@ pub mod auth_runtime; // The PQXDH bundle diagnostic (→ E2.4).
 pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted from commands/calls.rs.
 pub mod calls_adapter; // Phase 14 — CallSignalingDeps impl + calls free-fn facades.
 pub mod channel_adapter; // Phase 19.h-REDO — ChannelMessagingDeps impl for channel messaging ops.
-pub mod chat_runtime; // Phase 23.C — chat-handler runtime orchestration lifted from commands/chat.rs.
 pub mod community;
 pub mod community_audit_runtime; // Phase 23.C — audit-log read + ban-list runtime orchestration lifted from commands/community/{audit,moderation}.rs.
 pub mod community_automod_runtime; // Phase 23.C — automod rule list/set/delete orchestration lifted from commands/community/automod.rs.
@@ -43,7 +42,6 @@ pub mod dm;
 pub mod dm_adapter; // Phase 13 — DmDeps + DmMekCache impls.
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
 pub mod files_adapter; // Phase 15 — FilesDeps impl + Tier-9 facades.
-pub mod friend_runtime; // Phase 23.C — friend-handler runtime orchestration lifted from commands/friends.rs.
 pub mod friendship;
 pub mod friendship_deps;
 pub mod gossip_adapter; // Phase 20.e-REDO — GossipDeps impl for mesh broadcast.
@@ -54,12 +52,10 @@ pub mod messaging_runtime; // Phase 23.C — channel-messaging runtime orchestra
 pub mod native_video; // Linux-native GStreamer camera capture facade (plan rosy-bouncing-kahn Phase 3).
 pub mod preferences; // Plan D1 — the unlocked identity's preferences.
 pub mod presence_adapter; // Phase 21.e-REDO — FriendPresenceDeps impl for friend presence.
-pub mod presence_service;
 pub mod push_relay;
 pub mod relay;
 pub mod search;
 pub mod shell_session; // Plan E1.1 — the GUI's ShellHooks: its unported unlock stages.
-pub mod sync_adapter; // Phase 22.f-REDO — SyncDeps impl for pending-message retry.
 pub mod sync_communities;
 pub mod sync_runtime; // Phase 23.C — sync-handler runtime orchestration lifted from commands/sync.rs.
 pub mod sync_service;

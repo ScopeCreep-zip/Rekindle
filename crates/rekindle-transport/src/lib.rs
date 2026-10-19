@@ -74,7 +74,7 @@ pub use crypto::prekeys::PreKeyBundle;
 pub use crypto::pseudonym::derive_community_pseudonym;
 
 // Session state
-pub use session::{CommunityMembership, PendingFriendRequest, Session, SessionIdentity};
+pub use session::{CommunityMembership, Session, SessionIdentity};
 
 // W16.1 — envelope reliability primitive contract + default impls
 pub use envelope_store::{
@@ -93,8 +93,7 @@ pub use seq_tracker::SeqTracker;
 // Query engine
 pub use query::{
     community_detail, list_communities, ChannelOverviewDisplay, CommunityDetail,
-    CommunityMetaSummary, CommunityOverview, DecryptedMessageDisplay, DmMessageDisplay,
-    DmThreadDisplay, FriendDisplay, QueryEngine, RoleDisplay,
+    CommunityMetaSummary, CommunityOverview, DecryptedMessageDisplay, QueryEngine, RoleDisplay,
 };
 
 // Frame

@@ -19,7 +19,7 @@ use rekindle_codec::message::envelope::MessagePayload;
 use crate::state::AppState;
 use rekindle_db::Db;
 
-pub(super) async fn handle_call_signaling_payload(
+pub(crate) async fn handle_call_signaling_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &Db,

@@ -4,7 +4,6 @@ import { setNotificationState } from "../stores/notification.store";
 import { settingsState } from "../stores/settings.store";
 import { communityState } from "../stores/community.store";
 import { callsState } from "../stores/calls.store";
-import { queueSessionReset } from "../stores/session-reset.store";
 
 // Wave 12 W12.2 — true when an in-call DND auto-suppression should
 // short-circuit message OS notifications / sounds. The user-facing
@@ -80,27 +79,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           type: "system",
           title: data.title,
           body: data.body,
-          timestamp: Date.now(),
-          read: false,
-        },
-      ]);
-      setNotificationState("unreadCount", (c) => c + 1);
-    } else if ("sessionResetRequested" in event) {
-      // P3.3 — peer wants to re-establish the Signal session. The
-      // buddy list's SessionResetDialog asks the user to compare the
-      // safety number out-of-band and decide explicitly; it cannot be
-      // dismissed, so closing it never counts as an answer.
-      const { peerPublicKey, peerDisplayName, safetyNumber } =
-        event.sessionResetRequested;
-      queueSessionReset({ peerPublicKey, peerDisplayName, safetyNumber });
-      // Also persist to the notification list.
-      setNotificationState("notifications", (prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: "system",
-          title: "Session Reset Request",
-          body: `${peerDisplayName} requested a session reset (safety number: ${safetyNumber})`,
           timestamp: Date.now(),
           read: false,
         },

@@ -48,17 +48,21 @@ pub async fn handle_relay_envelope(
         return Err("not volunteered to relay for this friend".into());
     }
 
-    let route_id_and_rc = state_helpers::try_import_peer_route(state, target_pubkey);
-    let Some((route_id, routing_context)) = route_id_and_rc else {
-        return Err("no cached route for relay target".into());
-    };
-
-    routing_context
-        .app_message(
-            veilid_core::Target::RouteId(route_id),
-            inner_payload.to_vec(),
-        )
+    // The target's route from the one peer-route cache (plan E2.1); the
+    // inner bytes are forwarded as they came.
+    let node = state
+        .transport
+        .read()
+        .clone()
+        .ok_or("transport not started")?;
+    let blob = rekindle_transport::operations::dm::route::cached(&node, target_pubkey)
+        .ok_or("no cached route for relay target")?;
+    let target = node
+        .routes()
+        .import(&blob)
+        .map_err(|e| format!("relay target route: {e}"))?;
+    node.sender()
+        .send_direct(&target, inner_payload.to_vec())
         .await
-        .map_err(|e| format!("relay app_message failed: {e}"))?;
-    Ok(())
+        .map_err(|e| format!("relay app_message failed: {e}"))
 }

@@ -43,12 +43,7 @@ impl CallsAdapter {
     /// the crate's "if empty then short_pubkey(initiator_pubkey)"
     /// fallback path still works correctly for incoming-invite display.
     pub(super) fn display_name_with_fallback(&self, peer_pubkey_hex: &str) -> String {
-        let raw = self
-            .state
-            .friends
-            .read()
-            .get(peer_pubkey_hex)
-            .map(|f| f.display_name.clone())
+        let raw = crate::state_helpers::friend_display_name(&self.state, peer_pubkey_hex)
             .unwrap_or_default();
         if raw.is_empty() {
             if peer_pubkey_hex.len() > 16 {

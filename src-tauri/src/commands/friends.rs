@@ -1,325 +1,251 @@
+//! Friends, invites, blocks, groups and session resets are Host calls
+//! (plan E2.1): the Host's friend operations run them on both hosts, and
+//! the windows learn their effects from `SubscriptionEvent::Friend`.
+
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::friends::{
+    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest,
+};
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::services::friend_runtime::{
-    accept_request_inner, accept_session_reset_inner, add_friend_from_invite_inner,
-    add_friend_inner, block_user_inner, cancel_invite_inner, cancel_request_inner,
-    create_friend_group_inner, decline_session_reset_inner, emit_friends_presence_inner,
-    generate_invite_inner, get_blocked_users_inner, get_outgoing_invites_inner,
-    get_pending_requests_inner, list_friends_inner, move_friend_to_group_inner,
-    reject_request_inner, remove_friend_inner, rename_friend_group_inner,
-    reset_signal_session_inner, set_friend_nickname_inner, unblock_user_inner, BlockedUser,
-    FriendResponse, GenerateInviteResult, PendingFriendRequest,
-};
-
-pub use crate::services::friend_runtime::is_user_blocked;
+use crate::host_call;
 use crate::state::SharedState;
 
-/// Get all persisted pending friend requests for the current identity.
+/// What a friend action answers when it ran.
+type Ran = Done<serde_json::Value>;
+
+/// The requests waiting for our answer (`IpcRequest::FriendRequests`).
 #[tauri::command]
 pub async fn get_pending_requests(
     state: State<'_, SharedState>,
-) -> Result<Vec<PendingFriendRequest>, String> {
-    let pool = state.db.current()?;
-    get_pending_requests_inner(state.inner(), &pool).await
+) -> Result<Done<Vec<PendingRequest>>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendRequests).await
 }
 
-/// Add a friend by their public key.
-///
-/// Phase 8 — `idempotency_key` (UUID v7) dedupes click-spam. Without
-/// it, double-tapping "Add" issues two friend requests (two DHT inbox
-/// writes against the same target), spamming the recipient and
-/// creating ambiguous request state.
+/// Add a friend by public key (`IpcRequest::FriendAdd`).
 #[tauri::command]
 pub async fn add_friend(
     public_key: String,
     display_name: String,
     message: String,
-    idempotency_key: uuid::Uuid,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    // Phase 5 — gate writes on lifecycle.
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    let state_clone = state.inner().clone();
-    let pool_clone = pool.clone();
-    state
-        .idempotency
-        .wrap(idempotency_key, || async move {
-            add_friend_inner(
-                state_clone,
-                pool_clone,
-                app,
-                public_key,
-                display_name,
-                message,
-            )
-            .await
-        })
-        .await
-}
-
-/// Remove a friend.
-#[tauri::command]
-pub async fn remove_friend(
-    public_key: String,
-    app: tauri::AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    remove_friend_inner(state.inner().clone(), pool.clone(), app, public_key).await
-}
-
-/// Accept a pending friend request.
-#[tauri::command]
-pub async fn accept_request(
-    public_key: String,
-    display_name: String,
-    app: tauri::AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    accept_request_inner(
-        state.inner().clone(),
-        pool.clone(),
-        app,
-        public_key,
-        display_name,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FriendAdd {
+            public_key,
+            display_name,
+            message,
+        },
     )
     .await
 }
 
-/// Get the full friends list.
+/// Remove a friend (`IpcRequest::FriendRemove`).
 #[tauri::command]
-pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResponse>, String> {
-    let _g =
-        rekindle_lifecycle::TransportGuard::read(&state.lifecycle).map_err(|e| e.to_string())?;
-    Ok(list_friends_inner(state.inner()))
+pub async fn remove_friend(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendRemove { public_key }).await
 }
 
-/// Reject a pending friend request.
-/// Sends a rejection message to the peer and removes the request from the database.
+/// Accept a pending request (`IpcRequest::FriendAccept`).
+#[tauri::command]
+pub async fn accept_request(
+    public_key: String,
+    display_name: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FriendAccept {
+            public_key,
+            display_name,
+        },
+    )
+    .await
+}
+
+/// The buddy list (`IpcRequest::FriendList`).
+#[tauri::command]
+pub async fn get_friends(state: State<'_, SharedState>) -> Result<Done<Vec<Friend>>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendList).await
+}
+
+/// Reject a pending request (`IpcRequest::FriendReject`).
 #[tauri::command]
 pub async fn reject_request(
     public_key: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    reject_request_inner(state.inner().clone(), pool.clone(), public_key).await
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendReject { public_key }).await
 }
 
-/// Cancel an outbound pending friend request.
-///
-/// Only works for friends in `PendingOut` state — removes them from the
-/// friends table and in-memory state.
+/// Cancel the request we sent (`IpcRequest::FriendCancelRequest`).
 #[tauri::command]
 pub async fn cancel_request(
     public_key: String,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    cancel_request_inner(state.inner().clone(), pool.clone(), app, public_key).await
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendCancelRequest { public_key }).await
 }
 
-/// B6 — explicit user-driven Signal session reset for a peer.
-///
-/// The hardened safety stance forbids auto-rehandshake on decrypt
-/// failure (an attacker who corrupts session state could force an
-/// auto-recovery that substitutes their own keys). Instead, the user
-/// initiates the reset explicitly from the friend's context menu after
-/// verifying their safety number out-of-band.
-///
-/// Effect: deletes the local Signal session record for the peer. The
-/// next outbound encrypted message hits send_envelope_to_peer's "no
-/// session with {peer}" error (B8) which prompts the user to verify
-/// the peer's safety number before resuming. A fresh session is
-/// established at the next FriendAccept-style handshake.
-///
-/// Idempotent — calling on a peer with no active session is a no-op.
-///
-/// P3.3 update — also sends a SessionResetRequest to the peer carrying
-/// our fresh PreKeyBundle. The peer's UI surfaces a confirmation modal
-/// (NotificationEvent::SessionResetRequested) before any session state
-/// changes on their side; if they accept, they install a fresh session
-/// and reply with SessionResetAccept which our message_service handles
-/// to install our matching responder-side session. If they decline,
-/// they send SessionResetDecline and our local session stays deleted
-/// but no fresh session is established (caller knows the peer doesn't
-/// want to renew).
+/// Reset our secure session with a friend (`IpcRequest::SessionResetStart`,
+/// TrustChanging): the review shows whose session it is; the friend
+/// compares safety numbers before accepting.
 #[tauri::command]
 pub async fn reset_signal_session(
     peer_public_key: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    reset_signal_session_inner(state.inner().clone(), pool.clone(), peer_public_key).await
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::SessionResetStart {
+            public_key: peer_public_key,
+        },
+    )
+    .await
 }
 
-/// P3.3 — accept a SessionResetRequest from a peer. Consumes the
-/// stashed bundle from `state.pending_session_resets`, calls
-/// establish_session(peer, peer_bundle), and sends SessionResetAccept
-/// back with the X3DH metadata so the peer can complete the renewal on
-/// their side via respond_to_session.
-///
-/// MUST only be invoked after the user has verified the peer's safety
-/// number out-of-band. The frontend's session-reset modal is responsible
-/// for showing the safety_number from the NotificationEvent and
-/// requiring explicit user consent before invoking this command.
-#[tauri::command]
-pub async fn accept_session_reset(
-    peer_public_key: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    accept_session_reset_inner(state.inner().clone(), pool.clone(), peer_public_key).await
-}
-
-/// P3.3 — decline a SessionResetRequest. Clears the stashed bundle and
-/// sends SessionResetDecline so the peer knows we said no (their UI can
-/// surface the rejection so the user understands the renewal didn't
-/// complete).
-#[tauri::command]
-pub async fn decline_session_reset(
-    peer_public_key: String,
-    reason: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    decline_session_reset_inner(state.inner().clone(), pool.clone(), peer_public_key, reason).await
-}
-
-/// Create a new friend group.
+/// Create a friend group (`IpcRequest::FriendGroupCreate`).
 #[tauri::command]
 pub async fn create_friend_group(
     name: String,
     state: State<'_, SharedState>,
-) -> Result<i64, String> {
-    let pool = state.db.current()?;
-    create_friend_group_inner(state.inner(), &pool, name).await
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendGroupCreate { name }).await
 }
 
-/// Set (or clear) the local alias shown for one friend.
-///
-/// Distinct from `set_nickname`, which changes the *user's own* display
-/// name. This is the per-friend alias the buddy list renders.
+/// Set (or clear) our alias for one friend (`IpcRequest::FriendSetNickname`),
+/// distinct from `set_nickname`, our own display name.
 #[tauri::command]
 pub async fn set_friend_nickname(
     public_key: String,
     nickname: Option<String>,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    set_friend_nickname_inner(state.inner(), &pool, &app, public_key, nickname).await
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FriendSetNickname {
+            public_key,
+            nickname,
+        },
+    )
+    .await
 }
-/// Rename a friend group.
+
+/// Rename a friend group (`IpcRequest::FriendGroupRename`).
 #[tauri::command]
 pub async fn rename_friend_group(
     group_id: i64,
     name: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    rename_friend_group_inner(&pool, group_id, name).await
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendGroupRename { group_id, name }).await
 }
 
-/// Move a friend into a group (or remove from group with `group_id` = null).
+/// Delete a friend group; its friends fall back to no group
+/// (`IpcRequest::FriendGroupDelete`).
+#[tauri::command]
+pub async fn delete_friend_group(
+    group_id: i64,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendGroupDelete { group_id }).await
+}
+
+/// Move a friend into a group, or out of any with `None`
+/// (`IpcRequest::FriendGroupMove`).
 #[tauri::command]
 pub async fn move_friend_to_group(
     public_key: String,
     group_id: Option<i64>,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    move_friend_to_group_inner(state.inner().clone(), pool.clone(), public_key, group_id).await
-}
-
-/// Generate an invite link containing everything needed for a peer to add us.
-#[tauri::command]
-pub async fn generate_invite(
-    state: State<'_, SharedState>,
-) -> Result<GenerateInviteResult, String> {
-    let pool = state.db.current()?;
-    generate_invite_inner(state.inner().clone(), pool.clone()).await
-}
-
-/// Add a friend from a `rekindle://` invite string.
-#[tauri::command]
-pub async fn add_friend_from_invite(
-    invite_string: String,
-    app: tauri::AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    add_friend_from_invite_inner(state.inner().clone(), pool.clone(), app, invite_string).await
-}
-
-/// Block a user — works for any public key (friend, pending, invite, or raw key).
-///
-/// Removes them from friends/pending requests, adds to blocked list, cleans up
-/// Signal session, pending messages, DHT state, and rotates our profile key.
-#[tauri::command]
-pub async fn block_user(
-    public_key: String,
-    display_name: Option<String>,
-    app: tauri::AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    block_user_inner(
-        state.inner().clone(),
-        pool.clone(),
-        app,
-        public_key,
-        display_name,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FriendGroupMove {
+            public_key,
+            group_id,
+        },
     )
     .await
 }
 
-/// Unblock a user — removes them from the blocked list.
-///
-/// Does NOT re-add them as a friend. The user must manually re-add if desired.
+/// Make a tracked invite link (`IpcRequest::FriendInviteCreate`).
 #[tauri::command]
-pub async fn unblock_user(public_key: String, state: State<'_, SharedState>) -> Result<(), String> {
-    let pool = state.db.current()?;
-    unblock_user_inner(state.inner(), &pool, public_key).await
-}
-
-/// Get all blocked users for the current identity.
-#[tauri::command]
-pub async fn get_blocked_users(state: State<'_, SharedState>) -> Result<Vec<BlockedUser>, String> {
-    let pool = state.db.current()?;
-    get_blocked_users_inner(state.inner(), &pool).await
-}
-
-/// Re-emit presence events for all non-offline friends.
-///
-/// Called by the frontend after hydration completes so that event listeners
-/// (registered before hydration) receive the current friend presence state.
-/// Waits for Veilid network readiness (up to 15s) before syncing from DHT
-/// so that `state.friends` has fresh data rather than stale Offline defaults.
-#[tauri::command]
-pub async fn emit_friends_presence(
-    app: tauri::AppHandle,
+pub async fn generate_invite(
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    emit_friends_presence_inner(state.inner().clone(), app).await
+) -> Result<Done<InviteCreated>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendInviteCreate).await
 }
 
-/// Cancel a pending outgoing invite by its `invite_id`.
+/// Add the friend a pasted invite link names
+/// (`IpcRequest::FriendAddFromInvite`, reviewed with their fingerprint).
 #[tauri::command]
-pub async fn cancel_invite(invite_id: String, state: State<'_, SharedState>) -> Result<(), String> {
-    let pool = state.db.current()?;
-    cancel_invite_inner(state.inner(), &pool, invite_id).await
+pub async fn add_friend_from_invite(
+    invite_string: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FriendAddFromInvite {
+            invite: invite_string,
+        },
+    )
+    .await
 }
 
-/// Get all active (pending/responded) outgoing invites.
+/// Block anyone by public key (`IpcRequest::FriendBlock`): our profile
+/// moves to a new key.
+#[tauri::command]
+pub async fn block_user(
+    public_key: String,
+    display_name: Option<String>,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FriendBlock {
+            public_key,
+            display_name,
+        },
+    )
+    .await
+}
+
+/// Unblock a user (`IpcRequest::FriendUnblock`); they are not re-added.
+#[tauri::command]
+pub async fn unblock_user(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendUnblock { public_key }).await
+}
+
+/// Everyone we blocked (`IpcRequest::FriendBlockedList`).
+#[tauri::command]
+pub async fn get_blocked_users(
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<BlockedUser>>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendBlockedList).await
+}
+
+/// Cancel an open invite (`IpcRequest::FriendInviteCancel`).
+#[tauri::command]
+pub async fn cancel_invite(
+    invite_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendInviteCancel { invite_id }).await
+}
+
+/// Our open invites (`IpcRequest::FriendInviteList`).
 #[tauri::command]
 pub async fn get_outgoing_invites(
     state: State<'_, SharedState>,
-) -> Result<Vec<crate::invite_helpers::OutgoingInvite>, String> {
-    let pool = state.db.current()?;
-    get_outgoing_invites_inner(state.inner(), &pool).await
+) -> Result<Done<Vec<OutgoingInvite>>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendInviteList).await
 }

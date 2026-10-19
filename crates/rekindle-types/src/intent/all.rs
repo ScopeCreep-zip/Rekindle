@@ -57,6 +57,7 @@ impl IntentKind {
         Self::SetQuietHours,
         Self::WriteSyncPreferences,
         Self::CreateFriendGroup,
+        Self::DeleteFriendGroup,
         Self::MoveFriendToGroup,
         Self::RenameFriendGroup,
         Self::SetFriendNickname,

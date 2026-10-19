@@ -60,7 +60,6 @@ pub struct IdentitySettingsView {
     profile_dht_key: String,
     mailbox_dht_key: String,
     friend_list_dht_key: String,
-    friend_inbox_key: String,
     /// Security.
     signing_key_loaded: bool,
     /// Which sections are expanded.
@@ -87,7 +86,6 @@ impl IdentitySettingsView {
             profile_dht_key: String::new(),
             mailbox_dht_key: String::new(),
             friend_list_dht_key: String::new(),
-            friend_inbox_key: String::new(),
             signing_key_loaded: false,
             expanded: [false; 4],
             loaded: false,
@@ -153,7 +151,6 @@ impl IdentitySettingsView {
             items.push(Self::kv_item("    Profile", &self.profile_dht_key));
             items.push(Self::kv_item("    Mailbox", &self.mailbox_dht_key));
             items.push(Self::kv_item("    Friend List", &self.friend_list_dht_key));
-            items.push(Self::kv_item("    Friend Inbox", &self.friend_inbox_key));
         }
 
         // ── Security section ─────────────────────────────────

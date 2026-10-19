@@ -14,11 +14,6 @@ use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
 use super::in_flight::{shutting_down, Correlation, Finished, InFlight};
 use super::{Caller, DaemonContext};
 
-/// A store write or read failed: 500, naming what.
-pub(crate) fn store_error(what: &str, e: impl std::fmt::Display) -> IpcResponse {
-    IpcResponse::error(500, format!("{what}: {e}"))
-}
-
 // ── Shared helpers used across dispatch submodules ───────────────────────
 
 impl DaemonContext {

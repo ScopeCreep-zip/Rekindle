@@ -64,28 +64,10 @@ pub fn mailbox() -> RecordSchema {
     }
 }
 
-/// A single-subkey record: our friend list, a log spine, the account
-/// header.
+/// A single-subkey record: our friend list, the account header.
 #[must_use]
 pub fn single() -> RecordSchema {
     RecordSchema::Dflt { owner_subkeys: 1 }
-}
-
-/// A short array of `capacity` slots after its head subkey; `None` when
-/// the head does not fit (`capacity` is `u16::MAX`).
-#[must_use]
-pub fn short_array(capacity: u16) -> Option<RecordSchema> {
-    Some(RecordSchema::Dflt {
-        owner_subkeys: capacity.checked_add(1)?,
-    })
-}
-
-/// A friend-request inbox.
-#[must_use]
-pub fn friend_inbox() -> RecordSchema {
-    RecordSchema::Dflt {
-        owner_subkeys: layout::friend_inbox::SUBKEY_COUNT,
-    }
 }
 
 /// A community channel record: the channel layout's owner subkeys, then a
@@ -111,11 +93,8 @@ mod tests {
 
     #[test]
     fn layouts_size_their_records() {
-        assert_eq!(profile().subkey_count(), 11);
+        assert_eq!(profile().subkey_count(), 9);
         assert_eq!(mailbox().subkey_count(), 1);
-        assert_eq!(friend_inbox().subkey_count(), 32);
-        assert_eq!(short_array(255).unwrap().subkey_count(), 256);
-        assert!(short_array(u16::MAX).is_none());
         let keys = [[1u8; 32], [2u8; 32]];
         assert_eq!(community_smpl(&keys).subkey_count(), 2);
         assert_eq!(channel(&keys).subkey_count(), 2);

@@ -29,7 +29,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::intent::intent_cancel,
         commands::intent::undo,
         // chat
-        commands::chat::prepare_chat_session,
         commands::chat::send_message,
         commands::chat::send_typing,
         commands::chat::get_message_history,
@@ -43,6 +42,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::friends::get_pending_requests,
         commands::friends::create_friend_group,
         commands::friends::rename_friend_group,
+        commands::friends::delete_friend_group,
         commands::friends::set_friend_nickname,
         commands::friends::move_friend_to_group,
         commands::friends::generate_invite,
@@ -53,10 +53,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::friends::cancel_request,
         commands::friends::cancel_invite,
         commands::friends::get_outgoing_invites,
-        commands::friends::emit_friends_presence,
         commands::friends::reset_signal_session,
-        commands::friends::accept_session_reset,
-        commands::friends::decline_session_reset,
         // community
         commands::community::create_community,
         commands::community::join_community,

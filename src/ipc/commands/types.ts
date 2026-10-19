@@ -327,13 +327,11 @@ export type SettingsTab =
 /// stay in the backend.
 export type DeepLinkRequest =
   | { kind: "joinCommunity"; requestId: string; keyFingerprint: string }
-  | { kind: "addFriend"; requestId: string; keyFingerprint: string }
   | { kind: "pairingRefused"; requestId: string };
 
 /// What a confirmed deep link did.
 export type DeepLinkOutcome =
   | { kind: "joinedCommunity"; communityId: string }
-  | { kind: "friendAdded" }
   | { kind: "dismissed" };
 
 /// A live 1:1 call (`get_active_call`).

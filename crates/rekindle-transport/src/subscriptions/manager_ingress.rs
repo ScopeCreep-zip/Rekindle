@@ -1,11 +1,10 @@
-//! Inbound event ingress: gossip, DM, and DHT ValueChange routing
+//! Inbound event ingress: gossip and DHT ValueChange routing
 //! through the central enrich → state-effects → dedup → emit pipeline.
 
 use tracing::debug;
 
 use super::{state_effects, watches, SubscriptionManager};
 use crate::gossip::GossipAdmission;
-use crate::payload::dm::DmPayload;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use super::events::{self, SubscriptionEvent};
@@ -77,23 +76,6 @@ impl SubscriptionManager {
         }
     }
 
-    /// Route a DM payload. Called by the daemon's InboundHandler.
-    ///
-    /// Pipeline: payload.into_event() → state_effects → dedup → emit
-    pub fn on_dm(&self, sender_key: &str, payload: DmPayload, timestamp: u64) {
-        debug!(
-            sender = %sender_key,
-            timestamp, "sub: on_dm"
-        );
-        // W16.4 — call signaling and DM invites return None (they
-        // surface via TransportNotification, not SubscriptionEvent).
-        // The receive dispatch (W16.7) routes them to the call state
-        // machine before reaching this layer.
-        if let Some(event) = payload.into_event(sender_key, timestamp) {
-            self.process_event(event);
-        }
-    }
-
     /// Central event processing pipeline: enrich → state effects → dedup → emit.
     ///
     /// Single point of emission for ALL events regardless of source tier
@@ -149,14 +131,11 @@ impl SubscriptionManager {
             ) if sender_name.is_none() => {
                 // Resolve display name from friend list in session
                 let guard = self.session.read();
-                if let Some(ref session) = *guard {
-                    if let Some(request) = session
-                        .pending_friend_requests
-                        .iter()
-                        .find(|r| r.public_key == *peer_key)
-                    {
-                        *sender_name = Some(request.display_name.clone());
-                    }
+                if let Some(friend) = guard
+                    .as_ref()
+                    .and_then(|s| s.friends.get(peer_key.as_str()))
+                {
+                    *sender_name = Some(friend.display_name.clone());
                 }
             }
             _ => {}
@@ -182,51 +161,6 @@ impl SubscriptionManager {
         };
 
         match kind {
-            watches::WatchKind::FriendInbox => {
-                debug!(record_key, subkeys = ?changed_subkeys, "friend inbox changed");
-                // Update pending count from session
-                let pending_count = self.session.read().as_ref().map_or(0, |s| {
-                    u32::try_from(s.pending_friend_requests.len()).unwrap_or(u32::MAX)
-                });
-                self.state.write().unread.friend_requests = pending_count;
-                let count = pending_count;
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::FriendRequests,
-                    count,
-                });
-            }
-            watches::WatchKind::DmLog { peer_key } => {
-                debug!(peer = %peer_key, "DM log changed");
-                let count = self.state.write().unread.increment_dm(&peer_key);
-                self.process_event(SubscriptionEvent::ChannelMessage(
-                    events::ChannelMessageEvent::DirectMessageReceived {
-                        peer_key: peer_key.clone(),
-                        timestamp: rekindle_utils::timestamp_ms(),
-                        sender_name: None, // enriched from friend list
-                        // Still unenriched. Filling this means reading
-                        // the channel record and decrypting, which is
-                        // what the manager's `mek_cache` was for — it
-                        // was removed with the MEK-vault watch that was
-                        // its only reader, and this path will need it
-                        // back when the enrichment is implemented.
-                        body: None,
-                        // A watch fired; nothing was decrypted, so
-                        // there is no failure to report and nothing for
-                        // automod to have matched.
-                        decryption_failed: false,
-                        automod_blurred: false,
-                        // The DM log is per-peer, so the peer key is
-                        // the conversation.
-                        conversation_id: peer_key.clone(),
-                        server_message_id: None,
-                        reply_to_id: None,
-                    },
-                ));
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::Dm { peer_key },
-                    count,
-                });
-            }
             watches::WatchKind::GovernanceRecord { community } => {
                 // A governance subkey changing means the member holding
                 // that slot wrote entries. Which entries, and what they

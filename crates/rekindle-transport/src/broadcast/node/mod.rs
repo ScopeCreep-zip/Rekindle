@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 
 use crate::config::TransportConfig;
 
-use super::peer_registry::PeerRegistry;
+use super::peer_registry::{PeerRegistry, RelayState};
 use super::send::{AppCaller, Sender};
 use crate::error::{Result, TransportError};
 use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
@@ -32,6 +32,7 @@ pub struct TransportNode {
     route_publisher_handle: Option<tokio::task::JoinHandle<()>>,
     route_publisher_shutdown_tx: Option<mpsc::Sender<()>>,
     peer_registry: Arc<parking_lot::RwLock<PeerRegistry>>,
+    relay: RelayState,
     shared_state: Arc<SharedState>,
 }
 
@@ -147,6 +148,11 @@ impl TransportNode {
 
     pub fn peers(&self) -> Arc<parking_lot::RwLock<PeerRegistry>> {
         Arc::clone(&self.peer_registry)
+    }
+
+    /// Strand Relay sender state, beside the peer route cache.
+    pub fn relay(&self) -> &RelayState {
+        &self.relay
     }
 
     pub fn config(&self) -> &TransportConfig {

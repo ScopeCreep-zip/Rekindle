@@ -1,15 +1,8 @@
 use std::sync::Arc;
 
-use tauri::AppHandle;
-
-use crate::services::presence_service;
 use crate::state::AppState;
 
-pub async fn handle_value_change(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    change: veilid_core::VeilidValueChange,
-) {
+pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::VeilidValueChange) {
     // The port's form of the change (plan C9.1): keys as text, seqs whole.
     let change = rekindle_protocol::dht::pool::value_change(&change);
     let key = change.key.clone();
@@ -113,7 +106,7 @@ pub async fn handle_value_change(
             tracing::debug!(subkey, "no routing context to fetch subkey value");
             continue;
         };
-        presence_service::handle_value_change(app_handle, state, &key, &[subkey], &value);
+        crate::state_helpers::friend_presence_change(state, &key, &[subkey], &value);
         // Mutual Aid (architecture §14.3): we hold a watch slot for this
         // record, so gossip-relay the notification to community peers
         // who may not — the receivers fetch the new value themselves

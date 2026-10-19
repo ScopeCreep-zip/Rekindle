@@ -10,13 +10,19 @@ mod json;
 use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
+use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
+use rekindle_types::dto::friends::{
+    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest,
+};
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
 use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState};
 use rekindle_types::intent::{
     IntentClass, IntentId, IntentKind, IntentReview, Notifies, ProofRequired, Reversibility,
     Subject, UndoOffer,
 };
+use rekindle_types::message::SendState;
 use rekindle_types::presence::{IdleState, SessionStatus};
 use serde_json::{json, Map, Value};
 
@@ -170,7 +176,87 @@ fn samples() -> Map<String, Value> {
         "command.error.intentRequired",
         to(CommandError::IntentRequired(review())),
     );
+    friend_samples(&mut add);
     out
+}
+
+/// The friend and DM DTOs (plan E2.1).
+fn friend_samples(add: &mut impl FnMut(&str, Value)) {
+    let mut accepted = FriendState::new(pk('b'), "Bob".into(), FriendshipState::Accepted);
+    accepted.nickname = Some("Bobby".into());
+    accepted.status = SessionStatus::Busy;
+    accepted.status_message = Some("raiding".into());
+    accepted.group = Some("Raid team".into());
+    accepted.unread_count = 2;
+    accepted.last_seen_at = Some(1_700_000_000_000);
+    accepted.game_info = Some(GameInfoState {
+        game_id: 4181,
+        game_name: "Counter-Strike 2".into(),
+        server_info: None,
+        elapsed_seconds: 90,
+        server_address: Some("10.0.0.1:27015".into()),
+    });
+    add("friends.friend.accepted", to(Friend::of(&accepted)));
+    let mut pending = FriendState::new(pk('c'), "Cy".into(), FriendshipState::PendingOut);
+    pending.status = SessionStatus::Online;
+    pending.handshake_error = Some("their accept carried no session data".into());
+    add("friends.friend.pendingOut", to(Friend::of(&pending)));
+    add(
+        "friends.pendingRequest",
+        to(PendingRequest {
+            public_key: pk('d'),
+            display_name: "Dee".into(),
+            message: "remember me from LAN night?".into(),
+            received_at: 1_700_000_000_000,
+        }),
+    );
+    add(
+        "friends.blockedUser",
+        to(BlockedUser {
+            public_key: pk('e'),
+            display_name: "Eve".into(),
+            blocked_at: 1_700_000_000_000,
+        }),
+    );
+    add(
+        "friends.outgoingInvite",
+        to(OutgoingInvite {
+            invite_id: "3f2a7c1e-0000-4000-8000-000000000001".into(),
+            url: "rekindle://abc".into(),
+            created_at: 1_700_000_000_000,
+            expires_at: 1_700_172_800_000,
+            status: "responded".into(),
+            accepted_by: Some(pk('f')),
+        }),
+    );
+    add(
+        "friends.inviteCreated",
+        to(InviteCreated {
+            url: "rekindle://abc".into(),
+            invite_id: "3f2a7c1e-0000-4000-8000-000000000001".into(),
+        }),
+    );
+    add(
+        "dm.message",
+        to(DmMessage {
+            id: 9,
+            sender_id: pk('a'),
+            body: "gg".into(),
+            timestamp: 1_700_000_000_000,
+            is_own: true,
+            send_state: SendState::Delivered,
+        }),
+    );
+    add(
+        "dm.inboxEntry",
+        to(DmInboxEntry {
+            peer_key: pk('b'),
+            sender_key: pk('b'),
+            body: "gg".into(),
+            timestamp: 1_700_000_000_000,
+            is_read: false,
+        }),
+    );
 }
 
 fn golden_path() -> PathBuf {

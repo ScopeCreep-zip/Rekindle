@@ -1,7 +1,7 @@
 //! Friend lifecycle events — request, accept, reject, remove, profile rotation.
 //!
-//! These are triggered by `DmPayload` variants and DHT `ValueChange`
-//! on the friend inbox record.
+//! These are triggered by `DmPayload` variants arriving as `'D'`
+//! envelopes on the identity's own route.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum FriendEvent {
     /// An inbound friend request was received.
-    /// Triggered by: `DmPayload::FriendRequest`, DHT watch on friend inbox.
+    /// Triggered by: `DmPayload::FriendRequest`.
     RequestReceived {
         from_key: String,
         display_name: String,
@@ -20,21 +20,16 @@ pub enum FriendEvent {
     /// Triggered by: `DmPayload::FriendRequestAck`.
     RequestAcknowledged { peer_key: String },
     /// A friend request was accepted (friendship established).
-    /// Triggered by: `DmPayload::FriendAccept`, DHT watch on friend inbox (Accepted status).
+    /// Triggered by: `DmPayload::FriendAccept`.
     Accepted {
         peer_key: String,
-        /// The shared DM log spine, when the acceptance established one.
-        /// `Option` rather than an empty string: the DM-payload path
-        /// genuinely does not carry it, and `String::new()` there was
-        /// indistinguishable from a real-but-empty key.
-        dm_log_key: Option<String>,
         /// The accepter's display name, when the acceptance carried it.
         /// The desktop's parallel event always had this and Tier 1 did
         /// not, so a CLI saw an acceptance from a bare key.
         display_name: Option<String>,
     },
     /// A friend request was rejected.
-    /// Triggered by: `DmPayload::FriendReject`, DHT watch on friend inbox (Rejected status).
+    /// Triggered by: `DmPayload::FriendReject`.
     Rejected { peer_key: String },
     /// A friend row was added to our list — the point at which the
     /// friend becomes renderable, as distinct from [`Self::Accepted`],
@@ -61,6 +56,13 @@ pub enum FriendEvent {
     NicknameChanged {
         peer_key: String,
         nickname: Option<String>,
+    },
+    /// A friend's group changed: moved, or their group renamed or deleted
+    /// (`None`: no group).
+    /// Triggered by: the friend-group actions.
+    GroupChanged {
+        peer_key: String,
+        group: Option<String>,
     },
     /// The first-contact Signal handshake with a peer we sent a request to
     /// failed: no secure session exists, so the friendship stays pending.

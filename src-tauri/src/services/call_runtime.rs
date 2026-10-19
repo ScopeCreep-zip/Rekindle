@@ -71,7 +71,6 @@ pub fn get_active_call_inner(
 
 pub async fn send_call_media_state_inner(
     state: &SharedState,
-    pool: &Db,
     call_id: String,
     audio: bool,
     video: bool,
@@ -89,14 +88,17 @@ pub async fn send_call_media_state_inner(
         screen,
         timestamp_ms: rekindle_utils::timestamp_ms(),
     };
-    crate::services::message_service::send_to_peer(state, pool, &peer_pubkey, &payload)
-        .await
-        .map_err(|e| format!("send_call_media_state: {e}"))
+    rekindle_transport::operations::dm::send_to_peer(
+        crate::state_helpers::friend_host(state)?.as_ref(),
+        &peer_pubkey,
+        &payload,
+    )
+    .await
+    .map_err(|e| format!("send_call_media_state: {e}"))
 }
 
 pub async fn send_call_reaction_inner(
     state: &SharedState,
-    pool: &Db,
     call_id: String,
     emoji: String,
 ) -> Result<(), String> {
@@ -113,9 +115,13 @@ pub async fn send_call_reaction_inner(
         emoji,
         timestamp_ms: rekindle_utils::timestamp_ms(),
     };
-    crate::services::message_service::send_to_peer(state, pool, &peer_pubkey, &payload)
-        .await
-        .map_err(|e| format!("send_call_reaction: {e}"))
+    rekindle_transport::operations::dm::send_to_peer(
+        crate::state_helpers::friend_host(state)?.as_ref(),
+        &peer_pubkey,
+        &payload,
+    )
+    .await
+    .map_err(|e| format!("send_call_reaction: {e}"))
 }
 
 pub async fn get_missed_calls_inner(

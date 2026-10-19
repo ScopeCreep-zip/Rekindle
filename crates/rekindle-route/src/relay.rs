@@ -102,6 +102,18 @@ pub fn lookup<S: BuildHasher>(
     map.get(key).cloned()
 }
 
+/// The relay routes of a published relay pool (profile subkey 8, JSON
+/// `Vec<Vec<u8>>`), dummies dropped: a dummy's first byte is `0xFF`, the
+/// padding that hides the pool's real size.
+#[must_use]
+pub fn decode_relay_pool(pool_body: &[u8]) -> Vec<Vec<u8>> {
+    let entries: Vec<Vec<u8>> = serde_json::from_slice(pool_body).unwrap_or_default();
+    entries
+        .into_iter()
+        .filter(|blob| blob.first().is_some_and(|&b| b != 0xFF))
+        .collect()
+}
+
 /// Rank candidate relay blobs by `blake3(target_pubkey || blob)`
 /// ascending. The same target consistently picks the same relay first, so
 /// caching/keepalive effects accumulate on one route rather than
@@ -126,6 +138,19 @@ mod tests {
 
     fn key(byte: u8) -> RelayKey {
         [byte; 32]
+    }
+
+    #[test]
+    fn decode_strips_dummy_entries() {
+        let mut dummy = vec![0u8; 16];
+        dummy[0] = 0xFF;
+        let body = serde_json::to_vec(&vec![vec![1u8, 2, 3], dummy, Vec::new()]).unwrap();
+        assert_eq!(decode_relay_pool(&body), vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn decode_empty_pool_yields_empty() {
+        assert!(decode_relay_pool(&[]).is_empty());
     }
 
     #[test]

@@ -84,22 +84,9 @@ pub struct DecryptedMessageDisplay {
     pub needs_mek: Option<u64>,
 }
 
-// ── Friends / DMs ───────────────────────────────────────────────────────
+// ── DMs ─────────────────────────────────────────────────────────────────
 
-/// Friend with resolved display name and presence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendDisplay {
-    pub public_key: String,
-    pub display_name: String,
-    pub nickname: Option<String>,
-    pub status: String,
-    pub status_message: String,
-    pub last_seen_ms: Option<u64>,
-    pub profile_dht_key: Option<String>,
-    pub has_route: bool,
-}
-
-/// DM conversation thread for inbox display.
+/// DM conversation thread for the TUI inbox's display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DmThreadDisplay {
     pub peer_key: String,

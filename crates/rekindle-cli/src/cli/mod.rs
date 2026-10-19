@@ -21,7 +21,7 @@ pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
 pub use own::{AuditCmd, GameCmd, ProfileCmd};
-pub use social::{DmCmd, FriendCmd, PresenceCmd, PresenceStatus};
+pub use social::{DmCmd, FriendCmd, FriendInviteCmd, GroupCmd, PresenceCmd, PresenceStatus};
 
 use std::path::PathBuf;
 

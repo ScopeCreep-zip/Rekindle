@@ -109,7 +109,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 87: the preferences move from the plugin store into `app_settings`
 /// columns and `app_input_channels` (plan D1).
-pub const SCHEMA_VERSION: i64 = 90;
+///
+/// 91: the daemon's friend inbox and DM logs go (plan E2.1):
+/// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` are
+/// dropped; friend requests and DMs travel as `'D'` envelopes on both hosts.
+pub const SCHEMA_VERSION: i64 = 91;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

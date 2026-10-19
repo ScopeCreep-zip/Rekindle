@@ -19,6 +19,9 @@
 //!   connection and identity), expires after [`INTENT_TTL_MS`], and at
 //!   most [`MAX_PENDING_PER_OWNER`] are held per owner. Lock, logout and
 //!   identity switch [`IntentGate::clear`] the owner's.
+//! - The backend may [`IntentGate::hold`] an action it began (a friend's
+//!   session-reset request, plan E2.1): always held, never run at once,
+//!   for [`BACKEND_HOLD_TTL_MS`], with the action Cancel sends instead.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -38,6 +41,11 @@ use crate::cache::IdempotencyCache;
 pub const INTENT_TTL_MS: u64 = 5 * 60 * 1000;
 /// Held actions per owner.
 pub const MAX_PENDING_PER_OWNER: usize = 16;
+/// How long an action the backend holds waits (plan E2.1): a request that
+/// arrived while the user was away must still be there when they return.
+/// On expiry it is dropped and nothing is sent (an automatic answer would
+/// tell the requester the client was online and unattended).
+pub const BACKEND_HOLD_TTL_MS: u64 = 24 * 60 * 60 * 1000;
 
 /// What the backend knows about a selected action when it is selected,
 /// and again at commit.
@@ -105,6 +113,10 @@ struct Pending<A, O> {
     selection: Selection,
     review: IntentReview,
     action: A,
+    /// What Cancel runs instead (a backend hold's answer).
+    on_cancel: Option<A>,
+    /// How long it is held from each review.
+    ttl_ms: u64,
 }
 
 /// Held actions of type `A`, owned by `O`, whose runs answer `R`.
@@ -115,7 +127,7 @@ pub struct IntentGate<A, O: GateOwner, R: Clone + Send + Sync + 'static> {
     results: IdempotencyCache<(O, R)>,
 }
 
-fn review_of(selection: &Selection, now_ms: u64) -> IntentReview {
+fn review_of(selection: &Selection, now_ms: u64, ttl_ms: u64) -> IntentReview {
     let class = effective_class(selection.kind, &selection.escalations);
     IntentReview {
         intent_id: IntentId::new(),
@@ -127,7 +139,7 @@ fn review_of(selection: &Selection, now_ms: u64) -> IntentReview {
         reversibility: selection.reversibility,
         notifies: selection.notifies,
         proof: class.proof(),
-        expires_at_ms: now_ms + INTENT_TTL_MS,
+        expires_at_ms: now_ms + ttl_ms,
     }
 }
 
@@ -159,12 +171,43 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         if class == IntentClass::Routine || selection.kind.proves_itself() {
             return Ok(Gate::Run(action));
         }
+        self.insert(owner, selection, action, None, INTENT_TTL_MS, now_ms)
+            .map(Gate::Review)
+    }
+
+    /// Hold an action the backend began for `owner`'s review, never run at
+    /// once whatever its class: committed it runs `action`, cancelled it
+    /// runs `on_cancel`. Held for `ttl_ms` ([`BACKEND_HOLD_TTL_MS`]).
+    ///
+    /// # Errors
+    /// `owner` already holds [`MAX_PENDING_PER_OWNER`] unexpired actions.
+    pub fn hold(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        on_cancel: Option<A>,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<IntentReview, GateError> {
+        self.insert(owner, selection, action, on_cancel, ttl_ms, now_ms)
+    }
+
+    fn insert(
+        &self,
+        owner: O,
+        selection: Selection,
+        action: A,
+        on_cancel: Option<A>,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<IntentReview, GateError> {
         let mut pending = self.pending.lock();
         pending.retain(|_, p| p.review.expires_at_ms > now_ms);
         if pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER {
             return Err(GateError::TooManyPending);
         }
-        let review = review_of(&selection, now_ms);
+        let review = review_of(&selection, now_ms, ttl_ms);
         pending.insert(
             review.intent_id,
             Pending {
@@ -172,9 +215,11 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
                 selection,
                 review: review.clone(),
                 action,
+                on_cancel,
+                ttl_ms,
             },
         );
-        Ok(Gate::Review(review))
+        Ok(review)
     }
 
     /// Step 3, Commit: with `fresh` = the selection recomputed now, either
@@ -203,7 +248,7 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             let Some(mut held) = pending.remove(&intent_id) else {
                 return Err(GateError::UnknownIntent);
             };
-            held.review = review_of(&fresh, now_ms);
+            held.review = review_of(&fresh, now_ms, held.ttl_ms);
             held.selection = fresh;
             let review = held.review.clone();
             pending.insert(review.intent_id, held);
@@ -308,17 +353,30 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             .map(|p| p.action.clone())
     }
 
-    /// Drop a held action. Returns whether `owner` could act for it.
-    pub fn cancel(&self, intent_id: IntentId, owner: &O) -> bool {
+    /// Drop a held action; the action Cancel runs instead, if it has one
+    /// (the Cancel click is the user's act, so it is not reviewed again).
+    ///
+    /// # Errors
+    /// `UnknownIntent` when no held action has this id or `owner` cannot
+    /// act for it.
+    pub fn cancel(&self, intent_id: IntentId, owner: &O) -> Result<Option<A>, GateError> {
         let mut pending = self.pending.lock();
         if pending
             .get(&intent_id)
             .is_some_and(|p| owner.may_act_for(&p.owner))
         {
-            pending.remove(&intent_id);
-            return true;
+            if let Some(held) = pending.remove(&intent_id) {
+                return Ok(held.on_cancel);
+            }
         }
-        false
+        Err(GateError::UnknownIntent)
+    }
+
+    /// Keep only the held actions `keep` answers `true` for; the others go
+    /// without their Cancel action (a newer backend hold replaces an older
+    /// one of the same peer).
+    pub fn retain_held(&self, keep: impl Fn(&O, &A) -> bool) {
+        self.pending.lock().retain(|_, p| keep(&p.owner, &p.action));
     }
 
     /// Drop every action `owner` holds.

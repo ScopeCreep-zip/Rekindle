@@ -220,6 +220,12 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"|");
             h.update(nickname.as_deref().unwrap_or_default().as_bytes());
         }
+        FriendEvent::GroupChanged { peer_key, group } => {
+            h.update(b"group|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(group.as_deref().unwrap_or_default().as_bytes());
+        }
         FriendEvent::HandshakeFailed { peer_key, reason } => {
             h.update(b"hs_fail|");
             h.update(peer_key.as_bytes());

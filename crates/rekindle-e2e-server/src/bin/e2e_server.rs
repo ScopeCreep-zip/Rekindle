@@ -25,7 +25,7 @@ use tower_http::cors::{Any, CorsLayer};
 use rekindle_db::paths::DataRoot;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_lib::host_call;
-use rekindle_lib::state::{AppState, SharedState, UserStatus};
+use rekindle_lib::state::{AppState, SharedState};
 use rekindle_types::dto::{CommandError, Done};
 
 /// Shared server state passed to every axum handler.
@@ -155,7 +155,7 @@ enum Answer {
 
 /// Route a command: a Host call, or the server's own answer.
 async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Answer, CommandError> {
-    match local(server, cmd) {
+    match local(cmd) {
         Some(answer) => answer.map(Answer::Local),
         None => host(server, cmd, args).await.map(Answer::Host),
     }
@@ -249,41 +249,16 @@ async fn host(server: &ServerState, cmd: &str, args: &Value) -> Result<Done<Valu
             };
             host_call::call(state, request).await
         }
+        "get_friends" => host_call::call(state, IpcRequest::FriendList).await,
+        "get_pending_requests" => host_call::call(state, IpcRequest::FriendRequests).await,
         other => Err(bad_request(format!("unknown command: {other}"))),
     }
 }
 
 /// The commands not yet ported to the Host (the window's mount reads), or
 /// `None` for a Host call.
-fn local(server: &ServerState, cmd: &str) -> Option<Result<Value, CommandError>> {
+fn local(cmd: &str) -> Option<Result<Value, CommandError>> {
     let value = match cmd {
-        // ── Friends ──────────────────────────────────────────────────
-        "get_friends" => {
-            let friends = server.state.friends.read();
-            let list: Vec<Value> = friends
-                .values()
-                .map(|f| {
-                    json!({
-                        "publicKey": f.public_key,
-                        "displayName": f.display_name,
-                        "nickname": f.nickname,
-                        "status": format!("{}", match f.status {
-                            UserStatus::Online => "online",
-                            UserStatus::Away => "away",
-                            UserStatus::Busy => "busy",
-                            UserStatus::Offline | UserStatus::Invisible => "offline",
-                        }),
-                        "statusMessage": f.status_message,
-                        "gameInfo": Value::Null,
-                        "group": f.group,
-                        "unreadCount": f.unread_count,
-                        "lastSeenAt": f.last_seen_at,
-                    })
-                })
-                .collect();
-            Value::Array(list)
-        }
-
         // ── Communities ──────────────────────────────────────────────
         "get_community_details" | "get_communities" => json!([]),
 

@@ -351,8 +351,12 @@ fn default_dht_write_retries() -> u32 {
 fn default_route_watchdog_secs() -> u64 {
     30
 }
+/// How long a peer's route blob is trusted before it is fetched again: the
+/// one peer-route cache's age (plan E2.1; `rekindle_route::lifecycle::
+/// PEER_ROUTE_CACHE_MAX_AGE`). A route that dies sooner is dropped when a
+/// send to it fails, or when Veilid reports it dead.
 fn default_route_cache_ttl_secs() -> u64 {
-    90
+    900
 }
 fn default_circuit_breaker_threshold() -> u32 {
     3

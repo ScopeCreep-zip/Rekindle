@@ -6,9 +6,8 @@
 //! This module lets a host reach it through the transport node, and writes
 //! our own profile.
 
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
-use super::dht::channel_log::DhtLog;
 use super::node::TransportNode;
 use crate::error::Result;
 
@@ -62,21 +61,6 @@ pub async fn set_own_profile_status(
 /// never-written as `None` (a first write lands at seq 0).
 fn seqs_as_opt_u64(seqs: &[Option<u32>]) -> Vec<Option<u64>> {
     seqs.iter().map(|seq| seq.map(u64::from)).collect()
-}
-
-// ── DhtLog (append-only log built on DHT records) ──────────────────────
-
-/// Create a new DhtLog in the session's record pool. Returns
-/// `(DhtLog, owner_keypair)`, the keypair as text; the caller releases the
-/// log (`DhtLog::release`) when done.
-pub async fn create_dht_log(node: &TransportNode) -> Result<(DhtLog, String)> {
-    debug!("dht: create_dht_log");
-    let result = DhtLog::create(&*node.require_records()?).await;
-    match &result {
-        Ok((log, _)) => info!(spine_key = %log.spine_key(), "dht: DhtLog created"),
-        Err(e) => warn!(error = %e, "dht: DhtLog create failed"),
-    }
-    result.map_err(Into::into)
 }
 
 mod leased;

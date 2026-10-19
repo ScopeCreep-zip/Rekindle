@@ -6,10 +6,8 @@
     "chat-*"
   ],
   "permissions": [
-    "allow-emit-friends-presence",
     "allow-get-message-history",
     "allow-mark-read",
-    "allow-prepare-chat-session",
     "allow-send-message",
     "allow-send-typing",
     "allow-start-dm-call",

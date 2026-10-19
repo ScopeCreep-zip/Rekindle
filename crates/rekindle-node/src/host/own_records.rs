@@ -1,5 +1,5 @@
 //! The own-records stage (plan E1.1): the unlocked identity's mailbox,
-//! profile, friend list, account and friend inbox, on the record port, on
+//! profile, friend list and account, on the record port, on
 //! both hosts. Opened when the identity has them, created when it does
 //! not (a new identity), so create needs no transport of its own.
 //!
@@ -16,9 +16,9 @@ use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_db::repo::identity::OwnedRecord;
 use rekindle_db::DbHandle;
 use rekindle_protocol::dht::{account, friends, mailbox, profile};
+use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{RecordPort, RouteClass};
 use rekindle_transport::{Session, TransportNode};
-use rekindle_types::dht_layout::profile as subkeys;
 use rekindle_vault::typed::owner_keys::{load_owner_keypair, persist_owner_keypair, OwnerKey};
 use rekindle_vault::VaultHandle;
 use tokio_util::sync::CancellationToken;
@@ -37,6 +37,9 @@ pub(crate) struct OwnRecords {
     /// Our presence: its message goes into the profile, and its publisher
     /// writes our status once the profile exists.
     pub presence: super::own_presence::OwnPresence,
+    /// Where the profile's session lease is kept, so a rotation (block)
+    /// can release it (`DaemonContext.own_profile_lease`).
+    pub profile_lease: Arc<parking_lot::Mutex<Option<LeaseId>>>,
     pub public_key: String,
     pub display_name: String,
     pub secret: Zeroizing<[u8; 32]>,
@@ -52,7 +55,6 @@ struct Stored {
     profile_owner: Option<String>,
     friend_list_owner: Option<String>,
     account_owner: Option<String>,
-    friend_inbox: Option<String>,
 }
 
 impl OwnRecords {
@@ -121,12 +123,7 @@ impl OwnRecords {
         if stop.is_cancelled() {
             return;
         }
-        // The inbox only when the identity has none yet, on its profile.
-        let inbox = match (&stored.friend_inbox, &keys.profile) {
-            (None, Some(profile_key)) => self.friend_inbox(pool.as_ref(), profile_key).await,
-            _ => None,
-        };
-        self.project(&keys, owners, inbox);
+        self.project(&keys, owners);
         // The status, now that the projection names the profile (a created
         // identity had none until this stage).
         self.presence.republish();
@@ -139,11 +136,9 @@ impl OwnRecords {
     async fn stored(&self) -> Result<Stored, String> {
         let db = self.db.current().map_err(|e| e.to_string())?;
         let owner = self.public_key.clone();
-        let (columns, inbox) = db
+        let columns = db
             .call(move |conn| {
-                let row = rekindle_db::repo::identity::login_row(conn, &owner)?;
-                let inbox = rekindle_db::repo::identity::friend_inbox(conn, &owner)?;
-                Ok((row.map(|(_, c)| c), inbox))
+                Ok(rekindle_db::repo::identity::login_row(conn, &owner)?.map(|(_, c)| c))
             })
             .await
             .map_err(|e| e.to_string())?;
@@ -159,7 +154,6 @@ impl OwnRecords {
             profile_owner: owner(OwnerKey::Profile)?,
             friend_list_owner: owner(OwnerKey::FriendList)?,
             account_owner: owner(OwnerKey::Account)?,
-            friend_inbox: inbox.map(|(key, _)| key),
         })
     }
 
@@ -257,9 +251,12 @@ impl OwnRecords {
         // random per create (V4) and peers hold it.
         match (&stored.profile, &stored.profile_owner) {
             (Some(key), Some(owner)) => {
-                if let Err(e) = profile::open_profile(pool, key, owner).await {
-                    tracing::warn!(error = %e, "own records: profile not reopened");
-                    return None;
+                match profile::open_profile(pool, key, owner).await {
+                    Ok(lease) => *self.profile_lease.lock() = Some(lease),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "own records: profile not reopened");
+                        return None;
+                    }
                 }
                 match profile::publish_profile_fields(pool, key, fields).await {
                     Ok(outcome) if outcome.missed() => {
@@ -275,10 +272,11 @@ impl OwnRecords {
                 None
             }
             (None, _) => {
-                let (_, key, owner, outcome) = profile::create_profile(pool, fields)
+                let (lease, key, owner, outcome) = profile::create_profile(pool, fields)
                     .await
                     .map_err(|e| tracing::warn!(error = %e, "own records: profile not created"))
                     .ok()?;
+                *self.profile_lease.lock() = Some(lease);
                 if outcome.missed() {
                     tracing::warn!(?outcome, "own records: new profile not stored at consensus");
                 }
@@ -355,58 +353,11 @@ impl OwnRecords {
         }
     }
 
-    /// The friend inbox a new identity publishes (DFLT(32)), seeded so it is
-    /// on the network before a peer writes to it (C7.6d), its key and its
-    /// keypair published to the profile. Deleted at E2.1 with
-    /// `identity.friend_inbox_*`.
-    async fn friend_inbox(
-        &self,
-        pool: &dyn RecordPort,
-        profile_key: &str,
-    ) -> Option<(String, String)> {
-        let (lease, key, keypair) = pool
-            .create(&rekindle_records::schema::friend_inbox(), None)
-            .await
-            .map_err(|e| tracing::warn!(error = %e, "own records: friend inbox not created"))
-            .ok()?;
-        let seeded = pool
-            .set(lease, 0, b"[]".to_vec(), None)
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|o| o.require_stored(0).map_err(|e| e.to_string()));
-        if let Err(e) = seeded {
-            tracing::warn!(error = %e, "own records: friend inbox not seeded");
-            return None;
-        }
-        let keypair_hex = hex::encode(rekindle_crypto::keypair_text::keypair_wire(&keypair).ok()?);
-        for (subkey, value) in [
-            (subkeys::FRIEND_INBOX_KEY, key.as_bytes().to_vec()),
-            (
-                subkeys::FRIEND_INBOX_KEYPAIR,
-                keypair_hex.as_bytes().to_vec(),
-            ),
-        ] {
-            if let Err(e) = profile::set_own_profile_subkey(pool, profile_key, subkey, value).await
-            {
-                tracing::warn!(error = %e, "own records: friend inbox not published");
-                return None;
-            }
-        }
-        let db = self.db.current().ok()?;
-        let (pk, k, kp) = (self.public_key.clone(), key.clone(), keypair_hex.clone());
-        db.call(move |conn| rekindle_db::repo::identity::set_friend_inbox(conn, &pk, &k, &kp))
-            .await
-            .map_err(|e| tracing::error!(error = %e, "own records: friend inbox key not saved"))
-            .ok()?;
-        Some((key, keypair_hex))
-    }
-
     /// Write the keys into the session projection.
     fn project(
         &self,
         keys: &OwnRecordKeys,
         (profile_owner, friend_list_owner): (Option<String>, Option<String>),
-        inbox: Option<(String, String)>,
     ) {
         let mut guard = self.session.write();
         let Some(session) = guard.as_mut() else {
@@ -424,9 +375,79 @@ impl OwnRecords {
         }
         identity.profile_owner_keypair = profile_owner;
         identity.friend_list_owner_keypair = friend_list_owner;
-        if let Some((key, keypair_hex)) = inbox {
-            identity.friend_inbox_key = key;
-            identity.friend_inbox_keypair_hex = keypair_hex;
-        }
     }
+}
+
+/// Move our profile to a new record under a fresh owner key (a block, so
+/// the blocked user's copy of the old key finds nothing), written as the
+/// stage writes one: the new keypair into the vault, then its key into the
+/// database, then the projection; the old record is released and our
+/// status is written to the new one. The new record's key.
+///
+/// # Errors
+/// No unlocked identity, or the record could not be created or stored.
+pub(crate) async fn rotate_profile(
+    ctx: &crate::daemon::dispatch::DaemonContext,
+) -> Result<String, String> {
+    let transport = ctx
+        .transport
+        .read()
+        .clone()
+        .ok_or("transport not started")?;
+    let pool = transport.require_records().map_err(|e| e.to_string())?;
+    let (owner, display_name) = ctx
+        .session
+        .read()
+        .as_ref()
+        .map(|s| {
+            (
+                s.identity.public_key_hex.clone(),
+                s.identity.display_name.clone(),
+            )
+        })
+        .ok_or("no identity is unlocked")?;
+    let signal = ctx.signal.read().clone().ok_or("no identity is unlocked")?;
+    let bundle = signal
+        .current_bundle()
+        .map_err(|e| format!("prekey bundle: {e}"))?
+        .to_wire();
+    let route_blob = transport.personal_route_blob().unwrap_or_default();
+    let status_message = ctx.own_presence.view().status_message;
+    let (lease, key, keypair, outcome) = profile::create_profile(
+        pool.as_ref(),
+        profile::ProfileFields {
+            display_name: &display_name,
+            status_message: &status_message,
+            prekey_bundle: &bundle,
+            route_blob: &route_blob,
+        },
+    )
+    .await
+    .map_err(|e| format!("create new profile record: {e}"))?;
+    if outcome.missed() {
+        tracing::warn!(?outcome, "rotated profile not stored at consensus");
+    }
+    {
+        let guard = ctx.vault.lock();
+        let vault = guard.as_ref().ok_or("the vault is locked")?;
+        persist_owner_keypair(vault, OwnerKey::Profile, &keypair).map_err(|e| e.to_string())?;
+    }
+    let db = ctx.db.current().map_err(|e| e.to_string())?;
+    let (pk, k) = (owner, key.clone());
+    db.call(move |conn| {
+        rekindle_db::repo::identity::set_owned_record(conn, &pk, OwnedRecord::Profile, &k)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Some(session) = ctx.session.write().as_mut() {
+        session.identity.profile_dht_key.clone_from(&key);
+        session.identity.profile_owner_keypair = Some(keypair);
+    }
+    // The old profile is no longer ours to write.
+    let old = ctx.own_profile_lease.lock().replace(lease);
+    if let Some(old) = old {
+        pool.release(old).await;
+    }
+    ctx.own_presence.republish();
+    Ok(key)
 }

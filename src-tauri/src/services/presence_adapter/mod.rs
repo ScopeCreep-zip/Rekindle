@@ -1,13 +1,11 @@
-//! Phase 21 REDO — friend + community presence adapter.
+//! Phase 21 REDO — community presence adapter.
 //!
-//! Implements `rekindle_presence::{FriendPresenceDeps,
-//! CommunityPresenceDeps}` against the live AppState + AppHandle +
-//! Db. Split into per-trait files (Invariant 1 ≤500 LoC):
+//! Implements `rekindle_presence::CommunityPresenceDeps` against the live
+//! AppState + AppHandle + Db (friend presence is the Host's,
+//! `rekindle_node::host::adapters::friends`, plan E2.1). Split into files
+//! (Invariant 1 ≤500 LoC):
 //!
-//! - `friend_deps.rs` — `FriendPresenceDeps` impl (20 methods)
 //! - `community_deps.rs` — `CommunityPresenceDeps` impl (21 methods)
-//! - `mapping.rs` — `UserStatusKind` ↔ `UserStatus` + game-info +
-//!   event mapping helpers shared by both impls
 //! - `persist.rs` — SQLite-backed helpers (channel-log catchup
 //!   insert, history-range MIN/MAX scan, member upsert) extracted
 //!   from `community_deps.rs` to keep it under the LoC cap
@@ -21,9 +19,7 @@ use rekindle_db::Db;
 
 mod auto_expand;
 pub mod community_deps;
-pub mod friend_deps;
 mod gossip_overlay;
-mod mapping;
 mod member_state;
 mod pending_sync;
 mod persist;

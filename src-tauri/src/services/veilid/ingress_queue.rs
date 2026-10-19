@@ -37,9 +37,9 @@ pub enum IngressItem {
         signed: SignedEnvelope,
         is_video: bool,
     },
-    /// Everything that isn't voice or gossip — the legacy
-    /// `message_service` path (DMs, friend requests, call signaling).
-    Legacy(Vec<u8>),
+    /// A 1:1 message (the `'D'` tag): the Host's direct dispatch, with
+    /// the desktop's arms for what it hands back unported (plan E2.1).
+    Direct(Vec<u8>),
 }
 
 impl IngressItem {
@@ -136,7 +136,7 @@ mod tests {
     fn tag_of(item: &IngressItem) -> u8 {
         match item {
             IngressItem::Gossip { signed, .. } => signed.envelope_bytes[0],
-            IngressItem::Legacy(b) => b[0],
+            IngressItem::Direct(b) => b[0],
         }
     }
 
@@ -144,7 +144,7 @@ mod tests {
     fn fifo_order_preserved() {
         let q = GossipIngressQueue::new();
         q.push(gossip(false, 1));
-        q.push(IngressItem::Legacy(vec![2]));
+        q.push(IngressItem::Direct(vec![2]));
         q.push(gossip(true, 3));
         let mut got = Vec::new();
         while q.depth() > 0 {

@@ -175,19 +175,13 @@ pub(crate) async fn handle_rotate(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let signing_key = match ctx.require_signing_key() {
+    if let Err(e) = ctx.require_transport() {
+        return e;
+    }
+    let old_key = match ctx.require_owner() {
         Ok(k) => k,
         Err(e) => return e,
     };
-    let session = match ctx.require_session(Clone::clone) {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-    let old_key = session.identity.public_key_hex.clone();
     // The passphrase first: no friend hears of a rotation that then fails.
     if let Err(e) = host_identity::verify_passphrase(
         &ctx.root,
@@ -199,7 +193,11 @@ pub(crate) async fn handle_rotate(
         return identity_error(&e);
     }
 
-    let mut result = match identity::rotate_identity(&transport, &session, &signing_key).await {
+    let mut result = match identity::rotate_identity(
+        &crate::host::adapters::friends::HostFriends::of(ctx),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => return IpcResponse::error(500, format!("identity rotation failed: {e}")),
     };

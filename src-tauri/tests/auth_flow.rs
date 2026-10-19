@@ -122,10 +122,10 @@ async fn create_identity_writes_the_vault_database_and_registry_and_unlocks() {
         .map(|(name, _)| name);
     assert_eq!(name.as_deref(), Some("Alice"));
 
-    // The unlock reached the shell: vault, Signal manager, friend authority.
+    // The unlock reached the shell: vault and Signal manager (the friend
+    // authority is the Host's, plan E2.1).
     assert!(state.keystore.lock().is_some());
     assert!(state.signal_manager.read().is_some());
-    assert!(state.friend_store.read().is_some());
     assert_ne!(*state.identity_secret.lock(), None);
 
     // Files and registry.
@@ -183,7 +183,6 @@ async fn login_after_logout_restores_the_same_keypair() {
     assert!(state.identity.read().is_none());
     assert!(state.keystore.lock().is_none());
     assert!(state.db.current().is_err(), "logout closes the database");
-    assert!(state.friend_store.read().is_none());
     assert_eq!(*state.identity_secret.lock(), None);
 
     let login = login(&state, &created.public_key, "roundtrip-pass")
