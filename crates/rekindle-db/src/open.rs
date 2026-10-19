@@ -114,9 +114,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `identity.friend_inbox_{key,keypair}` and `friends.dm_log_key` are
 /// dropped; friend requests and DMs travel as `'D'` envelopes on both hosts.
 ///
-/// 92: the envelope-store family goes with the daemon's dead call
-/// orchestration (plan E2.3): `pending_envelopes`, `seen_envelopes`,
-/// `outbound_seqs` and `active_call_states` are dropped.
+/// 92 (plan E2.3): the 1:1 ratchet's tables `ratchet_sessions`,
+/// `signal_prekeys`, `signal_identities` and `unprocessed`; the
+/// envelope-store family goes with the daemon's dead call orchestration
+/// (`pending_envelopes`, `seen_envelopes`, `outbound_seqs`,
+/// `active_call_states`).
 pub const SCHEMA_VERSION: i64 = 92;
 
 /// Opening the database failed.

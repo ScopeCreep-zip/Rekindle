@@ -89,6 +89,13 @@ impl SessionRecord {
         self.active.is_some()
     }
 
+    /// Whether a session in this record has `base_key`: a PreKeyInit
+    /// with it is a duplicate, known before its prekeys are looked up
+    /// (a consumed one-time key no longer exists to look up).
+    pub fn has_base_key(&self, base_key: &[u8; 32]) -> bool {
+        self.states().any(|(_, s)| s.base_key() == base_key)
+    }
+
     /// Start a session from the peer's bundle and encrypt the first
     /// message under it (the initiator side). The new session is active;
     /// the old one, if any, is archived.
@@ -134,7 +141,7 @@ impl SessionRecord {
         rng: &dyn RandomSource,
     ) -> Result<(Self, Vec<u8>), CryptoError> {
         self.check_address(keys.identity, &init.identity_key)?;
-        if self.states().any(|(_, s)| *s.base_key() == init.base_key) {
+        if self.has_base_key(&init.base_key) {
             return Err(CryptoError::DuplicateMessage);
         }
         if init.one_time_prekey_id.is_some() != keys.one_time_prekey.is_some() {

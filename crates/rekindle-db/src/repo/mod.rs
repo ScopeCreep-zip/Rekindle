@@ -25,9 +25,31 @@ pub mod pending_messages;
 pub mod pending_requests;
 pub mod preferences;
 mod role_ids;
+pub mod signal_identities;
+pub mod unprocessed;
 
 #[cfg(test)]
 mod constraints_tests;
+
+/// An identity key as the per-owner tables store it: lowercase hex, the
+/// form `identity.public_key` and `friends.public_key` hold.
+pub(crate) fn identity_text(key: &[u8; 32]) -> String {
+    hex::encode(key)
+}
+
+/// [`identity_text`] read back; anything else is a corrupt row naming
+/// column `index`.
+pub(crate) fn identity_from_text(text: &str, index: usize) -> rusqlite::Result<[u8; 32]> {
+    let mut key = [0u8; 32];
+    hex::decode_to_slice(text, &mut key).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            format!("identity key {text:?}: {e}").into(),
+        )
+    })?;
+    Ok(key)
+}
 
 #[cfg(test)]
 pub(crate) mod fixture {
@@ -39,12 +61,22 @@ pub(crate) mod fixture {
     /// An in-memory database with the schema and [`OWNER`]'s identity row,
     /// which the per-owner tables reference.
     pub fn conn() -> Connection {
+        with_identity(OWNER)
+    }
+
+    /// An in-memory database with the schema and an identity row for the
+    /// key `owner` (the ratchet tables key their owner by its hex).
+    pub fn identity_conn(owner: &[u8; 32]) -> Connection {
+        with_identity(&super::identity_text(owner))
+    }
+
+    fn with_identity(public_key: &str) -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
         conn.execute_batch(crate::SCHEMA).unwrap();
         conn.execute(
             "INSERT INTO identity (public_key, display_name, created_at) VALUES (?1, 'me', 0)",
-            [OWNER],
+            [public_key],
         )
         .unwrap();
         conn

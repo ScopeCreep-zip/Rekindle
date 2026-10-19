@@ -1,6 +1,7 @@
 pub mod dr;
 pub mod memory_stores;
 pub mod pqxdh;
+pub mod prekey_material;
 pub mod prekeys;
 pub mod ratchet;
 pub mod record;

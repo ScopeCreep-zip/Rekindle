@@ -36,7 +36,7 @@ crates/
 # ── Tier 3 — Wire format, records, local state ────────────────────────
 ├── rekindle-codec/                     wire types + encodings: Cap'n Proto schemas/codecs, envelopes, record pages, dedup
 ├── rekindle-records/                (4) DHT record lifecycle, SMPL schema
-├── rekindle-db/                    (17) schema, Db handle, repositories, node lock [NEW]
+├── rekindle-db/                    (38) schema, Db handle, repositories, node lock, 1:1 ratchet storage [NEW]
 ├── rekindle-events/                 (5) dedup + SubscriptionState + EventJournal [NEW]
 ├── rekindle-idempotency/            (2) LRU+TTL command-dedup cache [NEW]
 ├── rekindle-mek-rotation/           (9) cascade election + MEK distribute [NEW]
@@ -141,6 +141,8 @@ column rather than inside it, and are consumed by whichever frontend needs
 them. They respect the no-`tauri` rule but may take a `veilid-core`
 dependency where it is unavoidable (`rekindle-sync` uses Veilid's
 `watch_dht_values` orchestration; `rekindle-crypto` does not).
+`rekindle-db` (Tier 3) depends on `rekindle-crypto` to run the 1:1 ratchet's
+`SessionRecord` inside `Db::call`, one transaction per message (plan E2.3).
 
 ## Visual Tier Diagram
 
@@ -171,9 +173,10 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
               │ Tier 6  governance + governance-runtime  │
               │ Tier 5  gossip, presence, friendship     │
               │ Tier 4  route, lifecycle                 │
-              │ Tier 3  codec, records, events,          │
+              │ Tier 3  codec, records, events, db,      │
               │         idempotency, mek-rotation,       │
               │         analytics, image                 │
+              │         (db ──► crypto: the 1:1 ratchet) │
               │ Tier 2  secrets, vault, audit            │
               │ Tier 1  types                            │
               └──────────────────────────────────────────┘

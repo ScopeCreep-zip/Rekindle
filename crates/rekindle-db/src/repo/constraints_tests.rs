@@ -43,6 +43,12 @@ fn seeded() -> Connection {
          event_type, occurred_at) VALUES (?1, 'c', 'ch', 'p', 'join', 0)",
         "INSERT INTO governance_entries_cache (owner_key, community_id, entries_json, updated_at) \
          VALUES (?1, 'c', '[]', 0)",
+        "INSERT INTO signal_prekeys (owner_key, id, kind, secret, public, created_at) \
+         VALUES (?1, 1, 'spk', x'00', x'00', 0)",
+        "INSERT INTO signal_identities (owner_key, peer_identity, identity_key) \
+         VALUES (?1, 'p', x'00')",
+        "INSERT INTO unprocessed (owner_key, peer_identity, header_dh, header_n, type_id, \
+         plaintext, received_at) VALUES (?1, 'p', x'00', 0, 256, x'00', 0)",
     ] {
         conn.execute(sql, params![OWNER]).unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
@@ -75,6 +81,10 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("push_relay_registrations", "record_keys_json", "'k'"),
     ("voice_session_events", "event_type", "'mute'"),
     ("governance_entries_cache", "entries_json", "'['"),
+    ("signal_prekeys", "kind", "'otpk'"),
+    ("signal_prekeys", "id", "4294967296"),
+    ("signal_identities", "verified", "2"),
+    ("unprocessed", "type_id", "65536"),
 ];
 
 #[test]

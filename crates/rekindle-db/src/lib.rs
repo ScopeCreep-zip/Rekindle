@@ -8,6 +8,8 @@
 //! - [`DbHandle`]: the logged-in identity's database, or none.
 //! - [`SqliteFriendStore`]: the receive path's friend authority.
 //! - [`repo`]: the queries on the tables more than one host uses.
+//! - [`ratchet`] / [`prekeys`]: the 1:1 ratchet and our prekeys, each step
+//!   one transaction on the `Db` thread (plan E2.3).
 
 mod db;
 mod friend_store;
@@ -15,10 +17,14 @@ mod handle;
 pub mod lock;
 mod open;
 pub mod paths;
+pub mod prekeys;
+pub mod ratchet;
 pub mod registry;
 pub mod repo;
 pub mod reset;
 pub mod row;
+#[cfg(test)]
+mod test_support;
 
 pub use db::Db;
 pub use friend_store::SqliteFriendStore;

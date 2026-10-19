@@ -742,6 +742,72 @@ CREATE TABLE IF NOT EXISTS dht_outbox (
     PRIMARY KEY (owner_key, record_key, subkey)
 );
 
+-- The 1:1 ratchet (plan E2.3; `rekindle_db::ratchet`). One
+-- `rekindle_crypto::SessionRecord` per peer device, stored in the same
+-- transaction as whatever the message changed, before any send.
+-- `peer_identity` is the peer's Ed25519 identity (hex), which is also its
+-- address; `peer_device` its device id (hex), empty until its device list
+-- (E2.4) names one.
+CREATE TABLE IF NOT EXISTS ratchet_sessions (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer_identity TEXT NOT NULL,
+    peer_device TEXT NOT NULL,
+    record BLOB NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, peer_identity, peer_device)
+);
+
+-- Our prekeys (plan E2.3; `rekindle_db::prekeys`): the signed prekey
+-- (`spk`), the ML-KEM last-resort key (`pq_lr`) and the one-time keys
+-- (`opk`, `pq_opk`). A one-time key is consumed only after the first
+-- message under it decrypts: `consumed_at` is set and its secret erased,
+-- and the row keeps its id taken (PQXDH §4.13). `published_subkey` is the
+-- prekey record slot holding it (E2.4); NULL for a bundle handed out.
+CREATE TABLE IF NOT EXISTS signal_prekeys (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    id INTEGER NOT NULL CHECK(id BETWEEN 0 AND 4294967295),
+    kind TEXT NOT NULL CHECK(kind IN ('opk', 'spk', 'pq_opk', 'pq_lr')),
+    secret BLOB NOT NULL,
+    public BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    published_subkey INTEGER,
+    consumed_at INTEGER,
+    PRIMARY KEY (owner_key, kind, id)
+);
+
+-- Peers' identity keys and their verification (plan E2.3;
+-- `rekindle_db::repo::signal_identities`). `changed_from_key` and
+-- `changed_at` hold an unacknowledged change of a verified key (the
+-- `VerifiedKeyChanged` escalation); committing the escalated action
+-- clears them.
+CREATE TABLE IF NOT EXISTS signal_identities (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer_identity TEXT NOT NULL,
+    identity_key BLOB NOT NULL,
+    verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN (0, 1)),
+    verified_at INTEGER,
+    changed_from_key BLOB,
+    changed_at INTEGER,
+    PRIMARY KEY (owner_key, peer_identity)
+);
+
+-- Decrypted, not yet applied 1:1 messages (plan E2.3, D24): written in
+-- the ratchet's transaction, deleted by the apply, replayed at startup.
+-- Keyed by the ratchet header, unique per message per session. Rows older
+-- than `UNPROCESSED_MAX_AGE` (from `DELIVERY_HORIZON`) or tried
+-- `MAX_UNPROCESSED_ATTEMPTS` times are dropped at replay.
+CREATE TABLE IF NOT EXISTS unprocessed (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer_identity TEXT NOT NULL,
+    header_dh BLOB NOT NULL,
+    header_n INTEGER NOT NULL,
+    type_id INTEGER NOT NULL CHECK(type_id BETWEEN 0 AND 65535),
+    plaintext BLOB NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    received_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, peer_identity, header_dh, header_n)
+);
+
 -- FTS5 indexes for local search (architecture §23). External-content tables
 -- per https://sqlite.org/fts5.html#external_content_tables — index lives in
 -- a parallel virtual table, content stays in the canonical row table, and

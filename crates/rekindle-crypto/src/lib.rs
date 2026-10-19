@@ -10,12 +10,15 @@
 pub mod bytes;
 pub mod dht_crypto;
 pub mod error;
+pub mod fingerprint;
 pub mod group;
+pub mod horizon;
 pub mod identity;
 pub mod keypair_text;
 pub mod signal;
 
 pub use dht_crypto::DhtRecordKey;
 pub use error::CryptoError;
+pub use fingerprint::SafetyNumber;
 pub use identity::Identity;
 pub use signal::SignalSessionManager;

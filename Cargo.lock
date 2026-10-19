@@ -7360,9 +7360,12 @@ name = "rekindle-db"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "hex",
  "parking_lot 0.12.5",
+ "rand 0.8.5",
  "rekindle-asql",
  "rekindle-audit",
+ "rekindle-crypto",
  "rekindle-types",
  "rekindle-utils",
  "rusqlite",

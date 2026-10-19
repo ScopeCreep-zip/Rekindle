@@ -101,9 +101,18 @@ functions take `&rusqlite::Connection` so several share one transaction;
 `cargo xtask check-sqlite` keeps SQL here, in `rekindle-vault` and in
 `rekindle-asql`.
 
-Dependencies: `rekindle-types`, `rekindle-audit`, `rekindle-utils`,
+The 1:1 ratchet's storage (plan E2.3): `ratchet::{initiate_and_record_outbound,
+encrypt_and_record_outbound, decrypt_and_record_inbound, accept_init}` run
+`rekindle_crypto::signal::SessionRecord` inside `Db::call`, one transaction per
+message before any send, so the single `Db` thread serializes every message for a
+peer; `prekeys::{current_bundle, handout_bundle}` over `signal_prekeys`;
+`repo::signal_identities` (verification and `VerifiedKeyChanged`) and
+`repo::unprocessed` (the D24 receive pipeline's decrypted, unapplied messages).
+
+Dependencies: `rekindle-types`, `rekindle-audit`, `rekindle-crypto` (the ratchet
+and prekey material; cross-cutting, plan E2.3), `rekindle-utils`,
 `rekindle-asql`, `rusqlite` (bundled SQLCipher, as `rekindle-vault`
-builds it), `serde`, `serde_json`, `thiserror`, `tracing`.
+builds it), `hex`, `serde`, `serde_json`, `thiserror`, `tracing`, `zeroize`.
 
 ### rekindle-records
 
@@ -465,7 +474,12 @@ XChaCha20-Poly1305 encrypt / decrypt), `group/{media_key, pseudonym}`
 (`MediaEncryptionKey` with generation tracking; community pseudonym
 derivation), `signal/{session, prekeys, store, memory_stores,
 test_stores}` (X3DH + Double Ratchet session manager — vault-backed
-Signal stores now, previously Stronghold-backed).
+Signal stores now, previously Stronghold-backed), `signal/{dr, record,
+prekey_material}` (the spec Double Ratchet and the pure `SessionRecord`,
+plan E2.2; the prekey minting and bundle signing `rekindle-db`'s prekeys run,
+E2.3), `fingerprint` (`SafetyNumber`: Signal's 5200×SHA-512 numeric
+fingerprint and its scannable form, E2.3) and `horizon` (`DELIVERY_HORIZON`,
+the one constant every delivery retention bound derives from, D24).
 
 ### rekindle-game-detect
 

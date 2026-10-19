@@ -10,14 +10,19 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1"
+hex = { workspace = true }
 parking_lot = { workspace = true }
 rekindle-audit = { path = "../rekindle-audit" }
+# The 1:1 ratchet runs `SessionRecord` inside `Db::call`, one transaction
+# per message (plan E2.3); rekindle-crypto is cross-cutting.
+rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+zeroize = "1"
 
 # Vendored tokio-rusqlite: one background thread per connection.
 rekindle-asql = { path = "../rekindle-asql" }
@@ -27,6 +32,6 @@ rekindle-asql = { path = "../rekindle-asql" }
 rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
 
 [dev-dependencies]
+rand = { workspace = true }
 tempfile = "3"
-tokio = { workspace = true, features = [ "macros", "rt" ] }
-zeroize = "1"
+tokio = { workspace = true, features = [ "macros", "rt", "rt-multi-thread" ] }
