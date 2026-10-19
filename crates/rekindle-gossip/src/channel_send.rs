@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::capnp_envelope::encode_signed_envelope;
 use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::ingress::gossip_datagram;
 
 use crate::deps::{GossipDeps, GossipError, PeerInfo};
 use crate::mesh_broadcast::{send_to_one_peer, sign_and_record};
@@ -59,8 +59,8 @@ pub async fn send_to_channel_peers_now<D: GossipDeps>(
 }
 
 /// Sign a channel-scoped envelope (`ttl = 0`: honest receivers never
-/// gossip-forward it beyond the roster the sender addressed). `None` when
-/// there is nobody to send to.
+/// gossip-forward it beyond the roster the sender addressed) into its
+/// `'G'` gossip datagram. `None` when there is nobody to send to.
 fn sign_for_channel<D: GossipDeps>(
     deps: &Arc<D>,
     community_id: &str,
@@ -76,7 +76,7 @@ fn sign_for_channel<D: GossipDeps>(
     }
     let mut signed = sign_and_record(deps, community_id, envelope)?;
     signed.ttl = 0;
-    Ok(Some(encode_signed_envelope(&signed)))
+    Ok(Some(gossip_datagram(&signed)))
 }
 
 /// Send `data` to every peer concurrently and wait for all of them.

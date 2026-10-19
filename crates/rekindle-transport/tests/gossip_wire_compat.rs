@@ -12,10 +12,12 @@
 //! perfectly well on their own side.
 
 use rekindle_codec::capnp_envelope::{
-    decode_signed_envelope, encode_community_envelope, encode_signed_envelope,
-    try_decode_community_envelope,
+    decode_signed_envelope, encode_community_envelope, try_decode_community_envelope,
 };
-use rekindle_codec::community::envelope::{sign_envelope, verify_envelope, CommunityEnvelope};
+use rekindle_codec::community::envelope::{
+    sign_envelope, verify_envelope, CommunityEnvelope, SignedEnvelope,
+};
+use rekindle_codec::ingress::{classify, gossip_datagram, Ingress};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
 fn signing_key() -> SigningKey {
@@ -31,6 +33,15 @@ fn my_pseudonym() -> String {
     hex::encode(signing_key().verifying_key().to_bytes())
 }
 
+/// What a receiver does with a gossip datagram: route it by its `'G'`
+/// tag (plan E2.3), then decode the envelope after it.
+fn receive(datagram: &[u8]) -> SignedEnvelope {
+    let Ingress::Gossip(bytes) = classify(datagram) else {
+        panic!("gossip travels as a 'G' datagram");
+    };
+    decode_signed_envelope(bytes).expect("decode envelope")
+}
+
 fn notification() -> CommunityEnvelope {
     CommunityEnvelope::MessageNotification {
         channel_id: "ab".repeat(8),
@@ -44,8 +55,8 @@ fn notification() -> CommunityEnvelope {
     }
 }
 
-/// The full path a broadcast takes: encode → sign → encode envelope →
-/// (wire) → decode envelope → verify → decode inner.
+/// The full path a broadcast takes: encode → sign → `'G'` datagram →
+/// (wire) → route by tag → decode envelope → verify → decode inner.
 ///
 /// This is exactly what `mesh_broadcast::send_to_mesh` does on the way
 /// out and `dispatch_bare_gossip` does on the way in, so a break in
@@ -55,9 +66,9 @@ fn a_broadcast_round_trips_through_the_shared_format() {
     let key = signing_key();
     let envelope_bytes = encode_community_envelope(&notification()).expect("encode inner");
     let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
-    let wire = encode_signed_envelope(&signed);
+    let wire = gossip_datagram(&signed);
 
-    let received = decode_signed_envelope(&wire).expect("decode envelope");
+    let received = receive(&wire);
     verify_envelope(&received).expect("signature must verify");
 
     let inner = try_decode_community_envelope(&received.envelope_bytes)
@@ -74,7 +85,7 @@ fn a_broadcast_round_trips_through_the_shared_format() {
 
 /// A tampered payload must not verify.
 ///
-/// The unframed inbound path has no transport-layer authentication, so
+/// The gossip inbound path has no transport-layer authentication, so
 /// this signature is the only thing between a forged `sender_pseudonym`
 /// and the handler.
 #[test]
@@ -108,9 +119,9 @@ fn watch_relay_crosses_the_wire() {
 
     let envelope_bytes = encode_community_envelope(&envelope).expect("encode");
     let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
-    let wire = encode_signed_envelope(&signed);
+    let wire = gossip_datagram(&signed);
 
-    let received = decode_signed_envelope(&wire).expect("decode");
+    let received = receive(&wire);
     verify_envelope(&received).expect("verify");
     let inner = try_decode_community_envelope(&received.envelope_bytes)
         .expect("decode inner")

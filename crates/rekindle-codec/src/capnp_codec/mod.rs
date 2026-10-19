@@ -226,6 +226,7 @@ fn read_profile(
 
 pub mod account;
 pub mod conversation;
+pub mod direct;
 pub mod friend;
 pub mod identity;
 pub mod message;

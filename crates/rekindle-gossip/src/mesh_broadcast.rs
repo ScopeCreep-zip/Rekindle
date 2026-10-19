@@ -9,10 +9,9 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::capnp_envelope::{
-    encode_community_envelope, encode_signed_envelope, try_decode_community_envelope,
-};
+use rekindle_codec::capnp_envelope::{encode_community_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{self, CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::ingress::gossip_datagram;
 
 use crate::broadcast::extract_mesh_dedup_key;
 use crate::deps::{GossipDeps, GossipError, PeerInfo};
@@ -91,7 +90,8 @@ pub async fn send_to_mesh<D: GossipDeps>(
 /// supervising tokio task with a `JoinSet` so per-peer tasks are
 /// owned (M9.6, not orphaned).
 pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed: SignedEnvelope) {
-    let signed_bytes = encode_signed_envelope(&signed);
+    // The `'G'` gossip datagram (§6 ingress ledger), as every gossip send.
+    let signed_bytes = gossip_datagram(&signed);
 
     let Some(peers) = deps.current_peers(community_id) else {
         tracing::warn!(
@@ -487,6 +487,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn channel_peers_send_reaches_every_peer_with_ttl_zero() {
         use rekindle_codec::capnp_envelope::decode_signed_envelope;
+        use rekindle_codec::ingress::{classify, Ingress};
 
         let deps = Arc::new(MockDeps::new());
         let peers: Vec<PeerInfo> = (0..3u8)
@@ -516,7 +517,10 @@ mod tests {
             "every channel peer gets the envelope — no fan-out degree cap"
         );
         for (_route, data) in &st.sent_payloads {
-            let signed = decode_signed_envelope(data).expect("wire-decodable");
+            let Ingress::Gossip(bytes) = classify(data) else {
+                panic!("a channel send is a 'G' gossip datagram");
+            };
+            let signed = decode_signed_envelope(bytes).expect("wire-decodable");
             assert_eq!(signed.ttl, 0, "directed media must not be relayable");
             assert_eq!(signed.community_id, "c1");
         }

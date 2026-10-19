@@ -19,9 +19,10 @@ pub use seal::resign_for_retry;
 pub use send::{build_and_queue, resend, send_to_peer, send_to_peer_call, Resend};
 
 /// The ingress tag of a 1:1 message: the first byte of every 1:1 datagram
-/// (§6 ingress ledger), so a receiver tells it from a gossip envelope and a
-/// transport frame without trying to decode it.
-pub const DIRECT_TAG: u8 = b'D';
+/// (§6 ingress ledger, `rekindle_codec::ingress`, beside the gossip tag),
+/// so a receiver tells it from gossip and a transport frame without trying
+/// to decode it.
+pub use rekindle_codec::ingress::DIRECT_TAG;
 
 /// The datagram for `envelope`: [`DIRECT_TAG`] then its Cap'n Proto
 /// encoding. Every 1:1 send builds its bytes here.

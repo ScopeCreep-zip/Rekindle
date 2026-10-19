@@ -28,8 +28,27 @@ pub async fn handle_app_call(
 
     let message = call.message().to_vec();
 
-    // Cross-device sync envelopes are tagged with their own discriminator,
-    // so try them first (architecture §28.4 device pairing).
+    // A 1:1 call (the `'D'` tag) is routed first, by its tag: the Host's
+    // direct dispatch; its call payloads are unported, answered by the
+    // desktop's arms (plan E2.1). Gossip never travels by `app_call`. The
+    // untagged arms below keep their order until their owners tag them
+    // (plan E2.3, "Ingress").
+    match rekindle_codec::ingress::classify(&message) {
+        rekindle_codec::ingress::Ingress::Direct(_) => {
+            let reply = direct_call(app_handle, state, &message).await;
+            reply_to_call(state, call_id, reply).await;
+            return;
+        }
+        rekindle_codec::ingress::Ingress::Gossip(_) => {
+            tracing::debug!(msg_len = message.len(), "gossip by app_call — NAK");
+            reply_to_call(state, call_id, b"NAK".to_vec()).await;
+            return;
+        }
+        rekindle_codec::ingress::Ingress::Untagged => {}
+    }
+
+    // Cross-device sync envelopes carry their own JSON discriminator
+    // (architecture §28.4 device pairing).
     if let Ok(rekindle_types::cross_device_sync::SyncEnvelope::PairingRequest(payload)) =
         serde_json::from_slice(&message)
     {
@@ -56,16 +75,14 @@ pub async fn handle_app_call(
         return;
     }
 
-    // A 1:1 call (the `'D'` tag) is the Host's direct dispatch; its call
-    // payloads are unported, answered by the desktop's arms (plan E2.1).
-    let reply_bytes = if rekindle_transport::operations::dm::unwire(&message).is_some() {
-        direct_call(app_handle, state, &message).await
-    } else {
-        community_call(app_handle, state, call_id, &message).await
-    };
+    let reply = community_call(app_handle, state, call_id, &message).await;
+    reply_to_call(state, call_id, reply).await;
+}
 
+/// Send an `app_call`'s reply.
+async fn reply_to_call(state: &Arc<AppState>, call_id: veilid_core::OperationId, reply: Vec<u8>) {
     if let Some(api) = state_helpers::veilid_api(state) {
-        if let Err(e) = api.app_call_reply(call_id, reply_bytes).await {
+        if let Err(e) = api.app_call_reply(call_id, reply).await {
             tracing::warn!(error = %e, "failed to reply to app_call");
         }
     }

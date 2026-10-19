@@ -137,6 +137,32 @@ mod tests {
         assert!(!sign_padding(&mut voice, &key));
     }
 
+    /// The §6 tag ledger: the ingress tags (`'D'`, `'G'`) and the media
+    /// tags share the first byte, so no two may collide, and an ingress
+    /// datagram is never mistaken for media.
+    #[test]
+    fn media_and_ingress_tags_are_distinct() {
+        use rekindle_codec::ingress::{DIRECT_TAG, GOSSIP_TAG};
+        let tags = [
+            VOICE_TAG,
+            ENVELOPE_TAG,
+            PADDING_TAG,
+            FEEDBACK_TAG,
+            crate::receiver_report::RECEIVER_REPORT_TAG,
+            DIRECT_TAG,
+            GOSSIP_TAG,
+        ];
+        for (i, a) in tags.iter().enumerate() {
+            assert!(
+                !tags[i + 1..].contains(a),
+                "tag {} is reused",
+                char::from(*a)
+            );
+        }
+        assert_eq!(split_sequenced(&[DIRECT_TAG, 0, 0, 0, 0]), None);
+        assert_eq!(split_sequenced(&[GOSSIP_TAG, 0, 0, 0, 0]), None);
+    }
+
     #[test]
     fn other_tags_and_short_frames_are_not_sequenced() {
         assert_eq!(split_sequenced(&[FEEDBACK_TAG, 0, 0, 0, 0]), None);

@@ -2,6 +2,10 @@
 //!
 //! Receives the node's [`PortEvent`]s and performs deterministic routing:
 //!
+//! 0. Route by the ingress tag (§6, `rekindle_codec::ingress`): `'D'` is a
+//!    1:1 message, `'G'` gossip; an untagged `app_message` is dropped, and
+//!    an untagged `app_call` is a transport frame (below) or the bare MEK
+//!    transfer until E3.5 tags it
 //! 1. Parse frame header (4 bytes: version, type, length)
 //! 2. Reject unknown versions (fail closed)
 //! 3. Route by TypeId to the correct verification + deserialization path
@@ -16,6 +20,7 @@ pub use crate::handler::TransportEvent;
 
 use std::sync::Arc;
 
+use rekindle_codec::ingress::Ingress;
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortEvent, RoutePort};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -116,46 +121,18 @@ async fn dispatch_app_message<H: InboundHandler>(
     dedup: &mut DedupCache,
     raw: &[u8],
 ) {
-    // A 1:1 message carries the `'D'` tag; frames start with their
-    // version (`0x01`) and gossip with a Cap'n Proto header, so the first
-    // byte decides without a trial decode (plan E2.1).
-    if raw.first() == Some(&crate::operations::dm::DIRECT_TAG) {
-        handler.on_direct(raw).await;
-        return;
-    }
-    let (type_id, _payload) = match frame::decode(raw) {
-        Ok(result) => result,
-        Err(e) => {
-            // Not a transport frame. Before dropping it, try the
-            // unframed gossip format: a Cap'n Proto `SignedEnvelope`
-            // straight on `app_message`, which is what the desktop's
-            // mesh broadcast sends. Without this branch a desktop peer's
-            // gossip never reaches a daemon member at all — PATH 2 of
-            // the three-path model simply does not cross the tracks.
-            //
-            // Safe unframed because the envelope authenticates itself:
-            // `verify_gossip_signed_envelope` checks an Ed25519
-            // signature over `(community_id, sender_pseudonym,
-            // envelope_bytes)` made with the sender's community
-            // pseudonym. The frame's signature would be redundant with
-            // a property the payload already carries — the same
-            // argument that admits the bare MEK transfer in
-            // `dispatch_app_call`, and unlike that one it does not turn
-            // on the payload type, so every variant is covered.
-            if super::dispatch_gossip::dispatch_bare_gossip(handler, dedup, raw).await {
-                return;
-            }
-            warn!(error = %e, raw_len = raw.len(), "dropping: frame decode failed");
-            return;
+    // Routed by the ingress tag (§6 ledger), so no path trial-decodes: a
+    // 1:1 message carries `'D'` and gossip `'G'`. No transport frame
+    // travels as an app message, so anything else is dropped (plan E2.3).
+    match rekindle_codec::ingress::classify(raw) {
+        Ingress::Direct(_) => handler.on_direct(raw).await,
+        Ingress::Gossip(envelope) => {
+            super::dispatch_gossip::dispatch_bare_gossip(handler, dedup, envelope).await;
         }
-    };
-
-    // No framed type travels as an app message: 1:1 messages are `'D'`
-    // datagrams and gossip is the unframed `SignedEnvelope` above.
-    warn!(
-        type_id = type_id as u8,
-        "unexpected frame type in app_message, dropping"
-    );
+        Ingress::Untagged => {
+            warn!(raw_len = raw.len(), "dropping untagged app_message");
+        }
+    }
 }
 
 const APP_CALL_HANDLER_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
@@ -166,7 +143,7 @@ async fn dispatch_app_call<H: InboundHandler>(
     call_id: AppCallId,
     raw: &[u8],
 ) {
-    if raw.first() == Some(&crate::operations::dm::DIRECT_TAG) {
+    if let Ingress::Direct(_) = rekindle_codec::ingress::classify(raw) {
         let reply = match tokio::time::timeout(
             APP_CALL_HANDLER_DEADLINE,
             handler.on_direct_call(raw),
@@ -407,3 +384,7 @@ async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
         warn!(error = %e, "failed to send NAK reply");
     }
 }
+
+#[cfg(test)]
+#[path = "dispatch_tests.rs"]
+mod tests;

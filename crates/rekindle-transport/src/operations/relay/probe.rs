@@ -2,6 +2,7 @@
 //! "social CDN" — status flows along the friendship edges the relay
 //! overlay uses.
 
+use rekindle_codec::capnp_codec::direct::StatusResponse;
 use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_types::friend::{FriendshipState, UserStatus};
 
@@ -67,32 +68,24 @@ fn parse_status(s: &str) -> Option<UserStatus> {
     }
 }
 
-/// What a relay friend told us about `target`.
-pub(crate) struct StatusResponse<'a> {
-    pub target: &'a str,
-    pub status: &'a str,
-    pub status_message: Option<&'a str>,
-    pub last_seen_secs: u64,
-    pub route_blob: &'a [u8],
-}
-
-/// A friend answered a probe: the snapshot refreshes our view of `target`
-/// only when `target` is our accepted friend, so a relay's word about a
-/// stranger is never trusted.
-pub(crate) fn on_status_response(host: &dyn FriendHost, r: &StatusResponse<'_>) {
-    if r.status.is_empty() || !state::is_accepted(host, r.target) {
+/// A friend answered a probe (the 0x0141 body, §6): the snapshot refreshes
+/// our view of `target_pubkey` only when it is our accepted friend, so a
+/// relay's word about a stranger is never trusted.
+pub(crate) fn on_status_response(host: &dyn FriendHost, r: &StatusResponse) {
+    let target = r.target_pubkey.as_str();
+    if r.status.is_empty() || !state::is_accepted(host, target) {
         return;
     }
-    let seen_ms = i64::try_from(r.last_seen_secs)
+    let seen_ms = i64::try_from(r.last_seen)
         .ok()
         .and_then(|s| s.checked_mul(1000))
-        .filter(|_| r.last_seen_secs > 0);
-    state::update(host, r.target, |f| {
-        if let Some(status) = parse_status(r.status) {
+        .filter(|_| r.last_seen > 0);
+    state::update(host, target, |f| {
+        if let Some(status) = parse_status(&r.status) {
             f.status = status;
         }
-        if let Some(message) = r.status_message {
-            f.status_message = Some(message.to_string());
+        if let Some(message) = &r.status_message {
+            f.status_message = Some(message.clone());
         }
         if seen_ms.is_some() {
             f.last_seen_at = seen_ms;
@@ -101,7 +94,7 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, r: &StatusResponse<'_>) 
     });
     if !r.route_blob.is_empty() {
         if let Ok(node) = host.node() {
-            dm::route::cache(&node, r.target, r.route_blob.to_vec());
+            dm::route::cache(&node, target, r.route_blob.clone());
         }
     }
 }

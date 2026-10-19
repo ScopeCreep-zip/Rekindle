@@ -7,12 +7,11 @@ use tauri::AppHandle;
 use crate::state::{AppState, OnlineMember};
 use crate::state_helpers;
 
-use rekindle_codec::capnp_envelope::{
-    decode_signed_envelope, encode_signed_envelope, try_decode_community_envelope,
-};
+use rekindle_codec::capnp_envelope::{decode_signed_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{
     verify_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
 };
+use rekindle_codec::ingress::{classify, gossip_datagram, Ingress};
 
 // `_app_handle` kept for dispatch-callback signature symmetry — the
 // gossip/legacy processing that used it now runs in the ingress worker
@@ -39,20 +38,25 @@ pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core:
     // is slow enough that a fragment burst would stall this serial
     // dispatch path and starve the voice fast path above. The worker
     // spawned by `lifecycle::dispatch` drains the queue in FIFO order.
+    //
+    // Routed by the ingress tag (§6), so nothing here trial-decodes: a
+    // datagram that is neither media, `'D'` nor `'G'` is dropped (plan E2.3).
     use crate::services::veilid::ingress_queue::IngressItem;
-    if rekindle_transport::operations::dm::unwire(&message).is_some() {
-        state.gossip_ingress.push(IngressItem::Direct(message));
-        return;
+    match classify(&message) {
+        Ingress::Direct(_) => state.gossip_ingress.push(IngressItem::Direct(message)),
+        Ingress::Gossip(bytes) => match decode_signed_envelope(bytes) {
+            Ok(signed) => {
+                let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
+                state
+                    .gossip_ingress
+                    .push(IngressItem::Gossip { signed, is_video });
+            }
+            Err(e) => tracing::debug!(error = %e, "malformed gossip datagram dropped"),
+        },
+        Ingress::Untagged => {
+            tracing::debug!(msg_len = message.len(), "untagged app_message dropped");
+        }
     }
-    if let Ok(signed) = decode_signed_envelope(&message) {
-        let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
-        state
-            .gossip_ingress
-            .push(IngressItem::Gossip { signed, is_video });
-        return;
-    }
-    // Neither a media packet, a 1:1 message nor gossip (plan E2.1).
-    tracing::debug!(msg_len = message.len(), "untagged app_message dropped");
 }
 
 /// Worker-side processing of one queued ingress item. Lives here so the
@@ -297,7 +301,7 @@ pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
 fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnvelope) {
     let mut forward = signed.clone();
     forward.ttl = forward.ttl.saturating_sub(1);
-    let signed_bytes = encode_signed_envelope(&forward);
+    let signed_bytes = gossip_datagram(&forward);
 
     let peers: Vec<Vec<u8>> = {
         let communities = state.communities.read();

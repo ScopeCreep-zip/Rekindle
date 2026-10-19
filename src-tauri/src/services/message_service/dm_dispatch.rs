@@ -119,21 +119,19 @@ pub(crate) async fn handle_dm_payload(
                     "DmVideoFragment with unknown codec tag; dropping");
                 return;
             }
-            if let Some(frame) =
-                state
-                    .dm_video_reassembly
-                    .record_fragment(rekindle_dm::DmVideoFragment {
-                        peer_pubkey: sender_hex,
-                        stream_id,
-                        frame_seq,
-                        fragment_index,
-                        fragment_count,
-                        keyframe,
-                        codec,
-                        timestamp,
-                        chunk,
-                    })
-            {
+            if let Some(frame) = state.dm_video_reassembly.record_fragment(
+                sender_hex,
+                rekindle_dm::DmVideoFragment {
+                    stream_id,
+                    frame_seq,
+                    fragment_index,
+                    fragment_count,
+                    keyframe,
+                    codec,
+                    timestamp,
+                    chunk,
+                },
+            ) {
                 // Phase 13 — assembled-frame event now flows through
                 // DmDeps::emit_event(DmEvent::VideoFrameAssembled); the
                 // adapter handles the base64 + json layout for the

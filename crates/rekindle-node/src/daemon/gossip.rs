@@ -11,7 +11,8 @@
 //!
 //! They now all send here, and this encodes the envelope the way the
 //! desktop does — Cap'n Proto `CommunityEnvelope` inside a
-//! `SignedEnvelope`, unframed on `app_message`. That is what makes
+//! `SignedEnvelope`, after the `'G'` ingress tag on `app_message`
+//! (`rekindle_codec::ingress::gossip_datagram`, plan E2.3). That is what makes
 //! cross-track gossip work at all: before this the daemon put postcard
 //! bytes inside a `TypeId::GossipBroadcast` frame, which no desktop peer
 //! could parse, and rejected the desktop's unframed Cap'n Proto in

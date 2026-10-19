@@ -121,12 +121,12 @@ pub(super) async fn handle(host: &dyn FriendHost, prepared: Prepared) -> Routed 
             route_blob,
         } => relay::on_status_response(
             host,
-            &relay::StatusResponse {
-                target: target_pubkey,
-                status,
-                status_message: status_message.as_deref(),
-                last_seen_secs: *last_seen,
-                route_blob,
+            &rekindle_codec::capnp_codec::direct::StatusResponse {
+                target_pubkey: target_pubkey.clone(),
+                status: status.clone(),
+                status_message: status_message.clone(),
+                last_seen: *last_seen,
+                route_blob: route_blob.clone(),
             },
         ),
         // Presence travels in the profile record, not in 1:1 messages.

@@ -7,6 +7,6 @@
 mod probe;
 mod send;
 
+pub(crate) use probe::on_status_response;
 pub use probe::probe_friends_for_status;
-pub(crate) use probe::{on_status_response, StatusResponse};
 pub use send::send_via_relay;
