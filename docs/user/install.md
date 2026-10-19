@@ -6,8 +6,16 @@ systems with the standard distribution format for each:
 | OS | Format | Notes |
 |----|--------|-------|
 | Windows | NSIS installer (`.exe`) | Windows 10 1903+ / Windows 11; uses the system WebView2 runtime |
-| macOS | DMG (`.dmg`) | macOS 11 Big Sur or later, both Intel and Apple Silicon |
-| Linux | AppImage and `.deb` | x86_64; GTK 3 + WebKitGTK 4.1 required |
+| macOS | DMG (`.dmg`) | macOS 14 Sonoma or later, both Intel and Apple Silicon; uses the system WebKit |
+| Linux | AppImage and `.deb` | x86_64; GTK 3 + WebKitGTK 4.1 (2.40 or later) required |
+
+The macOS floor tracks the oldest macOS release Apple still patches.
+On macOS the app renders in the system WebKit, which only receives
+security fixes with OS updates, and Rekindle displays content from
+peers in it, so an unpatched macOS is not supported. Every release
+at or above the floor ships a WebKit with everything the UI's CSS
+needs (Safari 16.4: cascade layers and `@property`). The policy lives
+in [`../contributor/release-process.md`](../contributor/release-process.md#platform-floor).
 
 > Pre-1.0 status: until the first tagged release lands, we do not
 > publish pre-built artifacts. The only install path today is to
@@ -55,9 +63,10 @@ sudo dpkg -i rekindle_x.y.z_amd64.deb
 sudo apt --fix-broken install   # in case dependencies are missing
 ```
 
-WebKitGTK 4.1 must be available. On Ubuntu 24.04 it ships in the
-default repos; on older versions you may need to enable the
-`universe` repo.
+WebKitGTK 4.1 at version 2.40 or later must be available (the
+`.deb` depends on `libwebkit2gtk-4.1-0 (>= 2.40)`). Ubuntu 24.04 and
+Pop!_OS 24.04 ship 2.44 in the default repos, and their updates carry
+newer releases.
 
 ## Building from source
 

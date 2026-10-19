@@ -64,10 +64,15 @@ export default defineConfig({
   },
 
   build: {
+    // The floor is Safari 16.4 on macOS (system WKWebView) and WebKitGTK
+    // 2.40 on Linux: Tailwind 4 needs Safari 16.4, and neither esbuild nor
+    // Lightning CSS lowers `@layer` or `@property`. Keep in sync with
+    // tauri.conf.json `minimumSystemVersion` and the `.deb` WebKitGTK depend
+    // (docs/contributor/release-process.md, "Platform floor").
     target:
       process.env.TAURI_ENV_PLATFORM === "windows"
         ? "chrome105"
-        : "safari13",
+        : "safari16.4",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     chunkSizeWarningLimit: 1024,

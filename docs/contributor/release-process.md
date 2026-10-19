@@ -44,6 +44,8 @@ Before tagging:
       relevant ADR is added or updated under [`../decisions/`](../decisions/).
 - [ ] If a security-relevant change landed, [`../security/threat-model.md`](../security/threat-model.md)
       is updated.
+- [ ] The macOS floor still matches the oldest macOS Apple patches
+      (see [Platform floor](#platform-floor)).
 
 ## Tagging
 
@@ -77,6 +79,46 @@ This produces:
 Per-OS builds happen on per-OS runners; cross-compilation is not
 the supported path. The release workflow at
 `.github/workflows/release.yml` orchestrates this.
+
+## Platform floor
+
+The minimum supported OS versions are set by the webview each
+platform renders in:
+
+| Platform | Floor | Where it is set |
+|----------|-------|-----------------|
+| macOS | 14 Sonoma (system WebKit, Safari 16.4 or later) | `src-tauri/tauri.conf.json` `bundle.macOS.minimumSystemVersion` (`LSMinimumSystemVersion` in the bundle's `Info.plist`) |
+| Linux | WebKitGTK 4.1, version 2.40 or later | `src-tauri/tauri.conf.json` `bundle.linux.deb.depends` (`libwebkit2gtk-4.1-0 (>= 2.40)`) |
+| Windows | Evergreen WebView2 (Chromium 105 or later) | `vite.config.ts` `build.target` |
+
+The frontend build target follows the floor: `vite.config.ts` uses
+`safari16.4` for macOS and Linux and `chrome105` for Windows. Tailwind 4
+requires Safari 16.4, and the UI depends on `@layer` (Safari 15.4,
+WebKitGTK 2.36, Chromium 99) and `@property` (Safari 16.4, WebKitGTK
+2.40, Chromium 85). Neither esbuild nor Lightning CSS lowers them, so
+on an older engine every layered rule is dropped and the app renders
+unstyled.
+
+**macOS policy: the floor tracks the oldest macOS release Apple still
+patches.** On macOS the webview is the system WebKit, which is updated
+only with the OS, and Rekindle renders content from peers in it, so a
+release Apple no longer patches is a release we do not support. When
+Apple stops patching the oldest supported release (it drops out of
+Apple's security-release index at
+<https://support.apple.com/en-us/100100>), raise
+`minimumSystemVersion` to the next release in the same change that
+updates [`../user/install.md`](../user/install.md). As of 2026-10,
+Ventura's last update was 13.7.8 (2025-08-20), and Sonoma, Sequoia and
+Tahoe are patched, so the floor is 14.0.
+
+The Linux floor is the first WebKitGTK release that enables
+`@property` by default (2.40). Raise it when the UI starts to depend on
+a feature a newer WebKitGTK introduces.
+
+Check the floor as part of every release: the built `Info.plist`
+carries `LSMinimumSystemVersion` 14.0 (or the current floor),
+`dpkg-deb -I` on the `.deb` shows the WebKitGTK depend, and the built
+CSS still contains its `@layer` statements.
 
 ## Signing
 
