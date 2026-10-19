@@ -15,6 +15,7 @@
 
 pub mod channel_body;
 pub mod derive;
+pub mod hpke;
 pub mod invite;
 pub mod keys;
 pub mod media_sender_key;

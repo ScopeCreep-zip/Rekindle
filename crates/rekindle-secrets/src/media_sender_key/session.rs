@@ -21,10 +21,12 @@ use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
 use zeroize::Zeroizing;
 
-use crate::mek::{HpkeAead, HpkeKdf, HpkeKem};
+use crate::hpke;
 
+/// The media secret a sealed key carries.
+const SECRET_LEN: usize = 32;
 /// 32 enc + 32 secret + 16 tag.
-const SEALED_LEN: usize = 80;
+const SEALED_LEN: usize = hpke::ENC_LEN + SECRET_LEN + hpke::TAG_LEN;
 
 /// Our X25519 key for one channel session. The secret is erased on drop.
 pub struct SessionKey {
@@ -36,13 +38,9 @@ impl SessionKey {
     /// A fresh session key.
     #[must_use]
     pub fn fresh() -> Self {
-        use hpke::{Deserializable, Serializable};
         let mut secret = Zeroizing::new([0u8; 32]);
         rand::rngs::OsRng.fill_bytes(secret.as_mut());
-        let sk = <HpkeKem as hpke::Kem>::PrivateKey::from_bytes(secret.as_ref())
-            .expect("any 32 bytes are an X25519 private key");
-        let mut public = [0u8; 32];
-        public.copy_from_slice(&<HpkeKem as hpke::Kem>::sk_to_pk(&sk).to_bytes());
+        let public = hpke::public_key(&secret);
         Self { secret, public }
     }
 
@@ -57,31 +55,18 @@ impl SessionKey {
     /// # Errors
     /// Not sealed to this key under this AAD, or malformed.
     pub fn open(&self, aad: &[u8], sealed: &[u8]) -> Result<Zeroizing<[u8; 32]>, CryptoError> {
-        use hpke::Deserializable;
         if sealed.len() != SEALED_LEN {
             return Err(CryptoError::Decryption(
                 "sealed media key is not 80 bytes".into(),
             ));
         }
-        let sk = <HpkeKem as hpke::Kem>::PrivateKey::from_bytes(self.secret.as_ref())
-            .map_err(|e| CryptoError::InvalidKey(format!("session key: {e}")))?;
-        let enc = <HpkeKem as hpke::Kem>::EncappedKey::from_bytes(&sealed[..32])
-            .map_err(|e| CryptoError::Decryption(format!("HPKE encapped key: {e}")))?;
-        let plaintext = Zeroizing::new(
-            hpke::single_shot_open::<HpkeAead, HpkeKdf, HpkeKem>(
-                &hpke::OpModeR::Base,
-                &sk,
-                &enc,
-                domains::MEDIA_KEY_SEAL.as_bytes(),
-                &sealed[32..],
-                aad,
-            )
-            .map_err(|e| CryptoError::Decryption(format!("HPKE open: {e}")))?,
-        );
-        if plaintext.len() != 32 {
+        let (enc, ciphertext) = sealed.split_at(hpke::ENC_LEN);
+        let plaintext =
+            hpke::open_base(&self.secret, domains::MEDIA_KEY_SEAL, aad, enc, ciphertext)?;
+        if plaintext.len() != SECRET_LEN {
             return Err(CryptoError::Decryption("media key is not 32 bytes".into()));
         }
-        let mut secret = Zeroizing::new([0u8; 32]);
+        let mut secret = Zeroizing::new([0u8; SECRET_LEN]);
         secret.copy_from_slice(&plaintext);
         Ok(secret)
     }
@@ -96,19 +81,13 @@ pub fn seal(
     aad: &[u8],
     secret: &[u8; 32],
 ) -> Result<Vec<u8>, CryptoError> {
-    use hpke::{Deserializable, Serializable};
-    let pk = <HpkeKem as hpke::Kem>::PublicKey::from_bytes(recipient_session)
-        .map_err(|e| CryptoError::InvalidKey(format!("recipient session key: {e}")))?;
-    let (enc, ciphertext) = hpke::single_shot_seal::<HpkeAead, HpkeKdf, HpkeKem>(
-        &hpke::OpModeS::Base,
-        &pk,
-        domains::MEDIA_KEY_SEAL.as_bytes(),
-        secret,
-        aad,
-    )
-    .map_err(|e| CryptoError::Encryption(format!("HPKE seal: {e}")))?;
-    let mut out = enc.to_bytes().to_vec();
-    out.extend_from_slice(&ciphertext);
+    let recipient: [u8; 32] = recipient_session
+        .try_into()
+        .map_err(|_| CryptoError::InvalidKey("recipient session key is not 32 bytes".into()))?;
+    let sealed = hpke::seal_base(&recipient, domains::MEDIA_KEY_SEAL, aad, secret)?;
+    let mut out = Vec::with_capacity(SEALED_LEN);
+    out.extend_from_slice(&sealed.enc);
+    out.extend_from_slice(&sealed.ciphertext);
     Ok(out)
 }
 
@@ -178,6 +157,29 @@ mod tests {
         assert_eq!(*bob.open(b"aad", &sealed).unwrap(), *secret);
         assert!(carol.open(b"aad", &sealed).is_err());
         assert!(bob.open(b"other", &sealed).is_err());
+    }
+
+    /// A key sealed before the seal moved onto `crate::hpke` (session
+    /// secret `[7; 32]`, AAD `seal_aad("ch", "bob", 5)`, media secret
+    /// `[0x42; 32]`) still opens: the wire bytes are unchanged.
+    #[test]
+    fn a_key_sealed_before_the_wrapper_still_opens() {
+        let bob = SessionKey {
+            secret: Zeroizing::new([7; 32]),
+            public: hpke::public_key(&[7; 32]),
+        };
+        assert_eq!(
+            hex::encode(bob.public()),
+            "13be4feaeaf204c7fd3358fc9c00721881d174278128227ec674f37f7fe97b6d"
+        );
+        let sealed = hex::decode(
+            "0d47ccd7909195755c3d1cd06cfaf76d3636ab55053849473f59c50b1477272f\
+             755afa0fec2d36039073e86f18cfb9fbe675f8deb57f303024f9ba472f2703a6\
+             d16d865012c8ff026a07d2e626a9ab7e",
+        )
+        .unwrap();
+        let aad = super::super::seal_aad("ch", "bob", 5);
+        assert_eq!(*bob.open(&aad, &sealed).unwrap(), [0x42; 32]);
     }
 
     /// Once the session key is gone nothing recorded opens: no long-term

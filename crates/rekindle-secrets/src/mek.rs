@@ -11,9 +11,9 @@
 //!   `[12-byte nonce || ciphertext + 16-byte tag]` (68 bytes for the
 //!   40-byte MEK wire input).
 //! - **v2 (`0x02` prefix)**: RFC 9180 HPKE, DHKEM-X25519 + HKDF-SHA256 +
-//!   ChaCha20Poly1305, **Auth mode** — the static-static shape of v1,
-//!   standardized. Auth (not Base) is deliberate: v1's ECDH implicitly
-//!   authenticated the sender, and Base mode would silently drop that
+//!   ChaCha20Poly1305 ([`crate::hpke`]), **Auth mode** — the static-static
+//!   shape of v1, standardized. Auth (not Base) is deliberate: v1's ECDH
+//!   implicitly authenticated the sender, and Base mode would silently drop that
 //!   property. Info label `rekindle-mek/1` (deliberately NOT Veilid's
 //!   `veilid-hpke/1` — MEK wrapping is Rekindle↔Rekindle only, and our
 //!   wire format must not be coupled to Veilid's domain separation).
@@ -40,6 +40,7 @@ use x25519_dalek::PublicKey as X25519PublicKey;
 use zeroize::Zeroizing;
 
 use crate::derive::pseudonym_to_x25519;
+use crate::hpke;
 use rekindle_types::domains;
 
 /// Derive an AES-256-GCM wrapping key from an X25519 shared secret.
@@ -95,35 +96,11 @@ pub fn wrap_mek(
 /// Version byte prefixing HPKE-wrapped (v2) MEK blobs.
 pub const HPKE_MEK_VERSION: u8 = 0x02;
 
-pub(crate) type HpkeKem = hpke::kem::X25519HkdfSha256;
-pub(crate) type HpkeKdf = hpke::kdf::HkdfSha256;
-pub(crate) type HpkeAead = hpke::aead::ChaCha20Poly1305;
-
-/// Convert our Ed25519-derived X25519 keys into the hpke crate's types.
-pub(crate) fn hpke_keys(
-    our_signing_key: &SigningKey,
-    their_ed25519_public: &[u8; 32],
-) -> Result<
-    (
-        <HpkeKem as hpke::Kem>::PrivateKey,
-        <HpkeKem as hpke::Kem>::PublicKey,
-        <HpkeKem as hpke::Kem>::PublicKey,
-    ),
-    CryptoError,
-> {
-    use hpke::Deserializable;
-    let our_x25519 = pseudonym_to_x25519(our_signing_key);
-    let our_sk = <HpkeKem as hpke::Kem>::PrivateKey::from_bytes(&our_x25519.to_bytes())
-        .map_err(|e| CryptoError::InvalidKey(format!("own X25519 key: {e}")))?;
-    let our_pk = <HpkeKem as hpke::Kem>::sk_to_pk(&our_sk);
-
-    let their_verifying = VerifyingKey::from_bytes(their_ed25519_public)
+/// A peer's Ed25519 public key as the X25519 point HPKE seals to.
+fn peer_x25519(ed25519_public: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    let verifying = VerifyingKey::from_bytes(ed25519_public)
         .map_err(|e| CryptoError::InvalidKey(format!("invalid peer Ed25519 key: {e}")))?;
-    let their_pk =
-        <HpkeKem as hpke::Kem>::PublicKey::from_bytes(&their_verifying.to_montgomery().to_bytes())
-            .map_err(|e| CryptoError::InvalidKey(format!("peer X25519 key: {e}")))?;
-
-    Ok((our_sk, our_pk, their_pk))
+    Ok(verifying.to_montgomery().to_bytes())
 }
 
 /// Wrap MEK wire bytes for a recipient via RFC 9180 HPKE (v2 format).
@@ -136,23 +113,20 @@ pub fn hpke_wrap_mek(
     recipient_ed25519_public: &[u8; 32],
     mek_wire_bytes: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    use hpke::Serializable;
-    let (our_sk, our_pk, their_pk) = hpke_keys(sender_signing_key, recipient_ed25519_public)?;
-
-    let (enc, ciphertext) = hpke::single_shot_seal::<HpkeAead, HpkeKdf, HpkeKem>(
-        &hpke::OpModeS::Auth((our_sk, our_pk)),
-        &their_pk,
-        domains::HPKE_MEK_INFO.as_bytes(),
-        mek_wire_bytes,
+    let sender = Zeroizing::new(pseudonym_to_x25519(sender_signing_key).to_bytes());
+    let recipient = peer_x25519(recipient_ed25519_public)?;
+    let sealed = hpke::seal_auth(
+        &sender,
+        &recipient,
+        domains::HPKE_MEK_INFO,
         b"",
-    )
-    .map_err(|e| CryptoError::Encryption(format!("HPKE seal: {e}")))?;
+        mek_wire_bytes,
+    )?;
 
-    let enc_bytes = enc.to_bytes();
-    let mut output = Vec::with_capacity(1 + enc_bytes.len() + ciphertext.len());
+    let mut output = Vec::with_capacity(1 + hpke::ENC_LEN + sealed.ciphertext.len());
     output.push(HPKE_MEK_VERSION);
-    output.extend_from_slice(&enc_bytes);
-    output.extend_from_slice(&ciphertext);
+    output.extend_from_slice(&sealed.enc);
+    output.extend_from_slice(&sealed.ciphertext);
     Ok(output)
 }
 
@@ -162,25 +136,22 @@ pub fn hpke_open_mek(
     sender_ed25519_public: &[u8; 32],
     wrapped_mek: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    use hpke::Deserializable;
-    // 1 version + 32 enc + 16 tag minimum
-    if wrapped_mek.len() < 49 || wrapped_mek[0] != HPKE_MEK_VERSION {
+    let body_start = 1 + hpke::ENC_LEN;
+    if wrapped_mek.len() < body_start + hpke::TAG_LEN || wrapped_mek[0] != HPKE_MEK_VERSION {
         return Err(CryptoError::Decryption("not an HPKE-wrapped MEK".into()));
     }
-    let (our_sk, _our_pk, their_pk) = hpke_keys(recipient_signing_key, sender_ed25519_public)?;
-
-    let enc = <HpkeKem as hpke::Kem>::EncappedKey::from_bytes(&wrapped_mek[1..33])
-        .map_err(|e| CryptoError::Decryption(format!("HPKE encapped key: {e}")))?;
-
-    hpke::single_shot_open::<HpkeAead, HpkeKdf, HpkeKem>(
-        &hpke::OpModeR::Auth(their_pk),
-        &our_sk,
-        &enc,
-        domains::HPKE_MEK_INFO.as_bytes(),
-        &wrapped_mek[33..],
+    let recipient = Zeroizing::new(pseudonym_to_x25519(recipient_signing_key).to_bytes());
+    let sender = peer_x25519(sender_ed25519_public)?;
+    let mut plaintext = hpke::open_auth(
+        &recipient,
+        &sender,
+        domains::HPKE_MEK_INFO,
         b"",
-    )
-    .map_err(|e| CryptoError::Decryption(format!("HPKE open: {e}")))
+        &wrapped_mek[1..body_start],
+        &wrapped_mek[body_start..],
+    )?;
+    // Hand the buffer out; the emptied `Zeroizing` has nothing left to wipe.
+    Ok(std::mem::take(&mut *plaintext))
 }
 
 /// Unwrap (decrypt) MEK wire bytes received from a peer — reads BOTH
@@ -336,6 +307,24 @@ mod tests {
         let opened =
             hpke_open_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
         assert_eq!(opened, wire);
+    }
+
+    /// A v2 blob sealed before the wrap moved onto `crate::hpke` (sender
+    /// and recipient as below, plaintext `0..40`) still opens: the move
+    /// left the wire bytes and the key schedule unchanged.
+    #[test]
+    fn hpke_blob_from_before_the_wrapper_still_opens() {
+        let sender = derive_community_pseudonym(&[1u8; 32], "c");
+        let recipient = derive_community_pseudonym(&[2u8; 32], "c");
+        let wrapped = hex::decode(
+            "025a004e4c8adf32f6f8c74f736afdfeea606457d2465b4c9f9c6961daf5f619\
+             197dc7f7eb346b2ba5763be8cb430b194c925c814c7b4e849d802a5e59ec07e0\
+             162150d264afa53ad060726c5f696719d48aab37dbd1ec6ff4",
+        )
+        .unwrap();
+        let opened =
+            hpke_open_mek(&recipient, &sender.verifying_key().to_bytes(), &wrapped).unwrap();
+        assert_eq!(opened, (0u8..40).collect::<Vec<_>>());
     }
 
     #[test]

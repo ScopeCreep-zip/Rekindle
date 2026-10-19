@@ -145,7 +145,7 @@ labels! {
     /// Replaced in step 33 (per-device sync key).
     PERSONAL_SYNC_RECORD_INFO = "personal-sync-record";
     /// HPKE info: MEK transfer — Rekindle-owned, never Veilid's
-    /// `veilid-hpke/1`. Deleted with the MEK in step 30 (MLS).
+    /// `veilid-hpke/1`. Renamed by E3.5's signed v2 wrap.
     HPKE_MEK_INFO = "rekindle-mek/1";
     /// 1:1 ratchet KDF labels, shared by the desktop and daemon tracks —
     /// deleted with the non-spec ratchet in step 27.
