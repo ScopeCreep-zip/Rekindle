@@ -1,17 +1,7 @@
-//! DM MEK derivation (architecture §27.1) and ratchet.
+//! Group DM MEK ratchet (architecture §27.2).
 //!
-//! For 2-party DMs, the MEK is derived deterministically from the X25519
-//! ECDH shared secret between identity keys, so both peers reach the
-//! same value with no key-exchange round trip:
-//!
-//! ```text
-//! ikm  = X25519(my_secret, their_public)
-//! salt = SHA256(sorted(my_pub || their_pub))   // commutative
-//! info = b"rekindle-dm-mek-v1"
-//! mek  = HKDF-SHA256(ikm, salt, info, 32 bytes)
-//! ```
-//!
-//! Rotation uses a forward-secure ratchet:
+//! A group DM's genesis MEK is random and wrapped per recipient in its
+//! `GroupDmInvite`. Rotation uses a forward-secure ratchet:
 //!
 //! ```text
 //! mek_n+1 = HKDF-SHA256(mek_n, salt: empty, info: b"rekindle-dm-ratchet-v1")
@@ -21,8 +11,7 @@
 //! (the caller is responsible for invoking `ratchet_dm_mek`).
 
 use hkdf::Hkdf;
-use sha2::{Digest, Sha256};
-use x25519_dalek::{PublicKey, StaticSecret};
+use sha2::Sha256;
 use zeroize::Zeroize;
 
 use crate::error::DmError;
@@ -54,39 +43,6 @@ impl std::fmt::Debug for DmMek {
     }
 }
 
-/// Derive the deterministic 2-party DM MEK from identity keys.
-///
-/// `my_x25519_secret` and `their_x25519_public` are the X25519 forms of
-/// each peer's identity. (For Ed25519 identities, the caller converts
-/// using the standard Ed25519→X25519 birational map; not done here so
-/// the dependency surface stays minimal.)
-pub fn derive_dm_mek(
-    my_x25519_secret: &[u8; 32],
-    their_x25519_public: &[u8; 32],
-    my_ed25519_public: &[u8; 32],
-    their_ed25519_public: &[u8; 32],
-) -> Result<DmMek, DmError> {
-    let secret = StaticSecret::from(*my_x25519_secret);
-    let their_pub = PublicKey::from(*their_x25519_public);
-    let shared = secret.diffie_hellman(&their_pub);
-
-    let mut salt_hasher = Sha256::new();
-    if my_ed25519_public <= their_ed25519_public {
-        salt_hasher.update(my_ed25519_public);
-        salt_hasher.update(their_ed25519_public);
-    } else {
-        salt_hasher.update(their_ed25519_public);
-        salt_hasher.update(my_ed25519_public);
-    }
-    let salt = salt_hasher.finalize();
-
-    let hk = Hkdf::<Sha256>::new(Some(&salt), shared.as_bytes());
-    let mut mek = [0u8; MEK_LEN];
-    hk.expand(domains::DM_MEK.as_bytes(), &mut mek)
-        .map_err(|e| DmError::Hkdf(e.to_string()))?;
-    Ok(DmMek(mek))
-}
-
 /// Forward-secure ratchet: derive next-generation MEK from the previous.
 pub fn ratchet_dm_mek(prev: &DmMek) -> Result<DmMek, DmError> {
     let hk = Hkdf::<Sha256>::new(None, prev.as_bytes());
@@ -114,7 +70,7 @@ pub struct DmMekChain {
 }
 
 impl DmMekChain {
-    /// Build a fresh chain rooted at the deterministic ECDH MEK.
+    /// Build a fresh chain rooted at the group's genesis MEK.
     pub fn new(genesis: DmMek) -> Self {
         Self {
             cache: vec![genesis],
@@ -196,35 +152,13 @@ impl std::fmt::Debug for DmMekChain {
 mod tests {
     use super::*;
 
-    fn keys() -> ([u8; 32], [u8; 32], [u8; 32], [u8; 32]) {
-        // Using fixed bytes — not a real keypair correspondence, but for the
-        // ECDH/HKDF we just need deterministic 32-byte inputs.
-        let alice_secret = [1u8; 32];
-        let alice_public: PublicKey = (&StaticSecret::from(alice_secret)).into();
-        let bob_secret = [2u8; 32];
-        let bob_public: PublicKey = (&StaticSecret::from(bob_secret)).into();
-        (
-            alice_secret,
-            *alice_public.as_bytes(),
-            bob_secret,
-            *bob_public.as_bytes(),
-        )
-    }
-
-    #[test]
-    fn both_parties_derive_same_mek() {
-        let (alice_sec, alice_pub, bob_sec, bob_pub) = keys();
-        // Use the X25519 public bytes as Ed25519 stand-ins for the salt
-        // hashing — sufficient for the convergence test.
-        let mek_a = derive_dm_mek(&alice_sec, &bob_pub, &alice_pub, &bob_pub).unwrap();
-        let mek_b = derive_dm_mek(&bob_sec, &alice_pub, &bob_pub, &alice_pub).unwrap();
-        assert_eq!(mek_a.as_bytes(), mek_b.as_bytes());
+    fn genesis() -> DmMek {
+        DmMek([7u8; MEK_LEN])
     }
 
     #[test]
     fn ratchet_advances_mek() {
-        let (alice_sec, alice_pub, _bob_sec, bob_pub) = keys();
-        let mek0 = derive_dm_mek(&alice_sec, &bob_pub, &alice_pub, &bob_pub).unwrap();
+        let mek0 = genesis();
         let mek1 = ratchet_dm_mek(&mek0).unwrap();
         assert_ne!(mek0.as_bytes(), mek1.as_bytes());
         let mek2 = ratchet_dm_mek(&mek1).unwrap();
@@ -233,19 +167,15 @@ mod tests {
 
     #[test]
     fn chain_lazy_materialize() {
-        let (alice_sec, alice_pub, _bob_sec, bob_pub) = keys();
-        let genesis = derive_dm_mek(&alice_sec, &bob_pub, &alice_pub, &bob_pub).unwrap();
-        let expected = ratchet_dm_mek(&ratchet_dm_mek(&genesis).unwrap()).unwrap();
-        let mut chain = DmMekChain::new(genesis);
+        let expected = ratchet_dm_mek(&ratchet_dm_mek(&genesis()).unwrap()).unwrap();
+        let mut chain = DmMekChain::new(genesis());
         let got = chain.for_generation(2).unwrap();
         assert_eq!(got.as_bytes(), expected.as_bytes());
     }
 
     #[test]
     fn chain_observed_locks_forward() {
-        let (alice_sec, alice_pub, _bob_sec, bob_pub) = keys();
-        let genesis = derive_dm_mek(&alice_sec, &bob_pub, &alice_pub, &bob_pub).unwrap();
-        let mut chain = DmMekChain::new(genesis);
+        let mut chain = DmMekChain::new(genesis());
         chain.observed_generation(5).unwrap();
         assert_eq!(chain.current().unwrap().0, 5);
         // Observing a lower gen does NOT roll us back.
@@ -255,9 +185,7 @@ mod tests {
 
     #[test]
     fn chain_advance_is_monotonic() {
-        let (alice_sec, alice_pub, _bob_sec, bob_pub) = keys();
-        let genesis = derive_dm_mek(&alice_sec, &bob_pub, &alice_pub, &bob_pub).unwrap();
-        let mut chain = DmMekChain::new(genesis);
+        let mut chain = DmMekChain::new(genesis());
         assert_eq!(chain.advance().unwrap(), 1);
         assert_eq!(chain.advance().unwrap(), 2);
         assert_eq!(chain.current().unwrap().0, 2);
@@ -265,11 +193,9 @@ mod tests {
 
     #[test]
     fn chain_restore_resumes_at_persisted_generation() {
-        let (alice_sec, alice_pub, _bob_sec, bob_pub) = keys();
-        let genesis = derive_dm_mek(&alice_sec, &bob_pub, &alice_pub, &bob_pub).unwrap();
-        let chain = DmMekChain::restore(genesis.clone(), 3).unwrap();
+        let chain = DmMekChain::restore(genesis(), 3).unwrap();
         let derived = {
-            let mut c = DmMekChain::new(genesis);
+            let mut c = DmMekChain::new(genesis());
             c.observed_generation(3).unwrap();
             c
         };

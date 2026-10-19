@@ -44,9 +44,6 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
   }
 }
 
-let typingTimeout: ReturnType<typeof setTimeout> | null = null;
-let isLocalTyping = false;
-
 export function handleKeyDown(
   e: KeyboardEvent,
   to: string,
@@ -57,32 +54,19 @@ export function handleKeyDown(
     e.preventDefault();
     const body = getBody();
     if (body.trim()) {
+      // The backend ends our typing when the message goes out.
       handleSendMessage(to, body);
       clearInput();
-      // Clear typing indicator on send
-      if (isLocalTyping) {
-        isLocalTyping = false;
-        commands.sendTyping(to, false).catch(() => {});
-      }
-      if (typingTimeout) {
-        clearTimeout(typingTimeout);
-        typingTimeout = null;
-      }
     }
-  } else {
-    // Send typing indicator on non-Enter key presses
-    if (!isLocalTyping) {
-      isLocalTyping = true;
-      commands.sendTyping(to, true).catch(() => {});
-    }
-    // Reset the typing timeout — stop after 3s of no input
-    if (typingTimeout) clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      isLocalTyping = false;
-      commands.sendTyping(to, false).catch(() => {});
-      typingTimeout = null;
-    }, 3000);
   }
+}
+
+/// Report the 1:1 draft to `to` after each edit: whether it holds text.
+/// The backend decides what the peer sees (the start, its refresh, the
+/// idle stop; plan E2.3), so the window keeps no typing state. Typing is
+/// best effort, so a failed report is dropped.
+export function handleDraftChanged(to: string, body: string): void {
+  commands.sendTyping(to, body.trim().length > 0).catch(() => {});
 }
 
 export function handleIncomingMessage(
@@ -105,6 +89,8 @@ export function handleIncomingMessage(
   }
 }
 
+/// Render the peer's typing as the backend emitted it: the start, and the
+/// stop on their stop, their message, or the backend's expiry (plan E2.3).
 export function handleTypingIndicator(
   peerId: string,
   isTyping: boolean,

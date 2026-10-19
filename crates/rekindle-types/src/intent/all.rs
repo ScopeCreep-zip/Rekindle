@@ -136,7 +136,6 @@ impl IntentKind {
         Self::AcceptRequest,
         Self::AddFriend,
         Self::AddFriendFromInvite,
-        Self::StartDm,
         Self::UnbanMember,
         Self::UnblockUser,
         Self::CreateCommunityInvite,

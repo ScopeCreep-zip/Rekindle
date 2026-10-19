@@ -281,15 +281,10 @@ ecosystem.
       info: "rekindle-slot-" ‖ decimal(slot_index),
   )
   ```
-- **DM MEK derivation:**
-  ```
-  dm_mek = HKDF-SHA256(
-      ikm:  X25519(alice_priv, bob_pub),
-      salt: SHA256(sorted(alice_pub ‖ bob_pub)),
-      info: "rekindle-dm-mek-v1",
-  )
-  ```
-- **DM MEK ratchet:**
+- **Group DM MEK:** random, wrapped per recipient in the `GroupDmInvite`
+  (the 2-party ECDH MEK went with the 1:1 SMPL path, plan E2.3; 1:1 DMs
+  are the friend's ratchet stream). E2.6 replaces it with sender-owned keys.
+- **Group DM MEK ratchet:**
   ```
   mek_n+1 = HKDF-SHA256(mek_n, info="rekindle-dm-ratchet-v1")
   ```

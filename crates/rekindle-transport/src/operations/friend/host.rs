@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use rekindle_crypto::signal::SignalSessionManager;
+use rekindle_events::typing::{TypingExpiry, TypingSessions};
 use rekindle_protocol::messaging::replay::ReplayGuard;
 use rekindle_types::friend_store::FriendStore;
 use rekindle_types::subscription_events::SubscriptionEvent;
@@ -39,6 +40,10 @@ pub struct FriendStores {
     /// The bundle of each friend's pending reset request, until the user
     /// answers it (one per friend, the newest wins).
     pub incoming_resets: Mutex<HashMap<String, Vec<u8>>>,
+    /// Who is typing to us, and when each start lapses (plan E2.3).
+    pub typing_in: Mutex<TypingExpiry>,
+    /// Our typing sessions, one per conversation (plan E2.3).
+    pub typing_out: Mutex<TypingSessions>,
 }
 
 impl FriendStores {
@@ -47,6 +52,8 @@ impl FriendStores {
         self.replay.lock().clear();
         self.outgoing_resets.lock().clear();
         self.incoming_resets.lock().clear();
+        self.typing_in.lock().clear();
+        self.typing_out.lock().clear();
     }
 }
 

@@ -32,8 +32,7 @@ import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handl
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import CallController from "../components/voice/CallController";
 import { startEventStream } from "../ipc/channels";
-import { subscribeDmInbox } from "../handlers/dm.handlers";
-import { handleListDms } from "../actions/dm.actions";
+import { subscribeDmInvites } from "../handlers/dm.handlers";
 import { handleHydrateRelayState } from "../actions/relay.actions";
 import { hydrateState } from "../stores/hydrate";
 import {
@@ -86,7 +85,7 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeDeepLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());
-    unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
+    unlisteners.push(subscribeDmInvites());
     void startEventStream(() => void hydrateState());
     void refreshMissedCalls();
 
@@ -94,7 +93,6 @@ const BuddyListWindow: Component = () => {
     await hydrateState();
     // A deep link that arrived before login waits in the backend for consent.
     void loadPendingDeepLink();
-    handleListDms();
     handleHydrateRelayState();
 
     // Load persisted pending friend requests from SQLite

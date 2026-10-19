@@ -231,7 +231,9 @@ pub enum IpcRequest {
     // ── DMs ───────────────────────────────────────────────────────
     /// Send a direct message.
     DmSend { peer_key: String, body: String },
-    /// Send a typing indicator to a peer.
+    /// The draft to a peer changed: `typing` is whether it holds text. The
+    /// Host decides what goes out (the start, its refresh, the idle stop;
+    /// plan E2.3).
     DmTyping { peer_key: String, typing: bool },
     /// The latest message of each direct conversation.
     DmInbox { limit: u32 },

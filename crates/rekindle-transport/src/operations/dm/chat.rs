@@ -31,6 +31,8 @@ pub async fn send_dm(
     })
     .await?;
 
+    // Sending the message ends our typing to `to`.
+    super::typing::message_sent(host, to);
     let payload = MessagePayload::DirectMessage {
         body: body.to_string(),
         reply_to: None,

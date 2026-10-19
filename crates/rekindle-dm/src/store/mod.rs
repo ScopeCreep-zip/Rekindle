@@ -100,7 +100,6 @@ pub struct DmInviteMeta {
     pub initiator_public_key: String,
     pub my_subkey: u32,
     pub mek_generation: u64,
-    pub is_group: bool,
     pub wrapped_mek_blob: Option<Vec<u8>>,
     pub participants: Vec<GroupDmParticipant>,
 }

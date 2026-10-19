@@ -155,11 +155,11 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         | SubscriptionEvent::ChannelMessage(ChannelMessageEvent::ConversationFocusRequested {
             ..
         }) => buddy_list(),
-        // The call's own window, the buddy list, and the chat and DM
-        // windows (each shows the call with its peer).
+        // The call's own window, the buddy list, and the chat windows
+        // (each shows the call with its peer).
         SubscriptionEvent::Call(e) => buddy_list()
             .with_labels(labels::call_label_for(e.call_id()))
-            .with_kinds(&[WindowKind::Chat, WindowKind::Dm]),
+            .with_kinds(&[WindowKind::Chat]),
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
@@ -493,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn group_dms_reach_their_dm_window() {
+    fn group_dms_reach_their_group_chat_window() {
         let a = sub(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::DirectMessageReceived {
                 peer_key: PK.into(),

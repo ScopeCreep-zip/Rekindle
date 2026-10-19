@@ -6,7 +6,6 @@
     "login",
     "buddy-list",
     "chat-*",
-    "dm-*",
     "community-*",
     "settings",
     "profile-*",

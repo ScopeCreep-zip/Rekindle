@@ -345,7 +345,6 @@ async fn load_invite_meta_returns_full_fields() {
         .await
         .unwrap()
         .expect("invite meta should exist");
-    assert!(meta.is_group);
     assert_eq!(meta.wrapped_mek_blob.as_deref(), Some(&[1u8, 2, 3, 4][..]));
     assert_eq!(meta.mek_generation, 7);
     assert_eq!(meta.my_subkey, 1);

@@ -143,8 +143,9 @@ pub async fn send_message(
     host_call::call(&state, IpcRequest::DmSend { peer_key: to, body }).await
 }
 
-/// Send a typing indicator (`IpcRequest::DmTyping`); dropped, never queued,
-/// when there is no route.
+/// Report the draft to a peer (`IpcRequest::DmTyping`): `typing` is whether
+/// it holds text. The Host sends the start, its refresh and the idle stop
+/// (plan E2.3); typing is dropped, never queued, when there is no route.
 #[tauri::command]
 pub async fn send_typing(
     peer_id: String,

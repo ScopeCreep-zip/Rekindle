@@ -1,11 +1,13 @@
 import { createStore } from "solid-js/store";
 import type { DmConversation } from "../ipc/commands";
 
+// Group DMs over SMPL records (architecture §27.2), until E2.6's group DM
+// store replaces this. 1:1 DMs are the friend's chat (`chat.store.ts`).
+
 export interface DmInviteRequest {
   recordKey: string;
   from: string;
   initiatorPseudonym: string;
-  isGroup: boolean;
   receivedAt: number;
 }
 
@@ -18,21 +20,18 @@ export interface DmMessage {
 }
 
 export interface DmState {
-  /** Invite-pending conversations awaiting accept/decline. */
+  /** Group invites awaiting accept/decline. */
   pendingInvites: Record<string, DmInviteRequest>;
-  /** Accepted DM conversations, keyed by SMPL record key. */
+  /** Accepted group DMs, keyed by SMPL record key. */
   conversations: Record<string, DmConversation>;
-  /** Per-conversation message log, keyed by record_key. */
+  /** Per-conversation message log, keyed by record key. */
   messages: Record<string, DmMessage[]>;
-  /** Currently focused DM record_key (drives the chat pane). */
-  activeRecordKey: string | null;
 }
 
 const [dmState, setDmState] = createStore<DmState>({
   pendingInvites: {},
   conversations: {},
   messages: {},
-  activeRecordKey: null,
 });
 
 export { dmState, setDmState };

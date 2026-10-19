@@ -2,8 +2,8 @@
 //!
 //! The webview never supplies a window title: a title is shown by the OS
 //! (task switcher, taskbar, Mission Control), outside the app's own chrome,
-//! so it is built here from the friend list, the community member table
-//! and the DM store, and stripped of control and bidi characters.
+//! so it is built here from the friend list and the community member
+//! table, and stripped of control and bidi characters.
 
 use std::sync::Arc;
 
@@ -74,24 +74,8 @@ pub async fn profile(state: &Arc<AppState>, pool: &Db, peer: &PublicKeyHex) -> S
     format!("Profile - {}", peer_name(state, pool, peer.as_str()).await)
 }
 
-/// `DM - <peer>` for a 1:1 DM, `Group DM` for a group.
-pub async fn dm(state: &Arc<AppState>, pool: &Db, record: &RecordKeyStr) -> String {
-    let me = state_helpers::owner_key_or_default(state);
-    let conversations = crate::services::dm::list_dm_conversations(state, pool).await;
-    let Some(conv) = conversations
-        .into_iter()
-        .find(|c| c.record_key == record.as_str())
-    else {
-        return "Direct Message".to_owned();
-    };
-    if conv.is_group {
-        return "Group DM".to_owned();
-    }
-    match conv.participants.iter().find(|p| p.public_key != me) {
-        Some(peer) => format!("DM - {}", peer_name(state, pool, &peer.public_key).await),
-        None => "Direct Message".to_owned(),
-    }
-}
+/// A group DM's window title (the roster that could name it is E2.6's).
+pub const GROUP: &str = "Group DM";
 
 /// `Community - <name>`, or `Communities` for the community browser.
 pub fn community(state: &Arc<AppState>, community: Option<&RecordKeyStr>) -> String {

@@ -1,7 +1,7 @@
 //! The 1:1 payload families the Host hands back unported (plan E2.1,
 //! `operations::direct::Routed::Unported`), handled by the desktop's
-//! existing arms until each owner step deletes its arm: the SMPL DM family
-//! and DM video (E2.3, E2.6, E4.3.8), calls and group calls (E4.1), relay
+//! existing arms until each owner step deletes its arm: the SMPL group DM
+//! family and DM video (E2.6, E4.3.8), calls and group calls (E4.1), relay
 //! offers, envelopes, status requests and push relay (E5.2), and a channel
 //! message over a 1:1 envelope (E3.1).
 
@@ -69,10 +69,7 @@ pub(super) async fn handle(app: &AppHandle, state: &Arc<AppState>, pool: &Db, pr
                 tracing::debug!(error = %e, target = %target_pubkey, "RelayEnvelope dropped");
             }
         }
-        payload @ (MessagePayload::DmInvite { .. }
-        | MessagePayload::DmAccept { .. }
-        | MessagePayload::DmDecline { .. }
-        | MessagePayload::GroupDmInvite { .. }
+        payload @ (MessagePayload::GroupDmInvite { .. }
         | MessagePayload::DmLeave { .. }
         | MessagePayload::DmVideoFragment { .. }) => {
             handle_dm_payload(app, state, pool, sender, payload).await;
@@ -120,70 +117,39 @@ pub(super) async fn handle(app: &AppHandle, state: &Arc<AppState>, pool: &Db, pr
     }
 }
 
-/// Answer an unported `app_call` payload (the DM invite handshake,
-/// architecture §27.1; a relay offer, §13.2 step 2): its reply, or `None`.
+/// Answer an unported `app_call` payload (a relay offer, architecture
+/// §13.2 step 2): its reply, or `None`.
 pub(super) async fn handle_call(
-    app: &AppHandle,
     state: &Arc<AppState>,
     pool: &Db,
     prepared: Prepared,
 ) -> Option<Vec<u8>> {
-    let reply = match prepared.payload {
-        MessagePayload::RelayOffer {
-            relay_route_blob,
-            relay_pseudonym,
-        } => {
-            let ingest = crate::services::relay::add_received_offer(
-                state,
-                pool,
-                &relay_pseudonym,
-                &relay_route_blob,
-            )
-            .await;
-            match ingest {
-                Ok(()) => {
-                    crate::services::relay::pool::republish_relay_pool(state, pool).await;
-                    MessagePayload::RelayOfferAck {
-                        ok: true,
-                        reason: String::new(),
-                    }
-                }
-                Err(e) => MessagePayload::RelayOfferAck {
-                    ok: false,
-                    reason: e,
-                },
+    let MessagePayload::RelayOffer {
+        relay_route_blob,
+        relay_pseudonym,
+    } = prepared.payload
+    else {
+        return None;
+    };
+    let ingest = crate::services::relay::add_received_offer(
+        state,
+        pool,
+        &relay_pseudonym,
+        &relay_route_blob,
+    )
+    .await;
+    let reply = match ingest {
+        Ok(()) => {
+            crate::services::relay::pool::republish_relay_pool(state, pool).await;
+            MessagePayload::RelayOfferAck {
+                ok: true,
+                reason: String::new(),
             }
         }
-        MessagePayload::DmInvite {
-            record_key,
-            slot_seed,
-            alice_pseudonym,
-            alice_subkey,
-            bob_subkey,
-        } => {
-            let result = crate::services::dm::handle_incoming_dm_invite(
-                app,
-                state,
-                pool,
-                &prepared.sender_hex,
-                &record_key,
-                &slot_seed,
-                &alice_pseudonym,
-                alice_subkey,
-                bob_subkey,
-            )
-            .await;
-            match result {
-                Ok(()) => MessagePayload::DmAccept {
-                    record_key: record_key.clone(),
-                },
-                Err(e) => MessagePayload::DmDecline {
-                    record_key: record_key.clone(),
-                    reason: e,
-                },
-            }
-        }
-        _ => return None,
+        Err(e) => MessagePayload::RelayOfferAck {
+            ok: false,
+            reason: e,
+        },
     };
     Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
 }

@@ -13,7 +13,7 @@ hex = { workspace = true }
 hkdf = "0.12"
 rekindle-crypto = { path = "../rekindle-crypto" }                 # Phase 13 — MediaEncryptionKey for envelope crypto.
 rekindle-codec = { path = "../rekindle-codec" }
-rekindle-records = { path = "../rekindle-records" }               # Phase 13 — SMPL schema construction for new DM records.
+rekindle-records = { path = "../rekindle-records" }               # Phase 13 — record leases.
 rekindle-secrets = { path = "../rekindle-secrets" }               # Phase 13 — slot keypair derivation.
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }                   # Phase 13 — timestamp_ms.
@@ -21,7 +21,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
 thiserror = { workspace = true }
-x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
 # Phase 13 additions: async runtime + storage + tracing + trait abstractions.
 async-trait = "0.1"
@@ -31,7 +30,6 @@ rekindle-db = { path = "../rekindle-db" }
 rusqlite = { version = "0.39", features = [ "bundled" ] }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
-rand = "0.8"                                              # Phase 13 — slot_seed random bytes for new DM records.
 
 [dev-dependencies]
 rekindle-asql = { path = "../rekindle-asql" }

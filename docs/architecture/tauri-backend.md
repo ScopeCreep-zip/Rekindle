@@ -106,7 +106,7 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 | `auth.rs` | 6 | `create_identity`, `login`, `logout`, `list_identities`, `delete_identity`, `get_identity` |
 | `chat.rs` | 5 | `prepare_chat_session`, `send_message`, `send_typing`, `get_message_history`, `mark_read` |
 | `friends.rs` | 17 | Add / remove / accept / reject, groups, invites, block / unblock, presence emit |
-| `dm.rs` | 6 | `list_dms`, `start_dm`, `accept_dm_invite`, `decline_dm_invite`, `send_dm_message`, `get_dm_messages` |
+| `dm.rs` | 5 | `list_dms`, `accept_dm_invite`, `decline_dm_invite`, `send_dm_message`, `get_dm_messages` (the group path, until E2.6) |
 | `calls.rs` | 12 | `start_dm_call`, `accept_dm_call`, `decline_dm_call`, `end_dm_call`, `send_call_media_state`, `send_call_reaction`, `mute_caller_temp`, `start_group_call`, `accept_group_call`, `decline_group_call`, `end_group_call`, `get_missed_calls` |
 | `voice.rs` | 12 | Join / leave channel, mute, deafen, devices, mode, server-mute, stage hand-raise |
 | `community/` | ~127 across 32 submodules | CRUD, channels, channel_admin, messaging, roles, moderation, mek, invites, notifications, reactions_pins, audit, analytics, automod, polls, expressions, files, link_previews, threads, events, game_servers, unread, presence, onboarding, segments, video, background_sync, diagnostics, profile_blobs, policy |
@@ -119,7 +119,7 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 | `settings.rs` | 3 | Get / set preferences, `check_for_updates` (stub — auto-updater not yet wired) |
 | `vault.rs` | several | Vault unlock / lock, passphrase change, audit verify / export |
 | `event.rs` | several | Event resume / cursor for Phase 10 reconnect replay |
-| `window.rs` | 7 | `show_buddy_list`, `open_chat_window`, `open_dm_window`, `open_settings_window`, `open_community_window`, `open_profile_window`, `get_network_status` |
+| `window.rs` | 6 | `show_buddy_list`, `open_chat_window`, `open_settings_window`, `open_community_window`, `open_profile_window`, `get_network_status` |
 
 `invoke.rs` registers the union of these — the file is the canonical
 source of truth for the IPC surface.
@@ -221,8 +221,7 @@ Windows are created via helper functions in `src-tauri/src/windows.rs`:
 |----------|--------|----------|
 | `open_login()` | Login | Destroys existing, supports `?account=` preselect |
 | `open_buddy_list()` | Buddy list | Destroys existing, narrow vertical (320 × 650) |
-| `open_chat_window()` | Chat | Show existing or create new, label `chat-{key prefix}` |
-| `open_dm_window()` | DM | Show existing or create new, label `dm-{record key prefix}` |
+| `open_chat_window()` | Chat | Show existing or create new: a `ChatTarget::Peer` labels `chat-{key prefix}`, a `ChatTarget::Group` `chat-{record key prefix}` |
 | `open_community_window()` | Community | Show existing or create new, label `community-{id}` |
 | `open_settings_window()` | Settings | Single instance |
 | `open_profile_window()` | Profile | Show existing or create new, label `profile-{key prefix}` |

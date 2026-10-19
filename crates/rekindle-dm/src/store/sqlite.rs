@@ -359,37 +359,35 @@ impl DmStore for SqliteDmStore {
         }
         let owner = owner_key.to_string();
         let record = record_key.to_string();
-        let row: Option<(String, i64, i64, bool, Option<Vec<u8>>, String)> = self
-            .conn
-            .call(
-                move |conn| -> rusqlite::Result<
-                    Option<(String, i64, i64, bool, Option<Vec<u8>>, String)>,
-                > {
-                    let r = conn
-                        .query_row(
-                            "SELECT initiator_public_key, my_subkey, mek_generation, is_group,
+        let row: Option<(String, i64, i64, Option<Vec<u8>>, String)> =
+            self.conn
+                .call(
+                    move |conn| -> rusqlite::Result<
+                        Option<(String, i64, i64, Option<Vec<u8>>, String)>,
+                    > {
+                        let r = conn
+                            .query_row(
+                                "SELECT initiator_public_key, my_subkey, mek_generation,
                                     wrapped_mek_blob, participants_json
                              FROM dms WHERE owner_key = ?1 AND record_key = ?2",
-                            rusqlite::params![owner, record],
-                            |row| {
-                                Ok((
-                                    row.get::<_, String>(0)?,
-                                    row.get::<_, i64>(1)?,
-                                    row.get::<_, i64>(2)?,
-                                    row.get::<_, i64>(3)? != 0,
-                                    row.get::<_, Option<Vec<u8>>>(4)?,
-                                    row.get::<_, String>(5)?,
-                                ))
-                            },
-                        )
-                        .ok();
-                    Ok(r)
-                },
-            )
-            .await
-            .map_err(|e| DmError::Sqlite(e.to_string()))?;
-        let Some((init_pk, my_subkey_i, mek_gen_i, is_group, wrapped, participants_json)) = row
-        else {
+                                rusqlite::params![owner, record],
+                                |row| {
+                                    Ok((
+                                        row.get::<_, String>(0)?,
+                                        row.get::<_, i64>(1)?,
+                                        row.get::<_, i64>(2)?,
+                                        row.get::<_, Option<Vec<u8>>>(3)?,
+                                        row.get::<_, String>(4)?,
+                                    ))
+                                },
+                            )
+                            .ok();
+                        Ok(r)
+                    },
+                )
+                .await
+                .map_err(|e| DmError::Sqlite(e.to_string()))?;
+        let Some((init_pk, my_subkey_i, mek_gen_i, wrapped, participants_json)) = row else {
             return Ok(None);
         };
         let participants: Vec<GroupDmParticipant> =
@@ -398,7 +396,6 @@ impl DmStore for SqliteDmStore {
             initiator_public_key: init_pk,
             my_subkey: u32::try_from(my_subkey_i).unwrap_or(1),
             mek_generation: u64::try_from(mek_gen_i).unwrap_or(0),
-            is_group,
             wrapped_mek_blob: wrapped,
             participants,
         }))

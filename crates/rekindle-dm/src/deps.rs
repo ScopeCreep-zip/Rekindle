@@ -66,15 +66,12 @@ pub enum DmEvent {
         body: String,
         timestamp_ms: u64,
     },
-    /// An inbound DM invite arrived — UI should surface the request.
+    /// An inbound group DM invite arrived — UI should surface the request.
     InviteReceived {
         record_key: String,
         sender_pseudonym: String,
         sender_public_key_hex: String,
-        is_group: bool,
     },
-    /// A peer declined our outbound invite.
-    InviteDeclined { record_key: String, reason: String },
     /// A peer left a group DM.
     GroupMemberLeft {
         record_key: String,
@@ -126,14 +123,6 @@ pub trait DmDeps: Send + Sync + 'static {
     // watch for the session (`dht_hold_session`); a send borrows and
     // releases.
 
-    /// Create a fresh SMPL DHT record with the given member slot pubkeys
-    /// (one per subkey, in order), held under its creator lease. Returns
-    /// the lease and the record key's canonical string form.
-    async fn dht_create_smpl_record(
-        &self,
-        member_pubkeys: Vec<[u8; 32]>,
-    ) -> Result<(LeaseId, String), DmError>;
-
     /// Borrow an existing DHT record, writable with `writer_keypair` (slot
     /// Ed25519 secret + public bytes) when given.
     async fn dht_acquire_record(
@@ -164,21 +153,11 @@ pub trait DmDeps: Send + Sync + 'static {
     /// session (a lease on a record it already holds is released).
     async fn dht_hold_session(&self, record_key: &str, lease: LeaseId);
 
-    /// Release the DM's held lease (the conversation ended: declined or
-    /// left). A no-op when none is held.
+    /// Release the DM's held lease (the conversation ended: left). A
+    /// no-op when none is held.
     async fn dht_release_session(&self, record_key: &str);
 
     // --- Transport ---
-
-    /// Send a Signal-encrypted `app_call` to a peer and wait for the
-    /// reply. Used for DM invites (synchronous accept/decline reply).
-    /// The adapter serializes via `serde_json` to match the existing
-    /// `message_service::send_to_peer_call` wire format.
-    async fn send_app_call(
-        &self,
-        peer_pubkey_hex: &str,
-        payload: MessagePayload,
-    ) -> Result<MessagePayload, DmError>;
 
     /// Send a Signal-encrypted `app_message` (fire-and-forget) to a
     /// peer. Used for DM video fragments + future encrypted controls.

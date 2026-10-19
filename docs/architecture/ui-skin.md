@@ -59,8 +59,7 @@ URL path; the SolidJS `Switch` in `main.tsx` reads
 |--------|-------|------|-------|
 | Login | `login` | `/login` | 380 × 480, opened by `open_login` at setup |
 | Buddy list | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
-| Chat | `chat-{pubkey}` | `/chat?peer={key}` | One per 1:1 friend conversation |
-| DM | `dm-{record-key}` | `/dm?record={key}` | One per DM / group DM |
+| Chat | `chat-{pubkey}`, `chat-{record-key}` | `/chat?peer={key}`, `/chat?group={key}` | One per 1:1 friend conversation or group DM |
 | Community | `community-{id}` | `/community?id={id}` | One per joined community |
 | Settings | `settings` | `/settings` | Single instance |
 | Profile | `profile-{key}` | `/profile?key={key}` | One per peer profile view |
@@ -243,7 +242,7 @@ theme tokens, and compose the component using `@apply` semantics.
 |---------|------|
 | Window builders (frameless + transparent), login included | `src-tauri/src/windows/mod.rs` |
 | Pathname-based routing | `src/main.tsx` |
-| Per-window components | `src/windows/{LoginWindow,BuddyListWindow,ChatWindow,DmWindow,CommunityWindow,SettingsWindow,ProfileWindow}.tsx` |
+| Per-window components | `src/windows/{LoginWindow,BuddyListWindow,ChatWindow,CommunityWindow,SettingsWindow,ProfileWindow}.tsx` |
 | Custom titlebar | `src/components/titlebar/Titlebar.tsx` |
 | Theme tokens (Tailwind 4 `@theme`) | `src/styles/global.css` |
 | Component skin classes | `src/styles/theme/*.css` (ordered parts; `16-security-surfaces.css` is `@layer sec`) |

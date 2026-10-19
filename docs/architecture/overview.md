@@ -90,11 +90,10 @@ Eleven of these crates are recent harvest extractions; see
 ```
 src/
 ├── main.tsx                          Entry point, path-based routing
-├── windows/                          One component per Tauri window (8)
+├── windows/                          One component per Tauri window (7)
 │   ├── LoginWindow.tsx
 │   ├── BuddyListWindow.tsx
-│   ├── ChatWindow.tsx
-│   ├── DmWindow.tsx
+│   ├── ChatWindow.tsx                1:1 and group mode (chat_window/)
 │   ├── CommunityWindow.tsx
 │   ├── SettingsWindow.tsx
 │   ├── ProfileWindow.tsx
@@ -240,8 +239,7 @@ component.
 |--------|-------|------|-------|
 | Login | `login` | `/login` | 380 × 480, declared in `tauri.conf.json` |
 | Buddy List | `buddy-list` | `/buddy-list` | Narrow vertical (320 × 650), hides to tray on close |
-| Chat | `chat-{pubkey prefix}` | `/chat?peer={key}` | One per 1:1 conversation |
-| DM | `dm-{record-key prefix}` | `/dm?record={key}` | One per DM / group DM |
+| Chat | `chat-{pubkey prefix}`, `chat-{record-key prefix}` | `/chat?peer={key}`, `/chat?group={key}` | One per 1:1 conversation or group DM |
 | Community | `community-{id}` | `/community?id={id}` | One per joined community |
 | Settings | `settings` | `/settings` | Single instance |
 | Profile | `profile-{key prefix}` | `/profile?key={key}` | One per peer |

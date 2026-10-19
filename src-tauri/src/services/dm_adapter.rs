@@ -132,19 +132,6 @@ impl DmDeps for DmAdapter {
         Arc::clone(&self.mek_cache)
     }
 
-    async fn dht_create_smpl_record(
-        &self,
-        member_pubkeys: Vec<[u8; 32]>,
-    ) -> Result<(LeaseId, String), DmError> {
-        let smpl_schema = rekindle_records::schema::community_smpl(&member_pubkeys);
-        let (lease, key, _owner) = self
-            .record_pool()?
-            .create(&smpl_schema, None)
-            .await
-            .map_err(|e| DmError::transport(format!("create dm dht record: {e}")))?;
-        Ok((lease, key))
-    }
-
     async fn dht_acquire_record(
         &self,
         record_key: &str,
@@ -213,21 +200,6 @@ impl DmDeps for DmAdapter {
         }
     }
 
-    async fn send_app_call(
-        &self,
-        peer_pubkey_hex: &str,
-        payload: MessagePayload,
-    ) -> Result<MessagePayload, DmError> {
-        let host = crate::state_helpers::friend_host(&self.state).map_err(DmError::transport)?;
-        rekindle_transport::operations::dm::send_to_peer_call(
-            host.as_ref(),
-            peer_pubkey_hex,
-            &payload,
-        )
-        .await
-        .map_err(|e| DmError::transport(e.to_string()))
-    }
-
     async fn send_encrypted(
         &self,
         peer_pubkey_hex: &str,
@@ -266,7 +238,6 @@ impl DmDeps for DmAdapter {
                 record_key,
                 sender_pseudonym,
                 sender_public_key_hex,
-                is_group,
             } => {
                 crate::event_dispatch::emit_subscription(
                     &self.app_handle,
@@ -274,16 +245,9 @@ impl DmDeps for DmAdapter {
                         from: sender_public_key_hex,
                         record_key,
                         initiator_pseudonym: sender_pseudonym,
-                        is_group,
+                        is_group: true,
                     }),
                 );
-            }
-            DmEvent::InviteDeclined { record_key, reason } => {
-                // No prior ChatEvent variant existed for inbound decline
-                // (the old code just deleted the row silently); preserve
-                // that by tracing only — the next conversation-list
-                // refresh on the frontend picks up the row removal.
-                tracing::info!(record_key, reason, "DM invite declined by peer");
             }
             DmEvent::GroupMemberLeft {
                 record_key,

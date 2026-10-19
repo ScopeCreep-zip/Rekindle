@@ -294,8 +294,10 @@ fn owned_frontend_code(kind: WindowKind) -> (&'static str, Option<&'static str>)
             "src/windows/SettingsWindow.tsx",
             Some("src/windows/settings"),
         ),
-        WindowKind::Chat => ("src/windows/ChatWindow.tsx", None),
-        WindowKind::Dm => ("src/windows/DmWindow.tsx", None),
+        WindowKind::Chat => (
+            "src/windows/ChatWindow.tsx",
+            Some("src/windows/chat_window"),
+        ),
         WindowKind::Community => (
             "src/windows/CommunityWindow.tsx",
             Some("src/windows/community_window"),

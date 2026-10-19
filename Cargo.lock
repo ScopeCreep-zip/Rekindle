@@ -7469,7 +7469,6 @@ dependencies = [
  "hex",
  "hkdf 0.12.4",
  "parking_lot 0.12.5",
- "rand 0.8.5",
  "rekindle-asql",
  "rekindle-codec",
  "rekindle-crypto",
@@ -7485,7 +7484,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "x25519-dalek 2.0.1",
  "zeroize",
 ]
 

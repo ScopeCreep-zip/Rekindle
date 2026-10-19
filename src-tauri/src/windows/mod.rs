@@ -60,7 +60,7 @@ const fn size(kind: WindowKind) -> Size {
         WindowKind::Login => ((380.0, 480.0), (340.0, 440.0)),
         WindowKind::BuddyList => ((320.0, 650.0), (300.0, 500.0)),
         WindowKind::Settings => ((500.0, 550.0), (420.0, 450.0)),
-        WindowKind::Chat | WindowKind::Dm => ((480.0, 550.0), (380.0, 400.0)),
+        WindowKind::Chat => ((480.0, 550.0), (380.0, 400.0)),
         WindowKind::Community => ((900.0, 650.0), (750.0, 500.0)),
         WindowKind::Call => ((420.0, 540.0), (360.0, 420.0)),
         WindowKind::Profile => ((380.0, 500.0), (340.0, 420.0)),
@@ -164,42 +164,49 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
     finish(builder, WindowKind::BuddyList).map(drop)
 }
 
-/// Open a 1:1 chat window with a friend (identity key) or a community member
-/// (pseudonym key).
+/// What a chat window shows: a 1:1 conversation with a friend (identity
+/// key) or a community member (pseudonym key), or a group DM by its record
+/// key (the group mode E2.6 completes).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatTarget {
+    Peer(String),
+    Group(String),
+}
+
+/// Open (or raise) the chat window for `target`.
 pub async fn open_chat_window(
     app: &AppHandle,
     state: &SharedState,
     pool: &Db,
-    peer: &str,
+    target: &ChatTarget,
 ) -> Result<(), String> {
-    let peer = key_format::public_key_hex(peer).map_err(|e| invalid("peer key", &e))?;
-    let label = labels::chat_label(&peer);
-    if raise(app, &label) {
-        return Ok(());
-    }
-    let title = titles::chat(state, pool, &peer).await;
-    let builder =
-        base_builder(app, WindowKind::Chat, &label, format!("/chat?peer={peer}")).title(title);
+    let (label, path, title) = match target {
+        ChatTarget::Peer(peer) => {
+            let peer = key_format::public_key_hex(peer).map_err(|e| invalid("peer key", &e))?;
+            let label = labels::chat_label(&peer);
+            if raise(app, &label) {
+                return Ok(());
+            }
+            let title = titles::chat(state, pool, &peer).await;
+            (label, format!("/chat?peer={peer}"), title)
+        }
+        ChatTarget::Group(record) => {
+            let record =
+                key_format::record_key(record).map_err(|e| invalid("group record key", &e))?;
+            let label = labels::group_chat_label(&record);
+            if raise(app, &label) {
+                return Ok(());
+            }
+            (
+                label,
+                format!("/chat?group={record}"),
+                titles::GROUP.to_owned(),
+            )
+        }
+    };
+    let builder = base_builder(app, WindowKind::Chat, &label, path).title(title);
     finish(builder, WindowKind::Chat).map(drop)
-}
-
-/// Open the window for a SMPL-record-backed DM conversation (architecture
-/// §27), keyed by its record key.
-pub async fn open_dm_window(
-    app: &AppHandle,
-    state: &SharedState,
-    pool: &Db,
-    record: &str,
-) -> Result<(), String> {
-    let record = key_format::record_key(record).map_err(|e| invalid("DM record key", &e))?;
-    let label = labels::dm_label(&record);
-    if raise(app, &label) {
-        return Ok(());
-    }
-    let title = titles::dm(state, pool, &record).await;
-    let builder =
-        base_builder(app, WindowKind::Dm, &label, format!("/dm?record={record}")).title(title);
-    finish(builder, WindowKind::Dm).map(drop)
 }
 
 /// Open the settings window (single instance), optionally on `tab`.

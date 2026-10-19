@@ -140,7 +140,7 @@ for the migration rationale.
 ### `windows.rs`
 
 Window creation helpers — one function per window type
-(`open_login`, `open_buddy_list`, `open_chat_window`, `open_dm_window`,
+(`open_login`, `open_buddy_list`, `open_chat_window` (1:1 or group),
 `open_community_window`, `open_settings_window`, `open_profile_window`,
 `open_call_window`). Encapsulates frameless-transparent window options,
 label naming conventions, and "show existing or create" idempotence.

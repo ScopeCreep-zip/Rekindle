@@ -8,7 +8,7 @@
 //!
 //! The pub-use re-exports preserve the prior type aliases at
 //! `crate::services::dm::store::{DmConversation, DmMessageRecord}` so
-//! call sites in `commands/dm.rs` + `services/dm/{ingest,messages,create}.rs`
+//! call sites in `commands/dm.rs` + `services/dm/{ingest,messages}.rs`
 //! continue to compile without import changes.
 
 use std::sync::Arc;

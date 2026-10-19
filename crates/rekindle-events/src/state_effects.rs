@@ -64,20 +64,6 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
             state.typing.set_channel_typing(community, channel, who);
         }
 
-        // ── Typing: DM ──────────────────────────────────────────
-        SubscriptionEvent::Typing(TypingEvent::Started {
-            context: TypingContext::Dm { .. },
-            who,
-        }) => {
-            state.typing.set_dm_typing(who);
-        }
-        SubscriptionEvent::Typing(TypingEvent::Stopped {
-            context: TypingContext::Dm { .. },
-            who,
-        }) => {
-            state.typing.remove_dm_peer(who);
-        }
-
         // ── Presence: community member ──────────────────────────
         SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {
             community,
@@ -181,7 +167,6 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
         // ── Friend: cleanup on unfriend ─────────────────────────
         SubscriptionEvent::Friend(FriendEvent::Removed { peer_key }) => {
             state.unread.remove_dm_peer(peer_key);
-            state.typing.remove_dm_peer(peer_key);
             state.presence.remove_dm_peer(peer_key);
         }
 

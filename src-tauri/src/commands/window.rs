@@ -4,7 +4,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::state::SharedState;
 use crate::window_labels;
-use crate::windows::{self, SettingsTab};
+use crate::windows::{self, ChatTarget, SettingsTab};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,28 +35,16 @@ pub async fn show_buddy_list(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Open a chat window with a friend or community member. The window title
-/// is resolved from backend state.
+/// Open a chat window: 1:1 with a friend or community member, or a group
+/// DM. The window title is resolved from backend state.
 #[tauri::command]
 pub async fn open_chat_window(
-    public_key: String,
+    target: ChatTarget,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let pool = state.db.current()?;
-    windows::open_chat_window(&app, state.inner(), &pool, &public_key).await
-}
-
-/// Open a DM window for a SMPL-record-backed direct message
-/// (architecture §27).
-#[tauri::command]
-pub async fn open_dm_window(
-    record_key: String,
-    app: tauri::AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    windows::open_dm_window(&app, state.inner(), &pool, &record_key).await
+    windows::open_chat_window(&app, state.inner(), &pool, &target).await
 }
 
 /// Open the settings window, optionally to a specific tab.

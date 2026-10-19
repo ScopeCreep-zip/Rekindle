@@ -1,9 +1,9 @@
 //! DM-family `app_message` payload dispatcher.
 //!
-//! Routes incoming `MessagePayload::Dm*` / `GroupDm*` variants (invite,
-//! accept, decline, leave, group invite, video fragment) to the
-//! `services::dm` ingest handlers. Lifted out of the main inbound
-//! dispatcher so it stays under the workspace line budget.
+//! Routes incoming group DM payloads (`GroupDmInvite`, `DmLeave`) and DM
+//! video fragments to the `services::dm` ingest handlers. Lifted out of
+//! the main inbound dispatcher so it stays under the workspace line
+//! budget. The 1:1 SMPL invite arms went with that path (plan E2.3).
 
 use std::sync::Arc;
 
@@ -20,46 +20,6 @@ pub(crate) async fn handle_dm_payload(
     payload: MessagePayload,
 ) {
     match payload {
-        MessagePayload::DmInvite {
-            record_key,
-            slot_seed,
-            alice_pseudonym,
-            alice_subkey,
-            bob_subkey,
-        } => {
-            if let Err(e) = crate::services::dm::handle_incoming_dm_invite(
-                app_handle,
-                state,
-                pool,
-                sender_hex,
-                &record_key,
-                &slot_seed,
-                &alice_pseudonym,
-                alice_subkey,
-                bob_subkey,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, from = %sender_hex, "failed to ingest DmInvite");
-            }
-        }
-        MessagePayload::DmAccept { record_key: _ } => {
-            // DmAccept is the reply to a DmInvite app_call; if it
-            // arrives via app_message instead (peer used the wrong
-            // path) we just log and ignore — Alice's outbound
-            // app_call already resolved with the inline reply.
-            tracing::trace!("received DmAccept via app_message; ignoring");
-        }
-        MessagePayload::DmDecline {
-            record_key,
-            reason: _,
-        } => {
-            if let Err(e) =
-                crate::services::dm::handle_incoming_dm_decline(state, pool, &record_key).await
-            {
-                tracing::debug!(error = %e, "DmDecline drop");
-            }
-        }
         MessagePayload::GroupDmInvite {
             record_key,
             slot_seed,

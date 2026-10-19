@@ -62,11 +62,11 @@ impl SubscriptionManager {
     /// Sweep expired typing indicators and dedup entries.
     ///
     /// `TypingEvent::Stopped` documents itself as "triggered by: expiry
-    /// timer" — there was no timer. `collect_expired_channel_typers`,
-    /// `collect_expired_dm_typers` and `EventDedup::evict_expired` were
-    /// all written and never called, so a peer who stopped typing stayed
-    /// "typing…" until they typed again, and the dedup cache only ever
-    /// shed entries by hitting its capacity bound.
+    /// timer" — there was no timer. `collect_expired_channel_typers` and
+    /// `EventDedup::evict_expired` were written and never called, so a
+    /// member who stopped typing stayed "typing…" until they typed again,
+    /// and the dedup cache only ever shed entries by hitting its capacity
+    /// bound. DM typing expires in the Host (`operations::dm::typing`).
     ///
     /// Ticks at the typing expiry interval because that is the shorter
     /// of the two deadlines; the dedup TTL is far longer and sweeping it
@@ -91,13 +91,8 @@ impl SubscriptionManager {
                         // is not reachable from here, but the broadcast
                         // send can block and these are parking_lot
                         // guards.
-                        let (channel_expired, dm_expired) = {
-                            let mut guard = state.write();
-                            (
-                                guard.typing.collect_expired_channel_typers(),
-                                guard.typing.collect_expired_dm_typers(),
-                            )
-                        };
+                        let channel_expired =
+                            state.write().typing.collect_expired_channel_typers();
                         dedup.write().evict_expired();
 
                         for (community, channel, who) in channel_expired {
@@ -105,14 +100,6 @@ impl SubscriptionManager {
                                 events::TypingEvent::Stopped {
                                     context: events::TypingContext::Channel { community, channel },
                                     who,
-                                },
-                            ));
-                        }
-                        for peer_key in dm_expired {
-                            let _ = event_tx.send(SubscriptionEvent::Typing(
-                                events::TypingEvent::Stopped {
-                                    context: events::TypingContext::Dm { peer_key: peer_key.clone() },
-                                    who: peer_key,
                                 },
                             ));
                         }

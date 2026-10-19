@@ -17,19 +17,17 @@ pub enum WindowKind {
     BuddyList,
     Settings,
     Chat,
-    Dm,
     Community,
     Call,
     Profile,
 }
 
 impl WindowKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 7] = [
         Self::Login,
         Self::BuddyList,
         Self::Settings,
         Self::Chat,
-        Self::Dm,
         Self::Community,
         Self::Call,
         Self::Profile,
@@ -44,7 +42,6 @@ impl WindowKind {
             Self::BuddyList => BUDDY_LIST,
             Self::Settings => SETTINGS,
             Self::Chat => "chat-*",
-            Self::Dm => "dm-*",
             Self::Community => "community-*",
             Self::Call => "call-*",
             Self::Profile => "profile-*",
@@ -55,7 +52,7 @@ impl WindowKind {
     /// microphone through the webview:
     /// - the 1:1 call's controls and video (call);
     /// - voice channels and video (community);
-    /// - voice messages (chat, DM, community message input);
+    /// - voice messages (chat, community message input);
     /// - device settings and the pairing QR scanner (settings).
     ///
     /// Login, profile and the buddy list never capture (group-call audio
@@ -64,7 +61,7 @@ impl WindowKind {
     #[must_use]
     pub const fn captures_media(self) -> bool {
         match self {
-            Self::Settings | Self::Chat | Self::Dm | Self::Community | Self::Call => true,
+            Self::Settings | Self::Chat | Self::Community | Self::Call => true,
             Self::Login | Self::BuddyList | Self::Profile => false,
         }
     }
@@ -93,16 +90,18 @@ pub fn chat_label(peer: &PublicKeyHex) -> String {
     format!("chat-{}", rekindle_utils::text::prefix(peer.as_str(), 16))
 }
 
-/// `dm-` + the first 20 alphanumeric characters of the DM record key.
+/// The chat window in group mode: `chat-` + the first 20 alphanumeric
+/// characters of the group DM's record key. A record key starts with its
+/// kind (`VLD0`), never 16 hex digits, so it cannot name a 1:1 window.
 #[must_use]
-pub fn dm_label(record: &RecordKeyStr) -> String {
+pub fn group_chat_label(record: &RecordKeyStr) -> String {
     let suffix: String = record
         .as_str()
         .chars()
         .filter(char::is_ascii_alphanumeric)
         .take(20)
         .collect();
-    format!("dm-{suffix}")
+    format!("chat-{suffix}")
 }
 
 /// `community-` + the first 16 characters of the community record key, or
@@ -143,12 +142,13 @@ pub fn peer_labels(peer_key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The DM window for a record-backed conversation named by an event.
+/// The group-mode chat window for a record-backed conversation named by an
+/// event.
 #[must_use]
 pub fn conversation_label(record_key: &str) -> Option<String> {
     key_format::record_key(record_key)
         .ok()
-        .map(|rk| dm_label(&rk))
+        .map(|rk| group_chat_label(&rk))
 }
 
 /// The pop-out window for a call named by an event.
@@ -172,7 +172,7 @@ mod tests {
         let call = key_format::call_id(rekindle_utils::text::prefix(HEX64, 32)).unwrap();
         let cases = [
             (chat_label(&pk), WindowKind::Chat),
-            (dm_label(&rk), WindowKind::Dm),
+            (group_chat_label(&rk), WindowKind::Chat),
             (community_label(Some(&rk)), WindowKind::Community),
             (community_label(None), WindowKind::Community),
             (call_label(&call), WindowKind::Call),
@@ -189,9 +189,10 @@ mod tests {
             );
         }
         assert_eq!(
-            dm_label(&rk),
-            format!("dm-VLD0{}", rekindle_utils::text::prefix(B64, 16))
+            group_chat_label(&rk),
+            format!("chat-VLD0{}", rekindle_utils::text::prefix(B64, 16))
         );
+        assert_ne!(group_chat_label(&rk), chat_label(&pk));
     }
 
     #[test]

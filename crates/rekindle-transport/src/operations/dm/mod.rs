@@ -1,22 +1,24 @@
 //! The 1:1 send path on both hosts (plan E2.1): sealing, the `'D'` wire,
 //! sends over the ports with their fallbacks, the friend-handshake
-//! messages, and our direct messages.
+//! messages, our direct messages and our typing indicator (E2.3).
 
 mod chat;
 mod outgoing;
 pub mod route;
 mod seal;
 mod send;
+mod typing;
 
 use rekindle_codec::message::envelope::MessageEnvelope;
 
 use crate::operations::friend::FriendError;
 
 pub use chat::{history, inbox, mark_read, send_dm};
-pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request, send_typing};
+pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
 pub(crate) use seal::recipient_key;
 pub use seal::resign_for_retry;
 pub use send::{build_and_queue, resend, send_to_peer, send_to_peer_call, Resend};
+pub use typing::report_draft;
 
 /// The ingress tag of a 1:1 message: the first byte of every 1:1 datagram
 /// (§6 ingress ledger, `rekindle_codec::ingress`, beside the gossip tag),

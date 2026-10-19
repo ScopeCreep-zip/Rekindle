@@ -60,11 +60,6 @@ impl SubscriptionManager {
         self.state.write().typing.channel_typers(community, channel)
     }
 
-    /// Whether a peer is typing in DM.
-    pub fn typing_in_dm(&self, peer_key: &str) -> bool {
-        self.state.read().typing.is_dm_typing(peer_key)
-    }
-
     /// Community member presence.
     pub fn presence(&self, community: &str) -> Vec<(String, state::PresenceInfo)> {
         self.state.read().presence.community_members(community)

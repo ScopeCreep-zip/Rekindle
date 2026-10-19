@@ -111,7 +111,7 @@ DM/group-DM invites, Strand Relay, Mobile Push Relay, presence cache, etc.
 |---------|---------|
 | `DirectMessage` | 1:1 encrypted chat message (with optional reply) |
 | `ChannelMessage` | Legacy community channel message (replaced by gossip) |
-| `TypingIndicator` | Ephemeral typing state |
+| `TypingIndicator` | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`, plan E2.3) |
 | `FriendRequest` | Initial friend contact (includes PreKeyBundle, profile/route/mailbox info, optional invite_id) |
 | `FriendAccept` | Accept with PreKeyBundle, ephemeral key, and prekey IDs |
 | `FriendReject` | Rejection notification |
@@ -121,7 +121,8 @@ DM/group-DM invites, Strand Relay, Mobile Push Relay, presence cache, etc.
 | `Unfriended` / `UnfriendedAck` | Notify peer of unfriending and confirm receipt |
 | `RelayOffer` / `RelayOfferAck` / `RelayWithdraw` | Strand Relay (§13.2): friend volunteers to forward |
 | `RelayEnvelope` | Strand Relay (§13.3): forwards an inner opaque envelope to a target |
-| `DmInvite` / `DmAccept` / `DmDecline` / `DmLeave` | 2-party DM lifecycle (§27.1) |
+| `DmInvite` / `DmAccept` / `DmDecline` | 2-party SMPL DM lifecycle (§27.1): dropped on receipt since E2.3 (1:1 DMs are the ratchet stream); the `DmFrame` cutover deletes them |
+| `DmLeave` | Leave a group DM (§27.2; becomes `GroupDmLeave`) |
 | `GroupDmInvite` | Group DM with per-recipient X25519-wrapped MEK (§27.2) |
 | `RegisterPushRelay` / `UnregisterPushRelay` / `WakeNotify` | Mobile Push Relay (§17.3 Tier 3) |
 | `StatusRequest` / `StatusResponse` | Strand Relay presence cache (§13.5 — "social CDN") |

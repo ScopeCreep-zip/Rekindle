@@ -1,34 +1,11 @@
-//! DM and group-DM invite payloads (architecture §27.1 & §27.2).
-//!
-//! These types travel as `app_call` payloads from initiator to invitee.
-//! For 2-party DMs the MEK is derived deterministically (no
-//! `wrapped_mek` field), per §27.1. For group DMs, the MEK is randomly
-//! generated and wrapped per recipient (§27.2).
+//! The group-DM invite payload (architecture §27.2): the MEK is randomly
+//! generated and wrapped per recipient. The 2-party `DmInvite` went with
+//! the 1:1 SMPL path (plan E2.3).
 
 use serde::{Deserialize, Serialize};
 
-/// 2-party DM invitation. Sent via `app_call` from Alice → Bob.
-/// Bob accepts → derives slot keypair from `slot_seed`, opens the SMPL
-/// record, and starts participating. Bob declines → sends a `DmDecline`
-/// reply on the same `app_call`; Alice deletes the record.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct DmInvite {
-    /// SMPL record DHT key (Veilid `TypedKey` rendered as string).
-    pub record_key: String,
-    /// 32-byte slot seed for `derive_slot_keypair` (§8.3 universal flow).
-    pub slot_seed: Vec<u8>,
-    /// Display name Alice wants to be known as in this DM.
-    pub alice_pseudonym: String,
-    /// Subkey index Alice writes to (architecture §27.1: 0).
-    pub alice_subkey: u32,
-    /// Subkey index Bob will write to (architecture §27.1: 1).
-    pub bob_subkey: u32,
-}
-
-/// Group-DM (3-8 participants) invitation. Same shape as DmInvite but
-/// carries the wrapped MEK (random, not ECDH-derived) and the full
-/// participant list.
+/// Group-DM (3-8 participants) invitation: the SMPL record, the wrapped
+/// MEK and the full participant list.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupDmInvite {

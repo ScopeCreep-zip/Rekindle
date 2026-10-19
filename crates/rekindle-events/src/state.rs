@@ -75,13 +75,13 @@ impl UnreadState {
 /// Typing indicator expiry duration.
 const TYPING_EXPIRY_SECS: u64 = 5;
 
-/// Ephemeral typing state. Entries auto-expire after 5 seconds.
+/// Ephemeral channel typing state. Entries auto-expire after 5 seconds.
+/// DM typing is the Host's ([`crate::typing`], plan E2.3), which E3.4's
+/// channel typing moves onto.
 #[derive(Debug, Default)]
 pub struct TypingState {
     /// (community, channel) → [(pseudonym, last_typing_instant)].
     pub channels: HashMap<(String, String), Vec<TypingEntry>>,
-    /// peer_key → last_typing_instant (DM context).
-    pub dms: HashMap<String, Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,46 +151,9 @@ impl TypingState {
         expired
     }
 
-    /// Record DM typing. Returns `true` if this is a new typing start.
-    pub fn set_dm_typing(&mut self, peer_key: &str) -> bool {
-        let is_new = !self.dms.contains_key(peer_key);
-        self.dms.insert(peer_key.to_string(), Instant::now());
-        is_new
-    }
-
-    /// Check if a peer is typing in DM (auto-expires).
-    pub fn is_dm_typing(&self, peer_key: &str) -> bool {
-        let cutoff = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
-            .expect("typing expiry within uptime");
-        self.dms.get(peer_key).is_some_and(|ts| *ts > cutoff)
-    }
-
-    /// Collect expired DM typers (for emitting TypingStopped).
-    pub fn collect_expired_dm_typers(&mut self) -> Vec<String> {
-        let cutoff = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
-            .expect("typing expiry within uptime");
-        let mut expired = Vec::new();
-        for (peer_key, ts) in &self.dms {
-            if *ts <= cutoff {
-                expired.push(peer_key.clone());
-            }
-        }
-        for key in &expired {
-            self.dms.remove(key);
-        }
-        expired
-    }
-
     /// Remove all typing state for a community (on leave).
     pub fn remove_community(&mut self, community: &str) {
         self.channels.retain(|k, _| k.0 != community);
-    }
-
-    /// Remove DM typing state for a peer (on unfriend).
-    pub fn remove_dm_peer(&mut self, peer_key: &str) {
-        self.dms.remove(peer_key);
     }
 }
 

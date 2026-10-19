@@ -1,6 +1,6 @@
 import { Component, For, createSignal, createEffect, Show } from "solid-js";
 import { Popover } from "@kobalte/core/popover";
-import { handleKeyDown } from "../../actions/chat.actions";
+import { handleDraftChanged, handleKeyDown } from "../../actions/chat.actions";
 import { handleUploadAttachment } from "../../actions/community.actions";
 import EmojiPicker from "./EmojiPicker";
 import ReplyPreview from "./ReplyPreview";
@@ -101,6 +101,8 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     // Recompute mention picker query from the new caret position.
     mentions.recomputeOnInput(target.value, target.selectionStart ?? target.value.length);
     props.onTyping?.();
+    // The 1:1 chat (no `onSend`) reports its draft for the typing indicator.
+    if (!props.onSend) handleDraftChanged(props.peerId, target.value);
   }
 
   function insertEmoji(value: string): void {

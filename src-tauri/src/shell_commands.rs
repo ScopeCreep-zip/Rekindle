@@ -93,7 +93,6 @@ pub const SHELL_LOCAL: &[&str] = &[
     "subscribe_events",
     "show_buddy_list",
     "open_chat_window",
-    "open_dm_window",
     "open_community_window",
     "open_settings_window",
     "open_profile_window",
@@ -104,13 +103,13 @@ pub const SHELL_LOCAL: &[&str] = &[
 
 /// `(Tauri command, the step that ports it)`.
 pub const PENDING_PORT: &[(&str, &str)] = &[
-    // E2.3 — the SMPL DM path is deleted (1:1 DMs are the ratchet stream).
-    ("start_dm", "E2.3"),
-    ("accept_dm_invite", "E2.3"),
-    ("decline_dm_invite", "E2.3"),
-    ("list_dms", "E2.3"),
-    ("get_dm_messages", "E2.3"),
-    ("send_dm_message", "E2.3"),
+    // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
+    // by the group DM requests.
+    ("accept_dm_invite", "E2.6"),
+    ("decline_dm_invite", "E2.6"),
+    ("list_dms", "E2.6"),
+    ("get_dm_messages", "E2.6"),
+    ("send_dm_message", "E2.6"),
     // E2.4 — the prekey record.
     ("pqxdh_bundle_info", "E2.4"),
     // E2.5 — the friendship coordinator is deleted.

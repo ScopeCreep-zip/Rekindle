@@ -5,10 +5,9 @@ import type {
 } from "./types_sync";
 
 export const syncCommands = {
-  // Direct messages (architecture §27)
+  // Group DMs over SMPL records (architecture §27.2), rendered by the chat
+  // window's group mode until E2.6 replaces them.
   listDms: () => invoke<DmConversation[]>("list_dms"),
-  startDm: (bobPublicKey: string, alicePseudonym: string) =>
-    invoke<string>("start_dm", { bobPublicKey, alicePseudonym }),
   acceptDmInvite: (recordKey: string) =>
     invoke<void>("accept_dm_invite", { recordKey }),
   declineDmInvite: (recordKey: string) =>
@@ -22,7 +21,6 @@ export const syncCommands = {
     }),
   getDmMessages: (recordKey: string, limit: number) =>
     invoke<DmMessageRecord[]>("get_dm_messages", { recordKey, limit }),
-  openDmWindow: (recordKey: string) => invoke<void>("open_dm_window", { recordKey }),
 
   // Strand Relay Network (architecture §13)
   volunteerRelay: (friendPublicKey: string) =>

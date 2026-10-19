@@ -1,9 +1,9 @@
-//! Phase 13 — thin facade for DM invite-accept.
+//! Phase 13 — thin facade for group DM invite-accept.
 //!
-//! All business logic moved to `rekindle_dm::session::accept_dm_invite`
-//! (responder path: load invite, recover MEK, restore chain, open
-//! record read-only, watch peer subkeys). This file builds a
-//! `DmAdapter` and delegates.
+//! All business logic is in `rekindle_dm::session::accept_dm_invite`
+//! (responder path: load invite, unwrap the group MEK, restore chain,
+//! borrow the record, watch the other members' subkeys). This file
+//! builds a `DmAdapter` and delegates.
 
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
 
-/// Responder-side accept for an inbound DM invite.
+/// Responder-side accept for an inbound group DM invite.
 pub async fn accept_dm_invite(
     state: &Arc<AppState>,
     pool: &Db,

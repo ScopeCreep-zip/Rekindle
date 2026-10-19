@@ -242,13 +242,18 @@ plus the group-call variants.
 
 ## 4. DMs and Group DMs
 
-DMs reuse the same SMPL infrastructure as community channels,
+Group DMs reuse the same SMPL infrastructure as community channels,
 optimised for small private conversations. See `crates/rekindle-dm/`
 for the pure-logic implementation; `src-tauri/src/services/dm/`
 wires it to Veilid and SQLite via `DmStore` (the
-`SqliteDmStore` impl is the production adapter).
+`SqliteDmStore` impl is the production adapter). ChatWindow's group mode
+renders them until E2.6 replaces them.
 
-### Direct messages (2 members)
+### Direct messages (2 members) — deleted (plan E2.3)
+
+The 2-member SMPL DM below is gone: 1:1 DMs are the friend's ratchet
+stream (the chat window's 1:1 mode). Kept here as the record of what was
+removed.
 
 ```
 SMPL Record (DM)

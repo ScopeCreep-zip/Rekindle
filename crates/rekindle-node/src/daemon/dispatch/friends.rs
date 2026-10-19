@@ -121,7 +121,7 @@ pub(crate) async fn route(
         }
         IpcRequest::DmSend { peer_key, body } => answer(dm::send_dm(&host, &peer_key, &body).await),
         IpcRequest::DmTyping { peer_key, typing } => {
-            done(dm::send_typing(&host, &peer_key, typing).await)
+            done(dm::report_draft(&host, &peer_key, typing).await)
         }
         IpcRequest::DmInbox { limit } => answer(dm::inbox(&host, limit).await),
         IpcRequest::DmHistory {

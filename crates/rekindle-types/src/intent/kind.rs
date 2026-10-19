@@ -162,7 +162,6 @@ pub enum IntentKind {
     AcceptRequest,
     AddFriend,
     AddFriendFromInvite,
-    StartDm,
     UnbanMember,
     UnblockUser,
     // TrustChanging: Giving out reach
@@ -377,7 +376,6 @@ impl IntentKind {
             | Self::AcceptRequest
             | Self::AddFriend
             | Self::AddFriendFromInvite
-            | Self::StartDm
             | Self::UnbanMember
             | Self::UnblockUser
             | Self::CreateCommunityInvite

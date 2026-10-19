@@ -47,8 +47,8 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     handlers::handle(host, prepared).await
 }
 
-/// Handle one inbound `app_call`. Its payloads (`RelayOffer`, `DmInvite`)
-/// are both unported, so a handled call has no reply.
+/// Handle one inbound `app_call`. Its one payload, `RelayOffer`, is
+/// unported, so a handled call has no reply.
 pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     let Some(envelope) = dm::unwire(datagram) else {
         tracing::debug!(len = datagram.len(), "dropping untagged 1:1 call");
@@ -57,13 +57,10 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     let Some(prepared) = prepare::prepare(host, envelope).await else {
         return Routed::Handled;
     };
-    match prepared.payload {
-        MessagePayload::RelayOffer { .. } | MessagePayload::DmInvite { .. } => {
-            Routed::Unported(Box::new(prepared))
-        }
-        _ => {
-            tracing::debug!(from = %prepared.sender_hex, "1:1 call with no call payload — no reply");
-            Routed::Handled
-        }
+    if matches!(prepared.payload, MessagePayload::RelayOffer { .. }) {
+        Routed::Unported(Box::new(prepared))
+    } else {
+        tracing::debug!(from = %prepared.sender_hex, "1:1 call with no call payload — no reply");
+        Routed::Handled
     }
 }

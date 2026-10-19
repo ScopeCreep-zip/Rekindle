@@ -1,13 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-chat",
-  "description": "App-command grants for `chat-*` windows (1:1 friend chat, with start and hang-up of a call to this peer). No plugin grants.",
+  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start and hang-up of a call to this peer, and the group mode, which reads and sends the group rows of the SMPL DM store until E2.6 replaces it. No plugin grants.",
   "windows": [
     "chat-*"
   ],
   "permissions": [
+    "allow-get-dm-messages",
     "allow-get-message-history",
+    "allow-list-dms",
     "allow-mark-read",
+    "allow-send-dm-message",
     "allow-send-message",
     "allow-send-typing",
     "allow-start-dm-call",

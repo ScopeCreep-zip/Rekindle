@@ -137,7 +137,14 @@ Reusable event primitives hoisted out of `rekindle-transport::subscriptions`
 so `src-tauri`'s Phase 10 `event_resume` flow can use them without
 pulling in `veilid-core`. Modules: `dedup` (`EventDedup`), `state`
 (`SubscriptionState`), `state_effects` (effect application), `journal`
-(`EventJournal` + `JournalCursor` for Tauri reconnect replay).
+(`EventJournal` + `JournalCursor` for Tauri reconnect replay), `typing`
+(plan E2.3: `TypingExpiry`, the receiver's lapse of an unrefreshed start,
+and `TypingSessions`, the sender's refresh and idle stop, keyed by
+`TypingContext` over the Host's clock). Typing lives here because it is
+event state both tracks need without a transport: the Host drives the 1:1
+deadlines (`rekindle_transport::operations::{typing, dm::typing}`), and
+E2.6's group typing (`rekindle-dm`, Tier 7) and E3.4's channel typing
+(with its own per-start TTL) use the same two types.
 
 `rekindle-transport` keeps its `SubscriptionManager` (which **is** the
 pipeline); this crate publishes the building blocks. See
@@ -383,15 +390,14 @@ Modules: `send`, `receive`, `pipeline`, `stage`, `threads`, `reactions`,
 
 ### rekindle-dm
 
-Direct messages and group DMs (architecture §27). DMs are SMPL records
-with `o_cnt: 0`, exactly 2 member subkeys, and a MEK derived
-deterministically via X25519 ECDH between the two identity keys (no
-separate key-exchange round trip). Group DMs wrap the MEK per recipient.
+Group DMs (architecture §27.2): SMPL records with `o_cnt: 0`, one member
+subkey each, and a random MEK wrapped per recipient. The 1:1 SMPL DM (2
+member subkeys, an ECDH MEK) was deleted by plan E2.3; E2.6 replaces the
+group path with sender-owned keys.
 Pure logic — no DHT, no Tauri. The `src-tauri/services/dm/` layer wires
 it to Veilid and SQLite via the `DmStore` trait (`SqliteDmStore` impl
-included). Modules: `invite` (`DmInvite`, `GroupDmInvite`,
-`GroupDmParticipant`), `mek` (`derive_dm_mek` → HKDF, `ratchet_dm_mek`,
-`DmMekChain`), `error`.
+included). Modules: `invite` (`GroupDmInvite`, `GroupDmParticipant`),
+`mek` (`ratchet_dm_mek`, `DmMekChain`), `error`.
 
 ### rekindle-calls
 

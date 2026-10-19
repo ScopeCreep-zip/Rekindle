@@ -38,8 +38,7 @@ and its own lazy chunk.
 |---|---|
 | `/login` | `LoginWindow` |
 | `/buddy-list` | `BuddyListWindow` |
-| `/chat` | `ChatWindow` |
-| `/dm` | `DmWindow` |
+| `/chat` | `ChatWindow` (`?peer=` 1:1, `?group=` group DM) |
 | `/community` | `CommunityWindow` |
 | `/settings` | `SettingsWindow` |
 | `/profile` | `ProfileWindow` |
@@ -55,11 +54,10 @@ screen-reader announcements work on every page.
 src/
 ├── main.tsx                          Entry point, path-based routing,
 │                                     global CallController + AnnounceRegion
-├── windows/                          One top-level component per window (8)
+├── windows/                          One top-level component per window (7)
 │   ├── LoginWindow.tsx
 │   ├── BuddyListWindow.tsx
-│   ├── ChatWindow.tsx
-│   ├── DmWindow.tsx
+│   ├── ChatWindow.tsx                Picks chat_window/ DirectChat or GroupChat
 │   ├── CommunityWindow.tsx           Composes community_window/ panes
 │   ├── SettingsWindow.tsx            Composes settings/ tabs
 │   ├── ProfileWindow.tsx

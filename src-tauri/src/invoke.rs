@@ -252,7 +252,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::relay::list_volunteered_relay_friends,
         // direct messages
         commands::dm::list_dms,
-        commands::dm::start_dm,
         commands::dm::accept_dm_invite,
         commands::dm::decline_dm_invite,
         commands::dm::send_dm_message,
@@ -292,7 +291,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::deep_link::confirm_deep_link,
         commands::deep_link::dismiss_deep_link,
         commands::window::open_chat_window,
-        commands::window::open_dm_window,
         commands::window::open_settings_window,
         commands::window::open_community_window,
         commands::window::open_profile_window,

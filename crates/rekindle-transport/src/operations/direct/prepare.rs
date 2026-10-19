@@ -124,7 +124,6 @@ pub(super) fn sender_admitted(payload: &MessagePayload, status: Option<Friendshi
         | MessagePayload::UnfriendedAck
         | MessagePayload::FriendReject
         | MessagePayload::RelayEnvelope { .. }
-        | MessagePayload::DmInvite { .. }
         | MessagePayload::GroupDmInvite { .. }
         | MessagePayload::WakeNotify { .. } => true,
         MessagePayload::FriendAccept { .. } => matches!(

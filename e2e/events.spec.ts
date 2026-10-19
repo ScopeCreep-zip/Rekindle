@@ -40,7 +40,6 @@ const BUDDY_LIST_HANDLER = `
         lastSeenAt: null, friendshipState: "pendingOut", handshakeError: null,
       }];
     case "get_community_details":
-    case "list_dms":
     case "get_pending_requests":
     case "get_missed_calls":
       return [];

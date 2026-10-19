@@ -1,4 +1,4 @@
-//! The friend-handshake messages and the typing indicator.
+//! The friend-handshake messages.
 
 use std::time::Duration;
 
@@ -105,12 +105,4 @@ pub async fn send_friend_accept(
 /// The send failed.
 pub async fn send_friend_reject(host: &dyn FriendHost, to: &str) -> Result<(), FriendError> {
     send_to_peer(host, to, &MessagePayload::FriendReject).await
-}
-
-/// Send a typing indicator (dropped, never queued, when there is no route).
-///
-/// # Errors
-/// The send failed.
-pub async fn send_typing(host: &dyn FriendHost, to: &str, typing: bool) -> Result<(), FriendError> {
-    send_to_peer(host, to, &MessagePayload::TypingIndicator { typing }).await
 }

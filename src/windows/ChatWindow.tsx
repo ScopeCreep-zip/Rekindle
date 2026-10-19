@@ -1,190 +1,40 @@
-import { Component, onMount, onCleanup, createMemo, createSignal, createEffect, Show } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { startEventStream } from "../ipc/channels";
+import { Component, Match, Switch } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
-import MessageList from "../components/chat/MessageList";
-import MessageInput from "../components/chat/MessageInput";
-import TypingIndicator from "../components/chat/TypingIndicator";
-import StatusDot from "../components/status/StatusDot";
-import { chatState, setChatState, type Message } from "../stores/chat.store";
-import { authState } from "../stores/auth.store";
-import { friendsState } from "../stores/friends.store";
-import { callsState } from "../stores/calls.store";
-import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "../actions/chat.actions";
-import { handleStartDmCall, handleEndDmCall } from "../actions/calls.actions";
-import { subscribeDmChatEvents } from "../handlers/chat-events.handlers";
-import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
-import { subscribeCallEvents } from "../handlers/calls.handlers";
-import { hydrateState } from "../stores/hydrate";
-import { commands } from "../ipc/commands";
-import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP } from "../icons";
+import DirectChat from "./chat_window/DirectChat";
+import GroupChat from "./chat_window/GroupChat";
 
-function getPeerFromUrl(): string {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("peer") ?? "";
-}
-
+/// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
+/// conversation, `?group=<record key>` a group DM (the group mode E2.6
+/// completes). The backend builds both URLs (`windows::open_chat_window`).
 const ChatWindow: Component = () => {
-  const peerId = getPeerFromUrl();
-
-  const peerName = createMemo(() => {
-    const friend = friendsState.friends[peerId];
-    return friend?.displayName ?? peerId.slice(0, 12) + "...";
-  });
-
-  // Reactive memo — tracks the global store, so any presence event that
-  // updates friendsState (via subscribeBuddyListPresenceEvents) is reflected
-  // immediately without maintaining a parallel local signal.
-  const peerStatus = createMemo(() =>
-    friendsState.friends[peerId]?.status ?? "offline",
-  );
-
-  const conversation = createMemo(() => {
-    return chatState.conversations[peerId] ?? {
-      peerId,
-      messages: [],
-      isTyping: false,
-      lastRead: 0,
-    };
-  });
-
-  const [messages, setMessages] = createSignal<Message[]>([]);
-
-  // Extracted so both createEffect and the direct event listener can call it
-  function syncMessages() {
-    const convo = chatState.conversations[peerId];
-    setMessages(convo ? [...convo.messages] : []);
-  }
-
-  // Handles history load, sent messages, and any store-driven updates
-  createEffect(syncMessages);
-
-  const ownName = createMemo(() => {
-    return authState.displayName ?? "You";
-  });
-
-  // W13-fix.1 — read from the 1:1 call store so the active state matches
-  // the buddy-list right-click flow + the DmWindow flow. Prior code read
-  // voiceState which is the COMMUNITY voice channel state — completely
-  // unrelated to 1:1 calls and bypassed the entire CallInvite handshake
-  // (start_dm_call → CallInvite → ring → accept).
-  const activeCallWithPeer = createMemo(() => {
-    const a = callsState.activeCall;
-    return a && a.peerKey === peerId ? a : null;
-  });
-  const outgoingToThisPeer = createMemo(() => {
-    const o = callsState.outgoingCall;
-    return o && o.peerKey === peerId ? o : null;
-  });
-
-  function startCall(video: boolean): void {
-    void handleStartDmCall(peerId, peerName(), video);
-  }
-
-  function hangup(): void {
-    const id = activeCallWithPeer()?.callId ?? outgoingToThisPeer()?.callId;
-    if (id) void handleEndDmCall(id);
-  }
-
-  function handleRetry(messageId: number): void {
-    handleRetrySendMessage(peerId, messageId);
-  }
-
-  const unlisteners: Promise<UnlistenFn>[] = [];
-
-  onMount(async () => {
-    // Register event listeners FIRST so no events are missed during hydration.
-    // subscribeBuddyListPresenceEvents updates the global friendsState store
-    // (each Tauri webview has isolated JS context, so we need our own listener).
-    // The peerStatus memo reactively reads from that store.
-    unlisteners.push(
-      subscribeDmChatEvents(peerId, () => authState.publicKey ?? "", () =>
-        queueMicrotask(syncMessages),
-      ),
-    );
-    unlisteners.push(subscribeBuddyListPresenceEvents());
-    // Keeps the call buttons in step with a call to this peer.
-    unlisteners.push(subscribeCallEvents({ owner: false }));
-    void startEventStream(() => void hydrateState());
-
-    // Await hydration so stores are populated before loading history
-    await hydrateState();
-    setChatState("activeConversation", peerId);
-    await handleLoadHistory(peerId, 50);
-    handleResetUnread(peerId);
-
-    // Retry any previously failed messages: the Host's send refreshes the
-    // peer's route inline when it has no fresh one (plan E2.1).
-    const convo = chatState.conversations[peerId];
-    if (convo) {
-      const failedMsgs = convo.messages.filter((m) => m.status === "failed");
-      for (const msg of failedMsgs) {
-        handleRetrySendMessage(peerId, msg.id);
-      }
-    }
-  });
-
-  onCleanup(() => {
-    for (const p of unlisteners) {
-      p.then((unlisten) => unlisten());
-    }
-  });
+  const params = new URLSearchParams(window.location.search);
+  const peer = params.get("peer") ?? "";
+  const group = params.get("group") ?? "";
 
   return (
     <div class="app-frame">
-      {/* Architecture §32 a11y — keyboard skip link past status header. */}
+      {/* Architecture §32 a11y — keyboard skip link past the header. */}
       <a href="#main-content" class="skip-link">Skip to messages</a>
-      <Titlebar title={`Chat — ${peerName()}`} showMaximize />
-      <div class="chat-peer-status">
-        <StatusDot status={peerStatus()} />
-        <span class="chat-peer-status-label">{peerStatus()}</span>
-        {/* W13-fix.1 — voice + video buttons matching the buddy-list
-         *  right-click menu + DmWindow header. Both go through the
-         *  start_dm_call → CallInvite handshake. When a call is active
-         *  with this peer, the voice button collapses into a hangup. */}
-        <Show
-          when={!activeCallWithPeer() && !outgoingToThisPeer()}
-          fallback={
-            <button
-              class="chat-call-btn chat-call-btn-active"
-              onClick={hangup}
-              title="End call"
-              aria-label={`End call with ${peerName()}`}
-            >
-              <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
-            </button>
-          }
-        >
-          <button
-            class="chat-call-btn"
-            onClick={() => startCall(false)}
-            title="Voice call"
-            aria-label={`Start voice call with ${peerName()}`}
-          >
-            <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
-          </button>
-          <button
-            class="chat-call-btn"
-            onClick={() => startCall(true)}
-            title="Video call"
-            aria-label={`Start video call with ${peerName()}`}
-          >
-            <span class="nf-icon" aria-hidden="true">{ICON_VIDEO}</span>
-          </button>
-        </Show>
-      </div>
-      <div id="main-content" tabindex="-1" class="window-main">
-      <MessageList
-        messages={messages()}
-        ownName={ownName()}
-        peerName={peerName()}
-        onRetry={handleRetry}
-      />
-      {/* A connected call's controls (timer, mute, hangup, video) live in
-       *  its own call window, which the backend opens on connect. */}
-      <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
-      <MessageInput peerId={peerId} />
-      </div>
+      <Switch
+        fallback={
+          <>
+            <Titlebar title="Chat" showMaximize />
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-title">No conversation selected</div>
+              <div class="empty-placeholder-subtitle">
+                Open a chat from the buddy list.
+              </div>
+            </div>
+          </>
+        }
+      >
+        <Match when={group}>
+          <GroupChat recordKey={group} />
+        </Match>
+        <Match when={peer}>
+          <DirectChat peerId={peer} />
+        </Match>
+      </Switch>
     </div>
   );
 };

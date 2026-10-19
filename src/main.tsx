@@ -11,7 +11,6 @@ import ToastContainer from "./components/common/Toast";
 const LoginWindow = lazy(() => import("./windows/LoginWindow"));
 const BuddyListWindow = lazy(() => import("./windows/BuddyListWindow"));
 const ChatWindow = lazy(() => import("./windows/ChatWindow"));
-const DmWindow = lazy(() => import("./windows/DmWindow"));
 const CommunityWindow = lazy(() => import("./windows/CommunityWindow"));
 const SettingsWindow = lazy(() => import("./windows/SettingsWindow"));
 const ProfileWindow = lazy(() => import("./windows/ProfileWindow"));
@@ -51,9 +50,6 @@ function App() {
           </Match>
           <Match when={route().startsWith("/chat")}>
             <ChatWindow />
-          </Match>
-          <Match when={route().startsWith("/dm")}>
-            <DmWindow />
           </Match>
           <Match when={route().startsWith("/community")}>
             <CommunityWindow />

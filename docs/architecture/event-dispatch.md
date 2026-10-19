@@ -29,11 +29,11 @@ emitter ──► event_dispatch::emit / emit_journaled ──► one mpsc queue
   | Scope / family | Windows |
   |---|---|
   | `Notification`, `ConversationFocusRequested` | `buddy-list` (single owner) |
-  | `Call(id)` events | `buddy-list`, `call-<id12>`, every `chat-*` and `dm-*` |
+  | `Call(id)` events | `buddy-list`, `call-<id12>`, every `chat-*` |
   | `Device` | every post-login window |
   | `Community(id)`, `CommunityJoin(id)` | `buddy-list`, every `community-*` (a community window switches communities in place) |
   | `Peer(pk)` | `buddy-list`, `chat-<pk16>`, `profile-<pk12>` (voice also every `call-*`) |
-  | `Conversation(record)` | `buddy-list`, `dm-<record20>` |
+  | `Conversation(record)` | `buddy-list`, `chat-<record20>` (the chat window's group mode) |
   | Lifecycle | every window (login included) |
 
 - **`WebviewRouter`** (`src-tauri/src/event_router.rs`) keeps one channel per window label. A

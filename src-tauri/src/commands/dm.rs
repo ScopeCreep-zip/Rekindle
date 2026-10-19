@@ -1,7 +1,8 @@
-//! Tauri commands for direct messages (architecture §27).
+//! Tauri commands for group DMs over SMPL records (architecture §27.2),
+//! which ChatWindow's group mode renders until E2.6 replaces them, and the
+//! DM video frame commands (E4.1, E4.3.8).
 //!
-//! The wire-level orchestration (creating SMPL records, sending invites,
-//! deriving MEKs) lives in `services/dm/`. These commands are thin
+//! The orchestration lives in `services/dm/`. These commands are thin
 //! adapters for the frontend.
 
 use tauri::State;
@@ -15,16 +16,6 @@ pub async fn list_dms(
 ) -> Result<Vec<dm::store::DmConversation>, String> {
     let pool = state.db.current()?;
     Ok(dm::list_dm_conversations(state.inner(), &pool).await)
-}
-
-#[tauri::command]
-pub async fn start_dm(
-    bob_public_key: String,
-    alice_pseudonym: String,
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
-    let pool = state.db.current()?;
-    dm::start_dm(state.inner(), &pool, &bob_public_key, &alice_pseudonym).await
 }
 
 #[tauri::command]

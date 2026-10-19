@@ -170,7 +170,6 @@
 '.soundboard-panel-header:hover' = { on = ["--color-xfire-bg-dark"] }
 '.soundboard-panel-count' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
 '.soundboard-panel-clip' = { on = ["--color-xfire-bg-input"] }
-'.dm-call-bar-label' = { on = ["--color-xfire-bg-panel"] }
 '.incoming-call-title' = { on = ["--color-xfire-bg-panel"] }
 '.incoming-call-display-name' = { on = ["--color-xfire-bg-panel"] }
 '.incoming-call-timer' = { on = ["--color-xfire-bg-panel"] }

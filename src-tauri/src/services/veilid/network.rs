@@ -35,7 +35,7 @@ pub async fn handle_app_call(
     // (plan E2.3, "Ingress").
     match rekindle_codec::ingress::classify(&message) {
         rekindle_codec::ingress::Ingress::Direct(_) => {
-            let reply = direct_call(app_handle, state, &message).await;
+            let reply = direct_call(state, &message).await;
             reply_to_call(state, call_id, reply).await;
             return;
         }
@@ -239,7 +239,7 @@ async fn community_call(
 
 /// Answer a 1:1 `app_call` through the Host: a handled call has no reply
 /// of its own (ACK); an unported one is answered by the desktop's arm.
-async fn direct_call(app_handle: &AppHandle, state: &Arc<AppState>, message: &[u8]) -> Vec<u8> {
+async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Vec<u8> {
     let Some(host) = state.host.current() else {
         return b"NAK".to_vec();
     };
@@ -249,7 +249,7 @@ async fn direct_call(app_handle: &AppHandle, state: &Arc<AppState>, message: &[u
             let Ok(pool) = state.db.current() else {
                 return b"NAK".to_vec();
             };
-            super::inbound_unported::handle_call(app_handle, state, &pool, *prepared)
+            super::inbound_unported::handle_call(state, &pool, *prepared)
                 .await
                 .unwrap_or_else(|| b"ACK".to_vec())
         }

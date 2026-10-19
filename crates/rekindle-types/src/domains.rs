@@ -71,8 +71,6 @@ labels! {
     FRAME_SIG_V3 = "rekindle-frame-sig-v3";
 
     // ── 1:1 and group DMs ────────────────────────────────────────────
-    /// HKDF info: group-DM MEK from the pairwise shared secret.
-    DM_MEK = "rekindle-dm-mek-v1";
     /// HKDF info: group-DM MEK forward ratchet step.
     DM_MEK_RATCHET = "rekindle-dm-ratchet-v1";
     /// HKDF info: the spec Double Ratchet's `KDF_RK` (DR rev. 1 §5.2).

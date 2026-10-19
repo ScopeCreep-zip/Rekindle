@@ -1,15 +1,23 @@
 //! What each opened 1:1 payload does.
 
 use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_events::typing::TYPING_TTL_MS;
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, FriendEvent, SubscriptionEvent, TypingContext, TypingEvent,
+    ChannelMessageEvent, FriendEvent, SubscriptionEvent, TypingContext,
 };
 
 use super::{Prepared, Routed};
 use crate::operations::friend::inbound::{self, IncomingFriendAccept, IncomingFriendRequest};
 use crate::operations::friend::session_reset::{self, ResetAccept};
 use crate::operations::friend::{state, FriendHost};
-use crate::operations::relay;
+use crate::operations::{relay, typing};
+
+/// Where a friend's typing to us shows: their DM.
+fn dm_typing(sender: &str) -> TypingContext {
+    TypingContext::Dm {
+        peer_key: sender.to_string(),
+    }
+}
 
 /// Handle `prepared`, or hand it back when its owner step has not come.
 pub(super) async fn handle(host: &dyn FriendHost, prepared: Prepared) -> Routed {
@@ -17,17 +25,15 @@ pub(super) async fn handle(host: &dyn FriendHost, prepared: Prepared) -> Routed 
     match &prepared.payload {
         MessagePayload::DirectMessage { body, .. } => {
             direct_message(host, sender, body, prepared.timestamp);
+            // Their message ends their typing (plan E2.3).
+            typing::stopped(host, &dm_typing(sender), sender);
         }
         MessagePayload::TypingIndicator { typing } => {
-            let context = TypingContext::Dm {
-                peer_key: sender.to_string(),
-            };
-            let who = sender.to_string();
-            host.publish(SubscriptionEvent::Typing(if *typing {
-                TypingEvent::Started { context, who }
+            if *typing {
+                typing::started(host, dm_typing(sender), sender, TYPING_TTL_MS);
             } else {
-                TypingEvent::Stopped { context, who }
-            }));
+                typing::stopped(host, &dm_typing(sender), sender);
+            }
         }
         MessagePayload::FriendRequest {
             display_name,
@@ -138,13 +144,17 @@ pub(super) async fn handle(host: &dyn FriendHost, prepared: Prepared) -> Routed 
         MessagePayload::RegisterPushRelay { .. } | MessagePayload::UnregisterPushRelay { .. } => {
             tracing::debug!("ignoring push-relay register payload at a client");
         }
+        // The 1:1 SMPL DM path is gone (plan E2.3); the `DmFrame` cutover
+        // deletes these variants.
+        MessagePayload::DmInvite { .. }
+        | MessagePayload::DmAccept { .. }
+        | MessagePayload::DmDecline { .. } => {
+            tracing::debug!(from = %sender, "dropping a 1:1 SMPL DM invite payload");
+        }
         MessagePayload::ChannelMessage { .. }
         | MessagePayload::RelayOffer { .. }
         | MessagePayload::RelayWithdraw { .. }
         | MessagePayload::RelayEnvelope { .. }
-        | MessagePayload::DmInvite { .. }
-        | MessagePayload::DmAccept { .. }
-        | MessagePayload::DmDecline { .. }
         | MessagePayload::GroupDmInvite { .. }
         | MessagePayload::DmLeave { .. }
         | MessagePayload::DmVideoFragment { .. }
