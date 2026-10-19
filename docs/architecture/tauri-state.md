@@ -91,7 +91,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `game_detector` | `Arc<Mutex<Option<GameDetectorHandle>>>` | Game detection state |
 | `file_caches` | `RwLock<HashMap<String, ChunkCache>>` | Per-community Lost Cargo `ChunkCache` |
 | `pinned_attachments` | `RwLock<HashMap<String, PinnedSet>>` | Per-community pinned attachment IDs (skipped during eviction) |
-| `file_cache_root` | `RwLock<Option<PathBuf>>` | `<app_data>/file_cache/` root path |
+| `file_cache_root` | `RwLock<Option<PathBuf>>` | Old `<app_data>/file_cache/` root path (community avatars only, until plan E3.1; chunks live under `state/{pk}.files/`) |
 
 ## Relay, Push Relay, Notifications
 

@@ -11,11 +11,13 @@
 //! - [`LayoutCheck::Current`]: nothing to do.
 //! - [`LayoutCheck::Mismatch`] (another version, a non-empty `state/`
 //!   without the file, or files of the layout before D1): [`run`] sweeps
-//!   `state/`, the old layout is removed, and the file is written.
+//!   `state/`, the old layout and the retired directories are removed, and
+//!   the file is written.
 //!
-//! Everything Rekindle owns per identity lives under `state/`, so the sweep
-//! is one directory; the node lock, logs, the file cache, webview data and
-//! the user's `config.toml` live outside it and survive.
+//! Everything Rekindle owns per identity lives under `state/`, its file
+//! cache `state/{pk}.files/` included (plan E3.0a), so the sweep is one
+//! directory; the node lock, logs, webview data and the user's
+//! `config.toml` live outside it and survive.
 
 use std::path::{Path, PathBuf};
 
@@ -70,6 +72,16 @@ fn old_layout(root: &DataRoot) -> Vec<PathBuf> {
     }
     out.retain(|p| p.exists());
     out
+}
+
+/// Directories retired after D1 that a reset removes but that do not
+/// trigger one: `data/file_cache/`, the desktop's chunk cache with one
+/// directory per community id (plan E3.0a moved the caches to
+/// `state/{pk}.files/` under keyed names). It is no trigger because the
+/// desktop still creates it at every start until E3.3 ports its last
+/// caller; a trigger would reset every identity at each launch.
+fn retired(root: &DataRoot) -> Vec<PathBuf> {
+    vec![root.data.join("file_cache")]
 }
 
 fn is_empty_dir(path: &Path) -> Result<bool, ResetError> {
@@ -162,7 +174,7 @@ pub fn apply(root: &DataRoot) -> Result<LayoutCheck, ResetError> {
                 path: root.state.clone(),
                 keep: &[],
             }])?;
-            for old in old_layout(root) {
+            for old in old_layout(root).into_iter().chain(retired(root)) {
                 remove(&old)?;
             }
             write_version(root)?;
@@ -248,6 +260,25 @@ mod tests {
             assert!(!root.config.join(f).exists(), "{f}");
         }
         assert!(root.config.join("config.toml").exists());
+    }
+
+    #[test]
+    fn a_reset_removes_the_old_file_cache_which_is_no_trigger_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = root(dir.path());
+        let old_cache = root.data.join("file_cache").join("community-id");
+        assert_eq!(apply(&root).unwrap(), LayoutCheck::Fresh);
+        std::fs::create_dir_all(&old_cache).unwrap();
+        assert_eq!(
+            apply(&root).unwrap(),
+            LayoutCheck::Current,
+            "the desktop recreates it at each start until E3.3"
+        );
+        std::fs::create_dir_all(root.identity_files("pk")).unwrap();
+        std::fs::write(root.layout_version(), "1").unwrap();
+        assert_eq!(apply(&root).unwrap(), LayoutCheck::Mismatch);
+        assert!(!root.data.join("file_cache").exists());
+        assert!(!root.identity_files("pk").exists());
     }
 
     #[test]

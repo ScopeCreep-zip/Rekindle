@@ -70,11 +70,13 @@ mod tests {
     use crate::cache::{CacheConfig, ChunkCache};
     use crate::pinned::PinnedSet;
     use tempfile::TempDir;
+    use zeroize::Zeroizing;
 
     fn open_cache(dir: &TempDir) -> ChunkCache {
         ChunkCache::open(CacheConfig {
             root_dir: dir.path().to_path_buf(),
             byte_budget: 1024 * 1024,
+            name_key: Zeroizing::new([3u8; 32]),
         })
         .unwrap()
     }

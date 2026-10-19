@@ -12,10 +12,11 @@
 //! `rekindle-protocol` (wire types + DHT helpers), and the Tauri command
 //! handlers in `commands/community/files.rs`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use rekindle_files::{CacheConfig, ChunkCache};
+use tauri::Manager as _;
 
 use crate::state::{AppState, SharedState};
 use rekindle_db::Db;
@@ -25,10 +26,31 @@ const DEFAULT_BYTE_BUDGET: u64 = 1024 * 1024 * 1024;
 
 // ─── Phase 3: cache lifecycle ──────────────────────────────────────────
 
-/// Resolve the per-community cache directory under the global file_cache root.
-fn community_cache_dir(state: &SharedState, community_id: &str) -> Option<PathBuf> {
-    let root = state.file_cache_root.read().clone()?;
-    Some(root.join(community_id))
+/// The unlocked identity's cache for one community: its keyed directory
+/// under `state/{pk}.files/` and the name key (plan E3.0a), so no directory
+/// names the community or an attachment before unlock.
+fn community_cache_config(state: &SharedState, community_id: &str) -> Result<CacheConfig, String> {
+    let owner = crate::state_helpers::current_owner_key(state)?;
+    let secret = zeroize::Zeroizing::new(
+        crate::state_helpers::identity_secret(state).ok_or("not logged in")?,
+    );
+    let identity_files = state
+        .app_handle
+        .read()
+        .as_ref()
+        .ok_or("app handle not initialized")?
+        .state::<rekindle_db::paths::DataRoot>()
+        .identity_files(&owner);
+    let name_key = rekindle_secrets::derive::derive_file_cache_name_key(&secret);
+    Ok(CacheConfig {
+        root_dir: rekindle_files::scope_root(
+            &identity_files,
+            &name_key,
+            rekindle_files::CacheScope::Community(community_id),
+        ),
+        byte_budget: DEFAULT_BYTE_BUDGET,
+        name_key,
+    })
 }
 
 /// Ensure the chunk cache for a given community is open. Idempotent.
@@ -36,13 +58,8 @@ pub fn ensure_cache_open(state: &SharedState, community_id: &str) -> Result<(), 
     if state.file_caches.read().contains_key(community_id) {
         return Ok(());
     }
-    let dir = community_cache_dir(state, community_id)
-        .ok_or_else(|| "file cache root not initialized".to_string())?;
-    let cache = ChunkCache::open(CacheConfig {
-        root_dir: dir,
-        byte_budget: DEFAULT_BYTE_BUDGET,
-    })
-    .map_err(|e| format!("failed to open file cache: {e}"))?;
+    let cache = ChunkCache::open(community_cache_config(state, community_id)?)
+        .map_err(|e| format!("failed to open file cache: {e}"))?;
     state
         .file_caches
         .write()

@@ -73,9 +73,9 @@ We **do not** defend against:
 | Z7 | Slot keypair (per community) | Low — derived deterministically; not sensitive | Derived from `slot_seed` on demand |
 | Z8 | Slot seed | High — distributed via invite | Vault |
 | Z9 | Master secret (cross-device) | Critical | Vault; transferred only via paired-device handshake |
-| Z10 | SQLite contents (messages, friends, communities, etc.) | High — represents social graph | Disk; OS-level encryption is the user's choice |
+| Z10 | SQLite contents (messages, friends, communities, etc.) | High — represents social graph | `state/{pk}.db`, SQLCipher keyed from the passphrase (Argon2id, then BLAKE3 `derive_key` with `VAULT_APP_DB_KEY`); unreadable before unlock |
 | Z11 | Local Veilid node identity | Medium | Veilid storage; relinking requires bootstrap |
-| Z12 | Friend list, community membership | High — represents who the user knows | DHT (encrypted) + SQLite |
+| Z12 | Friend list, community membership | High — represents who the user knows | DHT (encrypted) + SQLite; the file cache's directory names are keyed hashes, never ids (plan E3.0a) |
 | Z13 | Presence (status, route blob, game info) | Medium | DHT presence record (visible to friends/community members) |
 | Z14 | Plaintext message content | Critical | Memory only; never persisted unencrypted |
 | Z15 | Audit MAC key + tail anchor | High — tamper-evidence root | Vault; loss invalidates the chain |
@@ -123,7 +123,7 @@ would create cross-community linkability.
 | I3 | Banned member decrypts post-ban messages | MEK rotation on member departure. New MEK is wrapped only for remaining members. From plan E3.5 the rotation is a write-once ballot used only after a strict majority of eligible rotators confirm it (ADR 0018); until it is confirmed, the removed member can still read new text under the old key. |
 | I4 | Banned member decrypts pre-ban messages they had once cached | Acknowledged limitation. Forward secrecy protects only future content. The MEK rotation cadence and the deterministic rotator protocol minimise the exposure window for *future* content. |
 | I5 | Veilid relay node sees content | Layer 1 Veilid AEAD makes intermediate relays see only ciphertext. Layer 4 application AEAD makes them see only outer-envelope ciphertext even after Layer 1 unwraps. Defense in depth. |
-| I6 | Attacker reads at-rest secrets from disk | Layer 4: `rekindle-vault` SQLCipher double-encryption — page-level AES-256-CBC keyed by Argon2id-derived master, per-entry AES-256-GCM on top, sealed when not in use. SQLite (main DB) is not encrypted by default — users on full-disk-encryption OSes get coverage from there; users without FDE accept this gap. |
+| I6 | Attacker reads at-rest secrets from disk | Layer 4: `rekindle-vault` SQLCipher double-encryption — page-level AES-256-CBC keyed by Argon2id-derived master, per-entry AES-256-GCM on top, sealed when not in use. The identity database `state/{pk}.db` is SQLCipher as well, keyed from the same Argon2id master (`VAULT_APP_DB_KEY`), so it cannot be read before unlock (plan D1). What stays readable before unlock is listed, with its reason, in the pre-unlock plaintext inventory below. |
 | I7 | Memory dump on running app reveals secrets | Limited mitigation: every secret type implements `Zeroize + ZeroizeOnDrop` so secrets are wiped when the holding struct drops. Live secrets in active use are still in memory and recoverable from a memory dump. |
 | I8 | Attacker correlates a user's pseudonyms across communities | Pseudonyms are derived per-community via HKDF(`master_secret`, `community_id`). Distinct communities yield cryptographically unrelated pseudonyms. An attacker who compromises one community's member list learns only pseudonyms meaningless outside that community. |
 | I9 | Push relay correlates wake-pushes with content | Wake payload contains only `{type: "wake", ts}` — no content, no record key, no community ID. Relay cannot correlate; platform vendor cannot correlate. The relay daemon does see *which* DHT keys the device cares about, which is metadata; this is opt-in and self-hostable. (See [`../protocol/relay.md`](../protocol/relay.md).) |
@@ -131,6 +131,30 @@ would create cross-community linkability.
 | I11 | A coerced user is forced to reveal their pseudonym in another community | Cross-community linkability requires the user to either share the master secret or sign a challenge with two distinct pseudonyms. We provide no API that does this implicitly; OAuth2 / connected-account features that would create this correlation are deliberately omitted. |
 | I12 | Address-book matching reveals friend lists to a server | We do not implement address-book matching. Identity is a keypair, not a phone number. There is no server. |
 | I13 | A call participant, or someone who later seizes a participant's device, reads call media they should not | Call media uses sender-owned SFrame keys (RFC 9605 §5.1, ADR 0016), delivered pairwise and never under a MEK. **Leaver:** each sender starts a new key generation when someone leaves, used after 5 s, with at most one rotation pending; a leaver cannot read media sent more than ~10 s after leaving (RingRTC's bound under churn), and a kicked or banned member always triggers it, stage channels included. **Joiner:** a join ratchets the sender's key one step (RFC 9605 §5.1) and the joiner gets only the new step, so it cannot read media from before it joined. **Device seizure:** media keys are sealed (HPKE Base) to a per-session X25519 key erased at session end, so recorded calls stay sealed after a later seizure (RFC 9180 §9.1). All three landed in plan step C7.29. Accepted limits: no in-session post-compromise security and no periodic rotation (as DAVE and RingRTC); a > 4 participant MCU host decodes and hears plaintext until E4.4's forwarding-only relay. DM calls already use a fresh ephemeral X25519 per call. |
+
+### Pre-unlock plaintext inventory (A7)
+
+Every file a seizer of a locked device (A7) can read without the passphrase, and why it is not
+encrypted. This list is kept current: a step that adds a plaintext file adds its row here.
+Paths are under `DataRoot` (`crates/rekindle-utils/src/paths.rs`); `state/` is `DataRoot.data/state`.
+
+| What | Readable before unlock | Why it is plaintext |
+|------|------------------------|---------------------|
+| `state/identities.json` | Public key, display name and creation time of every identity on the device | The login picker and `IdentityList` list identities before any unlock (`rekindle-db/src/registry.rs`) |
+| `state/layout-version` | The `SCHEMA_VERSION` the root was laid out for | The reset trigger must be read before any SQLCipher database can be (`rekindle-db/src/reset.rs`) |
+| `state/{pk}.vault.hdr` | Magic, version, Argon2id parameters and salt | Needed to derive the vault key; none of it is secret, only unique per vault (`rekindle-vault/src/header.rs`) |
+| `state/{pk}.vault`, `state/{pk}.db` | Size and timestamps only (SQLCipher) | — |
+| `state/{pk}.files/` | The tree's shape: how many scope directories, attachment directories and chunks, their sizes and timestamps. Every directory name is a 32-hex keyed BLAKE3 hash under a key derived from the identity secret (`FILE_CACHE_NAMES`), so no name is a community id, conversation id, peer key or attachment id, and names are unlinkable across identities; chunks are FEK-encrypted | Stable names let the cache be re-found after a restart without a database lookup (plan E3.0a) |
+| `state/veilid/` | Veilid's table store and its ProtectedStore. The ProtectedStore is file-backed and Rekindle sets no device-encryption password, so the table-store device key is on disk: the node identity (Z11), route secrets and the record tables (what the record tables reveal, such as which records were opened, is not yet traced) | `always_use_insecure_storage` defaults on because the OS keyring crate panicked on Linux (`rekindle-types/src/config/mod.rs`); the store holds Veilid's secrets, never Rekindle's identity keys |
+| `data/node.lock` | That a node used this root | One node per data root (`rekindle-db/src/lock.rs`) |
+| `data/file_cache/` | **Known leak until plan E3.1:** `community_avatars/<community id>/` names each community the user joined (Z12); attachment chunks left it at E3.0a | The layout before E3.0a. A reset removes it; the avatars move onto `state/{pk}.files/` at E3.1, and E3.3 deletes the root |
+| `config/config.toml` | The user's settings layer | Read before unlock to start the host |
+| `config/agent-keys/` | Each CLI/TUI agent's Noise static keypair (the private key `0600`) | A client's key must survive a reboot because the daemon remembers it; the boundary is the OS user (S4) |
+| Logs | Scrubbed lines: identifiers are per-process keyed-hash tags (W8) | Diagnostics |
+| `$XDG_RUNTIME_DIR/rekindle/bus.pub` | The bus's public key (the private key never reaches the disk) | Clients read it to connect (`rekindle-ipc/src/noise_keys.rs`) |
+| Webview data | `sessionStorage` only (the event cursor) | — |
+
+Plan E7.7.2 adds the device login skin (`data/skins/`, Z16) here when it lands.
 
 ### D — Denial of Service
 

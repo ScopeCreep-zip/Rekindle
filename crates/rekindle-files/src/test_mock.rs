@@ -96,6 +96,7 @@ impl MockDeps {
         let cache = ChunkCache::open(CacheConfig {
             root_dir: temp.path().to_path_buf(),
             byte_budget: 4 * 1024 * 1024,
+            name_key: Zeroizing::new([3u8; 32]),
         })
         .unwrap();
         Self {

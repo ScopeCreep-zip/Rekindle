@@ -81,9 +81,16 @@ async fn unknown_identities_are_not_found_and_delete_removes_everything() {
         f.root.identity_vault(&pk).exists(),
         "a wrong passphrase deletes nothing"
     );
+    let cached = f.root.identity_files(&pk).join("scope").join("attachment");
+    std::fs::create_dir_all(&cached).unwrap();
+    std::fs::write(cached.join("0.bin"), b"chunk").unwrap();
     delete(&f.root, &f.attempts, &pk, "pass", 3).unwrap();
     assert!(!f.root.identity_vault(&pk).exists());
     assert!(!f.root.identity_db(&pk).exists());
+    assert!(
+        !f.root.identity_files(&pk).exists(),
+        "the file cache goes too"
+    );
     assert!(list(&f.root).unwrap().is_empty());
     assert!(matches!(
         delete(&f.root, &f.attempts, &pk, "pass", 4),
@@ -167,6 +174,7 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
     drop(made);
     lock(&f.stores()).await;
 
+    std::fs::create_dir_all(f.root.identity_files(&old)).unwrap();
     let next = rekindle_crypto::Identity::generate();
     let secret = *next.secret_key_bytes();
     assert!(matches!(
@@ -182,6 +190,10 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
     assert_eq!(entry.display_name, "Turner");
     assert!(!f.root.identity_vault(&old).exists());
     assert!(!f.root.identity_db(&old).exists());
+    assert!(
+        !f.root.identity_files(&old).exists(),
+        "the old key's cache names are unreachable under the new key"
+    );
     assert!(matches!(
         unlock(&f.root, &f.stores(), &old, "pass", 4).await,
         Err(IdentityError::NotFound)
@@ -200,8 +212,10 @@ async fn remove_needs_no_passphrase_and_a_missing_identity_is_not_found() {
     let pk = made.public_key.clone();
     drop(made);
     lock(&f.stores()).await;
+    std::fs::create_dir_all(f.root.identity_files(&pk)).unwrap();
     remove(&f.root, &pk).unwrap();
     assert!(list(&f.root).unwrap().is_empty());
     assert!(!f.root.identity_vault(&pk).exists());
+    assert!(!f.root.identity_files(&pk).exists());
     assert!(matches!(remove(&f.root, &pk), Err(IdentityError::NotFound)));
 }

@@ -1,7 +1,9 @@
-//! Key derivation functions — pseudonyms and SMPL slot keypairs.
+//! Key derivation functions — pseudonyms, SMPL slot keypairs and the
+//! file-cache name key.
 //!
 //! Pseudonyms: HKDF-SHA256(master_secret, community_id) → Ed25519 keypair.
 //! Slot keypairs: HKDF-SHA256(slot_seed, "rekindle-slot-{index}") → Ed25519 keypair.
+//! File-cache names: HKDF-SHA256(master_secret) → 32-byte BLAKE3 key.
 
 use ed25519_dalek::SigningKey;
 use hkdf::Hkdf;
@@ -9,6 +11,7 @@ use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
 use sha2::Sha256;
 use x25519_dalek::StaticSecret;
+use zeroize::Zeroizing;
 
 /// Derive a unique, unlinkable Ed25519 keypair for a specific community.
 ///
@@ -47,6 +50,19 @@ pub fn derive_governance_overflow_keypair(
     hkdf.expand(format!("{community_id}:{page_index}").as_bytes(), &mut seed)
         .expect("32-byte output is a valid HKDF-SHA256 length");
     SigningKey::from_bytes(&seed)
+}
+
+/// The key that names an identity's file-cache directories (plan E3.0a):
+/// every directory under `state/{pk}.files/` is a keyed BLAKE3 hash under
+/// it, so the names are stable across restarts and say nothing about the
+/// communities, conversations or attachments they hold to anyone without
+/// the identity secret. Domain-separated by its own HKDF salt.
+pub fn derive_file_cache_name_key(master_secret: &[u8; 32]) -> Zeroizing<[u8; 32]> {
+    let hkdf = Hkdf::<Sha256>::new(Some(domains::FILE_CACHE_NAMES.as_bytes()), master_secret);
+    let mut key = Zeroizing::new([0u8; 32]);
+    hkdf.expand(&[], key.as_mut())
+        .expect("32-byte output is a valid HKDF-SHA256 length");
+    key
 }
 
 /// Sign arbitrary bytes with a pseudonym key, returning a 64-byte Ed25519 signature.
@@ -147,6 +163,15 @@ mod tests {
         let verifying = VerifyingKey::from(&key);
         let signature = ed25519_dalek::Signature::from_bytes(&sig);
         assert!(verifying.verify_strict(b"hello", &signature).is_ok());
+    }
+
+    #[test]
+    fn file_cache_name_key_is_stable_per_secret_and_unlinkable_across_secrets() {
+        let a = derive_file_cache_name_key(&[5u8; 32]);
+        assert_eq!(*a, *derive_file_cache_name_key(&[5u8; 32]));
+        assert_ne!(*a, *derive_file_cache_name_key(&[6u8; 32]));
+        // Not the pseudonym of any community: its own salt.
+        assert_ne!(*a, derive_community_pseudonym(&[5u8; 32], "").to_bytes());
     }
 
     #[test]

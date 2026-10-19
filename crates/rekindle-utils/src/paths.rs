@@ -24,8 +24,8 @@ pub struct PathsError(pub &'static str);
 /// Where every Rekindle host keeps its files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataRoot {
-    /// `dirs::data_dir()/com.rekindle.app`: Veilid storage, the file cache,
-    /// and the node lock.
+    /// `dirs::data_dir()/com.rekindle.app`: `state/`, the node lock and,
+    /// until plan E3.3, the desktop's old `file_cache`.
     pub data: PathBuf,
     /// `dirs::config_dir()/com.rekindle.app`: `config.toml`, and (until
     /// plan D1) the database and vault files. On macOS this is the same
@@ -88,7 +88,10 @@ impl DataRoot {
         Ok(dir)
     }
 
-    /// The content-addressed file cache (per-community sub-directories).
+    /// The desktop's shared chunk cache, `data/file_cache` (per-community
+    /// sub-directories named by community id). It is the layout before plan
+    /// E3.0a, so the layout check removes it on a reset; E3.3 deletes it
+    /// with its last caller's port onto [`DataRoot::identity_files`].
     #[must_use]
     pub fn file_cache(&self) -> PathBuf {
         self.data.join("file_cache")
@@ -118,6 +121,15 @@ impl DataRoot {
     #[must_use]
     pub fn identity_vault(&self, public_key: &str) -> PathBuf {
         self.state.join(format!("{public_key}.vault"))
+    }
+
+    /// An identity's file cache, `state/{pk}.files/` (plan E3.0a): every
+    /// directory below it has a keyed-hash name
+    /// (`rekindle_files::cache::scope_root`), so before unlock it shows only
+    /// sizes and counts. Identity delete removes it with `{pk}.db`.
+    #[must_use]
+    pub fn identity_files(&self, public_key: &str) -> PathBuf {
+        self.state.join(format!("{public_key}.files"))
     }
 
     /// The identity registry, `state/identities.json` (plan D1).
@@ -170,6 +182,7 @@ mod tests {
         assert_eq!(root.data, dirs::data_dir().unwrap().join(IDENTIFIER));
         assert_eq!(root.config, dirs::config_dir().unwrap().join(IDENTIFIER));
         assert_eq!(root.state, root.data.join("state"));
+        assert_eq!(root.identity_files("pk"), root.state.join("pk.files"));
         assert!(root.logs.ends_with(if cfg!(target_os = "macos") {
             "Library/Logs/com.rekindle.app"
         } else {

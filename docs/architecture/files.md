@@ -120,22 +120,29 @@ Verification:
 ## Filesystem cache
 
 ```
-<app_data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
-                                       │
-                                       └── git-style 2-char fanout (256-way)
+<data>/state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin
 ```
 
-- **Path format** is git-style: first 2 hex chars of the attachment ID
-  fan out the cache directory, then the full attachment hex, then one
-  file per cached chunk.
+- **Path format:** the cache lives per identity under `state/{pk}.files/`.
+  Every directory name is a 32-hex BLAKE3-keyed hash. The scope name is
+  `keyed_name(k_names, "community:" ‖ id)` (`dm:` and `avatars:` scopes
+  work the same way); the attachment name is keyed from
+  `"attachment:" ‖ scope name ‖ ":" ‖ id`. `k_names` is
+  `rekindle_secrets::derive::derive_file_cache_name_key(master_secret)`
+  (HKDF-SHA256, salt `rekindle-file-cache-names-v1`). Names are stable
+  across restarts and unlinkable without the secret, so before unlock the
+  tree shows only sizes and counts. Below the attachment directory sits
+  one file per cached chunk.
 - **Per-chunk** files (not one big concatenated blob). This lets
   eviction work at chunk granularity and makes resumed downloads
   trivial.
-- **`.meta` sidecar** stores chunk size and the bitmap of locally-held
-  chunks for quick listing without a full directory walk.
 
-The cache is namespaced per community (`<app_data>/file_cache/<community_id>`)
-so that leaving a community cleanly removes all its cached cargo.
+The cache is namespaced per scope (a community's directory is
+`state/{pk}.files/<scope name>`) so that leaving a community cleanly
+removes all its cached cargo. Identity delete removes `state/{pk}.files/`.
+The old `data/file_cache/` layout is removed by a schema/layout reset;
+community avatars still sit in `data/file_cache/community_avatars/<id>`
+until plan step E3.1 moves them.
 
 ## LRU eviction with pinned-skip
 

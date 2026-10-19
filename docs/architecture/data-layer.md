@@ -14,7 +14,7 @@ storage for profile data, presence, and community state.
 | SQLite | Local device | Identity, friends, messages, communities, Signal sessions, DMs, sync state, audit chain, analytics, pending envelopes |
 | Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, Signal keying material, MEKs, audit MAC key, slot keypairs |
 | Veilid DHT | Distributed | Profile, presence, mailbox, friend list, community governance / registry / channels, account record, personal sync record |
-| Filesystem | Local device | Lost Cargo per-community chunk cache (`<data>/file_cache/<community_id>/...`) |
+| Filesystem | Local device | Lost Cargo per-identity chunk cache (`<data>/state/{pk}.files/<scope name>/...`, keyed-hash directory names) |
 
 The `event_journal` field on `AppState` is **in-memory only** — it
 does not touch SQLite or the vault — but it is the fourth piece of
@@ -32,8 +32,8 @@ same folders:
 
 | Field | Location | Holds |
 |---|---|---|
-| `data` | `dirs::data_dir()/com.rekindle.app` | the file cache (`file_cache/`), the node lock (`node.lock`) |
-| `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`; the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`) |
+| `data` | `dirs::data_dir()/com.rekindle.app` | the node lock (`node.lock`); `file_cache/` only for community avatars until plan E3.1 |
+| `state` | `data/state` | every identity's files: `{pk}.vault` (+ `.hdr`), `{pk}.db`, `{pk}.files/` (the file cache); the registry `identities.json`; `layout-version`; Veilid storage (`veilid/`) |
 | `config` | `dirs::config_dir()/com.rekindle.app` | `config.toml` (user layer) |
 | `logs` | `~/Library/Logs/com.rekindle.app` (macOS), `dirs::data_local_dir()/com.rekindle.app/logs` elsewhere | `rekindled.log`, `rekindle.log`, `rekindle-tui.log` (the desktop logs to stdout) |
 
@@ -444,15 +444,19 @@ key-exchange round-trip). Group DMs wrap the MEK per recipient.
 
 ## Lost Cargo File Cache (Architecture §28.9)
 
-Per-community filesystem cache for chunked attachments managed by
+Per-identity filesystem cache for chunked attachments managed by
 `rekindle-files`. Path layout:
 
 ```
-<data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
-                                                                <chunk_index>.meta
+<data>/state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin
 ```
 
-Two-character fanout directory follows the Git object-store pattern.
+Every directory name is a 32-hex BLAKE3-keyed hash (scope name =
+`keyed_name(k_names, "community:" ‖ id)`, also `dm:` and `avatars:`;
+attachment name keyed from `"attachment:" ‖ scope name ‖ ":" ‖ id`;
+`k_names` = `derive_file_cache_name_key(master_secret)`, HKDF-SHA256,
+salt `rekindle-file-cache-names-v1`). Names are stable across restarts
+and unlinkable without the secret. Identity delete removes the tree.
 Eviction runs synchronously after every `cache.insert()` until
 `total_bytes ≤ budget`; pinned attachments are skipped. Pinned-
 attachment IDs come from the merged

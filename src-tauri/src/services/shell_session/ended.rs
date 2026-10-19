@@ -91,6 +91,9 @@ fn clear(state: &AppState) {
     // outbox (C7.6h) and land with no status shown (C7.14).
     state.channel_pending_deliveries.lock().clear();
     state.communities.write().clear();
+    // Each cache is the identity's own keyed tree (plan E3.0a).
+    state.file_caches.write().clear();
+    state.pinned_attachments.write().clear();
     // The friendship coordinator stopped with the scope; the next unlock
     // installs fresh trigger senders.
     state.friendship_handle.clear();

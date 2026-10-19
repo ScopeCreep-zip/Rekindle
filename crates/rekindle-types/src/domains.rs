@@ -133,6 +133,10 @@ labels! {
     /// BLAKE3 `derive_key` context: the identity database's SQLCipher key,
     /// derived from the vault passphrase (plan D1).
     VAULT_APP_DB_KEY = "rekindle-vault-app-db-v1";
+    /// HKDF salt: the key that names an identity's file-cache directories
+    /// (keyed BLAKE3 of each scope and attachment), from the identity
+    /// secret (plan E3.0a).
+    FILE_CACHE_NAMES = "rekindle-file-cache-names-v1";
     // ── PRE_FORMAT: predate the naming rule; bytes kept until removal ──
     /// HKDF info prefix + decimal slot index: SMPL member-slot keypair.
     /// Renamed to the `-v<N>` form in step 22 (governance op DAG).

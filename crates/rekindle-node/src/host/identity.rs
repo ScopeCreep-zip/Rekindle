@@ -1,8 +1,9 @@
 //! The identity lifecycle, one implementation for every host (plan D1).
 //!
-//! An identity is three files under `DataRoot.state` and one registry
-//! entry: the vault `{pk}.vault` (+ `.hdr`), the database `{pk}.db`
-//! (SQLCipher, keyed by the vault-derived `AppDbKey`), and its row in
+//! An identity is three files and one directory under `DataRoot.state`
+//! and one registry entry: the vault `{pk}.vault` (+ `.hdr`), the database
+//! `{pk}.db` (SQLCipher, keyed by the vault-derived `AppDbKey`), its file
+//! cache `{pk}.files/` (keyed-hash names, plan E3.0a), and its row in
 //! `identities.json`. [`create`] and [`unlock`] install the vault and the
 //! database into the host's [`Stores`] and build the one
 //! `SignalSessionManager` of the unlock over the vault-backed stores;
@@ -221,7 +222,9 @@ async fn install(
     })
 }
 
-/// Remove an identity's files: vault, header, database (+ WAL and SHM).
+/// Remove an identity's files: vault, header, database (+ WAL and SHM),
+/// and its file cache. A rotation removes the old key's cache too: its
+/// names are keyed by the old secret, so the new one cannot find them.
 fn remove_files(root: &DataRoot, public_key: &str) -> Result<(), IdentityError> {
     VaultStore::delete_files(&root.identity_vault(public_key))?;
     let db = root.identity_db(public_key);
@@ -234,7 +237,11 @@ fn remove_files(root: &DataRoot, public_key: &str) -> Result<(), IdentityError> 
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(())
+    match std::fs::remove_dir_all(root.identity_files(public_key)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Create an identity and unlock it: vault → database → identity row →

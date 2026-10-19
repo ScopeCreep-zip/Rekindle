@@ -21,8 +21,10 @@
 //!   how many — enables BitTorrent-style swarm fetch where each peer serves
 //!   a disjoint chunk range.
 //! - **Filesystem cache** (not SQLite BLOB): chunks live at
-//!   `<root_dir>/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin`
-//!   with a `.meta` sidecar. Git-style 2-char fanout.
+//!   `state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin`,
+//!   both names keyed hashes under the identity's file-cache name key, so
+//!   the tree names no community, conversation or attachment before unlock
+//!   (plan E3.0a, `cache::names`).
 //! - **Insert-time eviction**: LRU eviction runs synchronously after every
 //!   `cache.insert()` until `total_bytes ≤ budget`; pinned attachments are
 //!   skipped. No background sweeper.
@@ -52,7 +54,7 @@ pub mod verify;
 #[cfg(test)]
 mod test_mock;
 
-pub use cache::{community_cache_root, CacheConfig, ChunkCache};
+pub use cache::{scope_root, CacheConfig, CacheScope, ChunkCache};
 pub use chunker::{merkle_root_of, ChunkedFile, Chunker, CHUNK_SIZE_BYTES, MAX_FILE_SIZE_BYTES};
 pub use deps::{read_bitmap_for, FilesDeps, FilesEvent, InsertChannelMessage, SharedFilesDeps};
 pub use dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};

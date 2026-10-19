@@ -37,6 +37,11 @@ impl PinnedSet {
         self.ids.is_empty()
     }
 
+    /// The pinned ids (the cache names them before an eviction sweep).
+    pub fn iter(&self) -> impl Iterator<Item = &Uuid> {
+        self.ids.iter()
+    }
+
     /// Replace contents with the supplied snapshot — used after every
     /// governance merge so the cache reads from the canonical state.
     pub fn replace<I: IntoIterator<Item = Uuid>>(&mut self, ids: I) {
