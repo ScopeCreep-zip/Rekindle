@@ -317,10 +317,12 @@ fn profile_links_and_game_servers_are_checked() {
         display_name: "  ".into()
     }));
     assert!(rejected(&IpcRequest::ProfileSetAvatar {
-        image: Vec::new()
+        image: Vec::new(),
+        kind: rekindle_types::image_kind::ImageKind::Png,
     }));
     assert!(!rejected(&IpcRequest::ProfileSetAvatar {
-        image: vec![1, 2, 3]
+        image: vec![1, 2, 3],
+        kind: rekindle_types::image_kind::ImageKind::Png,
     }));
     assert!(!rejected(&IpcRequest::LinkOpen {
         url: "https://example.com/a?b=c".into()

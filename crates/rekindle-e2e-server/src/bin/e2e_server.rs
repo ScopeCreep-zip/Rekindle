@@ -210,6 +210,7 @@ async fn host(server: &ServerState, cmd: &str, args: &Value) -> Result<Done<Valu
         "set_avatar" => {
             let request = IpcRequest::ProfileSetAvatar {
                 image: arg_parse(args, "avatarData")?,
+                kind: arg_parse(args, "kind")?,
             };
             host_call::call(state, request).await
         }

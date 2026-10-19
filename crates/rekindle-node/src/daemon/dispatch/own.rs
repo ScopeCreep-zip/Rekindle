@@ -5,6 +5,7 @@
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::game_server::ServerAddress;
+use rekindle_types::image_kind::ImageKind;
 use rekindle_types::presence::SessionStatus;
 
 use rekindle_ipc::protocol::IpcRequest;
@@ -26,7 +27,9 @@ pub(crate) async fn route(
         IpcRequest::ProfileSetNickname { display_name } => {
             handle_nickname(ctx, state, &display_name).await
         }
-        IpcRequest::ProfileSetAvatar { image } => handle_avatar(ctx, state, image).await,
+        IpcRequest::ProfileSetAvatar { image, kind } => {
+            handle_avatar(ctx, state, image, kind).await
+        }
         IpcRequest::AvatarGet { public_key } => handle_avatar_get(ctx, state, &public_key).await,
         IpcRequest::GamePresenceSet {
             game_name,
@@ -144,11 +147,16 @@ async fn handle_nickname(
 }
 
 /// `ProfileSetAvatar`.
-async fn handle_avatar(ctx: &DaemonContext, state: DaemonState, image: Vec<u8>) -> IpcResponse {
+async fn handle_avatar(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    image: Vec<u8>,
+    kind: ImageKind,
+) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    match crate::host::own_profile::set_avatar(ctx, image).await {
+    match crate::host::own_profile::set_avatar(ctx, image, kind).await {
         Ok(()) => IpcResponse::ok(&serde_json::Value::Null),
         Err(e) => IpcResponse::error(400, e),
     }

@@ -233,7 +233,9 @@ fn own(request: &IpcRequest) -> Checked {
                 .map(drop)
                 .map_err(|e| reject("display name", &e))
         }
-        IpcRequest::ProfileSetAvatar { image } => avatar(image),
+        // The kind is a closed set; that the bytes are of it is
+        // `rekindle-image`'s check, on decode.
+        IpcRequest::ProfileSetAvatar { image, kind: _ } => avatar(image),
         IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),

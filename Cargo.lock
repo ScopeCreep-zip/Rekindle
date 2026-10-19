@@ -7666,6 +7666,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-image"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "rekindle-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "rekindle-ipc"
 version = "0.1.0"
 dependencies = [
@@ -7788,7 +7797,6 @@ dependencies = [
  "clap 4.5.60",
  "futures",
  "hex",
- "image",
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "rekindle-audit",
@@ -7802,6 +7810,7 @@ dependencies = [
  "rekindle-governance-runtime",
  "rekindle-idempotency",
  "rekindle-idle",
+ "rekindle-image",
  "rekindle-ipc",
  "rekindle-lifecycle",
  "rekindle-link-preview",

@@ -44,7 +44,9 @@ const ProfileTab: Component = () => {
       if (!file) return;
       const arrayBuffer = await file.arrayBuffer();
       const bytes = Array.from(new Uint8Array(arrayBuffer));
-      await handleSetAvatar(bytes);
+      // The picker's MIME type declares the kind; the Host decodes it as
+      // that kind only.
+      await handleSetAvatar(bytes, file.type);
       // Refresh avatar in store after upload
       if (authState.publicKey) {
         const avatarUrl = await fetchAvatarUrl(authState.publicKey);

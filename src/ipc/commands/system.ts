@@ -12,7 +12,10 @@ export const systemCommands = {
   // `invisible`; offline is set only by logging out.
   setStatus: (status: SessionStatus) => hostInvoke<OwnPresenceView>("set_status", { status }),
   setNickname: (nickname: string) => hostInvoke<string>("set_nickname", { nickname }),
-  setAvatar: (avatarData: number[]) => hostInvoke<unknown>("set_avatar", { avatarData }),
+  /// `kind` is the file picker's MIME type, as the browser reports it; the
+  /// Host decodes the picture as that kind only (`ImageKind`).
+  setAvatar: (avatarData: number[], kind: string) =>
+    hostInvoke<unknown>("set_avatar", { avatarData, kind }),
   getAvatar: (publicKey: string) => hostInvoke<number[] | null>("get_avatar", { publicKey }),
   setStatusMessage: (message: string) =>
     hostInvoke<OwnPresenceView>("set_status_message", { message }),

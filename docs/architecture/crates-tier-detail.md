@@ -12,7 +12,7 @@ or jump to a specific crate via the section anchors.
 Shared type definitions for the Rekindle v2.0 community system. Zero
 logic, zero I/O, zero async — every other Rekindle crate depends on
 this. Modules: `analytics`, `attachment`, `channel`, `cross_device_sync`,
-`error`, `event`, `expression`, `governance`, `id`, `invite`,
+`error`, `event`, `expression`, `governance`, `id`, `image_kind`, `invite`,
 `link_preview`, `permissions`, `presence`, `search`. These types
 **replace** the v1.0 types that used to live in `rekindle-protocol`.
 
@@ -199,6 +199,30 @@ Modules: `activity_by_hour`, `buckets`, `channel_metrics`, `growth`,
 timeseries align all metrics to the same 30-day x-axis.
 
 Dependencies: `rekindle-types`, `rusqlite`.
+
+### rekindle-image
+
+The one image decoder (plan E7.11). Every image Rekindle takes from
+outside (our avatar now; community avatars and banners when E3.1 ports
+them; skin pictures in E7.7.1) goes through
+`decode_limited(bytes, declared: ImageKind, &DecodeLimits) -> Result<Decoded,
+ImageError>`. The caller declares the kind (`rekindle_types::image_kind::
+ImageKind`, PNG, JPEG or GIF: the file picker's MIME type, a file's
+extension, a skin's manifest); the magic bytes must match it
+(`ImageError::KindMismatch`) and only that kind's decoder runs, so a
+crafted file never picks its own decoder (the FORCEDENTRY path). The header
+is read and its sides and pixel count checked before any pixel buffer is
+allocated (`ImageError::TooLarge`); the decode then runs under
+`image::Limits` (`max_image_width`, `max_image_height`, `max_alloc`, which
+`image` passes to the `png` crate as `png::Limits`). `Frames::First` reads a
+GIF's first frame; `Frames::AtMost(n)` reads every frame, counting them and
+summing their buffers against `max_alloc`. Output is re-encoded with no
+metadata carried over: `encode_png`, `encode_gif`, `encode_webp` (lossless),
+and `fit_within` scales a picture down. WebP is never decoded.
+
+Dependencies: `rekindle-types`, `image` (`png`, `jpeg`, `gif`, `webp`
+features: pure-Rust `png`, `zune-jpeg`, `gif`, `image-webp`), `thiserror`.
+`#![forbid(unsafe_code)]`; no Veilid, no Tauri.
 
 ## Tier 4 — Routing & Lifecycle
 

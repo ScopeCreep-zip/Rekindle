@@ -41,6 +41,7 @@ crates/
 ├── rekindle-idempotency/            (2) LRU+TTL command-dedup cache [NEW]
 ├── rekindle-mek-rotation/           (9) cascade election + MEK distribute [NEW]
 ├── rekindle-analytics/              (8) local-only SQL aggregations [NEW]
+├── rekindle-image/                  (5) the one limited image decoder: declared kind, limits, re-encode
 
 # ── Tier 4 — Routing ──────────────────────────────────────────────────
 ├── rekindle-route/                  (6) private-route lifecycle, peer cache
@@ -107,7 +108,7 @@ The tier hierarchy is a contract. The CI gauntlet greps every crate's
 |------|--------|---------|-----------|
 | 1 | `types` | `serde`, `thiserror` | `tokio`, async, `veilid-core`, `tauri`, any crypto lib |
 | 2 | `secrets`, `vault`, `audit` | crypto libs (only here) | `veilid-core`, `tauri`, network I/O |
-| 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only | `veilid-core`, `tauri` |
+| 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics`, `image` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only, `image` (pure-Rust codecs) for `image` only | `veilid-core`, `tauri`, `unsafe` in `image` |
 | 4 | `route`, `lifecycle` | `tokio` | `veilid-core`, `tauri` |
 | 5 | `gossip`, `presence`, `friendship` | `tokio`, `async-trait` (deps traits) | `veilid-core`, `tauri` |
 | 6 | `governance`, `governance-runtime` | `tokio` (runtime only), `async-trait` | `veilid-core`, `tauri`, `rusqlite`, `iota_stronghold` |
@@ -172,7 +173,7 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
               │ Tier 4  route, lifecycle                 │
               │ Tier 3  codec, records, events,          │
               │         idempotency, mek-rotation,       │
-              │         analytics                        │
+              │         analytics, image                 │
               │ Tier 2  secrets, vault, audit            │
               │ Tier 1  types                            │
               └──────────────────────────────────────────┘

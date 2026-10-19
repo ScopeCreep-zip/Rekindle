@@ -1,0 +1,16 @@
+[package]
+name = "rekindle-image"
+version = "0.1.0"
+edition = "2021"
+description = "The one limited image decoder: declared kind checked against the magic bytes, decoded under limits, re-encoded (plan E7.11)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Pure-Rust decoders and encoders only (no C codec): png, zune-jpeg, gif,
+# image-webp (encode only; WebP is never decoded here).
+image = { version = "0.25", default-features = false, features = [ "png", "jpeg", "gif", "webp" ] }
+rekindle-types = { path = "../rekindle-types" }
+thiserror = { workspace = true }

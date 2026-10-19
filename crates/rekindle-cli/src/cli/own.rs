@@ -12,9 +12,10 @@ pub enum ProfileCmd {
         /// The new display name.
         name: String,
     },
-    /// Change our avatar (any PNG, JPEG, GIF or WebP; it becomes a 128 px WebP).
+    /// Change our avatar (a PNG, JPEG or GIF; it becomes a 128 px WebP).
     Avatar {
-        /// The image file.
+        /// The image file; its extension (.png, .jpg, .jpeg, .gif) declares
+        /// its kind.
         file: PathBuf,
     },
 }

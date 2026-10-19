@@ -74,7 +74,7 @@ inventory is [`crates.md`](crates.md); per-crate detail is
 |------|----------|------|
 | 1 | `rekindle-types` | Shared IDs, enums, error taxonomy. Zero deps on other rekindle crates. |
 | 2 | `rekindle-secrets`, `rekindle-vault`, `rekindle-audit` | All key material (`secrets`), SQLCipher persistent store (`vault`), tamper-evident BLAKE3 keyed hash chain (`audit`). The sole crypto / persistence boundary. |
-| 3 | `rekindle-codec`, `rekindle-records`, `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics` | Signed envelope build / verify, DHT record lifecycle, event dedup + journal, command idempotency, MEK cascade rotation, local-only analytics. |
+| 3 | `rekindle-codec`, `rekindle-records`, `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics`, `rekindle-image` | Signed envelope build / verify, DHT record lifecycle, event dedup + journal, command idempotency, MEK cascade rotation, local-only analytics, the one limited image decoder. |
 | 4 | `rekindle-route`, `rekindle-lifecycle` | Private route allocation + cache; 9-state app FSM + `TransportGuard`. |
 | 5 | `rekindle-gossip`, `rekindle-presence`, `rekindle-friendship` | Transport-agnostic gossip primitives; presence orchestrators; inbox-scan coordinator. |
 | 6 | `rekindle-governance`, `rekindle-governance-runtime` | Pure CRDT merge (no I/O, no async); async lifecycle layer for community origin / bootstrap / join / segments. |

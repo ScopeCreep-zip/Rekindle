@@ -61,8 +61,9 @@ rekindle-idempotency = { path = "../rekindle-idempotency" }
 rekindle-idle = { path = "../rekindle-idle" }
 rekindle-game-detect = { path = "../rekindle-game-detect" }
 rekindle-link-preview = { path = "../rekindle-link-preview" }
-# Avatars become a 128 px WebP (plan E1.1), as the desktop's do.
-image = { version = "0.25", default-features = false, features = [ "webp", "png", "jpeg", "gif" ] }
+# Avatars: decoded as their declared kind under limits, made a 128 px
+# WebP (plans E1.1, E7.11).
+rekindle-image = { path = "../rekindle-image" }
 
 # Async runtime
 futures = { workspace = true }

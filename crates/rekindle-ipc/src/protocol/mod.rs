@@ -302,9 +302,14 @@ pub enum IpcRequest {
     /// Change the name we show: the identity's database, the registry and
     /// profile subkey 0.
     ProfileSetNickname { display_name: String },
-    /// Change our avatar: the image is made a 128 px WebP, saved and
+    /// Change our avatar: the image, of the kind its sender declares (the
+    /// file picker's MIME type, the file's extension), is decoded by
+    /// `rekindle-image` as that kind only, made a 128 px WebP, saved and
     /// published to profile subkey 3.
-    ProfileSetAvatar { image: Vec<u8> },
+    ProfileSetAvatar {
+        image: Vec<u8>,
+        kind: rekindle_types::image_kind::ImageKind,
+    },
     /// Our own or a friend's avatar (WebP bytes), from the database.
     AvatarGet { public_key: String },
     /// Set game presence info.

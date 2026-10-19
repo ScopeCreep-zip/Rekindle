@@ -69,9 +69,9 @@ export async function handleSaveSettings(
   }
 }
 
-export async function handleSetAvatar(avatarData: number[]): Promise<void> {
+export async function handleSetAvatar(avatarData: number[], kind: string): Promise<void> {
   try {
-    await commands.setAvatar(avatarData);
+    await commands.setAvatar(avatarData, kind);
   } catch (e) {
     console.error("Failed to set avatar:", e);
   }

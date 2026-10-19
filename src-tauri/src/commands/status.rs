@@ -4,6 +4,7 @@
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::presence::OwnPresenceView;
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::image_kind::ImageKind;
 use rekindle_types::presence::SessionStatus;
 use tauri::State;
 
@@ -35,14 +36,23 @@ pub async fn set_nickname(
     .await
 }
 
-/// Change our avatar (`IpcRequest::ProfileSetAvatar`): the Host makes it a
-/// 128 px WebP.
+/// Change our avatar (`IpcRequest::ProfileSetAvatar`): `kind` is the file
+/// picker's MIME type; the Host decodes the picture as that kind only and
+/// makes it a 128 px WebP.
 #[tauri::command]
 pub async fn set_avatar(
     avatar_data: Vec<u8>,
+    kind: ImageKind,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(&state, IpcRequest::ProfileSetAvatar { image: avatar_data }).await
+    host_call::call(
+        &state,
+        IpcRequest::ProfileSetAvatar {
+            image: avatar_data,
+            kind,
+        },
+    )
+    .await
 }
 
 /// Our own or a friend's avatar as WebP bytes (`IpcRequest::AvatarGet`).

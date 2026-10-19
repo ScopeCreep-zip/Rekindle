@@ -2,6 +2,7 @@
 //! host, which owns them (plan E1.1).
 
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::image_kind::ImageKind;
 use rekindle_types::presence::SessionStatus;
 
 use crate::cli::{AuditCmd, GameCmd, PresenceCmd, PresenceStatus, ProfileCmd};
@@ -54,8 +55,18 @@ pub async fn dispatch_profile(
                     file.display()
                 );
             }
+            // The extension declares the kind; the host decodes it as
+            // that kind only.
+            let kind = file
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(ImageKind::from_extension)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("{} is not a .png, .jpg, .jpeg or .gif file", file.display())
+                })?;
             IpcRequest::ProfileSetAvatar {
                 image: std::fs::read(file)?,
+                kind,
             }
         }
     };

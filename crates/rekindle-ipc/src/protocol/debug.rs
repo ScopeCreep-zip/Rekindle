@@ -311,9 +311,10 @@ impl IpcRequest {
                 .debug_struct("ProfileSetNickname")
                 .field("display_name_len", &display_name.len())
                 .finish(),
-            Self::ProfileSetAvatar { image } => f
+            Self::ProfileSetAvatar { image, kind } => f
                 .debug_struct("ProfileSetAvatar")
                 .field("image_len", &image.len())
+                .field("kind", kind)
                 .finish(),
             Self::AvatarGet { public_key } => f
                 .debug_struct("AvatarGet")
