@@ -95,9 +95,9 @@
     }
   }
 
-  .toast-success { background: color-mix(in srgb, var(--color-xfire-online) 90%, black); }
-  .toast-error { background: color-mix(in srgb, var(--color-xfire-busy) 90%, black); }
-  .toast-info { background: color-mix(in srgb, var(--color-xfire-accent) 90%, black); }
+  .toast-success { background: var(--color-xfire-success-fill); }
+  .toast-error { background: var(--color-xfire-danger); }
+  .toast-info { background: var(--color-xfire-accent); }
 
   /* Confirm dialog */
   .confirm-dialog-body {
@@ -233,7 +233,7 @@
   }
 
   .menu-dropdown-item-danger {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   .menu-dropdown-item-danger:hover {
@@ -288,37 +288,6 @@
   /* Action bar spacer */
   .action-bar-spacer {
     flex: 1;
-  }
-
-  /* ─── Notification overrides ─── */
-  .notification-override-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    border-radius: 4px;
-  }
-
-  .notification-override-label {
-    font-size: 12px;
-    color: var(--color-xfire-text-secondary);
-  }
-
-  .notification-override-select {
-    /* Reuse form-select styling */
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
-
-  .notification-override-select:focus {
-    border-color: var(--color-xfire-accent);
   }
 
   /* ─── Reply preview ─── */
@@ -417,7 +386,7 @@
   }
 
   .reaction-chip-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
     border-color: var(--color-xfire-accent);
   }
 

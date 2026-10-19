@@ -88,7 +88,7 @@
   }
 
   .pin-panel-unpin-btn:hover {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     background: color-mix(in srgb, var(--color-xfire-busy) 15%, transparent);
   }
 

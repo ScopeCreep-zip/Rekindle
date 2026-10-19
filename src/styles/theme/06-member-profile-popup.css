@@ -1,9 +1,5 @@
 @layer components {
 
-  .group-submenu-item:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
-  }
-
   .group-create-inline {
     display: flex;
     align-items: center;
@@ -87,17 +83,6 @@
     font-weight: 600;
   }
 
-  .role-picker-check {
-    font-family: monospace;
-    font-size: 10px;
-    margin-right: 4px;
-    color: var(--color-xfire-text-dim);
-  }
-
-  .role-picker-item-active .role-picker-check {
-    color: var(--color-xfire-accent-text);
-  }
-
   /* Timeout indicator badge on members */
   .timeout-indicator {
     display: inline-block;
@@ -108,7 +93,7 @@
     border-radius: 3px;
     font-size: 9px;
     font-weight: 700;
-    background: color-mix(in srgb, var(--color-xfire-away) 40%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-away) 34%, transparent);
     color: var(--color-xfire-away);
     flex-shrink: 0;
     margin-left: 2px;
@@ -237,7 +222,7 @@
   }
 
   .message-status-failed {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-weight: 700;
   }
 
@@ -307,7 +292,7 @@
   }
 
   .chat-call-btn-active {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   .chat-call-btn-active:hover {
@@ -318,7 +303,7 @@
   .message-retry-btn {
     background: none;
     border: none;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     cursor: pointer;
     font-size: 10px;
     padding: 0 2px;

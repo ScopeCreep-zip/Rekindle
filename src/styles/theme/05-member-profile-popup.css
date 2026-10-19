@@ -34,7 +34,7 @@
   .add-friend-invite-list-header {
     font-size: 10px;
     font-weight: 600;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding-bottom: 2px;
@@ -52,8 +52,8 @@
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--color-xfire-offline) 30%, transparent);
-    color: var(--color-xfire-offline);
+    background: color-mix(in srgb, var(--color-xfire-offline) 12%, transparent);
+    color: var(--color-xfire-offline-text);
   }
 
   .invite-status-badge.responded {
@@ -63,7 +63,7 @@
 
   .invite-time {
     font-size: 10px;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
   }
 
   .invite-url-masked {
@@ -118,7 +118,7 @@
 
   .add-friend-divider {
     text-align: center;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     font-size: 11px;
     padding: 4px 0;
   }
@@ -314,25 +314,6 @@
     font-style: italic;
   }
 
-  /* Logout button */
-  .logout-btn {
-    background: transparent;
-    border: none;
-    color: var(--color-xfire-text-dim);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .logout-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
-    color: var(--color-xfire-busy);
-  }
-
   /* Network status indicator */
   .network-indicator {
     display: flex;
@@ -452,7 +433,7 @@
 
   .community-leave-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-busy) 25%, transparent);
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Member context menu */
@@ -464,10 +445,5 @@
     color: var(--color-xfire-text-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-  }
-
-  /* Friend group management */
-  .group-submenu {
-    padding: 4px 0;
   }
 }

@@ -406,7 +406,7 @@
   .active-call-status-online { color: var(--color-xfire-online); }
   .active-call-status-away   { color: var(--color-xfire-away); }
   .active-call-status-busy   { color: var(--color-xfire-busy); }
-  .active-call-status-offline { color: var(--color-xfire-offline); }
+  .active-call-status-offline { color: var(--color-xfire-offline-text); }
   .active-call-timer {
     margin-left: auto;
     font-variant-numeric: tabular-nums;

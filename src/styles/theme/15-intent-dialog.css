@@ -16,7 +16,7 @@
   }
 
   .intent-dialog-escalation {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   .intent-dialog-meta {

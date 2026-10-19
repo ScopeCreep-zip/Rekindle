@@ -39,7 +39,7 @@
     font-weight: 600;
     cursor: pointer;
     color: var(--color-xfire-text-on-fill);
-    background: var(--color-xfire-online);
+    background: var(--color-xfire-success-fill);
   }
 
   .call-stage-join-btn:hover {
@@ -180,8 +180,11 @@
     border-radius: 3px;
   }
 
+  /* Red on the 60% scrim over a white frame reads 1.53:1; the muted
+   * badge carries its own darker scrim. */
   .call-stage-tile-badge-muted {
-    color: var(--color-xfire-busy);
+    background: color-mix(in srgb, var(--color-xfire-scrim) 83%, transparent);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Footer control bar, centred over the gallery (Element Call pattern). */
@@ -237,7 +240,7 @@
   .call-control-g114 {
     margin-left: 6px;
     font-size: 10px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Architecture §24 — community analytics dashboard. */
@@ -428,14 +431,14 @@
   }
 
   .search-panel-chip-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
     color: var(--color-xfire-accent-text);
     border-color: var(--color-xfire-accent);
   }
 
   .search-panel-error {
     padding: 10px 14px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-size: 12px;
   }
 

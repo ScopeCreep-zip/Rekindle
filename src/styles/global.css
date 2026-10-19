@@ -84,6 +84,11 @@
    * at 3.76:1; the minimal Oklab-lightness step to 4.5:1 is #df3337. */
   --color-xfire-danger: #df3337;
   --color-xfire-danger-fg: #ffffff;
+  /* Error and destructive text on a ground (as accent/accent-text). busy
+   * #ef4444 read 4.43:1 on bg-panel and 3.70 on its own tints; the minimal
+   * Oklab-lightness step that passes every declared ground is #ff5955
+   * (worst 4.52 on the busy tints, 4.69 on a selected buddy row). */
+  --color-xfire-danger-text: #ff5955;
   /* Text on status fills, scrims and toasts. */
   --color-xfire-text-on-fill: #ffffff;
   --color-xfire-text: #e7e7e7;
@@ -96,11 +101,20 @@
   --color-xfire-ingame: #4fc3f7;
   --color-xfire-busy: #ef4444;
   --color-xfire-offline: #7d7d7d;
+  /* The offline grey as text. #7d7d7d read 4.05:1 on bg-panel and 3.51 on
+   * a selected buddy row; the minimal step up is #909090 (4.53 there). The
+   * invite badge's own tint drops from 30% to 12% to stay at 4.5:1. */
+  --color-xfire-offline-text: #909090;
   --color-xfire-link: #5fa8d3;
   --color-xfire-focus-outline: #5fa8d3;
   /* Positive state (invite answered, event live): text and its own tint.
    * #4ade80 read 4.41:1 on its 30% tint over bg-tertiary; minimal step up. */
   --color-xfire-success: #51e385;
+  /* Positive fills carrying white text (success toast, call-stage join).
+   * White on online #53d769 read 1.86:1; darkening the fill is the
+   * smaller Oklab-lightness change (-0.23, against -0.58 for darkening
+   * the text), gamut-mapped by chroma: #00892d, 4.55:1. */
+  --color-xfire-success-fill: #00892d;
   --color-xfire-titlebar-start: #0f1a3a;
   --color-xfire-titlebar-end: #1a2a5e;
   /* Mixed with `transparent` at the alpha each use needs. */
@@ -123,12 +137,16 @@
  * the root (E7.7.2). The status colours are the minimal Oklab-lightness
  * steps (gamut-mapped by chroma) to 3:1 on #ffffff: online #53d769 1.86 →
  * #13ac3e 3.00, away #ffcc00 1.51 → #b59000 3.02, in-game #4fc3f7 2.00 →
- * #1e9fd2 3.02; busy (3.76) and offline (4.12) already pass. */
+ * #1e9fd2 3.02; busy (3.76) and offline (4.12) already pass. The text
+ * roles step down to 4.5:1 on #ffffff: danger-text #ef4444 3.76 → #df3337
+ * 4.50, offline-text #7d7d7d 4.12 → #767676 4.54. */
 @layer xfire-defaults {
   :root[data-skin-base="light"] {
     --color-xfire-online: #13ac3e;
     --color-xfire-away: #b59000;
     --color-xfire-ingame: #1e9fd2;
+    --color-xfire-danger-text: #df3337;
+    --color-xfire-offline-text: #767676;
   }
 }
 
@@ -201,20 +219,18 @@
 /* Architecture §32 a11y — motion duration tokens.
  * Default to 0ms so reduced-motion users get instant transitions; the
  * `no-preference` media query opts motion-tolerant users in. Consumers
- * use `var(--motion-duration-base)` etc. directly in transition/animation
- * declarations; the @keyframes themselves stay defined so motion-tolerant
- * users get the full effect. */
+ * use `var(--motion-duration-fast)` and `var(--motion-duration-base)`
+ * directly in transition/animation declarations; the @keyframes themselves
+ * stay defined so motion-tolerant users get the full effect. */
 :root {
   --motion-duration-fast: 0ms;
   --motion-duration-base: 0ms;
-  --motion-duration-slow: 0ms;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   :root {
     --motion-duration-fast: 120ms;
     --motion-duration-base: 200ms;
-    --motion-duration-slow: 320ms;
   }
 }
 
@@ -224,7 +240,6 @@
  * chrome. Tokens make collisions visible and fix it once. Kobalte
  * primitives portal into these layers via the class on their Content. */
 :root {
-  --z-base: 0;
   --z-elevated: 10;            /* sticky message-input chrome, fixed headers */
   --z-dropdown: 100;           /* status picker, mention popover, expression picker */
   --z-tooltip: 200;

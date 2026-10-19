@@ -14,6 +14,11 @@
 # A video tile's text sits on a 60% scrim over arbitrary frames; its worst
 # case, a white frame, is written `scrim 60% over text-on-fill`.
 #
+# `graphic = true` marks a selector whose colour paints a graphic rather
+# than text (the status-dot shapes): WCAG 1.4.11 asks 3:1 of it, where text
+# needs 4.5:1 (1.4.3). `cargo xtask check-contrast-pairs` measures every
+# declared pair on the default (`@theme`) palette (plan E7.7.0a).
+#
 # `cargo xtask check-declared-grounds` fails on a token-coloured text selector
 # without an entry, on an entry for any other selector, and on a malformed
 # ground.
@@ -50,14 +55,12 @@
 '.outgoing-call-panel-kind' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
 '.notification-body' = { on = ["--color-xfire-bg-panel"] }
 '.reply-preview-body' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
-'.group-submenu-item' = { on = ["--color-xfire-bg-panel"] }
 '.role-picker-item' = { on = ["--color-xfire-bg-panel"] }
 '.avatar-upload-hint' = { on = ["--color-xfire-bg-dark"] }
 '.forward-dialog-hint' = { on = ["--color-xfire-bg"] }
 '.channel-manage-name' = { on = ["--color-xfire-bg-panel"] }
-'.settings-role-name' = { on = ["--color-xfire-bg-panel"] }
-'.event-filter-active' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }
-'.event-rsvp-active' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-secondary"] }
+'.event-filter-active' = { on = ["--color-xfire-accent 13% over --color-xfire-bg-dark"] }
+'.event-rsvp-active' = { on = ["--color-xfire-accent 13% over --color-xfire-bg-secondary"] }
 '.buddy-search-input' = { on = ["--color-xfire-bg-input"] }
 '.member-search-input' = { on = ["--color-xfire-bg-input"] }
 '.pin-panel-header' = { on = ["--color-xfire-bg-dark"] }
@@ -96,11 +99,11 @@
 '.buddy-handshake-error' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
-'.status-dot-online' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
-'.status-dot-away' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
-'.status-dot-busy' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
-'.status-dot-ingame' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
-'.status-dot-offline' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.status-dot-online' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"], graphic = true }
+'.status-dot-away' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"], graphic = true }
+'.status-dot-busy' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"], graphic = true }
+'.status-dot-ingame' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"], graphic = true }
+'.status-dot-offline' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"], graphic = true }
 '.chat-message-body' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.chat-message-timestamp' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-input' = { on = ["--color-xfire-bg-input"] }
@@ -110,16 +113,13 @@
 '.context-menu-item-danger' = { on = ["--color-xfire-bg-panel"] }
 '.login-title' = { on = ["--color-xfire-bg-dark"] }
 '.login-subtitle' = { on = ["--color-xfire-bg-dark"] }
-'.login-toggle-btn' = { on = ["--color-xfire-bg-dark"] }
-'.login-toggle-btn:hover' = { on = ["--color-xfire-bg-dark"] }
 '.account-picker-subtitle' = { on = ["--color-xfire-bg-dark"] }
 '.account-bubble-name' = { on = ["--color-xfire-bg-dark"] }
 '.account-bubble-delete' = { on = ["--color-xfire-bg-dark"] }
-'.account-bubble-delete:hover' = { on = ["--color-xfire-bg-dark"] }
+'.account-bubble-delete:hover' = { on = ["--color-xfire-busy 15% over --color-xfire-bg-dark"] }
 '.account-card-key' = { on = ["--color-xfire-bg-dark"] }
 '.lock-name' = { on = ["--color-xfire-bg-dark"] }
 '.account-create-btn' = { on = ["--color-xfire-bg-dark"] }
-'.delete-confirm-text' = { on = ["--color-xfire-bg-dark"] }
 '.settings-section-title' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.settings-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
 '.settings-category-label' = { on = ["--color-xfire-bg-panel"] }
@@ -215,7 +215,7 @@
 '.add-friend-copy-btn' = { on = ["--color-xfire-accent"] }
 '.add-friend-cancel-btn' = { on = ["--color-xfire-danger 50% over --color-xfire-bg-panel"] }
 '.add-friend-invite-list-header' = { on = ["--color-xfire-bg-panel"] }
-'.invite-status-badge' = { on = ["--color-xfire-offline 30% over --color-xfire-bg-panel"] }
+'.invite-status-badge' = { on = ["--color-xfire-offline 12% over --color-xfire-bg-panel"] }
 '.invite-status-badge.responded' = { on = ["--color-xfire-success 30% over --color-xfire-bg-panel"] }
 '.invite-time' = { on = ["--color-xfire-bg-panel"] }
 '.invite-url-masked' = { on = ["--color-xfire-bg-panel"] }
@@ -234,21 +234,17 @@
 '.notification-mark-read:hover' = { on = ["--color-xfire-bg-panel"] }
 '.notification-mark-all' = { on = ["--color-xfire-bg-panel"] }
 '.notification-empty' = { on = ["--color-xfire-bg-panel"] }
-'.logout-btn' = { on = ["--color-xfire-bg-dark"] }
-'.logout-btn:hover' = { on = ["--color-xfire-bg-dark"] }
 '.network-indicator' = { on = ["--color-xfire-bg-status"] }
 '.network-voice-note' = { on = ["--color-xfire-bg-status"] }
 '.join-stepper-row' = { on = ["--color-xfire-bg-dark"] }
 '.community-leave-btn' = { on = ["--color-xfire-bg-dark"] }
-'.community-leave-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.community-leave-btn:hover' = { on = ["--color-xfire-busy 25% over --color-xfire-bg-dark"] }
 '.context-menu-header' = { on = ["--color-xfire-bg-panel"] }
 '.group-create-input' = { on = ["--color-xfire-bg-input"] }
 '.avatar-upload-btn' = { on = ["--color-xfire-bg-dark"] }
 '.update-status' = { on = ["--color-xfire-bg-dark"] }
 '.role-picker-item-active' = { on = ["--color-xfire-bg-panel"] }
-'.role-picker-check' = { on = ["--color-xfire-bg-panel"] }
-'.role-picker-item-active .role-picker-check' = { on = ["--color-xfire-bg-panel"] }
-'.timeout-indicator' = { on = ["--color-xfire-away 40% over --color-xfire-bg-dark", "--color-xfire-away 40% over --color-xfire-bg-panel"] }
+'.timeout-indicator' = { on = ["--color-xfire-away 34% over --color-xfire-bg-dark", "--color-xfire-away 34% over --color-xfire-bg-panel"] }
 '.settings-role-position' = { on = ["--color-xfire-bg-panel"] }
 '.empty-placeholder' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-unread-badge' = { on = ["--color-xfire-danger"] }
@@ -283,19 +279,19 @@
 '.event-rsvp-btn:hover' = { on = ["--color-xfire-bg-secondary"] }
 '.event-rsvp-count' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-secondary"] }
 '.event-empty' = { on = ["--color-xfire-bg-dark"] }
-'.event-status-scheduled' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-secondary"] }
+'.event-status-scheduled' = { on = ["--color-xfire-accent 13% over --color-xfire-bg-secondary"] }
 '.event-status-active' = { on = ["--color-xfire-success 20% over --color-xfire-bg-secondary"] }
 '.event-status-completed' = { on = ["--color-xfire-text-dim 20% over --color-xfire-bg-secondary"] }
 '.event-status-cancelled' = { on = ["--color-xfire-busy 20% over --color-xfire-bg-secondary"] }
 '.event-filter-btn' = { on = ["--color-xfire-bg-dark"] }
 '.event-filter-btn:hover' = { on = ["--color-xfire-bg-dark"] }
 '.logout-icon-btn' = { on = ["--color-xfire-bg-dark"] }
-'.logout-icon-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.logout-icon-btn:hover' = { on = ["--color-xfire-busy 25% over --color-xfire-bg-dark"] }
 '.channel-voice-join-btn' = { on = ["--color-xfire-online 60% over --color-xfire-bg-dark"] }
 '.timeout-select' = { on = ["--color-xfire-bg-input"] }
 '.community-description-hint' = { on = ["--color-xfire-bg-dark"] }
 '.overwrite-perm-header' = { on = ["--color-xfire-bg-panel"] }
-'.toast-item' = { on = ["--color-xfire-online", "--color-xfire-busy", "--color-xfire-accent"] }
+'.toast-item' = { on = ["--color-xfire-success-fill", "--color-xfire-danger", "--color-xfire-accent"] }
 '.confirm-dialog-body' = { on = ["--color-xfire-bg-panel"] }
 '.buddy-tab' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-tab:hover' = { on = ["--color-xfire-bg-dark"] }
@@ -312,21 +308,19 @@
 '.identity-bar-status-msg:hover' = { on = ["--color-xfire-bg-dark"] }
 '.identity-bar-status-msg-edit' = { on = ["--color-xfire-bg-input"] }
 '.buddy-nickname' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
-'.notification-override-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
-'.notification-override-select' = { on = ["--color-xfire-bg-input"] }
 '.reply-preview-icon' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
 '.reply-preview-sender' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
 '.reply-preview-close' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
 '.reply-preview-close:hover' = { on = ["--color-xfire-accent 10% over --color-xfire-bg-dark"] }
 '.reply-snippet' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.reply-snippet-sender' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
-'.reaction-chip-active .reaction-chip-count' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.reaction-chip-active .reaction-chip-count' = { on = ["--color-xfire-accent 9% over --color-xfire-bg-dark", "--color-xfire-accent 9% over --color-xfire-bg-panel"] }
 '.pin-panel-empty' = { on = ["--color-xfire-bg-dark"] }
 '.pin-panel-item-sender' = { on = ["--color-xfire-bg-dark"] }
 '.pin-panel-item-body' = { on = ["--color-xfire-bg-dark"] }
 '.pin-panel-item-meta' = { on = ["--color-xfire-bg-dark"] }
 '.pin-panel-unpin-btn' = { on = ["--color-xfire-bg-dark"] }
-'.pin-panel-unpin-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.pin-panel-unpin-btn:hover' = { on = ["--color-xfire-busy 15% over --color-xfire-bg-dark"] }
 '.category-header' = { on = ["--color-xfire-bg-dark"] }
 '.category-header:hover' = { on = ["--color-xfire-bg-dark"] }
 '.thread-panel-archive-btn' = { on = ["--color-xfire-bg-dark"] }
@@ -355,9 +349,7 @@
 '.stage-panel-empty' = { on = ["--color-xfire-bg-secondary"] }
 '.thread-list-item-name' = { on = ["--color-xfire-bg-dark"] }
 '.thread-list-item-meta' = { on = ["--color-xfire-bg-dark"] }
-'.thread-list-toggle-archived' = { on = ["--color-xfire-bg-dark"] }
-'.thread-list-toggle-archived:hover' = { on = ["--color-xfire-bg-dark"] }
-'.thread-starter-badge' = { on = ["--color-xfire-accent 12% over --color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-panel"] }
+'.thread-starter-badge' = { on = ["--color-xfire-accent 9% over --color-xfire-bg-dark", "--color-xfire-accent 9% over --color-xfire-bg-panel"] }
 '.message-action-btn' = { on = ["--color-xfire-bg-panel"] }
 '.message-action-btn:hover' = { on = ["--color-xfire-bg-panel"] }
 '.edit-indicator' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
@@ -371,7 +363,7 @@
 '.game-server-icon' = { on = ["--color-xfire-bg-dark"] }
 '.game-server-label' = { on = ["--color-xfire-bg-dark"] }
 '.game-server-remove-btn' = { on = ["--color-xfire-bg-dark"] }
-'.game-server-remove-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.game-server-remove-btn:hover' = { on = ["--color-xfire-busy 15% over --color-xfire-bg-dark"] }
 '.game-server-join-btn' = { on = ["--color-xfire-ingame"] }
 '.channel-slowmode-label' = { on = ["--color-xfire-bg-panel"] }
 '.profile-popup-edit-image-placeholder' = { on = ["--color-xfire-bg-secondary"] }
@@ -381,10 +373,10 @@
 '.call-stage-hero-icon' = { on = ["--color-xfire-bg-dark"] }
 '.call-stage-hero-title' = { on = ["--color-xfire-bg-dark"] }
 '.call-stage-hero-subtitle' = { on = ["--color-xfire-bg-dark"] }
-'.call-stage-join-btn' = { on = ["--color-xfire-online"] }
+'.call-stage-join-btn' = { on = ["--color-xfire-success-fill"] }
 '.call-stage-tile-name' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
 '.call-stage-tile-badge' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
-'.call-stage-tile-badge-muted' = { on = ["--color-xfire-scrim 60% over --color-xfire-text-on-fill"] }
+'.call-stage-tile-badge-muted' = { on = ["--color-xfire-scrim 83% over --color-xfire-text-on-fill"] }
 '.call-control-quality' = { on = ["--color-xfire-bg-dark"] }
 '.call-control-g114' = { on = ["--color-xfire-bg-dark"] }
 '.analytics-card-value' = { on = ["--color-xfire-bg-secondary"] }
@@ -395,10 +387,10 @@
 '.search-panel-close' = { on = ["--color-xfire-bg-primary"] }
 '.search-panel-pinned' = { on = ["--color-xfire-bg-primary"] }
 '.search-panel-chip' = { on = ["--color-xfire-bg-secondary"] }
-'.search-panel-chip-active' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-primary"] }
+'.search-panel-chip-active' = { on = ["--color-xfire-accent 18% over --color-xfire-bg-primary"] }
 '.search-panel-error' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-primary", "--color-xfire-bg-secondary"] }
 '.search-panel-empty' = { on = ["--color-xfire-bg-primary"] }
-'.search-panel-hit-scope-channel' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-primary"] }
+'.search-panel-hit-scope-channel' = { on = ["--color-xfire-accent 18% over --color-xfire-bg-primary"] }
 '.search-panel-hit-scope-thread' = { on = ["--color-xfire-thread-tag 25% over --color-xfire-bg-primary"] }
 '.search-panel-hit-time' = { on = ["--color-xfire-bg-primary"] }
 '.search-panel-hit-body' = { on = ["--color-xfire-bg-primary"] }
@@ -409,10 +401,9 @@
 '.message-link-preview-description' = { on = ["--color-xfire-bg-secondary"] }
 '.mention-popover-row' = { on = ["--color-xfire-bg-secondary"] }
 '.mention-popover-tag-special' = { on = ["--color-xfire-mention-everyone 25% over --color-xfire-bg-secondary"] }
-'.mention-popover-tag-role' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-secondary"] }
+'.mention-popover-tag-role' = { on = ["--color-xfire-accent 13% over --color-xfire-bg-secondary"] }
 '.channel-notif-label' = { on = ["--color-xfire-bg-panel"] }
 '.channel-topic-label' = { on = ["--color-xfire-bg-panel"] }
-'.channel-notification-select' = { on = ["--color-xfire-bg-input"] }
 '.community-unread-badge' = { on = ["--color-xfire-accent"] }
 '.channel-header-badge' = { on = ["--color-xfire-bg-dark"] }
 '.header-btn-active' = { on = ["--color-xfire-bg-dark"] }
@@ -518,7 +509,7 @@
 '.relay-row-badge' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.push-relay-platform' = { on = ["--color-xfire-bg-dark"] }
 '.push-relay-watch-count' = { on = ["--color-xfire-bg-dark"] }
-'.chat-mention' = { on = ["--color-xfire-accent 18% over --color-xfire-bg-dark", "--color-xfire-accent 18% over --color-xfire-bg-panel"] }
+'.chat-mention' = { on = ["--color-xfire-accent 9% over --color-xfire-bg-dark", "--color-xfire-accent 9% over --color-xfire-bg-panel"] }
 '.chat-mention-everyone' = { on = ["--color-xfire-mention-everyone 22% over --color-xfire-bg-dark", "--color-xfire-mention-everyone 22% over --color-xfire-bg-panel"] }
 '.chat-mention-here' = { on = ["--color-xfire-mention-everyone 22% over --color-xfire-bg-dark", "--color-xfire-mention-everyone 22% over --color-xfire-bg-panel"] }
 '.chat-mention-role' = { on = ["--color-xfire-mention-role 20% over --color-xfire-bg-dark", "--color-xfire-mention-role 20% over --color-xfire-bg-panel"] }

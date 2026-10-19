@@ -307,7 +307,7 @@
 
   .profile-popup-timeout {
     font-size: 11px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-style: italic;
   }
 

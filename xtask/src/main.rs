@@ -27,6 +27,8 @@
 //!     cargo xtask check-declared-grounds
 //!                                      Every token-coloured text selector
 //!                                      declares its ground.
+//!     cargo xtask check-contrast-pairs Every declared pair reads 4.5:1
+//!                                      (graphics 3:1) on the defaults.
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -53,6 +55,7 @@ use ignore::WalkBuilder;
 use quote::ToTokens as _;
 
 mod bare_spawn;
+mod contrast_pairs;
 mod css;
 mod declared_grounds;
 mod destructive_controls;
@@ -117,6 +120,8 @@ enum Command {
     CheckDestructiveControls,
     /// Verify every token-coloured text selector declares its ground in the region map.
     CheckDeclaredGrounds,
+    /// Verify every declared text-on-ground pair reads 4.5:1 (graphics 3:1).
+    CheckContrastPairs,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
     /// Verify no type name is declared in two crates.
@@ -209,6 +214,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| declared_grounds::check_declared_grounds(&root)),
                 ),
                 (
+                    "contrast-pairs",
+                    Box::new(|| contrast_pairs::check_contrast_pairs(&root)),
+                ),
+                (
                     "duplicate-bodies",
                     Box::new(|| check_duplicate_bodies(&root)),
                 ),
@@ -256,6 +265,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
             destructive_controls::check_destructive_controls(&root)
         }
         Command::CheckDeclaredGrounds => declared_grounds::check_declared_grounds(&root),
+        Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),

@@ -317,7 +317,7 @@
 
   .onboarding-error {
     padding: 0 20px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-size: 12px;
   }
 

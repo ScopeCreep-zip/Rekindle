@@ -215,7 +215,6 @@
     margin: 4px 0;
   }
 
-  .group-submenu-item,
   .role-picker-item {
     color: var(--color-xfire-text);
     cursor: pointer;
@@ -240,8 +239,7 @@
     transition: background 0.15s;
   }
 
-  .channel-manage-name,
-  .settings-role-name {
+  .channel-manage-name {
     color: var(--color-xfire-text);
     flex: 1;
     font-size: 12px;
@@ -284,7 +282,7 @@
 
   .event-filter-active,
   .event-rsvp-active {
-    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 13%, transparent);
     border-color: var(--color-xfire-accent);
     color: var(--color-xfire-accent-text);
   }

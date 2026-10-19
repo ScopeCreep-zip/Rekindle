@@ -55,7 +55,7 @@
   }
 
   .message-input::placeholder {
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
   }
 
   /* Status bar */
@@ -96,7 +96,7 @@
   }
 
   .context-menu-item-danger {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Login — must claim the flex-1 slot inside `.app-frame` so the
@@ -124,20 +124,6 @@
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     text-align: center;
-  }
-
-  .login-toggle-btn {
-    background: none;
-    border: none;
-    color: var(--color-xfire-link, var(--color-xfire-accent-text));
-    font-size: 11px;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: color 0.15s;
-  }
-
-  .login-toggle-btn:hover {
-    color: var(--color-xfire-text);
   }
 
   /* Account Picker — like `.login-container`, takes the flex-1 slot so
@@ -221,7 +207,7 @@
   }
 
   .account-bubble-delete:hover {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     background: color-mix(in srgb, var(--color-xfire-busy) 15%, transparent);
   }
 
@@ -267,12 +253,6 @@
 
   .account-create-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
-  }
-
-  .delete-confirm-text {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    margin-bottom: 12px;
   }
 
   /* Settings */

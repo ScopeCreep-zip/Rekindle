@@ -254,7 +254,7 @@
 
   .consent-dialog-error {
     margin: 0;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     font-size: 12px;
   }
 
@@ -321,7 +321,7 @@
   .chat-mention {
     padding: 0 4px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
     color: var(--color-xfire-accent-text);
     font-weight: 500;
   }

@@ -96,20 +96,6 @@
     opacity: 0.5;
   }
 
-  .thread-list-toggle-archived {
-    background: transparent;
-    border: none;
-    color: var(--color-xfire-text-dim);
-    font-size: 11px;
-    cursor: pointer;
-    padding: 6px 8px;
-    text-align: left;
-  }
-
-  .thread-list-toggle-archived:hover {
-    color: var(--color-xfire-text);
-  }
-
   /* ─── Thread starter badge ─── */
   .thread-starter-badge {
     display: inline-flex;
@@ -118,7 +104,7 @@
     padding: 2px 8px;
     margin-top: 3px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
     border: none;
     color: var(--color-xfire-accent-text);
     font-size: 11px;
@@ -290,7 +276,7 @@
   }
 
   .game-server-remove-btn:hover {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     background: color-mix(in srgb, var(--color-xfire-busy) 15%, transparent);
   }
 

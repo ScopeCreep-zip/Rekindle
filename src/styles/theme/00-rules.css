@@ -167,7 +167,7 @@
 
   .form-error {
     font-size: 11px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     text-align: center;
   }
 
@@ -294,7 +294,7 @@
 
   .form-tabs-equal .form-tab {
     flex: 1;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     font-size: 12px;
   }
 
@@ -351,7 +351,7 @@
 
 
   .buddy-name-offline {
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
   }
 
   .buddy-game-info {
@@ -373,7 +373,7 @@
 
   .buddy-last-seen {
     font-size: 10px;
-    color: var(--color-xfire-offline);
+    color: var(--color-xfire-offline-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -382,7 +382,7 @@
   /* First-contact handshake failed: the friendship stays pending (C7.25). */
   .buddy-handshake-error {
     font-size: 10px;
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

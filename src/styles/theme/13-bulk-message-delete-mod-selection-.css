@@ -113,7 +113,7 @@
   }
 
   .message-input-mic-btn-active {
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
   }
 
   /* Architecture §32 a11y — opacity fade replaces the original
@@ -200,7 +200,7 @@
     gap: 12px;
     padding: 8px 12px;
     background: color-mix(in srgb, var(--color-xfire-busy) 30%, var(--color-xfire-bg-dark));
-    color: var(--color-xfire-busy);
+    color: var(--color-xfire-danger-text);
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
     font-size: 11px;
   }

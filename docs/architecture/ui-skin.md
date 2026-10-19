@@ -110,6 +110,8 @@ styles read the tokens with `var(--…)` in the ordered parts under
   --color-xfire-accent-text:    #3491d8;   /* the same blue as text */
   --color-xfire-accent-fg:      #ffffff;   /* text on an accent fill */
   --color-xfire-danger:         #df3337;   /* destructive fills */
+  --color-xfire-danger-text:    #ff5955;   /* errors and destructive text */
+  --color-xfire-success-fill:   #00892d;   /* positive fills, white text */
   --color-xfire-link:           #5fa8d3;
   --color-xfire-focus-outline:  #5fa8d3;
 
@@ -119,13 +121,18 @@ styles read the tokens with `var(--…)` in the ordered parts under
   --color-xfire-ingame:         #4fc3f7;
   --color-xfire-busy:           #ef4444;
   --color-xfire-offline:        #7d7d7d;
+  --color-xfire-offline-text:   #909090;   /* the offline grey as text */
 }
 ```
 
 The blue is the Xfire accent. As a fill (`accent`, selected items,
 buttons, badges) it carries white text at 4.54:1; as text on a ground it
 is `accent-text`, which reads ≥ 4.5:1 on every grey (plan E7.7.0; the
-original `#177cc1` failed both). This block is an excerpt: the full set,
+original `#177cc1` failed both). Red and the offline grey split the same
+way: the status colours stay for the dots, and `danger-text` and
+`offline-text` carry them as text (plan E7.7.0a). Every pair the region
+map `src/styles/regions.toml` declares reads ≥ 4.5:1, the status dots
+≥ 3:1 (`cargo xtask check-contrast-pairs`). This block is an excerpt: the full set,
 with the per-base values and the reserved `--sec-*` tokens, is
 `src/styles/global.css`. The grey
 hierarchy (`#0a → #14 → #1a → #1e → #25 → #2a`) gives subtle elevation

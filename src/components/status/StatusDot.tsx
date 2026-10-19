@@ -14,6 +14,20 @@ const statusClassMap: Record<string, string> = {
   invisible: "status-dot status-dot-offline",
 };
 
+/** The shape each status draws. `invisible` ("Appear offline") is the
+ *  offline ring, as its class is, and so is any status this map does not
+ *  know (WCAG 1.4.1: the shape, not the colour, carries the state). */
+type DotShape = "filled" | "ring" | "crescent" | "bar" | "triangle";
+
+const statusShapeMap: Record<string, DotShape> = {
+  online: "filled",
+  away: "crescent",
+  busy: "bar",
+  ingame: "triangle",
+  offline: "ring",
+  invisible: "ring",
+};
+
 const statusLabels: Record<string, string> = {
   online: "Online",
   away: "Away",
@@ -38,27 +52,31 @@ const statusLabels: Record<string, string> = {
 const StatusDot: Component<StatusDotProps> = (props) => {
   const status = (): string => props.status as string;
   const cls = (): string => statusClassMap[status()] ?? "status-dot status-dot-offline";
+  const shape = (): DotShape => statusShapeMap[status()] ?? "ring";
   const label = (): string => `Status: ${statusLabels[status()] ?? "Offline"}`;
 
   return (
     <span class={cls()} role="img" aria-label={label()}>
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-        <Switch fallback={<circle cx="6" cy="6" r="4.5" fill="currentColor" stroke="none" />}>
-          <Match when={status() === "offline"}>
+        <Switch>
+          <Match when={shape() === "filled"}>
+            <circle cx="6" cy="6" r="4.5" fill="currentColor" stroke="none" />
+          </Match>
+          <Match when={shape() === "ring"}>
             {/* Open ring — no fill, distinguishable in grayscale. */}
             <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
           </Match>
-          <Match when={status() === "away"}>
+          <Match when={shape() === "crescent"}>
             {/* Filled circle with a crescent cutout (clock/moon glyph). */}
             <circle cx="6" cy="6" r="4.5" fill="currentColor" />
             <circle cx="8" cy="5" r="3" class="status-dot-cutout" />
           </Match>
-          <Match when={status() === "busy"}>
+          <Match when={shape() === "bar"}>
             {/* Filled circle with a horizontal "do not enter" bar. */}
             <circle cx="6" cy="6" r="4.5" fill="currentColor" />
             <rect x="2.5" y="5.25" width="7" height="1.5" class="status-dot-cutout" rx="0.5" />
           </Match>
-          <Match when={status() === "ingame"}>
+          <Match when={shape() === "triangle"}>
             {/* Filled circle with a play-triangle glyph. */}
             <circle cx="6" cy="6" r="4.5" fill="currentColor" />
             <polygon points="4.5,3.5 4.5,8.5 9,6" class="status-dot-cutout" />
