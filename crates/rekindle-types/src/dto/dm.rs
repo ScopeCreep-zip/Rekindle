@@ -9,6 +9,9 @@ use crate::message::SendState;
 #[serde(rename_all = "camelCase")]
 pub struct DmMessage {
     pub id: i64,
+    /// Its client id (a UUID v7 its author minted), which a reply names;
+    /// `None` for a row stored before E2.3.
+    pub message_id: Option<String>,
     pub sender_id: String,
     pub body: String,
     /// When it was sent, ms since the epoch.

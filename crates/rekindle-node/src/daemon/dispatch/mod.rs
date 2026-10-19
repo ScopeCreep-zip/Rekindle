@@ -105,9 +105,6 @@ pub struct DaemonContext {
     /// The one wrong-passphrase counter per identity (U1.9): unlock,
     /// import, rotate and export count on it.
     pub identity_attempts: std::sync::Arc<rekindle_idempotency::attempts::AttemptLimiter<String>>,
-    /// The unlock's one Signal manager (`host::identity::unlock`). None
-    /// while locked.
-    pub signal: RwLock<Option<Arc<rekindle_crypto::signal::SignalSessionManager>>>,
     /// MEK cache shared with transport operations.
     pub mek_cache: Arc<RwLock<MekCache>>,
     /// Ed25519 signing key, held in memory after unlock. None when locked.

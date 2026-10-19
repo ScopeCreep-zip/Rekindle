@@ -14,7 +14,9 @@ use crate::signaling::event::CallSignalEvent;
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{
+    CallAccept, CallClosed, CallInvite, DirectBody, GroupCallMember, GroupCallOffer,
+};
 
 /// Ring window (architecture §10.10) — 30 s for both caller-side
 /// dialing and receiver-side incoming. `pub` because rekindle-transport
@@ -57,14 +59,14 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
         expires_at_ms,
     );
 
-    let invite = MessagePayload::CallInvite {
+    let invite = DirectBody::CallInvite(CallInvite {
         call_id: call_id.clone(),
         offer_kind: kind.as_u8(),
         initiator_pubkey,
         initiator_x25519_pub: my_pub.to_vec(),
         expires_at_ms,
         video_decode_codecs: deps.local_video_decode_codecs(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(peer_public_key, invite).await {
         deps.registry().remove(&call_id);
         return Err(CallError::Transport(format!(
@@ -152,21 +154,21 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
         let _ = deps
             .send_to_peer(
                 &peer_pubkey,
-                MessagePayload::CallDecline {
+                DirectBody::CallDecline(CallClosed {
                     call_id: call_id.to_string(),
                     reason: format!("voice session failed: {e}"),
-                },
+                }),
             )
             .await;
         return Err(CallError::Session(format!("voice session failed: {e}")));
     }
 
     // Voice up. Fire CallAccept (caller will derive matching key).
-    let accept = MessagePayload::CallAccept {
+    let accept = DirectBody::CallAccept(CallAccept {
         call_id: call_id.to_string(),
         acceptor_x25519_pub: my_pub.to_vec(),
         video_decode_codecs: deps.local_video_decode_codecs(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(&peer_pubkey, accept).await {
         // We're locally in-call but the peer never got the accept.
         // Don't unwind — audio may still reach them via any other
@@ -220,10 +222,10 @@ pub async fn decline_dm_call<D: CallSignalingDeps + ?Sized>(
     let _ = deps
         .send_to_peer(
             &peer_pubkey,
-            MessagePayload::CallDecline {
+            DirectBody::CallDecline(CallClosed {
                 call_id: call_id.to_string(),
                 reason: reason.unwrap_or_default(),
-            },
+            }),
         )
         .await;
     Ok(())
@@ -250,10 +252,10 @@ pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
     if let Err(e) = deps
         .send_to_peer(
             &peer_pubkey,
-            MessagePayload::CallEnd {
+            DirectBody::CallEnd(CallClosed {
                 call_id: call_id.to_string(),
                 reason: reason_str.clone(),
-            },
+            }),
         )
         .await
     {
@@ -343,7 +345,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
                 continue;
             }
         };
-        let offer = MessagePayload::GroupCallOffer {
+        let offer = DirectBody::GroupCallOffer(GroupCallOffer {
             call_id: call_id.clone(),
             offer_kind: kind.as_u8(),
             initiator_pubkey: initiator_pubkey.clone(),
@@ -351,7 +353,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
             participants: all_participants.clone(),
             wrapped_call_key: wrapped,
             expires_at_ms,
-        };
+        });
         if let Err(e) = deps.send_to_peer(invitee, offer).await {
             tracing::info!(peer = %invitee, error = %e, "GroupCallOffer send failed");
         }
@@ -381,10 +383,10 @@ pub async fn accept_group_call<D: CallSignalingDeps + ?Sized>(
     registry.set_status(call_id, GroupCallStatus::Active);
 
     let our_ed_pubkey = deps.owner_key()?;
-    let payload = MessagePayload::GroupCallAccept {
+    let payload = DirectBody::GroupCallAccept(GroupCallMember {
         call_id: call_id.to_string(),
-        acceptor_pubkey: our_ed_pubkey,
-    };
+        pubkey: our_ed_pubkey,
+    });
     if let Err(e) = deps.send_to_peer(&snapshot.initiator_pubkey, payload).await {
         tracing::warn!(call = %call_id, error = %e, "GroupCallAccept send failed");
     }
@@ -411,10 +413,10 @@ pub async fn decline_group_call<D: CallSignalingDeps + ?Sized>(
     let _ = deps
         .send_to_peer(
             &initiator,
-            MessagePayload::GroupCallDecline {
+            DirectBody::GroupCallDecline(CallClosed {
                 call_id: call_id.to_string(),
                 reason: reason.unwrap_or_default(),
-            },
+            }),
         )
         .await;
     Ok(())

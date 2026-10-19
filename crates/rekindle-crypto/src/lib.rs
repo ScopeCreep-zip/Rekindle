@@ -21,4 +21,3 @@ pub use dht_crypto::DhtRecordKey;
 pub use error::CryptoError;
 pub use fingerprint::SafetyNumber;
 pub use identity::Identity;
-pub use signal::SignalSessionManager;

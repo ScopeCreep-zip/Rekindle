@@ -7,21 +7,18 @@
 //! existing call sites in `state.rs` + `message_service.rs` compile
 //! unchanged, and keeps `send_dm_video_frame` — the outbound
 //! orchestration that fragments a frame and dispatches each chunk via
-//! the Signal-encrypted 1:1 transport (`operations::dm::send_to_peer`).
+//! the ratchet-sealed 1:1 transport (`operations::dm::send_to_peer`, §6
+//! 0x0220 until E4.3.8).
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmVideoFragment};
 
 use crate::state::AppState;
 
 // Re-export the moved primitives so existing import paths still work.
 pub use rekindle_dm::{DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
 
-/// Fragment a frame's encoded payload into ≤`FRAGMENT_PAYLOAD_LIMIT`
-/// chunks and send each as a `MessagePayload::DmVideoFragment` via the
-/// existing Signal-encrypted DM transport. Returns the number of
-/// fragments sent.
 /// One outbound DM video frame, decoded from the Tauri command's
 /// request shape. Bundled so the send fn stays under the argument
 /// budget.
@@ -35,6 +32,9 @@ pub struct DmVideoFrameSend {
     pub encoded_payload: Vec<u8>,
 }
 
+/// Fragment a frame's encoded payload into ≤`FRAGMENT_PAYLOAD_LIMIT`
+/// chunks and send each as a `DmVideoFragment` frame over the ratchet.
+/// Returns the number of fragments sent.
 pub async fn send_dm_video_frame(
     state: &Arc<AppState>,
     peer_pubkey: &str,
@@ -63,7 +63,7 @@ pub async fn send_dm_video_frame(
         .map_err(|_| format!("frame too large to fragment ({} chunks)", chunks.len()))?;
 
     for (idx, chunk) in chunks.iter().enumerate() {
-        let payload = MessagePayload::DmVideoFragment {
+        let body = DirectBody::DmVideoFragment(DmVideoFragment {
             stream_id,
             frame_seq,
             fragment_index: u16::try_from(idx).expect("checked above"),
@@ -72,14 +72,14 @@ pub async fn send_dm_video_frame(
             codec: codec.clone(),
             timestamp,
             chunk: chunk.to_vec(),
-        };
+        });
         // Encrypted fail-closed: vulnerable users are protected from a
         // plaintext fallback that an attacker could trigger by
-        // corrupting the Signal session.
+        // corrupting the session.
         rekindle_transport::operations::dm::send_to_peer(
             crate::state_helpers::friend_host(state)?.as_ref(),
             peer_pubkey,
-            &payload,
+            &body,
         )
         .await
         .map_err(|e| e.to_string())?;

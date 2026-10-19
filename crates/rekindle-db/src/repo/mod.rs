@@ -21,6 +21,7 @@ pub mod intent_facts;
 pub mod members;
 pub mod messages;
 pub mod outgoing_invites;
+pub mod peer_rekey;
 pub mod pending_messages;
 pub mod pending_requests;
 pub mod preferences;
@@ -61,25 +62,13 @@ pub(crate) mod fixture {
     /// An in-memory database with the schema and [`OWNER`]'s identity row,
     /// which the per-owner tables reference.
     pub fn conn() -> Connection {
-        with_identity(OWNER)
+        crate::test_support::schema_conn(OWNER)
     }
 
     /// An in-memory database with the schema and an identity row for the
     /// key `owner` (the ratchet tables key their owner by its hex).
     pub fn identity_conn(owner: &[u8; 32]) -> Connection {
-        with_identity(&super::identity_text(owner))
-    }
-
-    fn with_identity(public_key: &str) -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
-        conn.execute_batch(crate::SCHEMA).unwrap();
-        conn.execute(
-            "INSERT INTO identity (public_key, display_name, created_at) VALUES (?1, 'me', 0)",
-            [public_key],
-        )
-        .unwrap();
-        conn
+        crate::test_support::schema_conn(&super::identity_text(owner))
     }
 
     /// A `communities` row for [`OWNER`], which the per-community tables

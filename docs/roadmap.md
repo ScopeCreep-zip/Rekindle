@@ -43,10 +43,10 @@ windows.
 - [~] PreKey rotation and one-time prekey replenishment — one-time keys are
   minted per handout (fresh pair in every per-peer bundle, capped at 200
   unclaimed); signed-prekey rotation waits for the bundle to carry key ids
-- [~] Signal Protocol session establishment: the desktop runs PQXDH; the daemon track
-  establishes no session yet (plan E2.1–E2.3)
-- [x] Message encrypt → envelope → Veilid send
-- [x] Message receive → deserialise → decrypt → SQLite store
+- [x] Signal Protocol session establishment: PQXDH rev. 3 and the spec Double Ratchet on both
+  tracks, over the `'D'` `DmFrame` wire (plan E2.3)
+- [x] Message encrypt → `'D' ‖ DmFrame` → Veilid send
+- [x] Message receive → `DmFrame` → decrypt (ratchet transaction, `unprocessed`) → SQLite store
 - [x] Chat window (MessageList, MessageBubble, MessageInput)
 - [x] Multi-window chat (one window per conversation)
 - [x] Typing indicators (ephemeral, not queued)

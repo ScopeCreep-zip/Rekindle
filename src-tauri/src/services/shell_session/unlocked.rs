@@ -7,7 +7,7 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_node::host::{OwnRecordKeys, UnlockedView};
 
 use crate::services;
-use crate::state::{IdentityState, SharedState, SignalManagerHandle, UserStatus};
+use crate::state::{IdentityState, SharedState, UserStatus};
 use crate::state_helpers;
 
 /// How long a community stage waits for the network before it runs
@@ -28,9 +28,6 @@ pub(super) async fn run(
 ) -> Result<(), String> {
     state.communities.write().clear();
     // What the shell's unported code reads of the unlock (→ E3.1, E4.1).
-    *state.signal_manager.write() = Some(Arc::new(SignalManagerHandle {
-        manager: Arc::clone(&view.signal),
-    }));
     *state.identity_secret.lock() = Some(*view.secret);
     *state.identity.write() = Some(IdentityState {
         public_key: view.public_key.clone(),

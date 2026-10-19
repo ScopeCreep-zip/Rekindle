@@ -175,7 +175,6 @@ src-tauri/
 │   ├── friend_repo.rs                Fire-and-forget friend-row writes
 │   ├── message_repo.rs               Message persistence
 │   ├── message_view.rs               Message read views
-│   ├── signal_stores.rs              Signal store DB-level access
 │   ├── invite_helpers.rs             Outgoing invite tracking
 │   ├── serde_helpers.rs              Custom serde adapters
 │   ├── deep_links.rs                 rekindle:// URI handler
@@ -205,7 +204,7 @@ schemas/                              Cap'n Proto schema definitions
 ├── conversation.capnp                ConversationHeader
 ├── friend.capnp                      FriendRequest, FriendList, FriendEntry
 ├── identity.capnp                    UserProfile, PreKeyBundle
-├── message.capnp                     MessageEnvelope, ChatMessage, Attachment
+├── direct.capnp                      DmFrame, DmContent, SealedContent, 1:1 kind bodies
 ├── presence.capnp                    PresenceUpdate, GameStatus
 └── voice.capnp                       VoiceSignaling
 ```
@@ -253,16 +252,16 @@ to the system tray on close.
 ## Data Flow: Sending a 1:1 Message
 
 ```
-┌──────────┐    invoke()     ┌──────────┐   Signal encrypt   ┌────────────────┐
+┌──────────┐    invoke()     ┌──────────┐  ratchet / seal    ┌────────────────┐
 │ Frontend │ ──────────────→ │  Tauri   │ ────────────────→  │ rekindle-crypto│
-│ MessageInput│ send_message │ commands │                    │   (encrypt)    │
+│ MessageInput│ send_message │ commands │                    │ + rekindle-db  │
 └──────────┘                 └────┬─────┘                    └──────┬─────────┘
                                   │                                  │
                                   │ ciphertext                       │
                                   ▼                                  ▼
-                            ┌──────────────┐  build & sign    ┌─────────────┐
+                            ┌──────────────┐  encode          ┌─────────────┐
                             │ message_     │ ───────────────→ │ rekindle-   │
-                            │ service      │  MessageEnvelope │ codec       │
+                            │ service      │  'D' ‖ DmFrame   │ codec       │
                             └──────┬───────┘                  └──────┬──────┘
                                    │ app_message(route_id, bytes)    │
                                    ▼                                  │

@@ -1,17 +1,17 @@
 //! Phase 14 — `CallSignalingDeps` trait.
 //!
 //! The orchestration port the rekindle-calls signaling logic talks to.
-//! Identity, transport (Signal-encrypted `app_message` sends), voice
+//! Identity, transport (ratchet-sealed `DmFrame` sends), voice
 //! session start/stop, persistence (missed-call log), and frontend
 //! emit are all behind this trait — the adapter in `src-tauri/services/
 //! calls_adapter.rs` (lands in 14.h) implements it against
-//! `AppState` + `tauri::AppHandle` + `message_service::send_to_peer_raw`
-//! + `services::voice::*`.
+//! `AppState` + `tauri::AppHandle` + the transport's
+//! `operations::dm::send_to_peer` + `services::voice::*`.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use crate::error::CallError;
 use crate::signaling::event::CallSignalEvent;
@@ -62,16 +62,11 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
 
     // --- Transport ---
 
-    /// Send a signed-but-not-encrypted `app_message` to a peer
-    /// (`send_to_peer_raw` in the existing adapter). Used for all
-    /// fire-and-forget call signaling envelopes (CallInvite, CallAccept,
-    /// CallDecline, CallRinging, CallEnd, CallMediaState, CallReaction,
-    /// and all GroupCall* variants).
-    async fn send_to_peer(
-        &self,
-        peer_pubkey_hex: &str,
-        payload: MessagePayload,
-    ) -> Result<(), CallError>;
+    /// Send one call kind to a peer as a ratchet-sealed `DmFrame` (plan
+    /// E2.3, §6 0x0200–0x0214). Used for all fire-and-forget call
+    /// signaling (CallInvite, CallAccept, CallDecline, CallRinging,
+    /// CallEnd, CallMediaState, CallReaction, and every GroupCall* kind).
+    async fn send_to_peer(&self, peer_pubkey_hex: &str, body: DirectBody) -> Result<(), CallError>;
 
     // --- Voice integration ---
 

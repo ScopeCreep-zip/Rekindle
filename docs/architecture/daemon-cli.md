@@ -10,7 +10,7 @@ Rekindle ships **two ways** to run the protocol stack:
    `ratatui` TUI.
 
 Both speak the same Veilid protocol, the same SMPL governance, the same
-Signal/MEK encryption. They differ only in how the local process is
+Double Ratchet/MEK encryption. They differ only in how the local process is
 structured. This document covers the daemon track. For the desktop
 shell, see [`tauri-backend.md`](tauri-backend.md).
 
@@ -80,7 +80,7 @@ crates/rekindle-transport/src/
 │                      friend, voice, mek, presence, roles,
 │                      moderation, invites, identity)
 ├── payload/           wire payload helpers, Cap'n Proto adapters
-├── crypto/            pseudonym derivation, prekeys, Signal session
+├── crypto/            pseudonym derivation, prekeys
 ├── community/         per-community state types
 ├── session/           Session, SessionIdentity, CommunityMembership
 ├── gossip.rs          GossipMesh, OnlineMember, DedupCache, LamportClock
@@ -95,7 +95,7 @@ crates/rekindle-transport/src/
 Public re-exports include `TransportNode` (its routes via
 `TransportNode::own_routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `Session`, `QueryEngine`,
-`SignalSessionManager`, plus the per-feature operation modules.
+plus the per-feature operation modules.
 
 ## `rekindle-ipc` — the bus
 
@@ -149,7 +149,6 @@ crates/rekindle-node/src/
 │   ├── mod.rs           DaemonState state machine
 │   ├── handler.rs       top-level request dispatch
 │   ├── community_rpc.rs / governance_rpc.rs
-│   ├── friend_inbox.rs  inbound friend-request queue
 │   └── dispatch/        per-operation dispatch tables
 └── state/               session, config, paths
 ```
@@ -314,8 +313,7 @@ matching client.
 
 `MAX_FILTERS_PER_CONNECTION` caps subscription cost per client.
 
-Both the bus's event delivery and the daemon's tier-3 inbox consumer
-follow the event source with `rekindle_ipc::event_source::follow`: unlock
+The bus's event delivery follows the event source with `rekindle_ipc::event_source::follow`: unlock
 publishes the `SubscriptionManager` broadcast, lock clears it, and each
 follower re-subscribes after every unlock.
 

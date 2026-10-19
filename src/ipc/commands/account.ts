@@ -9,6 +9,7 @@ import type {
   FriendInviteCreated,
   OutgoingInvite,
   PendingRequest,
+  SafetyNumberView,
 } from "./dto";
 
 export const accountCommands = {
@@ -29,8 +30,8 @@ export const accountCommands = {
 
   // Direct messages and friends: Host calls (plan E2.1). The windows learn
   // their effects from the `Friend`/`ChannelMessage` events.
-  sendMessage: (to: string, body: string) =>
-    hostInvoke<DmMessage>("send_message", { to, body }),
+  sendMessage: (to: string, body: string, replyTo: string | null = null) =>
+    hostInvoke<DmMessage>("send_message", { to, body, replyTo }),
   sendTyping: (peerId: string, typing: boolean) =>
     hostInvoke<unknown>("send_typing", { peerId, typing }),
   getMessageHistory: (peerId: string, limit: number, before?: number) =>
@@ -74,4 +75,14 @@ export const accountCommands = {
    *  compares safety numbers before accepting. */
   resetSignalSession: (peerPublicKey: string) =>
     hostInvoke<unknown>("reset_signal_session", { peerPublicKey }),
+
+  // Safety numbers and verification (plan E2.3).
+  getSafetyNumber: (publicKey: string) =>
+    hostInvoke<SafetyNumberView>("get_safety_number", { publicKey }),
+  /** TrustChanging: the review states the safety number the user compared. */
+  markIdentityVerified: (publicKey: string) =>
+    hostInvoke<unknown>("mark_identity_verified", { publicKey }),
+  /** TrustChanging: the review states the safety number. */
+  clearIdentityVerification: (publicKey: string) =>
+    hostInvoke<unknown>("clear_identity_verification", { publicKey }),
 };

@@ -1,6 +1,7 @@
 //! `PreKey` bundle wire type for Signal Protocol session establishment.
 //!
-//! Bundles are built by [`crate::signal::session::SignalSessionManager`]:
+//! Bundles are built over the identity's `signal_prekeys` by
+//! `rekindle_db::prekeys` (plan E2.3):
 //! - `current_bundle` — the long-lived signed prekey and PQ last-resort
 //!   key, with no one-time keys; published to DHT profile subkey 5 and
 //!   carried in invites.
@@ -16,6 +17,18 @@ use serde::{Deserialize, Serialize};
 use crate::error::CryptoError;
 
 /// A bundle of public keys published to DHT for session establishment.
+/// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
+/// Singleton — one per identity at a time; rotates rarely.
+pub const PQ_LR_ID: u32 = 0;
+
+/// Identifier of the signed prekey. Fixed until the bundle carries the
+/// signed prekey's id (PQXDH §3.2), which signed-prekey rotation needs
+/// (E2.4).
+pub const SPK_ID: u32 = 1;
+
+/// Unclaimed one-time keys kept per kind; beyond this the oldest go.
+pub const MAX_UNCLAIMED_ONE_TIME: usize = 200;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreKeyBundle {
     // ── Classical X3DH layer ────────────────────────────────────

@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, Typing};
 use rekindle_events::typing::{Input, Lapse};
 use rekindle_types::subscription_events::TypingContext;
 
@@ -29,7 +29,7 @@ fn context(peer: &str) -> TypingContext {
 /// Send our typing state to `to` (dropped, never queued, when there is no
 /// route: `send_to_peer` treats typing as ephemeral).
 async fn send(host: &dyn FriendHost, to: &str, typing: bool) -> Result<(), FriendError> {
-    send_to_peer(host, to, &MessagePayload::TypingIndicator { typing }).await
+    send_to_peer(host, to, &DirectBody::Typing(Typing { typing })).await
 }
 
 /// The window's draft to `to` changed: `typing` is whether it holds text.

@@ -1,4 +1,5 @@
-//! The friend, DM and session-reset requests' `Debug` (plan E2.1).
+//! The friend, DM, session-reset and verification requests' `Debug`
+//! (plans E2.1, E2.3).
 
 use super::super::IpcRequest;
 
@@ -43,6 +44,11 @@ impl IpcRequest {
                 .debug_struct(self.name())
                 .field("public_key", public_key)
                 .finish(),
+            Self::IdentitySafetyNumber { peer }
+            | Self::IdentityMarkVerified { peer }
+            | Self::IdentityClearVerification { peer } => {
+                f.debug_struct(self.name()).field("peer", peer).finish()
+            }
             // The link carries our peer's route and records: its length only.
             Self::FriendAddFromInvite { invite } => f
                 .debug_struct("FriendAddFromInvite")

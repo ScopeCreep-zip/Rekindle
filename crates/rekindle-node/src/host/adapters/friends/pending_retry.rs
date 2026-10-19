@@ -4,9 +4,8 @@
 //! through `operations::dm`.
 
 use async_trait::async_trait;
-use rekindle_codec::message::envelope::MessageEnvelope;
 use rekindle_sync::{PendingMessageRow, PendingRetryOutcome, SyncDeps};
-use rekindle_transport::operations::dm::{self, Resend};
+use rekindle_transport::operations::dm::{self, Queued, Resend};
 use tokio_util::sync::CancellationToken;
 
 use super::HostFriends;
@@ -79,19 +78,19 @@ impl SyncDeps for PendingRetry {
     }
 
     async fn attempt_pending_retry(&self, row: &PendingMessageRow) -> PendingRetryOutcome {
-        let Ok(envelope) = serde_json::from_str::<MessageEnvelope>(&row.body) else {
+        let Ok(queued) = serde_json::from_str::<Queued>(&row.body) else {
             return PendingRetryOutcome::Unrecognized;
         };
         // The session ending interrupts the attempt; the row stays for the
         // next session.
         match self
             .stop
-            .run_until_cancelled(dm::resend(&self.host, &row.recipient_key, &envelope))
+            .run_until_cancelled(dm::resend(&self.host, &row.recipient_key, &queued))
             .await
         {
             Some(Resend::Delivered) => PendingRetryOutcome::Delivered,
             Some(Resend::Failed) => PendingRetryOutcome::Failed,
-            Some(Resend::Unsignable) => PendingRetryOutcome::Unrecognized,
+            Some(Resend::Unsendable) => PendingRetryOutcome::Unrecognized,
             None => PendingRetryOutcome::Interrupted,
         }
     }

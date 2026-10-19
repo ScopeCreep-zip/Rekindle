@@ -505,6 +505,7 @@ mod tests {
                 conversation_id: REC.into(),
                 server_message_id: None,
                 reply_to_id: None,
+                is_own: false,
             },
         ));
         assert!(a.includes(&labels::conversation_label(REC).unwrap()));

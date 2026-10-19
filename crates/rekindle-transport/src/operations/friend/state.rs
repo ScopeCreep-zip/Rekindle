@@ -183,6 +183,21 @@ pub(crate) fn fire_state(host: &dyn FriendHost, public_key: &str, friendship: Fr
     });
 }
 
+/// End every ratchet session with `peer` (an unfriend, a block, a
+/// removal): a later message to them opens a new one. Logged on failure.
+pub(crate) async fn forget_session(host: &dyn FriendHost, peer: &str) {
+    let (Ok(db), Ok(local), Ok(theirs)) = (
+        host.db(),
+        host.local_party(),
+        rekindle_types::key_format::public_key_hex(peer),
+    ) else {
+        return;
+    };
+    if let Err(e) = rekindle_db::ratchet::forget(&db, &local.owner(), &theirs.to_bytes()).await {
+        tracing::error!(peer = %peer, error = %e, "session with former friend not forgotten");
+    }
+}
+
 /// Queue the deletion of a friend's row and their pending request.
 pub(crate) fn fire_forget(host: &dyn FriendHost, public_key: &str) {
     let Ok(owner) = owner(host) else {

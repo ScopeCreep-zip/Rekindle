@@ -253,36 +253,16 @@ impl PeerRegistry {
     }
 }
 
-/// Strand Relay sender state beside the route cache (plan E2.1): each
-/// relay route's circuit breaker (Wave 7 P7.3) and the status-probe
-/// cooldown per target (§13.5).
+/// Strand Relay sender state beside the route cache (plan E2.1): the
+/// status-probe cooldown per target (§13.5). The relay routes' circuit
+/// breakers (Wave 7 P7.3, `rekindle_route::relay`) join it at E5.5 with
+/// the relay send.
 #[derive(Default)]
 pub struct RelayState {
-    health: parking_lot::Mutex<
-        HashMap<rekindle_route::relay::RelayKey, rekindle_route::relay::RelayHealth>,
-    >,
     probe_cooldown: parking_lot::Mutex<HashMap<String, u64>>,
 }
 
 impl RelayState {
-    /// A relay route's breaker, if it has one.
-    pub fn health(
-        &self,
-        key: &rekindle_route::relay::RelayKey,
-    ) -> Option<rekindle_route::relay::RelayHealth> {
-        rekindle_route::relay::lookup(&self.health.lock(), key)
-    }
-
-    /// A send through the relay route `key` went out.
-    pub fn record_success(&self, key: rekindle_route::relay::RelayKey) {
-        rekindle_route::relay::record_success(&mut self.health.lock(), key);
-    }
-
-    /// A send through the relay route `key` failed.
-    pub fn record_failure(&self, key: rekindle_route::relay::RelayKey) {
-        rekindle_route::relay::record_failure(&mut self.health.lock(), key);
-    }
-
     /// Whether a probe for `target` may go now (none in the last
     /// `cooldown_secs`); taking the slot when it may. Entries older than
     /// four cooldowns are dropped so the map stays small.

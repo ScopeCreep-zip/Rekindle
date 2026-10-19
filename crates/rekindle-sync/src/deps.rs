@@ -15,8 +15,10 @@ use async_trait::async_trait;
 pub struct PendingMessageRow {
     pub id: i64,
     pub recipient_key: String,
-    /// JSON-encoded DM `MessageEnvelope`. Channel writes are not queued
-    /// here: the record pool holds and re-pushes them (plan C7.13).
+    /// A queued 1:1 frame, JSON (`rekindle_transport::operations::dm::Queued`:
+    /// a ratchet frame's datagram, or a sealed kind's body and nonce, plan
+    /// E2.3). Channel writes are not queued here: the record pool holds and
+    /// re-pushes them (plan C7.13).
     pub body: String,
     pub retry_count: i64,
 }
@@ -57,11 +59,8 @@ pub trait SyncDeps: Send + Sync + 'static {
     /// most recent attempt.
     async fn increment_pending_retry(&self, id: i64);
 
-    /// Attempt to deliver one pending row. The adapter parses the
-    /// body, dispatches via the appropriate transport (DM via
-    /// message_service::send_to_peer_call, channel via a record-pool
-    /// write), and reports the outcome back. Keeps the JSON parse +
-    /// transport-specific orchestration in src-tauri (Invariant 7)
-    /// while the crate owns the retry loop + eligibility decision.
+    /// Attempt to deliver one pending row. The adapter parses the body,
+    /// sends it again (`operations::dm::resend`), and reports the outcome
+    /// back; the crate owns the retry loop and the eligibility decision.
     async fn attempt_pending_retry(&self, row: &PendingMessageRow) -> PendingRetryOutcome;
 }

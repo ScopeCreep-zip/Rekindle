@@ -31,23 +31,36 @@ macro_rules! labels {
 }
 
 labels! {
-    // ── Identity, DHT records, safety numbers ────────────────────────
+    // ── Identity and DHT records ────────────────────────────────
     /// HKDF info: account-record encryption key from the identity secret.
     ACCOUNT_KEY = "rekindle-account-v1";
     /// HKDF info prefix: per-pair conversation-record key.
     CONVERSATION_KEY = "rekindle-conversation-v1";
-    /// BLAKE3 suffix: safety-number fingerprint of two identity keys.
-    SAFETY_NUMBER = "rekindle-safety-v1";
-    /// HKDF info: PQXDH shared secret → initial root key.
-    PQXDH_ROOT = "rekindle-pqxdh-root-v1";
     /// HKDF info: the PQXDH key material (X25519, SHA-256, ML-KEM-768, with
     /// EncodeEC/EncodeKEM of the bound keys) → `SKec ‖ SKscka` (plan E2.2).
     PQXDH_SK = "rekindle-pqxdh-sk-v1";
 
-    // ── Signed 1:1 envelopes ─────────────────────────────────────────
-    /// Ed25519 signature prefix: desktop `MessageEnvelope`, bound to the
-    /// recipient's identity key.
-    MSG_ENVELOPE_V2 = "rekindle-msg-envelope-v2";
+    // ── 1:1 frames (plan E2.3) ───────────────────────────────────────
+    /// Ed25519 signature prefix: a pre-session frame, over
+    /// `recipient ‖ typeId ‖ enc ‖ ct`.
+    DM_PRESESSION_SIG = "rekindle-dm-presession-sig-v1";
+    /// HPKE info: a sealed `FriendRequest` (0x0002).
+    DM_FRIEND_REQUEST_HPKE = "rekindle-dm-friend-request-hpke-v1";
+    /// HPKE info: a sealed `FriendReject` (0x0102).
+    DM_FRIEND_REJECT_HPKE = "rekindle-dm-friend-reject-hpke-v1";
+    /// HPKE info: a sealed `SessionResetRequest` (0x0007).
+    DM_SESSION_RESET_REQUEST_HPKE = "rekindle-dm-session-reset-request-hpke-v1";
+    /// HPKE info: a sealed `SessionResetDecline` (0x0009).
+    DM_SESSION_RESET_DECLINE_HPKE = "rekindle-dm-session-reset-decline-hpke-v1";
+    /// HPKE info: a sealed `RegisterPushRelay` (0x0310).
+    DM_PUSH_REGISTER_HPKE = "rekindle-dm-push-register-hpke-v1";
+    /// HPKE info: a sealed `UnregisterPushRelay` (0x0311).
+    DM_PUSH_UNREGISTER_HPKE = "rekindle-dm-push-unregister-hpke-v1";
+    /// HPKE info: a sealed `WakeNotify` (0x0312).
+    DM_PUSH_WAKE_HPKE = "rekindle-dm-push-wake-hpke-v1";
+    /// Ed25519 signature prefix: an identity rotation, signed by the old and
+    /// the new identity over `old ‖ new ‖ recipient` (0x0108).
+    IDENTITY_ROTATED = "rekindle-identity-rotated-v1";
 
     // ── Communities ──────────────────────────────────────────────────
     /// HKDF salt: per-community pseudonym from the identity secret.
@@ -147,31 +160,11 @@ labels! {
     /// HPKE info: MEK transfer — Rekindle-owned, never Veilid's
     /// `veilid-hpke/1`. Renamed by E3.5's signed v2 wrap.
     HPKE_MEK_INFO = "rekindle-mek/1";
-    /// 1:1 ratchet KDF labels, shared by the desktop and daemon tracks —
-    /// deleted with the non-spec ratchet in step 27.
-    RATCHET_PQXDH_EXPAND = "ReKindlePQXDH";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_ROOT = "ReKindleRootKey";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_CHAIN_RATCHET = "ReKindleChainRatchet";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_MSG_KEY = "ReKindleMsgKey";
-    /// See `RATCHET_PQXDH_EXPAND`.
-    RATCHET_CHAIN_KEY = "ReKindleChainKey";
 }
 
 /// Labels exempt from the `rekindle-<purpose>-v<N>` rule, each scheduled
 /// for removal or renaming (see the constant's doc).
-pub const PRE_FORMAT: &[&str] = &[
-    SLOT_KEY_PREFIX,
-    PERSONAL_SYNC_RECORD_INFO,
-    HPKE_MEK_INFO,
-    RATCHET_PQXDH_EXPAND,
-    RATCHET_ROOT,
-    RATCHET_CHAIN_RATCHET,
-    RATCHET_MSG_KEY,
-    RATCHET_CHAIN_KEY,
-];
+pub const PRE_FORMAT: &[&str] = &[SLOT_KEY_PREFIX, PERSONAL_SYNC_RECORD_INFO, HPKE_MEK_INFO];
 
 /// `rekindle-<purpose>-v<N>`: lowercase ASCII words joined by `-`, ending
 /// in a version.

@@ -85,13 +85,13 @@ type_ids! {
     DmDelete = 0x0111 => Ratchet,
     /// React to a message.
     DmReaction = 0x0112 => Ratchet,
-    /// Allocated E2.3; body E2.6.
+    /// A group-DM invite (the SMPL group path's fields until E2.6).
     GroupDmInvite = 0x0120 => Ratchet,
     /// Allocated E2.3; body E2.6.
     GroupDmAccept = 0x0121 => Ratchet,
     /// Allocated E2.3; body E2.6.
     GroupDmDecline = 0x0122 => Ratchet,
-    /// Allocated E2.3; body E2.6.
+    /// A member left a group DM (the SMPL group path's fields until E2.6).
     GroupDmLeave = 0x0123 => Ratchet,
     /// A friend offers a relay route.
     RelayOffer = 0x0130 => Ratchet,

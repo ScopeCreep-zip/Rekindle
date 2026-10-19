@@ -31,6 +31,13 @@ rekindle-asql = { path = "../rekindle-asql" }
 # whole process one libsqlite3, and SQLCipher wins (plan G5).
 rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
 
+# The ratchet fixtures (a party with its own database, a seeded
+# generator), for the crates that test frames over it (plan E2.3).
+rand = { workspace = true, optional = true }
+
+[features]
+test-support = [ "dep:rand" ]
+
 [dev-dependencies]
 rand = { workspace = true }
 tempfile = "3"

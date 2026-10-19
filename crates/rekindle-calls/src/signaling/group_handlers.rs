@@ -14,7 +14,9 @@
 
 use std::collections::HashSet;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{
+    CallClosed, DirectBody, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft,
+};
 use x25519_dalek::StaticSecret;
 
 use crate::group::unwrap_call_key;
@@ -23,18 +25,18 @@ use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
 use crate::state::CallKind;
 
-/// Dispatcher for group-call MessagePayload variants. After W13.13,
+/// Dispatcher for the group-call kinds (§6 0x0210–0x0214). After W13.13,
 /// ALL group call signaling travels via app_message (was app_call in
-/// W12.9). Non-group payloads log + return (callers shouldn't dispatch
+/// W12.9). Non-group bodies log + return (callers shouldn't dispatch
 /// them here, but we no longer `unreachable!()` since this is a public
 /// trait-using function and panicking on bad input is hostile).
 pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
-    payload: MessagePayload,
+    body: DirectBody,
 ) {
-    match payload {
-        MessagePayload::GroupCallOffer {
+    match body {
+        DirectBody::GroupCallOffer(GroupCallOffer {
             call_id,
             offer_kind,
             initiator_pubkey,
@@ -42,7 +44,7 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             participants,
             wrapped_call_key,
             expires_at_ms,
-        } => {
+        }) => {
             handle_incoming_group_invite(
                 deps,
                 GroupInvite {
@@ -57,19 +59,16 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                 },
             );
         }
-        MessagePayload::GroupCallAccept {
-            call_id,
-            acceptor_pubkey,
-        } => {
-            handle_group_accept_received(deps, sender_hex, &call_id, &acceptor_pubkey);
+        DirectBody::GroupCallAccept(GroupCallMember { call_id, pubkey }) => {
+            handle_group_accept_received(deps, sender_hex, &call_id, &pubkey);
         }
-        MessagePayload::GroupCallDecline { call_id, reason } => {
+        DirectBody::GroupCallDecline(CallClosed { call_id, reason }) => {
             handle_group_decline_received(deps, sender_hex, &call_id, reason);
         }
-        MessagePayload::GroupCallParticipantJoined {
+        DirectBody::GroupCallParticipantJoined(GroupCallMember {
             call_id,
-            participant_pubkey,
-        } => {
+            pubkey: participant_pubkey,
+        }) => {
             // Defend against a malicious peer announcing arbitrary joins:
             // only forward if the announced participant is in the call's
             // known invite list.
@@ -82,11 +81,11 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                 });
             }
         }
-        MessagePayload::GroupCallParticipantLeft {
+        DirectBody::GroupCallParticipantLeft(GroupCallParticipantLeft {
             call_id,
             participant_pubkey,
             reason,
-        } => {
+        }) => {
             let snapshot = deps.group_registry().snapshot(&call_id);
             let known = snapshot.is_some_and(|s| s.participants.contains(&participant_pubkey));
             if known {
@@ -98,7 +97,7 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             }
         }
         other => {
-            tracing::warn!(payload = ?other, "handle_group_call_payload: non-group payload ignored");
+            tracing::warn!(kind = ?other.type_id(), "handle_group_call_payload: non-group body ignored");
         }
     }
 }

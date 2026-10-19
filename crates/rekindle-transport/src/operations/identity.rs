@@ -2,15 +2,16 @@
 //! are created by the unlock's own-records stage (`rekindle_node::host`).
 //!
 //! Orchestration logic that composes:
-//! - `operations::friend` for the rotation notice to our friends
+//! - `operations::friend::identity_rotation` for the notice to our friends
 
 use tracing::info;
 
 use crate::error::Result;
 use crate::operations::friend::{self, FriendHost};
 
-/// Mint a new identity keypair and tell our friends, under the old key
-/// (still the unlocked one), where our profile is. The Host stores the new
+/// Mint a new identity keypair and tell our friends, over the old
+/// sessions (the old key is still the unlocked one), the new identity
+/// signed by both (`IdentityRotated`, plan E2.3). The Host stores the new
 /// identity afterwards (`rekindle_node::host::identity::rotate`).
 ///
 /// # Errors
@@ -23,13 +24,10 @@ pub async fn rotate_identity(host: &dyn FriendHost) -> Result<RotatedIdentity> {
     let new_public_key_hex = hex::encode(new_signing_key.verifying_key().as_bytes());
     info!(new_public_key = %new_public_key_hex, "new keypair generated");
 
-    let profile_key = host
-        .session()
-        .read()
-        .as_ref()
-        .map(|s| s.identity.profile_dht_key.clone())
-        .ok_or(crate::error::TransportError::NotStarted)?;
-    let notified = friend::notify_profile_key_rotated(host, &profile_key).await;
+    // Every friend learns the new identity, signed by both, over the old
+    // session, before the identity moves (plan E2.3).
+    let new_identity = rekindle_crypto::Identity::from_secret_bytes(&secret);
+    let notified = friend::identity_rotation::notify_identity_rotated(host, &new_identity).await;
     info!(notified, "rotation notifications sent");
 
     Ok(RotatedIdentity {

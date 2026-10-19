@@ -12,6 +12,9 @@ import { handleRemoveFriend } from "../actions/buddy.actions";
 import { handleStartDmCall } from "../actions/calls.actions";
 import { ICON_SEND, ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_VIDEO } from "../icons";
 import { startEventStream } from "../ipc/channels";
+import SafetyNumberPanel from "../components/profile/SafetyNumberPanel";
+import VerifiedBadge from "../components/profile/VerifiedBadge";
+import { useSafetyNumber } from "../hooks/useSafetyNumber";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -21,6 +24,7 @@ function getKeyFromUrl(): string {
 const ProfileWindow: Component = () => {
   const publicKey = getKeyFromUrl();
   const [confirmRemove, setConfirmRemove] = createSignal(false);
+  const safety = useSafetyNumber(publicKey);
   let unlistenPresence: Promise<import("@tauri-apps/api/event").UnlistenFn> | undefined;
 
   onMount(() => {
@@ -58,6 +62,7 @@ const ProfileWindow: Component = () => {
       <div class="profile-content">
         <Avatar displayName={displayName()} size={64} />
         <div class="profile-display-name">{displayName()}</div>
+        <VerifiedBadge view={safety.view()} />
         <Show when={friend()}>
           <div class="profile-status-row">
             <StatusDot status={friend()!.status} />
@@ -71,6 +76,12 @@ const ProfileWindow: Component = () => {
           <div class="profile-section-label">Public Key</div>
           <div class="profile-key-display">{publicKey}</div>
         </div>
+        <Show when={friend()}>
+          <div class="profile-section">
+            <div class="profile-section-label">Safety Number</div>
+            <SafetyNumberPanel peerKey={publicKey} view={safety.view()} onChanged={safety.reload} />
+          </div>
+        </Show>
         <Show when={friend()?.gameInfo}>
           <div class="profile-section">
             <div class="profile-section-label">Currently Playing</div>

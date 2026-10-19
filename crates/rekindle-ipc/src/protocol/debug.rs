@@ -50,10 +50,15 @@ impl std::fmt::Debug for IpcRequest {
                 .field("body_len", &body.len())
                 .field("reply_to", reply_to)
                 .finish(),
-            Self::DmSend { peer_key, body } => f
+            Self::DmSend {
+                peer_key,
+                body,
+                reply_to,
+            } => f
                 .debug_struct("DmSend")
                 .field("peer_key", peer_key)
                 .field("body_len", &body.len())
+                .field("reply_to", reply_to)
                 .finish(),
 
             // Everything else — derive-style display
@@ -98,7 +103,10 @@ impl std::fmt::Debug for IpcRequest {
             | Self::FriendGroupDelete { .. }
             | Self::SessionResetStart { .. }
             | Self::SessionResetAccept { .. }
-            | Self::SessionResetDecline { .. } => self.fmt_friend(f),
+            | Self::SessionResetDecline { .. }
+            | Self::IdentitySafetyNumber { .. }
+            | Self::IdentityMarkVerified { .. }
+            | Self::IdentityClearVerification { .. } => self.fmt_friend(f),
             Self::CommunityCreate {
                 name,
                 description,

@@ -1,7 +1,7 @@
 //! Moving our profile to a new record, so a blocked user's copy of the old
 //! key no longer finds us, and telling our remaining friends where it went.
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, ProfileKeyRotated};
 use rekindle_types::friend::FriendshipState;
 
 use super::error::FriendError;
@@ -17,12 +17,12 @@ pub async fn notify_profile_key_rotated(host: &dyn FriendHost, profile_dht_key: 
         .filter(|f| f.friendship_state != FriendshipState::Removing)
         .map(|f| f.public_key)
         .collect();
-    let payload = MessagePayload::ProfileKeyRotated {
+    let notice = DirectBody::ProfileKeyRotated(ProfileKeyRotated {
         new_profile_dht_key: profile_dht_key.to_string(),
-    };
+    });
     let mut notified = 0;
     for friend in &friends {
-        match dm::send_to_peer(host, friend, &payload).await {
+        match dm::send_to_peer(host, friend, &notice).await {
             Ok(()) => notified += 1,
             Err(e) => tracing::warn!(to = %friend, error = %e, "failed to send ProfileKeyRotated"),
         }

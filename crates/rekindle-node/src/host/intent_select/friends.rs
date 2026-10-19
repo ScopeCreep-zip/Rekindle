@@ -1,12 +1,16 @@
-//! The selection of a friend, session-reset or 1:1 request (plan E2.1):
-//! the person it is about, by our nickname and their key fingerprint.
+//! The selection of a friend, session-reset, verification or 1:1 request
+//! (plans E2.1, E2.3): the person it is about, by our nickname and their
+//! key fingerprint. An action toward a peer whose verified key changed is
+//! held on `VerifiedKeyChanged` until the user acknowledges it.
 
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_transport::operations::friend::verification;
 use rekindle_types::intent::{Fact, IntentKind, Notifies, Reversibility, Subject};
 
 use super::unavailable;
 use crate::daemon::dispatch::DaemonContext;
+use crate::host::adapters::friends::HostFriends;
 
 /// Fill `s` for a friend, session-reset or DM request.
 ///
@@ -101,7 +105,7 @@ pub(super) async fn selection(
             s.subject = person(ctx, public_key).await?;
             let safety_number =
                 rekindle_transport::operations::friend::session_reset::pending_safety_number(
-                    &crate::host::adapters::friends::HostFriends::of(ctx),
+                    &HostFriends::of(ctx),
                     public_key,
                 )
                 .ok_or_else(|| {
@@ -109,6 +113,23 @@ pub(super) async fn selection(
                 })?;
             s.facts.push(Fact::SafetyNumber { safety_number });
             s.notifies = Notifies::Subject;
+            if matches!(request, IpcRequest::SessionResetAccept { .. }) {
+                s.escalations.extend(key_change(ctx, public_key).await?);
+            }
+        }
+        IpcRequest::IdentityMarkVerified { peer }
+        | IpcRequest::IdentityClearVerification { peer } => {
+            s.subject = person(ctx, peer).await?;
+            let safety_number = verification::safety_number(&HostFriends::of(ctx), peer)
+                .ok_or_else(|| unavailable("the safety number", "no identity is unlocked"))?;
+            s.facts.push(Fact::SafetyNumber { safety_number });
+            s.reversibility = Reversibility::ReversibleByInverse(
+                if matches!(request, IpcRequest::IdentityMarkVerified { .. }) {
+                    IntentKind::ClearVerification
+                } else {
+                    IntentKind::MarkVerified
+                },
+            );
         }
         IpcRequest::FriendAccept { public_key, .. } => {
             s.subject = person(ctx, public_key).await?;
@@ -130,10 +151,26 @@ pub(super) async fn selection(
         IpcRequest::DmSend { peer_key, .. } => {
             s.subject = person(ctx, peer_key).await?;
             s.notifies = Notifies::Subject;
+            s.escalations.extend(key_change(ctx, peer_key).await?);
         }
         _ => {}
     }
     Ok(())
+}
+
+/// `VerifiedKeyChanged` while the key we verified for `peer` changed and
+/// the change is unacknowledged (`signal_identities::verified_key_changed`);
+/// nothing while locked (the request then fails on its own).
+async fn key_change(
+    ctx: &DaemonContext,
+    peer: &str,
+) -> Result<Option<rekindle_types::intent::Escalation>, IpcResponse> {
+    if ctx.require_owner().is_err() {
+        return Ok(None);
+    }
+    verification::key_change(&HostFriends::of(ctx), peer)
+        .await
+        .map_err(|e| unavailable("the peer's key verification", e))
 }
 
 /// A person: our nickname for them first, their key fingerprint always; a

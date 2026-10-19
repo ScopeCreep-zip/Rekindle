@@ -20,12 +20,16 @@ use anyhow::{anyhow, Context, Result};
 use crate::css;
 
 /// The security-surface components. The incoming session reset is a Host
-/// review rendered by `IntentDialog` (plan E2.1); E7.7.2's skin-error
-/// banner and its keep-or-revert control join this list in their step.
+/// review rendered by `IntentDialog` (plan E2.1); the safety number and the
+/// key-trust badge are what two people compare (plan E2.3); E7.7.2's
+/// skin-error banner and its keep-or-revert control join this list in
+/// their step.
 pub(crate) const SURFACES: &[&str] = &[
     "src/components/common/IntentDialog.tsx",
     "src/components/buddy-list/DeepLinkConsentDialog.tsx",
     "src/components/settings/AddDeviceModal.tsx",
+    "src/components/profile/SafetyNumberPanel.tsx",
+    "src/components/profile/VerifiedBadge.tsx",
 ];
 
 const SEC_LAYER: &str = "sec";

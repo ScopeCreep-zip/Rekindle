@@ -95,8 +95,9 @@ pub(crate) async fn run(
             db: Arc::clone(&ctx.db),
             vault: ctx.vault.clone(),
             session: Arc::clone(&ctx.session),
-            signal: Arc::clone(&installed.signal),
             shell: ctx.shell.clone(),
+            rng: Arc::clone(&ctx.rng),
+            clock: Arc::clone(&ctx.clock),
             presence: ctx.own_presence.clone(),
             profile_lease: Arc::clone(&ctx.own_profile_lease),
             public_key: installed.public_key.clone(),
@@ -129,9 +130,14 @@ pub(crate) async fn run(
             .await;
         }
     }
-    // 3c. Friends (plan E2.1): the maintenance task on both hosts; on the
-    // daemon, the friends' presence watches too (the GUI's friend sync
-    // holds them until E2.5).
+    // 3c. Friends (plan E2.1): what was decrypted but never applied is
+    // applied first (D24, plan E2.3), then the maintenance task on both
+    // hosts; on the daemon, the friends' presence watches too (the GUI's
+    // friend sync holds them until E2.5).
+    rekindle_transport::operations::direct::replay_unprocessed(
+        &super::adapters::friends::HostFriends::of(ctx),
+    )
+    .await;
     if let Err(e) = super::adapters::friends::start_maintenance(ctx, &scope) {
         return fail(
             ctx,
@@ -164,7 +170,6 @@ pub(crate) async fn run(
             public_key: installed.public_key.clone(),
             display_name: installed.display_name.clone(),
             secret: installed.secret.clone(),
-            signal: Arc::clone(&installed.signal),
             friend_store: Arc::clone(&installed.friend_store),
             created,
         };

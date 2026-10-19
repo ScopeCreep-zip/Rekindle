@@ -1,5 +1,6 @@
 //! Friend DTOs (plan E2.1): what `FriendList`, `FriendRequests`,
-//! `FriendBlockedList`, `FriendInviteList` and `FriendInviteCreate` answer.
+//! `FriendBlockedList`, `FriendInviteList`, `FriendInviteCreate` and
+//! `IdentitySafetyNumber` (plan E2.3) answer.
 
 use serde::{Deserialize, Serialize};
 
@@ -87,4 +88,25 @@ pub struct OutgoingInvite {
 pub struct InviteCreated {
     pub url: String,
     pub invite_id: String,
+}
+
+/// Our safety number with a peer and whether we verified it (plan E2.3):
+/// what `IdentitySafetyNumber` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SafetyNumberView {
+    pub peer_key: String,
+    /// The 60 digits both sides see, shown as 12 groups of 5.
+    pub digits: String,
+    /// Signal's scannable form (`CombinedFingerprints`), base64.
+    #[serde(with = "crate::base64_bytes")]
+    pub scannable: Vec<u8>,
+    /// The scannable form as a QR code: one string per row, `1` a dark
+    /// module, without the quiet zone.
+    pub qr_rows: Vec<String>,
+    pub verified: bool,
+    pub verified_at: Option<i64>,
+    /// The key we verified changed and the change is not acknowledged
+    /// yet: the next action toward them is reviewed (`VerifiedKeyChanged`).
+    pub changed: bool,
 }

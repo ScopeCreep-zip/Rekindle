@@ -59,6 +59,11 @@ impl IpcRequest {
             Self::IdentityRotate { .. } => ("IdentityRotate", Exclusive, Admin),
             Self::IdentityDelete { .. } => ("IdentityDelete", Exclusive, Open),
             Self::IdentityWipe => ("IdentityWipe", Exclusive, Open),
+            Self::IdentitySafetyNumber { .. } => ("IdentitySafetyNumber", Query, Authenticated),
+            Self::IdentityMarkVerified { .. } => ("IdentityMarkVerified", Write, Authenticated),
+            Self::IdentityClearVerification { .. } => {
+                ("IdentityClearVerification", Write, Authenticated)
+            }
             // The gate checks who may commit (plan D3.3); the held request
             // runs in its own lane.
             Self::IntentCommit { .. } => ("IntentCommit", Write, Open),

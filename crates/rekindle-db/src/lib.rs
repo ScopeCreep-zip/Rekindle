@@ -23,8 +23,8 @@ pub mod registry;
 pub mod repo;
 pub mod reset;
 pub mod row;
-#[cfg(test)]
-mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub use db::Db;
 pub use friend_store::SqliteFriendStore;

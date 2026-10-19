@@ -1,11 +1,17 @@
-//! Signal session resets (P3.3) with their out-of-band safety number.
+//! Secure-session resets (P3.3) with their out-of-band safety number (plan
+//! E2.3: libsignal's 60-digit format, `verification::safety_number`).
 //!
-//! The user starts one ([`start`]); a friend's request is held for the
-//! user's review by the backend ([`on_request`], plan E2.1), and the user
-//! accepts ([`accept`]) or declines ([`decline`]) it. Only an accept naming
-//! the keys our request offered installs a session (plan C7.25).
+//! The user starts one ([`start`]): a sealed request carrying a fresh
+//! handout bundle. A friend's request is held for the user's review by the
+//! backend ([`on_request`], plan E2.1), and the user accepts ([`accept`],
+//! the PreKeyInit that opens a new session from their bundle and carries
+//! `SessionResetAccept`) or declines ([`decline`], sealed). Only a
+//! PreKeyInit naming the keys our request offered opens a session
+//! ([`answers_reset`], checked before the init consumes them; plan C7.25).
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{
+    DirectBody, PqPrekey, PreKeyInitBody, SessionResetDecline, SessionResetRequest,
+};
 use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
 
 use super::error::FriendError;
@@ -13,9 +19,9 @@ use super::host::{BackendHold, FriendHost};
 use super::state;
 use crate::operations::dm;
 
-/// A Signal session reset we requested from a peer: the keys our
-/// request's handout bundle offered. Their accept must name exactly these,
-/// or it was not an answer to our request (plan C7.25).
+/// A session reset we requested from a peer: the keys our request's
+/// handout bundle offered. Their PreKeyInit must name exactly these, or it
+/// was not an answer to our request (plan C7.25).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutgoingReset {
     /// The signed prekey's id.
@@ -27,34 +33,28 @@ pub struct OutgoingReset {
 }
 
 impl OutgoingReset {
-    /// Whether an accept's handshake ids answer this request.
+    /// Whether a PreKeyInit's prekey ids answer this request.
     #[must_use]
-    pub fn answered_by(&self, spk_id: u32, otpk_id: Option<u32>, pq_ot_id: Option<u32>) -> bool {
-        self.signed_prekey == spk_id
-            && self.one_time_prekey == otpk_id
-            && self.pq_one_time == pq_ot_id
+    pub fn answered_by(&self, init: &PreKeyInitBody) -> bool {
+        let pq_one_time = match init.pq_prekey {
+            PqPrekey::OneTime(id) => Some(id),
+            PqPrekey::LastResort(_) => None,
+        };
+        self.signed_prekey == init.signed_prekey_id
+            && self.one_time_prekey == init.one_time_prekey_id
+            && self.pq_one_time == pq_one_time
     }
-}
-
-/// The short out-of-band safety number for us and the identity in a peer's
-/// bundle (BLAKE3 of the sorted Ed25519 identity keys, so both sides see the
-/// same code).
-#[must_use]
-pub fn safety_number(host: &dyn FriendHost, peer_bundle: &[u8]) -> Option<String> {
-    let bundle = rekindle_crypto::signal::PreKeyBundle::from_wire(peer_bundle).ok()?;
-    let secret = host.identity_secret().ok()?;
-    let ours = rekindle_crypto::Identity::from_secret_bytes(&secret).public_key_bytes();
-    Some(rekindle_crypto::identity::safety_number(
-        &ours,
-        &bundle.identity_key,
-    ))
 }
 
 /// The safety number of the reset `peer` asked for, while it is pending.
 #[must_use]
 pub fn pending_safety_number(host: &dyn FriendHost, peer: &str) -> Option<String> {
-    let bundle = host.stores().incoming_resets.lock().get(peer).cloned()?;
-    safety_number(host, &bundle)
+    host.stores()
+        .incoming_resets
+        .lock()
+        .contains_key(peer)
+        .then_some(())?;
+    super::verification::safety_number(host, peer)
 }
 
 fn alert(host: &dyn FriendHost, title: &str, body: String) {
@@ -66,9 +66,9 @@ fn alert(host: &dyn FriendHost, title: &str, body: String) {
     ));
 }
 
-/// Reset our secure session with a friend: the old session goes, and our
-/// request carries a fresh handout bundle whose keys only their accept may
-/// name.
+/// Reset our secure session with a friend: our request carries a fresh
+/// handout bundle whose keys only their init may name. The old session
+/// stays until theirs replaces it, so messages in flight still open.
 ///
 /// # Errors
 /// They are no friend, or the request could not be sent.
@@ -78,13 +78,9 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
             "can only reset sessions with existing friends".to_string(),
         ));
     }
-    let signal = host.signal()?;
-    signal
-        .delete_session(peer)
-        .map_err(|e| FriendError::Failed(format!("delete_session: {e}")))?;
-    let bundle = signal
-        .handout_bundle()
-        .map_err(|e| FriendError::Failed(format!("handout_bundle: {e}")))?;
+    let bundle = rekindle_db::prekeys::handout_bundle(&host.db()?, &host.local_party()?)
+        .await
+        .map_err(|e| FriendError::Failed(format!("handout bundle: {e}")))?;
     host.stores().outgoing_resets.lock().insert(
         peer.to_string(),
         OutgoingReset {
@@ -93,11 +89,11 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
             pq_one_time: bundle.pqpk_ot_id,
         },
     );
-    tracing::info!(peer = %peer, "Signal session reset by user; sending SessionResetRequest");
-    let payload = MessagePayload::SessionResetRequest {
-        our_prekey_bundle: bundle.to_wire(),
-    };
-    if let Err(e) = dm::send_to_peer(host, peer, &payload).await {
+    tracing::info!(peer = %peer, "session reset by user; sending SessionResetRequest");
+    let request = DirectBody::SessionResetRequest(SessionResetRequest {
+        prekey_bundle: bundle.to_wire(),
+    });
+    if let Err(e) = dm::send_to_peer(host, peer, &request).await {
         host.stores().outgoing_resets.lock().remove(peer);
         return Err(FriendError::Failed(format!(
             "send SessionResetRequest: {e}"
@@ -106,13 +102,21 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
     Ok(())
 }
 
-/// Accept the reset `peer` asked for: a fresh initiator session from their
-/// bundle, and our accept naming its keys.
+/// Accept the reset `peer` asked for: a new session from their bundle,
+/// carrying `SessionResetAccept`. When its review was held on their
+/// verified key changing (`VerifiedKeyChanged`), committing it was the
+/// user's acknowledgement (`acknowledges_key_change`): the change is
+/// acknowledged once the new session is recorded, since that record is
+/// `rekindle_db::ratchet`'s own transaction.
 ///
 /// # Errors
-/// `NotFound` when no reset from them is pending; the session or the
-/// accept failed.
-pub async fn accept(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
+/// `NotFound` when no reset from them is pending; the session, the
+/// acknowledgement or the send failed.
+pub async fn accept(
+    host: &dyn FriendHost,
+    peer: &str,
+    acknowledges_key_change: bool,
+) -> Result<(), FriendError> {
     if !state::is_accepted(host, peer) {
         return Err(FriendError::Conflict(
             "can only accept session reset from existing friends".to_string(),
@@ -125,34 +129,22 @@ pub async fn accept(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError
         .remove(peer)
         .ok_or_else(|| {
             FriendError::NotFound(
-            "no pending session reset for this peer (it may have expired or already been processed)"
-                .to_string(),
-        )
+                "no pending session reset for this peer (it may have expired or already been \
+                 processed)"
+                    .to_string(),
+            )
         })?;
     let bundle = rekindle_crypto::signal::PreKeyBundle::from_wire(&bundle_bytes)
-        .map_err(|e| FriendError::Failed(format!("invalid PreKeyBundle in pending reset: {e}")))?;
-    let signal = host.signal()?;
-    if let Err(e) = signal.delete_session(peer) {
-        tracing::warn!(peer = %peer, error = %e, "old session not deleted before reset");
+        .map_err(|e| FriendError::Failed(format!("invalid bundle in pending reset: {e}")))?;
+    let frame =
+        dm::frame::initiate_frame(host, peer, bundle, &DirectBody::SessionResetAccept).await?;
+    if acknowledges_key_change {
+        super::verification::acknowledge_key_change(host, peer).await?;
     }
-    let init = signal
-        .establish_session(peer, &bundle)
-        .map_err(|e| FriendError::Failed(format!("establish_session: {e}")))?;
-    let secret = host.identity_secret()?;
-    let payload = MessagePayload::SessionResetAccept {
-        ephemeral_key: init.ephemeral_public_key,
-        signed_prekey_id: init.signed_prekey_id,
-        one_time_prekey_id: init.one_time_prekey_id,
-        our_identity_key: rekindle_crypto::Identity::from_secret_bytes(&secret)
-            .public_key_bytes()
-            .to_vec(),
-        ml_kem_ciphertext: init.ml_kem_ciphertext,
-        used_ot_pqpk_id: init.used_ot_pqpk_id,
-    };
-    dm::send_to_peer(host, peer, &payload)
+    dm::send_frame(host, peer, &frame)
         .await
         .map_err(|e| FriendError::Failed(format!("send SessionResetAccept: {e}")))?;
-    tracing::info!(peer = %peer, "Signal session renewal accepted; SessionResetAccept dispatched");
+    tracing::info!(peer = %peer, "session reset accepted; the new session's init is out");
     Ok(())
 }
 
@@ -162,27 +154,22 @@ pub async fn accept(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError
 /// The decline could not be sent.
 pub async fn decline(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
     host.stores().incoming_resets.lock().remove(peer);
-    let payload = MessagePayload::SessionResetDecline {
+    let decline = DirectBody::SessionResetDecline(SessionResetDecline {
         reason: String::new(),
-    };
-    dm::send_to_peer(host, peer, &payload).await
+    });
+    dm::send_to_peer(host, peer, &decline).await
 }
 
 /// A friend asked to reset our session: their bundle is kept (the newest
-/// wins) and the backend holds the accept for the user's review. A request
-/// with no computable safety number is never offered: comparing it out of
-/// band is the user's only defence.
+/// wins) and the backend holds the accept for the user's review. A bundle
+/// under another identity than the sender's is never offered: the safety
+/// number the user compares names the sender.
 pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, bundle: &[u8]) {
-    if !state::is_accepted(host, sender) {
-        tracing::debug!(from = %sender, "dropping SessionResetRequest from non-friend");
-        return;
-    }
-    if bundle.is_empty() {
-        tracing::warn!(from = %sender, "SessionResetRequest with empty prekey bundle — dropping");
-        return;
-    }
-    if safety_number(host, bundle).is_none() {
-        tracing::warn!(from = %sender, "SessionResetRequest without a computable safety number — dropping");
+    let under_sender = rekindle_crypto::signal::PreKeyBundle::from_wire(bundle)
+        .ok()
+        .is_some_and(|b| hex::encode(b.identity_key) == sender);
+    if !under_sender {
+        tracing::warn!(from = %sender, "SessionResetRequest without the sender's own bundle — dropping");
         return;
     }
     host.stores()
@@ -200,86 +187,44 @@ pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, bundle: &[u8
     }
 }
 
-/// The handshake ids of an incoming session-reset accept.
-pub(crate) struct ResetAccept<'a> {
-    pub ephemeral_key: &'a [u8],
-    pub signed_prekey_id: u32,
-    pub one_time_prekey_id: Option<u32>,
-    pub identity_key: &'a [u8],
-    pub ml_kem_ciphertext: &'a [u8],
-    pub used_ot_pqpk_id: Option<u32>,
+/// Whether `sender`'s PreKeyInit carrying `SessionResetAccept` answers our
+/// outstanding request with the keys we offered; the request is consumed
+/// when it does, so a repeat opens nothing.
+pub(crate) fn answers_reset(host: &dyn FriendHost, sender: &str, init: &PreKeyInitBody) -> bool {
+    let mut outgoing = host.stores().outgoing_resets.lock();
+    match outgoing.get(sender) {
+        Some(sent) if sent.answered_by(init) => {
+            outgoing.remove(sender);
+            true
+        }
+        Some(_) => {
+            tracing::warn!(from = %sender,
+                "dropping SessionResetAccept that names keys our request did not offer");
+            false
+        }
+        None => {
+            tracing::warn!(from = %sender, "dropping SessionResetAccept: we requested no session reset");
+            false
+        }
+    }
 }
 
-/// The friend accepted our reset: a fresh responder session, only when it
-/// answers our outstanding request with the keys we offered (consumed, so a
-/// repeat installs nothing).
-pub(crate) fn on_accept(host: &dyn FriendHost, sender: &str, a: &ResetAccept<'_>) {
-    if !state::is_accepted(host, sender) {
-        tracing::debug!(from = %sender, "dropping SessionResetAccept from non-friend");
-        return;
-    }
-    if a.ephemeral_key.is_empty() || a.identity_key.is_empty() {
-        tracing::warn!(from = %sender, "SessionResetAccept missing ephemeral or identity key");
-        return;
-    }
-    {
-        let mut outgoing = host.stores().outgoing_resets.lock();
-        match outgoing.remove(sender) {
-            Some(sent)
-                if sent.answered_by(
-                    a.signed_prekey_id,
-                    a.one_time_prekey_id,
-                    a.used_ot_pqpk_id,
-                ) => {}
-            Some(sent) => {
-                // Not an answer to our request; keep it for the real one.
-                outgoing.insert(sender.to_string(), sent);
-                tracing::warn!(from = %sender,
-                    "dropping SessionResetAccept that names keys our request did not offer");
-                return;
-            }
-            None => {
-                tracing::warn!(from = %sender, "dropping SessionResetAccept: we requested no session reset");
-                return;
-            }
-        }
-    }
-    let Ok(signal) = host.signal() else {
-        tracing::warn!(from = %sender, "SessionResetAccept arrived but no Signal manager");
-        return;
-    };
-    if let Err(e) = signal.delete_session(sender) {
-        tracing::warn!(from = %sender, error = %e, "old session not deleted before reset");
-    }
-    match signal.respond_to_session(
-        sender,
-        a.identity_key,
-        a.ephemeral_key,
-        a.signed_prekey_id,
-        a.one_time_prekey_id,
-        a.ml_kem_ciphertext,
-        a.used_ot_pqpk_id,
-    ) {
-        Ok(()) => {
-            tracing::info!(from = %sender, "established responder Signal session from SessionResetAccept");
-            let display = state::label(host, sender);
-            alert(
-                host,
-                "Secure session re-established",
-                format!(
-                    "New Signal session with {display} is active. Verify their safety number \
-                     out-of-band before resuming sensitive conversations."
-                ),
-            );
-        }
-        Err(error) => {
-            tracing::warn!(from = %sender, %error, "failed to respond_to_session from SessionResetAccept");
-        }
-    }
+/// The friend's new session is open (their PreKeyInit was ours to accept).
+pub(crate) fn on_accept(host: &dyn FriendHost, sender: &str) {
+    let display = state::label(host, sender);
+    alert(
+        host,
+        "Secure session re-established",
+        format!(
+            "A new secure session with {display} is active. Verify their safety number \
+             out-of-band before resuming sensitive conversations."
+        ),
+    );
 }
 
 /// The friend declined our reset.
 pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str, reason: &str) {
+    host.stores().outgoing_resets.lock().remove(sender);
     let display = state::label(host, sender);
     let body = if reason.is_empty() {
         format!("{display} declined your secure session reset request.")
@@ -291,7 +236,30 @@ pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str, reason: &str) {
 
 #[cfg(test)]
 mod tests {
+    use rekindle_codec::capnp_codec::direct::{
+        DmTypeId, PqPrekey, PreKeyInitBody, RatchetBody, RatchetHeader,
+    };
+
     use super::OutgoingReset;
+
+    fn init(spk: u32, otpk: Option<u32>, pq: PqPrekey) -> PreKeyInitBody {
+        PreKeyInitBody {
+            base_key: [1; 32],
+            signed_prekey_id: spk,
+            one_time_prekey_id: otpk,
+            pq_prekey: pq,
+            kem_ciphertext: Vec::new(),
+            first_type_id: DmTypeId::SessionResetAccept,
+            message: RatchetBody {
+                header: RatchetHeader {
+                    dh: [2; 32],
+                    pn: 0,
+                    n: 0,
+                },
+                ciphertext: Vec::new(),
+            },
+        }
+    }
 
     #[test]
     fn only_the_offered_keys_answer_a_reset() {
@@ -300,9 +268,9 @@ mod tests {
             one_time_prekey: Some(5),
             pq_one_time: Some(6),
         };
-        assert!(sent.answered_by(1, Some(5), Some(6)));
-        assert!(!sent.answered_by(1, Some(5), None));
-        assert!(!sent.answered_by(1, Some(9), Some(6)));
-        assert!(!sent.answered_by(2, Some(5), Some(6)));
+        assert!(sent.answered_by(&init(1, Some(5), PqPrekey::OneTime(6))));
+        assert!(!sent.answered_by(&init(1, Some(5), PqPrekey::LastResort(6))));
+        assert!(!sent.answered_by(&init(1, Some(9), PqPrekey::OneTime(6))));
+        assert!(!sent.answered_by(&init(2, Some(5), PqPrekey::OneTime(6))));
     }
 }

@@ -1,9 +1,11 @@
 //! Carol's relay forwarding (architecture §13.3 step 3): on receipt of
-//! a `RelayEnvelope` whose `target_pubkey` matches a friend we've
-//! actively volunteered to relay for, forward `inner_payload` verbatim
-//! to that friend's current Veilid route. Drop otherwise — Carol must
-//! not become a free relay for arbitrary friends, only those who have
-//! her offer in their pool.
+//! a `RelayEnvelope` (0x0003) whose `target_pubkey` matches a friend
+//! we've actively volunteered to relay for, forward `inner_payload` — a
+//! whole `'D'` datagram from the sender to the target, sealed under their
+//! session — verbatim to that friend's current Veilid route. Drop
+//! otherwise — Carol must not become a free relay for arbitrary friends,
+//! only those who have her offer in their pool, and she forwards only 1:1
+//! datagrams.
 
 use std::sync::Arc;
 
@@ -21,6 +23,9 @@ pub async fn handle_relay_envelope(
 ) -> Result<(), String> {
     if !state_helpers::is_friend(state, target_pubkey) {
         return Err("relay target is not a known friend".into());
+    }
+    if rekindle_transport::operations::dm::unwire(inner_payload).is_none() {
+        return Err("relay payload is not a 1:1 datagram".into());
     }
 
     // Architecture §13.2 step 1: forwarding requires that we *actively*

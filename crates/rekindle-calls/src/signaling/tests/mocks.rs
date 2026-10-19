@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CallError;
@@ -179,7 +179,7 @@ impl CallSignalingDeps for MockDeps {
     fn local_video_decode_codecs(&self) -> Vec<String> {
         vec!["vp9".to_string()]
     }
-    async fn send_to_peer(&self, _peer: &str, _payload: MessagePayload) -> Result<(), CallError> {
+    async fn send_to_peer(&self, _peer: &str, _body: DirectBody) -> Result<(), CallError> {
         Ok(())
     }
     async fn start_voice_session(

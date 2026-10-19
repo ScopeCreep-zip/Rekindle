@@ -457,16 +457,13 @@ mod tests {
         let k = VaultKey::AuditMacKey;
         vault.put(&k, b"hello world").unwrap();
         assert_eq!(&*vault.get(&k).unwrap().unwrap(), b"hello world");
-        vault.put(&VaultKey::SignalPrekey { id: 7 }, b"x").unwrap();
-        vault.put(&VaultKey::SignalPrekey { id: 9 }, b"y").unwrap();
-        let listed = vault.list("signal").unwrap();
-        assert_eq!(
-            listed,
-            vec![
-                VaultKey::SignalPrekey { id: 7 },
-                VaultKey::SignalPrekey { id: 9 }
-            ]
-        );
+        let mek = |community: &str| VaultKey::CommunityMek {
+            community: community.into(),
+        };
+        vault.put(&mek("c7"), b"x").unwrap();
+        vault.put(&mek("c9"), b"y").unwrap();
+        let listed = vault.list("communities").unwrap();
+        assert_eq!(listed, vec![mek("c7"), mek("c9")]);
         vault.delete(&k).unwrap();
         assert!(vault.get(&k).unwrap().is_none());
     }
@@ -477,21 +474,19 @@ mod tests {
     fn an_entry_moved_to_another_key_does_not_open() {
         let (_dir, path) = fresh_path();
         let (vault, _) = VaultStore::create(&path, "pp").unwrap();
-        vault
-            .put(&VaultKey::SignalPrekey { id: 1 }, b"one")
-            .unwrap();
+        let mek = |community: &str| VaultKey::CommunityMek {
+            community: community.into(),
+        };
+        vault.put(&mek("c1"), b"one").unwrap();
         {
             let conn = vault.conn.lock();
             conn.execute(
                 "UPDATE entries SET key = ?1 WHERE key = ?2",
-                params![
-                    VaultKey::SignalPrekey { id: 2 }.key().as_ref(),
-                    VaultKey::SignalPrekey { id: 1 }.key().as_ref()
-                ],
+                params![mek("c2").key().as_ref(), mek("c1").key().as_ref()],
             )
             .unwrap();
         }
-        assert!(vault.get(&VaultKey::SignalPrekey { id: 2 }).is_err());
+        assert!(vault.get(&mek("c2")).is_err());
     }
 
     #[test]

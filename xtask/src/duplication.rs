@@ -238,21 +238,6 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
          ADMINISTRATOR (bit 3) from the Owner role. protocol's is the \
          Rust-to-Rust form with no such constraint.",
     ),
-    (
-        &[
-            "rekindle-crypto::SignalSessionManager",
-            "rekindle-transport::SignalSessionManager",
-        ],
-        "Two shells over the *same* primitives — both use \
-         `rekindle_crypto::signal::{pqxdh, ratchet}`, so cross-track \
-         compatibility holds by construction. They differ in store \
-         backing (Stronghold/vault versus the daemon's own \
-         `signal_store`) and therefore in method shape: crypto's is \
-         async with a `SessionCache` of per-peer `tokio::sync::Mutex`es, \
-         transport's synchronous with a `parking_lot` map. Both now \
-         serialise the ratchet per peer, which the Double Ratchet spec \
-         requires — see the comment on `peer_locks`.",
-    ),
     // ── One finding, three names: the two frontends have parallel
     //    view and event vocabularies. Recorded as exceptions because
     //    converging them is an architecture change, not a rename.

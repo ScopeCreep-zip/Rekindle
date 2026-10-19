@@ -1,5 +1,5 @@
 //! Strand relay, status-probe and push-relay bodies, moved unchanged from
-//! their `MessagePayload` variants (they stay with their `src-tauri`
+//! the pre-E2.3 1:1 payload (they stay with their `src-tauri`
 //! owners until E5.2 and E5.6).
 
 use crate::capnp_codec::direct::{data, list_len, opt_text, set_text_list, text, text_list};

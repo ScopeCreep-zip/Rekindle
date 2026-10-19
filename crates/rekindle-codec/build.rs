@@ -99,7 +99,6 @@ fn main() {
 
             capnpc::CompilerCommand::new()
                 .src_prefix("../../schemas")
-                .file("../../schemas/message.capnp")
                 .file("../../schemas/direct.capnp")
                 .file("../../schemas/identity.capnp")
                 .file("../../schemas/presence.capnp")

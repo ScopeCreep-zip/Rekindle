@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use super::circuit::CircuitBreakerState;
 use super::community::CommunityState;
 use super::friend::IdentityState;
-use super::runtime::{NodeHandle, SignalManagerHandle, VoiceEngineHandle};
+use super::runtime::{NodeHandle, VoiceEngineHandle};
 use rekindle_channel::AutoModCompiledCache;
 
 /// Central application state shared across all Tauri commands and services.
@@ -55,11 +55,6 @@ pub struct AppState {
     /// The unlocked identity's preferences (`services::preferences`; the
     /// defaults while locked).
     pub preferences: RwLock<rekindle_types::preferences::Preferences>,
-    /// Signal session manager (set after identity unlock). `RwLock` so
-    /// encrypt/decrypt readers don't serialize on the wrapper; the
-    /// inner `Arc<SignalManagerHandle>` is cloned out under the
-    /// read-guard and the guard is dropped before any `.await`.
-    pub signal_manager: Arc<RwLock<Option<Arc<SignalManagerHandle>>>>,
     /// Voice engine state. `pub(crate)` so the Tauri-runtime adapters
     /// keep direct access while external callers go through the typed
     /// `AppState` helpers below.
@@ -70,8 +65,8 @@ pub struct AppState {
     pub network_ready_tx: Arc<tokio::sync::watch::Sender<bool>>,
     /// Receiver half — clone and `.changed().await` to wait for readiness.
     pub network_ready_rx: tokio::sync::watch::Receiver<bool>,
-    /// Ed25519 secret key bytes for signing `MessageEnvelope`s. Stored
-    /// after identity unlock so `message_service` can sign outgoing messages.
+    /// The identity's Ed25519 secret, stored at unlock for the unported
+    /// paths that sign or derive from it (communities, voice, sync).
     pub identity_secret: Mutex<Option<[u8; 32]>>,
     /// The unlocked identity's tamper-evident audit chain
     /// (`rekindle_node::host::audit`). `None` while locked.
@@ -272,7 +267,6 @@ impl Default for AppState {
             db: Arc::new(rekindle_db::DbHandle::default()),
             identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
-            signal_manager: Arc::new(RwLock::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),
             shutdown_tx: Arc::new(RwLock::new(None)),
             network_ready_tx: Arc::new(network_ready_tx),

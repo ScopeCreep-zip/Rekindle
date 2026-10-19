@@ -1,11 +1,12 @@
 //! Carol's side of Strand Relay (architecture §13.2 step 1-2):
 //! allocate a dedicated private route on Veilid distinct from her
 //! personal route, persist the (friend → route_id) mapping, and ship
-//! the route blob to the friend over `app_message`.
+//! the route blob to the friend in a `RelayOffer` (0x0130) by `app_call`,
+//! answered with a `RelayOfferAck` (0x0132) frame.
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, RelayOffer, RelayOfferAck, RelayWithdraw};
 
 use rekindle_db::Db;
 use rusqlite::OptionalExtension as _;
@@ -30,8 +31,8 @@ enum Replaced {
 /// 2. Persist `(friend_public_key → route_id, blob)` so the inbound
 ///    `RelayEnvelope` dispatcher knows which friend is the intended target;
 ///    a route this replaces is released.
-/// 3. Send a `RelayOffer` via `app_message` so Bob can publish the blob in
-///    his pool.
+/// 3. Send a `RelayOffer` by `app_call` so Bob can publish the blob in
+///    his pool; his `RelayOfferAck` says whether he did.
 pub async fn volunteer_relay(
     state: &Arc<AppState>,
     pool: &Db,
@@ -136,10 +137,10 @@ async fn offer_relay(
         }
     }
 
-    let payload = MessagePayload::RelayOffer {
+    let body = DirectBody::RelayOffer(RelayOffer {
         relay_route_blob: route_blob,
         relay_pseudonym: owner_key,
-    };
+    });
     // Architecture §13.2 step 2 — `app_call` so we get a persisted-ack
     // reply. If the friend's pool persist failed (disk full, schema
     // mismatch) we surface the error rather than silently leaving the
@@ -147,18 +148,24 @@ async fn offer_relay(
     let reply = rekindle_transport::operations::dm::send_to_peer_call(
         state_helpers::friend_host(state)?.as_ref(),
         friend_public_key,
-        &payload,
+        &body,
     )
     .await
     .map_err(|e| e.to_string())?;
-    match reply {
-        MessagePayload::RelayOfferAck { ok: true, .. } => Ok(()),
-        MessagePayload::RelayOfferAck { ok: false, reason } => Err(if reason.is_empty() {
-            "friend rejected RelayOffer".to_string()
-        } else {
-            format!("friend rejected RelayOffer: {reason}")
-        }),
-        other => Err(format!("unexpected RelayOffer reply: {other:?}")),
+    match reply.map(|opened| opened.body) {
+        Some(DirectBody::RelayOfferAck(RelayOfferAck { ok: true, .. })) => Ok(()),
+        Some(DirectBody::RelayOfferAck(RelayOfferAck { ok: false, reason })) => {
+            Err(if reason.is_empty() {
+                "friend rejected RelayOffer".to_string()
+            } else {
+                format!("friend rejected RelayOffer: {reason}")
+            })
+        }
+        Some(other) => Err(format!(
+            "unexpected RelayOffer reply: {:?}",
+            other.type_id()
+        )),
+        None => Err("friend sent no RelayOfferAck".to_string()),
     }
 }
 
@@ -207,14 +214,14 @@ pub async fn revoke_relay(
         }
     }
 
-    let payload = MessagePayload::RelayWithdraw {
+    let body = DirectBody::RelayWithdraw(RelayWithdraw {
         relay_pseudonym: pseudonym_for_payload,
-    };
+    });
     if let Ok(host) = state_helpers::friend_host(state) {
         if let Err(e) = rekindle_transport::operations::dm::send_to_peer(
             host.as_ref(),
             friend_public_key,
-            &payload,
+            &body,
         )
         .await
         {

@@ -1,10 +1,11 @@
-//! Friends, invites, blocks, groups and session resets are Host calls
-//! (plan E2.1): the Host's friend operations run them on both hosts, and
-//! the windows learn their effects from `SubscriptionEvent::Friend`.
+//! Friends, invites, blocks, groups, session resets and verification are
+//! Host calls (plans E2.1, E2.3): the Host's friend operations run them on
+//! both hosts, and the windows learn their effects from
+//! `SubscriptionEvent::Friend` (verification from its own answer).
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::friends::{
-    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest,
+    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest, SafetyNumberView,
 };
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -105,6 +106,49 @@ pub async fn reset_signal_session(
         IpcRequest::SessionResetStart {
             public_key: peer_public_key,
         },
+    )
+    .await
+}
+
+/// Our safety number with a friend, its QR, and whether we verified their
+/// key (`IpcRequest::IdentitySafetyNumber`, plan E2.3).
+#[tauri::command]
+pub async fn get_safety_number(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<SafetyNumberView>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::IdentitySafetyNumber { peer: public_key },
+    )
+    .await
+}
+
+/// Mark a friend's key verified after comparing the safety number
+/// (`IpcRequest::IdentityMarkVerified`, TrustChanging: the review states
+/// the number).
+#[tauri::command]
+pub async fn mark_identity_verified(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::IdentityMarkVerified { peer: public_key },
+    )
+    .await
+}
+
+/// Withdraw a friend's verification
+/// (`IpcRequest::IdentityClearVerification`, TrustChanging).
+#[tauri::command]
+pub async fn clear_identity_verification(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::IdentityClearVerification { peer: public_key },
     )
     .await
 }

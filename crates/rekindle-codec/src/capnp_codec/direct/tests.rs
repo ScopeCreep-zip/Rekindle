@@ -101,6 +101,17 @@ fn samples() -> Vec<DirectBody> {
             emoji: s("👍"),
             add: true,
         }),
+        DirectBody::GroupDmInvite(GroupDmInvite {
+            record_key: dht_key(),
+            slot_seed: vec![0x5E; 32],
+            initiator_pseudonym: "ab".repeat(32),
+            participants_json: s(r#"[{"pseudonym":"p0","subkey":0,"publicKey":"pk0"}]"#),
+            wrapped_mek: vec![0x3C; 92],
+            mek_generation: 2,
+        }),
+        DirectBody::GroupDmLeave(GroupDmLeave {
+            record_key: dht_key(),
+        }),
         DirectBody::RelayOffer(RelayOffer {
             relay_route_blob: vec![6; 40],
             relay_pseudonym: "cd".repeat(32),
@@ -209,13 +220,11 @@ fn samples() -> Vec<DirectBody> {
 
 /// The kinds §6 allocates whose bodies a later step defines, and the
 /// PreKeyInit, which is a frame.
-const NO_BODY_YET: [DmTypeId; 6] = [
+const NO_BODY_YET: [DmTypeId; 4] = [
     DmTypeId::PreKeyInit,
     DmTypeId::RetryRequest,
-    DmTypeId::GroupDmInvite,
     DmTypeId::GroupDmAccept,
     DmTypeId::GroupDmDecline,
-    DmTypeId::GroupDmLeave,
 ];
 
 #[test]

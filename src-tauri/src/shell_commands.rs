@@ -86,6 +86,19 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "reset_signal_session",
         HostCall::Request("SessionResetStart"),
     ),
+    // Safety numbers and verification (plan E2.3).
+    (
+        "get_safety_number",
+        HostCall::Request("IdentitySafetyNumber"),
+    ),
+    (
+        "mark_identity_verified",
+        HostCall::Request("IdentityMarkVerified"),
+    ),
+    (
+        "clear_identity_verification",
+        HostCall::Request("IdentityClearVerification"),
+    ),
 ];
 
 /// The shell's own commands.

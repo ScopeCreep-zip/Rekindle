@@ -1,23 +1,23 @@
-//! The 1:1 send path on both hosts (plan E2.1): sealing, the `'D'` wire,
-//! sends over the ports with their fallbacks, the friend-handshake
-//! messages, our direct messages and our typing indicator (E2.3).
+//! The 1:1 send path on both hosts (plan E2.1, on `DmFrame` since E2.3):
+//! sealing by carrier (`frame`), sends over the ports with their fallbacks,
+//! the friend-handshake messages, our direct messages and our typing.
 
 mod chat;
+pub mod frame;
 mod outgoing;
 pub mod route;
-mod seal;
 mod send;
 mod typing;
 
-use rekindle_codec::message::envelope::MessageEnvelope;
-
-use crate::operations::friend::FriendError;
-
-pub use chat::{history, inbox, mark_read, send_dm};
-pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
-pub(crate) use seal::recipient_key;
-pub use seal::resign_for_retry;
-pub use send::{build_and_queue, resend, send_to_peer, send_to_peer_call, Resend};
+pub(crate) use chat::NewDmFields;
+pub use chat::{client_id_text, history, inbox, mark_read, parse_client_id, send_dm};
+pub use frame::wire;
+pub use outgoing::{
+    handout_bundle_bytes, send_friend_accept, send_friend_reject, send_friend_request,
+};
+pub use send::{
+    build_and_queue, hint_for, resend, send_frame, send_to_peer, send_to_peer_call, Queued, Resend,
+};
 pub use typing::report_draft;
 
 /// The ingress tag of a 1:1 message: the first byte of every 1:1 datagram
@@ -26,23 +26,19 @@ pub use typing::report_draft;
 /// to decode it.
 pub use rekindle_codec::ingress::DIRECT_TAG;
 
-/// The datagram for `envelope`: [`DIRECT_TAG`] then its Cap'n Proto
-/// encoding. Every 1:1 send builds its bytes here.
+/// The recipient's identity key a frame to `to` names.
 ///
 /// # Errors
-/// `Invalid` when the datagram is over Veilid's message cap: it fails on
-/// every path, so it is refused rather than queued (plan C7.25).
-pub fn wire(envelope: &MessageEnvelope) -> Result<Vec<u8>, FriendError> {
-    let encoded = rekindle_codec::capnp_codec::message::encode_envelope(envelope);
-    let mut datagram = Vec::with_capacity(encoded.len() + 1);
-    datagram.push(DIRECT_TAG);
-    datagram.extend_from_slice(&encoded);
-    rekindle_records::port::check_message_len(&datagram)
-        .map_err(|e| FriendError::Invalid(e.to_string()))?;
-    Ok(datagram)
+/// `Invalid` when `to` is not a public key.
+pub(crate) fn recipient_key(to: &str) -> Result<[u8; 32], crate::operations::friend::FriendError> {
+    rekindle_types::key_format::public_key_hex(to)
+        .map(|k| k.to_bytes())
+        .map_err(|e| {
+            crate::operations::friend::FriendError::Invalid(format!("recipient key {to}: {e}"))
+        })
 }
 
-/// The envelope bytes of a 1:1 datagram, when it carries [`DIRECT_TAG`].
+/// The frame bytes of a 1:1 datagram, when it carries [`DIRECT_TAG`].
 #[must_use]
 pub fn unwire(datagram: &[u8]) -> Option<&[u8]> {
     match datagram.split_first() {
@@ -53,37 +49,44 @@ pub fn unwire(datagram: &[u8]) -> Option<&[u8]> {
 
 #[cfg(test)]
 mod tests {
+    use rekindle_codec::capnp_codec::direct::{
+        DmFrame, DmTypeId, FrameBody, RatchetBody, RatchetHeader,
+    };
+
     use super::*;
 
+    fn frame(ciphertext: Vec<u8>) -> DmFrame {
+        DmFrame {
+            type_id: DmTypeId::DmText,
+            sender: [1; 32],
+            body: FrameBody::Ratchet(RatchetBody {
+                header: RatchetHeader {
+                    dh: [2; 32],
+                    pn: 0,
+                    n: 3,
+                },
+                ciphertext,
+            }),
+        }
+    }
+
     #[test]
-    fn a_wired_envelope_unwires_to_its_encoding() {
-        let envelope = MessageEnvelope {
-            sender_key: vec![1; 32],
-            timestamp: 7,
-            nonce: vec![2; 16],
-            payload: b"hi".to_vec(),
-            signature: vec![3; 64],
-        };
-        let datagram = wire(&envelope).unwrap();
+    fn a_wired_frame_unwires_to_its_encoding() {
+        let sent = frame(b"hi".to_vec());
+        let datagram = wire(&sent).unwrap();
         assert_eq!(datagram[0], DIRECT_TAG);
-        let decoded =
-            rekindle_codec::capnp_codec::message::decode_envelope(unwire(&datagram).unwrap())
-                .unwrap();
-        assert_eq!(decoded.payload, envelope.payload);
+        assert_eq!(DmFrame::decode(unwire(&datagram).unwrap()).unwrap(), sent);
         assert_eq!(unwire(&[0x01, 2, 3]), None);
         assert_eq!(unwire(&[]), None);
     }
 
     #[test]
-    fn an_envelope_over_the_cap_is_refused() {
-        let envelope = MessageEnvelope {
-            sender_key: vec![1; 32],
-            timestamp: 7,
-            nonce: vec![2; 16],
-            // Packed Cap'n Proto shrinks zeros; these bytes do not pack.
-            payload: vec![0x5A; rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN],
-            signature: vec![3; 64],
-        };
-        assert!(matches!(wire(&envelope), Err(FriendError::Invalid(_))));
+    fn a_frame_over_the_cap_is_refused() {
+        // Packed Cap'n Proto shrinks zeros; these bytes do not pack.
+        let big = frame(vec![0x5A; rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN]);
+        assert!(matches!(
+            wire(&big),
+            Err(crate::operations::friend::FriendError::Invalid(_))
+        ));
     }
 }

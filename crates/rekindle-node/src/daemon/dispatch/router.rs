@@ -1,6 +1,7 @@
 //! The `dispatch()` router: matches every `IpcRequest` variant to its
 //! domain handler, plus the audit-logging helper it calls before routing.
 
+use crate::host::gate::Acknowledged;
 use crate::host::shell_hooks::EndReason;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
@@ -10,17 +11,23 @@ use super::{
 };
 
 /// Dispatch a validated, gated IPC request to its domain handler
-/// (`HostApi::call` validated it and ran the intent gate).
+/// (`HostApi::call` validated it and ran the intent gate); `acknowledged`
+/// is what committing its review acknowledged (plan E2.3).
 ///
 /// Returns an `IpcResponse` for every request — no request goes unanswered.
 /// Every `IpcRequest` variant is explicitly matched; there is no catch-all arm.
-pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest, caller: &Caller) -> IpcResponse {
+pub async fn dispatch(
+    ctx: &DaemonContext,
+    request: IpcRequest,
+    caller: &Caller,
+    acknowledged: Acknowledged,
+) -> IpcResponse {
     let state = ctx.lifecycle.state();
 
     // Audit: log every request before dispatch (best-effort, non-blocking).
     audit_request(ctx, &request);
 
-    route(ctx, state, request, caller).await
+    route(ctx, state, request, caller, acknowledged).await
 }
 
 /// Route an audited, validated request to its domain handler: one arm per
@@ -30,6 +37,7 @@ async fn route(
     state: crate::daemon::DaemonState,
     request: IpcRequest,
     caller: &Caller,
+    acknowledged: Acknowledged,
 ) -> IpcResponse {
     match request {
         // ── Lifecycle (any state) ────────────────────────────────
@@ -143,11 +151,14 @@ async fn route(
         | IpcRequest::SessionResetStart { .. }
         | IpcRequest::SessionResetAccept { .. }
         | IpcRequest::SessionResetDecline { .. }
+        | IpcRequest::IdentitySafetyNumber { .. }
+        | IpcRequest::IdentityMarkVerified { .. }
+        | IpcRequest::IdentityClearVerification { .. }
         | IpcRequest::DmSend { .. }
         | IpcRequest::DmTyping { .. }
         | IpcRequest::DmInbox { .. }
         | IpcRequest::DmHistory { .. }
-        | IpcRequest::DmMarkRead { .. }) => friends::route(ctx, state, request).await,
+        | IpcRequest::DmMarkRead { .. }) => friends::route(ctx, state, request, acknowledged).await,
 
         // ── Governance (roles, moderation, invites) ──────────────
         IpcRequest::RoleList { community } => governance::handle_role_list(ctx, state, &community),

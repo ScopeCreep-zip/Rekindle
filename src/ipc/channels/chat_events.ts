@@ -28,6 +28,7 @@ export interface DirectMessageReceived {
   conversationId: string;
   serverMessageId: string | null;
   replyToId: string | null;
+  isOwn: boolean;
 }
 
 export type ChannelMessageEvent =
@@ -77,6 +78,7 @@ export type FriendEvent =
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
   | { groupChanged: { peerKey: string; group: string | null } }
+  | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } };
 
 /** Peer on the other end of a direct call; absent for a group call. */

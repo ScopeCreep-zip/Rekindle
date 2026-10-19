@@ -1,46 +1,8 @@
-use super::{account, conversation, friend, identity, message, presence, voice};
-
-#[test]
-fn round_trip_message_envelope() {
-    use crate::message::envelope::MessageEnvelope;
-
-    let env = MessageEnvelope {
-        sender_key: vec![1u8; 32],
-        timestamp: 1_234_567_890,
-        nonce: vec![42u8; 16],
-        payload: b"encrypted content".to_vec(),
-        signature: vec![99u8; 64],
-    };
-
-    let encoded = message::encode_envelope(&env);
-    let decoded = message::decode_envelope(&encoded).unwrap();
-
-    assert_eq!(env.sender_key, decoded.sender_key);
-    assert_eq!(env.timestamp, decoded.timestamp);
-    assert_eq!(env.nonce, decoded.nonce);
-    assert_eq!(env.payload, decoded.payload);
-    assert_eq!(env.signature, decoded.signature);
-}
-
-#[test]
-fn round_trip_chat_message() {
-    let (body, reply) = message::decode_chat_message(&message::encode_chat_message(
-        "hello world",
-        Some(&[1, 2, 3]),
-    ))
-    .unwrap();
-    assert_eq!(body, "hello world");
-    assert_eq!(reply, Some(vec![1, 2, 3]));
-
-    let (body2, reply2) =
-        message::decode_chat_message(&message::encode_chat_message("no reply", None)).unwrap();
-    assert_eq!(body2, "no reply");
-    assert_eq!(reply2, None);
-}
+use super::{account, conversation, friend, identity, presence, voice};
 
 #[test]
 fn round_trip_presence_update() {
-    use crate::message::envelope::GameInfo;
+    use super::presence::GameInfo;
 
     let game = GameInfo {
         game_id: 42,
@@ -72,7 +34,7 @@ fn round_trip_presence_update() {
 
 #[test]
 fn round_trip_user_profile() {
-    use crate::message::envelope::GameInfo;
+    use super::presence::GameInfo;
 
     let profile = identity::UserProfile {
         display_name: "xXGamerXx".to_string(),
@@ -209,7 +171,7 @@ fn round_trip_voice_signaling() {
 
 #[test]
 fn round_trip_game_status() {
-    use crate::message::envelope::GameInfo;
+    use super::presence::GameInfo;
 
     let info = GameInfo {
         game_id: 7,
@@ -276,7 +238,7 @@ fn account_header_without_avatar() {
 
 #[test]
 fn round_trip_conversation_header() {
-    use crate::message::envelope::GameInfo;
+    use super::presence::GameInfo;
 
     let header = conversation::ConversationHeader {
         identity_public_key: vec![0xCC; 32],

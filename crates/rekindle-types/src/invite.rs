@@ -179,7 +179,8 @@ pub enum DeepLink {
     /// `rekindle://invite/...`: join a community.
     CommunityInvite(InviteLink),
     /// `rekindle://<base64url blob>`: add a friend. The blob is decoded and
-    /// its signature checked by `rekindle_protocol::messaging`.
+    /// its signature and recency checked by the Host's review
+    /// (`rekindle_transport::operations::friend::open_invite`).
     FriendInvite(String),
     /// `rekindle://pair?...`: link a new device. Never accepted from an OS
     /// deep link, because an attacker-supplied pairing URI would steer this

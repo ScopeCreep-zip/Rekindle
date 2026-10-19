@@ -147,8 +147,8 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     Ok(())
 }
 
-/// Cache the invite's route for immediate contact, delete any Signal
-/// session left from a prior friendship with this peer, and refresh the
+/// Cache the invite's route for immediate contact, end any session left
+/// from a prior friendship with this peer, and refresh the
 /// route from the peer's mailbox when it has a newer one.
 ///
 /// Deliberately does NOT establish a session: the invite's bundle carries
@@ -167,15 +167,7 @@ async fn setup_invite_contact(host: &dyn FriendHost, blob: &InviteBlob) {
         return;
     };
     dm::route::cache(&node, &blob.public_key, blob.route_blob.clone());
-    match host.signal() {
-        Ok(signal) => {
-            if let Err(e) = signal.delete_session(&blob.public_key) {
-                tracing::error!(peer = %blob.public_key, error = %e,
-                    "setup_invite_contact: failed to delete prior Signal session");
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, "setup_invite_contact: no Signal manager"),
-    }
+    state::forget_session(host, &blob.public_key).await;
     let Ok(records) = node.require_records() else {
         return;
     };

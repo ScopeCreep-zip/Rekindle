@@ -64,6 +64,10 @@ pub enum FriendEvent {
         peer_key: String,
         group: Option<String>,
     },
+    /// A friend rotated their identity: they are `new_key` now, with their
+    /// history and settings moved, and unverified (plan E2.3).
+    /// Triggered by: their signed `IdentityRotated` frame.
+    KeyChanged { peer_key: String, new_key: String },
     /// The first-contact Signal handshake with a peer we sent a request to
     /// failed: no secure session exists, so the friendship stays pending.
     /// This is not a trust prompt; it never asks for "Reset Secure

@@ -103,6 +103,29 @@ pub enum FriendCmd {
         #[arg(long, short = 'f')]
         friend: String,
     },
+
+    /// Show our safety number with a friend, its QR code, and whether
+    /// their key is verified.
+    SafetyNumber {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+
+    /// Mark a friend's key verified, after comparing the safety number
+    /// with them out of band (the host asks to confirm).
+    Verify {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
+
+    /// Withdraw a friend's verification (the host asks to confirm).
+    Unverify {
+        /// The friend's public key.
+        #[arg(long, short = 'f')]
+        friend: String,
+    },
 }
 
 /// Friend invite link subcommands.

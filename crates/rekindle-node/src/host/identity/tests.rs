@@ -11,7 +11,6 @@ async fn create_lock_unlock_round_trips_and_lists() {
     assert_eq!(made.display_name, "Alice");
     assert!(f.db.current().is_ok());
     assert!(f.vault.lock().is_some());
-    assert!(made.signal.current_bundle().is_ok());
     assert!(f.root.identity_db(&made.public_key).exists());
     assert!(f.root.identity_vault(&made.public_key).exists());
     let listed = list(&f.root).unwrap();

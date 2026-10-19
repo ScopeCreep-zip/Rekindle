@@ -1,4 +1,4 @@
-//! Call bodies, moved unchanged from their `MessagePayload` variants and
+//! Call bodies, moved unchanged from the pre-E2.3 1:1 payload and
 //! now ratchet-sealed (E4.2 replaces them with `MediaSignal`), and DM
 //! video until E4.3.8.
 

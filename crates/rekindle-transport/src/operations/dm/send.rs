@@ -1,16 +1,57 @@
-//! Sending one sealed, signed 1:1 envelope: the cached route, an inline
-//! route refresh from the peer's profile, the Strand Relay fallback
-//! (architecture §13.3), a status probe (§13.5), and finally the
-//! pending-message queue. Every send goes through the node's ports (plan
-//! E2.1); the bytes are [`super::wire`].
+//! Sending one 1:1 frame: the cached route, an inline route refresh from
+//! the peer's profile, a status probe (§13.5), and finally the
+//! pending-message queue. Every send goes through the node's ports; the
+//! bytes are [`frame::wire`]. The Strand Relay fallback (§13.3) returns at
+//! E5.5, whose pool entries name the relay's identity: a relay frame is
+//! addressed and signed to it, and a bare route blob names no one.
+//!
+//! What the queue holds until E2.5 (D22): a ratchet or PreKeyInit frame's
+//! wire bytes exactly as encrypted and recorded (retried byte-identical:
+//! the ratchet state was committed before the first send, and the receiver
+//! drops a used `(dh, n)`), and a sealed frame's body and nonce, re-sealed
+//! with a fresh `sent_at` per attempt (the replay guard drops a copy that
+//! already arrived).
 
-use rekindle_codec::message::envelope::{MessageEnvelope, MessagePayload};
+use rekindle_codec::capnp_codec::direct::{Carrier, ContentHint, DirectBody, DmFrame, DmTypeId};
+use serde::{Deserialize, Serialize};
 
-use super::{route, seal, wire};
+use super::frame::{self, Nonce};
+use super::route;
+use crate::operations::direct::frame::Opened;
 use crate::operations::friend::{state, FriendError, FriendHost};
 
-/// Send `envelope`'s wire bytes over the peer's freshly fetched route.
-async fn refresh_and_send(host: &dyn FriendHost, to: &str, bytes: &[u8]) -> bool {
+/// A queued frame (`pending_messages.body`, JSON).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Queued {
+    /// A ratchet or PreKeyInit frame's datagram, sent again as it is.
+    Wire {
+        #[serde(with = "rekindle_types::base64_bytes")]
+        datagram: Vec<u8>,
+    },
+    /// A sealed kind's body, re-sealed per attempt under its nonce.
+    Sealed {
+        type_id: u16,
+        #[serde(with = "rekindle_types::base64_bytes")]
+        body: Vec<u8>,
+        nonce: Nonce,
+    },
+}
+
+/// The D24 content hint of a kind: a text message may be resent from the
+/// send log (E2.5), typing is implicit (its loss shows nothing), and the
+/// rest are the default.
+#[must_use]
+pub fn hint_for(type_id: DmTypeId) -> ContentHint {
+    match type_id {
+        DmTypeId::DmText => ContentHint::Resendable,
+        DmTypeId::Typing => ContentHint::Implicit,
+        _ => ContentHint::Default,
+    }
+}
+
+/// `datagram` over the peer's freshly fetched route.
+async fn refresh_and_send(host: &dyn FriendHost, to: &str, datagram: &[u8]) -> bool {
     let Some(blob) = route::fetch_from_profile(host, to).await else {
         return false;
     };
@@ -21,38 +62,7 @@ async fn refresh_and_send(host: &dyn FriendHost, to: &str, bytes: &[u8]) -> bool
         return false;
     };
     node.sender()
-        .send_direct(&target, bytes.to_vec())
-        .await
-        .is_ok()
-}
-
-/// The Strand Relay fallback (architecture §13.3): when the cached route
-/// and the inline refresh both fail, forward the envelope through a relay
-/// from the recipient's published relay pool (profile subkey 8).
-async fn relay_fallback(host: &dyn FriendHost, to: &str, envelope: &MessageEnvelope) -> bool {
-    let Some(profile_key) = state::friend(host, to).and_then(|f| f.dht_record_key) else {
-        return false;
-    };
-    let Ok(node) = host.node() else {
-        return false;
-    };
-    let Ok(records) = node.require_records() else {
-        return false;
-    };
-    let Ok(Some(pool_body)) = rekindle_protocol::dht::profile::read_profile_subkey(
-        records.as_ref(),
-        &profile_key,
-        rekindle_protocol::dht::profile::SUBKEY_RELAY_POOL,
-        true,
-    )
-    .await
-    else {
-        return false;
-    };
-    let Ok(envelope_bytes) = serde_json::to_vec(envelope) else {
-        return false;
-    };
-    crate::operations::relay::send_via_relay(&node, to, &pool_body, &envelope_bytes)
+        .send_direct(&target, datagram.to_vec())
         .await
         .is_ok()
 }
@@ -69,18 +79,14 @@ fn probe_in_background(host: &dyn FriendHost, to: &str) {
         });
 }
 
-/// Queue `envelope` for the pending-message retry.
+/// Queue `queued` for the pending-message retry.
 ///
 /// # Errors
 /// The queue could not be written.
-pub(crate) async fn queue(
-    host: &dyn FriendHost,
-    to: &str,
-    envelope: &MessageEnvelope,
-) -> Result<(), FriendError> {
+async fn queue(host: &dyn FriendHost, to: &str, queued: &Queued) -> Result<(), FriendError> {
     let owner = state::owner(host)?;
-    let body = serde_json::to_string(envelope)
-        .map_err(|e| FriendError::Failed(format!("serialize envelope: {e}")))?;
+    let body = serde_json::to_string(queued)
+        .map_err(|e| FriendError::Failed(format!("serialize queued frame: {e}")))?;
     let recipient = to.to_string();
     let now = host.clock().now_ms_i64();
     state::db_call!(host, "queue pending message", move |conn| {
@@ -89,30 +95,88 @@ pub(crate) async fn queue(
     .await
 }
 
-/// Seal `payload` as its sealing requires, sign it to `to` and send it.
+/// The frame to `to` for `body`, and how the queue keeps it.
+async fn framed(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<(DmFrame, Queued), FriendError> {
+    let type_id = body.type_id();
+    if type_id.carrier() == Carrier::Sealed {
+        let mut nonce = Nonce::default();
+        host.rng().fill(&mut nonce);
+        let frame = frame::sealed_frame(host, to, body, nonce)?;
+        let queued = Queued::Sealed {
+            type_id: type_id.as_u16(),
+            body: body.encode(),
+            nonce,
+        };
+        return Ok((frame, queued));
+    }
+    let frame = frame::frame(host, to, body, hint_for(type_id)).await?;
+    let queued = Queued::Wire {
+        datagram: frame::wire(&frame)?,
+    };
+    Ok((frame, queued))
+}
+
+/// Send `body` to `to` as its kind travels.
 ///
-/// With no usable route the message is refreshed inline, relayed, and
-/// otherwise queued for the retry. Ephemeral payloads (typing) are never
-/// queued: a stale typing indicator minutes later is worse than none.
+/// With no usable route the frame is refreshed inline, and otherwise
+/// queued for the retry. Typing is never queued: a stale typing
+/// indicator minutes later is worse than none.
 ///
 /// # Errors
-/// The payload could not be sealed, or its envelope is over Veilid's
-/// message cap (never queued: it fails on every path, plan C7.25).
+/// The frame could not be sealed (no session for a ratchet kind), or it is
+/// over Veilid's message cap (never queued: it fails on every path, plan
+/// C7.25).
 pub async fn send_to_peer(
     host: &dyn FriendHost,
     to: &str,
-    payload: &MessagePayload,
+    body: &DirectBody,
 ) -> Result<(), FriendError> {
-    let is_ephemeral = matches!(payload, MessagePayload::TypingIndicator { .. });
-    let envelope = seal::build_signed_envelope(host, to, payload).await?;
-    let bytes = wire(&envelope)?;
-    tracing::debug!(to = %to, wire_len = bytes.len(), "envelope fits the Veilid message cap");
-    let node = host.node()?;
+    let (frame, queued) = framed(host, to, body).await?;
+    deliver(
+        host,
+        to,
+        &frame,
+        &queued,
+        body.type_id() == DmTypeId::Typing,
+    )
+    .await
+}
 
+/// Send a frame built elsewhere (a PreKeyInit opened from a bundle) to
+/// `to`, queued like any other when no route takes it.
+///
+/// # Errors
+/// The frame is over Veilid's message cap, or the queue could not be
+/// written.
+pub async fn send_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    frame: &DmFrame,
+) -> Result<(), FriendError> {
+    let queued = Queued::Wire {
+        datagram: frame::wire(frame)?,
+    };
+    deliver(host, to, frame, &queued, false).await
+}
+
+/// One send of `frame` down the fallbacks, queued last unless ephemeral.
+async fn deliver(
+    host: &dyn FriendHost,
+    to: &str,
+    frame: &DmFrame,
+    queued: &Queued,
+    ephemeral: bool,
+) -> Result<(), FriendError> {
+    let datagram = frame::wire(frame)?;
+    let node = host.node()?;
     let failure = match route::cached_target(&node, to) {
-        Some(target) => match node.sender().send_direct(&target, bytes.clone()).await {
+        Some(target) => match node.sender().send_direct(&target, datagram.clone()).await {
             Ok(()) => {
-                tracing::info!(to = %to, "message sent via veilid");
+                tracing::info!(to = %to, kind = ?frame.type_id, "frame sent via veilid");
                 return Ok(());
             }
             Err(e) => {
@@ -123,82 +187,90 @@ pub async fn send_to_peer(
         },
         None => None,
     };
-    if is_ephemeral {
-        tracing::debug!(to = %to, error = ?failure, "no route for peer — dropping ephemeral message");
+    if ephemeral {
+        tracing::debug!(to = %to, error = ?failure, "no route for peer — dropping ephemeral frame");
         return Ok(());
     }
-    if refresh_and_send(host, to, &bytes).await {
-        tracing::info!(to = %to, "message sent via veilid (after inline route refresh)");
-        return Ok(());
-    }
-    if relay_fallback(host, to, &envelope).await {
-        tracing::info!(to = %to, "message sent via strand relay");
+    if refresh_and_send(host, to, &datagram).await {
+        tracing::info!(to = %to, "frame sent via veilid (after inline route refresh)");
         return Ok(());
     }
     if failure.is_none() {
         probe_in_background(host, to);
     }
-    tracing::debug!(to = %to, error = ?failure, "no usable route for peer — queuing message for retry");
-    queue(host, to, &envelope).await
+    tracing::debug!(to = %to, error = ?failure, "no usable route for peer — queuing frame for retry");
+    queue(host, to, queued).await
 }
 
-/// Seal and sign `payload` and queue it for the retry without trying to
-/// send it now: a notice whose delivery the queue must track (`Unfriended`
-/// until its ack, an ack the peer is waiting on).
+/// Frame `body` and queue it for the retry without trying to send it now:
+/// a notice whose delivery the queue must track (`Unfriended` until its
+/// ack).
 ///
 /// # Errors
-/// The payload could not be sealed, or the queue could not be written.
+/// The frame could not be sealed, or the queue could not be written.
 pub async fn build_and_queue(
     host: &dyn FriendHost,
     to: &str,
-    payload: &MessagePayload,
+    body: &DirectBody,
 ) -> Result<(), FriendError> {
-    let envelope = seal::build_signed_envelope(host, to, payload).await?;
-    queue(host, to, &envelope).await
+    let (_, queued) = framed(host, to, body).await?;
+    queue(host, to, &queued).await
 }
 
-/// `app_call` `payload` to `to` and await the reply, a raw `MessagePayload`
-/// JSON (the receiver shapes it directly).
+/// `app_call` `body` to `to` and open the reply: a frame from `to`, or
+/// `None` for an empty reply (the call's return is the receipt).
 ///
 /// # Errors
-/// No cached route, the call failed, or the reply does not decode.
+/// No cached route, the call failed, or the reply is not a frame from `to`
+/// that opens.
 pub async fn send_to_peer_call(
     host: &dyn FriendHost,
     to: &str,
-    payload: &MessagePayload,
-) -> Result<MessagePayload, FriendError> {
-    let envelope = seal::build_signed_envelope(host, to, payload).await?;
-    let bytes = wire(&envelope)?;
+    body: &DirectBody,
+) -> Result<Option<Opened>, FriendError> {
+    let (frame, _) = framed(host, to, body).await?;
+    let datagram = frame::wire(&frame)?;
     let node = host.node()?;
     let target = route::cached_target(&node, to)
         .ok_or_else(|| FriendError::NotReady(format!("no cached route for peer {to}")))?;
     let reply = node
         .caller()
-        .call_direct(&target, bytes)
+        .call_direct(&target, datagram)
         .await
         .map_err(|e| FriendError::Failed(format!("app_call: {e}")))?;
-    serde_json::from_slice::<MessagePayload>(&reply)
-        .map_err(|e| FriendError::Failed(format!("decode reply payload: {e}")))
+    if reply.is_empty() {
+        return Ok(None);
+    }
+    let opened = super::unwire(&reply)
+        .ok_or_else(|| FriendError::Failed("app_call reply is not a 1:1 frame".into()))?;
+    let opened = crate::operations::direct::frame::open(host, opened)
+        .await
+        .ok_or_else(|| FriendError::Failed("app_call reply does not open".into()))?;
+    if opened.sender_hex != to {
+        return Err(FriendError::Failed(format!(
+            "app_call reply from {} for a call to {to}",
+            opened.sender_hex
+        )));
+    }
+    crate::operations::direct::frame::processed(host, &opened);
+    Ok(Some(opened))
 }
 
-/// What one retry of a queued envelope came to.
+/// What one retry of a queued frame came to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Resend {
     /// It went out.
     Delivered,
     /// No route, or the send failed: try again next tick.
     Failed,
-    /// It cannot be re-signed (its recipient is not a key, or the identity
-    /// is gone): drop it.
-    Unsignable,
+    /// It cannot be sent again (its kind is not one, its recipient is not a
+    /// key, or the identity is gone): drop it.
+    Unsendable,
 }
 
-/// Send a queued envelope again over the peer's cached route, or their
-/// mailbox's route when none is cached, re-signed with a fresh timestamp
-/// and the same nonce: the receiver's freshness window would reject the
-/// original signature, and a copy that already arrived is dropped as a
-/// duplicate (the pending-message retry).
-pub async fn resend(host: &dyn FriendHost, to: &str, envelope: &MessageEnvelope) -> Resend {
+/// Send a queued frame again over the peer's cached route, or their
+/// mailbox's route when none is cached (the pending-message retry).
+pub async fn resend(host: &dyn FriendHost, to: &str, queued: &Queued) -> Resend {
     let Ok(node) = host.node() else {
         return Resend::Failed;
     };
@@ -214,21 +286,72 @@ pub async fn resend(host: &dyn FriendHost, to: &str, envelope: &MessageEnvelope)
         tracing::debug!(to = %to, "discovered route via mailbox fallback");
         target
     };
-    let bytes = match seal::resign_for_retry(host, to, envelope).and_then(|e| wire(&e)) {
-        Ok(bytes) => bytes,
+    let datagram = match datagram_for_retry(host, to, queued) {
+        Ok(datagram) => datagram,
         Err(error) => {
-            tracing::warn!(to = %to, %error, "pending DM cannot be re-signed — dropping");
-            return Resend::Unsignable;
+            tracing::warn!(to = %to, %error, "queued frame cannot be sent again — dropping");
+            return Resend::Unsendable;
         }
     };
-    match node.sender().send_direct(&target, bytes).await {
+    match node.sender().send_direct(&target, datagram).await {
         Ok(()) => {
-            tracing::debug!(to = %to, "pending DM delivered successfully");
+            tracing::debug!(to = %to, "queued frame delivered");
             Resend::Delivered
         }
         Err(error) => {
-            tracing::debug!(to = %to, %error, "pending DM retry failed");
+            tracing::debug!(to = %to, %error, "queued frame retry failed");
             Resend::Failed
         }
+    }
+}
+
+/// The datagram one retry sends.
+fn datagram_for_retry(
+    host: &dyn FriendHost,
+    to: &str,
+    queued: &Queued,
+) -> Result<Vec<u8>, FriendError> {
+    match queued {
+        Queued::Wire { datagram } => Ok(datagram.clone()),
+        Queued::Sealed {
+            type_id,
+            body,
+            nonce,
+        } => {
+            let type_id = DmTypeId::from_u16(*type_id)
+                .ok_or_else(|| FriendError::Invalid(format!("typeId {type_id:#06x}")))?;
+            let body = DirectBody::decode(type_id, body)
+                .map_err(|e| FriendError::Invalid(format!("queued body: {e}")))?;
+            frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_queued_frame_survives_its_json_row() {
+        for queued in [
+            Queued::Wire {
+                datagram: vec![b'D', 1, 2, 3],
+            },
+            Queued::Sealed {
+                type_id: DmTypeId::FriendReject.as_u16(),
+                body: Vec::new(),
+                nonce: [9; 16],
+            },
+        ] {
+            let row = serde_json::to_string(&queued).unwrap();
+            assert_eq!(serde_json::from_str::<Queued>(&row).unwrap(), queued);
+        }
+    }
+
+    #[test]
+    fn hints_follow_the_kind() {
+        assert_eq!(hint_for(DmTypeId::DmText), ContentHint::Resendable);
+        assert_eq!(hint_for(DmTypeId::Typing), ContentHint::Implicit);
+        assert_eq!(hint_for(DmTypeId::CallInvite), ContentHint::Default);
     }
 }

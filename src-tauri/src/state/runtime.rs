@@ -1,4 +1,4 @@
-//! Phase 23.B — extracted from `state.rs`. Veilid + Signal + Voice
+//! Phase 23.B — extracted from `state.rs`. Veilid + Voice
 //! runtime handles owned by `AppState`. Each is an `Option<T>` field set on
 //! the relevant lifecycle hook (node start, login, voice join).
 
@@ -28,13 +28,6 @@ pub struct NodeHandle {
     pub friend_list_dht_key: Option<String>,
     /// Our mailbox DHT record key (deterministic, permanent).
     pub mailbox_dht_key: Option<String>,
-}
-
-/// Handle to the Signal session manager.
-pub struct SignalManagerHandle {
-    /// The unlock's one Signal manager, shared with the in-process host
-    /// (plan D3.1), so a bus request and the window use one session state.
-    pub manager: std::sync::Arc<rekindle_crypto::SignalSessionManager>,
 }
 
 /// Handle to the voice engine.

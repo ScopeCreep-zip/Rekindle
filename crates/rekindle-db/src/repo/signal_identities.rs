@@ -7,8 +7,9 @@
 //! on a safety-number change; when the row was verified it also records
 //! the change (`changed_from_key`, `changed_at`), and while that is set
 //! [`verified_key_changed`] raises the `VerifiedKeyChanged` escalation.
-//! Committing the escalated action acknowledges it
-//! ([`acknowledge_key_change`]); marking the new key verified does too.
+//! Committing the escalated action acknowledges it ([`acknowledging`], in
+//! the action's own transaction, or [`acknowledge_key_change`] after an
+//! action whose write is not here); marking the new key verified does too.
 
 use rekindle_crypto::SafetyNumber;
 use rekindle_types::intent::Escalation;
@@ -118,6 +119,26 @@ pub fn acknowledge_key_change(
         params![identity_text(owner), identity_text(peer)],
     )?;
     Ok(())
+}
+
+/// Run `write`, the own write of an action whose review a
+/// [`verified_key_changed`] escalation held, and acknowledge `peer`'s key
+/// change in the same transaction: the action and the acknowledgement
+/// commit together or not at all.
+///
+/// # Errors
+/// `write` or the acknowledgement failed; neither is kept.
+pub fn acknowledging<R>(
+    conn: &Connection,
+    owner: &[u8; 32],
+    peer: &[u8; 32],
+    write: impl FnOnce(&Connection) -> rusqlite::Result<R>,
+) -> rusqlite::Result<R> {
+    let tx = conn.unchecked_transaction()?;
+    let written = write(&tx)?;
+    acknowledge_key_change(&tx, owner, peer)?;
+    tx.commit()?;
+    Ok(written)
 }
 
 /// A friend rotated from `old` to `new` (both signatures checked by the
@@ -245,6 +266,27 @@ mod tests {
         assert_ne!(old_safety_number, new_safety_number);
 
         acknowledge_key_change(&conn, &OWNER, &NEW).unwrap();
+        assert_eq!(verified_key_changed(&conn, &OWNER, &NEW).unwrap(), None);
+        assert!(!get(&conn, &OWNER, &NEW).unwrap().unwrap().verified);
+    }
+
+    #[test]
+    fn an_acknowledging_write_commits_with_its_acknowledgement_or_not_at_all() {
+        let conn = fixture::identity_conn(&OWNER);
+        ensure(&conn, &OWNER, &OLD).unwrap();
+        mark_verified(&conn, &OWNER, &OLD, 1).unwrap();
+        rotate(&conn, &OWNER, &OLD, &NEW, 9).unwrap();
+
+        let failed: rusqlite::Result<()> = acknowledging(&conn, &OWNER, &NEW, |_| {
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        });
+        assert!(failed.is_err());
+        assert!(
+            verified_key_changed(&conn, &OWNER, &NEW).unwrap().is_some(),
+            "a failed write acknowledges nothing"
+        );
+
+        assert_eq!(acknowledging(&conn, &OWNER, &NEW, |_| Ok(7)).unwrap(), 7);
         assert_eq!(verified_key_changed(&conn, &OWNER, &NEW).unwrap(), None);
         assert!(!get(&conn, &OWNER, &NEW).unwrap().unwrap().verified);
     }

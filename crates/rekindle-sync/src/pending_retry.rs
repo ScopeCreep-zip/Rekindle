@@ -3,10 +3,9 @@
 //! Pure decision helpers for the offline retry queue + the
 //! [`process_pending_retry_queue`] orchestrator that loops over
 //! every pending row, dispatches via [`crate::SyncDeps`], and
-//! tracks the delete-vs-bump-retry decision. AppState +
-//! transport-specific orchestration (JSON envelope parse, DM vs
-//! channel-message dispatch, Veilid DHT write) stays in src-tauri
-//! behind the trait.
+//! tracks the delete-vs-bump-retry decision. The transport-specific
+//! orchestration (the queued frame's JSON parse and its resend) stays in
+//! the host behind the trait.
 //!
 //! Chiral split matches Phase 17/18/19/20/21.
 

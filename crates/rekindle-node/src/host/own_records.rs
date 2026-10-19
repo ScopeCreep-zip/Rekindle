@@ -12,7 +12,6 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_db::repo::identity::OwnedRecord;
 use rekindle_db::DbHandle;
 use rekindle_protocol::dht::{account, friends, mailbox, profile};
@@ -32,8 +31,11 @@ pub(crate) struct OwnRecords {
     pub db: Arc<DbHandle>,
     pub vault: VaultHandle,
     pub session: Arc<RwLock<Option<Session>>>,
-    pub signal: Arc<SignalSessionManager>,
     pub shell: Option<Arc<dyn ShellHooks>>,
+    /// The Host's generator and clock (C9.2): our prekeys are minted with
+    /// them (`rekindle_db::prekeys`, plan E2.3).
+    pub rng: Arc<dyn rekindle_utils::RandomSource>,
+    pub clock: Arc<dyn rekindle_utils::Clock>,
     /// Our presence: its message goes into the profile, and its publisher
     /// writes our status once the profile exists.
     pub presence: super::own_presence::OwnPresence,
@@ -227,14 +229,28 @@ impl OwnRecords {
         Some(key)
     }
 
+    /// Our long-lived bundle, in its wire form (`rekindle_db::prekeys`).
+    async fn current_bundle(&self) -> Result<Vec<u8>, String> {
+        let db = self.db.current().map_err(|e| e.to_string())?;
+        let local = rekindle_db::ratchet::LocalParty {
+            identity: Arc::new(rekindle_crypto::Identity::from_secret_bytes(&self.secret)),
+            rng: Arc::clone(&self.rng),
+            now_ms: self.clock.now_ms_i64(),
+        };
+        rekindle_db::prekeys::current_bundle(&db, &local)
+            .await
+            .map(|bundle| bundle.to_wire())
+            .map_err(|e| e.to_string())
+    }
+
     async fn profile(
         &self,
         pool: &dyn RecordPort,
         stored: &Stored,
         route_blob: &[u8],
     ) -> Option<(String, String)> {
-        let bundle = match self.signal.current_bundle() {
-            Ok(bundle) => bundle.to_wire(),
+        let bundle = match self.current_bundle().await {
+            Ok(bundle) => bundle,
             Err(e) => {
                 tracing::error!(error = %e, "own records: no prekey bundle");
                 return None;
@@ -406,11 +422,16 @@ pub(crate) async fn rotate_profile(
             )
         })
         .ok_or("no identity is unlocked")?;
-    let signal = ctx.signal.read().clone().ok_or("no identity is unlocked")?;
-    let bundle = signal
-        .current_bundle()
-        .map_err(|e| format!("prekey bundle: {e}"))?
-        .to_wire();
+    let host = super::adapters::friends::HostFriends::of(ctx);
+    let bundle = rekindle_transport::operations::friend::FriendHost::local_party(&host)
+        .map_err(|e| e.to_string())?;
+    let bundle = rekindle_db::prekeys::current_bundle(
+        &ctx.db.current().map_err(|e| e.to_string())?,
+        &bundle,
+    )
+    .await
+    .map_err(|e| format!("prekey bundle: {e}"))?
+    .to_wire();
     let route_blob = transport.personal_route_blob().unwrap_or_default();
     let status_message = ctx.own_presence.view().status_message;
     let (lease, key, keypair, outcome) = profile::create_profile(

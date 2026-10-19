@@ -74,6 +74,9 @@ pub enum ChannelMessageEvent {
         server_message_id: Option<String>,
         /// The message this replies to, if any.
         reply_to_id: Option<String>,
+        /// Whether we sent it (from another of our devices, E5.3): a
+        /// window renders it as ours.
+        is_own: bool,
     },
 
     /// A direct message we sent was acknowledged by the peer.

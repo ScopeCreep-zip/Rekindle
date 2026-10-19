@@ -179,7 +179,7 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoSnapshot> {
     if data.is_empty() {
         return None;
     }
-    let game = match rekindle_codec::capnp_codec::message::decode_game_info(data) {
+    let game = match rekindle_codec::capnp_codec::presence::decode_game_status(data) {
         Ok(game) => game,
         Err(e) => {
             tracing::debug!(error = %e, "friend game info does not decode");
@@ -316,8 +316,8 @@ mod tests {
     /// `host:port` is dropped, the game kept; empty is no game.
     #[test]
     fn game_info_decodes_the_capnp_game_status() {
-        use rekindle_codec::capnp_codec::message::encode_game_info;
-        use rekindle_codec::message::envelope::GameInfo;
+        use rekindle_codec::capnp_codec::presence::encode_game_status;
+        use rekindle_codec::capnp_codec::presence::GameInfo;
         let game = |server_address: &str| GameInfo {
             game_id: 4181,
             game_name: "Counter-Strike 2".into(),
@@ -325,13 +325,13 @@ mod tests {
             elapsed_seconds: 90,
             server_address: Some(server_address.into()),
         };
-        let parsed = parse_game_info(&encode_game_info(&game("1.2.3.4:27015"))).unwrap();
+        let parsed = parse_game_info(&encode_game_status(&game("1.2.3.4:27015"))).unwrap();
         assert_eq!(parsed.game_id, 4181);
         assert_eq!(parsed.game_name, "Counter-Strike 2");
         assert_eq!(parsed.elapsed_seconds, 90);
         assert_eq!(parsed.server_address.as_deref(), Some("1.2.3.4:27015"));
 
-        let hostile = parse_game_info(&encode_game_info(&game("1.2.3.4:27015 +exec x"))).unwrap();
+        let hostile = parse_game_info(&encode_game_status(&game("1.2.3.4:27015 +exec x"))).unwrap();
         assert_eq!(hostile.server_address, None);
         assert_eq!(hostile.game_name, "Counter-Strike 2");
 

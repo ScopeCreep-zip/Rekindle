@@ -83,6 +83,7 @@ pub async fn send_dm_message<D: DmDeps + ?Sized>(
         sender_pseudonym: my_pseudonym,
         body: body.to_string(),
         timestamp_ms: now_ms,
+        is_own: true,
     });
 
     maybe_ratchet(deps, record_key, &owner_key, next_sequence).await;

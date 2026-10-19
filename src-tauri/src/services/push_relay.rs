@@ -3,14 +3,15 @@
 //! On Tier 3, a separate headless `veilid-server` (self-hosted or
 //! shared) watches DHT records on the device's behalf and forwards
 //! content-free wake signals via FCM/APNs. This module is the
-//! Rekindle-side client: persist registrations locally, send the
-//! `RegisterPushRelay` AppCall on register, send `UnregisterPushRelay`
-//! on logout. The relay daemon itself is out of scope for this crate
+//! Rekindle-side client: persist registrations locally, send
+//! `RegisterPushRelay` (0x0310) on register and `UnregisterPushRelay`
+//! (0x0311) on logout, each HPKE-sealed to the relay's identity and
+//! signed by ours (§6 `DmFrame` typeIds; E5.6 builds the relay). The relay daemon itself is out of scope for this crate
 //! — it ships as a separate `rekindle-push-relay` binary.
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, RegisterPushRelay, UnregisterPushRelay};
 
 use crate::db_helpers::db_call;
 use crate::state::AppState;
@@ -53,15 +54,15 @@ pub async fn register_with_push_relay(
     })
     .await?;
 
-    let payload = MessagePayload::RegisterPushRelay {
+    let body = DirectBody::RegisterPushRelay(RegisterPushRelay {
         device_push_token: device_push_token.to_string(),
         platform: platform.to_string(),
         record_keys: record_keys.to_vec(),
-    };
+    });
     rekindle_transport::operations::dm::send_to_peer(
         state_helpers::friend_host(state)?.as_ref(),
         relay_pseudonym,
-        &payload,
+        &body,
     )
     .await
     .map_err(|e| e.to_string())
@@ -107,16 +108,13 @@ pub async fn unregister_with_push_relay(
     .await?;
 
     if let Some(token) = token {
-        let payload = MessagePayload::UnregisterPushRelay {
+        let body = DirectBody::UnregisterPushRelay(UnregisterPushRelay {
             device_push_token: token,
-        };
+        });
         if let Ok(host) = state_helpers::friend_host(state) {
-            if let Err(e) = rekindle_transport::operations::dm::send_to_peer(
-                host.as_ref(),
-                &pseudonym,
-                &payload,
-            )
-            .await
+            if let Err(e) =
+                rekindle_transport::operations::dm::send_to_peer(host.as_ref(), &pseudonym, &body)
+                    .await
             {
                 tracing::debug!(error = %e, "push relay unregister not sent");
             }

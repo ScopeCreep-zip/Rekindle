@@ -57,11 +57,7 @@ pub async fn block(
     // Watching the presence of someone the user cut off is the worse half
     // of not blocking at all.
     host.unwatch_friend(public_key).await;
-    if let Ok(signal) = host.signal() {
-        if let Err(e) = signal.delete_session(public_key) {
-            tracing::warn!(peer = %public_key, error = %e, "blocked user's session not deleted");
-        }
-    }
+    state::forget_session(host, public_key).await;
     rotate::rotate_profile_key(host).await?;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),

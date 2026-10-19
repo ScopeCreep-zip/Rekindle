@@ -101,7 +101,7 @@ pub async fn delete_identity(
 pub async fn pqxdh_bundle_info(
     state: State<'_, SharedState>,
 ) -> Result<crate::services::auth_runtime::PqxdhBundleInfo, String> {
-    crate::services::auth_runtime::pqxdh_bundle_info_inner(state.inner())
+    crate::services::auth_runtime::pqxdh_bundle_info_inner(state.inner()).await
 }
 
 /// Verify the identity's tamper-evident audit log end to end

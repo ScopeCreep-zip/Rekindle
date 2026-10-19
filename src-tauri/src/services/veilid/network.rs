@@ -29,8 +29,8 @@ pub async fn handle_app_call(
     let message = call.message().to_vec();
 
     // A 1:1 call (the `'D'` tag) is routed first, by its tag: the Host's
-    // direct dispatch; its call payloads are unported, answered by the
-    // desktop's arms (plan E2.1). Gossip never travels by `app_call`. The
+    // direct dispatch; an unported kind (a relay offer) is answered by the
+    // desktop's arm (plan E2.3). Gossip never travels by `app_call`. The
     // untagged arms below keep their order until their owners tag them
     // (plan E2.3, "Ingress").
     match rekindle_codec::ingress::classify(&message) {
@@ -237,21 +237,22 @@ async fn community_call(
     }
 }
 
-/// Answer a 1:1 `app_call` through the Host: a handled call has no reply
-/// of its own (ACK); an unported one is answered by the desktop's arm.
+/// Answer a 1:1 `app_call` through the Host: its reply (empty for a
+/// handled call, whose return is the receipt, or a frame); an unported
+/// kind is answered by the desktop's arm. With no host or no identity
+/// database nothing was received, so the reply is `NAK`, which no caller
+/// takes for a receipt.
 async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Vec<u8> {
     let Some(host) = state.host.current() else {
         return b"NAK".to_vec();
     };
     match host.receive_direct_call(message).await {
-        rekindle_transport::operations::direct::Routed::Handled => b"ACK".to_vec(),
-        rekindle_transport::operations::direct::Routed::Unported(prepared) => {
+        rekindle_transport::operations::direct::Called::Answered(reply) => reply,
+        rekindle_transport::operations::direct::Called::Unported(opened) => {
             let Ok(pool) = state.db.current() else {
                 return b"NAK".to_vec();
             };
-            super::inbound_unported::handle_call(state, &pool, *prepared)
-                .await
-                .unwrap_or_else(|| b"ACK".to_vec())
+            super::inbound_unported::handle_call(state, &pool, *opened).await
         }
     }
 }

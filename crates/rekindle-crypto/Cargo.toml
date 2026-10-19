@@ -11,7 +11,6 @@ workspace = true
 # Tier 1 owns the primitive crypto error taxonomy; this crate wraps it
 # rather than restating it (see src/error.rs).
 aes-gcm = "0.10"
-blake3 = "1"
 chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hex = "0.4"
@@ -20,7 +19,6 @@ hkdf = "0.12"
 # KDF_CK of the spec Double Ratchet (`signal::dr`): HMAC-SHA256 over the
 # chain key, DR rev. 1 §5.2.
 hmac = "0.12"
-parking_lot = "0.12"
 rand = "0.8"
 # The prekey bundle's wire form is the Cap'n Proto DTO (plan C7.25).
 rekindle-codec = { path = "../rekindle-codec" }
@@ -35,12 +33,9 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
-# Phase 6 — SessionCache infrastructure
-async-trait = "0.1"
-dashmap = "6"
-lru = "0.12"
-tokio = { workspace = true, features = [ "sync" ] }
 
 [dev-dependencies]
+parking_lot = "0.12"
+# The test generator seeds itself from a message's bytes (`signal::test_support`).
+blake3 = "1"
 proptest = "1"
-tokio = { workspace = true, features = [ "sync", "rt", "rt-multi-thread", "macros", "time" ] }

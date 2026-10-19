@@ -1,13 +1,106 @@
 //! Our direct messages: send, history, read marks and the inbox.
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{ClientId, DirectBody, DmText};
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::send::send_to_peer;
 use crate::operations::friend::{state, FriendError, FriendHost};
 
-/// Store our message to `to` and send it.
+/// A fresh client id: a UUID v7 from the Host's clock and generator
+/// (C9.2), so ids sort by send time.
+pub(crate) fn mint_client_id(host: &dyn FriendHost) -> ClientId {
+    let mut random = [0u8; 10];
+    host.rng().fill(&mut random);
+    *uuid::Builder::from_unix_timestamp_millis(host.clock().now_ms(), &random)
+        .into_uuid()
+        .as_bytes()
+}
+
+/// A client id as the `messages.message_id` column stores it.
+#[must_use]
+pub fn client_id_text(id: &ClientId) -> String {
+    uuid::Uuid::from_bytes(*id).to_string()
+}
+
+/// The client id in `text` (a UUID), as a reply names its parent.
+///
+/// # Errors
+/// `Invalid` when `text` is not a UUID.
+pub fn parse_client_id(text: &str) -> Result<ClientId, FriendError> {
+    uuid::Uuid::parse_str(text)
+        .map(|id| *id.as_bytes())
+        .map_err(|e| FriendError::Invalid(format!("message id {text}: {e}")))
+}
+
+/// A direct message to store, owned so it crosses to the database thread
+/// (`rekindle_db::repo::messages::NewDm`).
+pub(crate) struct NewDmFields {
+    pub peer: String,
+    pub sender: String,
+    pub body: String,
+    pub timestamp: i64,
+    pub is_read: bool,
+    pub message_id: String,
+    pub reply_to: Option<String>,
+}
+
+impl NewDmFields {
+    /// Store it; its row id (the held row's for a replay).
+    ///
+    /// # Errors
+    /// The identity is locked, or the write failed.
+    pub(crate) async fn store(self, host: &dyn FriendHost) -> Result<i64, FriendError> {
+        self.store_with(host, None).await
+    }
+
+    /// Store it and acknowledge the peer's verified key change in the
+    /// same transaction: the send a `VerifiedKeyChanged` review held was
+    /// committed (plan E2.3).
+    ///
+    /// # Errors
+    /// The identity is locked, a key is malformed, or the write failed
+    /// (neither is kept).
+    async fn store_acknowledging(self, host: &dyn FriendHost) -> Result<i64, FriendError> {
+        let keys = crate::operations::friend::verification::keys(host, &self.peer)?;
+        self.store_with(host, Some(keys)).await
+    }
+
+    async fn store_with(
+        self,
+        host: &dyn FriendHost,
+        acknowledge: Option<([u8; 32], [u8; 32])>,
+    ) -> Result<i64, FriendError> {
+        let owner = state::owner(host)?;
+        state::db_call!(host, "store direct message", move |conn| {
+            let dm = rekindle_db::repo::messages::NewDm {
+                owner_key: &owner,
+                peer_key: &self.peer,
+                sender_key: &self.sender,
+                body: &self.body,
+                timestamp: self.timestamp,
+                is_read: self.is_read,
+                message_id: &self.message_id,
+                reply_to: self.reply_to.as_deref(),
+            };
+            match acknowledge {
+                Some((ours, theirs)) => rekindle_db::repo::signal_identities::acknowledging(
+                    conn,
+                    &ours,
+                    &theirs,
+                    |tx| rekindle_db::repo::messages::insert_dm(tx, &dm),
+                ),
+                None => rekindle_db::repo::messages::insert_dm(conn, &dm),
+            }
+        })
+        .await
+    }
+}
+
+/// Store our message to `to` (a reply to `reply_to`, the parent's client
+/// id, when given) and send it. A send whose review was held on `to`'s
+/// verified key changing acknowledges the change with its own row
+/// (`acknowledges_key_change`, plan E2.3).
 ///
 /// The send's outcome reaches the window: an error is returned (the
 /// window marks the message failed, with Retry), and only a message that
@@ -20,24 +113,40 @@ pub async fn send_dm(
     host: &dyn FriendHost,
     to: &str,
     body: &str,
+    reply_to: Option<&str>,
+    acknowledges_key_change: bool,
 ) -> Result<DmMessage, FriendError> {
     state::require_public_key(to)?;
+    let reply_to = reply_to.map(parse_client_id).transpose()?;
     let owner = state::owner(host)?;
     let timestamp = host.clock().now_ms_i64();
+    let client_id = mint_client_id(host);
+    let message_id = client_id_text(&client_id);
     tracing::info!(to = %to, len = body.len(), "sending message");
-    let (ok, peer, text) = (owner.clone(), to.to_string(), body.to_string());
-    let id = state::db_call!(host, "store sent message", move |conn| {
-        rekindle_db::repo::messages::insert_dm(conn, &ok, &peer, &ok, &text, timestamp, true)
-    })
-    .await?;
+    let fields = NewDmFields {
+        peer: to.to_string(),
+        sender: owner.clone(),
+        body: body.to_string(),
+        timestamp,
+        is_read: true,
+        message_id: message_id.clone(),
+        reply_to: reply_to.as_ref().map(client_id_text),
+    };
+    let id = if acknowledges_key_change {
+        fields.store_acknowledging(host).await?
+    } else {
+        fields.store(host).await?
+    };
 
     // Sending the message ends our typing to `to`.
     super::typing::message_sent(host, to);
-    let payload = MessagePayload::DirectMessage {
+    let message = DirectBody::DmText(DmText {
+        client_id,
         body: body.to_string(),
-        reply_to: None,
-    };
-    if let Err(e) = send_to_peer(host, to, &payload).await {
+        reply_to,
+        expire_seconds: 0,
+    });
+    if let Err(e) = send_to_peer(host, to, &message).await {
         tracing::warn!(error = %e, "DM send failed — message persisted locally");
         return Err(e);
     }
@@ -49,6 +158,7 @@ pub async fn send_dm(
     ));
     Ok(DmMessage {
         id,
+        message_id: Some(message_id),
         sender_id: owner,
         body: body.to_string(),
         timestamp,
@@ -79,6 +189,7 @@ pub async fn history(
         .into_iter()
         .map(|row| DmMessage {
             id: row.id,
+            message_id: row.message_id,
             is_own: row.sender_key == owner,
             sender_id: row.sender_key,
             body: row.body,

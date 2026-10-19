@@ -154,7 +154,9 @@
  * `@layer sec`, valued per base and never themeable. The commit controls of
  * the intent review, the deep-link consent and device pairing use them, so a
  * skin cannot disguise a destructive commit; StatusDot's cutouts paint with
- * `--sec-status-cutout`, so a skin cannot erase the shape cue. */
+ * `--sec-status-cutout`, so a skin cannot erase the shape cue; the safety
+ * number and its key-trust badges use them, so a skin cannot hide or fake
+ * what the user compares (plan E2.3). */
 @layer sec {
   :root {
     --sec-font-family: "Segoe UI", "Tahoma", sans-serif;
@@ -170,6 +172,14 @@
     --sec-focus: #8cc4ff;
     --sec-status-cutout: #0a0a0a;
     --sec-qr-backing: #f8fafc;
+    /* The safety number's card (plan E2.3): dark digits and modules on the
+     * QR backing in every skin, and the key-trust badges. */
+    --sec-qr-ink: #0a0a0a;
+    --sec-mono-font-family: "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+    --sec-verified-bg: #1b5e20;
+    --sec-verified-fg: #ffffff;
+    --sec-changed-bg: #8a4b00;
+    --sec-changed-fg: #ffffff;
   }
 
   :root[data-skin-base="light"] {

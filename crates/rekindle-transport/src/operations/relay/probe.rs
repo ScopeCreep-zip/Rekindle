@@ -2,8 +2,7 @@
 //! "social CDN" — status flows along the friendship edges the relay
 //! overlay uses.
 
-use rekindle_codec::capnp_codec::direct::StatusResponse;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, StatusRequest, StatusResponse};
 use rekindle_types::friend::{FriendshipState, UserStatus};
 
 use crate::operations::dm;
@@ -48,11 +47,11 @@ pub async fn probe_friends_for_status(host: &dyn FriendHost, target: &str) {
         tracing::trace!(target = %target, "dropping status probe — within cooldown");
         return;
     }
-    let payload = MessagePayload::StatusRequest {
+    let request = DirectBody::StatusRequest(StatusRequest {
         target_pubkey: target.to_string(),
-    };
+    });
     for friend in probe_targets(host, target) {
-        if let Err(e) = dm::send_to_peer(host, &friend, &payload).await {
+        if let Err(e) = dm::send_to_peer(host, &friend, &request).await {
             tracing::trace!(to = %friend, error = %e, "status probe not sent");
         }
     }

@@ -7,9 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
-use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_events::typing::{TypingExpiry, TypingSessions};
-use rekindle_protocol::messaging::replay::ReplayGuard;
 use rekindle_types::friend_store::FriendStore;
 use rekindle_types::subscription_events::SubscriptionEvent;
 use zeroize::Zeroizing;
@@ -17,6 +15,7 @@ use zeroize::Zeroizing;
 use super::error::FriendError;
 use super::session_reset::OutgoingReset;
 use crate::broadcast::node::TransportNode;
+use crate::operations::direct::replay::ReplayGuard;
 use crate::session::Session;
 
 /// An action the backend holds for the user's review (plan E2.1): the Host
@@ -32,7 +31,7 @@ pub enum BackendHold {
 /// identity, cleared at lock.
 #[derive(Default)]
 pub struct FriendStores {
-    /// Envelopes already accepted, so a replayed copy is dropped.
+    /// Pre-session frames already accepted, so a replayed copy is dropped.
     pub replay: Mutex<ReplayGuard>,
     /// The session resets we asked for: only an accept naming the keys we
     /// offered answers one (plan C7.25).
@@ -70,11 +69,12 @@ pub trait FriendHost: Send + Sync {
     fn db(&self) -> Result<rekindle_db::Db, FriendError>;
     /// The session projection (`HostStores.session`).
     fn session(&self) -> &Arc<RwLock<Option<Session>>>;
-    /// The unlock's Signal manager (until E2.3).
+    /// Our side of a ratchet step: the unlocked identity, the Host's
+    /// generator and its clock now (plan E2.3, `rekindle_db::ratchet`).
     ///
     /// # Errors
     /// `Locked` while no identity is unlocked.
-    fn signal(&self) -> Result<Arc<SignalSessionManager>, FriendError>;
+    fn local_party(&self) -> Result<rekindle_db::ratchet::LocalParty, FriendError>;
     /// The Ed25519 identity secret.
     ///
     /// # Errors

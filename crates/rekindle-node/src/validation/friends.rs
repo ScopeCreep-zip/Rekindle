@@ -31,6 +31,15 @@ fn friend_invite(link: &str) -> Checked {
     Ok(())
 }
 
+/// A message's client id: a hyphenated UUID.
+fn client_id(id: &str) -> Checked {
+    if id.len() == 36 && uuid::Uuid::parse_str(id).is_ok() {
+        Ok(())
+    } else {
+        Err(IpcResponse::error(400, "invalid message id: want a UUID"))
+    }
+}
+
 /// Check a friend, DM or session-reset request.
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
@@ -85,8 +94,13 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             name: group,
         } => name(group, "group"),
 
-        IpcRequest::DmSend { peer_key, body } => {
+        IpcRequest::DmSend {
+            peer_key,
+            body,
+            reply_to,
+        } => {
             public_key(peer_key, "peer key")?;
+            opt(reply_to.as_deref(), client_id)?;
             message_body(body)
         }
         IpcRequest::DmTyping {

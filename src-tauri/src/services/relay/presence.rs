@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, StatusResponse};
 
 use crate::db_helpers::db_call;
 use crate::state::{AppState, UserStatus};
@@ -14,7 +14,7 @@ use crate::state_helpers;
 use rekindle_db::Db;
 use rusqlite::OptionalExtension;
 
-/// Carol's side: respond to a `StatusRequest` from `requester` asking
+/// Carol's side: respond to a `StatusRequest` (0x0140) from `requester` asking
 /// about `target`. Replies only when:
 ///   - the requester is a known friend (privacy: don't gossip our
 ///     friends' status to strangers), and
@@ -50,14 +50,14 @@ pub async fn respond_to_status_request(
     if !volunteered {
         // Architecture §13.5: only relay friends serve a peer's status.
         // Reply with empty so the requester can fall back to DHT.
-        let payload = MessagePayload::StatusResponse {
+        let body = DirectBody::StatusResponse(StatusResponse {
             target_pubkey: target_pubkey.to_string(),
             status: String::new(),
             status_message: None,
             last_seen: 0,
             route_blob: Vec::new(),
-        };
-        return send(state, requester_pubkey, &payload).await;
+        });
+        return send(state, requester_pubkey, &body).await;
     }
 
     // Our snapshot of the friend, from the Host's projection.
@@ -76,22 +76,22 @@ pub async fn respond_to_status_request(
 
     let (status, status_message, last_seen) =
         snapshot.unwrap_or_else(|| (String::from("offline"), None, 0));
-    let payload = MessagePayload::StatusResponse {
+    let body = DirectBody::StatusResponse(StatusResponse {
         target_pubkey: target_pubkey.to_string(),
         status,
         status_message,
         last_seen,
         route_blob,
-    };
-    send(state, requester_pubkey, &payload).await
+    });
+    send(state, requester_pubkey, &body).await
 }
 
-/// Send through the Host's 1:1 path (plan E2.1).
-async fn send(state: &AppState, to: &str, payload: &MessagePayload) -> Result<(), String> {
+/// Send through the Host's 1:1 path (plan E2.1), ratchet-sealed (0x0141).
+async fn send(state: &AppState, to: &str, body: &DirectBody) -> Result<(), String> {
     rekindle_transport::operations::dm::send_to_peer(
         state_helpers::friend_host(state)?.as_ref(),
         to,
-        payload,
+        body,
     )
     .await
     .map_err(|e| e.to_string())

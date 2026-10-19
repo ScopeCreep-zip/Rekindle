@@ -135,3 +135,134 @@ async fn cancelled_and_disconnected_actions_are_gone() {
     );
     assert_eq!(identity::list(host.root()).unwrap().len(), 1);
 }
+
+/// Ann, unlocked from the window, and a friend who rotated from a key she verified to
+/// `rotated` (their `signal_identities` row, as `IdentityRotated` leaves it).
+async fn ann_with_rotated_verified_friend(
+    dir: &tempfile::TempDir,
+) -> (std::sync::Arc<Host>, String) {
+    let (host, ann) = host_with_identity(dir).await;
+    let unlocked = host
+        .call(
+            Caller::shell(),
+            IpcRequest::Unlock {
+                identity: ann.clone(),
+                passphrase: "pass".into(),
+            },
+        )
+        .await;
+    assert!(code(&unlocked).is_none(), "{unlocked:?}");
+    let owner: [u8; 32] = hex::decode(&ann).unwrap().try_into().unwrap();
+    let (first, rotated) = (
+        rekindle_crypto::Identity::generate().public_key_bytes(),
+        rekindle_crypto::Identity::generate().public_key_bytes(),
+    );
+    let earlier = rekindle_crypto::Identity::generate().public_key_bytes();
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            use rekindle_db::repo::signal_identities as ids;
+            ids::rotate(conn, &owner, &earlier, &first, 1)?;
+            ids::mark_verified(conn, &owner, &first, 2)?;
+            ids::rotate(conn, &owner, &first, &rotated, 3)
+        })
+        .await
+        .unwrap();
+    (host, hex::encode(rotated))
+}
+
+async fn safety_number(host: &Host, peer: &str) -> rekindle_types::dto::friends::SafetyNumberView {
+    let answer = host
+        .call(
+            bus(1),
+            IpcRequest::IdentitySafetyNumber { peer: peer.into() },
+        )
+        .await;
+    match answer {
+        IpcResponse::Ok { data, .. } => serde_json::from_value(data).unwrap(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A send to a friend whose verified key changed is held on
+/// `VerifiedKeyChanged` (TrustChanging, plan E2.3); committing it is the
+/// acknowledgement, which the send's own row carries; `verified` stays
+/// cleared, and marking the new key verified is its own reviewed action.
+#[tokio::test]
+async fn a_verified_key_change_holds_the_send_until_it_is_acknowledged() {
+    use rekindle_types::intent::{Escalation, Fact, IntentKind, Reversibility};
+    let dir = tempfile::tempdir().unwrap();
+    let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
+    let before = safety_number(&host, &peer).await;
+    assert!(before.changed && !before.verified);
+    assert_eq!(before.digits.len(), 60);
+    assert!(before.qr_rows.len() >= 21);
+
+    let send = IpcRequest::DmSend {
+        peer_key: peer.clone(),
+        body: "still you?".into(),
+        reply_to: None,
+    };
+    let held = review(host.call(bus(1), send).await);
+    assert_eq!(held.class, IntentClass::TrustChanging);
+    assert!(matches!(
+        held.escalations.as_slice(),
+        [Escalation::VerifiedKeyChanged { new_safety_number, .. }] if *new_safety_number == before.digits
+    ));
+    // No session exists offline, so the send itself fails; its row, and
+    // the acknowledgement with it, are kept.
+    host.call(
+        bus(1),
+        IpcRequest::IntentCommit {
+            intent_id: held.intent_id,
+            proof: IntentProof::Acknowledged,
+        },
+    )
+    .await;
+    let after = safety_number(&host, &peer).await;
+    assert!(!after.changed && !after.verified);
+
+    let mark = review(
+        host.call(
+            bus(1),
+            IpcRequest::IdentityMarkVerified { peer: peer.clone() },
+        )
+        .await,
+    );
+    assert_eq!(
+        (mark.kind, mark.class),
+        (IntentKind::MarkVerified, IntentClass::TrustChanging)
+    );
+    assert_eq!(mark.proof, ProofRequired::Acknowledge);
+    assert_eq!(
+        mark.facts,
+        [Fact::SafetyNumber {
+            safety_number: before.digits.clone()
+        }]
+    );
+    assert_eq!(
+        mark.reversibility,
+        Reversibility::ReversibleByInverse(IntentKind::ClearVerification)
+    );
+    let commit = |id| IpcRequest::IntentCommit {
+        intent_id: id,
+        proof: IntentProof::Acknowledged,
+    };
+    let marked = host.call(bus(1), commit(mark.intent_id)).await;
+    assert!(code(&marked).is_none(), "{marked:?}");
+    assert!(safety_number(&host, &peer).await.verified);
+
+    let clear = review(
+        host.call(
+            bus(1),
+            IpcRequest::IdentityClearVerification { peer: peer.clone() },
+        )
+        .await,
+    );
+    assert_eq!(clear.kind, IntentKind::ClearVerification);
+    let cleared = host.call(bus(1), commit(clear.intent_id)).await;
+    assert!(code(&cleared).is_none(), "{cleared:?}");
+    assert!(!safety_number(&host, &peer).await.verified);
+}

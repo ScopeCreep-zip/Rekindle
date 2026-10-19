@@ -28,16 +28,18 @@ Identity creation:
 ┌───────────┐                                              ┌───────────┐
 │  Sender   │                                              │ Receiver  │
 │           │                                              │           │
-│ plaintext │                                              │ plaintext │
+│ DmContent │                                              │ DmContent │
 │     │     │                                              │     ▲     │
 │     ▼     │                                              │     │     │
-│  Signal   │                                              │  Signal   │
-│  encrypt  │                                              │  decrypt  │
+│ Carrier   │                                              │ Carrier   │
+│ encrypt   │                                              │ open      │
+│ (ratchet /│                                              │ (ratchet /│
+│ PreKeyInit│                                              │ PreKeyInit│
+│ / sealed) │                                              │ / sealed) │
 │     │     │                                              │     ▲     │
 │     ▼     │                                              │     │     │
-│ Envelope  │                                              │ Envelope  │
-│ + Ed25519 │                                              │ verify    │
-│ signature │                                              │ signature │
+│ 'D' ‖     │                                              │ 'D' ‖     │
+│ DmFrame   │                                              │ DmFrame   │
 │     │     │                                              │     ▲     │
 │     ▼     │                                              │     │     │
 │ Veilid    │    safety route    ┌─────────┐  private     │ Veilid    │
@@ -55,77 +57,84 @@ receiver's IP in the same manner.
 | Stage | Layer | Operation |
 |-------|-------|-----------|
 | 1. Compose | Frontend | User types message, invokes `send_message` command |
-| 2. Seal | rekindle-crypto | `payload.sealing()`: `Session` payloads are Signal Double Ratchet ciphertext; `Plain` payloads are signed only |
-| 3. Sign | rekindle-protocol | Build `MessageEnvelope`, sign `envelope_signing_bytes` (domain ‖ recipient ‖ timestamp ‖ length-prefixed nonce and payload) with Ed25519 |
-| 4. Serialize | rekindle-protocol | Cap'n Proto-encode the envelope (`capnp_codec::message`) |
-| 5. Send | rekindle-protocol | Look up peer's route blob, import route, `app_message()` |
-| 6. Receive | services/veilid::dispatch | `VeilidUpdate::AppMessage` callback dispatches to `message_service` |
-| 7. Verify & open | rekindle-protocol, rekindle-crypto | Verify the signature for our key, check freshness and replay, Signal-decrypt, require the sealing the payload type demands |
-| 8. Store & Display | src-tauri | Insert into SQLite, emit `ChatEvent::MessageReceived` |
+| 2. Encode | rekindle-codec | Build the kind's body (`DmText`, ...), wrap it in a `DmContent {contentHint, sentAtMs, payload}` (a `SealedContent` with a random nonce for pre-session kinds) |
+| 3. Seal | rekindle-crypto, rekindle-db, rekindle-secrets | By the kind's carrier (below): step the Double Ratchet in one DB transaction (`rekindle_db::ratchet`), open a session with a PreKeyInit, or HPKE-seal and Ed25519-sign |
+| 4. Serialize | rekindle-codec | Cap'n Proto-encode the `DmFrame` (`capnp_codec::direct`) and prefix the `'D'` tag |
+| 5. Send | rekindle-transport | Look up peer's route blob, import route, `app_message()` (`operations::dm::send`) |
+| 6. Receive | rekindle-transport | `rekindle_codec::ingress::classify` routes `'D'` to `operations::direct::frame`; an untagged datagram is dropped |
+| 7. Verify & open | rekindle-transport, rekindle-crypto | Block list, friend gate for the kind, then the carrier's checks: signature, freshness and replay guard for sealed; ratchet decrypt; PreKeyInit session open |
+| 8. Store & Display | rekindle-transport, host | The decrypted plaintext is written to `unprocessed` in the ratchet transaction, applied (insert into SQLite, emit `ChatEvent::MessageReceived`) and then deleted; rows left at a crash are replayed at unlock (D24) |
 
-## MessageEnvelope (Wire Format)
+## DmFrame (Wire Format)
 
-All friend-to-friend messages are wrapped in a `MessageEnvelope`:
+A 1:1 datagram is the ingress tag `'D'` followed by one packed Cap'n Proto
+`DmFrame` (`schemas/direct.capnp`; codec in
+`rekindle-codec::capnp_codec::direct`). Community gossip is tagged `'G'`
+(`rekindle-codec::ingress`). An untagged datagram is dropped.
 
-```rust
-pub struct MessageEnvelope {
-    pub sender_key: Vec<u8>,    // Ed25519 public key (32 bytes)
-    pub timestamp: u64,         // Unix milliseconds, set at each send attempt
-    pub nonce: Vec<u8>,         // Message identity, kept across retries
-    pub payload: Vec<u8>,       // Signal ciphertext, or plain JSON (see Sealing)
-    pub signature: Vec<u8>,     // Ed25519 over envelope_signing_bytes
+```
+DmFrame {
+  typeId  :UInt16     // the kind (type_id.rs); decides the body
+  sender  :Data       // 32-byte Ed25519 identity (identity == address)
+  body    :union { ratchet | preKeyInit | sealed }
 }
 ```
 
-The signature covers `"rekindle-msg-envelope-v2" ‖ recipient identity key ‖
-timestamp LE ‖ u32 len(nonce) ‖ nonce ‖ u32 len(payload) ‖ payload`
-(`rekindle-protocol::messaging::signing`). Binding the recipient means a
-captured envelope verifies only for the identity it was sent to. The
-receiver rejects envelopes outside the freshness window (5 minutes old,
-60 seconds ahead, shared with the daemon track) and drops a second copy of
-a `(sender, nonce)` it already accepted (`messaging::replay`); the retry
-queue re-signs each attempt with a fresh timestamp and the same nonce.
+The typeId names the kind and its carrier (`DmTypeId::carrier()`):
 
-Every `MessagePayload` has a sealing class (`MessagePayload::sealing()`,
-exhaustive): `Session` payloads (DMs, typing, DM video, group-DM control)
-must arrive Signal-encrypted, `Plain` payloads (friend handshake, session
-reset, call signaling, relay, push and status probes) must arrive signed
-only. A payload that arrives in the other form is dropped.
+| Carrier | Body | Kinds |
+|---------|------|-------|
+| Ratchet | `{header {dh, pn, n}, ciphertext}` of a `DmContent` | DMs, edits, reactions, typing, unfriend, rotations, group DM, call signaling, DM video, Strand Relay, status |
+| PreKeyInit | PQXDH init (base key, prekey ids, ML-KEM ciphertext) plus the first ratchet message | opens a session; the first payload is a `FriendAccept` or `SessionResetAccept` (or any ratchet kind) |
+| Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `FriendReject`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
+
+**Ratchet.** The spec Double Ratchet (`rekindle-crypto::signal::{dr,record}`,
+`SessionRecord`) with one record per peer in `ratchet_sessions`. The send
+path steps it and commits in one DB transaction before the frame leaves.
+The associated data binds both identities and the typeId.
+
+**PreKeyInit.** Opens a session with PQXDH revision 3
+(`signal/pqxdh/agreement.rs`: X25519 plus ML-KEM-768, with the signed and
+one-time or last-resort prekeys in `signal_prekeys`) and carries its first
+payload encrypted under it.
+
+**Sealed.** HPKE Base (`rekindle-secrets::hpke`) to the recipient
+identity's X25519 key, plus the sender's Ed25519 signature over
+`DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`. Binding the
+recipient means a captured frame verifies only for the identity it was sent
+to. The receiver rejects frames outside the freshness window (5 minutes
+old, 60 seconds ahead) and drops a second copy of a `(sender, nonce)` it
+already accepted (`operations::direct::replay`); a retry keeps the nonce and
+re-seals with a fresh `sentAtMs`. Ratchet frames need no replay guard: a
+used `(dh, n)` has no key left.
 
 The daemon's framed community RPCs (`SignedPayload`, `app_call`) carry
 the same recipient binding under `"rekindle-frame-sig-v3"`, plus the frame
 `TypeId`, so signed bytes cannot be re-framed as another message type. No
-1:1 message is framed: both tracks send 1:1 traffic as `'D'` envelopes
-(plan E2.1), and E2.3 deleted the framed DM kinds.
+1:1 message is framed that way: both tracks send 1:1 traffic as `'D'`
+frames (plan E2.1), and E2.3 deleted `MessagePayload`, `MessageEnvelope`
+and the framed DM kinds.
 
-Payload type discrimination uses an internally tagged serde enum
-(`#[serde(tag = "type")]`).
+### DmFrame Kinds
 
-### MessagePayload Variants
-
-The `MessagePayload` enum (in `rekindle-protocol::messaging::envelope`)
-covers all 1:1 traffic between friends — DMs, friend-request handshakes,
-DM/group-DM invites, Strand Relay, Mobile Push Relay, presence cache, etc.
-
-| Variant | Purpose |
-|---------|---------|
-| `DirectMessage` | 1:1 encrypted chat message (with optional reply) |
-| `ChannelMessage` | Legacy community channel message (replaced by gossip) |
-| `TypingIndicator` | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`, plan E2.3) |
-| `FriendRequest` | Initial friend contact (includes PreKeyBundle, profile/route/mailbox info, optional invite_id) |
-| `FriendAccept` | Accept with PreKeyBundle, ephemeral key, and prekey IDs |
-| `FriendReject` | Rejection notification |
-| `FriendRequestReceived` | Lightweight ACK confirming delivery (not acceptance) |
-| `ProfileKeyRotated` | Notify remaining friends of new DHT profile key after block/unfriend |
-| `PresenceUpdate` | Inline presence (status, optional GameInfo) — fallback when DHT watch fails |
-| `Unfriended` / `UnfriendedAck` | Notify peer of unfriending and confirm receipt |
-| `RelayOffer` / `RelayOfferAck` / `RelayWithdraw` | Strand Relay (§13.2): friend volunteers to forward |
-| `RelayEnvelope` | Strand Relay (§13.3): forwards an inner opaque envelope to a target |
-| `DmInvite` / `DmAccept` / `DmDecline` | 2-party SMPL DM lifecycle (§27.1): dropped on receipt since E2.3 (1:1 DMs are the ratchet stream); the `DmFrame` cutover deletes them |
-| `DmLeave` | Leave a group DM (§27.2; becomes `GroupDmLeave`) |
-| `GroupDmInvite` | Group DM with per-recipient X25519-wrapped MEK (§27.2) |
-| `RegisterPushRelay` / `UnregisterPushRelay` / `WakeNotify` | Mobile Push Relay (§17.3 Tier 3) |
-| `StatusRequest` / `StatusResponse` | Strand Relay presence cache (§13.5 — "social CDN") |
+| Kind (typeId) | Purpose |
+|---------------|---------|
+| `DmText` (0x0100), `DmEdit`/`DmDelete`/`DmReaction` (0x0110-0x0112) | 1:1 chat message (with optional reply and expiry), edits, deletes, reactions |
+| `Typing` (0x0401) | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`) |
+| `FriendRequest` (0x0002) | Initial friend contact, sealed, by `app_call`; the reply is its receipt |
+| `FriendAccept` (0x0101) | Accept; travels as the first payload of the PreKeyInit that opens the session |
+| `FriendReject` (0x0102) | Rejection notification, sealed |
+| `ProfileKeyRotated` (0x0105) | Notify remaining friends of new DHT profile key after block/unfriend |
+| `IdentityRotated` (0x0108) | Identity moved to a new key; signed by both keys over `IDENTITY_ROTATED ‖ old ‖ new ‖ recipient`, sent over the old session (`operations::friend::identity_rotation`) |
+| `Unfriended` / `UnfriendedAck` (0x0103/0x0104) | Notify peer of unfriending and confirm receipt |
+| `SessionResetRequest` / `SessionResetAccept` / `SessionResetDecline` (0x0007-0x0009) | Start a new session; the accept is the first payload of the answering PreKeyInit |
+| `RetryRequest` (0x0006) | Allocated at E2.3; body and sends arrive with E2.5 |
+| `RelayOffer` / `RelayOfferAck` / `RelayWithdraw` (0x0130-0x0132), `RelayEnvelope` (0x0003) | Strand Relay (§13.2-13.3). The sender-side relay fallback was deleted at E2.3 and returns at E5.5 |
+| `GroupDmInvite` / `GroupDmAccept` / `GroupDmDecline` / `GroupDmLeave` (0x0120-0x0123) | Group DM lifecycle with per-recipient X25519-wrapped MEK (§27.2) |
+| `Call*` (0x0200-0x0206), `GroupCall*` (0x0210-0x0214) | Direct and group call signaling |
+| `DmVideoFragment` (0x0220) | DM video |
+| `RegisterPushRelay` / `UnregisterPushRelay` / `WakeNotify` (0x0310-0x0312) | Mobile Push Relay (§17.3 Tier 3), sealed |
+| `StatusRequest` / `StatusResponse` (0x0140/0x0141) | Strand Relay presence cache (§13.5 "social CDN") |
 
 ### Invite System
 
@@ -236,7 +245,7 @@ Full architecture: [`../architecture/communities.md`](../architecture/communitie
 
 | Schema File | Top-level structs |
 |-------------|-------------------|
-| `message.capnp` | `MessageEnvelope`, `ChatMessage`, `Attachment` |
+| `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
 | `identity.capnp` | `UserProfile`, `PreKeyBundle` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
@@ -339,7 +348,7 @@ directly.
 When two friends cannot reach each other directly (NAT / route churn), a
 mutual friend can volunteer to forward. The relayer never sees plaintext —
 they receive a `RelayEnvelope` containing an opaque inner payload addressed
-to the target. The friend volunteers via `RelayOffer` (acknowledged with
+to the target (the sender-side fallback returns at E5.5). The friend volunteers via `RelayOffer` (acknowledged with
 `RelayOfferAck`) and can withdraw at any time with `RelayWithdraw`.
 `StatusRequest` / `StatusResponse` form a presence cache so the requester
 can short-circuit DHT route lookup as well (the "social CDN" pattern).

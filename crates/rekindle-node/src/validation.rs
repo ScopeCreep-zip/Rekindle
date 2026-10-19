@@ -374,7 +374,10 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::DmInbox { .. }
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. } => friends::check(request),
-        IpcRequest::AvatarGet { public_key: key } => public_key(key, "public key"),
+        IpcRequest::AvatarGet { public_key: key }
+        | IpcRequest::IdentitySafetyNumber { peer: key }
+        | IpcRequest::IdentityMarkVerified { peer: key }
+        | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
         IpcRequest::CommunityCreate {
             name: community_name,

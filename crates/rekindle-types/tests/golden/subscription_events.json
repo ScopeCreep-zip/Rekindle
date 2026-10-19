@@ -166,6 +166,7 @@
         "body": "hi there",
         "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "decryptionFailed": false,
+        "isOwn": false,
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "replyToId": "dm_33333333333333333333333333333333",
         "senderName": "Bob",
@@ -291,6 +292,14 @@
       "handshakeFailed": {
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "reason": "identity key mismatch"
+      }
+    }
+  },
+  "friend.keyChanged": {
+    "friend": {
+      "keyChanged": {
+        "newKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
   },

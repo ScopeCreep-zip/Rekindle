@@ -1,6 +1,19 @@
 use super::{capnp_err, pack, read_game_status, unpack, write_game_status, CodecError};
-use crate::message::envelope::GameInfo;
+use serde::{Deserialize, Serialize};
+
 use crate::presence_capnp;
+
+/// Game information for rich presence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameInfo {
+    pub game_id: u32,
+    pub game_name: String,
+    pub server_info: Option<String>,
+    pub elapsed_seconds: u32,
+    /// Direct server address ("ip:port") for join-game functionality.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_address: Option<String>,
+}
 
 /// Encode a presence update (status byte + optional game info).
 pub fn encode_update(status: u8, game: Option<&GameInfo>) -> Vec<u8> {

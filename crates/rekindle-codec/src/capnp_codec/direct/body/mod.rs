@@ -2,18 +2,21 @@
 //! [`super::SealedContent`].
 //!
 //! Kinds §6 marks "moved unchanged" (relay, status, push relay, calls and
-//! DM video) keep their `MessagePayload` variant's fields, names and types
+//! DM video) keep the pre-E2.3 1:1 payload's fields, names and types
 //! one for one (`String` → `Text`, `Vec<u8>` → `Data`, `Option<String>` →
 //! `Text`, empty when absent), so the cutover maps each variant without
 //! a semantic change. The friendship and content kinds are E2.3's own
 //! definitions. FriendReject, Unfriended, UnfriendedAck and
-//! SessionResetAccept have an empty body. RetryRequest (E2.5) and the
-//! group-DM kinds (E2.6) are allocated here; their steps define their
-//! bodies, so [`DirectBody::decode`] refuses them until then.
+//! SessionResetAccept have an empty body. GroupDmInvite and GroupDmLeave
+//! carry the SMPL group path's fields unchanged until E2.6 replaces them.
+//! RetryRequest (E2.5), GroupDmAccept and GroupDmDecline (E2.6) are
+//! allocated here; their steps define their bodies, so
+//! [`DirectBody::decode`] refuses them until then.
 
 mod calls;
 mod content;
 mod friend;
+mod group;
 mod relay;
 
 pub use calls::{
@@ -25,6 +28,7 @@ pub use friend::{
     FriendAccept, FriendRequest, IdentityRotated, ProfileKeyRotated, SessionResetDecline,
     SessionResetRequest,
 };
+pub use group::{GroupDmInvite, GroupDmLeave};
 pub use relay::{
     RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest,
     StatusResponse, UnregisterPushRelay, WakeNotify,
@@ -114,6 +118,8 @@ direct_bodies! {
         DmEdit(DmEdit) = dm_edit,
         DmDelete(DmDelete) = dm_delete,
         DmReaction(DmReaction) = dm_reaction,
+        GroupDmInvite(GroupDmInvite) = group_dm_invite,
+        GroupDmLeave(GroupDmLeave) = group_dm_leave,
         RelayOffer(RelayOffer) = relay_offer,
         RelayWithdraw(RelayWithdraw) = relay_withdraw,
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,

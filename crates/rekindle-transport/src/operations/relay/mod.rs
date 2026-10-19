@@ -1,12 +1,10 @@
-//! Alice's side of Strand Relay, pulled forward from E5.2 because the 1:1
-//! send path calls it (plan E2.1): sending through a friend's relay when
-//! the direct route fails (§13.3), and asking friends for a peer's status
-//! and route (§13.5). Their wire is unchanged (V18); the relay's receive
-//! side stays for E5.2.
+//! Alice's side of Strand Relay (plan E2.1): asking friends for a peer's
+//! status and route (§13.5). Sending through a friend's relay (§13.3)
+//! returns at E5.5, whose pool entries name the relay's identity (a relay
+//! frame is addressed and signed to it); the relay's receive side stays
+//! for E5.2.
 
 mod probe;
-mod send;
 
 pub(crate) use probe::on_status_response;
 pub use probe::probe_friends_for_status;
-pub use send::send_via_relay;

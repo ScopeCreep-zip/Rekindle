@@ -41,7 +41,6 @@ macro_rules! capnp_module {
     };
 }
 
-capnp_module!(message_capnp);
 capnp_module!(direct_capnp);
 capnp_module!(presence_capnp);
 capnp_module!(identity_capnp);

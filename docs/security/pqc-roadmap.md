@@ -15,7 +15,7 @@ primitives in line with the wider messaging-app ecosystem.
 | Purpose | Primitive | Quantum status |
 |---------|-----------|----------------|
 | Identity / signatures | Ed25519 | Classical-secure; **not PQ-secure** |
-| Key agreement (1:1, DM, MEK wrap, IPC bus) | X25519 (within Signal X3DH, ECDH for DMs, Noise IK) | **Not PQ-secure** |
+| Key agreement (1:1, DM, MEK wrap, IPC bus) | X25519 (within Signal PQXDH and the Double Ratchet, ECDH for DMs, Noise IK) | **Not PQ-secure** for the ratchet, the IPC bus and MEK wrapping; the 1:1 session's initial agreement is hybrid (PQXDH rev. 3 adds ML-KEM-768, E2.3) |
 | Symmetric content encryption | AES-256-GCM | PQ-secure with 256-bit key (Grover halves effective security to ~128 bits — still adequate) |
 | Symmetric content encryption | XChaCha20-Poly1305 | PQ-secure (Grover applies; same reasoning) |
 | Hash | BLAKE3, SHA-256 | PQ-secure with 256-bit output |
@@ -140,9 +140,9 @@ distribution and DM MEK derivation.
 
 Goal: ship hybrid for **everything**, including signatures.
 
-- **Signal Protocol X3DH:** mirror PQXDH — drop the Kyber bake-in and
-  replace it with the standardised ML-KEM-768 once the libsignal
-  crate exposes it.
+- **Signal Protocol:** the initial agreement is already PQXDH rev. 3
+  with ML-KEM-768 (plan E2.3). What remains is a post-quantum ratchet
+  step (SPQR/Triple Ratchet, plan phase F).
 - **Identity signatures:** evaluate ML-DSA (FIPS 204) for new
   identities. Migration of existing identities is a multi-version
   effort because the identity key is the root of every per-community

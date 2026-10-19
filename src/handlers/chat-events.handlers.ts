@@ -182,6 +182,18 @@ function applyFriendEvent(friend: FriendEvent): void {
     }
     return;
   }
+  if ("keyChanged" in friend) {
+    // The friend rotated their identity: the Host moved them to the new
+    // key, unverified (plan E2.3).
+    const { peerKey, newKey } = friend.keyChanged;
+    const moved = friendsState.friends[peerKey];
+    if (moved) {
+      const next = { ...friendsState.friends, [newKey]: { ...moved, publicKey: newKey } };
+      delete next[peerKey];
+      setFriendsState("friends", reconcile(next));
+    }
+    return;
+  }
   // requestAcknowledged / removeAcknowledged / profileKeyRotated need no
   // store change: delivery receipts and key rotation are handled by the
   // backend, and the list already reflects the outcome.

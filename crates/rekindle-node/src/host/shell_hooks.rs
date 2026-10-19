@@ -13,7 +13,6 @@
 
 use std::sync::Arc;
 
-use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_db::SqliteFriendStore;
 use rekindle_lifecycle::SessionScope;
 use zeroize::Zeroizing;
@@ -25,8 +24,6 @@ pub struct UnlockedView {
     pub display_name: String,
     /// The Ed25519 identity secret.
     pub secret: Zeroizing<[u8; 32]>,
-    /// The unlock's one Signal manager.
-    pub signal: Arc<SignalSessionManager>,
     /// The receive path's friend authority over the identity's database.
     pub friend_store: Arc<SqliteFriendStore>,
     /// A new identity (create), not a returning one (unlock).

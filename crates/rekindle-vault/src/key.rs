@@ -20,40 +20,6 @@ pub enum VaultKey {
     /// Ed25519 signing private key — `("identity", "ed25519_private")`.
     IdentityEd25519,
 
-    /// Per-peer trusted identity (trust-on-first-use) —
-    /// `("signal", "trusted:{peer}")`.
-    SignalTrusted {
-        peer: String,
-    },
-    /// Per-peer Signal session — `("signal", "session:{peer}")`.
-    SignalSession {
-        peer: String,
-    },
-    /// Index of peers that have a stored session —
-    /// `("signal", "session_index")`.
-    SignalSessionIndex,
-    /// One-time prekey by id — `("signal", "prekey:{id}")`.
-    SignalPrekey {
-        id: u32,
-    },
-    /// Index of stored one-time prekey ids — `("signal", "prekey_index")`.
-    SignalPrekeyIndex,
-    /// Signed prekey by id — `("signal", "signed_prekey:{id}")`.
-    SignalSignedPrekey {
-        id: u32,
-    },
-    /// PQXDH last-resort ML-KEM-768 secret — `("signal", "pq_lr:{id}")`.
-    SignalPqLastResort {
-        id: u32,
-    },
-    /// PQXDH one-time ML-KEM-768 secret — `("signal", "pq_ot:{id}")`.
-    SignalPqOneTime {
-        id: u32,
-    },
-    /// Index of stored PQ one-time prekey ids, oldest first —
-    /// `("signal", "pq_ot_index")`.
-    SignalPqOneTimeIndex,
-
     /// Community-level MEK — `("communities", "mek_{community}")`.
     CommunityMek {
         community: String,
@@ -132,15 +98,6 @@ impl VaultKey {
             | Self::FriendListOwnerKeypair
             | Self::AccountOwnerKeypair
             | Self::PersonalSyncOwnerKeypair => "identity",
-            Self::SignalTrusted { .. }
-            | Self::SignalSession { .. }
-            | Self::SignalSessionIndex
-            | Self::SignalPrekey { .. }
-            | Self::SignalPrekeyIndex
-            | Self::SignalSignedPrekey { .. }
-            | Self::SignalPqLastResort { .. }
-            | Self::SignalPqOneTime { .. }
-            | Self::SignalPqOneTimeIndex => "signal",
             Self::CommunityMek { .. }
             | Self::CommunityMekGeneration { .. }
             | Self::CommunityMekGenerationsIndex { .. }
@@ -165,15 +122,6 @@ impl VaultKey {
             Self::FriendListOwnerKeypair => ("friend_list_owner_keypair", vec![]),
             Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
             Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
-            Self::SignalTrusted { peer } => ("trusted", vec![s(peer)]),
-            Self::SignalSession { peer } => ("session", vec![s(peer)]),
-            Self::SignalSessionIndex => ("session_index", vec![]),
-            Self::SignalPrekey { id } => ("prekey", vec![n(u64::from(*id))]),
-            Self::SignalPrekeyIndex => ("prekey_index", vec![]),
-            Self::SignalSignedPrekey { id } => ("signed_prekey", vec![n(u64::from(*id))]),
-            Self::SignalPqLastResort { id } => ("pq_lr", vec![n(u64::from(*id))]),
-            Self::SignalPqOneTime { id } => ("pq_ot", vec![n(u64::from(*id))]),
-            Self::SignalPqOneTimeIndex => ("pq_ot_index", vec![]),
             Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
             Self::CommunityMekGeneration {
                 community,
@@ -237,23 +185,6 @@ impl VaultKey {
             ("friend_list_owner_keypair", []) => Self::FriendListOwnerKeypair,
             ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
             ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
-            ("trusted", [peer]) => Self::SignalTrusted { peer: peer.clone() },
-            ("session", [peer]) => Self::SignalSession { peer: peer.clone() },
-            ("session_index", []) => Self::SignalSessionIndex,
-            ("prekey", [id]) => Self::SignalPrekey {
-                id: id.parse().ok()?,
-            },
-            ("prekey_index", []) => Self::SignalPrekeyIndex,
-            ("signed_prekey", [id]) => Self::SignalSignedPrekey {
-                id: id.parse().ok()?,
-            },
-            ("pq_lr", [id]) => Self::SignalPqLastResort {
-                id: id.parse().ok()?,
-            },
-            ("pq_ot", [id]) => Self::SignalPqOneTime {
-                id: id.parse().ok()?,
-            },
-            ("pq_ot_index", []) => Self::SignalPqOneTimeIndex,
             ("community_mek", [c]) => Self::CommunityMek {
                 community: c.clone(),
             },
@@ -328,15 +259,6 @@ mod tests {
             VaultKey::FriendListOwnerKeypair,
             VaultKey::AccountOwnerKeypair,
             VaultKey::PersonalSyncOwnerKeypair,
-            VaultKey::SignalTrusted { peer: "p:1".into() },
-            VaultKey::SignalSession { peer: "p".into() },
-            VaultKey::SignalSessionIndex,
-            VaultKey::SignalPrekey { id: 7 },
-            VaultKey::SignalPrekeyIndex,
-            VaultKey::SignalSignedPrekey { id: 9 },
-            VaultKey::SignalPqLastResort { id: 3 },
-            VaultKey::SignalPqOneTime { id: 4 },
-            VaultKey::SignalPqOneTimeIndex,
             VaultKey::CommunityMek { community: c() },
             VaultKey::CommunityMekGeneration {
                 community: c(),
@@ -389,11 +311,11 @@ mod tests {
             "channel_mek:1:a:1:b"
         );
         assert_eq!(
-            VaultKey::parse("signal", "prekey:2:7"),
+            VaultKey::parse("communities", "community_mek:2:7"),
             None,
             "length mismatch"
         );
-        assert_eq!(VaultKey::parse("signal", "prekey:x:7"), None);
+        assert_eq!(VaultKey::parse("communities", "community_mek:x:7"), None);
     }
 
     /// Field values cannot alias: two different (community, channel) pairs

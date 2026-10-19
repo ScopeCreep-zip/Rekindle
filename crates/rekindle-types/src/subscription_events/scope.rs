@@ -183,6 +183,7 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::ProfileKeyRotated { peer_key, .. }
         | FriendEvent::NicknameChanged { peer_key, .. }
         | FriendEvent::GroupChanged { peer_key, .. }
+        | FriendEvent::KeyChanged { peer_key, .. }
         | FriendEvent::HandshakeFailed { peer_key, .. } => peer_key,
     }
 }
@@ -224,6 +225,7 @@ mod tests {
                 conversation_id: "pk".into(),
                 server_message_id: None,
                 reply_to_id: None,
+                is_own: false,
             });
         assert_eq!(one_to_one.scope(), EventScope::Peer("pk".into()));
         let group = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
@@ -236,6 +238,7 @@ mod tests {
             conversation_id: "VLD0:rec".into(),
             server_message_id: None,
             reply_to_id: None,
+            is_own: false,
         });
         assert_eq!(group.scope(), EventScope::Conversation("VLD0:rec".into()));
         let ack =

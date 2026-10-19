@@ -65,8 +65,8 @@ pub use error::TransportError;
 pub use crypto::mek::MekCacheEntrySnapshot;
 pub use shared::{AttachmentState, SharedState, TransportNotification, TransportSnapshot};
 
-// Crypto — pseudonym, prekeys (the Signal manager is the unlock's one,
-// `rekindle_crypto::signal::SignalSessionManager`, plan D1)
+// Crypto — pseudonym, prekeys (the 1:1 ratchet is `rekindle_db::ratchet`,
+// plan E2.3)
 pub use crypto::prekeys::PreKeyBundle;
 pub use crypto::pseudonym::derive_community_pseudonym;
 

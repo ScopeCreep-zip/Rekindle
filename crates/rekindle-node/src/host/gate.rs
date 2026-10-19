@@ -8,12 +8,15 @@
 //! with `IntentRequired(IntentReview)`. `IntentCommit` recomputes the
 //! selection from the held request and runs it once on the proof its class
 //! demands; a passphrase is checked off the executor before the gate's
-//! lock, against the same attempt limiter the unlock counts on.
+//! lock, against the same attempt limiter the unlock counts on. A commit
+//! of a review held on a peer's verified key changing is the user's
+//! acknowledgement of the change ([`Acknowledged`], plan E2.3).
 
 use rekindle_idempotency::intent_gate::{Committed, Gate, GateError, GateOwner, IntentGate};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::intent::{
-    effective_class, kind_of, Classified, IntentId, IntentProof, ProofRequired, Reversibility,
+    effective_class, kind_of, Classified, Escalation, IntentId, IntentProof, ProofRequired,
+    Reversibility,
 };
 
 use crate::daemon::dispatch::DaemonContext;
@@ -47,6 +50,36 @@ impl GateOwner for IntentOwner {
 /// The host's gate over IPC requests.
 pub type HostGate = IntentGate<IpcRequest, IntentOwner, IpcResponse>;
 
+/// What committing a held action acknowledged, for its dispatch (plan
+/// E2.3). Signal holds a send to a contact whose verified safety number
+/// changed until the user confirms it, and the confirmation is the
+/// acknowledgement: here the action's own write clears the change
+/// (`signal_identities::acknowledging`), so the action and the
+/// acknowledgement commit together; `verified` stays cleared until the
+/// user marks the new key verified.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Acknowledged {
+    /// The review was held on `VerifiedKeyChanged` for the peer the
+    /// request names.
+    pub key_change: bool,
+}
+
+impl Acknowledged {
+    /// Nothing: a request that ran without a review, or whose review held
+    /// no acknowledgeable fact.
+    pub const NOTHING: Self = Self { key_change: false };
+
+    /// What a commit of a review with `escalations` acknowledges.
+    #[must_use]
+    pub fn of(escalations: &[Escalation]) -> Self {
+        Self {
+            key_change: escalations
+                .iter()
+                .any(|e| matches!(e, Escalation::VerifiedKeyChanged { .. })),
+        }
+    }
+}
+
 /// Validate, refuse what the shell's window owns, gate, dispatch.
 pub(crate) async fn run(ctx: &DaemonContext, request: IpcRequest, caller: &Caller) -> IpcResponse {
     if let Err(rejection) = crate::validation::validate_request(&request) {
@@ -77,7 +110,9 @@ pub(crate) async fn run(ctx: &DaemonContext, request: IpcRequest, caller: &Calle
                 // reset declined, plan E2.1): it runs, unreviewed, since
                 // the click is the user's act.
                 Ok(Some(on_cancel)) => {
-                    let answered = ctx.dispatch_in_lane(on_cancel, caller).await;
+                    let answered = ctx
+                        .dispatch_in_lane(on_cancel, caller, Acknowledged::NOTHING)
+                        .await;
                     if let IpcResponse::Error { message, .. } = &answered {
                         tracing::warn!(error = %message, "a held action's cancel answer failed");
                     }
@@ -93,7 +128,11 @@ pub(crate) async fn run(ctx: &DaemonContext, request: IpcRequest, caller: &Calle
 
 async fn begin(ctx: &DaemonContext, caller: &Caller, request: IpcRequest) -> IpcResponse {
     let kind = match kind_of(request.name()) {
-        Some(Classified::NotAnIntent) => return ctx.dispatch_in_lane(request, caller).await,
+        Some(Classified::NotAnIntent) => {
+            return ctx
+                .dispatch_in_lane(request, caller, Acknowledged::NOTHING)
+                .await
+        }
         Some(Classified::Intent(kind)) => kind,
         // `cargo xtask check-intent-table` keeps every request in the
         // table; a name it does not know is refused, not run.
@@ -115,8 +154,12 @@ async fn begin(ctx: &DaemonContext, caller: &Caller, request: IpcRequest) -> Ipc
         .intents
         .begin(owner.clone(), selection, request, ctx.clock.now_ms())
     {
+        // An action that ran at once was never reviewed, so it
+        // acknowledges nothing (a `VerifiedKeyChanged` would have held it).
         Ok(Gate::Run(request)) => {
-            let response = ctx.dispatch_in_lane(request, caller).await;
+            let response = ctx
+                .dispatch_in_lane(request, caller, Acknowledged::NOTHING)
+                .await;
             ran(ctx, response, reversibility, owner, inverse)
         }
         Ok(Gate::Review(review)) => IpcResponse::IntentRequired(review),
@@ -162,6 +205,9 @@ async fn commit(
     let reversibility = fresh.reversibility;
     let inverse = super::intent_select::inverse(ctx, &held, reversibility);
     let undo_owner = owner.clone();
+    // The commit runs only on the fresh selection matching the review the
+    // user answered, so what it acknowledges is what they saw.
+    let acknowledged = Acknowledged::of(&fresh.escalations);
     let outcome = ctx
         .intents
         .commit_and_run(
@@ -172,7 +218,7 @@ async fn commit(
             move |_| passphrase_ok,
             now_ms,
             |request| async move {
-                let response = ctx.dispatch_in_lane(request, caller).await;
+                let response = ctx.dispatch_in_lane(request, caller, acknowledged).await;
                 ran(ctx, response, reversibility, undo_owner, inverse)
             },
         )

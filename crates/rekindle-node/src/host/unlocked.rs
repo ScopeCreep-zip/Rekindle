@@ -1,12 +1,11 @@
 //! The unlocked identity's host state, one implementation for the daemon's
 //! `Unlock` and the GUI's login (plan D3.1): what an unlock installs (the
-//! signing key, the one Signal manager, the session projection, the MEKs,
+//! signing key, the session projection, the MEKs,
 //! the audit chain, the trusted clients, the friend authority) and what a
 //! lock takes out again.
 
 use std::sync::Arc;
 
-use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_db::SqliteFriendStore;
 use zeroize::Zeroizing;
 
@@ -19,8 +18,6 @@ pub struct Installed {
     pub display_name: String,
     /// The Ed25519 identity secret.
     pub secret: Zeroizing<[u8; 32]>,
-    /// The unlock's one Signal manager, shared with the host.
-    pub signal: Arc<SignalSessionManager>,
     /// The receive path's friend authority over the installed database.
     pub friend_store: Arc<SqliteFriendStore>,
     /// What the audit chain's restore found, when it ran.
@@ -38,15 +35,12 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         public_key,
         display_name,
         secret,
-        signal,
         friend_store,
         failed_attempts,
     } = unlocked;
     // This unlock's events start a new journal epoch (plan D3.2).
     ctx.journal.begin();
     *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(*secret));
-    let signal = Arc::new(signal);
-    *ctx.signal.write() = Some(Arc::clone(&signal));
     *ctx.friend_store.write() = Some(Arc::clone(&friend_store));
 
     // The session is projected from the identity's stores (plan D1).
@@ -72,7 +66,6 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         public_key,
         display_name,
         secret,
-        signal,
         friend_store,
         audit,
     })
@@ -80,7 +73,7 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
 
 /// Take the unlocked identity out, last-installed first: its clients'
 /// clearance, the cached channel keys, the signing key (zeroized on drop),
-/// the audit chain, the session, the Signal manager, then the database and
+/// the audit chain, the session, then the database and
 /// vault (plan D1).
 pub(crate) async fn release(ctx: &DaemonContext) {
     // Every action held for this identity goes with it (plan D3.3).
@@ -93,7 +86,6 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     *ctx.signing_key.write() = None;
     super::audit::close(&ctx.audit_chain);
     *ctx.session.write() = None;
-    *ctx.signal.write() = None;
     // The 1:1 receive state is the identity's, and so are the probes and
     // the profile lease (its pool ends with the unlock).
     *ctx.friend_store.write() = None;

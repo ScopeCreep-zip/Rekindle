@@ -48,7 +48,7 @@ Double-encrypted SQLCipher store that **replaces** the previous
 
 The 32-byte salt lives in `{vault_path}.salt` sidecar (plaintext — salts
 only need to be unique per install). Modules: `key`, `schema`, `store`,
-`error`, and `typed::{signal, community_keys, mek, audit}`: one module of
+`error`, and `typed::{community_keys, mek, audit, owner_keys}`: one module of
 helpers per kind of secret, so every host stores them the same way (plan
 C5.4). See [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md).
 
@@ -77,8 +77,13 @@ on `rekindle-protocol`. Modules:
 - `community` (`CommunityEnvelope`, `ControlPayload`, the community
   `SignedEnvelope`, governance and metadata types, `channel_record` page
   types and their signed encoding);
-- `message` (`MessageEnvelope`, `MessagePayload`, invite blobs, signing
-  bytes);
+- `capnp_codec::direct` (the 1:1 wire, plan E2.3: `DmFrame`,
+  `DmContent`, `SealedContent`, the `DmTypeId` registry and one body type
+  per kind; schema `schemas/direct.capnp`);
+- `ingress` (the `'D'` 1:1 and `'G'` gossip datagram tags and `classify`;
+  an untagged datagram is dropped);
+- `message` (invite blobs and the community RPC DTOs; `MessageEnvelope` and
+  `MessagePayload` are deleted);
 - `friend` (`FriendEntry`);
 - `envelope` (the gossip `SignedEnvelope` build/verify);
 - `dedup` (sliding-window cache: envelope ID → seen-at);
@@ -450,40 +455,32 @@ Dependencies include `reed-solomon-erasure` for FEC.
 ### rekindle-protocol
 
 Veilid networking, DHT record management, Cap'n Proto serialization, and
-routing for the **desktop app**. Hosts the v1.0 `MessageEnvelope` /
-`MessagePayload` types still used for 1:1 friend traffic (DM invites,
-friend requests, relay payloads, presence inline updates).
+routing for the **desktop app**. The v1.0 `MessageEnvelope` /
+`MessagePayload` types and the `messaging` module (`envelope`, `sender`,
+`receiver`, `signing`, `replay`) are deleted: the 1:1 wire is `DmFrame` in
+`rekindle-codec` (plan E2.3), sent and opened by `rekindle-transport`
+(`operations::{dm, direct}`).
 
-Top-level modules: `node` (`RekindleNode` lifecycle), `routing` (private
-route allocation, peer route import), `peer` (address resolution),
-`capnp_codec` (encode / decode helpers), `messaging` (`envelope`,
-`sender`, `receiver`), `dht` (`profile`, `presence`, `friends`,
+Top-level modules: `node` (`RekindleNode` lifecycle), `own_routes`
+(private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `presence`, `friends`,
 `conversation`, `account`, `mailbox`, `channel`, `short_array`, `log`,
 `community/{envelope, manifest, member_registry, channel_record,
 audit_log, automod, onboarding, permissions_v2, types}`), `error`.
 
-`MessagePayload` variants cover: `DirectMessage`, `ChannelMessage`,
-`FriendRequest/Accept/Reject`, `ProfileKeyRotated`, `PresenceUpdate`,
-`Unfriended`, `RelayOffer/Withdraw/Ack/Envelope`,
-`DmInvite/Accept/Decline`, `GroupDmInvite`, `DmLeave`,
-`RegisterPushRelay`, `UnregisterPushRelay`, `WakeNotify`,
-`StatusRequest/Response`.
-
 ### rekindle-crypto
 
-Cryptographic operations including Ed25519 identity, Signal Protocol
-session handling, group MEK primitives, and HKDF-derived DHT record
+Cryptographic operations including Ed25519 identity, the Signal Protocol
+state machines (pure; persistence is `rekindle-db`'s), group MEK
+primitives, and HKDF-derived DHT record
 keys. Modules: `identity` (Ed25519 keypair, sign / verify, hex
-helpers), `keychain` (`Keychain` trait, vault / key constants),
-`dht_crypto` (`DhtRecordKey` — account/conversation key derivation +
+helpers), `dht_crypto` (`DhtRecordKey` — account/conversation key derivation +
 XChaCha20-Poly1305 encrypt / decrypt), `group/{media_key, pseudonym}`
 (`MediaEncryptionKey` with generation tracking; community pseudonym
-derivation), `signal/{session, prekeys, store, memory_stores,
-test_stores}` (X3DH + Double Ratchet session manager — vault-backed
-Signal stores now, previously Stronghold-backed), `signal/{dr, record,
-prekey_material}` (the spec Double Ratchet and the pure `SessionRecord`,
-plan E2.2; the prekey minting and bundle signing `rekindle-db`'s prekeys run,
-E2.3), `fingerprint` (`SafetyNumber`: Signal's 5200×SHA-512 numeric
+derivation), `signal/{dr, record, pqxdh, prekeys,
+prekey_material}` (the spec Double Ratchet, the pure `SessionRecord`,
+PQXDH rev. 3 with SKec/SKscka, and the prekey minting and bundle signing
+`rekindle-db`'s prekeys run; plans E2.2-E2.3. `SignalSessionManager`, the
+non-spec ratchet and the vault-backed Signal stores are deleted), `fingerprint` (`SafetyNumber`: Signal's 5200×SHA-512 numeric
 fingerprint and its scannable form, E2.3) and `horizon` (`DELIVERY_HORIZON`,
 the one constant every delivery retention bound derives from, D24).
 
@@ -580,9 +577,10 @@ the desktop's ports by `adopt_outbound`, or a simulator's by `from_ports`.
 Public API re-exports include `TransportNode` (its routes via
 `TransportNode::routes`), `Sender`,
 `PeerRegistry`, `DhtStore`, `InboundHandler`, `GossipMesh`,
-`SignalSessionManager`, `Session`, `QueryEngine`, plus per-feature
-operation modules (`operations::{community, channel, dm, friend, voice,
-mek, presence, roles, moderation, invites, identity}`).
+`Session`, `QueryEngine`, plus per-feature
+operation modules (`operations::{community, channel, dm, direct, friend,
+voice, mek, presence, relay, identity, …}`; `direct` opens inbound `DmFrame`s:
+`frame`, `handlers`, the sealed-frame `replay` guard).
 
 Dependencies: `rekindle-types`, `rekindle-utils`, `rekindle-events`,
 `rekindle-secrets`, `rekindle-crypto`, `rekindle-route`,

@@ -144,8 +144,8 @@ impl OwnPresence {
         self.state.write().game.clone_from(&game);
         self.changed();
         let bytes = game.map_or_else(Vec::new, |game| {
-            rekindle_codec::capnp_codec::message::encode_game_info(
-                &rekindle_codec::message::envelope::GameInfo {
+            rekindle_codec::capnp_codec::presence::encode_game_status(
+                &rekindle_codec::capnp_codec::presence::GameInfo {
                     game_id: game.id,
                     game_name: game.name.clone(),
                     server_info: game.server_info.clone(),

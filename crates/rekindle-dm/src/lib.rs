@@ -33,7 +33,7 @@ pub use error::DmError;
 pub use ingest::{
     handle_incoming_dm_leave, handle_incoming_group_dm_invite, IncomingGroupDmInvite,
 };
-pub use invite::{GroupDmInvite, GroupDmParticipant};
+pub use invite::GroupDmParticipant;
 pub use mek::{ratchet_dm_mek, DmMek, DmMekChain, MEK_LEN};
 pub use receiver::handle_dm_subkey_change;
 pub use sender::send_dm_message;

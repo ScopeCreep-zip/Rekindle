@@ -2,7 +2,7 @@
 //! unfriended (and the ack of our own unfriend), a friend's profile moving,
 //! and the crossing-request auto-accept.
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
 use rekindle_db::repo::friends::Column;
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, NotificationEvent, SubscriptionEvent};
@@ -70,16 +70,11 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) {
     }
     state::fire_forget(host, sender);
     state::fire_drop_queued(host, sender);
-    if let Err(e) = dm::send_to_peer(host, sender, &MessagePayload::UnfriendedAck).await {
+    if let Err(e) = dm::send_to_peer(host, sender, &DirectBody::UnfriendedAck).await {
         tracing::debug!(to = %sender, error = %e, "UnfriendedAck not sent");
     }
     state::take(host, sender);
-    if let Ok(signal) = host.signal() {
-        if let Err(e) = signal.delete_session(sender) {
-            tracing::error!(from = %sender, error = %e,
-                "failed to delete Signal session after peer unfriended us");
-        }
-    }
+    state::forget_session(host, sender).await;
     host.unwatch_friend(sender).await;
     if let Err(e) = list_record::push(host).await {
         tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
@@ -90,57 +85,43 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) {
     tracing::info!(from = %sender, "removed by peer (Unfriended)");
 }
 
-/// Our side of a crossing handshake.
-enum CrossRole {
-    /// We initiate; the session init goes out in our `FriendAccept`.
-    Initiator(rekindle_crypto::signal::SessionInitInfo),
-    /// The peer initiates; we answer their `FriendAccept`.
-    Responder,
-    /// The handshake failed and the user was told; both sides are already
-    /// `Accepted`, so 'Reset Secure Session' recovers it.
-    Failed,
+/// Whether we open the session of a crossing request: exactly one side
+/// does, the lower identity, so the two inits do not cross.
+fn we_initiate_crossing(host: &dyn FriendHost, peer: &str) -> bool {
+    let (Ok(local), Ok(theirs)) = (host.local_party(), hex::decode(peer)) else {
+        return false;
+    };
+    local.owner().as_slice() < theirs.as_slice()
 }
 
-/// Drop any prior session with the peer and, when we initiate (the lower
-/// identity), establish a new one from their bundle.
-fn crossing_session(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) -> CrossRole {
-    let result = (|| -> Result<CrossRole, String> {
-        let bundle = rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle)
-            .map_err(|e| format!("unparseable prekey bundle: {e}"))?;
-        let their_identity = hex::decode(req.sender_hex).map_err(|e| format!("sender key: {e}"))?;
-        let signal = host.signal().map_err(|e| e.to_string())?;
-        signal
-            .delete_session(req.sender_hex)
-            .map_err(|e| e.to_string())?;
-        if !signal
-            .initiates_crossing_handshake(&their_identity)
-            .map_err(|e| e.to_string())?
-        {
-            return Ok(CrossRole::Responder);
-        }
-        let info = signal
-            .establish_session(req.sender_hex, &bundle)
-            .map_err(|e| e.to_string())?;
-        tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
-        Ok(CrossRole::Initiator(info))
-    })();
-    result.unwrap_or_else(|e| {
-        tracing::error!(peer = %req.sender_hex, error = %e, "cross-request Signal handshake failed");
+/// Open the session of a crossing request from the peer's bundle, our
+/// accept as its first payload. A failure is told to the user; both sides
+/// are already `Accepted`, so a session reset recovers it.
+async fn open_crossing_session(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
+    let sent = match rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle) {
+        Ok(bundle) => dm::send_friend_accept(host, req.sender_hex, bundle).await,
+        Err(e) => Err(crate::operations::friend::FriendError::Invalid(format!(
+            "unreadable prekey bundle: {e}"
+        ))),
+    };
+    if let Err(e) = sent {
+        tracing::error!(peer = %req.sender_hex, error = %e, "cross-request session not opened");
         let peer_label = state::label(host, req.sender_hex);
-        host.publish(SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
-            title: "Couldn't establish secure session".into(),
-            body: format!(
-                "Cross-request auto-accept with {peer_label} failed at the Signal \
-                 handshake: {e}. Click 'Reset Secure Session' from their friend menu \
-                 after verifying their safety number out-of-band."
-            ),
-        }));
-        CrossRole::Failed
-    })
+        host.publish(SubscriptionEvent::Notification(
+            NotificationEvent::SystemAlert {
+                title: "Couldn't establish secure session".into(),
+                body: format!(
+                    "Cross-request auto-accept with {peer_label} could not open the secure \
+                 session: {e}. Reset the secure session from their friend menu after \
+                 verifying their safety number out-of-band."
+                ),
+            },
+        ));
+    }
 }
 
 /// Both sides sent a request: our pending friend becomes `Accepted`, our
-/// half of the handshake runs (see [`CrossRole`]), and their profile is
+/// half of the handshake runs ([`we_initiate_crossing`]), and their profile is
 /// watched.
 pub(super) async fn accept_crossing_request(
     host: &dyn FriendHost,
@@ -196,18 +177,12 @@ pub(super) async fn accept_crossing_request(
             Some(req.mailbox_dht_key.to_string()),
         );
     }
-    // Exactly one side initiates: the lower identity establishes and sends
-    // `FriendAccept` with the session init; the higher side answers it.
-    match crossing_session(host, req) {
-        CrossRole::Initiator(init) => {
-            if let Err(e) = dm::send_friend_accept(host, req.sender_hex, Some(init)).await {
-                tracing::warn!(error = %e, "failed to send friend accept for cross-request");
-            }
-        }
-        CrossRole::Responder => {
-            tracing::info!(peer = %req.sender_hex, "cross-request: peer initiates — awaiting their FriendAccept");
-        }
-        CrossRole::Failed => {}
+    // Exactly one side initiates: the lower identity opens the session with
+    // its accept; the higher side's session opens when that arrives.
+    if we_initiate_crossing(host, req.sender_hex) {
+        open_crossing_session(host, req).await;
+    } else {
+        tracing::info!(peer = %req.sender_hex, "cross-request: peer initiates — awaiting their accept");
     }
     if !req.profile_dht_key.is_empty() {
         host.watch_friend(req.sender_hex, req.profile_dht_key).await;

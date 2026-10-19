@@ -60,6 +60,8 @@ serde_json = { workspace = true }
 aes-gcm = "0.10"
 blake3 = "1"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
+# The pre-session replay guard keys `(sender, nonce)` (plan E2.3).
+blake2 = "0.10"
 hkdf = "0.12"
 rand = { workspace = true }
 sha2 = "0.10"
@@ -70,8 +72,12 @@ bitflags = { version = "2", features = [ "serde" ] }
 indexmap = "2"
 parking_lot = { workspace = true }
 
+# The safety number's scannable form as a QR code (plan E2.3); matrix
+# only, no renderer: every frontend draws the modules itself.
+qrcode = { version = "0.14", default-features = false }
+
 # Identity generation
-uuid = { version = "1", features = [ "v4", "fast-rng" ] }
+uuid = { version = "1", features = [ "v4", "v7", "fast-rng" ] }
 
 # Logging
 hex = "0.4"
@@ -79,5 +85,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# The frame size tests build real bundles over a temporary database.
+rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 proptest = "1"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

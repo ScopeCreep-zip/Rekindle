@@ -5,7 +5,7 @@
 //! `veilid-core`, `AppState`, `tauri::AppHandle`, and `tokio_rusqlite`
 //! types at its public surface. The src-tauri adapter
 //! (`services/dm_adapter.rs`) implements them against the live Veilid
-//! runtime + Signal session manager + Tauri AppHandle.
+//! runtime + Tauri AppHandle.
 //!
 //! Why split into multiple traits rather than one god-trait:
 //! - `DmStore` (existing, in `store.rs`) is the persistence port.
@@ -13,15 +13,14 @@
 //!   adapter on `AppState`, accessed via concrete operations (insert,
 //!   current, observed_and_lookup, advance) so the trait stays
 //!   dyn-safe.
-//! - `DmDeps` is the orchestration port: DHT ops + transport ops +
-//!   identity ops + event emit. One trait because every DM operation
+//! - `DmDeps` is the orchestration port: DHT ops + identity ops +
+//!   event emit. One trait because every DM operation
 //!   needs some subset of these and splitting further would force
 //!   callers to thread multiple `&dyn _` parameters.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_records::lease::LeaseId;
 
 use crate::error::DmError;
@@ -65,6 +64,8 @@ pub enum DmEvent {
         sender_pseudonym: String,
         body: String,
         timestamp_ms: u64,
+        /// Our own message (the local echo), as opposed to a peer's.
+        is_own: bool,
     },
     /// An inbound group DM invite arrived — UI should surface the request.
     InviteReceived {
@@ -93,8 +94,8 @@ pub enum DmEvent {
 }
 
 /// Orchestration port. The DM crate calls these methods to perform
-/// every external operation — DHT writes, app-message sends, identity
-/// extraction, frontend emits. The adapter handles all the
+/// every external operation — DHT writes, identity extraction, frontend
+/// emits. The adapter handles all the
 /// `veilid-core` / `AppState` / `AppHandle` plumbing.
 #[async_trait]
 pub trait DmDeps: Send + Sync + 'static {
@@ -156,16 +157,6 @@ pub trait DmDeps: Send + Sync + 'static {
     /// Release the DM's held lease (the conversation ended: left). A
     /// no-op when none is held.
     async fn dht_release_session(&self, record_key: &str);
-
-    // --- Transport ---
-
-    /// Send a Signal-encrypted `app_message` (fire-and-forget) to a
-    /// peer. Used for DM video fragments + future encrypted controls.
-    async fn send_encrypted(
-        &self,
-        peer_pubkey_hex: &str,
-        payload: MessagePayload,
-    ) -> Result<(), DmError>;
 
     // --- Frontend emit ---
 

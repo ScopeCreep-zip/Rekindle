@@ -225,7 +225,7 @@ pub enum IntentKind {
     // Protected: Not yet built
     ExportKeys,
     ViewRecoveryMaterial,
-    // TrustChanging: Not yet built
+    // TrustChanging: Key trust (plan E2.3, safety numbers)
     MarkVerified,
     ClearVerification,
     // Protected: Not yet built

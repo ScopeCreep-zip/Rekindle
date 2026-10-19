@@ -14,7 +14,7 @@ use rekindle_calls::signaling::{
 };
 use rekindle_calls::state::CallKind;
 use rekindle_calls::CallError;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use super::CallsAdapter;
 use crate::state_helpers;
@@ -67,13 +67,9 @@ impl CallSignalingDeps for CallsAdapter {
             .collect()
     }
 
-    async fn send_to_peer(
-        &self,
-        peer_pubkey_hex: &str,
-        payload: MessagePayload,
-    ) -> Result<(), CallError> {
+    async fn send_to_peer(&self, peer_pubkey_hex: &str, body: DirectBody) -> Result<(), CallError> {
         let host = crate::state_helpers::friend_host(&self.state).map_err(CallError::Transport)?;
-        rekindle_transport::operations::dm::send_to_peer(host.as_ref(), peer_pubkey_hex, &payload)
+        rekindle_transport::operations::dm::send_to_peer(host.as_ref(), peer_pubkey_hex, &body)
             .await
             .map_err(|e| CallError::Transport(e.to_string()))
     }

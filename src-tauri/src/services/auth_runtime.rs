@@ -29,16 +29,12 @@ pub struct PqxdhBundleInfo {
     pub pqpk_ot_signature_len: Option<usize>,
 }
 
-pub fn pqxdh_bundle_info_inner(state: &Arc<AppState>) -> Result<PqxdhBundleInfo, String> {
-    let handle = state
-        .signal_manager
-        .read()
-        .as_ref()
-        .map(std::sync::Arc::clone)
-        .ok_or("signal manager not initialized")?;
-    let bundle = handle
-        .manager
-        .current_bundle()
+pub async fn pqxdh_bundle_info_inner(state: &Arc<AppState>) -> Result<PqxdhBundleInfo, String> {
+    let host = crate::state_helpers::friend_host(state)?;
+    let local = host.local_party().map_err(|e| e.to_string())?;
+    let db = host.db().map_err(|e| e.to_string())?;
+    let bundle = rekindle_db::prekeys::current_bundle(&db, &local)
+        .await
         .map_err(|e| format!("current bundle: {e}"))?;
     Ok(PqxdhBundleInfo {
         identity_key_len: bundle.identity_key.len(),

@@ -234,6 +234,7 @@ impl App {
                 .request_ok(IpcRequest::DmSend {
                     peer_key: peer_key.clone(),
                     body: text,
+                    reply_to: None,
                 })
                 .await
             {

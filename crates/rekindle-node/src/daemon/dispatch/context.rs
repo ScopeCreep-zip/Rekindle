@@ -7,6 +7,7 @@ use std::sync::Arc;
 use rekindle_transport::{Session, TransportNode};
 
 use crate::daemon::DaemonState;
+use crate::host::gate::Acknowledged;
 use rekindle_ipc::protocol::{BusPayload, IpcRequest, IpcResponse, Lane};
 
 use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
@@ -79,19 +80,6 @@ impl DaemonContext {
             vault: &self.vault,
             attempts: &self.identity_attempts,
         }
-    }
-
-    /// The unlock's Signal manager, or 423 while locked.
-    pub(crate) fn require_signal(
-        &self,
-    ) -> Result<Arc<rekindle_crypto::signal::SignalSessionManager>, IpcResponse> {
-        self.signal.read().clone().ok_or_else(|| {
-            IpcResponse::error_with_remediation(
-                423,
-                "no identity is unlocked",
-                "unlock the daemon first",
-            )
-        })
     }
 
     /// Resolve a community by governance key or name from session.
@@ -281,21 +269,23 @@ impl DaemonContext {
         crate::host::gate::run(self, request, caller).await
     }
 
-    /// Dispatch `request` holding its lane for the whole handler.
+    /// Dispatch `request` holding its lane for the whole handler;
+    /// `acknowledged` is what committing its review acknowledged.
     pub(crate) async fn dispatch_in_lane(
         &self,
         request: IpcRequest,
         caller: &Caller,
+        acknowledged: Acknowledged,
     ) -> IpcResponse {
         match request.lane() {
-            Lane::Query => super::router::dispatch(self, request, caller).await,
+            Lane::Query => super::router::dispatch(self, request, caller, acknowledged).await,
             Lane::Write => {
                 let _lane = self.write_lane.read().await;
-                super::router::dispatch(self, request, caller).await
+                super::router::dispatch(self, request, caller, acknowledged).await
             }
             Lane::Exclusive => {
                 let _lane = self.write_lane.write().await;
-                super::router::dispatch(self, request, caller).await
+                super::router::dispatch(self, request, caller, acknowledged).await
             }
         }
     }

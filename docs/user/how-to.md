@@ -200,7 +200,7 @@ buddy list immediately. Past chat history with them remains in your
 local SQLite (deletion of the record is destructive — you can't
 get it back). MEK rotation does not apply to 1:1 chats; the next
 session establishment with this friend (if you re-friend) starts
-fresh via X3DH.
+fresh via PQXDH.
 
 ## Block a user
 

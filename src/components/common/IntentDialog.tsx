@@ -36,6 +36,13 @@ const IntentDialog: Component = () => {
   });
 
   const review = () => intentState.review;
+  // The box states the salient fact: the first one, else the escalation
+  // that raised the class (a verified key that changed, plan E2.3).
+  const acknowledgement = (r: NonNullable<ReturnType<typeof review>>): string => {
+    if (r.facts.length > 0) return factText(r.facts[0]);
+    if (r.escalations.length > 0) return escalationText(r.escalations[0]);
+    return "I understand.";
+  };
   const warning = () => {
     const r = review();
     return r !== null && (r.class === "destructive" || r.class === "protected");
@@ -120,7 +127,7 @@ const IntentDialog: Component = () => {
                           checked={acknowledged()}
                           onChange={(e) => setAcknowledged(e.currentTarget.checked)}
                         />
-                        <span>{r().facts.length > 0 ? factText(r().facts[0]) : "I understand."}</span>
+                        <span>{acknowledgement(r())}</span>
                       </label>
                     </Match>
                     <Match when={r().proof === "typeSubject"}>

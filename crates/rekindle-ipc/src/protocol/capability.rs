@@ -101,7 +101,8 @@ impl IpcRequest {
             Self::FriendList
             | Self::FriendRequests
             | Self::FriendInviteList
-            | Self::FriendBlockedList => Some(C::FriendsRead),
+            | Self::FriendBlockedList
+            | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
             Self::FriendAdd { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }
@@ -169,6 +170,9 @@ impl IpcRequest {
             | Self::IdentityRotate { .. }
             | Self::IdentityDelete { .. }
             | Self::IdentityWipe
+            // Which keys the user trusts is the user's own decision.
+            | Self::IdentityMarkVerified { .. }
+            | Self::IdentityClearVerification { .. }
             // A commit runs the request the gate held, which passed this
             // caller's capability check when it was selected.
             | Self::IntentCommit { .. }

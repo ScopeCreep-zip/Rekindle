@@ -1,0 +1,183 @@
+//! Safety numbers and verification (plan E2.3): our safety number with a
+//! peer (libsignal's 60 digits, `rekindle_crypto::SafetyNumber`), its
+//! scannable form as a QR code, and the user's mark that they compared it
+//! out of band (`signal_identities.verified`).
+//!
+//! Under identity == address a peer's key is their public key, so the
+//! number is computed from the two identities. The peer's row is recorded
+//! with the first session (trust on first use, unverified); a rotation
+//! moves it, clears the mark and, when it was verified, records the change
+//! until an escalated action acknowledges it (`VerifiedKeyChanged`).
+
+use rekindle_crypto::SafetyNumber;
+use rekindle_types::dto::friends::SafetyNumberView;
+use rekindle_types::intent::Escalation;
+
+use super::error::FriendError;
+use super::host::FriendHost;
+use super::state;
+
+/// Our identity key and `peer`'s, as `signal_identities` keys them (and
+/// an action that acknowledges a key change in its own transaction,
+/// `signal_identities::acknowledging`).
+///
+/// # Errors
+/// `Locked` while no identity is unlocked; `Invalid` when `peer` is not a
+/// public key.
+pub(crate) fn keys(host: &dyn FriendHost, peer: &str) -> Result<([u8; 32], [u8; 32]), FriendError> {
+    let parse = |key: &str| {
+        rekindle_types::key_format::public_key_hex(key)
+            .map(|k| k.to_bytes())
+            .map_err(|e| FriendError::Invalid(format!("public key {key}: {e}")))
+    };
+    Ok((parse(&state::owner(host)?)?, parse(peer)?))
+}
+
+/// The safety number of our identity and `peer`'s, as both sides display
+/// it.
+#[must_use]
+pub fn safety_number(host: &dyn FriendHost, peer: &str) -> Option<String> {
+    let (owner, theirs) = keys(host, peer).ok()?;
+    Some(SafetyNumber::new(&owner, &theirs).digits())
+}
+
+/// `scannable` as a QR code: one string per row, `1` a dark module.
+///
+/// # Errors
+/// `Failed` when the bytes do not fit a QR code (they always do: the form
+/// is 74 bytes).
+fn qr_rows(scannable: &[u8]) -> Result<Vec<String>, FriendError> {
+    let code = qrcode::QrCode::new(scannable)
+        .map_err(|e| FriendError::Failed(format!("safety number QR: {e}")))?;
+    let width = code.width();
+    Ok(code
+        .to_colors()
+        .chunks(width)
+        .map(|row| {
+            row.iter()
+                .map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' })
+                .collect()
+        })
+        .collect())
+}
+
+/// Our safety number with `peer`, its QR, and whether we verified them.
+///
+/// # Errors
+/// The identity is locked, `peer` is not a key, or the row could not be
+/// read.
+pub async fn view(host: &dyn FriendHost, peer: &str) -> Result<SafetyNumberView, FriendError> {
+    let (owner, theirs) = keys(host, peer)?;
+    let row = state::db_call!(host, "read verification", move |conn| {
+        rekindle_db::repo::signal_identities::get(conn, &owner, &theirs)
+    })
+    .await?;
+    let number = SafetyNumber::new(&owner, &theirs);
+    let scannable = number.scannable();
+    Ok(SafetyNumberView {
+        peer_key: peer.to_string(),
+        digits: number.digits(),
+        qr_rows: qr_rows(&scannable)?,
+        scannable,
+        verified: row.as_ref().is_some_and(|r| r.verified),
+        verified_at: row.as_ref().and_then(|r| r.verified_at),
+        changed: row.is_some_and(|r| r.changed_from_key.is_some()),
+    })
+}
+
+/// The user compared the safety number with `peer` and marks their key
+/// verified (an unacknowledged key change is acknowledged with it).
+///
+/// # Errors
+/// `NotFound` when we hold no session row for `peer` yet (it is recorded
+/// with the first session); the write failed.
+pub async fn mark_verified(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
+    let (owner, theirs) = keys(host, peer)?;
+    let now = host.clock().now_ms_i64();
+    let marked = state::db_call!(host, "mark verified", move |conn| {
+        rekindle_db::repo::signal_identities::mark_verified(conn, &owner, &theirs, now)
+    })
+    .await?;
+    if !marked {
+        return Err(no_session(peer));
+    }
+    tracing::info!(peer = %peer, "identity key marked verified");
+    Ok(())
+}
+
+/// The user withdraws `peer`'s verification.
+///
+/// # Errors
+/// `NotFound` when we hold no session row for `peer`; the write failed.
+pub async fn clear_verification(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
+    let (owner, theirs) = keys(host, peer)?;
+    let cleared = state::db_call!(host, "clear verification", move |conn| {
+        rekindle_db::repo::signal_identities::clear_verification(conn, &owner, &theirs)
+    })
+    .await?;
+    if !cleared {
+        return Err(no_session(peer));
+    }
+    tracing::info!(peer = %peer, "identity key verification cleared");
+    Ok(())
+}
+
+fn no_session(peer: &str) -> FriendError {
+    FriendError::NotFound(format!(
+        "no secure session with {peer} yet: their key is recorded with the first one"
+    ))
+}
+
+/// `VerifiedKeyChanged` while the key we verified for `peer` changed and
+/// the change is unacknowledged: the review of the next action toward them
+/// is held on it.
+///
+/// # Errors
+/// The identity is locked, `peer` is not a key, or the row could not be
+/// read.
+pub async fn key_change(
+    host: &dyn FriendHost,
+    peer: &str,
+) -> Result<Option<Escalation>, FriendError> {
+    let (owner, theirs) = keys(host, peer)?;
+    state::db_call!(host, "read key change", move |conn| {
+        rekindle_db::repo::signal_identities::verified_key_changed(conn, &owner, &theirs)
+    })
+    .await
+}
+
+/// Acknowledge `peer`'s key change after an escalated action whose own
+/// write is not ours to join (a session-reset accept, whose ratchet record
+/// is `rekindle_db::ratchet`'s transaction). A crash before it leaves the
+/// change unacknowledged, so the next action asks again.
+///
+/// # Errors
+/// The write failed.
+pub(crate) async fn acknowledge_key_change(
+    host: &dyn FriendHost,
+    peer: &str,
+) -> Result<(), FriendError> {
+    let (owner, theirs) = keys(host, peer)?;
+    state::db_call!(host, "acknowledge key change", move |conn| {
+        rekindle_db::repo::signal_identities::acknowledge_key_change(conn, &owner, &theirs)
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::qr_rows;
+
+    #[test]
+    fn the_scannable_form_fits_a_square_qr() {
+        let number = rekindle_crypto::SafetyNumber::new(&[1; 32], &[2; 32]);
+        let rows = qr_rows(&number.scannable()).unwrap();
+        assert!(rows.len() >= 21, "a QR code is at least 21 modules wide");
+        assert!(rows.iter().all(|row| row.len() == rows.len()));
+        assert!(rows
+            .iter()
+            .all(|row| row.chars().all(|c| c == '0' || c == '1')));
+        // The finder pattern's corner module is dark.
+        assert!(rows[0].starts_with('1'));
+    }
+}

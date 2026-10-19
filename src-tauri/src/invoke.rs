@@ -54,6 +54,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::friends::cancel_invite,
         commands::friends::get_outgoing_invites,
         commands::friends::reset_signal_session,
+        commands::friends::get_safety_number,
+        commands::friends::mark_identity_verified,
+        commands::friends::clear_identity_verification,
         // community
         commands::community::create_community,
         commands::community::join_community,

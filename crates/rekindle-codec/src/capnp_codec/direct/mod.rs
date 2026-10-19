@@ -17,10 +17,10 @@ mod type_id;
 pub use body::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DirectBody,
     DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
-    GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, IdentityRotated, ProfileKeyRotated,
-    RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw,
-    SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, Typing,
-    UnregisterPushRelay, WakeNotify,
+    GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupDmInvite, GroupDmLeave,
+    IdentityRotated, ProfileKeyRotated, RegisterPushRelay, RelayEnvelope, RelayOffer,
+    RelayOfferAck, RelayWithdraw, SessionResetDecline, SessionResetRequest, StatusRequest,
+    StatusResponse, Typing, UnregisterPushRelay, WakeNotify,
 };
 pub use frame::{
     ContentHint, DmContent, DmFrame, FrameBody, PqPrekey, PreKeyInitBody, RatchetBody,

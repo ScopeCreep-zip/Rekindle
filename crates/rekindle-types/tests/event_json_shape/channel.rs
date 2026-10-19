@@ -78,6 +78,7 @@ pub fn samples() -> Vec<Sample> {
                 conversation_id: pk('b'),
                 server_message_id: Some(id("dm_", '2')),
                 reply_to_id: Some(id("dm_", '3')),
+                is_own: false,
             },
         ),
         ev(

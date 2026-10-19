@@ -1,6 +1,5 @@
 pub mod dht;
 pub mod error;
-pub mod messaging;
 pub mod node;
 pub mod own_routes;
 pub mod ports;

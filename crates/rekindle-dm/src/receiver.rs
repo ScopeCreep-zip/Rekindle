@@ -65,6 +65,7 @@ pub async fn handle_dm_subkey_change<D: DmDeps + ?Sized>(
         sender_pseudonym: peer_pseudonym,
         body,
         timestamp_ms: envelope.timestamp_ms,
+        is_own: false,
     });
 
     maybe_ratchet(deps, record_key, &owner_key, envelope.sequence).await;

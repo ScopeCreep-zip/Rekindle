@@ -116,18 +116,21 @@ pub(crate) async fn handle_prekey_replenish(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let signal = match ctx.require_signal() {
-        Ok(s) => s,
-        Err(e) => return e,
+    let host = crate::host::adapters::friends::HostFriends::of(ctx);
+    let (Ok(local), Ok(db)) = (
+        rekindle_transport::operations::friend::FriendHost::local_party(&host),
+        ctx.require_db(),
+    ) else {
+        return IpcResponse::error(423, "no identity is unlocked");
     };
     let profile_key = match ctx.require_session(|s| s.identity.profile_dht_key.clone()) {
         Ok(k) => k,
         Err(e) => return e,
     };
 
-    // The manager's long-lived bundle (its private halves are in the
-    // vault); one-time keys go to single peers in handout bundles.
-    let bundle = match signal.current_bundle() {
+    // The long-lived bundle (its private halves are in `signal_prekeys`);
+    // one-time keys go to single peers in handout bundles.
+    let bundle = match rekindle_db::prekeys::current_bundle(&db, &local).await {
         Ok(b) => b,
         Err(e) => return IpcResponse::error(500, format!("prekey replenish: {e}")),
     };
@@ -140,7 +143,7 @@ pub(crate) async fn handle_prekey_replenish(
     {
         return IpcResponse::error(500, format!("prekey replenish: {e}"));
     }
-    match signal.unclaimed_one_time() {
+    match rekindle_db::prekeys::unclaimed_one_time(&db, &local.owner()).await {
         Ok((one_time, pq_one_time)) => IpcResponse::ok(&serde_json::json!({
             "replenished": true,
             "one_time_prekeys": one_time,

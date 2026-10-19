@@ -5,9 +5,9 @@
 //! `{pk}.db` (SQLCipher, keyed by the vault-derived `AppDbKey`), its file
 //! cache `{pk}.files/` (keyed-hash names, plan E3.0a), and its row in
 //! `identities.json`. [`create`] and [`unlock`] install the vault and the
-//! database into the host's [`Stores`] and build the one
-//! `SignalSessionManager` of the unlock over the vault-backed stores;
-//! [`lock`] takes them out again.
+//! database into the host's [`Stores`]; [`lock`] takes them out again. The
+//! 1:1 ratchet's state is in the database (`rekindle_db::ratchet`, plan
+//! E2.3).
 //!
 //! Every wrong passphrase — unlock, delete and (from D3) a Protected intent
 //! proof — counts on the host's one per-identity [`AttemptLimiter`]; a
@@ -15,15 +15,12 @@
 
 use std::sync::Arc;
 
-use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_db::paths::DataRoot;
 use rekindle_db::registry::{self, IdentityEntry};
 use rekindle_db::{Db, DbHandle, SqliteFriendStore};
 use rekindle_idempotency::attempts::AttemptLimiter;
 use rekindle_vault::{VaultHandle, VaultKey, VaultStore};
 use zeroize::Zeroizing;
-
-use super::adapters::signal::{VaultIdentityStore, VaultPreKeyStore, VaultSessionStore};
 
 /// The host's slots for the unlocked identity.
 pub struct Stores<'a> {
@@ -38,8 +35,6 @@ pub struct Unlocked {
     pub display_name: String,
     /// The Ed25519 identity secret.
     pub secret: Zeroizing<[u8; 32]>,
-    /// The unlock's one Signal manager, with its session cache.
-    pub signal: SignalSessionManager,
     /// The receive path's friend authority over the installed database.
     pub friend_store: Arc<SqliteFriendStore>,
     /// Wrong passphrases this unlock cleared (the host records them in
@@ -165,36 +160,8 @@ pub fn passphrase_matches(
     }
 }
 
-/// The unlock's Signal manager over the vault-backed stores: the identity
-/// store holds the Ed25519 keypair bytes (PQXDH derives X25519 from them),
-/// and the registration id is derived from the public key so it is stable.
-fn signal_manager(
-    vault: &VaultHandle,
-    secret: &[u8; 32],
-) -> Result<SignalSessionManager, IdentityError> {
-    let identity = rekindle_crypto::Identity::from_secret_bytes(secret);
-    let public = identity.public_key_bytes();
-    let registration_id = u32::from_le_bytes([public[0], public[1], public[2], public[3]]);
-    let storage = |e: rekindle_crypto::CryptoError| IdentityError::Storage(e.to_string());
-    let identity_store = VaultIdentityStore::new(
-        Arc::clone(vault),
-        identity.secret_key_bytes().to_vec(),
-        public.to_vec(),
-        registration_id,
-    );
-    let prekeys = VaultPreKeyStore::new(Arc::clone(vault)).map_err(storage)?;
-    let sessions = VaultSessionStore::new(Arc::clone(vault)).map_err(storage)?;
-    Ok(SignalSessionManager::new(
-        Box::new(identity_store),
-        Box::new(prekeys),
-        Box::new(sessions),
-    )
-    .with_session_cache(256))
-}
-
-/// Install the opened vault and database and build the unlock's Signal
-/// manager; a failure takes both out again.
-async fn install(
+/// Install the opened vault and database.
+fn install(
     stores: &Stores<'_>,
     vault: VaultStore,
     db: Db,
@@ -202,24 +169,16 @@ async fn install(
     display_name: String,
     secret: Zeroizing<[u8; 32]>,
     failed_attempts: u32,
-) -> Result<Unlocked, IdentityError> {
+) -> Unlocked {
     *stores.vault.lock() = Some(vault);
     stores.db.set(db);
-    let signal = match signal_manager(stores.vault, &secret) {
-        Ok(signal) => signal,
-        Err(e) => {
-            lock(stores).await;
-            return Err(e);
-        }
-    };
-    Ok(Unlocked {
+    Unlocked {
         public_key,
         display_name,
         secret,
-        signal,
         friend_store: Arc::new(SqliteFriendStore::new(Arc::clone(stores.db))),
         failed_attempts,
-    })
+    }
 }
 
 /// Remove an identity's files: vault, header, database (+ WAL and SHM),
@@ -281,7 +240,15 @@ pub async fn create(
             return Err(e);
         }
     };
-    install(stores, vault, db, public_key, display_name, secret, 0).await
+    Ok(install(
+        stores,
+        vault,
+        db,
+        public_key,
+        display_name,
+        secret,
+        0,
+    ))
 }
 
 async fn create_files(
@@ -350,7 +317,7 @@ pub async fn unlock(
         .await
         .map_err(|e| IdentityError::Storage(e.to_string()))?
         .map_or(entry.display_name, |(name, _)| name);
-    install(
+    Ok(install(
         stores,
         vault,
         db,
@@ -358,8 +325,7 @@ pub async fn unlock(
         display_name,
         secret,
         cleared_failures,
-    )
-    .await
+    ))
 }
 
 /// Record a new display name in the registry, so the login picker shows

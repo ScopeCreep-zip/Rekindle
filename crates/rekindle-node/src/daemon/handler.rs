@@ -133,19 +133,23 @@ impl InboundHandler for DaemonHandler {
             debug!("1:1 message before the host is up — dropped");
             return;
         };
-        if let Routed::Unported(prepared) = direct::receive(&host, datagram).await {
-            // The daemon has none of the unported features (DM records,
-            // calls, relays) yet; their owner steps bring them.
-            debug!(from = %prepared.sender_hex, "unported 1:1 payload dropped at the daemon");
+        if let Routed::Unported(opened) = direct::receive(&host, datagram).await {
+            // The daemon has none of the unported features (calls, relays)
+            // yet; their owner steps bring them.
+            debug!(from = %opened.sender_hex, kind = ?opened.type_id, "unported 1:1 kind dropped at the daemon");
         }
     }
 
     async fn on_direct_call(&self, datagram: &[u8]) -> Option<Vec<u8>> {
         let host = self.friends()?;
-        if let Routed::Unported(prepared) = direct::receive_call(&host, datagram).await {
-            debug!(from = %prepared.sender_hex, "unported 1:1 call refused at the daemon");
+        match direct::receive_call(&host, datagram).await {
+            direct::Called::Answered(reply) => Some(reply),
+            direct::Called::Unported(opened) => {
+                // The daemon relays for no one yet (E5.2): no answer.
+                debug!(from = %opened.sender_hex, "unported 1:1 call refused at the daemon");
+                None
+            }
         }
-        None
     }
 
     async fn on_gossip(

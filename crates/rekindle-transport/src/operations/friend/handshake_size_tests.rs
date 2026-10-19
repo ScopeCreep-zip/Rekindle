@@ -1,39 +1,32 @@
-//! Every friend-handshake envelope fits Veilid's message cap (plan C7.25).
+//! Every friend-handshake frame fits Veilid's message cap (plans C7.25,
+//! E2.3).
 //!
 //! FriendAccept was ~37 KB and FriendRequest ~33 KB against Veilid's
 //! 32,768-byte `app_message` limit while the prekey bundle travelled as
-//! JSON inside the JSON payload, so every invite failed. These build each
-//! handshake payload at its worst case, from a real handout bundle,
-//! serialize it as `seal` does for a `Sealing::Plain` payload, sign it
-//! with the protocol's envelope builder and wire it as every 1:1 send
-//! does (`operations::dm::wire`, the `'D'` tag included).
+//! JSON inside the JSON payload, so every invite failed. These seal each
+//! handshake frame at its worst case, from a real handout bundle minted by
+//! `rekindle_db::prekeys` over a temporary database, and wire it as every
+//! 1:1 send does (`operations::dm::wire`, the `'D'` tag included).
 
-use ed25519_dalek::SigningKey;
-use rekindle_codec::message::envelope::{MessagePayload, Sealing};
-use rekindle_crypto::signal::{
-    MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore, SignalSessionManager,
+use rekindle_codec::capnp_codec::direct::{
+    DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest,
+    SessionResetDecline, SessionResetRequest,
 };
-use rekindle_protocol::messaging::sender::build_envelope;
+use rekindle_db::test_support::Party;
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
+
+use crate::operations::dm::frame::{ad_extra, init_body, seal_presession};
+use crate::operations::dm::wire;
 
 /// 3.5× the largest 1-hop route blob measured (1,178 B), room for 3-hop
 /// inbound routes.
 const ROUTE_BLOB_LEN: usize = 4_096;
-/// ML-KEM-768 ciphertext.
-const ML_KEM_CIPHERTEXT_LEN: usize = 1_088;
 
-fn handout_bundle_wire() -> Vec<u8> {
-    let signing = SigningKey::from_bytes(&[7; 32]);
-    let manager = SignalSessionManager::new(
-        Box::new(MemoryIdentityStore::new(
-            signing.to_bytes().to_vec(),
-            signing.verifying_key().as_bytes().to_vec(),
-            1,
-        )),
-        Box::new(MemoryPreKeyStore::new()),
-        Box::new(MemorySessionStore::new()),
-    );
-    manager.handout_bundle().unwrap().to_wire()
+async fn handout_wire(party: &Party) -> Vec<u8> {
+    rekindle_db::prekeys::handout_bundle(&party.db, &party.local)
+        .await
+        .unwrap()
+        .to_wire()
 }
 
 /// A display name and message at their bounds, every character 4 bytes.
@@ -45,85 +38,105 @@ fn dht_key() -> String {
     format!("VLD0:{}", "A".repeat(43))
 }
 
-fn encoded_len(payload: &MessagePayload) -> usize {
-    assert_eq!(
-        payload.sealing(),
-        Sealing::Plain,
-        "handshake payloads travel unsealed"
-    );
-    let sealed = serde_json::to_vec(payload).unwrap();
-    let signing = SigningKey::from_bytes(&[9; 32]);
-    let envelope = build_envelope(&signing, &[3; 32], u64::MAX, vec![0; 16], sealed);
-    crate::operations::dm::wire(&envelope)
-        .unwrap_or_else(|e| panic!("{payload:?} does not fit: {e}"))
+/// The wire length of `body` sealed from `from` to `to`.
+fn sealed_len(from: &Party, to: &Party, body: &DirectBody) -> usize {
+    let frame = seal_presession(
+        &from.local.identity,
+        &to.local.owner(),
+        body,
+        [0xFF; 16],
+        u64::MAX,
+    )
+    .unwrap();
+    wire(&frame)
+        .unwrap_or_else(|e| panic!("{:?} does not fit: {e}", body.type_id()))
         .len()
 }
 
-#[test]
-fn friend_request_fits() {
-    let len = encoded_len(&MessagePayload::FriendRequest {
+/// The wire length of the PreKeyInit from `from` that opens a session with
+/// `to` from its handout bundle, carrying `first`.
+async fn init_len(from: &Party, to: &Party, first: &DirectBody) -> usize {
+    let bundle = rekindle_db::prekeys::handout_bundle(&to.db, &to.local)
+        .await
+        .unwrap();
+    let content = DmContent {
+        content_hint: rekindle_codec::capnp_codec::direct::ContentHint::Default,
+        sent_at_ms: u64::MAX,
+        payload: first.encode(),
+    }
+    .encode();
+    let init = rekindle_db::ratchet::initiate_and_record_outbound(
+        &from.db,
+        &from.local,
+        &to.address(),
+        bundle,
+        &content,
+        &ad_extra(first.type_id()),
+    )
+    .await
+    .unwrap();
+    let frame = DmFrame {
+        type_id: DmTypeId::PreKeyInit,
+        sender: from.local.owner(),
+        body: FrameBody::PreKeyInit(init_body(init, first.type_id())),
+    };
+    wire(&frame)
+        .unwrap_or_else(|e| {
+            panic!(
+                "PreKeyInit carrying {:?} does not fit: {e}",
+                first.type_id()
+            )
+        })
+        .len()
+}
+
+#[tokio::test]
+async fn friend_request_fits() {
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let request = DirectBody::FriendRequest(FriendRequest {
         display_name: widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
         message: widest(rekindle_types::key_format::MAX_MESSAGE_LEN),
-        prekey_bundle: handout_bundle_wire(),
+        prekey_bundle: handout_wire(&alice).await,
         profile_dht_key: dht_key(),
         route_blob: vec![0xAB; ROUTE_BLOB_LEN],
         mailbox_dht_key: dht_key(),
         invite_id: Some(uuid::Uuid::new_v4().to_string()),
     });
+    let len = sealed_len(&alice, &bob, &request);
     assert!(len <= MAX_APP_MESSAGE_LEN, "FriendRequest {len} B");
 }
 
-#[test]
-fn friend_accept_fits() {
-    let len = encoded_len(&MessagePayload::FriendAccept {
-        prekey_bundle: handout_bundle_wire(),
+#[tokio::test]
+async fn friend_accept_fits() {
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let accept = DirectBody::FriendAccept(FriendAccept {
         profile_dht_key: dht_key(),
         route_blob: vec![0xAB; ROUTE_BLOB_LEN],
         mailbox_dht_key: dht_key(),
-        ephemeral_key: vec![0xCD; 32],
-        signed_prekey_id: u32::MAX,
-        one_time_prekey_id: Some(u32::MAX),
-        ml_kem_ciphertext: vec![0xEF; ML_KEM_CIPHERTEXT_LEN],
-        used_ot_pqpk_id: Some(u32::MAX),
     });
-    assert!(len <= MAX_APP_MESSAGE_LEN, "FriendAccept {len} B");
+    let len = init_len(&bob, &alice, &accept).await;
+    assert!(
+        len <= MAX_APP_MESSAGE_LEN,
+        "PreKeyInit + FriendAccept {len} B"
+    );
 }
 
-#[test]
-fn session_reset_fits() {
-    let request = encoded_len(&MessagePayload::SessionResetRequest {
-        our_prekey_bundle: handout_bundle_wire(),
+#[tokio::test]
+async fn every_presession_frame_and_the_reset_accept_fit() {
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let request = DirectBody::SessionResetRequest(SessionResetRequest {
+        prekey_bundle: handout_wire(&alice).await,
     });
-    let accept = encoded_len(&MessagePayload::SessionResetAccept {
-        ephemeral_key: vec![0xCD; 32],
-        signed_prekey_id: u32::MAX,
-        one_time_prekey_id: Some(u32::MAX),
-        our_identity_key: vec![0x11; 32],
-        ml_kem_ciphertext: vec![0xEF; ML_KEM_CIPHERTEXT_LEN],
-        used_ot_pqpk_id: Some(u32::MAX),
+    let decline = DirectBody::SessionResetDecline(SessionResetDecline {
+        reason: widest(rekindle_types::key_format::MAX_NOTE_LEN),
     });
-    assert!(
-        request <= MAX_APP_MESSAGE_LEN,
-        "SessionResetRequest {request} B"
-    );
+    for body in [&request, &decline, &DirectBody::FriendReject] {
+        let len = sealed_len(&alice, &bob, body);
+        assert!(len <= MAX_APP_MESSAGE_LEN, "{:?} {len} B", body.type_id());
+    }
+    let accept = init_len(&bob, &alice, &DirectBody::SessionResetAccept).await;
     assert!(
         accept <= MAX_APP_MESSAGE_LEN,
-        "SessionResetAccept {accept} B"
+        "PreKeyInit + SessionResetAccept {accept} B"
     );
-}
-
-#[test]
-fn an_oversize_envelope_is_refused_before_veilid() {
-    let signing = SigningKey::from_bytes(&[9; 32]);
-    let envelope = build_envelope(
-        &signing,
-        &[3; 32],
-        0,
-        vec![0; 16],
-        vec![0x5A; MAX_APP_MESSAGE_LEN],
-    );
-    assert!(matches!(
-        crate::operations::dm::wire(&envelope),
-        Err(crate::operations::friend::FriendError::Invalid(_))
-    ));
 }

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
 use x25519_dalek::StaticSecret;
 
 use super::mocks::*;
@@ -49,8 +49,8 @@ impl CallSignalingDeps for EmptyNameDeps {
     fn local_video_decode_codecs(&self) -> Vec<String> {
         self.0.local_video_decode_codecs()
     }
-    async fn send_to_peer(&self, p: &str, msg: MessagePayload) -> Result<(), CallError> {
-        self.0.send_to_peer(p, msg).await
+    async fn send_to_peer(&self, p: &str, body: DirectBody) -> Result<(), CallError> {
+        self.0.send_to_peer(p, body).await
     }
     async fn start_voice_session(&self, c: &str, p: &str, kind: CallKind) -> Result<(), CallError> {
         self.0.start_voice_session(c, p, kind).await

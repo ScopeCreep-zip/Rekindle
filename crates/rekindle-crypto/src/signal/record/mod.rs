@@ -31,7 +31,7 @@ use crate::signal::dr::{RatchetMessage, SessionState};
 use crate::signal::pqxdh::agreement::{self, PqPrekeyId, ResponderKeys};
 use crate::signal::pqxdh::PqxdhError;
 use crate::signal::prekeys::PreKeyBundle;
-use crate::signal::session::SPK_ID;
+use crate::signal::prekeys::SPK_ID;
 use crate::Identity;
 
 /// Inactive sessions kept per record (libsignal

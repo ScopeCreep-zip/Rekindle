@@ -14,7 +14,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::message::envelope::MessagePayload;
 use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore};
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::RecordPort;
@@ -200,17 +199,6 @@ impl DmDeps for DmAdapter {
         }
     }
 
-    async fn send_encrypted(
-        &self,
-        peer_pubkey_hex: &str,
-        payload: MessagePayload,
-    ) -> Result<(), DmError> {
-        let host = crate::state_helpers::friend_host(&self.state).map_err(DmError::transport)?;
-        rekindle_transport::operations::dm::send_to_peer(host.as_ref(), peer_pubkey_hex, &payload)
-            .await
-            .map_err(|e| DmError::transport(e.to_string()))
-    }
-
     fn emit_event(&self, event: DmEvent) {
         match event {
             DmEvent::MessageReceived {
@@ -218,6 +206,7 @@ impl DmDeps for DmAdapter {
                 sender_pseudonym,
                 body,
                 timestamp_ms,
+                is_own,
             } => {
                 crate::event_dispatch::emit_subscription(
                     &self.app_handle,
@@ -231,6 +220,7 @@ impl DmDeps for DmAdapter {
                         server_message_id: None,
                         reply_to_id: None,
                         sender_name: None,
+                        is_own,
                     }),
                 );
             }

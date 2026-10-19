@@ -152,6 +152,25 @@ struct Typing {
   typing @0 :Bool;
 }
 
+# --- Group DMs (0x0120, 0x0123: moved unchanged from the SMPL group path
+# until E2.6 replaces them with sender keys; 0x0121/0x0122 have no body
+# until E2.6) ---
+
+# 0x0120.
+struct GroupDmInvite {
+  recordKey @0 :Text;
+  slotSeed @1 :Data;
+  initiatorPseudonym @2 :Text;
+  participantsJson @3 :Text;            # JSON `Vec<GroupDmParticipant>`
+  wrappedMek @4 :Data;                  # the MEK wrapped for this recipient
+  mekGeneration @5 :UInt32;
+}
+
+# 0x0123.
+struct GroupDmLeave {
+  recordKey @0 :Text;
+}
+
 # --- Strand relay, status probes and push relay (moved unchanged) ---
 
 # 0x0003.

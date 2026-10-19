@@ -8,7 +8,7 @@ pub struct UserProfile {
     pub status_message: String,
     pub status: u8, // 0=online, 1=away, 2=busy, 3=offline
     pub avatar_hash: Vec<u8>,
-    pub game_status: Option<crate::message::envelope::GameInfo>,
+    pub game_status: Option<super::presence::GameInfo>,
 }
 
 /// Domain struct for a Signal Protocol pre-key bundle.

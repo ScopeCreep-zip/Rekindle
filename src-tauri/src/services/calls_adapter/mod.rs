@@ -74,21 +74,21 @@ impl CallsAdapter {
     }
 }
 
-/// Public free-fn facade — dispatch an inbound group-call gossip
-/// `MessagePayload` through the crate's group_handlers. Used by
-/// `services::message_service` (the app_message dispatcher).
+/// Public free-fn facade — dispatch an inbound group-call kind (§6
+/// 0x0210–0x0214) through the crate's group_handlers. Used by the
+/// unported 1:1 dispatch (`veilid::inbound_unported`).
 pub async fn handle_group_call_payload(
     app: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &Db,
     sender_hex: &str,
-    payload: rekindle_codec::message::envelope::MessagePayload,
+    body: rekindle_codec::capnp_codec::direct::DirectBody,
 ) {
     let adapter = CallsAdapter::new(state.clone(), app.clone(), pool.clone());
     rekindle_calls::signaling::group_handlers::handle_group_call_payload(
         adapter.as_ref(),
         sender_hex,
-        payload,
+        body,
     )
     .await;
 }

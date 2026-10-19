@@ -1,72 +1,37 @@
 //! The `FriendRequest` and `FriendAccept` receive handlers: the stored
-//! request, the friend state, the `FriendRequestReceived` ack, and the
-//! crossing-request short-circuit (`super::lifecycle`).
+//! request, the friend state, and the crossing-request short-circuit
+//! (`super::lifecycle`). A request's receipt is its `app_call` return; an
+//! accept arrives as the first payload of the PreKeyInit that opened our
+//! session with the sender (plan E2.3).
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::DirectBody;
 use rekindle_db::repo::friends::Column;
 use rekindle_types::friend::FriendshipState;
-use rekindle_types::subscription_events::{FriendEvent, NotificationEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::lifecycle::accept_crossing_request;
-use super::session::{answer_accept, AcceptOutcome};
 use super::{IncomingFriendAccept, IncomingFriendRequest};
 use crate::operations::dm;
 use crate::operations::friend::{invites, state, FriendError, FriendHost};
 
-/// Send `payload`; when it cannot go now, queue it for the retry, so the
-/// peer is not left re-sending (a lost ack or rejection made the requester
-/// retry forever, B10/P3.4). The queue is bounded (20 × 30 s).
-async fn send_or_queue(host: &dyn FriendHost, to: &str, payload: &MessagePayload, what: &str) {
-    if let Err(e) = dm::send_to_peer(host, to, payload).await {
+/// Send `body`; when it cannot go now, queue it for the retry, so the peer
+/// is not left re-sending (a lost rejection made the requester retry
+/// forever, B10/P3.4). The queue is bounded (20 × 30 s).
+async fn send_or_queue(host: &dyn FriendHost, to: &str, body: &DirectBody, what: &str) {
+    if let Err(e) = dm::send_to_peer(host, to, body).await {
         tracing::info!(to = %to, error = %e, "{what} send failed, queueing for retry");
-        if let Err(e) = dm::build_and_queue(host, to, payload).await {
+        if let Err(e) = dm::build_and_queue(host, to, body).await {
             tracing::warn!(to = %to, error = %e, "failed to queue {what} for retry");
         }
     }
 }
 
-/// A request from a peer we already accepted: a network retry (their ack
-/// never landed) when the bundle's identity is the one we trust — answered
-/// with the ack and nothing else; otherwise a changed identity, which is
-/// never trusted silently.
-async fn request_from_accepted(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
-    let identity_matches = rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle)
+/// Whether the request's bundle is under the sender's own identity
+/// (identity == address); one that is not names someone else's keys.
+fn bundle_is_senders(req: &IncomingFriendRequest<'_>) -> bool {
+    rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle)
         .ok()
-        .and_then(|bundle| {
-            host.signal()
-                .ok()?
-                .is_trusted_identity(req.sender_hex, &bundle.identity_key)
-                .ok()
-        })
-        .unwrap_or(false);
-    if identity_matches {
-        tracing::info!(from = %req.sender_hex,
-            "FriendRequest from already-Accepted peer with matching identity — treating as retry, re-sending ACK");
-        if let Err(e) =
-            dm::send_to_peer(host, req.sender_hex, &MessagePayload::FriendRequestReceived).await
-        {
-            tracing::debug!(to = %req.sender_hex, error = %e,
-                "failed to re-send FriendRequestReceived ACK on retry — sender's retry queue will fire again later");
-        }
-        return;
-    }
-    // A re-install, or an impersonation: the friendship and session stay
-    // untouched until the user verifies the safety number and resets.
-    let peer_label = state::label(host, req.sender_hex);
-    tracing::error!(from = %req.sender_hex,
-        "FriendRequest from already-Accepted peer with DIFFERENT identity_key — leaving existing friendship intact");
-    host.publish(SubscriptionEvent::Notification(
-        NotificationEvent::SystemAlert {
-            title: "Peer's identity key has changed".into(),
-            body: format!(
-                "{peer_label} sent a friend request with a new identity key. \
-             This usually means they re-installed the app, but it could also \
-             be an impersonation attempt. Verify their safety number out-of-band \
-             (phone call, in person), then click 'Reset Secure Session' from \
-             their friend menu to accept the new keys."
-            ),
-        },
-    ));
+        .is_some_and(|bundle| hex::encode(bundle.identity_key) == req.sender_hex)
 }
 
 /// Store the request; persisted before the event, so the row exists when a
@@ -122,7 +87,7 @@ async fn admit_invite(
             send_or_queue(
                 host,
                 req.sender_hex,
-                &MessagePayload::FriendReject,
+                &DirectBody::FriendReject,
                 "FriendReject",
             )
             .await;
@@ -140,15 +105,10 @@ async fn admit_invite(
 
 /// An incoming friend request.
 pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
-    if req.prekey_bundle.is_empty() {
-        tracing::warn!(from = %req.sender_hex, "friend request has empty prekey bundle");
+    if !bundle_is_senders(req) {
+        tracing::warn!(from = %req.sender_hex, "friend request without the sender's own bundle — dropping");
+        return;
     }
-    tracing::info!(
-        from = %req.sender_hex,
-        route_blob_len = req.route_blob.len(),
-        route_count = req.route_blob.first().copied().unwrap_or(0),
-        "friend request: received peer route blob"
-    );
     if !req.route_blob.is_empty() {
         if let Ok(node) = host.node() {
             dm::route::cache(&node, req.sender_hex, req.route_blob.to_vec());
@@ -162,7 +122,9 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
             return;
         }
         Some(FriendshipState::Accepted) => {
-            request_from_accepted(host, req).await;
+            // A network retry (our receipt never reached them): the call's
+            // return answers it, and nothing else changes.
+            tracing::info!(from = %req.sender_hex, "friend request from an accepted friend — a retry");
             return;
         }
         Some(FriendshipState::Removing) => {
@@ -183,7 +145,7 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
     }
     if let Err(e) = persist_request(host, req).await {
         tracing::warn!(from = %req.sender_hex, error = %e,
-            "failed to persist friend request — skipping event and ACK to avoid phantom UI state");
+            "failed to persist friend request — skipping the event to avoid phantom UI state");
         return;
     }
     host.publish(SubscriptionEvent::Friend(FriendEvent::RequestReceived {
@@ -191,38 +153,20 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
         display_name: req.display_name.to_string(),
         message: req.message.to_string(),
     }));
-    send_or_queue(
-        host,
-        req.sender_hex,
-        &MessagePayload::FriendRequestReceived,
-        "FriendRequestReceived ACK",
-    )
-    .await;
 }
 
-/// An incoming friend accept: the responder session, then the friend
-/// `Accepted` with the records it named and their profile watched. No
-/// session, no friendship: the row stays pending and says why (plan C7.25).
+/// An incoming friend accept: the friend `Accepted` with the records it
+/// named and their profile watched. The session is already open (the
+/// PreKeyInit that carried it).
 pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAccept<'_>) {
     if state::friendship(host, a.sender_hex) == Some(FriendshipState::Removing) {
         tracing::info!(from = %a.sender_hex, "ignoring FriendAccept — friend is being removed");
         return;
     }
-    let outcome = answer_accept(host, a);
     if !a.route_blob.is_empty() {
         if let Ok(node) = host.node() {
             dm::route::cache(&node, a.sender_hex, a.route_blob.clone());
         }
-    }
-    if let AcceptOutcome::Failed(reason) = outcome {
-        state::update(host, a.sender_hex, |f| {
-            f.handshake_error = Some(reason.clone());
-        });
-        host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeFailed {
-            peer_key: a.sender_hex.to_string(),
-            reason,
-        }));
-        return;
     }
     state::fire_state(host, a.sender_hex, FriendshipState::Accepted);
     if !a.profile_dht_key.is_empty() {
@@ -259,5 +203,19 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: a.sender_hex.to_string(),
         display_name: Some(display_name),
+    }));
+}
+
+/// A friend's accept reached us but its session did not open: the row stays
+/// pending and says why (plan C7.25). First contact going wrong, not a
+/// broken trusted session, so it never points at the reset flow.
+pub(crate) fn on_accept_failed(host: &dyn FriendHost, sender: &str, reason: String) {
+    if state::friendship(host, sender) != Some(FriendshipState::PendingOut) {
+        return;
+    }
+    state::update(host, sender, |f| f.handshake_error = Some(reason.clone()));
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeFailed {
+        peer_key: sender.to_string(),
+        reason,
     }));
 }

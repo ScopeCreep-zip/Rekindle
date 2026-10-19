@@ -133,14 +133,24 @@ impl MessageAttachmentDto {
     }
 }
 
-/// Send a direct message (`IpcRequest::DmSend`); the stored message.
+/// Send a direct message (`IpcRequest::DmSend`), a reply to `reply_to`
+/// (the parent's client id) when given; the stored message.
 #[tauri::command]
 pub async fn send_message(
     to: String,
     body: String,
+    reply_to: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<DmMessage>, CommandError> {
-    host_call::call(&state, IpcRequest::DmSend { peer_key: to, body }).await
+    host_call::call(
+        &state,
+        IpcRequest::DmSend {
+            peer_key: to,
+            body,
+            reply_to,
+        },
+    )
+    .await
 }
 
 /// Report the draft to a peer (`IpcRequest::DmTyping`): `typing` is whether

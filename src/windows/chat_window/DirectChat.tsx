@@ -16,7 +16,10 @@ import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
 import { subscribeCallEvents } from "../../handlers/calls.handlers";
 import { hydrateState } from "../../stores/hydrate";
-import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP } from "../../icons";
+import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP, ICON_SHIELD } from "../../icons";
+import SafetyNumberPanel from "../../components/profile/SafetyNumberPanel";
+import VerifiedBadge from "../../components/profile/VerifiedBadge";
+import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -45,6 +48,11 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
   });
 
   const [messages, setMessages] = createSignal<Message[]>([]);
+
+  // The peer's key trust (plan E2.3): the header's badge, and the safety
+  // number with its mark-verified flow behind the shield button.
+  const safety = useSafetyNumber(peerId);
+  const [showSafety, setShowSafety] = createSignal(false);
 
   // Extracted so both createEffect and the direct event listener can call it
   function syncMessages() {
@@ -132,6 +140,17 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
       <div class="chat-peer-status">
         <StatusDot status={peerStatus()} />
         <span class="chat-peer-status-label">{peerStatus()}</span>
+        <VerifiedBadge view={safety.view()} />
+        <button
+          class="chat-safety-btn"
+          onClick={() => setShowSafety(!showSafety())}
+          title="Safety number"
+          aria-label={`Safety number with ${peerName()}`}
+          aria-expanded={showSafety()}
+          aria-controls="chat-safety-number"
+        >
+          <span class="nf-icon" aria-hidden="true">{ICON_SHIELD}</span>
+        </button>
         {/* W13-fix.1 — voice + video buttons matching the buddy-list
          *  right-click menu. Both go through the start_dm_call →
          *  CallInvite handshake. When a call is active with this peer,
@@ -167,6 +186,11 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           </button>
         </Show>
       </div>
+      <Show when={showSafety()}>
+        <div id="chat-safety-number" class="chat-safety-number">
+          <SafetyNumberPanel peerKey={peerId} view={safety.view()} onChanged={safety.reload} />
+        </div>
+      </Show>
       <div id="main-content" tabindex="-1" class="window-main">
       <MessageList
         messages={messages()}

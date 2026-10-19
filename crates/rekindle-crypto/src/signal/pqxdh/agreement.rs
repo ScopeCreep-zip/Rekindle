@@ -20,12 +20,15 @@ use x25519_dalek::{PublicKey as X25519Public, SharedSecret, StaticSecret};
 use zeroize::Zeroizing;
 
 use super::encode::{encode_identity, encode_kem, ENCODED_EC_LEN};
-use super::kdf::F_BYTES;
 use super::keys::{ml_kem_public_from_bytes, x25519_from_bytes, x25519_from_ed};
 use super::verify::{verify_pq, verify_spk};
 use super::PqxdhError;
+
+/// `F`: 32 `0xFF` bytes ahead of the key material (curve25519; PQXDH
+/// rev. 3 §2.2).
+const F_BYTES: [u8; 32] = [0xFF; 32];
 use crate::signal::prekeys::PreKeyBundle;
-use crate::signal::session::PQ_LR_ID;
+use crate::signal::prekeys::PQ_LR_ID;
 use crate::Identity;
 
 /// Length of the AD: `EncodeEC(IK_A) ‖ EncodeEC(IK_B)`.

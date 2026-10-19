@@ -5,11 +5,11 @@
 //! [`CallSignalingDeps`] so this crate stays free of `AppState`,
 //! `tauri::AppHandle`, and direct `veilid-core` references. The
 //! src-tauri adapter (lands in 14.h) implements the deps trait against
-//! `AppState` + `message_service::send_to_peer_raw` + `services::voice::*`.
+//! `AppState` + the transport's `operations::dm::send_to_peer` + `services::voice::*`.
 //!
 //! Pre-Phase-14 these lived in `src-tauri/services/calls/mod.rs`.
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{CallClosed, CallRinging, DirectBody};
 
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
@@ -130,9 +130,9 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
 
     // Best-effort CallRinging ack so the caller's UI can flip
     // "Calling…" → "Ringing…". Failure logs but doesn't block.
-    let ringing = MessagePayload::CallRinging {
+    let ringing = DirectBody::CallRinging(CallRinging {
         call_id: call_id.to_string(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(sender_hex, ringing).await {
         tracing::debug!(call = %call_id, error = %e, "CallRinging ack send failed");
     }
@@ -233,10 +233,10 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
         deps.shutdown_voice_session().await;
-        let hangup = MessagePayload::CallEnd {
+        let hangup = DirectBody::CallEnd(CallClosed {
             call_id: call_id.to_string(),
             reason: format!("voice session failed: {e}"),
-        };
+        });
         let _ = deps.send_to_peer(&peer_pubkey, hangup).await;
         deps.emit_event(CallSignalEvent::CallEnded {
             call_id: call_id.to_string(),
@@ -326,10 +326,10 @@ async fn send_decline<D: CallSignalingDeps + ?Sized>(
     call_id: &str,
     reason: &str,
 ) {
-    let payload = MessagePayload::CallDecline {
+    let payload = DirectBody::CallDecline(CallClosed {
         call_id: call_id.to_string(),
         reason: reason.to_string(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(peer_pubkey, payload).await {
         tracing::debug!(call = %call_id, error = %e, "CallDecline send failed");
     }
@@ -354,10 +354,10 @@ async fn cancel_outgoing_for_glare<D: CallSignalingDeps + ?Sized>(
     if was_voice_up {
         deps.shutdown_voice_session().await;
     }
-    let payload = MessagePayload::CallEnd {
+    let payload = DirectBody::CallEnd(CallClosed {
         call_id: call_id.to_string(),
         reason: "glare-resolved-we-lost".into(),
-    };
+    });
     if let Err(e) = deps.send_to_peer(peer_pubkey, payload).await {
         tracing::debug!(call = %call_id, error = %e, "CallEnd (glare) send failed");
     }

@@ -18,6 +18,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
                 IpcRequest::DmSend {
                     peer_key: friend.clone(),
                     body: message.clone(),
+                    reply_to: None,
                 },
             )
             .await?;

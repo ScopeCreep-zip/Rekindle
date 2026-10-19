@@ -23,7 +23,8 @@ which primitives address which threats.
 | At-rest / transport AEAD (Veilid layer; chunk FEK) | **XChaCha20-Poly1305** | `chacha20poly1305` (via Veilid + Rekindle file FEK) |
 | At-rest vault (entry seal) | **AES-256-GCM** + page-level **AES-256-CBC** via SQLCipher | `aes-gcm`, SQLCipher (via `rekindle-vault`) |
 | Tamper-evident audit MAC | **BLAKE3-keyed** | `blake3` (via `rekindle-audit`) |
-| 1:1 messaging | **Signal Protocol** (X3DH + Double Ratchet) | `libsignal-protocol`-derived (in `rekindle-crypto`) |
+| 1:1 messaging | **Signal Protocol** (PQXDH rev. 3 + Double Ratchet) | spec implementation in `rekindle-crypto` (`signal/`) |
+| Pre-session 1:1 frames | **HPKE Base** (RFC 9180) + Ed25519 signature | `rekindle-secrets::hpke` |
 | Hash / KDF / dedup | **SHA-256** | `sha2` |
 | Hash (rotator selection, content addressing) | **BLAKE3** | `blake3` |
 | Key derivation | **HKDF-SHA256** | `hkdf` |
@@ -35,7 +36,7 @@ which primitives address which threats.
 
 **Where used.** Every long-term identity. Every per-community pseudonym.
 Every gossip envelope signature. Every governance entry signature.
-Every `MessagePayload` 1:1 envelope signature.
+Every sealed pre-session 1:1 frame signature (`DM_PRESESSION_SIG`) and `IdentityRotated` signature.
 
 **Why.**
 
@@ -180,9 +181,14 @@ rotation cadence.
 
 ## 5. Signal Protocol — 1:1 friend messaging
 
-**Where used.** Layer 4 for 1:1 friend messages. X3DH for session
-establishment over DHT-published prekey bundles; Double Ratchet for
-ongoing per-message forward and backward secrecy.
+**Where used.** Layer 4 for 1:1 friend messages. PQXDH (rev. 3) for session
+establishment over prekey bundles; Double Ratchet for
+ongoing per-message forward and backward secrecy. Pre-session kinds
+(friend request and reject, session reset request and decline, push-relay
+kinds) use HPKE Base to the recipient's X25519 key plus an Ed25519
+signature over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`
+(`rekindle-secrets::hpke`). Safety numbers are libsignal's 60-digit and
+scannable format (`rekindle-crypto::fingerprint`).
 
 **Why.**
 
@@ -201,9 +207,12 @@ ongoing per-message forward and backward secrecy.
   record; every bundle sent to a single peer carries a fresh one-time
   X25519 and ML-KEM key that is used once (PQXDH §3.3).
 
-**Implementation.** `crates/rekindle-crypto/src/signal/` contains the
-session manager, with stores backed by the vault
-(`rekindle_vault::typed::signal` on top of `rekindle-vault`). Our types follow the
+**Implementation.** `crates/rekindle-crypto/src/signal/{dr,record,pqxdh}`
+hold the pure Double Ratchet, `SessionRecord` and PQXDH state machines; the
+sessions are stored per peer in `ratchet_sessions` and stepped in one DB
+transaction before any send (`crates/rekindle-db/src/ratchet/`), prekeys in
+`signal_prekeys`. The ratchet associated data binds both identities and the
+frame typeId. Our types follow the
 [libsignal-protocol](https://github.com/signalapp/libsignal) data
 shapes.
 

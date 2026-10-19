@@ -1,6 +1,7 @@
 //! Friends on both hosts (plan E2.1): adding by key or invite, answering
 //! requests, removing and blocking, our labels for them, invites, session
-//! resets, and the receive side of the handshake. Everything the Host owns
+//! resets, safety numbers and verification, and the receive side of the
+//! handshake. Everything the Host owns
 //! comes through [`FriendHost`].
 
 mod add;
@@ -9,6 +10,7 @@ mod blocked;
 mod edit;
 mod error;
 mod host;
+pub mod identity_rotation;
 pub(crate) mod inbound;
 mod invites;
 mod list;
@@ -17,6 +19,7 @@ mod remove;
 mod rotate;
 pub mod session_reset;
 pub(crate) mod state;
+pub mod verification;
 
 #[cfg(test)]
 mod handshake_size_tests;

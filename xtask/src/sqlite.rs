@@ -29,7 +29,7 @@ const OWNERS: &[&str] = &[
 const SHRINKING: &[(&str, &str)] = &[
     (
         "crates/rekindle-dm",
-        "E2.3 deletes the rekindle-dm 1:1 path",
+        "E2.6 deletes the rekindle-dm SMPL store",
     ),
     (
         "crates/rekindle-analytics",

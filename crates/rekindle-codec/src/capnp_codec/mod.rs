@@ -157,7 +157,7 @@ fn status_from_capnp(
 /// Write a `GameInfo` into a capnp `GameStatus` builder.
 fn write_game_status(
     mut gs: crate::presence_capnp::game_status::Builder<'_>,
-    game: &crate::message::envelope::GameInfo,
+    game: &presence::GameInfo,
 ) {
     gs.set_game_id(game.game_id);
     gs.set_game_name(&game.game_name);
@@ -173,8 +173,8 @@ fn write_game_status(
 /// Read a capnp `GameStatus` reader into a `GameInfo`.
 fn read_game_status(
     gs: crate::presence_capnp::game_status::Reader<'_>,
-) -> Result<crate::message::envelope::GameInfo, CodecError> {
-    Ok(crate::message::envelope::GameInfo {
+) -> Result<presence::GameInfo, CodecError> {
+    Ok(presence::GameInfo {
         game_id: gs.get_game_id(),
         game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
         server_info: text_or_none(gs.has_server_info(), gs.get_server_info())?,
@@ -220,16 +220,11 @@ fn read_profile(
     })
 }
 
-// ---------------------------------------------------------------------------
-// message.capnp — MessageEnvelope, ChatMessage, Attachment
-// ---------------------------------------------------------------------------
-
 pub mod account;
 pub mod conversation;
 pub mod direct;
 pub mod friend;
 pub mod identity;
-pub mod message;
 pub mod presence;
 pub mod transport_feedback;
 pub mod voice;

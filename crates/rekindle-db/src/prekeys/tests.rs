@@ -84,3 +84,22 @@ async fn unclaimed_one_time_keys_beyond_the_cap_are_evicted_oldest_first() {
     );
     assert_eq!(ids(&bob, PrekeyKind::Spk).await.len(), 1, "never evicted");
 }
+
+#[tokio::test]
+async fn unclaimed_one_time_keys_are_counted() {
+    let party = Party::new(5);
+    assert_eq!(
+        unclaimed_one_time(&party.db, &party.local.owner())
+            .await
+            .unwrap(),
+        (0, 0)
+    );
+    handout_bundle(&party.db, &party.local).await.unwrap();
+    handout_bundle(&party.db, &party.local).await.unwrap();
+    assert_eq!(
+        unclaimed_one_time(&party.db, &party.local.owner())
+            .await
+            .unwrap(),
+        (2, 2)
+    );
+}

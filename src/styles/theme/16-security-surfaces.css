@@ -1,6 +1,7 @@
 /* Security surfaces (plan E7.7.0). `@layer sec` is last in the cascade, and
  * these rules read only the reserved `--sec-*` tokens (`global.css`), so no
- * skin can restyle them (`cargo xtask check-sec-surfaces`).
+ * skin can restyle them (`cargo xtask check-sec-surfaces`). The safety
+ * number's card and its badges (plan E2.3) are here too.
  *
  * The commit controls of the components that ask for a deliberate decision:
  * the intent review, the deep-link consent and device pairing. A skin can
@@ -82,5 +83,86 @@
    * erase the crescent, bar or triangle. */
   .status-dot-cutout {
     fill: var(--sec-status-cutout);
+  }
+
+  /* The safety number (plan E2.3): the digits, their QR code and the
+   * verified state on a fixed light card, the way Signal shows them, so a
+   * skin can neither hide nor restyle what two people compare. */
+  .sec-safety-number {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--sec-qr-backing);
+    color: var(--sec-qr-ink);
+    border: 1px solid var(--sec-secondary-border);
+    border-radius: 6px;
+    font-family: var(--sec-font-family);
+    font-size: 12px;
+  }
+
+  .sec-safety-number-state {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+  }
+
+  .sec-safety-number-digits {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    gap: 4px 12px;
+    font-family: var(--sec-mono-font-family);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+
+  .sec-safety-number-qr {
+    display: block;
+    width: 160px;
+    height: 160px;
+  }
+
+  .sec-safety-number-qr-ground {
+    fill: var(--sec-qr-backing);
+  }
+
+  .sec-safety-number-qr-modules {
+    fill: var(--sec-qr-ink);
+  }
+
+  .sec-safety-number-hint {
+    margin: 0;
+    max-width: 260px;
+    text-align: center;
+    font-size: 11px;
+  }
+
+  /* Key trust at a glance: the word is the cue, the colour only repeats it. */
+  .sec-verified-badge,
+  .sec-key-changed-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border: 1px solid;
+    border-radius: 3px;
+    font-family: var(--sec-font-family);
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .sec-verified-badge {
+    background: var(--sec-verified-bg);
+    border-color: var(--sec-verified-bg);
+    color: var(--sec-verified-fg);
+  }
+
+  .sec-key-changed-badge {
+    background: var(--sec-changed-bg);
+    border-color: var(--sec-changed-bg);
+    color: var(--sec-changed-fg);
   }
 }

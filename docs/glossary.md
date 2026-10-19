@@ -543,6 +543,8 @@ the daemon-track IPC bus DH within Noise IK.
 **X3DH.** Extended Triple Diffie-Hellman, the Signal Protocol
 session-establishment scheme. Combines identity key, signed
 prekey, and one-time prekey to derive the initial root key.
+Rekindle uses its post-quantum successor, PQXDH (rev. 3), which adds an
+ML-KEM-768 encapsulation; see `rekindle-crypto::signal::pqxdh`.
 
 **Xfire skin / Symbiosis.** The original Xfire skin (extracted to
 `legacy/unpacked/skins/Symbiosis/`) used as visual reference for

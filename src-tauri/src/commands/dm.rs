@@ -72,13 +72,13 @@ pub async fn get_dm_messages(
 /// W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
 ///
 /// Mirrors `commands::community::video::send_video_frame` but routes
-/// 1:1 via the Signal-encrypted `send_envelope_to_peer` path instead
-/// of mesh fan-out, and uses no community MEK (Signal Double Ratchet
+/// 1:1 over the peer's ratchet session (`operations::dm::send_to_peer`)
+/// instead of mesh fan-out, and uses no community MEK (the Double Ratchet
 /// already covers confidentiality + authenticity).
 ///
 /// The frontend produces VP9 chunks via WebCodecs and base64-encodes
 /// them for IPC; the backend chunks to the 4 KB transport budget, wraps each chunk in a
-/// `DmVideoFragment` payload, and sends through the existing DM
+/// `DmVideoFragment` (0x0220) frame, and sends through the 1:1
 /// transport. Returns the number of fragments dispatched.
 #[tauri::command]
 pub async fn send_dm_video_frame(

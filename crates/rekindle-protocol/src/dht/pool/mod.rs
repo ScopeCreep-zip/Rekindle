@@ -85,7 +85,7 @@ pub const RETRY_BUDGET: Duration = Duration::from_secs(30);
 /// Wait between retries while the node already reports readiness.
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Opened {
+pub(super) struct OpenRecord {
     pub(super) key_cap: usize,
     /// The record's subkey count (from its schema), for a whole-record
     /// watch.
@@ -123,7 +123,7 @@ pub struct RecordPool {
     scope: Arc<SessionScope>,
     ready: tokio::sync::watch::Receiver<bool>,
     table: Mutex<LeaseTable<KeyPair>>,
-    records: Mutex<HashMap<String, (RecordKey, Opened)>>,
+    records: Mutex<HashMap<String, (RecordKey, OpenRecord)>>,
     key_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     rearm: Mutex<HashMap<String, watch::Rearm>>,
     /// Durable writes that missed, held for re-push (`durable.rs`).
@@ -363,7 +363,7 @@ impl RecordPool {
             .clone()
     }
 
-    pub(super) fn lookup(&self, id: LeaseId) -> Result<(RecordKey, Opened), ProtocolError> {
+    pub(super) fn lookup(&self, id: LeaseId) -> Result<(RecordKey, OpenRecord), ProtocolError> {
         let table = self.table.lock();
         let key = table.key(id).ok_or(ProtocolError::LeaseNotHeld(id.0))?;
         self.records
@@ -380,7 +380,7 @@ impl RecordPool {
             key.to_string(),
             (
                 key.clone(),
-                Opened {
+                OpenRecord {
                     key_cap: cap,
                     subkey_count,
                 },

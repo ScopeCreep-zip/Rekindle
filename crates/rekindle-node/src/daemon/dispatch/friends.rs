@@ -1,6 +1,6 @@
-//! Friends, direct messages and session resets on both hosts (plan E2.1):
-//! each request runs the ported operation (`operations::{friend, dm}`) over
-//! the Host (`HostFriends`).
+//! Friends, direct messages, session resets and verification on both hosts
+//! (plans E2.1, E2.3): each request runs the ported operation
+//! (`operations::{friend, dm}`) over the Host (`HostFriends`).
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_transport::operations::{dm, friend, friend::FriendError};
@@ -8,6 +8,7 @@ use rekindle_transport::operations::{dm, friend, friend::FriendError};
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
 use crate::host::adapters::friends::HostFriends;
+use crate::host::gate::Acknowledged;
 
 /// The response for a failed friend operation.
 fn failed(e: &FriendError) -> IpcResponse {
@@ -41,16 +42,21 @@ fn reads(request: &IpcRequest) -> bool {
             | IpcRequest::FriendRequests
             | IpcRequest::FriendInviteList
             | IpcRequest::FriendBlockedList
+            | IpcRequest::IdentitySafetyNumber { .. }
             | IpcRequest::DmInbox { .. }
             | IpcRequest::DmHistory { .. }
     )
 }
 
-/// Route one friend, DM or session-reset request (the router's arm).
+/// Route one friend, DM, session-reset or verification request (the
+/// router's arm). An action whose review was held on the peer's verified
+/// key changing acknowledges the change with its own write
+/// (`acknowledged`).
 pub(crate) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
     request: IpcRequest,
+    acknowledged: Acknowledged,
 ) -> IpcResponse {
     if reads(&request) {
         if !state.can_query() {
@@ -114,12 +120,34 @@ pub(crate) async fn route(
             done(friend::session_reset::start(&host, &public_key).await)
         }
         IpcRequest::SessionResetAccept { public_key } => {
-            done(friend::session_reset::accept(&host, &public_key).await)
+            done(friend::session_reset::accept(&host, &public_key, acknowledged.key_change).await)
         }
         IpcRequest::SessionResetDecline { public_key } => {
             done(friend::session_reset::decline(&host, &public_key).await)
         }
-        IpcRequest::DmSend { peer_key, body } => answer(dm::send_dm(&host, &peer_key, &body).await),
+        IpcRequest::IdentitySafetyNumber { peer } => {
+            answer(friend::verification::view(&host, &peer).await)
+        }
+        IpcRequest::IdentityMarkVerified { peer } => {
+            done(friend::verification::mark_verified(&host, &peer).await)
+        }
+        IpcRequest::IdentityClearVerification { peer } => {
+            done(friend::verification::clear_verification(&host, &peer).await)
+        }
+        IpcRequest::DmSend {
+            peer_key,
+            body,
+            reply_to,
+        } => answer(
+            dm::send_dm(
+                &host,
+                &peer_key,
+                &body,
+                reply_to.as_deref(),
+                acknowledged.key_change,
+            )
+            .await,
+        ),
         IpcRequest::DmTyping { peer_key, typing } => {
             done(dm::report_draft(&host, &peer_key, typing).await)
         }

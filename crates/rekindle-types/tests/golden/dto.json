@@ -75,6 +75,7 @@
     "body": "gg",
     "id": 9,
     "isOwn": true,
+    "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11",
     "sendState": "delivered",
     "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "timestamp": 1700000000000
@@ -133,6 +134,19 @@
     "message": "remember me from LAN night?",
     "publicKey": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     "receivedAt": 1700000000000
+  },
+  "friends.safetyNumber": {
+    "changed": true,
+    "digits": "123456789012345678901234567890123456789012345678901234567890",
+    "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "qrRows": [
+      "101",
+      "010",
+      "101"
+    ],
+    "scannable": "CAI=",
+    "verified": false,
+    "verifiedAt": null
   },
   "identity.shown": {
     "communities": 2,

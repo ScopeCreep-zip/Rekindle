@@ -17,8 +17,7 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | Field | Type | Purpose |
 |---|---|---|
 | `identity` | `Arc<RwLock<Option<IdentityState>>>` | Logged-in user identity, set after vault unlock |
-| `identity_secret` | `Mutex<Option<[u8; 32]>>` | Ed25519 secret bytes for envelope signing |
-| `signal_manager` | `Arc<RwLock<Option<Arc<SignalManagerHandle>>>>` | Signal session manager (X3DH + Double Ratchet) |
+| `identity_secret` | `Mutex<Option<[u8; 32]>>` | Ed25519 secret bytes for signing |
 | `keystore` | `crate::keystore::KeystoreHandle` | VaultStore handle (`rekindle-vault` SQLCipher) |
 | `node` | `Arc<RwLock<Option<NodeHandle>>>` | Veilid node handle |
 | `dht_manager` | `Arc<RwLock<Option<DHTManagerHandle>>>` | Maps of watched DHT keys to friends (DHT calls go through `record_pool`) |
@@ -51,7 +50,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `unwatched_friends` | `RwLock<HashSet<String>>` | Friends whose DHT watch failed; `sync_service` polls them with `force_refresh=true` |
 | `pre_away_status` | `RwLock<Option<UserStatus>>` | Status before auto-away (restored on activity) |
 | `friendship_handle` | `Arc<FriendshipHandle>` | `rekindle-friendship::InboxScanCoordinator` wiring — watch + 30 s poll + direct trigger |
-| `pending_session_resets` | `Arc<Mutex<HashMap<String, Vec<u8>>>>` | In-memory `SessionResetRequest` map (resync after Signal session reset) |
 
 ## Communities & Channels
 
@@ -109,7 +107,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `event_journal` | `Arc<EventJournal<WebviewEvent>>` | 10 k-capacity FIFO of journaled webview events, replayed to a window that reloads (`subscribe_events`) |
 | `event_router` | `crate::event_router::WebviewRouter` | Per-window event channels; see [`event-dispatch.md`](event-dispatch.md) |
 | `dedup_cache` | `Mutex<DedupCache>` | Global gossip-mesh dedup cache |
-| `envelope_replay` | `Mutex<ReplayGuard>` | 1:1 envelopes already accepted, kept until they leave the freshness window; cleared on logout |
 
 ## Idempotency
 

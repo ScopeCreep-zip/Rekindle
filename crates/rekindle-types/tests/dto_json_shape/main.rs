@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
-    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest,
+    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest, SafetyNumberView,
 };
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
 use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
@@ -237,9 +237,22 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add(
+        "friends.safetyNumber",
+        to(SafetyNumberView {
+            peer_key: pk('b'),
+            digits: "123456789012345678901234567890123456789012345678901234567890".into(),
+            scannable: vec![0x08, 0x02],
+            qr_rows: vec!["101".into(), "010".into(), "101".into()],
+            verified: false,
+            verified_at: None,
+            changed: true,
+        }),
+    );
+    add(
         "dm.message",
         to(DmMessage {
             id: 9,
+            message_id: Some("0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11".into()),
             sender_id: pk('a'),
             body: "gg".into(),
             timestamp: 1_700_000_000_000,

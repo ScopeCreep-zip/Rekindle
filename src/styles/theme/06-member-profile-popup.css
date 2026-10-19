@@ -203,6 +203,33 @@
     text-transform: capitalize;
   }
 
+  /* The safety number behind the header's shield (plan E2.3). */
+  .chat-safety-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--color-xfire-text-dim);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .chat-safety-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-text-dim) 15%, transparent);
+  }
+
+  .chat-safety-number {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+  }
+
   /* Message send status */
   .message-status {
     font-size: 10px;

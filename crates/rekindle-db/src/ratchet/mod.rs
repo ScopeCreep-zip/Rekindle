@@ -221,6 +221,25 @@ pub async fn accept_init(
     .await
 }
 
+/// End every session with `peer` (an unfriend, a block, a removal): the
+/// next message to them initiates from their bundle. Unprocessed messages
+/// from them stay for their apply, which the friend gate then judges.
+///
+/// # Errors
+/// The database refused.
+pub async fn forget(db: &Db, owner: &[u8; 32], peer: &[u8; 32]) -> Result<(), RatchetError> {
+    let (owner, peer) = (identity_text(owner), identity_text(peer));
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
+            params![owner, peer],
+        )
+        .map(|_| ())
+    })
+    .await
+    .map_err(RatchetError::from)
+}
+
 /// Run `step` in one transaction on the `Db` thread; it commits only when
 /// `step` succeeds.
 pub(crate) async fn in_transaction<T, F>(db: &Db, step: F) -> Result<T, RatchetError>

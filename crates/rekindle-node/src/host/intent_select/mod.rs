@@ -90,6 +90,8 @@ pub(crate) async fn select(
         | IpcRequest::FriendAccept { .. }
         | IpcRequest::FriendReject { .. }
         | IpcRequest::FriendRemove { .. }
+        | IpcRequest::IdentityMarkVerified { .. }
+        | IpcRequest::IdentityClearVerification { .. }
         | IpcRequest::DmSend { .. } => friends::selection(ctx, request, &mut s).await?,
         IpcRequest::CommunityCreate { name, .. } => {
             s.subject = Subject::Community {
@@ -205,6 +207,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendRequests
         | IpcRequest::FriendInviteList
         | IpcRequest::FriendBlockedList
+        | IpcRequest::IdentitySafetyNumber { .. }
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::CommunityList

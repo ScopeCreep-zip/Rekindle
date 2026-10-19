@@ -23,9 +23,13 @@ people that become the infrastructure itself. Friends volunteer
 bandwidth and route capacity for friends; the network is stronger
 because of those connections, not in spite of them.
 
-Implementation: `src-tauri/src/services/relay/{offer,pool,forward,send,presence}.rs`.
-The wire protocol uses `MessagePayload` variants in
-`rekindle-protocol::messaging::envelope`.
+Implementation: `src-tauri/src/services/relay/{offer,pool,forward,presence}.rs`
+and `rekindle-transport::operations::relay` (status probe). The wire protocol
+uses `DmFrame` kinds (`schemas/direct.capnp`, typeIds in
+`rekindle-codec::capnp_codec::direct::type_id`). The sender-side fallback
+(Alice sending through a relay, §13.3) was deleted with the old 1:1 path in
+plan E2.3 and returns at E5.5, whose pool entries name the relay's
+identity.
 
 ### Roles
 
@@ -76,21 +80,15 @@ Alice            Carol (mutual friend, volunteer relay)         Bob
 
 ### Message types
 
-```rust
-MessagePayload::RelayOffer {
-    relay_route_blob: Vec<u8>,    // dedicated route Carol just created for Bob
-}
-MessagePayload::RelayWithdraw {
-    relay_route_id: Vec<u8>,      // Carol revokes her offer
-}
-MessagePayload::RelayAck {
-    relay_route_id: Vec<u8>,      // Bob confirms receipt and add to pool
-}
-MessagePayload::RelayEnvelope {
-    target_route: Vec<u8>,        // Bob's route blob (Carol forwards to this)
-    inner_payload: Vec<u8>,       // ciphertext encrypted to Bob's key
-}
 ```
+RelayOffer     (0x0130, ratchet)  { relayRouteBlob, relayPseudonym }   // dedicated route Carol just created for Bob
+RelayWithdraw  (0x0131, ratchet)  { relayPseudonym }                   // Carol revokes her offer
+RelayOfferAck  (0x0132, ratchet)  { ok, reason }                       // Bob's app_call reply: confirms receipt, adds to pool
+RelayEnvelope  (0x0003, ratchet)  { targetPubkey, innerPayload }       // inner payload is a DmFrame sealed to Bob
+```
+
+These are `DmFrame` kinds; each travels in the ratchet session between the
+two friends it is addressed to.
 
 ### Bob's relay pool publication
 
@@ -126,7 +124,7 @@ random DHT routing step.
 
 Friends acting as relays also serve as a **social CDN for presence**.
 When Alice's client wants Bob's current status, it can ask one of
-Bob's relay friends via `MessagePayload::StatusRequest`, and Carol
+Bob's relay friends via `StatusRequest` (0x0140), and Carol
 replies with cached presence (what she most recently observed of Bob)
 via `StatusResponse`. This is faster than a fresh DHT lookup of Bob's
 presence record and uses paths already established for relaying.
@@ -208,14 +206,14 @@ Device                              Relay daemon
     ],
   })
 
-  ────── MessagePayload::RegisterPushRelay ──────────▶
+  ────── RegisterPushRelay (0x0310) ──────────▶
                                     ▶ persist registration
                                     ▶ open watches on each record_key
                                     ▶ on ValueChange, push opaque wake
                                        via FCM/APNs to device_push_token
 
 ▶ unregister_with_push_relay()
-  ────── MessagePayload::UnregisterPushRelay ────────▶
+  ────── UnregisterPushRelay (0x0311) ────────▶
                                     ▶ close watches
                                     ▶ delete registration
 ```
@@ -265,10 +263,10 @@ periodic background fetch.
 | **Strand Relay**: volunteer / revoke an offer | `src-tauri/src/services/relay/offer.rs` |
 | **Strand Relay**: received-offer pool persistence | `src-tauri/src/services/relay/pool.rs` |
 | **Strand Relay**: forward an envelope | `src-tauri/src/services/relay/forward.rs` |
-| **Strand Relay**: send via relay (Alice's side) | `src-tauri/src/services/relay/send.rs` |
+| **Strand Relay**: status probe (Alice's side; send-via-relay returns at E5.5) | `crates/rekindle-transport/src/operations/relay/probe.rs` |
 | **Strand Relay**: presence cache (`StatusRequest`/`StatusResponse`) | `src-tauri/src/services/relay/presence.rs` |
-| **Strand Relay** wire types (`RelayOffer/Withdraw/Ack/Envelope`) | `crates/rekindle-protocol/src/messaging/envelope.rs` |
+| **Strand Relay** wire types (`RelayOffer/Withdraw/Ack/Envelope`) | `schemas/direct.capnp`, `crates/rekindle-codec/src/capnp_codec/direct/body/relay.rs` |
 | **Push Relay**: client-side registration | `src-tauri/src/services/push_relay.rs` |
-| **Push Relay** wire types (`RegisterPushRelay`, `UnregisterPushRelay`, `WakeNotify`) | `crates/rekindle-protocol/src/messaging/envelope.rs` |
+| **Push Relay** wire types (`RegisterPushRelay`, `UnregisterPushRelay`, `WakeNotify`) | `schemas/direct.capnp` (sealed: HPKE + Ed25519, `operations::dm::frame`) |
 | **Push Relay** SQLite schema | `crates/rekindle-db/schema/001_init.sql` (`push_relay_registrations` table) |
 | Reliability tracking for gossip ziplines | `services/community/` (peer reliability dirty set, flushed every 30 s) |

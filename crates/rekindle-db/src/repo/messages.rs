@@ -100,6 +100,8 @@ pub fn send_state(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DmRow {
     pub id: i64,
+    /// The client id its author minted (plan E2.3).
+    pub message_id: Option<String>,
     pub peer_key: String,
     pub sender_key: String,
     pub body: String,
@@ -108,26 +110,53 @@ pub struct DmRow {
     pub send_state: SendState,
 }
 
-/// Store a direct message with `peer_key`; its row id. Ours is read; a
-/// received one is unread until the window marks it.
+/// A direct message to store (plan E2.3): `message_id` is its client id,
+/// minted by its author, and `reply_to` the parent's.
+#[derive(Debug, Clone, Copy)]
+pub struct NewDm<'a> {
+    pub owner_key: &'a str,
+    pub peer_key: &'a str,
+    pub sender_key: &'a str,
+    pub body: &'a str,
+    pub timestamp: i64,
+    /// Ours is read; a received one is unread until the window marks it.
+    pub is_read: bool,
+    pub message_id: &'a str,
+    /// Resolved to the parent's row; `NULL` when the parent is not held.
+    pub reply_to: Option<&'a str>,
+}
+
+/// Store a direct message; its row id. A message whose client id is
+/// already held is not stored again (a replay of an applied message, D24):
+/// the held row's id is returned.
 ///
 /// # Errors
 /// The write failed.
-pub fn insert_dm(
-    conn: &Connection,
-    owner_key: &str,
-    peer_key: &str,
-    sender_key: &str,
-    body: &str,
-    timestamp: i64,
-    is_read: bool,
-) -> rusqlite::Result<i64> {
+pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<i64> {
     conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
-         timestamp, is_read) VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6)",
-        params![owner_key, peer_key, sender_key, body, timestamp, is_read],
+         timestamp, is_read, message_id, reply_to_id) \
+         VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6, ?7, \
+                 (SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+                  AND message_id = ?8)) \
+         ON CONFLICT(owner_key, conversation_id, message_id) WHERE message_id IS NOT NULL \
+         DO NOTHING",
+        params![
+            dm.owner_key,
+            dm.peer_key,
+            dm.sender_key,
+            dm.body,
+            dm.timestamp,
+            dm.is_read,
+            dm.message_id,
+            dm.reply_to
+        ],
     )?;
-    Ok(conn.last_insert_rowid())
+    conn.query_row(
+        "SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 AND message_id = ?3",
+        params![dm.owner_key, dm.peer_key, dm.message_id],
+        |row| row.get(0),
+    )
 }
 
 fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
@@ -139,6 +168,7 @@ fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
         body: row.get(3)?,
         timestamp: row.get(4)?,
         is_read: row.get(5)?,
+        message_id: row.get(7)?,
         send_state: SendState::parse(&stored).ok_or_else(|| {
             rusqlite::Error::FromSqlConversionFailure(
                 6,
@@ -149,7 +179,8 @@ fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
     })
 }
 
-const DM_COLS: &str = "id, conversation_id, sender_key, body, timestamp, is_read, send_state";
+const DM_COLS: &str =
+    "id, conversation_id, sender_key, body, timestamp, is_read, send_state, message_id";
 
 /// The newest `limit` messages with `peer_key` before `before` (a
 /// timestamp, ms; all when `None`), oldest first.
@@ -258,22 +289,60 @@ mod tests {
         .unwrap();
     }
 
+    /// A message `body` with client id `id`.
+    fn dm<'a>(
+        peer: &'a str,
+        sender: &'a str,
+        ts: i64,
+        (body, id): (&'a str, &'a str),
+        reply_to: Option<&'a str>,
+    ) -> NewDm<'a> {
+        NewDm {
+            owner_key: OWNER,
+            peer_key: peer,
+            sender_key: sender,
+            body,
+            timestamp: ts,
+            is_read: sender == OWNER,
+            message_id: id,
+            reply_to,
+        }
+    }
+
+    #[test]
+    fn a_reply_points_at_its_parent_and_a_replayed_message_is_stored_once() {
+        let conn = fixture::conn();
+        let parent = insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap();
+        let reply = insert_dm(&conn, &dm("bob", OWNER, 2, ("m2", "id2"), Some("id1"))).unwrap();
+        let orphan = insert_dm(&conn, &dm("bob", "bob", 3, ("m3", "id3"), Some("gone"))).unwrap();
+        let reply_to = |id: i64| -> Option<i64> {
+            conn.query_row(
+                "SELECT reply_to_id FROM messages WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(reply_to(reply), Some(parent));
+        assert_eq!(reply_to(orphan), None);
+        assert_eq!(
+            insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap(),
+            parent
+        );
+        assert_eq!(dm_history(&conn, OWNER, "bob", 10, None).unwrap().len(), 3);
+    }
+
     #[test]
     fn dm_history_pages_back_and_the_inbox_shows_each_conversation_once() {
         let conn = fixture::conn();
-        for (peer, sender, ts) in [("bob", "bob", 1), ("bob", OWNER, 2), ("bob", "bob", 3)] {
-            insert_dm(
-                &conn,
-                OWNER,
-                peer,
-                sender,
-                &format!("m{ts}"),
-                ts,
-                sender == OWNER,
-            )
-            .unwrap();
+        for (peer, sender, ts, text) in [
+            ("bob", "bob", 1, ("m1", "id1")),
+            ("bob", OWNER, 2, ("m2", "id2")),
+            ("bob", "bob", 3, ("m3", "id3")),
+            ("carol", "carol", 5, ("hey", "id5")),
+        ] {
+            insert_dm(&conn, &dm(peer, sender, ts, text, None)).unwrap();
         }
-        insert_dm(&conn, OWNER, "carol", "carol", "hey", 5, false).unwrap();
         let newest: Vec<i64> = dm_history(&conn, OWNER, "bob", 2, None)
             .unwrap()
             .iter()

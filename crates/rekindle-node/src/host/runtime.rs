@@ -280,7 +280,6 @@ impl Host {
             db: Arc::clone(&stores.db),
             vault: stores.vault.clone(),
             identity_attempts: Arc::clone(&stores.attempts),
-            signal: RwLock::new(None),
             mek_cache,
             signing_key,
             lifecycle: Arc::clone(&lifecycle),

@@ -4,15 +4,15 @@ Rekindle uses three persistent backends, each serving a distinct
 purpose. SQLite stores local state and message history. The
 **Vault** (`rekindle-vault`, SQLCipher double-encryption) replaces
 the previous `iota_stronghold` dependency and holds private keys,
-MEKs, and Signal keying material. Veilid DHT provides distributed
+and MEKs. Signal keying material (ratchet sessions, prekeys) lives in the identity's SQLCipher database. Veilid DHT provides distributed
 storage for profile data, presence, and community state.
 
 ## Storage Backend Summary
 
 | Backend | Scope | Contents |
 |---------|-------|----------|
-| SQLite | Local device | Identity, friends, messages, communities, Signal sessions, DMs, sync state, audit chain, analytics, pending envelopes |
-| Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, Signal keying material, MEKs, audit MAC key, slot keypairs |
+| SQLite | Local device | Identity, friends, messages, communities, ratchet sessions and prekeys, DMs, sync state, audit chain, analytics, pending messages |
+| Vault (`rekindle-vault`) | Local device | Ed25519 / X25519 private keys, MEKs, audit MAC key, slot keypairs |
 | Veilid DHT | Distributed | Profile, presence, mailbox, friend list, community governance / registry / channels, account record, personal sync record |
 | Filesystem | Local device | Lost Cargo per-identity chunk cache (`<data>/state/{pk}.files/<scope name>/...`, keyed-hash directory names) |
 
@@ -87,8 +87,10 @@ groups them by concern.
   personal sync, optional avatar BLOB, and a stable per-device
   `device_id` (random 16-byte UUID hex) used for the cross-device
   DeviceList without exposing more PII.
-- **`trusted_identities`** — TOFU identity-key tracking with optional
-  `verified` flag for out-of-band confirmation.
+- **`signal_identities`** — peers' identity keys (TOFU) with the
+  `verified` flag and `verified_at` for out-of-band safety-number
+  confirmation; `changed_from_key` / `changed_at` hold an unacknowledged
+  change of a verified key (the `VerifiedKeyChanged` escalation).
 - **`friend_groups`** — collapsible buddy list groupings.
 - **`friends`** — friend list with per-identity scoping. Tracks
   display name, nickname override, group, presence DHT record key,
@@ -178,18 +180,25 @@ groups them by concern.
 
 ### Signal Protocol
 
-- **`signal_sessions`** — serialized Signal Protocol session state
-  per peer.
-- **`prekeys`** — unused; Signal prekeys live in the vault (see below).
-  Removed when the app database gains its Signal tables.
+- **`ratchet_sessions`** — one `rekindle_crypto::SessionRecord` (the spec
+  Double Ratchet state) per peer identity and device, stepped and stored in
+  the same transaction as whatever the message changed, before any send
+  (`rekindle_db::ratchet`).
+- **`signal_prekeys`** — our prekeys by `kind` (`spk` signed, `pq_lr`
+  ML-KEM last resort, `opk` / `pq_opk` one-time), `rekindle_db::prekeys`.
+- **`unprocessed`** — decrypted inbound 1:1 messages not yet applied,
+  written in the ratchet transaction, deleted by the apply and replayed at
+  unlock (D24); keyed by ratchet header `(header_dh, header_n)`.
 
 Prekey lifecycle (PQXDH §3.2–§3.3): the signed prekey and the PQ
 last-resort key are minted once and reused (`current_bundle`, published
 at profile subkey 5 and carried in invites). Every bundle sent to one
 peer (friend request, friend accept, session reset) comes from
 `handout_bundle`, which adds a fresh X25519 and ML-KEM one-time key under
-random ids; the responder deletes them when consumed, and beyond 200
-unclaimed keys per kind the oldest are deleted.
+random ids. A one-time key is consumed only after the first message under
+it decrypts: its secret is erased and the row stays so the id is never
+reused (PQXDH §4.13). Beyond 200 unclaimed keys per kind the oldest are
+deleted.
 
 ### Notifications & Settings
 
@@ -253,7 +262,7 @@ all tables and recreates them from `001_init.sql`, reporting
 `schema_reset` so the host wipes the storage below.
 
 Because SQLite, the vault, and Veilid DHT store interrelated state
-(friend keys, DHT record keypairs, Signal sessions), a schema reset
+(friend keys, DHT record keypairs), a schema reset
 also triggers:
 
 1. Removal of the vault store and its salt sidecar.
@@ -335,7 +344,6 @@ re-exports them):
 
 | Module | Namespace / key pattern | Purpose |
 |---|---|---|
-| `typed::signal` | `signal` / `trusted:{peer}`, `session:{peer}`, `session_index`, `signed_prekey:{id}`, `prekey:{id}`, `prekey_index`, `pq_lr:{id}`, `pq_ot:{id}`, `pq_ot_index` | Trusted peer identities, Double Ratchet sessions and PQXDH prekeys (indexes list one-time keys oldest first). The Signal identity itself is derived from the Ed25519 identity at login and never stored |
 | `typed::community_keys` | `communities` / `slot_keypair_{community_id}`, `slot_seed_{community_id}`, `registry_keypair_{community_id}` | Per-community slot / registry keypairs and slot seed |
 | `typed::mek` | `communities` / `mek_{community}`, `community_mek_{community}_{generation}`, `community_mek_generations_{community}`, `mek_{community}_{channel}`, `mek_{community}_{channel}_{generation}`, `mek_generations_{community}_{channel}` | Every MEK generation per scope, the scope's latest key, and the generations index that leaving a community erases |
 | `typed::audit` | `audit` / `mac_key`, `tail` | BLAKE3-keyed MAC key + tail anchor for the audit chain |
@@ -463,7 +471,7 @@ paths resolve.
 
 | Schema | Top-level structs |
 |--------|-------------------|
-| `message.capnp` | `MessageEnvelope`, `ChatMessage`, `Attachment` |
+| `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
 | `identity.capnp` | `UserProfile`, `PreKeyBundle` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
@@ -473,5 +481,5 @@ paths resolve.
 | `account.capnp` | `AccountHeader`, `ContactEntry`, `ChatEntry` |
 
 `postcard` / `bincode` is used for the v2.0 community gossip
-envelope and DM payloads — those are internal binary formats not
+envelope — those are internal binary formats not
 intended for cross-language use.

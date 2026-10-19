@@ -71,7 +71,6 @@ pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, r
 /// next one to log in.
 fn clear(state: &AppState) {
     *state.identity.write() = None;
-    *state.signal_manager.write() = None;
     *state.identity_secret.lock() = None;
     services::preferences::reset(state);
     // A deep link belongs to the user it reached (the Host's teardown

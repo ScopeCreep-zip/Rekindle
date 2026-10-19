@@ -83,12 +83,6 @@ Message persistence against `messages` / `message_delivery` /
 Read-side message view helpers. Builds the paginated history payloads
 the chat windows consume.
 
-### `signal_stores.rs`
-
-The `rekindle_crypto` Signal store traits over the vault: an in-memory
-cache written through to `rekindle_vault::typed::signal`. Layers above
-go through `rekindle_crypto::signal::SignalSessionManager`.
-
 ### `services/audit.rs`
 
 The desktop over `rekindle_node::host::audit` (both hosts' audit chain
@@ -131,7 +125,7 @@ Arc<EventDispatch>`.
 
 The per-identity `VaultStore` handle (`StrongholdKeystore`, which derefs
 to the store) and its open / delete-file helpers. The typed helpers it
-re-exports are `rekindle_vault::typed::{signal, community_keys, mek,
+re-exports are `rekindle_vault::typed::{community_keys, mek,
 audit}` (plan C5.4), backed by SQLCipher double-encryption. See
 [`data-layer.md`](data-layer.md) for the vault layout and
 [`decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md)

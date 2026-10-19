@@ -1,15 +1,16 @@
-//! What each opened 1:1 payload does.
+//! What each opened 1:1 kind does (plan E2.3). An applied message's
+//! `unprocessed` row goes once it has run; so does an unported one's, at
+//! its hand-off.
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmText};
 use rekindle_events::typing::TYPING_TTL_MS;
-use rekindle_types::subscription_events::{
-    ChannelMessageEvent, FriendEvent, SubscriptionEvent, TypingContext,
-};
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, TypingContext};
 
-use super::{Prepared, Routed};
+use super::frame::{processed, Opened};
+use super::Routed;
+use crate::operations::dm::{client_id_text, NewDmFields};
 use crate::operations::friend::inbound::{self, IncomingFriendAccept, IncomingFriendRequest};
-use crate::operations::friend::session_reset::{self, ResetAccept};
-use crate::operations::friend::{state, FriendHost};
+use crate::operations::friend::{identity_rotation, session_reset, state, FriendHost};
 use crate::operations::{relay, typing};
 
 /// Where a friend's typing to us shows: their DM.
@@ -19,188 +20,131 @@ fn dm_typing(sender: &str) -> TypingContext {
     }
 }
 
-/// Handle `prepared`, or hand it back when its owner step has not come.
-pub(super) async fn handle(host: &dyn FriendHost, prepared: Prepared) -> Routed {
-    let sender = prepared.sender_hex.as_str();
-    match &prepared.payload {
-        MessagePayload::DirectMessage { body, .. } => {
-            direct_message(host, sender, body, prepared.timestamp);
+/// Handle `opened`, or hand it back when its owner step has not come.
+pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
+    let sender = opened.sender_hex.as_str();
+    match &opened.body {
+        DirectBody::DmText(text) => {
+            direct_message(host, sender, text, opened.sent_at_ms).await;
             // Their message ends their typing (plan E2.3).
             typing::stopped(host, &dm_typing(sender), sender);
         }
-        MessagePayload::TypingIndicator { typing } => {
-            if *typing {
+        DirectBody::Typing(t) => {
+            if t.typing {
                 typing::started(host, dm_typing(sender), sender, TYPING_TTL_MS);
             } else {
                 typing::stopped(host, &dm_typing(sender), sender);
             }
         }
-        MessagePayload::FriendRequest {
-            display_name,
-            message,
-            prekey_bundle,
-            profile_dht_key,
-            route_blob,
-            mailbox_dht_key,
-            invite_id,
-        } => {
+        DirectBody::FriendRequest(r) => {
             let req = IncomingFriendRequest {
                 sender_hex: sender,
-                display_name,
-                message,
-                prekey_bundle,
-                profile_dht_key,
-                route_blob,
-                mailbox_dht_key,
-                invite_id: invite_id.as_deref(),
+                display_name: &r.display_name,
+                message: &r.message,
+                prekey_bundle: &r.prekey_bundle,
+                profile_dht_key: &r.profile_dht_key,
+                route_blob: &r.route_blob,
+                mailbox_dht_key: &r.mailbox_dht_key,
+                invite_id: r.invite_id.as_deref(),
             };
             inbound::on_friend_request(host, &req).await;
         }
-        MessagePayload::FriendAccept {
-            prekey_bundle,
-            profile_dht_key,
-            route_blob,
-            mailbox_dht_key,
-            ephemeral_key,
-            signed_prekey_id,
-            one_time_prekey_id,
-            ml_kem_ciphertext,
-            used_ot_pqpk_id,
-        } => {
+        DirectBody::FriendAccept(a) => {
             let accept = IncomingFriendAccept {
                 sender_hex: sender,
-                prekey_bundle,
-                profile_dht_key,
-                route_blob: route_blob.clone(),
-                mailbox_dht_key,
-                ephemeral_key,
-                signed_prekey_id: *signed_prekey_id,
-                one_time_prekey_id: *one_time_prekey_id,
-                ml_kem_ciphertext,
-                used_ot_pqpk_id: *used_ot_pqpk_id,
+                profile_dht_key: &a.profile_dht_key,
+                route_blob: a.route_blob.clone(),
+                mailbox_dht_key: &a.mailbox_dht_key,
             };
             inbound::on_friend_accept(host, &accept).await;
         }
-        MessagePayload::FriendReject => inbound::on_friend_reject(host, sender),
-        MessagePayload::FriendRequestReceived => {
-            host.publish(SubscriptionEvent::Friend(
-                FriendEvent::RequestAcknowledged {
-                    peer_key: sender.to_string(),
-                },
-            ));
+        DirectBody::FriendReject => inbound::on_friend_reject(host, sender),
+        DirectBody::ProfileKeyRotated(p) => {
+            inbound::on_profile_key_rotated(host, sender, &p.new_profile_dht_key).await;
         }
-        MessagePayload::ProfileKeyRotated {
-            new_profile_dht_key,
-        } => inbound::on_profile_key_rotated(host, sender, new_profile_dht_key).await,
-        MessagePayload::Unfriended => inbound::on_unfriended(host, sender).await,
-        MessagePayload::UnfriendedAck => inbound::on_unfriended_ack(host, sender),
-        MessagePayload::SessionResetRequest { our_prekey_bundle } => {
-            session_reset::on_request(host, sender, our_prekey_bundle).await;
+        DirectBody::IdentityRotated(r) => {
+            identity_rotation::on_identity_rotated(host, sender, r).await;
         }
-        MessagePayload::SessionResetAccept {
-            ephemeral_key,
-            signed_prekey_id,
-            one_time_prekey_id,
-            our_identity_key,
-            ml_kem_ciphertext,
-            used_ot_pqpk_id,
-        } => session_reset::on_accept(
-            host,
-            sender,
-            &ResetAccept {
-                ephemeral_key,
-                signed_prekey_id: *signed_prekey_id,
-                one_time_prekey_id: *one_time_prekey_id,
-                identity_key: our_identity_key,
-                ml_kem_ciphertext,
-                used_ot_pqpk_id: *used_ot_pqpk_id,
-            },
-        ),
-        MessagePayload::SessionResetDecline { reason } => {
-            session_reset::on_decline(host, sender, reason);
+        DirectBody::Unfriended => inbound::on_unfriended(host, sender).await,
+        DirectBody::UnfriendedAck => inbound::on_unfriended_ack(host, sender),
+        DirectBody::SessionResetRequest(r) => {
+            session_reset::on_request(host, sender, &r.prekey_bundle).await;
         }
-        MessagePayload::StatusResponse {
-            target_pubkey,
-            status,
-            status_message,
-            last_seen,
-            route_blob,
-        } => relay::on_status_response(
-            host,
-            &rekindle_codec::capnp_codec::direct::StatusResponse {
-                target_pubkey: target_pubkey.clone(),
-                status: status.clone(),
-                status_message: status_message.clone(),
-                last_seen: *last_seen,
-                route_blob: route_blob.clone(),
-            },
-        ),
-        // Presence travels in the profile record, not in 1:1 messages.
-        MessagePayload::PresenceUpdate { .. } => {}
-        MessagePayload::RelayOfferAck { .. } => {
+        DirectBody::SessionResetAccept => session_reset::on_accept(host, sender),
+        DirectBody::SessionResetDecline(d) => session_reset::on_decline(host, sender, &d.reason),
+        DirectBody::StatusResponse(r) => relay::on_status_response(host, r),
+        DirectBody::RelayOfferAck(_) => {
             tracing::trace!("received RelayOfferAck via app_message; ignoring");
         }
         // The push relay is its own binary; a client only sends these.
-        MessagePayload::RegisterPushRelay { .. } | MessagePayload::UnregisterPushRelay { .. } => {
-            tracing::debug!("ignoring push-relay register payload at a client");
+        DirectBody::RegisterPushRelay(_) | DirectBody::UnregisterPushRelay(_) => {
+            tracing::debug!("ignoring push-relay registration at a client");
         }
-        // The 1:1 SMPL DM path is gone (plan E2.3); the `DmFrame` cutover
-        // deletes these variants.
-        MessagePayload::DmInvite { .. }
-        | MessagePayload::DmAccept { .. }
-        | MessagePayload::DmDecline { .. } => {
-            tracing::debug!(from = %sender, "dropping a 1:1 SMPL DM invite payload");
+        // Defined here for E6's DM parity; E6.4 applies them with their
+        // rules (the author only, 48 h, ten edits, delete wins).
+        DirectBody::DmEdit(_) | DirectBody::DmDelete(_) | DirectBody::DmReaction(_) => {
+            tracing::debug!(from = %sender, kind = ?opened.type_id, "DM edit/delete/reaction not applied before E6.4");
         }
-        MessagePayload::ChannelMessage { .. }
-        | MessagePayload::RelayOffer { .. }
-        | MessagePayload::RelayWithdraw { .. }
-        | MessagePayload::RelayEnvelope { .. }
-        | MessagePayload::GroupDmInvite { .. }
-        | MessagePayload::DmLeave { .. }
-        | MessagePayload::DmVideoFragment { .. }
-        | MessagePayload::WakeNotify { .. }
-        | MessagePayload::StatusRequest { .. }
-        | MessagePayload::CallInvite { .. }
-        | MessagePayload::CallRinging { .. }
-        | MessagePayload::CallAccept { .. }
-        | MessagePayload::CallDecline { .. }
-        | MessagePayload::CallEnd { .. }
-        | MessagePayload::CallMediaState { .. }
-        | MessagePayload::CallReaction { .. }
-        | MessagePayload::GroupCallOffer { .. }
-        | MessagePayload::GroupCallAccept { .. }
-        | MessagePayload::GroupCallDecline { .. }
-        | MessagePayload::GroupCallParticipantJoined { .. }
-        | MessagePayload::GroupCallParticipantLeft { .. } => {
-            return Routed::Unported(Box::new(prepared))
+        DirectBody::RelayEnvelope(_)
+        | DirectBody::GroupDmInvite(_)
+        | DirectBody::GroupDmLeave(_)
+        | DirectBody::RelayOffer(_)
+        | DirectBody::RelayWithdraw(_)
+        | DirectBody::StatusRequest(_)
+        | DirectBody::WakeNotify(_)
+        | DirectBody::DmVideoFragment(_)
+        | DirectBody::CallInvite(_)
+        | DirectBody::CallRinging(_)
+        | DirectBody::CallAccept(_)
+        | DirectBody::CallDecline(_)
+        | DirectBody::CallEnd(_)
+        | DirectBody::CallMediaState(_)
+        | DirectBody::CallReaction(_)
+        | DirectBody::GroupCallOffer(_)
+        | DirectBody::GroupCallAccept(_)
+        | DirectBody::GroupCallDecline(_)
+        | DirectBody::GroupCallParticipantJoined(_)
+        | DirectBody::GroupCallParticipantLeft(_) => {
+            processed(host, &opened);
+            return Routed::Unported(Box::new(opened));
         }
     }
+    processed(host, &opened);
     Routed::Handled
 }
 
-/// Store a friend's direct message, count it unread, and publish it.
-fn direct_message(host: &dyn FriendHost, sender: &str, body: &str, timestamp: i64) {
-    if let Ok(owner) = state::owner(host) {
-        let (peer, text) = (sender.to_string(), body.to_string());
-        state::db_fire!(host, "persist incoming message", move |conn| {
-            rekindle_db::repo::messages::insert_dm(
-                conn, &owner, &peer, &peer, &text, timestamp, false,
-            )
-            .map(|_| ())
-        });
+/// Store a friend's direct message (once: a replayed one is already held),
+/// count it unread, and publish it.
+async fn direct_message(host: &dyn FriendHost, sender: &str, text: &DmText, sent_at_ms: u64) {
+    let timestamp = i64::try_from(sent_at_ms).unwrap_or(i64::MAX);
+    let message_id = client_id_text(&text.client_id);
+    let reply_to = text.reply_to.as_ref().map(client_id_text);
+    let fields = NewDmFields {
+        peer: sender.to_string(),
+        sender: sender.to_string(),
+        body: text.body.clone(),
+        timestamp,
+        is_read: false,
+        message_id: message_id.clone(),
+        reply_to: reply_to.clone(),
+    };
+    if let Err(e) = fields.store(host).await {
+        tracing::warn!(from = %sender, error = %e, "incoming message not stored");
+        return;
     }
     state::update(host, sender, |f| f.unread_count += 1);
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DirectMessageReceived {
             peer_key: sender.to_string(),
-            body: Some(body.to_string()),
+            body: Some(text.body.clone()),
             decryption_failed: false,
             automod_blurred: false,
             timestamp: timestamp.cast_unsigned(),
             conversation_id: sender.to_string(),
-            server_message_id: None,
-            reply_to_id: None,
-            sender_name: None,
+            sender_name: state::friend(host, sender).map(|f| f.display_name),
+            server_message_id: Some(message_id),
+            reply_to_id: reply_to,
+            is_own: false,
         },
     ));
 }

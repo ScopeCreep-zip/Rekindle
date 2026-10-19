@@ -83,6 +83,14 @@ pub enum IpcRequest {
     IdentityDelete { identity: String },
     /// Factory reset: delete every identity and Veilid storage. Protected.
     IdentityWipe,
+    /// Our safety number with `peer` and whether we verified their key
+    /// (`dto::friends::SafetyNumberView`, plan E2.3).
+    IdentitySafetyNumber { peer: String },
+    /// Mark `peer`'s identity key verified, after comparing the safety
+    /// number out of band; acknowledges an unacknowledged key change.
+    IdentityMarkVerified { peer: String },
+    /// Withdraw `peer`'s verification.
+    IdentityClearVerification { peer: String },
 
     // ── Friends (plan E2.1) ───────────────────────────────────────
     /// Send a friend request to `public_key` (they become a pending friend).
@@ -230,7 +238,12 @@ pub enum IpcRequest {
 
     // ── DMs ───────────────────────────────────────────────────────
     /// Send a direct message.
-    DmSend { peer_key: String, body: String },
+    DmSend {
+        peer_key: String,
+        body: String,
+        /// The parent message's client id (a UUID) when this is a reply.
+        reply_to: Option<String>,
+    },
     /// The draft to a peer changed: `typing` is whether it holds text. The
     /// Host decides what goes out (the start, its refresh, the idle stop;
     /// plan E2.3).

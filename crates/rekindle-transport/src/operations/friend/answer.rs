@@ -32,66 +32,49 @@ fn session_alert(host: &dyn FriendHost, body: String) {
     ));
 }
 
-/// Establish the initiator-side Signal session from the requester's stored
-/// bundle (accepting makes us the initiator; a session left from an earlier
-/// friendship is replaced). A failure is told to the user; the friendship
-/// stands and the peer gets no session init.
-fn initiate_session(
-    host: &dyn FriendHost,
-    public_key: &str,
-    bundle_bytes: Option<&[u8]>,
-) -> Option<rekindle_crypto::signal::SessionInitInfo> {
-    let Some(bundle_bytes) = bundle_bytes else {
-        tracing::debug!(peer = %public_key, "no stored prekey bundle for session establishment");
-        return None;
-    };
-    let signal = host.signal().ok()?;
+/// Open the session with `public_key` from the bundle their request
+/// carried and send our accept as its first payload. A failure is told to
+/// the user; the friendship stands, and their side stays pending until a
+/// session reaches them.
+async fn open_session(host: &dyn FriendHost, public_key: &str, bundle_bytes: Option<&[u8]>) {
     let peer_label = state::label(host, public_key);
+    let Some(bundle_bytes) = bundle_bytes else {
+        tracing::warn!(peer = %public_key, "no stored prekey bundle — no session to open");
+        session_alert(
+            host,
+            format!("{peer_label}'s request carried no key bundle. Ask them to send it again."),
+        );
+        return;
+    };
     let bundle = match rekindle_crypto::signal::PreKeyBundle::from_wire(bundle_bytes) {
         Ok(bundle) => bundle,
         Err(e) => {
-            tracing::error!(peer = %public_key, error = %e,
-                "failed to deserialize stored prekey bundle — cannot establish Signal session");
+            tracing::error!(peer = %public_key, error = %e, "stored prekey bundle does not decode");
             session_alert(
                 host,
                 format!(
-                    "Stored prekey bundle for {peer_label} is unparseable. \
-                     Tell them to re-send the friend request, then verify their \
-                     safety number out-of-band before accepting again."
+                    "The key bundle in {peer_label}'s request is unreadable. Ask them to \
+                     send the request again."
                 ),
             );
-            return None;
+            return;
         }
     };
-    match signal
-        .delete_session(public_key)
-        .and_then(|()| signal.establish_session(public_key, &bundle))
-    {
-        Ok(info) => {
-            tracing::info!(peer = %public_key, "established initiator Signal session on accept");
-            Some(info)
-        }
-        Err(e) => {
-            tracing::error!(peer = %public_key, error = %e,
-                "failed to establish Signal session on accept — the peer will not receive the session init");
-            session_alert(
-                host,
-                format!(
-                    "Failed to establish encrypted session with {peer_label}: {e}. \
-                     Their side will not receive the session-init data; \
-                     subsequent encrypted messages will fail. \
-                     Tell them to re-send the friend request, then verify their \
-                     safety number out-of-band before accepting again."
-                ),
-            );
-            None
-        }
+    if let Err(e) = dm::send_friend_accept(host, public_key, bundle).await {
+        tracing::error!(peer = %public_key, error = %e, "friend accept not sent");
+        session_alert(
+            host,
+            format!(
+                "The secure session with {peer_label} could not be opened: {e}. Ask them to \
+                 send the request again."
+            ),
+        );
     }
 }
 
 /// Accept the pending request from `public_key`: the friend is stored
-/// `Accepted` with the records the request named, the initiator session is
-/// established, our accept is sent, their profile is watched, and the
+/// `Accepted` with the records the request named, our accept opens the
+/// session, their profile is watched, and the
 /// invite it answered is marked accepted.
 ///
 /// # Errors
@@ -140,10 +123,7 @@ pub async fn accept(
     friend.mailbox_dht_key.clone_from(&answer.mailbox_dht_key);
     state::put(host, friend);
 
-    let session_init = initiate_session(host, public_key, answer.prekey_bundle.as_deref());
-    if let Err(e) = dm::send_friend_accept(host, public_key, session_init).await {
-        tracing::warn!(error = %e, "failed to send friend accept");
-    }
+    open_session(host, public_key, answer.prekey_bundle.as_deref()).await;
     if let Some(profile_key) = &answer.profile_dht_key {
         host.watch_friend(public_key, profile_key).await;
     }

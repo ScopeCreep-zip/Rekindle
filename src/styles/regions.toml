@@ -254,6 +254,7 @@
 '.message-status-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.network-banner' = { on = ["--color-xfire-away 30% over --color-xfire-bg-dark"] }
 '.action-bar-icon-btn' = { on = ["--color-xfire-bg-dark"] }
+'.chat-safety-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.chat-call-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.chat-call-btn-active' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.message-retry-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }

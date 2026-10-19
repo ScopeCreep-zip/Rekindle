@@ -122,10 +122,9 @@ async fn create_identity_writes_the_vault_database_and_registry_and_unlocks() {
         .map(|(name, _)| name);
     assert_eq!(name.as_deref(), Some("Alice"));
 
-    // The unlock reached the shell: vault and Signal manager (the friend
-    // authority is the Host's, plan E2.1).
+    // The unlock reached the shell: the vault (the friend authority and the
+    // ratchet are the Host's, plans E2.1, E2.3).
     assert!(state.keystore.lock().is_some());
-    assert!(state.signal_manager.read().is_some());
     assert_ne!(*state.identity_secret.lock(), None);
 
     // Files and registry.

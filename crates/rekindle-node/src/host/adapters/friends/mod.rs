@@ -12,7 +12,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
-use rekindle_crypto::signal::SignalSessionManager;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_records::lease::LeaseId;
 use rekindle_transport::operations::friend::{BackendHold, FriendError, FriendHost, FriendStores};
@@ -76,8 +75,13 @@ impl FriendHost for HostFriends {
         &self.ctx.session
     }
 
-    fn signal(&self) -> Result<Arc<SignalSessionManager>, FriendError> {
-        self.ctx.signal.read().clone().ok_or(FriendError::Locked)
+    fn local_party(&self) -> Result<rekindle_db::ratchet::LocalParty, FriendError> {
+        let secret = self.identity_secret()?;
+        Ok(rekindle_db::ratchet::LocalParty {
+            identity: Arc::new(rekindle_crypto::Identity::from_secret_bytes(&secret)),
+            rng: Arc::clone(&self.ctx.rng),
+            now_ms: self.ctx.clock.now_ms_i64(),
+        })
     }
 
     fn identity_secret(&self) -> Result<Zeroizing<[u8; 32]>, FriendError> {

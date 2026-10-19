@@ -9,6 +9,8 @@ use rand::{RngCore, SeedableRng};
 use rekindle_crypto::Identity;
 use rekindle_utils::random::RandomSource;
 
+use rusqlite::Connection;
+
 use crate::ratchet::{LocalParty, PeerAddress};
 use crate::Db;
 
@@ -39,7 +41,7 @@ impl Party {
     /// A fresh identity with an in-memory database holding its row.
     pub fn new(seed: u64) -> Self {
         let identity = Arc::new(Identity::generate());
-        let conn = crate::repo::fixture::identity_conn(&identity.public_key_bytes());
+        let conn = schema_conn(&crate::repo::identity_text(&identity.public_key_bytes()));
         Self {
             db: Db::from(rekindle_asql::Connection::from(conn)),
             local: LocalParty {
@@ -62,4 +64,22 @@ impl Party {
             .await
             .unwrap()
     }
+}
+
+/// An in-memory database with the schema and an identity row for
+/// `public_key`, which the per-owner tables reference.
+///
+/// # Panics
+/// The schema does not apply (a broken `001_init.sql`).
+#[must_use]
+pub fn schema_conn(public_key: &str) -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+    conn.execute_batch(crate::SCHEMA).unwrap();
+    conn.execute(
+        "INSERT INTO identity (public_key, display_name, created_at) VALUES (?1, 'me', 0)",
+        [public_key],
+    )
+    .unwrap();
+    conn
 }

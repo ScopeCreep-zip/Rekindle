@@ -1,11 +1,12 @@
-//! Receive-side replay guard for 1:1 envelopes.
+//! Receive-side replay guard for pre-session frames (plan E2.3; moved
+//! from `rekindle-protocol`).
 //!
-//! An envelope is accepted once: its `(sender, nonce)` is remembered until
-//! its timestamp leaves the freshness window, after which
-//! [`crate::messaging::receiver::process_incoming`] rejects it as stale
-//! anyway. A retry keeps the nonce and re-signs with a fresh timestamp, so
-//! a copy of a message that already arrived is dropped as a duplicate,
-//! while one that never arrived goes through.
+//! Ratchet frames need none: a used `(dh, n)` has no key left. A sealed
+//! frame is accepted once: its `(sender, nonce)` is remembered until its
+//! `sent_at` leaves the freshness window, after which the frame is refused
+//! as stale anyway. A retry keeps the nonce and re-seals with a fresh
+//! `sent_at`, so a copy of a frame that already arrived is dropped as a
+//! duplicate, while one that never arrived goes through.
 
 use std::collections::{HashMap, VecDeque};
 

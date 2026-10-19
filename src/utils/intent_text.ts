@@ -7,6 +7,7 @@
 import type {
   Escalation, Fact, IntentKind, IntentReview, Notifies, Reversibility, Subject,
 } from "../ipc/commands/dto";
+import { groupDigits } from "./safety_number";
 
 /** `deleteChannel` → `Delete channel`. */
 export function kindPhrase(kind: IntentKind): string {
@@ -56,7 +57,9 @@ export function factText(fact: Fact): string {
   if (fact === "ipAddressLeaves") return "The site will see your IP address.";
   if (fact === "rejoinNeedsInvite") return "Rejoining needs a new invite.";
   if ("fingerprint" in fact) return `Key fingerprint: ${fact.fingerprint.fingerprint}`;
-  if ("safetyNumber" in fact) return `Safety number: ${fact.safetyNumber.safetyNumber}`;
+  if ("safetyNumber" in fact) {
+    return `Safety number: ${groupDigits(fact.safetyNumber.safetyNumber).join(" ")}`;
+  }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
   return `${fact.messagesDeleted.count} messages are deleted for everyone.`;
 }
@@ -90,7 +93,8 @@ export function escalationText(escalation: Escalation): string {
     return `${parts.join(", ")}.`;
   }
   const k = escalation.verifiedKeyChanged;
-  return `Their verified key changed: ${k.oldSafetyNumber} → ${k.newSafetyNumber}.`;
+  const spaced = (digits: string): string => groupDigits(digits).join(" ");
+  return `Their verified key changed: the safety number was ${spaced(k.oldSafetyNumber)} and is now ${spaced(k.newSafetyNumber)}.`;
 }
 
 export function reversibilityText(reversibility: Reversibility): string {

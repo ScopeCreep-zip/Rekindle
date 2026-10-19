@@ -77,14 +77,14 @@ pub(crate) async fn process_ingress_item(
                 tracing::debug!("1:1 message before the host started — dropped");
                 return;
             };
-            if let rekindle_transport::operations::direct::Routed::Unported(prepared) =
+            if let rekindle_transport::operations::direct::Routed::Unported(opened) =
                 host.receive_direct(&message).await
             {
                 let Ok(pool) = state.db.current() else {
                     tracing::debug!("unported 1:1 message: no identity database — dropped");
                     return;
                 };
-                super::inbound_unported::handle(app_handle, state, &pool, *prepared).await;
+                super::inbound_unported::handle(app_handle, state, &pool, *opened).await;
             }
         }
     }

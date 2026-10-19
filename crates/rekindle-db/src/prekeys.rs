@@ -1,7 +1,5 @@
 //! Our prekeys over `signal_prekeys` (plan E2.3): the bundles we hand to
-//! peers, and the secrets a PreKeyInit names. They replace
-//! `SignalSessionManager`'s minting (`rekindle-crypto`
-//! `signal/session/bundles.rs`) with the same bundles in the same wire
+//! peers, and the secrets a PreKeyInit names, in the bundles' one wire
 //! form (`PreKeyBundle::to_wire`); E2.4 then replaces the bundle with the
 //! prekey record.
 //!
@@ -98,6 +96,29 @@ pub async fn handout_bundle(db: &Db, local: &LocalParty) -> Result<PreKeyBundle,
         Ok(signed_bundle(&local.identity, &spk, &lr, Some(&one_time)))
     })
     .await
+}
+
+/// How many one-time keys we handed out that no peer has claimed yet:
+/// `(curve, pq)`.
+///
+/// # Errors
+/// The database failed.
+pub async fn unclaimed_one_time(db: &Db, owner: &[u8; 32]) -> Result<(u32, u32), RatchetError> {
+    let owner = identity_text(owner);
+    let counts = db
+        .call(move |conn| {
+            let count = |kind: PrekeyKind| -> rusqlite::Result<u32> {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM signal_prekeys \
+                     WHERE owner_key = ?1 AND kind = ?2 AND consumed_at IS NULL",
+                    params![owner, kind.as_str()],
+                    |row| row.get(0),
+                )
+            };
+            Ok((count(PrekeyKind::Opk)?, count(PrekeyKind::PqOpk)?))
+        })
+        .await?;
+    Ok(counts)
 }
 
 /// The secrets `init` names, unconsumed.

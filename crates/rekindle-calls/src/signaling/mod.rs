@@ -7,7 +7,7 @@
 //! sends), voice session start/stop, persistence, frontend emit. The
 //! src-tauri adapter (`services/calls_adapter.rs`, lands in 14.h)
 //! implements them against `AppState` + `tauri::AppHandle` +
-//! `message_service::send_to_peer_raw` + `services::voice::*`.
+//! the transport's `operations::dm::send_to_peer` + `services::voice::*`.
 //!
 //! Why split CallRegistry + GroupCallRegistry out of CallSignalingDeps:
 //! - They're storage ports with concrete CRUD semantics (insert/get/

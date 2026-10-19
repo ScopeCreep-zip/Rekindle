@@ -22,7 +22,7 @@ during normal operation.
 │  Scope: Community channel messages, DMs, group DMs          │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Signal Protocol (Double Ratchet)                  │
-│  X3DH key agreement + symmetric ratchet                     │
+│  PQXDH key agreement + Double Ratchet                       │
 │  Scope: 1:1 friend messages                                 │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 1: Veilid Transport Encryption                       │
@@ -59,8 +59,8 @@ private-route path.
 
 ## Layer 2: Signal Protocol (1:1 Friend Messages)
 
-**Algorithm:** X3DH key agreement + Double Ratchet
-**Managed by:** `rekindle-crypto` crate (`signal/` module)
+**Algorithm:** PQXDH (rev. 3) key agreement + Double Ratchet
+**Managed by:** `rekindle-crypto` crate (`signal/` module); sessions in `rekindle-db` (`ratchet_sessions`)
 
 ### Properties
 
@@ -72,27 +72,50 @@ private-route path.
 | Deniability | Messages are not cryptographically attributable to sender |
 | Asynchronous | Sessions can be established while the recipient is offline |
 
-### Session Establishment (X3DH)
+### Session Establishment (PQXDH)
 
 ```
 Alice initiates a session with Bob:
 
-1. Fetch Bob's PreKeyBundle from his DHT profile (subkey 5)
-   ├── Bob's identity key (Ed25519 → X25519 conversion)
-   ├── Bob's signed prekey
-   └── Bob's one-time prekey (if available)
+1. Fetch Bob's PreKeyBundle (from his DHT profile, or sent to her with a
+   friend request)
+   ├── Bob's identity key (Ed25519, encoded as 0x06 ‖ key)
+   ├── Bob's signed prekey (X25519) and PQ last-resort key (ML-KEM-768)
+   └── Bob's one-time X25519 and ML-KEM prekeys (if available)
 
-2. Perform X3DH key agreement:
-   DH1 = DH(Alice_identity,  Bob_signed_prekey)
-   DH2 = DH(Alice_ephemeral, Bob_identity)
-   DH3 = DH(Alice_ephemeral, Bob_signed_prekey)
-   DH4 = DH(Alice_ephemeral, Bob_one_time_prekey)   [if available]
-   SK  = HKDF(DH1 ║ DH2 ║ DH3 ║ DH4)
+2. Perform PQXDH (rev. 3) key agreement:
+   DH1..DH3 (identity, signed prekey, ephemeral), DH4 with the one-time
+   prekey when present, plus an ML-KEM-768 encapsulation to Bob's PQ key
+   SK  = HKDF(DH1 ║ DH2 ║ DH3 ║ [DH4] ║ SS_kem)
 
-3. Alice sends initial message with her identity key + ephemeral key
-4. Bob derives the same shared key from his private keys
-5. Double Ratchet begins — every message uses a new symmetric key
+3. Alice sends a PreKeyInit frame: her base key, the prekey ids used, the
+   KEM ciphertext and a first payload encrypted under SK
+4. Bob derives the same shared key from his private keys and answers
+5. The Double Ratchet begins, one symmetric key per message
 ```
+
+### Wire carriers
+
+A 1:1 datagram is `'D' ‖ DmFrame` (`schemas/direct.capnp`); an untagged
+datagram is dropped. A frame travels one of three ways:
+
+- **Ratchet.** The spec Double Ratchet (`signal/{dr,record}`), one
+  `SessionRecord` per peer in `ratchet_sessions`, stepped and committed in
+  one DB transaction before any send. The associated data binds both
+  identities and the frame typeId.
+- **PreKeyInit.** Opens a session (above) and carries its first payload
+  (`FriendAccept`, `SessionResetAccept`).
+- **Sealed.** The pre-session kinds (`FriendRequest`, `FriendReject`,
+  `SessionResetRequest`/`Decline`, push-relay kinds) have no session yet.
+  They are HPKE Base sealed to the recipient identity's X25519 key and
+  Ed25519-signed over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖
+  ciphertext`, with a receive-side replay guard on `(sender, nonce)`.
+
+There is no plaintext fallback: a frame that fails its carrier's checks, or
+that fails to decrypt on an established session, is dropped and logged,
+never re-initiated on its own. Decrypted plaintext is written to
+`unprocessed` in the same transaction as the ratchet advance and replayed
+at unlock, so a crash never loses a message whose key was spent.
 
 ### Serverless PreKey Distribution
 
@@ -101,27 +124,33 @@ publishes them to Veilid DHT subkey 5 instead:
 
 - Each user generates and publishes a PreKeyBundle to their DHT profile
 - One-time prekeys are consumed on first use
-- Signed prekeys are rotated periodically
-- If no one-time prekeys remain, X3DH proceeds with 3 DH operations instead of 4
+- Signed prekeys are not rotated yet: rotation and one-time replenishment arrive with the prekey record (plan E2.4)
+- If no one-time prekeys remain, PQXDH proceeds without DH4 and the one-time
+  KEM key (the last-resort KEM key is used)
 
 PreKey rotation and one-time prekey replenishment is the remaining open
-work in Phase 2.
+work in Phase 2. Private prekey material lives in the `signal_prekeys`
+table (`rekindle-db::prekeys`).
 
-### Plaintext Fallback
+### Safety numbers and key continuity
 
-If no Signal session exists for a peer, or if decryption fails, inbound
-messages are processed as plaintext with a `tracing::warn!()` log. This
-fallback exists to allow friend-request bootstrapping before a Signal session
-is established.
+Safety numbers use libsignal's format (`rekindle-crypto::fingerprint`): 60
+digits plus the scannable (QR) form, over the Ed25519 identity keys.
+Verification state is kept in `signal_identities`. When a verified peer's
+key changes, the change is recorded and escalates the next review
+(`VerifiedKeyChanged`). A friend who rotates identity sends a signed
+`IdentityRotated` frame over the old session
+(`rekindle-transport::operations::friend::identity_rotation`), which the
+receiver marks unverified.
 
 ### Implementation
 
-The `rekindle-crypto` crate provides `SignalSessionManager` which wraps the
-Signal protocol primitives with vault-backed key storage
-(`rekindle_vault::typed::signal`). Sessions, prekeys and trusted peer
-identities are persisted in the vault; the `signal_sessions` and `prekeys`
-SQLite tables are unused, and plan E2.3 replaces both with
-`ratchet_sessions` / `signal_prekeys`.
+The `rekindle-crypto` crate holds the Double Ratchet (`signal::dr`),
+`SessionRecord` (`signal::record`) and PQXDH (`signal::pqxdh`) as pure
+state machines. Persistence is in `rekindle-db`: `ratchet_sessions`,
+`signal_prekeys`, `signal_identities` and `unprocessed`. The vault holds no
+Signal entries. `SignalSessionManager` and the old non-spec ratchet are
+gone (plan E2.3).
 
 ## Layer 3: Group / DM Media Encryption Key (MEK)
 
@@ -147,7 +176,7 @@ the two identity keys — no separate key exchange round-trip is needed. For
 group DMs the MEK is wrapped per recipient with X25519 (since ECDH is
 pairwise) and distributed in the `GroupDmInvite` payload. The
 `AppState.dm_mek_cache` holds the genesis MEK plus every materialized
-generation — receivers must keep historical MEKs because each envelope
+generation — receivers must keep historical MEKs because each message
 carries its `mek_generation`. (Voice frames carry the generation's low
 bits in their SFrame KID instead; see `architecture/voice.md`.)
 
@@ -191,9 +220,6 @@ dependency — see [`../decisions/0006-vault-replaces-stronghold.md`](../decisio
 |--------|---------|
 | Ed25519 private key | Identity signing |
 | X25519 private key | Diffie-Hellman key agreement (DM MEK derivation) |
-| Signal identity keypair | Signal Protocol identity |
-| Signed prekey (private) | Signal Protocol key exchange |
-| One-time prekeys (private) | Signal Protocol first-contact |
 | Per-community / per-channel MEKs | Channel message decryption |
 | Slot seed + slot keypairs | Per-community pseudonyms |
 | Audit MAC key + tail anchor | Tamper-evident audit chain (Layer 5) |
@@ -250,10 +276,7 @@ Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 - **Trust on first use (TOFU)** — first contact establishes identity binding
 - **Key verification** — optional out-of-band fingerprint comparison
 - **No certificate authority** — no third party vouches for identity
-- **Key continuity** — Signal session tracks identity key, warns on change
-
-The `trusted_identities` SQLite table records identity keys seen for each
-peer, with an optional `verified` flag for out-of-band confirmation.
+- **Key continuity** — the `signal_identities` table records each peer's identity key and verification; a change of a verified key escalates review (`VerifiedKeyChanged`)
 
 ### Adding Friends
 
@@ -266,7 +289,7 @@ peer, with an optional `verified` flag for out-of-band confirmation.
 4. Bob accepts → both add each other to their DHT friend lists
    - Accept includes: PreKeyBundle, profile/route/mailbox keys, X25519
      ephemeral key, signed-prekey + one-time-prekey IDs
-5. Signal session established via PreKeyBundle exchange
+5. Session established by a PreKeyInit carrying the accept (PQXDH)
 6. Messaging begins
 ```
 

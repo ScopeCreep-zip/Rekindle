@@ -44,6 +44,8 @@ export interface InviteDto {
 /** One direct message, as a chat window shows it. */
 export interface DmMessage {
   id: number;
+  /** Its client id, which a reply names; null for a row from before E2.3. */
+  messageId: string | null;
   senderId: string;
   body: string;
   timestamp: number;
@@ -64,6 +66,23 @@ export interface BlockedUser {
   publicKey: string;
   displayName: string;
   blockedAt: number;
+}
+
+/** Our safety number with a peer and whether we verified their key
+ *  (`dto::friends::SafetyNumberView`, plan E2.3). */
+export interface SafetyNumberView {
+  peerKey: string;
+  /** The 60 digits both sides see, shown as 12 groups of 5. */
+  digits: string;
+  /** Signal's scannable form, base64. */
+  scannable: string;
+  /** The scannable form as a QR code: one string per row, `1` a dark
+   *  module, without the quiet zone. */
+  qrRows: string[];
+  verified: boolean;
+  verifiedAt: number | null;
+  /** The key we verified changed and the change is not acknowledged. */
+  changed: boolean;
 }
 
 /** A friend invite we made that is still open. */

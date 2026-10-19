@@ -107,6 +107,32 @@ async fn a_session_runs_both_ways_and_records_what_it_decrypts() {
     assert_eq!(alice.count("signal_identities").await, 1);
 }
 
+#[tokio::test]
+async fn forgetting_a_peer_ends_the_session() {
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let init = initiate(&alice, &bob, b"hello").await;
+    accept_init(
+        &bob.db,
+        &bob.local,
+        &alice.address(),
+        init,
+        AD_EXTRA,
+        0x0001,
+    )
+    .await
+    .unwrap();
+    forget(&bob.db, &bob.local.owner(), &alice.local.owner())
+        .await
+        .unwrap();
+    assert_eq!(bob.count("ratchet_sessions").await, 0);
+    let sent =
+        encrypt_and_record_outbound(&bob.db, &bob.local, &alice.address(), b"x", AD_EXTRA).await;
+    assert!(matches!(
+        sent,
+        Err(RatchetError::Crypto(CryptoError::NoSession(_)))
+    ));
+}
+
 /// The encrypt commits the advanced record before the caller sends: a
 /// crash between the two loses no key, the next message uses the next
 /// key, and the retry of the unsent bytes still decrypts.

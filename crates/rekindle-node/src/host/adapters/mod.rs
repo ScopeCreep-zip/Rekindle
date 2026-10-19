@@ -4,4 +4,3 @@
 
 pub mod friends;
 pub mod mek;
-pub mod signal;

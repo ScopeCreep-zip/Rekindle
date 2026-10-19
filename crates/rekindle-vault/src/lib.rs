@@ -2,7 +2,8 @@
 //! Double-encrypted SQLCipher vault for Rekindle.
 //!
 //! Replaces Stronghold (`iota_stronghold`) as the on-disk store for
-//! identity secrets, MEKs, slot keypairs, and Signal session state.
+//! identity secrets, MEKs and slot keypairs (the 1:1 ratchet's state is
+//! in the identity database, plan E2.3).
 //!
 //! ## Encryption layers
 //!

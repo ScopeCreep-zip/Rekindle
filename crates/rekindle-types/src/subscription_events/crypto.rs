@@ -49,7 +49,7 @@ pub enum CryptoEvent {
     /// Phase 3a declares the variant so the cross-tier `EventDedup` hash
     /// already knows the shape when 3b starts firing it.
     PqBundlePublished {
-        /// DHT subkey number written (5 = canonical PqPreKeyBundle).
+        /// DHT subkey number written (5 = the prekey bundle).
         subkey: u16,
         /// Which component of the bundle was rotated.
         kind: PqBundleKind,

@@ -1,11 +1,15 @@
-//! The friend-handshake messages.
+//! The friend-handshake messages (plan E2.3): a request is sealed to the
+//! peer's identity and carries our handout bundle; an accept is the
+//! PreKeyInit that opens the session from theirs; a reject is sealed.
 
 use std::time::Duration;
 
-use rekindle_codec::message::envelope::MessagePayload;
+use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, FriendRequest};
+use rekindle_crypto::signal::PreKeyBundle;
 use rekindle_records::port::RouteClass;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
-use super::send::send_to_peer;
+use super::send::{send_frame, send_to_peer, send_to_peer_call};
 use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// How long a friend request waits for our route to be published, when it
@@ -13,18 +17,24 @@ use crate::operations::friend::{state, FriendError, FriendHost};
 /// leaves the receiver no way to answer.
 const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
-/// A serialized bundle carrying fresh one-time keys, for exactly one peer.
-fn handout_bundle_bytes(host: &dyn FriendHost) -> Result<Vec<u8>, FriendError> {
-    let bundle = host
-        .signal()?
-        .handout_bundle()
+/// Our bundle with fresh one-time keys, for exactly one peer, in its wire
+/// form.
+///
+/// # Errors
+/// The identity is locked, or the keys could not be minted.
+pub async fn handout_bundle_bytes(host: &dyn FriendHost) -> Result<Vec<u8>, FriendError> {
+    let bundle = rekindle_db::prekeys::handout_bundle(&host.db()?, &host.local_party()?)
+        .await
         .map_err(|e| FriendError::Failed(format!("prekey bundle: {e}")))?;
     Ok(bundle.to_wire())
 }
 
-/// Send a friend request, with our handout bundle so the receiver can
-/// establish a Signal session. Signed, not encrypted (`Sealing::Plain`):
-/// there is no session yet.
+/// Send a friend request, sealed to `to` and carrying our handout bundle,
+/// so the receiver can open the session when they accept.
+///
+/// It goes by `app_call` when we hold a route to them: the call's return is
+/// the receipt, raising `RequestAcknowledged`. Otherwise it is sent like
+/// any frame (refreshed, then queued) and the accept is its receipt.
 ///
 /// # Errors
 /// Our route is not published yet, or the send failed.
@@ -43,35 +53,42 @@ pub async fn send_friend_request(
                 "Veilid private route not allocated yet — try again in a moment".to_string(),
             )
         })?;
-    tracing::info!(
-        to = %to,
-        route_blob_len = route_blob.len(),
-        route_count = route_blob.first().copied().unwrap_or(0),
-        "send_friend_request: our route blob info"
-    );
-    let payload = MessagePayload::FriendRequest {
+    let request = DirectBody::FriendRequest(FriendRequest {
         display_name: own.display_name,
         message: message.to_string(),
-        prekey_bundle: handout_bundle_bytes(host)?,
+        prekey_bundle: handout_bundle_bytes(host).await?,
         profile_dht_key: own.profile_dht_key,
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
         invite_id: invite_id.map(str::to_string),
-    };
-    send_to_peer(host, to, &payload).await
+    });
+    match send_to_peer_call(host, to, &request).await {
+        Ok(_) => {
+            host.publish(SubscriptionEvent::Friend(
+                FriendEvent::RequestAcknowledged {
+                    peer_key: to.to_string(),
+                },
+            ));
+            Ok(())
+        }
+        Err(e) => {
+            tracing::debug!(to = %to, error = %e, "friend request not delivered by app_call — sending");
+            send_to_peer(host, to, &request).await
+        }
+    }
 }
 
-/// Send our acceptance, with our handout bundle and, when we established
-/// the session, its init so the requester can `respond_to_session`.
+/// Accept `to`'s request: open the session from `bundle` (theirs, from the
+/// request), carrying our records as its first payload.
 ///
 /// # Errors
-/// The send failed.
+/// The bundle is not `to`'s, the session could not be opened, or the send
+/// failed.
 pub async fn send_friend_accept(
     host: &dyn FriendHost,
     to: &str,
-    session_init: Option<rekindle_crypto::signal::SessionInitInfo>,
+    bundle: PreKeyBundle,
 ) -> Result<(), FriendError> {
-    let prekey_bundle = handout_bundle_bytes(host)?;
     let own = state::own_identity(host)?;
     let route_blob = host.node()?.personal_route_blob().unwrap_or_default();
     if route_blob.is_empty() {
@@ -79,24 +96,13 @@ pub async fn send_friend_accept(
             "sending friend accept with empty route blob — peer will fetch from DHT profile"
         );
     }
-    let payload = MessagePayload::FriendAccept {
-        prekey_bundle,
+    let accept = DirectBody::FriendAccept(FriendAccept {
         profile_dht_key: own.profile_dht_key,
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
-        ephemeral_key: session_init
-            .as_ref()
-            .map(|s| s.ephemeral_public_key.clone())
-            .unwrap_or_default(),
-        signed_prekey_id: session_init.as_ref().map_or(1, |s| s.signed_prekey_id),
-        one_time_prekey_id: session_init.as_ref().and_then(|s| s.one_time_prekey_id),
-        ml_kem_ciphertext: session_init
-            .as_ref()
-            .map(|s| s.ml_kem_ciphertext.clone())
-            .unwrap_or_default(),
-        used_ot_pqpk_id: session_init.as_ref().and_then(|s| s.used_ot_pqpk_id),
-    };
-    send_to_peer(host, to, &payload).await
+    });
+    let frame = super::frame::initiate_frame(host, to, bundle, &accept).await?;
+    send_frame(host, to, &frame).await
 }
 
 /// Send a friend rejection.
@@ -104,5 +110,5 @@ pub async fn send_friend_accept(
 /// # Errors
 /// The send failed.
 pub async fn send_friend_reject(host: &dyn FriendHost, to: &str) -> Result<(), FriendError> {
-    send_to_peer(host, to, &MessagePayload::FriendReject).await
+    send_to_peer(host, to, &DirectBody::FriendReject).await
 }
