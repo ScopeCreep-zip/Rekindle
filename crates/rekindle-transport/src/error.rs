@@ -256,11 +256,13 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
             C::Core(core) => core.into(),
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
             C::UntrustedIdentity { address } => Self::UntrustedIdentity { peer: address },
-            other @ (C::SessionError(_) | C::VaultLocked | C::WrongPassphrase) => {
-                Self::SignalProtocol {
-                    reason: other.to_string(),
-                }
-            }
+            other @ (C::SessionError(_)
+            | C::VaultLocked
+            | C::WrongPassphrase
+            | C::IdentityAddressMismatch { .. }
+            | C::DuplicateMessage) => Self::SignalProtocol {
+                reason: other.to_string(),
+            },
         }
     }
 }

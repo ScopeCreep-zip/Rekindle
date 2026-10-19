@@ -40,6 +40,9 @@ labels! {
     SAFETY_NUMBER = "rekindle-safety-v1";
     /// HKDF info: PQXDH shared secret → initial root key.
     PQXDH_ROOT = "rekindle-pqxdh-root-v1";
+    /// HKDF info: the PQXDH key material (X25519, SHA-256, ML-KEM-768, with
+    /// EncodeEC/EncodeKEM of the bound keys) → `SKec ‖ SKscka` (plan E2.2).
+    PQXDH_SK = "rekindle-pqxdh-sk-v1";
 
     // ── Signed 1:1 envelopes ─────────────────────────────────────────
     /// Ed25519 signature prefix: desktop `MessageEnvelope`, bound to the
@@ -70,6 +73,11 @@ labels! {
     DM_MEK = "rekindle-dm-mek-v1";
     /// HKDF info: group-DM MEK forward ratchet step.
     DM_MEK_RATCHET = "rekindle-dm-ratchet-v1";
+    /// HKDF info: the spec Double Ratchet's `KDF_RK` (DR rev. 1 §5.2).
+    DR_ROOT = "rekindle-dr-root-v1";
+    /// HKDF info: a Double Ratchet message key → AES-256-GCM key and nonce
+    /// (DR rev. 1 §5.2 `ENCRYPT`).
+    DR_MSG = "rekindle-dr-msg-v1";
 
     // ── Calls and voice ──────────────────────────────────────────────
     /// HKDF info: 1:1 call media key. Distinct from the friend/DM

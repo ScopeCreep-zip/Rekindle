@@ -30,7 +30,9 @@
 //! Responder (Bob): symmetric — recover `SS` via ML-KEM decapsulate, derive
 //! the same DH outputs in reverse, compute identical `root_key`.
 
+pub mod agreement;
 pub mod bundle;
+pub mod encode;
 pub mod handshake;
 pub mod kdf;
 pub mod keys;
@@ -55,4 +57,12 @@ pub enum PqxdhError {
     Hkdf(String),
     #[error("PQ prekey bundle missing both one-time and last-resort PQ keys")]
     NoPqKey,
+    #[error("invalid Ed25519 identity key: {0}")]
+    InvalidIdentityKey(String),
+    /// A DH output was all zeros: the peer's key is a low-order point.
+    #[error("non-contributory X25519 agreement")]
+    NonContributory,
+    /// A one-time key arrived without its id or signature, or the reverse.
+    #[error("incomplete prekey bundle: {0}")]
+    IncompleteBundle(&'static str),
 }

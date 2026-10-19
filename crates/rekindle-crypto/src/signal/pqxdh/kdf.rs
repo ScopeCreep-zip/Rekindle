@@ -16,7 +16,8 @@ use zeroize::Zeroizing;
 use super::PqxdhError;
 use rekindle_types::domains;
 
-const F_BYTES: [u8; 32] = [0xFF; 32];
+/// `F`: 32 `0xFF` bytes ahead of the key material (curve25519).
+pub(super) const F_BYTES: [u8; 32] = [0xFF; 32];
 
 /// Derive a 32-byte root key from the four DH outputs (DH4 optional) and
 /// the ML-KEM shared secret. Returns a zeroizing buffer.

@@ -17,12 +17,18 @@ ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hex = "0.4"
 base64 = "0.22"
 hkdf = "0.12"
+# KDF_CK of the spec Double Ratchet (`signal::dr`): HMAC-SHA256 over the
+# chain key, DR rev. 1 §5.2.
+hmac = "0.12"
 parking_lot = "0.12"
 rand = "0.8"
 # The prekey bundle's wire form is the Cap'n Proto DTO (plan C7.25).
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
+# `RandomSource` (plan C9.2): the ratchet and PQXDH keys the pure session
+# API mints come from the caller's generator.
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 sha2 = "0.10"
 thiserror = { workspace = true }
@@ -36,4 +42,5 @@ lru = "0.12"
 tokio = { workspace = true, features = [ "sync" ] }
 
 [dev-dependencies]
+proptest = "1"
 tokio = { workspace = true, features = [ "sync", "rt", "rt-multi-thread", "macros", "time" ] }

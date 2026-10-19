@@ -42,6 +42,19 @@ pub enum CryptoError {
     #[error("identity key for {address} does not match the trusted key")]
     UntrustedIdentity { address: String },
 
+    /// A bundle or PreKeyInit names an identity key other than the
+    /// address it is for. Under identity == address a peer's key is its
+    /// address, so this is never a key change to accept (plan E2.2).
+    #[error("identity key does not match the address {address}")]
+    IdentityAddressMismatch { address: String },
+
+    /// The message was already decrypted (its key is gone), or the
+    /// PreKeyInit's base key is already a session's. Dropped silently by
+    /// the receiver; nothing changed (plan E2.2, libsignal
+    /// `DuplicatedMessage`).
+    #[error("duplicate message")]
+    DuplicateMessage,
+
     /// No session exists for the requested peer, in the in-memory cache
     /// or in persistent storage.
     #[error("no session for peer {0}")]
