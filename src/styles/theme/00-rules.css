@@ -118,7 +118,7 @@
     cursor: pointer;
     border: none;
     background: transparent;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .xfire-titlebar-btn:hover {
@@ -192,7 +192,7 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .form-btn-primary:hover {
@@ -214,7 +214,7 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .form-btn-secondary:hover {
@@ -236,7 +236,7 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
     white-space: nowrap;
   }
 
@@ -308,7 +308,7 @@
     border-bottom: 2px solid transparent;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--motion-duration-fast), border-color var(--motion-duration-fast);
     white-space: nowrap;
     flex-shrink: 0;
   }

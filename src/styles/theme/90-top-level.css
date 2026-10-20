@@ -248,7 +248,7 @@
     border-radius: 6px;
     background: var(--color-xfire-bg-secondary);
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--motion-duration-fast), background var(--motion-duration-fast);
     text-align: left;
     color: var(--color-xfire-text-primary);
     font-size: 13px;
@@ -365,7 +365,7 @@
     border-radius: 6px;
     background: var(--color-xfire-bg-secondary);
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--motion-duration-fast), background var(--motion-duration-fast);
     text-align: left;
     width: 100%;
     color: var(--color-xfire-text-primary);

@@ -32,7 +32,7 @@
     border: none;
     cursor: pointer;
     border-radius: 3px;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast);
   }
 
   .channel-create-category-btn:hover {
@@ -47,7 +47,7 @@
     gap: 6px;
     padding: 4px 8px;
     border-radius: 3px;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .settings-member-row:hover {
@@ -196,7 +196,7 @@
     border-radius: 4px;
     background: var(--color-xfire-bg-secondary);
     border-left: 3px solid var(--color-xfire-accent);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .event-card:hover {
@@ -238,7 +238,7 @@
     color: var(--color-xfire-text-secondary);
     font-size: 11px;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast), border-color var(--motion-duration-fast);
   }
 
   .event-rsvp-btn:hover {
@@ -317,7 +317,7 @@
     color: var(--color-xfire-text-dim);
     font-size: 11px;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast), border-color var(--motion-duration-fast);
   }
 
   .event-filter-btn:hover {
@@ -335,7 +335,7 @@
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 3px;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast);
   }
 
   .logout-icon-btn:hover {
@@ -406,6 +406,6 @@
     cursor: pointer;
     font-family: var(--font-family-xfire);
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--motion-duration-fast);
   }
 }

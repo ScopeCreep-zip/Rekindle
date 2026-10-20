@@ -133,7 +133,7 @@
     color: var(--color-xfire-text-dim);
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--motion-duration-fast), border-color var(--motion-duration-fast);
   }
 
   .buddy-tab:hover {
@@ -179,7 +179,7 @@
     padding: 0 10px;
     height: 100%;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast);
   }
 
   .menu-bar-item:hover,
@@ -214,7 +214,7 @@
     color: var(--color-xfire-text);
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.1s;
+    transition: background var(--motion-duration-fast);
   }
 
   .menu-dropdown-item:hover {
@@ -257,7 +257,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
   }
 
   .identity-bar-status-msg:hover {
@@ -378,7 +378,7 @@
     background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
     cursor: pointer;
     font-size: 12px;
-    transition: background 0.15s, border-color 0.15s;
+    transition: background var(--motion-duration-fast), border-color var(--motion-duration-fast);
   }
 
   .reaction-chip:hover {

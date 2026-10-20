@@ -75,7 +75,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 140px;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
   }
 
   .invite-url-masked:hover {
@@ -142,7 +142,7 @@
     padding: 4px 8px;
     border-radius: 3px;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .action-bar-btn:hover {
@@ -168,7 +168,7 @@
     background: transparent;
     color: var(--color-xfire-text-dim);
     cursor: pointer;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .notification-bell:hover {
@@ -237,7 +237,7 @@
     gap: 8px;
     padding: 8px 10px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 10%, transparent);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .notification-item:hover {
@@ -281,7 +281,7 @@
     cursor: pointer;
     flex-shrink: 0;
     margin-top: 2px;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .notification-mark-read:hover {
@@ -299,7 +299,7 @@
     padding: 2px 6px;
     border-radius: 3px;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .notification-mark-all:hover {
@@ -428,7 +428,7 @@
     border-radius: 3px;
     font-family: var(--font-family-xfire);
     margin-left: auto;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--motion-duration-fast), color var(--motion-duration-fast);
   }
 
   .community-leave-btn:hover {

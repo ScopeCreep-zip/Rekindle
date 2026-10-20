@@ -165,7 +165,7 @@
     position: relative;
     padding: 8px 4px;
     border-radius: 8px;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .account-bubble:hover {
@@ -196,7 +196,7 @@
     font-size: 10px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--motion-duration-fast);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -225,7 +225,7 @@
     cursor: pointer;
     border-radius: 50%;
     padding: 4px;
-    transition: box-shadow 0.2s;
+    transition: box-shadow var(--motion-duration-base);
   }
 
   .lock-avatar:hover {
@@ -248,7 +248,7 @@
     font-size: 12px;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .account-create-btn:hover {

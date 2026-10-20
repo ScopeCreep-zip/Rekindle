@@ -431,6 +431,6 @@
     font-size: 13px;
     color: var(--color-xfire-text);
     background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 }

@@ -236,7 +236,7 @@
     display: flex;
     gap: 8px;
     padding: 4px 8px;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .channel-manage-name {
@@ -378,7 +378,7 @@
     cursor: pointer;
     font-size: 10px;
     padding: 3px 8px;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .sidebar-event-row,

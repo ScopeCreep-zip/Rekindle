@@ -10,7 +10,7 @@
     border-radius: 4px;
     cursor: pointer;
     font-size: 16px;
-    transition: background 0.1s;
+    transition: background var(--motion-duration-fast);
   }
 
   .emoji-picker-item:hover {
@@ -104,7 +104,7 @@
     color: var(--color-xfire-text-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
   }
 
   .category-header:hover {
@@ -113,7 +113,7 @@
 
   .category-chevron {
     font-size: 10px;
-    transition: transform 0.15s;
+    transition: transform var(--motion-duration-fast);
   }
 
 

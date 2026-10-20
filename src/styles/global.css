@@ -238,6 +238,14 @@
     --sec-review-muted-fg: #b0b0b0;
     --sec-review-danger-fg: #ff8a80;
     --sec-review-border: #767676;
+    /* The sec controls' own motion, instant unless the user allows motion. */
+    --sec-motion-duration: 0ms;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :root {
+      --sec-motion-duration: 120ms;
+    }
   }
 
   :root[data-skin-base="light"] {
@@ -302,8 +310,8 @@
  * Architecture §32 — motion duration tokens. Default to 0ms so
  * reduced-motion users get instant transitions; the `no-preference` media
  * query opts motion-tolerant users in. Consumers use
- * `var(--motion-duration-fast)` and `var(--motion-duration-base)` directly
- * in transition/animation declarations; the @keyframes themselves stay
+ * `var(--motion-duration-fast)`, `-base` and `-slow` directly in
+ * transition/animation declarations (`cargo xtask check-motion`); the @keyframes themselves stay
  * defined so motion-tolerant users get the full effect. */
 @layer a11y {
   @media (prefers-contrast: more) {
@@ -317,12 +325,15 @@
   :root {
     --motion-duration-fast: 0ms;
     --motion-duration-base: 0ms;
+    --motion-duration-slow: 0ms;
   }
 
   @media (prefers-reduced-motion: no-preference) {
     :root {
       --motion-duration-fast: 120ms;
       --motion-duration-base: 200ms;
+      /* A highlight fading out (the jumped-to message). */
+      --motion-duration-slow: 1500ms;
     }
   }
 }

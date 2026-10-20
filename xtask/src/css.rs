@@ -53,6 +53,25 @@ impl Block {
         self.ancestors.iter().any(|p| p.starts_with("@keyframes"))
     }
 
+    /// The `@keyframes` name a keyframe step belongs to.
+    pub(crate) fn keyframes_of(&self) -> Option<&str> {
+        self.ancestors
+            .iter()
+            .find_map(|p| p.strip_prefix("@keyframes "))
+            .map(str::trim)
+    }
+
+    /// Whether an enclosing at-rule's prelude, whitespace removed, contains
+    /// `needle` (`prefers-reduced-motion:no-preference`).
+    pub(crate) fn under(&self, needle: &str) -> bool {
+        self.ancestors.iter().any(|p| {
+            p.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .contains(needle)
+        })
+    }
+
     /// The selectors of a rule's prelude, split at top-level commas.
     pub(crate) fn selectors(&self) -> Vec<String> {
         split_top_level(&self.prelude, ',')

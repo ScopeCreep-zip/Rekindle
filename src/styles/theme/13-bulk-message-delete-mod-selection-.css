@@ -58,7 +58,7 @@
     padding: 4px 10px;
     border-radius: 3px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .attachment-card-btn:hover:not(:disabled) {
@@ -395,7 +395,7 @@
   /* ─── Message highlight (jump to pinned message) ─── */
   .message-highlight {
     background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
-    transition: background 1.5s ease-out;
+    transition: background var(--motion-duration-slow) ease-out;
   }
 
   /* ─── Pin panel jump button ─── */

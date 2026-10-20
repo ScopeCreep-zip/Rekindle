@@ -28,7 +28,7 @@
     font-family: var(--sec-font-family);
     font-weight: 600;
     cursor: pointer;
-    transition: filter 0.15s;
+    transition: filter var(--sec-motion-duration);
   }
 
   /* Commit and destructive commit share one size and place, so a review
@@ -284,5 +284,51 @@
     background: var(--sec-changed-bg);
     border-color: var(--sec-changed-bg);
     color: var(--sec-changed-fg);
+  }
+
+  /* Windows High Contrast (forced colors): the commit controls keep a
+   * system-colour border and focus ring; the QR codes keep their dark
+   * modules on the light backing, or no scanner reads them; StatusDot's
+   * cutouts paint the system ground, so the crescent, bar and triangle that
+   * tell away, busy and in-game apart survive the forced palette. */
+  @media (forced-colors: active) {
+    .sec-btn-commit,
+    .sec-btn-commit-danger,
+    .sec-btn-secondary,
+    .sec-review,
+    .sec-pairing-code,
+    .sec-safety-number,
+    .sec-verified-badge,
+    .sec-key-changed-badge {
+      border-color: CanvasText;
+    }
+
+    .sec-btn-commit-danger {
+      border-width: 2px;
+    }
+
+    .sec-btn-commit:disabled,
+    .sec-btn-commit-danger:disabled,
+    .sec-btn-secondary:disabled {
+      border-color: GrayText;
+      color: GrayText;
+    }
+
+    .sec-btn-commit:focus-visible,
+    .sec-btn-commit-danger:focus-visible,
+    .sec-btn-secondary:focus-visible {
+      outline: 2px solid Highlight;
+    }
+
+    .sec-pairing-qr,
+    .sec-pairing-qr svg,
+    .sec-safety-number-qr {
+      forced-color-adjust: none;
+    }
+
+    .status-dot-cutout {
+      fill: Canvas;
+      forced-color-adjust: none;
+    }
   }
 }

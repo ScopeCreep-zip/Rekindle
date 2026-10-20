@@ -65,6 +65,7 @@ mod frontend_boundaries;
 mod intent_table;
 mod jsx;
 mod literals;
+mod motion;
 mod no_emitter;
 mod no_managed_db;
 mod sec_styles;
@@ -124,6 +125,8 @@ enum Command {
     CheckDeclaredGrounds,
     /// Verify every declared text-on-ground pair reads 4.5:1 (graphics 3:1) on each base.
     CheckContrastPairs,
+    /// Verify every transition reads a motion token and motion honours reduced motion.
+    CheckMotion,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
     /// Verify no type name is declared in two crates.
@@ -219,6 +222,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "contrast-pairs",
                     Box::new(|| contrast_pairs::check_contrast_pairs(&root)),
                 ),
+                ("motion", Box::new(|| motion::check_motion(&root))),
                 (
                     "duplicate-bodies",
                     Box::new(|| check_duplicate_bodies(&root)),
@@ -268,6 +272,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         }
         Command::CheckDeclaredGrounds => declared_grounds::check_declared_grounds(&root),
         Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
+        Command::CheckMotion => motion::check_motion(&root),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),

@@ -71,8 +71,20 @@
     bottom: 60px;
     left: 50%;
     font-size: 28px;
-    animation: call-reaction-float 2s ease-out forwards;
     transform: translateX(-50%);
+    /* Reduced motion: the glyph holds in place and fades, so the
+     * `animationend` ReactionFloater removes it on still fires. */
+    animation: call-reaction-hold 2s linear forwards;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .call-reaction-float {
+      animation: call-reaction-float 2s ease-out forwards;
+    }
+  }
+  @keyframes call-reaction-hold {
+    0%   { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { opacity: 0; }
   }
   @keyframes call-reaction-float {
     0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
@@ -221,7 +233,7 @@
     cursor: pointer;
     border: none;
     background: transparent;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .modal-close-btn:hover {

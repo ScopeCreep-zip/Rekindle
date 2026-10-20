@@ -428,6 +428,6 @@
     cursor: pointer;
     padding-left: 28px;
     position: relative;
-    transition: background 0.1s;
+    transition: background var(--motion-duration-fast);
   }
 }

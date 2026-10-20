@@ -44,7 +44,7 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
   }
 
   .avatar-upload-btn:hover {
@@ -289,7 +289,7 @@
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 3px;
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
     position: relative;
   }
 
@@ -311,7 +311,7 @@
     font-size: 14px;
     cursor: pointer;
     margin-left: auto;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
   }
 
   .chat-call-btn:hover {
@@ -335,7 +335,7 @@
     font-size: 10px;
     padding: 0 2px;
     margin-left: 2px;
-    transition: color 0.15s;
+    transition: color var(--motion-duration-fast);
   }
 
   .message-retry-btn:hover {
@@ -376,7 +376,7 @@
     font-weight: 600;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: background 0.15s;
+    transition: background var(--motion-duration-fast);
     white-space: nowrap;
   }
 

@@ -363,7 +363,7 @@
     justify-content: center;
     font-weight: 700;
     border: 2px solid transparent;
-    transition: border-color 80ms ease-out;
+    transition: border-color var(--motion-duration-fast) ease-out;
   }
   .active-call-peer-avatar-speaking {
     border-color: var(--color-xfire-online);
