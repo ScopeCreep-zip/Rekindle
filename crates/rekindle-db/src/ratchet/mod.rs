@@ -234,8 +234,12 @@ pub async fn decrypt_ephemeral(
     let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
-        let (next, plaintext) =
-            load(conn, &owner, &peer)?.decrypt(&message, &ad_extra, local.rng.as_ref())?;
+        let (next, plaintext) = load(conn, &owner, &peer)?.decrypt(
+            &message,
+            &ad_extra,
+            local.now_ms,
+            local.rng.as_ref(),
+        )?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
         Ok(plaintext)
     })

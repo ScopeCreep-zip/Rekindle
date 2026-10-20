@@ -13,24 +13,15 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, IdentityRotated};
 use rekindle_crypto::Identity;
-use rekindle_types::domains;
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::{state, FriendHost};
 use crate::operations::dm;
 
-/// What both identities sign for `recipient`.
-#[must_use]
-pub fn signing_bytes(old: &[u8; 32], new: &[u8; 32], recipient: &[u8; 32]) -> Vec<u8> {
-    let label = domains::IDENTITY_ROTATED.as_bytes();
-    let mut bytes = Vec::with_capacity(label.len() + 96);
-    bytes.extend_from_slice(label);
-    bytes.extend_from_slice(old);
-    bytes.extend_from_slice(new);
-    bytes.extend_from_slice(recipient);
-    bytes
-}
+/// What both identities sign for `recipient` (`rekindle_crypto`'s, which
+/// owns the construction).
+pub use rekindle_crypto::identity_rotation::signing_bytes;
 
 /// The rotation frame from `old` to `new` for `recipient`.
 #[must_use]

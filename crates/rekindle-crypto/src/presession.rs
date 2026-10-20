@@ -23,7 +23,7 @@ use crate::{CryptoError, Identity};
 
 /// A sealed frame's carrier fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Sealed {
+pub struct SignedSeal {
     /// The HPKE encapsulated key.
     pub enc: [u8; 32],
     /// The HPKE ciphertext.
@@ -94,7 +94,7 @@ pub fn seal(
     type_id: u16,
     info: &str,
     plaintext: &[u8],
-) -> Result<Sealed, CryptoError> {
+) -> Result<SignedSeal, CryptoError> {
     let recipient_x25519 = Identity::peer_ed25519_to_x25519(recipient)?;
     let sealed = rekindle_secrets::hpke::seal_base(
         recipient_x25519.as_bytes(),
@@ -110,7 +110,7 @@ pub fn seal(
             &sealed.ciphertext,
         ))
         .to_bytes();
-    Ok(Sealed {
+    Ok(SignedSeal {
         enc: sealed.enc,
         ciphertext: sealed.ciphertext,
         signature,
@@ -126,7 +126,7 @@ pub fn verify(
     recipient: &[u8; 32],
     sender: &[u8; 32],
     type_id: u16,
-    sealed: &Sealed,
+    sealed: &SignedSeal,
 ) -> Result<(), Refused> {
     let key = ed25519_dalek::VerifyingKey::from_bytes(sender).map_err(|_| Refused::NotAKey)?;
     let signing = signing_bytes(recipient, type_id, &sealed.enc, &sealed.ciphertext);
@@ -148,7 +148,7 @@ pub fn open(
     sender: &[u8; 32],
     type_id: u16,
     info: &str,
-    sealed: &Sealed,
+    sealed: &SignedSeal,
 ) -> Result<Zeroizing<Vec<u8>>, Refused> {
     let secret = Zeroizing::new(identity.to_x25519_secret().to_bytes());
     rekindle_secrets::hpke::open_base(
