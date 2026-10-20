@@ -792,7 +792,8 @@ CREATE TABLE IF NOT EXISTS prekey_slots_used (
 );
 
 -- The `PreKeyRejected` notices we sent (plan E2.4 B5): one per initiator
--- base key (`base_key_hash` = BLAKE3 of it), at most 10 per sender per
+-- base key (`base_key_hash` = SHA-256 over `PREKEY_REJECTED_BASE_KEY` and
+-- it, `prekey_record::base_key_hash`), at most 10 per sender per
 -- 3 h. Kept for the 30-day archive horizon.
 CREATE TABLE IF NOT EXISTS prekey_rejections (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,

@@ -280,7 +280,7 @@ paths resolve.
 
 ## DHT Record Layouts
 
-### User Profile Record (DFLT, 8 subkeys)
+### User Profile Record (DFLT, 9 subkeys)
 
 | Subkey | Content |
 |--------|---------|
@@ -292,6 +292,7 @@ paths resolve.
 | 5 | Prekey records: Cap'n Proto `PrekeyRecordList` (each device's id and prekey record key; one entry until E5.3) |
 | 6 | Private route blob (for receiving `app_message`) |
 | 7 | Metadata (reserved) |
+| 8 | Strand Relay pool (JSON list of opaque relay route blobs, padded) |
 
 Friends watch each other's DHT records via `watch_dht_values`. When a subkey
 changes, Veilid delivers a `VeilidUpdate::ValueChange` to the watcher, which

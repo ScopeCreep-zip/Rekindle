@@ -113,6 +113,18 @@ pub async fn reconcile(host: &dyn FriendHost) -> Result<usize, FriendError> {
 /// # Errors
 /// The rows could not be read or written, or a publish failed.
 pub async fn maintain(host: &dyn FriendHost) -> Result<(), FriendError> {
+    let values = plan_and_store(host).await?;
+    publish(host, values).await
+}
+
+/// [`maintain`] without the publish: what the pass minted and stored, the
+/// head first, for a caller that publishes it in its own order (the
+/// unlock writes the head and a few slots before the profile names the
+/// record, the rest after it).
+///
+/// # Errors
+/// The rows could not be read or written.
+pub async fn plan_and_store(host: &dyn FriendHost) -> Result<Vec<Publish>, FriendError> {
     let (db, local) = (host.db()?, host.local_party()?);
     let owner = local.owner();
     let now = local.now_ms;
@@ -120,18 +132,18 @@ pub async fn maintain(host: &dyn FriendHost) -> Result<(), FriendError> {
         .await
         .map_err(|e| stored("read our prekeys", e))?;
     let actions = plan_maintenance(now, &prekeys);
+    let mut values = Vec::new();
     if !actions.is_empty() {
         tracing::info!(actions = actions.len(), "prekey maintenance");
-        let values = rekindle_db::prekeys::apply_maintenance(&db, &local, actions)
+        values = rekindle_db::prekeys::apply_maintenance(&db, &local, actions)
             .await
             .map_err(|e| stored("mint prekeys", e))?;
-        publish(host, values).await?;
     }
     let swept = rekindle_db::prekeys::sweep_archive(&db, &owner, now)
         .await
         .map_err(|e| stored("sweep the prekey archive", e))?;
     tracing::debug!(?swept, "prekey archive swept");
-    Ok(())
+    Ok(values)
 }
 
 /// This device's prekey record and its upkeep.

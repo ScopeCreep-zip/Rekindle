@@ -375,7 +375,7 @@ for the migration rationale and the threat-model implications.
 
 ## DHT Record Layout
 
-### User Profile Record (DFLT, 8 subkeys)
+### User Profile Record (DFLT, 9 subkeys)
 
 | Subkey | Content | Format |
 |--------|---------|--------|
@@ -387,6 +387,7 @@ for the migration rationale and the threat-model implications.
 | 5 | Prekey records | Cap'n Proto `PrekeyRecordList` (each device's id and prekey record key; one entry until E5.3) |
 | 6 | Route blob | Raw bytes (Veilid private route) |
 | 7 | Metadata | Reserved (extensible header) |
+| 8 | Strand Relay pool | JSON list of opaque relay route blobs, padded with dummies |
 
 ### Prekey Record (DFLT(101))
 
