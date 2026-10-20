@@ -5,7 +5,9 @@
 //!
 //! Four proof widgets: a verb + object button (Commit), a checkbox stating
 //! the trust fact (Acknowledge), a field for the subject's name
-//! (TypeSubject) and a masked field (Passphrase). Esc cancels. Cancel has
+//! (TypeSubject) and a masked field (Passphrase). Esc cancels, except a
+//! review whose cancel sends something (`cancel_sends`, plan F6 U-2): only
+//! Enter on Cancel resolves that one. Cancel has
 //! the focus first; colour is never the only signal (`[Cancel]`/`[Commit]`
 //! labels, `[x]` for the checkbox).
 //!
@@ -59,6 +61,8 @@ impl IntentOverlay {
                 self.commit_focused = !self.commit_focused;
             }
             KeyCode::Enter if self.commit_focused => return self.commit(),
+            // A cancel that sends (a decline) is never a stray Esc.
+            KeyCode::Esc if self.review.as_ref().is_some_and(|r| r.cancel_sends) => {}
             // Esc, or Enter on Cancel.
             KeyCode::Esc | KeyCode::Enter => return self.cancel(),
             KeyCode::Char(' ') if proof == ProofRequired::Acknowledge => {
@@ -246,6 +250,20 @@ mod tests {
         overlay.show(review(ProofRequired::Commit));
         assert!(matches!(
             overlay.handle_key(key(KeyCode::Esc)),
+            Some(Action::CancelIntent { .. })
+        ));
+    }
+
+    #[test]
+    fn esc_does_not_cancel_a_review_whose_cancel_sends() {
+        let mut overlay = IntentOverlay::default();
+        let mut held = review(ProofRequired::Commit);
+        held.cancel_sends = true;
+        overlay.show(held);
+        assert!(overlay.handle_key(key(KeyCode::Esc)).is_none());
+        assert!(overlay.visible());
+        assert!(matches!(
+            overlay.handle_key(key(KeyCode::Enter)),
             Some(Action::CancelIntent { .. })
         ));
     }

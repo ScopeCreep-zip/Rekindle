@@ -249,10 +249,17 @@ impl FriendListView {
                 format!("  {}", helpers::format_duration_ago(elapsed))
             })
             .unwrap_or_default();
-        let pending = match (&friend.handshake_error, friend.friendship_state) {
-            (Some(_), _) => " [secure session failed]",
-            (None, rekindle_types::friend::FriendshipState::PendingOut) => " [request sent]",
-            _ => "",
+        let pending = if friend.identity_pin_mismatch {
+            // A trust alert (plan E2.4, B3): nothing is sent to them.
+            " [identity key mismatch]"
+        } else if friend.handshake_error.is_some() {
+            " [secure session failed]"
+        } else if friend.handshake_retrying {
+            " [retrying with a fresh key]"
+        } else if friend.friendship_state == rekindle_types::friend::FriendshipState::PendingOut {
+            " [request sent]"
+        } else {
+            ""
         };
         ListItem::new(Line::from(vec![
             Span::raw(format!("   {glyph} {text_label} ")),

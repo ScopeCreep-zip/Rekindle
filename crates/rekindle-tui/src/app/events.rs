@@ -180,6 +180,7 @@ impl App {
             SubscriptionEvent::Friend(FriendEvent::RequestReceived {
                 ref display_name, ..
             }) => {
+                self.reload_friends();
                 self.notifications.push(
                     format!("Friend request from {display_name}"),
                     ToastLevel::Info,
@@ -193,6 +194,7 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::Friend(FriendEvent::Accepted { .. }) => {
+                self.reload_friends();
                 self.notifications
                     .push("Friend request accepted!".into(), ToastLevel::Success);
                 let _ = self
@@ -201,6 +203,7 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::Friend(FriendEvent::Removed { .. }) => {
+                self.reload_friends();
                 self.notifications
                     .push("Friend removed".into(), ToastLevel::Info);
                 let _ = self
@@ -261,6 +264,7 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::Friend(FriendEvent::Rejected { .. }) => {
+                self.reload_friends();
                 self.notifications
                     .push("Friend request rejected".into(), ToastLevel::Warning);
                 Some(Action::Render)
@@ -352,8 +356,70 @@ impl App {
                 | SystemEvent::SyncRequested { .. },
             ) => None,
 
-            // ── All other events: render only (badges, status bar, etc.) ─
-            _ => Some(Action::Render),
+            // ── Friend rows: re-read the list the Host projects ──────────
+            SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
+                ref display_name, ..
+            }) => {
+                self.notifications.push(
+                    format!(
+                        "{}'s keys are not signed by the identity you know. Nothing was \
+                         sent; verify their safety number.",
+                        crate::helpers::sanitize_for_display(display_name)
+                    ),
+                    ToastLevel::Error,
+                );
+                self.reload_friends();
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Friend(FriendEvent::HandshakeFailed { ref reason, .. }) => {
+                self.notifications.push(
+                    format!("Secure session not set up: {reason}"),
+                    ToastLevel::Warning,
+                );
+                self.reload_friends();
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Friend(
+                FriendEvent::HandshakeRetrying { .. }
+                | FriendEvent::BlockChanged { .. }
+                | FriendEvent::GroupChanged { .. }
+                | FriendEvent::NicknameChanged { .. }
+                | FriendEvent::KeyChanged { .. }
+                | FriendEvent::VerificationChanged { .. }
+                | FriendEvent::Added { .. }
+                | FriendEvent::RequestAcknowledged { .. }
+                | FriendEvent::RemoveAcknowledged { .. }
+                | FriendEvent::ProfileKeyRotated { .. },
+            ) => {
+                self.reload_friends();
+                Some(Action::Render)
+            }
+
+            // ── Render only: badges, status bar, the open view ───────────
+            SubscriptionEvent::UnreadChanged { .. }
+            | SubscriptionEvent::ChannelMessage(_)
+            | SubscriptionEvent::Typing(_)
+            | SubscriptionEvent::Presence(_)
+            | SubscriptionEvent::Membership(_)
+            | SubscriptionEvent::Crypto(_)
+            | SubscriptionEvent::Voice(_)
+            | SubscriptionEvent::Governance(_)
+            | SubscriptionEvent::Social(_)
+            | SubscriptionEvent::Call(_)
+            | SubscriptionEvent::Notification(_)
+            | SubscriptionEvent::Network(_)
+            | SubscriptionEvent::System(_) => Some(Action::Render),
+        }
+    }
+
+    /// Re-read the friend list when it is on screen: its rows (pin alert,
+    /// handshake state, group, nickname, key, block list) are the Host's.
+    fn reload_friends(&self) {
+        if matches!(
+            self.nav.current_view(),
+            super::super::views::ViewKind::FriendList
+        ) {
+            self.load_friend_list();
         }
     }
 

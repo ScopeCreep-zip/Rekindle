@@ -309,14 +309,20 @@ impl View for DmInboxView {
             sender_name,
             body,
             decryption_failed,
+            is_own,
             ..
         }) = event
         {
+            // `is_own`: we sent it, from another of our devices (E5.3).
             let display_msg = DmMessageDisplay {
                 sender_key: peer_key.clone(),
-                sender_name: sender_name
-                    .clone()
-                    .unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
+                sender_name: if *is_own {
+                    "You".to_string()
+                } else {
+                    sender_name
+                        .clone()
+                        .unwrap_or_else(|| helpers::abbreviate_key(peer_key))
+                },
                 // A failed decrypt is not a pending one. Without this
                 // flag the two were indistinguishable here, and a
                 // permanently undecryptable message sat forever as
@@ -327,13 +333,14 @@ impl View for DmInboxView {
                     body.clone().unwrap_or_else(|| "(decrypting...)".into())
                 },
                 timestamp: *timestamp,
-                is_self: false,
+                is_self: *is_own,
             };
+            let unread = u32::from(!*is_own);
 
             if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
                 thread.messages.push(display_msg);
                 thread.last_message_at = *timestamp;
-                thread.unread_count += 1;
+                thread.unread_count += unread;
             } else {
                 self.threads.push(DmThreadDisplay {
                     peer_key: peer_key.clone(),
@@ -341,7 +348,7 @@ impl View for DmInboxView {
                         .clone()
                         .unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
                     last_message_at: *timestamp,
-                    unread_count: 1,
+                    unread_count: unread,
                     messages: vec![display_msg],
                 });
             }
