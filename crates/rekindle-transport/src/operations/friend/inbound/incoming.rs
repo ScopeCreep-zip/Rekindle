@@ -4,7 +4,7 @@
 //! accept arrives as the first payload of the PreKeyInit that opened our
 //! session with the sender (plan E2.3).
 
-use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
 use rekindle_db::repo::friends::Column;
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
@@ -94,6 +94,37 @@ async fn admit_invite(
     }
 }
 
+/// A request from a friend we accepted. With an established session it is
+/// a network retry (our receipt never reached them), and the call's return
+/// answers it. With none, or only our unanswered init, our accept never
+/// opened a session on their side (it failed, or was lost with a restart):
+/// it is opened again (B7), off the call's return.
+fn reopen_unanswered(host: &dyn FriendHost, sender: &str) {
+    let (owned, peer) = (host.owned(), sender.to_string());
+    host.scope().spawn_or_drop("reopen first contact", async move {
+        let host = owned.as_ref();
+        let (Ok(db), Ok(local), Ok(address)) = (
+            host.db(),
+            host.local_party(),
+            dm::frame::peer_address(&peer),
+        ) else {
+            return;
+        };
+        match rekindle_db::ratchet::is_established(&db, &local.owner(), &address).await {
+            Ok(true) => {
+                tracing::info!(from = %peer, "friend request from an accepted friend — a retry");
+            }
+            Ok(false) => {
+                tracing::info!(from = %peer,
+                    "friend request from an accepted friend with no session — opening it again");
+                crate::operations::prekeys::open_or_fail(host, &peer, DmTypeId::FriendAccept)
+                    .await;
+            }
+            Err(e) => tracing::warn!(from = %peer, error = %e, "session state unreadable"),
+        }
+    });
+}
+
 /// An incoming friend request, applied once: the same request again stores
 /// nothing new and raises no second event (plan audit G4). Whether it is
 /// done: `false` when a store failed, so the sender is not receipted.
@@ -114,9 +145,7 @@ pub(crate) async fn on_friend_request(
             return true;
         }
         Some(FriendshipState::Accepted) => {
-            // A network retry (our receipt never reached them): the call's
-            // return answers it, and nothing else changes.
-            tracing::info!(from = %req.sender_hex, "friend request from an accepted friend — a retry");
+            reopen_unanswered(host, req.sender_hex);
             return true;
         }
         Some(FriendshipState::Removing) => {

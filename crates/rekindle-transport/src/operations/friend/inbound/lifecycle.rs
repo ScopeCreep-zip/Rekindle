@@ -2,10 +2,10 @@
 //! unfriended (and the ack of our own unfriend), a friend's profile moving,
 //! and the crossing-request auto-accept.
 
-use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
 use rekindle_db::repo::friends::Column;
 use rekindle_types::friend::FriendshipState;
-use rekindle_types::subscription_events::{FriendEvent, NotificationEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::IncomingFriendRequest;
 use crate::operations::dm;
@@ -115,34 +115,6 @@ fn we_initiate_crossing(host: &dyn FriendHost, peer: &str) -> bool {
     local.owner().as_slice() < theirs.as_slice()
 }
 
-/// Open the session of a crossing request from the peer's prekey record
-/// (the profile their request named; plan E2.4), our accept as its first
-/// payload. A failure is told to the user; both sides are already
-/// `Accepted`, so a session reset recovers it.
-async fn open_crossing_session(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
-    let sent =
-        match crate::operations::prekeys::pick_bundle(host, req.sender_hex, req.profile_dht_key)
-            .await
-        {
-            Ok(bundle) => dm::send_friend_accept(host, req.sender_hex, bundle).await,
-            Err(e) => Err(e),
-        };
-    if let Err(e) = sent {
-        tracing::error!(peer = %req.sender_hex, error = %e, "cross-request session not opened");
-        let peer_label = state::label(host, req.sender_hex);
-        host.publish(SubscriptionEvent::Notification(
-            NotificationEvent::SystemAlert {
-                title: "Couldn't establish secure session".into(),
-                body: format!(
-                    "Cross-request auto-accept with {peer_label} could not open the secure \
-                 session: {e}. Reset the secure session from their friend menu after \
-                 verifying their safety number out-of-band."
-                ),
-            },
-        ));
-    }
-}
-
 /// Both sides sent a request: our pending friend becomes `Accepted`, our
 /// half of the handshake runs ([`we_initiate_crossing`]), and their profile is
 /// watched.
@@ -206,7 +178,11 @@ pub(super) async fn accept_crossing_request(
     // Exactly one side initiates: the lower identity opens the session with
     // its accept; the higher side's session opens when that arrives.
     if we_initiate_crossing(host, req.sender_hex) {
-        open_crossing_session(host, req).await;
+        // From the peer's prekey record (the profile their request named,
+        // stored above; plan E2.4). A failure shows on their row with Retry
+        // (B7); it is a first contact, never a session reset.
+        crate::operations::prekeys::open_or_fail(host, req.sender_hex, DmTypeId::FriendAccept)
+            .await;
     } else {
         tracing::info!(peer = %req.sender_hex, "cross-request: peer initiates — awaiting their accept");
     }

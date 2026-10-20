@@ -363,6 +363,23 @@ pub async fn discard_pending_init(
     .await
 }
 
+/// Whether our active session with `peer` is established: something
+/// decrypted under it. No session, or only our unanswered init, is not.
+///
+/// # Errors
+/// The database refused.
+pub async fn is_established(
+    db: &Db,
+    owner: &[u8; 32],
+    peer: &PeerAddress,
+) -> Result<bool, RatchetError> {
+    let (owner, peer) = (*owner, peer.clone());
+    in_transaction(db, move |conn| {
+        Ok(load(conn, &owner, &peer)?.is_established())
+    })
+    .await
+}
+
 /// End every session with `peer` (an unfriend, a block, a removal): the
 /// next message to them initiates from their prekey record. Unprocessed messages
 /// from them stay for their apply, which the friend gate then judges.

@@ -1,8 +1,9 @@
 //! Answering friend requests: accepting or rejecting one we received, and
 //! cancelling one we sent.
 
+use rekindle_codec::capnp_codec::direct::DmTypeId;
 use rekindle_types::friend::{FriendState, FriendshipState};
-use rekindle_types::subscription_events::{FriendEvent, NotificationEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::error::FriendError;
 use super::host::FriendHost;
@@ -20,51 +21,6 @@ async fn pending_request(
         rekindle_db::repo::pending_requests::answer(conn, &owner, &pk)
     })
     .await
-}
-
-/// Tell the user the secure session with `public_key` could not be set up.
-fn session_alert(host: &dyn FriendHost, body: String) {
-    host.publish(SubscriptionEvent::Notification(
-        NotificationEvent::SystemAlert {
-            title: "Couldn't establish secure session".into(),
-            body,
-        },
-    ));
-}
-
-/// Open the session with `public_key` from their prekey record (the
-/// profile their request named; plan E2.4, B2) and send our accept as its
-/// first payload. A failure is told to the user; the friendship stands,
-/// and their side stays pending until a session reaches them.
-async fn open_session(host: &dyn FriendHost, public_key: &str, profile_key: Option<&str>) {
-    let peer_label = state::label(host, public_key);
-    let Some(profile_key) = profile_key else {
-        tracing::warn!(peer = %public_key, "the request named no profile — no session to open");
-        session_alert(
-            host,
-            format!("{peer_label}'s request named no profile. Ask them to send it again."),
-        );
-        return;
-    };
-    let bundle = match crate::operations::prekeys::pick_bundle(host, public_key, profile_key).await
-    {
-        Ok(bundle) => bundle,
-        Err(e) => {
-            tracing::warn!(peer = %public_key, error = %e, "no prekey bundle to open the session");
-            session_alert(host, e.to_string());
-            return;
-        }
-    };
-    if let Err(e) = dm::send_friend_accept(host, public_key, bundle).await {
-        tracing::error!(peer = %public_key, error = %e, "friend accept not sent");
-        session_alert(
-            host,
-            format!(
-                "The secure session with {peer_label} could not be opened: {e}. Ask them to \
-                 send the request again."
-            ),
-        );
-    }
 }
 
 /// Accept the pending request from `public_key`: the friend is stored
@@ -121,7 +77,11 @@ pub async fn accept(
     let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
 
-    open_session(host, public_key, profile_key.as_deref()).await;
+    // Our accept opens the session from their record (the profile their
+    // request named; plan E2.4, B2). A failure shows on their row with
+    // Retry (B7); the friendship stands, and their side stays pending
+    // until a session reaches them.
+    crate::operations::prekeys::open_or_fail(host, public_key, DmTypeId::FriendAccept).await;
     if let Some(profile_key) = &profile_key {
         host.watch_friend(public_key, profile_key).await;
     }

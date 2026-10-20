@@ -10,7 +10,9 @@
 //! we asked opens a session this way ([`awaits_accept`], B11): the ids its
 //! init names are ours, and the init's own consumption checks them (B8).
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, SessionResetDecline, SessionResetRequest};
+use rekindle_codec::capnp_codec::direct::{
+    DirectBody, DmTypeId, SessionResetDecline, SessionResetRequest,
+};
 use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
 
 use super::error::FriendError;
@@ -86,7 +88,7 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
 
 /// Accept the reset `peer` asked for: a new session from a slot of their
 /// prekey record, carrying `SessionResetAccept`. Their request is answered
-/// only once that session is opened; until then it stays pending. When its review was held on their
+/// only once that session is opened and sent; until then it stays pending. When its review was held on their
 /// verified key changing (`VerifiedKeyChanged`), committing it was the
 /// user's acknowledgement (`acknowledges_key_change`): the change is
 /// acknowledged once the new session is recorded, since that record is
@@ -94,8 +96,8 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
 ///
 /// # Errors
 /// `NotFound` when no reset from them is pending; their record gave no
-/// bundle (the request stays pending), or the session, the
-/// acknowledgement or the send failed.
+/// bundle, or the session or the send failed (the request stays pending,
+/// and their row offers Retry), or the acknowledgement failed.
 pub async fn accept(
     host: &dyn FriendHost,
     peer: &str,
@@ -113,22 +115,18 @@ pub async fn accept(
                 .to_string(),
         ));
     }
-    let profile = state::friend(host, peer)
-        .and_then(|f| f.dht_record_key)
-        .ok_or_else(|| FriendError::Conflict(format!("{peer}'s profile is not known")))?;
-    let bundle = crate::operations::prekeys::pick_bundle(host, peer, &profile).await?;
-    let frame =
-        dm::frame::initiate_frame(host, peer, bundle, &DirectBody::SessionResetAccept).await?;
-    // Answered only once the session is opened: a record that cannot be
-    // read, or is not theirs (B3), leaves the request for the user to
-    // accept again or decline.
+    let kind = DmTypeId::SessionResetAccept;
+    if let Err(e) = crate::operations::prekeys::open_first_contact(host, peer, kind).await {
+        // Not answered: a record that cannot be read, or is not theirs
+        // (B3), or a send that failed shows on their row with Retry (B7),
+        // which re-sends this reset accept; the request stays until then.
+        crate::operations::prekeys::failed(host, peer, kind, e.to_string());
+        return Err(e);
+    }
     host.stores().incoming_resets.lock().remove(peer);
     if acknowledges_key_change {
         super::verification::acknowledge_key_change(host, peer).await?;
     }
-    dm::send_frame(host, peer, &frame)
-        .await
-        .map_err(|e| FriendError::Failed(format!("send SessionResetAccept: {e}")))?;
     tracing::info!(peer = %peer, "session reset accepted; the new session's init is out");
     Ok(())
 }

@@ -158,7 +158,7 @@ pub async fn ratchet_frame(
         Err(RatchetError::Crypto(CryptoError::NoSession(_)))
             if crate::operations::friend::state::is_accepted(host, to) =>
         {
-            let bundle = published_bundle(host, to).await?;
+            let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
             return initiate_frame(host, to, bundle, body).await;
         }
         Err(e) => return Err(ratchet_error(to, e)),
@@ -168,22 +168,6 @@ pub async fn ratchet_frame(
         sender: local.owner(),
         body: FrameBody::Ratchet(ratchet_body(message)),
     })
-}
-
-/// The bundle a session with an accepted friend's current identity opens
-/// from: a slot of the prekey record their profile names (plan E2.4).
-///
-/// # Errors
-/// They have no known profile, or no bundle can be picked from it.
-async fn published_bundle(host: &dyn FriendHost, to: &str) -> Result<PreKeyBundle, FriendError> {
-    let profile = crate::operations::friend::state::friend(host, to)
-        .and_then(|f| f.dht_record_key)
-        .ok_or_else(|| {
-            FriendError::Conflict(format!(
-                "No secure session with {to}, and none can be opened: their profile is not known"
-            ))
-        })?;
-    crate::operations::prekeys::pick_bundle(host, to, &profile).await
 }
 
 /// Open a session with `to` from its `bundle`, carrying `first` (an accept,

@@ -19,27 +19,39 @@ use crate::operations::friend::{session_reset, state, FriendHost};
 pub struct FirstContact {
     pub kind: DmTypeId,
     pub retried: bool,
+    /// It failed (B7) and waits for the user's Retry.
+    pub failed: bool,
 }
 
 /// Our init carrying `kind` to `peer` went out: remember it, keeping a
-/// resend's `retried`.
+/// resend's `retried` (a failed one is replaced).
 pub(crate) fn began_first_contact(host: &dyn FriendHost, peer: &str, kind: DmTypeId) {
     if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
+        let fresh = FirstContact {
+            kind,
+            retried: false,
+            failed: false,
+        };
         host.stores()
             .first_contacts
             .lock()
             .entry(peer.to_string())
-            .or_insert(FirstContact {
-                kind,
-                retried: false,
-            });
+            .and_modify(|c| {
+                if c.failed {
+                    *c = fresh;
+                }
+            })
+            .or_insert(fresh);
     }
 }
 
 /// `peer` answered under the session: the first contact landed.
 pub(crate) fn acknowledged(host: &dyn FriendHost, peer: &str) {
     if host.stores().first_contacts.lock().remove(peer).is_some() {
-        state::update(host, peer, |f| f.handshake_retrying = false);
+        state::update(host, peer, |f| {
+            f.handshake_retrying = false;
+            f.handshake_error = None;
+        });
     }
 }
 
@@ -145,16 +157,26 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
         }
     }
     let contact = host.stores().first_contacts.lock().get(sender).copied();
-    let Some(contact) = contact else {
-        // An init that carried a message, not a first contact: the session
-        // is gone, and the next send opens a new one from their record.
-        tracing::info!(from = %sender, "our session init was refused; the next send re-opens it");
+    let Some(contact) = contact.filter(|c| !c.failed) else {
+        // No first contact we remember (one lost with a restart, or an init
+        // that carried a message): an accepted friend has no session now,
+        // so it fails visibly with Retry rather than waiting for a send.
+        tracing::info!(from = %sender, "our session init was refused; no first contact pending");
+        if state::is_accepted(host, sender) {
+            super::failed(
+                host,
+                sender,
+                DmTypeId::FriendAccept,
+                "they refused the keys of our secure session".to_string(),
+            );
+        }
         return;
     };
     if contact.retried {
-        failed(
+        super::failed(
             host,
             sender,
+            contact.kind,
             "they refused our keys twice; try again later".to_string(),
         );
         return;
@@ -168,45 +190,7 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
     }));
     tracing::info!(from = %sender, kind = ?contact.kind, ?rejected.pq_prekey,
         "our first contact was refused; resending from a fresh key");
-    if let Err(e) = resend(host, sender, contact.kind).await {
-        failed(host, sender, e.to_string());
+    if let Err(e) = super::open_first_contact(host, sender, contact.kind).await {
+        super::failed(host, sender, contact.kind, e.to_string());
     }
-}
-
-/// The first contact again, from another slot of their record.
-async fn resend(
-    host: &dyn FriendHost,
-    peer: &str,
-    kind: DmTypeId,
-) -> Result<(), crate::operations::friend::FriendError> {
-    let profile = state::friend(host, peer)
-        .and_then(|f| f.dht_record_key)
-        .ok_or_else(|| {
-            crate::operations::friend::FriendError::Conflict(format!(
-                "{peer}'s profile is not known"
-            ))
-        })?;
-    let bundle = super::pick_bundle(host, peer, &profile).await?;
-    match kind {
-        DmTypeId::SessionResetAccept => {
-            let frame =
-                dm::frame::initiate_frame(host, peer, bundle, &DirectBody::SessionResetAccept)
-                    .await?;
-            dm::send_frame(host, peer, &frame).await
-        }
-        _ => dm::send_friend_accept(host, peer, bundle).await,
-    }
-}
-
-/// B7: the first contact cannot be completed; the user sees it with Retry.
-fn failed(host: &dyn FriendHost, peer: &str, reason: String) {
-    host.stores().first_contacts.lock().remove(peer);
-    state::update(host, peer, |f| {
-        f.handshake_retrying = false;
-        f.handshake_error = Some(reason.clone());
-    });
-    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeFailed {
-        peer_key: peer.to_string(),
-        reason,
-    }));
 }
