@@ -94,8 +94,14 @@ fn channel_send_checks_ref_and_body() {
     assert!(!rejected(&send("general", "hello")));
     assert!(rejected(&send("general", "")));
     assert!(rejected(&send("general", "  \n ")));
-    assert!(rejected(&send("general", &"a".repeat(MAX_MESSAGE_LEN + 1))));
-    assert!(!rejected(&send("general", &"é".repeat(MAX_MESSAGE_LEN))));
+    assert!(rejected(&send(
+        "general",
+        &"a".repeat(rekindle_types::key_format::MAX_MESSAGE_LEN + 1)
+    )));
+    assert!(!rejected(&send(
+        "general",
+        &"é".repeat(rekindle_types::key_format::MAX_MESSAGE_LEN)
+    )));
     assert!(rejected(&send("general", "bell\x07")));
     assert!(rejected(&send("", "hello")));
 }

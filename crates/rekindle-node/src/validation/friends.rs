@@ -1,22 +1,18 @@
 //! Friends, direct messages and session resets (plan E2.1).
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
-use rekindle_types::key_format::MAX_NOTE_LEN;
+use rekindle_types::key_format::{MAX_INVITE_ID_LEN, MAX_NOTE_LEN};
+use rekindle_types::presence::limits;
 
-use super::{message_body, name, opt, page, public_key, text, Checked};
+use super::{message_body, name, opt, page, public_key, reject, text, Checked};
 
 /// A peer's display name as a request carries it (theirs, or what the user
-/// typed for them).
+/// typed for them): the shared rule a received one meets too.
 fn peer_name(s: &str) -> Checked {
-    text(
-        s,
-        rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN,
-        "display name",
-    )
+    limits::peer_display_name(s)
+        .map(drop)
+        .map_err(|e| reject("display name", &e))
 }
-
-/// The longest invite id: a hyphenated UUID is 36.
-const MAX_INVITE_ID_LEN: usize = 64;
 
 /// A friend invite link, bounded before anything decodes it (its signature
 /// and recency are checked where it is reviewed).

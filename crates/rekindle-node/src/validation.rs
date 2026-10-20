@@ -10,8 +10,8 @@
 use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{
-    self, KeyFormatError, MAX_DESCRIPTION_LEN, MAX_MESSAGE_LEN, MAX_NAME_LEN, MAX_NOTE_LEN,
-    MAX_STATUS_LEN, MAX_TOPIC_LEN,
+    self, KeyFormatError, MAX_DESCRIPTION_LEN, MAX_NAME_LEN, MAX_NOTE_LEN, MAX_STATUS_LEN,
+    MAX_TOPIC_LEN,
 };
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
@@ -75,6 +75,14 @@ fn text(s: &str, max: usize, label: &str) -> Checked {
         .map_err(|e| reject(label, &e))
 }
 
+/// A message body: the shared rule (not blank, bounded, no format
+/// characters), as a received one meets too.
+fn message_body(body: &str) -> Checked {
+    key_format::message_body(body)
+        .map(drop)
+        .map_err(|e| reject("message body", &e))
+}
+
 fn opt<T: ?Sized>(value: Option<&T>, check: impl FnOnce(&T) -> Checked) -> Checked {
     value.map_or(Ok(()), check)
 }
@@ -86,13 +94,6 @@ fn key_scope(s: &str) -> Checked {
         return Ok(());
     }
     hex16(s, "channel id")
-}
-
-fn message_body(body: &str) -> Checked {
-    if body.trim().is_empty() {
-        return Err(IpcResponse::error(400, "message body cannot be empty"));
-    }
-    text(body, MAX_MESSAGE_LEN, "message body")
 }
 
 fn page(limit: u32) -> Checked {
