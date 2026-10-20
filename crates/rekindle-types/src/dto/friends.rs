@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::friend::{FriendshipState, GameInfoState, UserStatus};
 
+/// The group a friend in no group of ours is listed under.
+pub const DEFAULT_FRIEND_GROUP: &str = "Friends";
+
 /// A friend on the buddy list. Presence is shown only for an accepted
 /// friend; a pending one reads offline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +21,9 @@ pub struct Friend {
     pub status_message: Option<String>,
     pub game_info: Option<GameInfoState>,
     pub group: Option<String>,
+    /// The group the buddy list shows them under: `group`, or
+    /// [`DEFAULT_FRIEND_GROUP`] for none.
+    pub group_label: String,
     pub unread_count: u32,
     pub last_seen_at: Option<i64>,
     pub friendship_state: FriendshipState,
@@ -25,6 +31,9 @@ pub struct Friend {
     pub handshake_error: Option<String>,
     /// Our first contact is being resent from a fresh key (plan E2.4).
     pub handshake_retrying: bool,
+    /// Their keys are not signed by the identity we know for them: a trust
+    /// alert, shown on their row until it is resolved (plan E2.4, B3).
+    pub identity_pin_mismatch: bool,
 }
 
 impl Friend {
@@ -44,11 +53,16 @@ impl Friend {
             status_message: friend.status_message.clone().filter(|_| accepted),
             game_info: friend.game_info.clone().filter(|_| accepted),
             group: friend.group.clone(),
+            group_label: friend
+                .group
+                .clone()
+                .unwrap_or_else(|| DEFAULT_FRIEND_GROUP.to_string()),
             unread_count: friend.unread_count,
             last_seen_at: friend.last_seen_at,
             friendship_state: friend.friendship_state,
             handshake_error: friend.handshake_error.clone(),
             handshake_retrying: friend.handshake_retrying,
+            identity_pin_mismatch: friend.identity_pin_mismatch,
         }
     }
 }

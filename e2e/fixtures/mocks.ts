@@ -141,10 +141,14 @@ export const LOGIN_SUCCESS_HANDLER = `
           notifies: "nobody",
           proof: "passphrase",
           expiresAtMs: Date.now() + 60000,
+          cancelSends: false,
         },
       };
     case "intent_commit":
       return { deleted: args.intentId };
+    case "intent_cancel":
+      // The error the cancelled call ends with (CommandError::Cancelled).
+      return { type: "cancelled" };
     case "login":
       return { publicKey: "abc123def456", displayName: "TestUser" };
     case "create_identity":

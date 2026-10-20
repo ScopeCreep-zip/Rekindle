@@ -152,16 +152,31 @@ pub async fn send_dm(
         reply_to,
         expire_seconds: 0,
     });
-    if let Err(e) = send_to_peer(host, to, &message).await {
+    let sent = send_to_peer(host, to, &message).await;
+    let send_state = if sent.is_ok() {
+        rekindle_types::message::SendState::Sent
+    } else {
+        rekindle_types::message::SendState::Failed
+    };
+    let (ok, mid) = (owner.clone(), message_id.clone());
+    if let Err(e) = state::db_call!(host, "store the send state", move |conn| {
+        rekindle_db::repo::messages::set_send_state(conn, &ok, &mid, send_state, None)
+    })
+    .await
+    {
+        tracing::warn!(error = %e, "send state not stored");
+    }
+    host.publish(SubscriptionEvent::ChannelMessage(
+        ChannelMessageEvent::DirectMessageStateChanged {
+            message_id: message_id.clone(),
+            conversation_id: to.to_string(),
+            send_state,
+        },
+    ));
+    if let Err(e) = sent {
         tracing::warn!(error = %e, "DM send failed — message persisted locally");
         return Err(e);
     }
-    host.publish(SubscriptionEvent::ChannelMessage(
-        ChannelMessageEvent::DirectMessageAcknowledged {
-            message_id: timestamp.cast_unsigned(),
-            conversation_id: to.to_string(),
-        },
-    ));
     Ok(DmMessage {
         id: stored.id,
         message_id: Some(message_id),
@@ -169,8 +184,7 @@ pub async fn send_dm(
         body: body.to_string(),
         timestamp,
         is_own: true,
-        // As the row stores it (the column default) until E2.5's outbox.
-        send_state: rekindle_types::message::SendState::Delivered,
+        send_state,
     })
 }
 
@@ -217,7 +231,28 @@ pub async fn mark_read(host: &dyn FriendHost, peer: &str) -> Result<(), FriendEr
     })
     .await?;
     state::update(host, peer, |f| f.unread_count = 0);
+    publish_unread(host, peer, 0);
     Ok(())
+}
+
+/// Count one more unread message from `peer` and tell the frontends the
+/// count, which they render as is.
+pub(crate) fn count_unread(host: &dyn FriendHost, peer: &str) {
+    let mut count = 0;
+    state::update(host, peer, |f| {
+        f.unread_count += 1;
+        count = f.unread_count;
+    });
+    publish_unread(host, peer, count);
+}
+
+fn publish_unread(host: &dyn FriendHost, peer: &str, count: u32) {
+    host.publish(SubscriptionEvent::UnreadChanged {
+        context: rekindle_types::subscription_events::UnreadContext::Dm {
+            peer_key: peer.to_string(),
+        },
+        count,
+    });
 }
 
 /// The latest message of each direct conversation, newest first.

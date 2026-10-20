@@ -160,7 +160,7 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
             conversation_id,
             ..
         } => EventScope::direct(peer_key, conversation_id),
-        ChannelMessageEvent::DirectMessageAcknowledged {
+        ChannelMessageEvent::DirectMessageStateChanged {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
         // An invitation names a conversation we do not show yet; it is
@@ -186,7 +186,9 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::KeyChanged { peer_key, .. }
         | FriendEvent::HandshakeFailed { peer_key, .. }
         | FriendEvent::HandshakeRetrying { peer_key }
-        | FriendEvent::IdentityPinMismatch { peer_key, .. } => peer_key,
+        | FriendEvent::IdentityPinMismatch { peer_key, .. }
+        | FriendEvent::VerificationChanged { peer_key, .. }
+        | FriendEvent::BlockChanged { peer_key, .. } => peer_key,
     }
 }
 
@@ -244,9 +246,10 @@ mod tests {
         });
         assert_eq!(group.scope(), EventScope::Conversation("VLD0:rec".into()));
         let ack =
-            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageAcknowledged {
-                message_id: 7,
+            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageStateChanged {
+                message_id: "m".into(),
                 conversation_id: "pk".into(),
+                send_state: crate::message::SendState::Sent,
             });
         assert_eq!(ack.scope(), EventScope::Peer("pk".into()));
     }

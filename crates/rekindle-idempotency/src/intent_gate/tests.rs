@@ -465,6 +465,8 @@ fn cancelling_a_hold_hands_back_its_cancel_action() {
             0,
         )
         .unwrap();
+    // Its Cancel sends something, so only an explicit Cancel may cancel it.
+    assert!(hold.cancel_sends);
     assert_eq!(
         gate.cancel(hold.intent_id, &who(2)),
         Err(GateError::UnknownIntent),
@@ -477,6 +479,7 @@ fn cancelling_a_hold_hands_back_its_cancel_action() {
         "gone"
     );
     let plain = held(&gate, s);
+    assert!(!plain.cancel_sends);
     assert_eq!(gate.cancel(plain.intent_id, &ME), Ok(None));
 }
 

@@ -35,14 +35,21 @@ pub async fn intent_commit(
     Ok(done)
 }
 
-/// Drop a held action (`IpcRequest::IntentCancel`).
+/// Drop a held action (`IpcRequest::IntentCancel`). Its value is the
+/// error the cancelled call ends with (`CommandError::Cancelled`), so the
+/// window rejects that call with the Host's answer, never one of its own.
 #[tauri::command]
 pub async fn intent_cancel(
     intent_id: IntentId,
     state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
+) -> Result<Done<CommandError>, CommandError> {
     state.pending_link_opens.lock().remove(&intent_id);
-    host_call::call(&state, IpcRequest::IntentCancel { intent_id }).await
+    let done: Done<serde_json::Value> =
+        host_call::call(&state, IpcRequest::IntentCancel { intent_id }).await?;
+    Ok(Done {
+        value: CommandError::Cancelled,
+        undo: done.undo,
+    })
 }
 
 /// Take back an action that ran, while its offer lasts (`IpcRequest::Undo`).

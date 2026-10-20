@@ -25,7 +25,7 @@ mod voice;
 
 pub use call::{CallEvent, DirectCallInfo};
 pub use channel::ChannelMessageEvent;
-pub use crypto::{CryptoEvent, PrekeyPublishKind};
+pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
@@ -175,7 +175,7 @@ impl SubscriptionEvent {
                 // Direct-conversation events belong to a peer, not a
                 // community.
                 ChannelMessageEvent::DirectMessageReceived { .. }
-                | ChannelMessageEvent::DirectMessageAcknowledged { .. }
+                | ChannelMessageEvent::DirectMessageStateChanged { .. }
                 | ChannelMessageEvent::DirectConversationInvited { .. }
                 | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },

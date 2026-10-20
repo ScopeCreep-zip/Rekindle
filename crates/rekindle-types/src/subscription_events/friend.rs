@@ -89,4 +89,13 @@ pub enum FriendEvent {
         peer_key: String,
         display_name: String,
     },
+    /// We marked a peer's identity key verified, or cleared it (plan E2.3):
+    /// every window showing their badge or safety number re-renders.
+    /// Triggered by: the `IdentityMarkVerified` / `IdentityClearVerification`
+    /// actions.
+    VerificationChanged { peer_key: String, verified: bool },
+    /// We blocked or unblocked an identity: the block list changed. A block
+    /// also removes the friend ([`Self::Removed`]).
+    /// Triggered by: the `FriendBlock` / `FriendUnblock` actions.
+    BlockChanged { peer_key: String, blocked: bool },
 }

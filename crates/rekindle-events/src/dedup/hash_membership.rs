@@ -246,5 +246,15 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"pin_mismatch|");
             h.update(peer_key.as_bytes());
         }
+        FriendEvent::VerificationChanged { peer_key, verified } => {
+            h.update(b"verified|");
+            h.update(peer_key.as_bytes());
+            h.update(&[u8::from(*verified)]);
+        }
+        FriendEvent::BlockChanged { peer_key, blocked } => {
+            h.update(b"blocked|");
+            h.update(peer_key.as_bytes());
+            h.update(&[u8::from(*blocked)]);
+        }
     }
 }

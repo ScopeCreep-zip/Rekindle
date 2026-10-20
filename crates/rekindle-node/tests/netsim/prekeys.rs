@@ -10,7 +10,7 @@ use rekindle_netsim::{Fault, Netsim};
 use rekindle_types::dht_layout::prekeys::{slot_subkey, HEAD, SLOT_COUNT};
 use rekindle_types::dht_layout::profile::PREKEY_RECORDS;
 use rekindle_types::subscription_events::{
-    CryptoEvent, FriendEvent, NotificationEvent, PrekeyPublishKind, SubscriptionEvent,
+    CryptoEvent, FriendEvent, NotificationEvent, SubscriptionEvent,
 };
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
@@ -225,10 +225,8 @@ async fn a_refill_lost_in_a_crash_is_published_at_the_next_unlock() {
             rae_events.any(|e| {
                 matches!(
                     e,
-                    SubscriptionEvent::Crypto(CryptoEvent::PrekeyRecordPublished {
-                        kind: PrekeyPublishKind::OneTimeRefilled,
-                        ..
-                    })
+                    SubscriptionEvent::Crypto(CryptoEvent::PrekeyRecordPublished { slots, .. })
+                        if !slots.is_empty()
                 )
             })
         })

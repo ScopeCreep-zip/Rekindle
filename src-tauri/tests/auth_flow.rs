@@ -83,6 +83,7 @@ fn code(error: &CommandError) -> u32 {
     match error {
         CommandError::Failed { code, .. } => *code,
         CommandError::IntentRequired(review) => panic!("held for review: {review:?}"),
+        CommandError::Cancelled => panic!("cancelled"),
     }
 }
 

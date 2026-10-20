@@ -107,6 +107,9 @@ export interface FriendInfo {
   statusMessage: string | null;
   gameInfo: GameStatus | null;
   group: string | null;
+  /** The group the buddy list shows them under: `group`, or the Host's
+   *  default group name when `group` is null. */
+  groupLabel: string;
   unreadCount: number;
   lastSeenAt: number | null;
   friendshipState: "pendingOut" | "accepted";
@@ -114,6 +117,9 @@ export interface FriendInfo {
   handshakeError: string | null;
   /** Our first contact is being resent from a fresh key (plan E2.4, B6). */
   handshakeRetrying: boolean;
+  /** Their keys are not signed by the identity we know for them: a trust
+   *  alert shown on their row until it is resolved (plan E2.4, B3). */
+  identityPinMismatch: boolean;
 }
 
 export interface GameStatus {

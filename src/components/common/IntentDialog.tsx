@@ -13,7 +13,10 @@ import {
  * TypeSubject a text field for the object's own name (paste allowed);
  * Passphrase a password field (paste allowed). Only the final button of a
  * Destructive or Protected review carries the warning style. Kobalte's
- * Dialog traps focus and returns it to the opener; Esc cancels.
+ * Dialog traps focus and returns it to the opener; Esc cancels, except a
+ * review whose cancel sends something (`cancelSends`, the decline of a
+ * session-reset request): only its explicit Cancel button cancels it, never
+ * Esc or a click outside.
  *
  * A security surface (plan E7.7.0): what the decision rests on (the
  * subject, the escalations and facts, what undo and notification apply,
@@ -40,6 +43,11 @@ const IntentDialog: Component = () => {
   });
 
   const review = () => intentState.review;
+  // A review whose cancel acts (`cancelSends`) is dismissed only by Cancel.
+  const guarded = (): boolean => review()?.cancelSends === true;
+  function holdOpen(e: Event): void {
+    if (guarded()) e.preventDefault();
+  }
   // The box states the salient fact: the first one, else the escalation
   // that raised the class (a verified key that changed, plan E2.3).
   const acknowledgement = (r: NonNullable<ReturnType<typeof review>>): string => {
@@ -94,7 +102,7 @@ const IntentDialog: Component = () => {
     <Dialog
       open={review() !== null}
       onOpenChange={(open) => {
-        if (!open) void cancelReview();
+        if (!open && !guarded()) void cancelReview();
       }}
       modal={true}
     >
@@ -103,7 +111,12 @@ const IntentDialog: Component = () => {
         <div class="modal-overlay-positioner">
           <Show when={review()}>
             {(r) => (
-              <Dialog.Content class="modal-container modal-container-sm intent-dialog">
+              <Dialog.Content
+                class="modal-container modal-container-sm intent-dialog"
+                onEscapeKeyDown={holdOpen}
+                onPointerDownOutside={holdOpen}
+                onInteractOutside={holdOpen}
+              >
                 <div class="modal-header">
                   <Dialog.Title class="modal-title">{kindPhrase(r().kind)}</Dialog.Title>
                 </div>

@@ -30,6 +30,8 @@ export const accountCommands = {
 
   // Direct messages and friends: Host calls (plan E2.1). The windows learn
   // their effects from the `Friend`/`ChannelMessage` events.
+  /** Resolves with the stored message (`sendState: "sent"`); a failed send
+   *  rejects, and its stored row reads `failed` in the history. */
   sendMessage: (to: string, body: string, replyTo: string | null = null) =>
     hostInvoke<DmMessage>("send_message", { to, body, replyTo }),
   sendTyping: (peerId: string, typing: boolean) =>

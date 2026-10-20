@@ -44,23 +44,17 @@ pub enum CryptoEvent {
         slot_index: u32,
         segment_index: u32,
     },
-    /// The prekey maintenance published to our prekey record (plan E2.4):
-    /// the head after an SPK and PQ-LR rotation, or a one-time slot.
-    /// Triggered by: the "prekey maintenance" task and the slot refill
-    /// after a first contact consumed one.
+    /// One publish to our prekey record (plan E2.4): the head after an SPK
+    /// and PQ-LR rotation, the one-time slots refilled or topped up, or
+    /// both. One event per publish call, so a new identity's first set is
+    /// one event, not 101.
+    /// Triggered by: the unlock's first set and reconciliation, the
+    /// "prekey maintenance" task and the slot refill after a first contact
+    /// consumed one.
     PrekeyRecordPublished {
-        kind: PrekeyPublishKind,
-        /// The record subkey written (0: the head; 1..=100: a slot).
-        subkey: u32,
+        /// The head (subkey 0) was written.
+        head: bool,
+        /// The one-time slots written (1..=100), ascending.
+        slots: Vec<u32>,
     },
-}
-
-/// What a [`CryptoEvent::PrekeyRecordPublished`] wrote.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum PrekeyPublishKind {
-    /// A new signed prekey and PQ last-resort key (the head).
-    SignedRotated,
-    /// A one-time slot, refilled or topped up.
-    OneTimeRefilled,
 }

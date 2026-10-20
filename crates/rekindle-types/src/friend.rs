@@ -49,6 +49,11 @@ pub struct FriendState {
     /// Our first contact is being resent from a fresh key after the peer
     /// rejected the one it used (plan E2.4, B6). Not stored.
     pub handshake_retrying: bool,
+    /// Their prekey record is not signed by the identity we hold for them
+    /// (`IdentityPinMismatch`, plan E2.4 B3): no session opens until the
+    /// user resolves it. Not stored; it stays set until a record of theirs
+    /// verifies, and the next read raises it again after an unlock.
+    pub identity_pin_mismatch: bool,
 }
 
 impl FriendState {
@@ -75,6 +80,7 @@ impl FriendState {
             friendship_state,
             handshake_error: None,
             handshake_retrying: false,
+            identity_pin_mismatch: false,
         }
     }
 }

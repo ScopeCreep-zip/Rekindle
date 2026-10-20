@@ -17,6 +17,8 @@
  * {@link isLegacy} discriminates the two.
  */
 
+import type { SendState } from "../commands/types";
+
 /** DM / conversation message from the daemon vocabulary. */
 export interface DirectMessageReceived {
   peerKey: string;
@@ -31,9 +33,18 @@ export interface DirectMessageReceived {
   isOwn: boolean;
 }
 
+/** A direct message we sent changed delivery state: `sent` when it went
+ *  out or was queued, `failed` when its send failed. `messageId` is its
+ *  client id (`DmMessage.messageId`, `serverMessageId` of a received one). */
+export interface DirectMessageStateChanged {
+  messageId: string;
+  conversationId: string;
+  sendState: SendState;
+}
+
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
-  | { directMessageAcknowledged: { messageId: number; conversationId: string } }
+  | { directMessageStateChanged: DirectMessageStateChanged }
   | {
       directConversationInvited: {
         from: string;
@@ -81,7 +92,9 @@ export type FriendEvent =
   | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } }
   | { handshakeRetrying: { peerKey: string } }
-  | { identityPinMismatch: { peerKey: string; displayName: string } };
+  | { identityPinMismatch: { peerKey: string; displayName: string } }
+  | { verificationChanged: { peerKey: string; verified: boolean } }
+  | { blockChanged: { peerKey: string; blocked: boolean } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
 export interface DirectCallInfo {

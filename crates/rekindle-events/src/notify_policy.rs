@@ -64,6 +64,20 @@ pub fn os_notification_for(
     event: &SubscriptionEvent,
     inputs: &NotifyInputs,
 ) -> Option<OsNotification> {
+    // A security alert: the user must learn that a friend's keys are not
+    // signed by the identity they know, whatever silences the rest (the
+    // "show notifications" preference, Do Not Disturb, quiet hours, Busy,
+    // a call).
+    if let SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch { display_name, .. }) = event
+    {
+        return Some(OsNotification::new(
+            "Identity key mismatch",
+            format!(
+                "{display_name}'s keys are not signed by the identity you know. Nothing was \
+                 sent; verify their safety number."
+            ),
+        ));
+    }
     if !inputs.enabled || inputs.do_not_disturb {
         return None;
     }
@@ -106,16 +120,6 @@ pub fn os_notification_for(
                 format!("{title} starts in {minutes_until_start} min"),
             )
         }),
-        // Trust changed under a friend: always shown, like a system alert.
-        SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch { display_name, .. }) => {
-            Some(OsNotification::new(
-                "Identity key mismatch",
-                format!(
-                    "{display_name}'s keys are not signed by the identity you know. Nothing \
-                     was sent; verify their safety number."
-                ),
-            ))
-        }
         _ => None,
     }
 }
@@ -235,5 +239,33 @@ mod tests {
         let shown = os_notification_for(&mismatch, &quiet).expect("a notification");
         assert_eq!(shown.title, "Identity key mismatch");
         assert!(shown.body.starts_with("Bob's keys"));
+    }
+
+    #[test]
+    fn an_identity_pin_mismatch_is_shown_through_dnd_and_disabled_notifications() {
+        let mismatch = SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
+            peer_key: "b".into(),
+            display_name: "Bob".into(),
+        });
+        for silenced in [
+            NotifyInputs::default(),
+            NotifyInputs {
+                do_not_disturb: true,
+                ..on()
+            },
+            NotifyInputs {
+                do_not_disturb: true,
+                in_call_dnd: true,
+                call_active: true,
+                ..NotifyInputs::default()
+            },
+        ] {
+            assert!(
+                os_notification_for(&mismatch, &silenced).is_some(),
+                "silenced by {silenced:?}"
+            );
+            // Everything else stays silent.
+            assert_eq!(os_notification_for(&message(), &silenced), None);
+        }
     }
 }

@@ -30,6 +30,10 @@ pub enum CommandError {
     /// Held by the intent gate: render the review and commit it with the
     /// proof it asks for.
     IntentRequired(IntentReview),
+    /// The user cancelled the review the call waited on, so it did not run
+    /// (a backend hold's own cancel action ran instead). `intent_cancel`
+    /// answers it, and the cancelled call rejects with it.
+    Cancelled,
 }
 
 impl CommandError {
@@ -49,6 +53,7 @@ impl std::fmt::Display for CommandError {
         match self {
             Self::Failed { message, .. } => f.write_str(message),
             Self::IntentRequired(review) => write!(f, "{:?} needs your review", review.kind),
+            Self::Cancelled => f.write_str("Cancelled"),
         }
     }
 }

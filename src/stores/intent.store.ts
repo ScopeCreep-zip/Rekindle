@@ -11,13 +11,14 @@
 
 import { createStore } from "solid-js/store";
 import {
-  cancelledError,
   hostInvoke,
   invoke,
   registerIntentPresenter,
   registerUndoPresenter,
 } from "../ipc/invoke";
-import type { Done, IntentProof, IntentReview, UndoOffer } from "../ipc/commands/dto";
+import type {
+  CommandError, Done, IntentProof, IntentReview, UndoOffer,
+} from "../ipc/commands/dto";
 import { isCommandError } from "../ipc/commands/dto";
 import { errorMessage } from "../utils/error";
 
@@ -92,16 +93,22 @@ export async function commitReview(proof: IntentProof): Promise<void> {
   }
 }
 
-/** Cancel the open review: the Host drops it and the call is cancelled. */
+/** Cancel the open review: the Host drops it (running its own cancel
+ *  action for a `cancelSends` review) and the call rejects with the Host's
+ *  answer, `{ type: "cancelled" }`, or with the error `intent_cancel` met
+ *  (the review had expired). */
 export async function cancelReview(): Promise<void> {
   const pending = queue[0];
-  if (pending === undefined) return;
+  if (pending === undefined || intentState.busy) return;
+  setIntentState({ busy: true, error: null });
   try {
-    await invoke("intent_cancel", { intentId: pending.review.intentId });
-  } catch {
-    // Already expired or committed elsewhere: the call is cancelled either way.
+    const done = await invoke<Done<CommandError>>("intent_cancel", {
+      intentId: pending.review.intentId,
+    });
+    pending.reject(done.value);
+  } catch (e) {
+    pending.reject(e);
   }
-  pending.reject(cancelledError());
   settle();
 }
 

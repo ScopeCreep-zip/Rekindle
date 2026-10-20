@@ -150,7 +150,6 @@ async fn direct_message(
             return false;
         }
     }
-    state::update(host, sender, |f| f.unread_count += 1);
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DirectMessageReceived {
             peer_key: sender.to_string(),
@@ -165,5 +164,6 @@ async fn direct_message(
             is_own: false,
         },
     ));
+    crate::operations::dm::count_unread(host, sender);
     true
 }

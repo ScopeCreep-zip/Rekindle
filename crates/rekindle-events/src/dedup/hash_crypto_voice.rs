@@ -63,18 +63,13 @@ pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
             h.update(b"|");
             h.update(&segment_index.to_le_bytes());
         }
-        CryptoEvent::PrekeyRecordPublished { kind, subkey } => {
+        CryptoEvent::PrekeyRecordPublished { head, slots } => {
             h.update(b"prekey_record|");
-            h.update(match kind {
-                rekindle_types::subscription_events::PrekeyPublishKind::SignedRotated => {
-                    b"spk".as_slice()
-                }
-                rekindle_types::subscription_events::PrekeyPublishKind::OneTimeRefilled => {
-                    b"opk".as_slice()
-                }
-            });
-            h.update(b"|");
-            h.update(&subkey.to_le_bytes());
+            h.update(&[u8::from(*head)]);
+            for slot in slots {
+                h.update(b"|");
+                h.update(&slot.to_le_bytes());
+            }
         }
     }
 }

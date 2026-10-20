@@ -213,8 +213,14 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         // System events (announcements, raids, automod, lockdowns, sync,
         // audit) are handled by the community dispatcher.
         | SubscriptionEvent::System(_)
-        | SubscriptionEvent::UnreadChanged { .. } => "community-event",
-        SubscriptionEvent::ChannelMessage(_)
+        | SubscriptionEvent::UnreadChanged {
+            context: rekindle_types::subscription_events::UnreadContext::Channel { .. },
+            ..
+        } => "community-event",
+        // A DM's or the friend requests' unread count goes to the friend
+        // and chat handlers.
+        SubscriptionEvent::UnreadChanged { .. }
+        | SubscriptionEvent::ChannelMessage(_)
         | SubscriptionEvent::Typing(_)
         | SubscriptionEvent::Call(_)
         | SubscriptionEvent::Friend(_) => "chat-event",
@@ -335,6 +341,12 @@ pub fn spawn_host_stream(
                             );
                         }
                         crate::os_notify::notify(&app, &state, &sequenced.event);
+                        // A review the backend began is answered on the
+                        // buddy list: bring it forward (never recreated,
+                        // which would drop the review).
+                        if matches!(sequenced.event, SubscriptionEvent::IntentPending(_)) {
+                            crate::windows::surface_buddy_list(&app);
+                        }
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
                             state.event_router.deliver(&envelope, &event.audience());
@@ -481,9 +493,10 @@ mod tests {
     #[test]
     fn a_direct_message_reaches_its_chat_window_only() {
         let a = sub(SubscriptionEvent::ChannelMessage(
-            ChannelMessageEvent::DirectMessageAcknowledged {
-                message_id: 1,
+            ChannelMessageEvent::DirectMessageStateChanged {
+                message_id: "01900000-0000-7000-8000-000000000002".into(),
                 conversation_id: PK.into(),
+                send_state: rekindle_types::message::SendState::Sent,
             },
         ));
         assert!(a.includes("buddy-list"));

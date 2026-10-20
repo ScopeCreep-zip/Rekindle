@@ -62,6 +62,10 @@ pub async fn block(
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));
+    host.publish(SubscriptionEvent::Friend(FriendEvent::BlockChanged {
+        peer_key: public_key.to_string(),
+        blocked: true,
+    }));
     tracing::info!(public_key = %public_key, "user blocked and profile key rotated");
     Ok(())
 }
@@ -82,6 +86,10 @@ pub async fn unblock(host: &dyn FriendHost, public_key: &str) -> Result<(), Frie
             "{public_key} is not blocked"
         )));
     }
+    host.publish(SubscriptionEvent::Friend(FriendEvent::BlockChanged {
+        peer_key: public_key.to_string(),
+        blocked: false,
+    }));
     tracing::info!(public_key = %public_key, "user unblocked");
     Ok(())
 }

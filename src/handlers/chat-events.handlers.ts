@@ -3,7 +3,7 @@ import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { isLegacy } from "../ipc/channels/chat_events";
-import type { FriendEvent } from "../ipc/channels/chat_events";
+import type { DirectMessageStateChanged, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { setNotificationState } from "../stores/notification.store";
 import { communityState, setCommunityState } from "../stores/community.store";
@@ -13,25 +13,16 @@ import { handleRefreshFriends } from "../actions/buddy.actions";
 import type { Message } from "../stores/chat.store";
 import { transformNewFriend } from "../utils/transformers";
 
-// Architecture §16 — flip the optimistic "sending"/"queued" status
-// on the matching outbound DM to "sent". The Rust ack carries the
-// SQLite-row timestamp (ms); the optimistic frontend used a slightly
-// earlier `Date.now()` so we accept a small fuzz window. The matching
-// ack names its conversation (the peer's key for a 1:1 DM), so only
-// that conversation is searched.
-function applyMessageAck(messageId: number, conversationId: string): void {
-  const FUZZ_MS = 5000;
-  const convo = chatState.conversations[conversationId];
+// A DM we sent changed delivery state (`directMessageStateChanged`): the
+// message whose client id (`serverMessageId`) it names takes the state the
+// backend names. No matching or inference happens here.
+function applyMessageState(state: DirectMessageStateChanged): void {
+  const convo = chatState.conversations[state.conversationId];
   if (!convo) return;
-  const idx = convo.messages.findIndex(
-    (m) =>
-      m.isOwn &&
-      (m.status === "sending" || m.status === "queued") &&
-      Math.abs(m.timestamp - messageId) <= FUZZ_MS,
-  );
-  if (idx >= 0) {
-    setChatState("conversations", conversationId, "messages", idx, "status", "sent" as const);
-  }
+  const idx = convo.messages.findIndex((m) => m.serverMessageId === state.messageId);
+  if (idx < 0) return;
+  const status = state.sendState === "failed" || state.sendState === "queued" ? state.sendState : "sent";
+  setChatState("conversations", state.conversationId, "messages", idx, "status", status);
 }
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
@@ -56,9 +47,8 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
             setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
           }
         });
-      } else if ("directMessageAcknowledged" in msg) {
-        const ack = msg.directMessageAcknowledged;
-        applyMessageAck(ack.messageId, ack.conversationId);
+      } else if ("directMessageStateChanged" in msg) {
+        applyMessageState(msg.directMessageStateChanged);
       }
       return;
     }
@@ -241,11 +231,11 @@ export function subscribeDmChatEvents(
       return;
     }
 
-    // Our own sent message reached the peer: flip it to sent in this
-    // window too (plan C7.28; the buddy list's arm does the same).
-    if ("channelMessage" in event && "directMessageAcknowledged" in event.channelMessage) {
-      const ack = event.channelMessage.directMessageAcknowledged;
-      if (ack.conversationId === peerId) applyMessageAck(ack.messageId, peerId);
+    // Our own message changed delivery state: render the state the
+    // backend names in this window too (the buddy list's arm does the same).
+    if ("channelMessage" in event && "directMessageStateChanged" in event.channelMessage) {
+      const state = event.channelMessage.directMessageStateChanged;
+      if (state.conversationId === peerId) applyMessageState(state);
       return;
     }
 

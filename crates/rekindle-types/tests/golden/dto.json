@@ -37,6 +37,9 @@
       "serverAddress": "10.0.0.1:27015"
     }
   },
+  "command.error.cancelled": {
+    "type": "cancelled"
+  },
   "command.error.failed": {
     "data": {
       "code": 401,
@@ -47,6 +50,7 @@
   },
   "command.error.intentRequired": {
     "data": {
+      "cancelSends": false,
       "class": "protected",
       "escalations": [],
       "expiresAtMs": 1700000300000,
@@ -96,8 +100,10 @@
       "serverInfo": null
     },
     "group": "Raid team",
+    "groupLabel": "Raid team",
     "handshakeError": null,
     "handshakeRetrying": false,
+    "identityPinMismatch": true,
     "lastSeenAt": 1700000000000,
     "nickname": "Bobby",
     "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -110,8 +116,10 @@
     "friendshipState": "pendingOut",
     "gameInfo": null,
     "group": null,
+    "groupLabel": "Friends",
     "handshakeError": "their accept carried no session data",
     "handshakeRetrying": false,
+    "identityPinMismatch": false,
     "lastSeenAt": null,
     "nickname": null,
     "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",

@@ -248,7 +248,12 @@ async fn host(server: &ServerState, cmd: &str, args: &Value) -> Result<Done<Valu
             let request = IpcRequest::IntentCancel {
                 intent_id: arg_parse(args, "intentId")?,
             };
-            host_call::call(state, request).await
+            let done: Done<Value> = host_call::call(state, request).await?;
+            Ok(Done {
+                value: serde_json::to_value(CommandError::Cancelled)
+                    .map_err(|e| CommandError::internal(e.to_string()))?,
+                undo: done.undo,
+            })
         }
         "get_friends" => host_call::call(state, IpcRequest::FriendList).await,
         "get_pending_requests" => host_call::call(state, IpcRequest::FriendRequests).await,

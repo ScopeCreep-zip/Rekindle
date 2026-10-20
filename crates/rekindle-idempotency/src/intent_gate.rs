@@ -127,7 +127,9 @@ pub struct IntentGate<A, O: GateOwner, R: Clone + Send + Sync + 'static> {
     results: IdempotencyCache<(O, R)>,
 }
 
-fn review_of(selection: &Selection, now_ms: u64, ttl_ms: u64) -> IntentReview {
+/// The review of `selection`, held `ttl_ms` from `now_ms`; `cancel_sends`
+/// when its Cancel runs an action of its own.
+fn review_of(selection: &Selection, now_ms: u64, ttl_ms: u64, cancel_sends: bool) -> IntentReview {
     let class = effective_class(selection.kind, &selection.escalations);
     IntentReview {
         intent_id: IntentId::new(),
@@ -140,6 +142,7 @@ fn review_of(selection: &Selection, now_ms: u64, ttl_ms: u64) -> IntentReview {
         notifies: selection.notifies,
         proof: class.proof(),
         expires_at_ms: now_ms + ttl_ms,
+        cancel_sends,
     }
 }
 
@@ -207,7 +210,7 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         if pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER {
             return Err(GateError::TooManyPending);
         }
-        let review = review_of(&selection, now_ms, ttl_ms);
+        let review = review_of(&selection, now_ms, ttl_ms, on_cancel.is_some());
         pending.insert(
             review.intent_id,
             Pending {
@@ -248,7 +251,7 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             let Some(mut held) = pending.remove(&intent_id) else {
                 return Err(GateError::UnknownIntent);
             };
-            held.review = review_of(&fresh, now_ms, held.ttl_ms);
+            held.review = review_of(&fresh, now_ms, held.ttl_ms, held.on_cancel.is_some());
             held.selection = fresh;
             let review = held.review.clone();
             pending.insert(review.intent_id, held);

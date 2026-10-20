@@ -74,22 +74,25 @@ pub enum ChannelMessageEvent {
         server_message_id: Option<String>,
         /// The message this replies to, if any.
         reply_to_id: Option<String>,
-        /// Whether we sent it (from another of our devices, E5.3): a
-        /// window renders it as ours.
+        /// Whether we sent it: a window renders it as ours. True for the
+        /// group DM log's echo of our own send (`rekindle-dm`, until E2.6);
+        /// a 1:1 message received from a peer is never ours (E5.3 adds our
+        /// other devices' sends).
         is_own: bool,
     },
 
-    /// A direct message we sent was acknowledged by the peer.
-    DirectMessageAcknowledged {
-        /// The send timestamp in milliseconds, which is what a DM's
-        /// local echo is keyed on — a DM has no server-assigned id, so
-        /// this is a `u64` rather than the `String` that
-        /// `server_message_id` uses for channel messages.
-        message_id: u64,
-        /// The conversation the acknowledged message belongs to — the
-        /// peer's identity key for a 1:1 DM — so a frontend can route the
-        /// ack to that conversation's view.
+    /// A direct message we sent changed delivery state (D22's
+    /// vocabulary): it went out or was queued (`Sent`), or its send failed
+    /// (`Failed`, with Retry). Every window renders the state it names;
+    /// none infers it.
+    /// Triggered by: a send or a resend of our stored message.
+    DirectMessageStateChanged {
+        /// The message's client id, as `DmMessage.messageId` and
+        /// `server_message_id` name it.
+        message_id: String,
+        /// The conversation it belongs to (the peer's identity key).
         conversation_id: String,
+        send_state: crate::message::SendState,
     },
 
     /// We were invited into a direct conversation — a per-peer DM log,

@@ -13,7 +13,7 @@ use rekindle_db::prekeys::Publish;
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_types::dht_layout::prekeys::HEAD;
 use rekindle_types::dto::identity::{PrekeyComponentLens, PrekeyStatus};
-use rekindle_types::subscription_events::{CryptoEvent, PrekeyPublishKind, SubscriptionEvent};
+use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
 use super::stored;
 use crate::operations::friend::{state, FriendError, FriendHost};
@@ -37,10 +37,12 @@ pub fn device_list(record_key: &str, device_id: &str) -> Result<Vec<u8>, FriendE
 }
 
 /// Write `values` to our record, each durable (a miss is re-pushed until it
-/// lands), and tell the frontends what was published.
+/// lands), and tell the frontends what was published: one event for the
+/// whole call, naming the head and the slots written.
 ///
 /// # Errors
-/// Our record is not open yet, or a write failed outright.
+/// Our record is not open yet, or a write failed outright (the event names
+/// what was written before it).
 pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), FriendError> {
     if values.is_empty() {
         return Ok(());
@@ -49,26 +51,64 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
         .own_prekey_lease()
         .ok_or_else(|| FriendError::NotReady("our prekey record is not open yet".to_string()))?;
     let pool = host.node()?.require_records()?;
+    let mut written = Written::default();
+    let mut outcome = Ok(());
     for Publish { subkey, value } in values {
-        let outcome = if subkey == HEAD {
+        let result = if subkey == HEAD {
             record::publish_head(pool.as_ref(), lease, value).await
         } else {
             record::publish_slot(pool.as_ref(), lease, subkey, value).await
-        }
-        .map_err(|e| stored("publish prekeys", e))?;
-        if outcome.missed() {
-            tracing::debug!(subkey, ?outcome, "prekey write held for re-push");
-        }
-        let kind = if subkey == HEAD {
-            PrekeyPublishKind::SignedRotated
-        } else {
-            PrekeyPublishKind::OneTimeRefilled
         };
-        host.publish(SubscriptionEvent::Crypto(
-            CryptoEvent::PrekeyRecordPublished { kind, subkey },
-        ));
+        match result {
+            Ok(held) => {
+                if held.missed() {
+                    tracing::debug!(subkey, ?held, "prekey write held for re-push");
+                }
+                written.add(subkey);
+            }
+            Err(e) => {
+                outcome = Err(stored("publish prekeys", e));
+                break;
+            }
+        }
     }
-    Ok(())
+    written.publish(host);
+    outcome
+}
+
+/// What one [`publish`] call wrote.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Written {
+    head: bool,
+    slots: Vec<u32>,
+}
+
+impl Written {
+    fn add(&mut self, subkey: u32) {
+        if subkey == HEAD {
+            self.head = true;
+        } else {
+            self.slots.push(subkey);
+        }
+    }
+
+    /// The one `PrekeyRecordPublished` for what was written, if anything.
+    fn into_event(mut self) -> Option<CryptoEvent> {
+        if !self.head && self.slots.is_empty() {
+            return None;
+        }
+        self.slots.sort_unstable();
+        Some(CryptoEvent::PrekeyRecordPublished {
+            head: self.head,
+            slots: self.slots,
+        })
+    }
+
+    fn publish(self, host: &dyn FriendHost) {
+        if let Some(event) = self.into_event() {
+            host.publish(SubscriptionEvent::Crypto(event));
+        }
+    }
 }
 
 /// The unlock's reconciliation: every value our rows say is published but
@@ -237,6 +277,23 @@ mod tests {
             ..healthy()
         };
         assert!(prekey_problem(&none).is_some());
+    }
+
+    #[test]
+    fn one_publish_names_the_head_and_its_slots() {
+        let mut written = Written::default();
+        for subkey in [3, HEAD, 1, 2] {
+            written.add(subkey);
+        }
+        let Some(CryptoEvent::PrekeyRecordPublished { head, slots }) = written.into_event() else {
+            panic!("one event");
+        };
+        assert!(head);
+        assert_eq!(slots, vec![1, 2, 3]);
+        assert!(
+            Written::default().into_event().is_none(),
+            "nothing written, no event"
+        );
     }
 
     #[test]

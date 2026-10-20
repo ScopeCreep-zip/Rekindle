@@ -171,6 +171,7 @@ fn the_review_serializes_in_camel_case() {
         notifies: Notifies::Members(57),
         proof: ProofRequired::TypeSubject,
         expires_at_ms: 1,
+        cancel_sends: false,
     };
     let json = serde_json::to_value(&review).unwrap();
     assert_eq!(
@@ -185,7 +186,8 @@ fn the_review_serializes_in_camel_case() {
             "reversibility": {"reversibleByInverse": "createChannel"},
             "notifies": {"members": 57},
             "proof": "typeSubject",
-            "expiresAtMs": 1
+            "expiresAtMs": 1,
+            "cancelSends": false
         })
     );
     let back: IntentReview = serde_json::from_value(json).unwrap();

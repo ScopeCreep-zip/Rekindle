@@ -1,6 +1,7 @@
-//! `CryptoEvent` samples, covering both `PrekeyPublishKind` variants.
+//! `CryptoEvent` samples: a prekey publish of the head with slots, and of
+//! slots alone.
 
-use rekindle_types::subscription_events::{CryptoEvent, PrekeyPublishKind, SubscriptionEvent};
+use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
 use crate::{channel, community, pk, Sample};
 
@@ -13,10 +14,7 @@ pub const NAMES: &[&str] = &[
     "prekeyRecordPublished",
 ];
 
-pub const NESTED: &[&str] = &[
-    "PrekeyPublishKind.signedRotated",
-    "PrekeyPublishKind.oneTimeRefilled",
-];
+pub const NESTED: &[&str] = &[];
 
 pub fn variant_name(e: &CryptoEvent) -> &'static str {
     match e {
@@ -29,17 +27,10 @@ pub fn variant_name(e: &CryptoEvent) -> &'static str {
     }
 }
 
-fn kind_name(kind: PrekeyPublishKind) -> &'static str {
-    match kind {
-        PrekeyPublishKind::SignedRotated => "PrekeyPublishKind.signedRotated",
-        PrekeyPublishKind::OneTimeRefilled => "PrekeyPublishKind.oneTimeRefilled",
-    }
-}
-
 pub fn nested_names(e: &CryptoEvent) -> Vec<&'static str> {
     match e {
-        CryptoEvent::PrekeyRecordPublished { kind, .. } => vec![kind_name(*kind)],
-        CryptoEvent::MekRotated { .. }
+        CryptoEvent::PrekeyRecordPublished { .. }
+        | CryptoEvent::MekRotated { .. }
         | CryptoEvent::MekRequested { .. }
         | CryptoEvent::MekTransferred { .. }
         | CryptoEvent::AdminKeypairGranted { .. }
@@ -95,17 +86,17 @@ pub fn samples() -> Vec<Sample> {
             },
         ),
         ev(
-            "prekeyRecordPublished.signedRotated",
+            "prekeyRecordPublished.headAndSlots",
             CryptoEvent::PrekeyRecordPublished {
-                kind: PrekeyPublishKind::SignedRotated,
-                subkey: 0,
+                head: true,
+                slots: vec![1, 2, 3],
             },
         ),
         ev(
-            "prekeyRecordPublished.oneTimeRefilled",
+            "prekeyRecordPublished.slots",
             CryptoEvent::PrekeyRecordPublished {
-                kind: PrekeyPublishKind::OneTimeRefilled,
-                subkey: 37,
+                head: false,
+                slots: vec![37],
             },
         ),
     ]

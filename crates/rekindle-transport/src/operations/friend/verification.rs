@@ -12,6 +12,7 @@
 use rekindle_crypto::SafetyNumber;
 use rekindle_types::dto::friends::SafetyNumberView;
 use rekindle_types::intent::Escalation;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::error::FriendError;
 use super::host::FriendHost;
@@ -102,6 +103,7 @@ pub async fn mark_verified(host: &dyn FriendHost, peer: &str) -> Result<(), Frie
         return Err(no_session(peer));
     }
     tracing::info!(peer = %peer, "identity key marked verified");
+    publish_verification(host, peer, true);
     Ok(())
 }
 
@@ -119,7 +121,19 @@ pub async fn clear_verification(host: &dyn FriendHost, peer: &str) -> Result<(),
         return Err(no_session(peer));
     }
     tracing::info!(peer = %peer, "identity key verification cleared");
+    publish_verification(host, peer, false);
     Ok(())
+}
+
+/// Tell every frontend that `peer`'s verification changed, so each window
+/// showing their badge or safety number re-reads it.
+fn publish_verification(host: &dyn FriendHost, peer: &str, verified: bool) {
+    host.publish(SubscriptionEvent::Friend(
+        FriendEvent::VerificationChanged {
+            peer_key: peer.to_string(),
+            verified,
+        },
+    ));
 }
 
 fn no_session(peer: &str) -> FriendError {

@@ -4,7 +4,7 @@ import Avatar from "../components/common/Avatar";
 import LoadingButton from "../components/common/LoadingButton";
 import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
 import { commands, IdentitySummary } from "../ipc/commands";
-import { isCommandError } from "../ipc/commands/dto";
+import { isCancelled } from "../ipc/commands/dto";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
@@ -141,7 +141,7 @@ const LoginWindow: Component = () => {
       await loadIdentities();
     } catch (err) {
       // A cancelled review is the user's choice, not a failure.
-      if (isCommandError(err) && err.type === "failed" && err.data.code === 499) return;
+      if (isCancelled(err)) return;
       setError(errorMessage(err));
     }
   }

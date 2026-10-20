@@ -55,6 +55,7 @@ fn review() -> IntentReview {
         notifies: Notifies::Nobody,
         proof: ProofRequired::Passphrase,
         expires_at_ms: 1_700_000_300_000,
+        cancel_sends: false,
     }
 }
 
@@ -176,6 +177,7 @@ fn samples() -> Map<String, Value> {
         "command.error.intentRequired",
         to(CommandError::IntentRequired(review())),
     );
+    add("command.error.cancelled", to(CommandError::Cancelled));
     friend_samples(&mut add);
     out
 }
@@ -188,6 +190,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
     accepted.status_message = Some("raiding".into());
     accepted.group = Some("Raid team".into());
     accepted.unread_count = 2;
+    accepted.identity_pin_mismatch = true;
     accepted.last_seen_at = Some(1_700_000_000_000);
     accepted.game_info = Some(GameInfoState {
         game_id: 4181,

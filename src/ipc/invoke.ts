@@ -15,7 +15,7 @@
  */
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import type { CommandError, Done, IntentReview, UndoOffer } from "./commands/dto";
+import type { Done, IntentReview, UndoOffer } from "./commands/dto";
 import { isCommandError } from "./commands/dto";
 
 const E2E_SERVER = "http://127.0.0.1:3001";
@@ -60,8 +60,8 @@ export function registerUndoPresenter(presenter: UndoPresenter): void {
 
 /**
  * Call a Host-call command: its value, after the review it needed (if
- * any) was committed. Rejects with the `CommandError` the Host answered,
- * or a cancelled one.
+ * any) was committed. Rejects with the `CommandError` the Host answered
+ * (`{ type: "cancelled" }` when the user cancelled the review).
  */
 export async function hostInvoke<T>(
   cmd: string,
@@ -81,11 +81,6 @@ export async function hostInvoke<T>(
     undoPresenter(done.undo);
   }
   return done.value;
-}
-
-/** The error a cancelled review rejects its call with. */
-export function cancelledError(): CommandError {
-  return { type: "failed", data: { code: 499, message: "Cancelled", remediation: null } };
 }
 
 async function invokeViaHttp<T>(

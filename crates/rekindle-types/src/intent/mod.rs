@@ -337,6 +337,11 @@ pub struct IntentReview {
     pub notifies: Notifies,
     pub proof: ProofRequired,
     pub expires_at_ms: u64,
+    /// Cancelling it runs an action of its own (a backend hold's answer,
+    /// such as the decline a session-reset request gets): only the
+    /// review's explicit Cancel control cancels it, never Esc, a click
+    /// outside or closing the view.
+    pub cancel_sends: bool,
 }
 
 /// The proof a commit carries (step 3).

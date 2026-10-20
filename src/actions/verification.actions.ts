@@ -1,5 +1,5 @@
 import { commands } from "../ipc/commands";
-import { isCommandError } from "../ipc/commands/dto";
+import { isCancelled } from "../ipc/commands/dto";
 import { errorMessage } from "../utils/error";
 
 /// Mark `peerKey`'s identity key verified, or withdraw it, through the
@@ -16,8 +16,8 @@ export async function handleSetVerified(peerKey: string, verified: boolean): Pro
     }
     return null;
   } catch (e) {
-    // 499: the user cancelled the review (`cancelledError`).
-    if (isCommandError(e) && e.type === "failed" && e.data.code === 499) return null;
+    // The user cancelled the review: the Host's `cancelled` answer.
+    if (isCancelled(e)) return null;
     return errorMessage(e);
   }
 }

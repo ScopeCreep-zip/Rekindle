@@ -226,6 +226,7 @@ mod tests {
             notifies: Notifies::Members(3),
             proof,
             expires_at_ms: 1,
+            cancel_sends: false,
         }
     }
 

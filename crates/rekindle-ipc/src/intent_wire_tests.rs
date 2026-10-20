@@ -63,6 +63,7 @@ fn a_pending_review_crosses_the_bus() {
         notifies: Notifies::Members(3),
         proof: ProofRequired::TypeSubject,
         expires_at_ms: 1,
+        cancel_sends: true,
     };
     let decoded = round_trip(BusPayload::Event(StreamFrame::Event(Sequenced {
         cursor: Cursor { epoch: 1, seq: 2 },

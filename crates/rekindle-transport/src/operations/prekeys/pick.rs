@@ -78,6 +78,8 @@ pub async fn pick_bundle(
         }
         Err(e) => {
             tracing::warn!(peer = %peer, error = %e, "prekey record not signed by the pinned identity");
+            // The trust alert stays on their row until a record verifies.
+            state::update(host, peer, |f| f.identity_pin_mismatch = true);
             host.publish(SubscriptionEvent::Friend(
                 FriendEvent::IdentityPinMismatch {
                     peer_key: peer.to_string(),
@@ -91,6 +93,8 @@ pub async fn pick_bundle(
         }
     };
 
+    // Their record verifies under the identity we hold: the alert is over.
+    state::update(host, peer, |f| f.identity_pin_mismatch = false);
     let (db, owner) = (host.db()?, host.local_party()?.owner());
     let address = PeerAddress::sole_device(identity);
     let listed: Vec<u32> = view.listed_opk_ids().collect();

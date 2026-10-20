@@ -267,6 +267,10 @@ export interface IntentReview {
   notifies: Notifies;
   proof: ProofRequired;
   expiresAtMs: number;
+  /** Cancelling it runs an action of its own (the decline a session-reset
+   *  request gets): only the explicit Cancel control cancels it, never Esc
+   *  or a click outside the dialog. */
+  cancelSends: boolean;
 }
 
 /** The proof a commit carries. */
@@ -292,15 +296,23 @@ export interface Done<T> {
 /** A Host call that did not run. */
 export type CommandError =
   | { type: "failed"; data: { code: number; message: string; remediation: string | null } }
-  | { type: "intentRequired"; data: IntentReview };
+  | { type: "intentRequired"; data: IntentReview }
+  /** The user cancelled the review the call waited on; the Host answers it
+   *  from `intent_cancel`. */
+  | { type: "cancelled" };
 
 /** Whether `e` is a `CommandError` (the shape a Host call rejects with). */
 export function isCommandError(e: unknown): e is CommandError {
-  return (
-    typeof e === "object" && e !== null && "type" in e && "data" in e &&
-    ((e as { type: unknown }).type === "failed" ||
-      (e as { type: unknown }).type === "intentRequired")
-  );
+  if (typeof e !== "object" || e === null || !("type" in e)) return false;
+  const type = (e as { type: unknown }).type;
+  if (type === "cancelled") return true;
+  return "data" in e && (type === "failed" || type === "intentRequired");
+}
+
+/** Whether `e` is the Host's answer to a cancelled review: the call did not
+ *  run because the user cancelled it, which is not an error to show. */
+export function isCancelled(e: unknown): boolean {
+  return isCommandError(e) && e.type === "cancelled";
 }
 
 // ── Identity (rekindle_types::dto::identity) ──

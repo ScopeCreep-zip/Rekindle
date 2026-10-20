@@ -3,6 +3,9 @@
  *  anything else as text. */
 export function errorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e !== null && (e as { type?: unknown }).type === "cancelled") {
+    return "Cancelled.";
+  }
   if (typeof e === "object" && e !== null && "type" in e && "data" in e) {
     const { type, data } = e as { type: string; data: Record<string, unknown> };
     if (type === "failed" && typeof data.message === "string") {

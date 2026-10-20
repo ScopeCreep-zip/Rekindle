@@ -151,14 +151,6 @@
       }
     }
   },
-  "channelMessage.directMessageAcknowledged": {
-    "channelMessage": {
-      "directMessageAcknowledged": {
-        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "messageId": 1760000002500
-      }
-    }
-  },
   "channelMessage.directMessageReceived": {
     "channelMessage": {
       "directMessageReceived": {
@@ -172,6 +164,15 @@
         "senderName": "Bob",
         "serverMessageId": "dm_22222222222222222222222222222222",
         "timestamp": 1760000002000
+      }
+    }
+  },
+  "channelMessage.directMessageStateChanged": {
+    "channelMessage": {
+      "directMessageStateChanged": {
+        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "messageId": "01900000-0000-7000-8000-000000000002",
+        "sendState": "failed"
       }
     }
   },
@@ -237,19 +238,25 @@
       }
     }
   },
-  "crypto.prekeyRecordPublished.oneTimeRefilled": {
+  "crypto.prekeyRecordPublished.headAndSlots": {
     "crypto": {
       "prekeyRecordPublished": {
-        "kind": "oneTimeRefilled",
-        "subkey": 37
+        "head": true,
+        "slots": [
+          1,
+          2,
+          3
+        ]
       }
     }
   },
-  "crypto.prekeyRecordPublished.signedRotated": {
+  "crypto.prekeyRecordPublished.slots": {
     "crypto": {
       "prekeyRecordPublished": {
-        "kind": "signedRotated",
-        "subkey": 0
+        "head": false,
+        "slots": [
+          37
+        ]
       }
     }
   },
@@ -275,6 +282,14 @@
       "added": {
         "displayName": "Bob",
         "friendshipState": "pendingOut",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.blockChanged": {
+    "friend": {
+      "blockChanged": {
+        "blocked": false,
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
@@ -368,6 +383,14 @@
         "displayName": "Bob",
         "fromKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "message": "remember me from LAN night?"
+      }
+    }
+  },
+  "friend.verificationChanged": {
+    "friend": {
+      "verificationChanged": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "verified": true
       }
     }
   },
@@ -589,6 +612,7 @@
     "typed": "general"
   },
   "intent.intentReview": {
+    "cancelSends": true,
     "class": "destructive",
     "escalations": [
       {
@@ -685,6 +709,7 @@
   },
   "intentPending.intentPending": {
     "intentPending": {
+      "cancelSends": true,
       "class": "destructive",
       "escalations": [
         {

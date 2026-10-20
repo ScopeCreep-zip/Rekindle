@@ -240,6 +240,7 @@ pub fn review() -> IntentReview {
         notifies: Notifies::Members(57),
         proof: ProofRequired::TypeSubject,
         expires_at_ms: 1_700_000_300_000,
+        cancel_sends: true,
     }
 }
 
