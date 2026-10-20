@@ -235,7 +235,7 @@ mod tests {
     fn a_failed_block_keeps_the_friend() {
         let conn = conn();
         insert_accepted(&conn, OWNER, BOB, "Bob", 1).unwrap();
-        fail_on(&conn, "blocked");
+        fail_on(&conn, "blocked_users");
         assert!(block(&conn, OWNER, BOB, "Bob", 2).is_err());
         assert_eq!(state_of(&conn).as_deref(), Some("accepted"));
         conn.execute_batch("DROP TRIGGER injected").unwrap();
