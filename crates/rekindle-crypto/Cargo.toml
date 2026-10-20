@@ -34,9 +34,10 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
 zeroize = { version = "1", features = [ "derive" ] }
+# Identifier hashing under a derive-key context (`prekey_record::base_key_hash`,
+# crypto-primitives §7); also the test generator's seed (`signal::test_support`).
+blake3 = "1"
 
 [dev-dependencies]
 parking_lot = "0.12"
-# The test generator seeds itself from a message's bytes (`signal::test_support`).
-blake3 = "1"
 proptest = "1"

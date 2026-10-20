@@ -48,7 +48,8 @@ labels! {
     DM_FRIEND_REJECT_HPKE = "rekindle-dm-friend-reject-hpke-v1";
     /// HPKE info: a sealed `PreKeyRejected` (0x0005).
     DM_PREKEY_REJECTED_HPKE = "rekindle-dm-prekey-rejected-hpke-v1";
-    /// Hash prefix: the initiator base key a `PreKeyRejected` names.
+    /// BLAKE3 derive-key context: the initiator base key a `PreKeyRejected`
+    /// names.
     PREKEY_REJECTED_BASE_KEY = "rekindle-prekey-rejected-base-key-v1";
     /// HPKE info: a sealed `SessionResetRequest` (0x0007).
     DM_SESSION_RESET_REQUEST_HPKE = "rekindle-dm-session-reset-request-hpke-v1";
