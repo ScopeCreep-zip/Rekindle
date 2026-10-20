@@ -15,20 +15,56 @@ use super::state;
 /// after it, so a leaked link never grants indefinite reach.
 pub const MAX_INVITE_AGE_SECS: u64 = 7 * 24 * 3600;
 
-/// How long making an invite waits for our profile, mailbox and route to be
-/// published (right after unlock).
+/// How long making an invite or a friend request waits for our profile,
+/// mailbox (and, for an invite, route) to be published (right after
+/// unlock, while the own-records stage writes them).
 const PUBLISHED_WAIT: Duration = Duration::from_secs(30);
 /// How often that wait looks again.
 const PUBLISHED_POLL: Duration = Duration::from_millis(500);
 
+/// Our identity, once the own-records stage has published our profile and
+/// mailbox: an invite or a request names them, and one naming none leaves
+/// the peer no prekey record to open the session from.
+fn records_published(host: &dyn FriendHost) -> Option<state::OwnIdentity> {
+    let own = state::own_identity(host).ok()?;
+    (!own.profile_dht_key.is_empty() && !own.mailbox_dht_key.is_empty()).then_some(own)
+}
+
 /// Our profile and mailbox keys and our route, once all are published.
 fn published(host: &dyn FriendHost) -> Option<(state::OwnIdentity, Vec<u8>)> {
-    let own = state::own_identity(host).ok()?;
-    if own.profile_dht_key.is_empty() || own.mailbox_dht_key.is_empty() {
-        return None;
-    }
+    let own = records_published(host)?;
     let route_blob = host.node().ok()?.personal_route_blob()?;
     Some((own, route_blob))
+}
+
+/// What `ready` gives, waiting up to [`PUBLISHED_WAIT`] for it.
+async fn await_published<T>(
+    host: &dyn FriendHost,
+    ready: impl Fn(&dyn FriendHost) -> Option<T>,
+) -> Result<T, FriendError> {
+    tokio::time::timeout(PUBLISHED_WAIT, async {
+        loop {
+            match ready(host) {
+                Some(ready) => return ready,
+                None => tokio::time::sleep(PUBLISHED_POLL).await,
+            }
+        }
+    })
+    .await
+    .map_err(|_| {
+        FriendError::NotReady("Network not ready — please wait a moment and try again".to_string())
+    })
+}
+
+/// Our identity once our profile and mailbox are published, waiting up to
+/// 30 s (a friend added right after the first unlock).
+///
+/// # Errors
+/// `NotReady` when they are not published in time.
+pub(crate) async fn published_identity(
+    host: &dyn FriendHost,
+) -> Result<state::OwnIdentity, FriendError> {
+    await_published(host, records_published).await
 }
 
 /// Make a tracked friend invite.
@@ -38,18 +74,7 @@ fn published(host: &dyn FriendHost) -> Option<(state::OwnIdentity, Vec<u8>)> {
 /// not import, or the invite cannot be stored.
 pub async fn create(host: &dyn FriendHost) -> Result<InviteCreated, FriendError> {
     let secret = host.identity_secret()?;
-    let (own, route_blob) = tokio::time::timeout(PUBLISHED_WAIT, async {
-        loop {
-            match published(host) {
-                Some(ready) => return ready,
-                None => tokio::time::sleep(PUBLISHED_POLL).await,
-            }
-        }
-    })
-    .await
-    .map_err(|_| {
-        FriendError::NotReady("Network not ready — please wait a moment and try again".to_string())
-    })?;
+    let (own, route_blob) = await_published(host, published).await?;
     tracing::info!(
         route_blob_len = route_blob.len(),
         route_count = route_blob.first().copied().unwrap_or(0),

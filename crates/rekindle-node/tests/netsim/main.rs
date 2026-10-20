@@ -3,5 +3,8 @@
 
 mod friends;
 mod harness;
+mod pair;
+mod prekey_collision;
+mod prekeys;
 mod scenarios;
 mod smoke;

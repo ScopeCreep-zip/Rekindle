@@ -34,7 +34,9 @@ async fn check_addable(
 /// best-effort (the peer may be offline; the request is queued).
 ///
 /// # Errors
-/// The key is malformed, ours, or blocked; or the friend cannot be stored.
+/// The key is malformed, ours, or blocked; our profile is not published
+/// yet (`NotReady`: the request must name it); or the friend cannot be
+/// stored.
 pub async fn add(
     host: &dyn FriendHost,
     public_key: &str,
@@ -44,6 +46,7 @@ pub async fn add(
     state::require_public_key(public_key)?;
     let owner = state::owner(host)?;
     check_addable(host, &owner, public_key).await?;
+    invites::published_identity(host).await?;
 
     let now = host.clock().now_ms_i64();
     let (ok, pk, dn) = (
@@ -90,11 +93,13 @@ pub async fn add(
 ///
 /// # Errors
 /// The invite is malformed, forged or expired; it is ours or a blocked
-/// user's; or the friend cannot be stored.
+/// user's; our profile is not published yet (`NotReady`); or the friend
+/// cannot be stored.
 pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), FriendError> {
     let blob = invites::open(link, host.clock().now_ms())?;
     let owner = state::owner(host)?;
     check_addable(host, &owner, &blob.public_key).await?;
+    invites::published_identity(host).await?;
 
     if state::take(host, &blob.public_key).is_some() {
         if let Ok(node) = host.node() {

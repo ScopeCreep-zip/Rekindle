@@ -320,6 +320,12 @@ impl FakePool {
         Ok(SetOutcome::Landed)
     }
 
+    /// Forget the held writes, as a killed process loses them: they lived
+    /// only in memory, so nothing re-pushes them.
+    pub(crate) fn forget_held(&self) {
+        self.state.lock().held.clear();
+    }
+
     /// Re-push the held writes (the network came back): those that land or
     /// lose settle.
     pub(crate) fn retry_held(&self) {

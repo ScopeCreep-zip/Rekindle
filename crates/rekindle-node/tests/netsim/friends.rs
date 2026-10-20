@@ -4,43 +4,10 @@
 //! the first message each way opens one from the other's published bundle
 //! (`dm/frame.rs`, `published_bundle`).
 
-use std::time::Duration;
-
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
-
-const LIMIT: Duration = Duration::from_secs(180);
-
-async fn friends(node: &SimNode) -> Vec<rekindle_types::dto::friends::Friend> {
-    serde_json::from_value(node.ok(IpcRequest::FriendList).await).expect("the friend list")
-}
-
-async fn is_accepted_friend(node: &SimNode, key: &str) -> bool {
-    friends(node).await.iter().any(|f| {
-        f.public_key == key
-            && f.friendship_state == rekindle_types::friend::FriendshipState::Accepted
-    })
-}
-
-async fn has_request_from(node: &SimNode, key: &str) -> bool {
-    let requests: Vec<rekindle_types::dto::friends::PendingRequest> =
-        serde_json::from_value(node.ok(IpcRequest::FriendRequests).await).expect("the requests");
-    requests.iter().any(|r| r.public_key == key)
-}
-
-async fn holds_message(node: &SimNode, peer: &str, body: &str) -> bool {
-    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
-        node.ok(IpcRequest::DmHistory {
-            peer_key: peer.to_string(),
-            limit: 50,
-            before: None,
-        })
-        .await,
-    )
-    .expect("the history");
-    history.iter().any(|m| m.body == body && !m.is_own)
-}
+use crate::pair::{accept, holds_message, is_accepted_friend, request, send, LIMIT};
 
 /// The unlocked identity's mailbox key, empty before the unlock made one.
 async fn mailbox(node: &SimNode) -> String {
@@ -48,15 +15,6 @@ async fn mailbox(node: &SimNode) -> String {
         .as_str()
         .unwrap_or_default()
         .to_string()
-}
-
-async fn send(node: &SimNode, peer: &str, body: &str) {
-    node.ok(IpcRequest::DmSend {
-        peer_key: peer.to_string(),
-        body: body.to_string(),
-        reply_to: None,
-    })
-    .await;
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -69,19 +27,8 @@ async fn a_rotated_friend_is_messaged_both_ways() {
 
     // Bea's invite carries her route and records; she accepts the request
     // that answers it.
-    let invite: rekindle_types::dto::friends::InviteCreated =
-        serde_json::from_value(nodes[1].ok(IpcRequest::FriendInviteCreate).await)
-            .expect("the invite");
-    nodes[0]
-        .ok(IpcRequest::FriendAddFromInvite { invite: invite.url })
-        .await;
-    assert!(eventually(&sim, LIMIT, || has_request_from(&nodes[1], &ann)).await);
-    nodes[1]
-        .ok(IpcRequest::FriendAccept {
-            public_key: ann.clone(),
-            display_name: "Ann".into(),
-        })
-        .await;
+    request(&sim, &nodes[0], &nodes[1]).await;
+    accept(&nodes[1], &nodes[0], "Ann").await;
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &bea)).await);
     assert!(is_accepted_friend(&nodes[1], &ann).await);
 

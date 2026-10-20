@@ -88,6 +88,9 @@ pub(crate) struct NodeSlot {
 #[derive(Default)]
 pub(crate) struct Inner {
     pub records: HashMap<String, NetRecord>,
+    /// The owner keypair each record was created with, as its creator
+    /// holds it (a scenario's thief of that key writes with it).
+    pub owners: HashMap<String, String>,
     pub routes: HashMap<String, RouteEntry>,
     pub nodes: Vec<NodeSlot>,
     pending: Vec<Pending>,

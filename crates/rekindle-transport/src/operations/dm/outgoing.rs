@@ -26,7 +26,7 @@ const ROUTE_WAIT: Duration = Duration::from_secs(5);
 /// any frame (refreshed, then queued) and the accept is its receipt.
 ///
 /// # Errors
-/// Our route is not published yet, or the send failed.
+/// Our profile or route is not published yet, or the send failed.
 pub async fn send_friend_request(
     host: &dyn FriendHost,
     to: &str,
@@ -34,6 +34,13 @@ pub async fn send_friend_request(
     invite_id: Option<&str>,
 ) -> Result<(), FriendError> {
     let own = state::own_identity(host)?;
+    if own.profile_dht_key.is_empty() {
+        // A request naming no profile leaves the receiver no prekey
+        // record to open the session from (plan E2.4).
+        return Err(FriendError::NotReady(
+            "our profile is not published yet — try again in a moment".to_string(),
+        ));
+    }
     let routes = host.node()?.routes();
     let route_blob = tokio::time::timeout(ROUTE_WAIT, routes.available_own(RouteClass::General))
         .await

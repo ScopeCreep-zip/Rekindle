@@ -15,7 +15,7 @@ use crate::host::adapters::friends::HostFriends;
 use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource};
 
 /// An offline host with Ann unlocked; her key.
-async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
+pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
     let data = dir.path().join("data");
     let root = rekindle_db::paths::DataRoot {
         config: dir.path().join("config"),
@@ -57,7 +57,7 @@ async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
 }
 
 /// Bob, an accepted friend of Ann's.
-async fn befriend(host: &Host, owner: [u8; 32], bob: [u8; 32]) {
+pub(super) async fn befriend(host: &Host, owner: [u8; 32], bob: [u8; 32]) {
     let (owner, bob) = (hex::encode(owner), hex::encode(bob));
     host.ctx
         .db

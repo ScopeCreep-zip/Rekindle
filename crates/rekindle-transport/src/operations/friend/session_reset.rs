@@ -85,14 +85,16 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
 }
 
 /// Accept the reset `peer` asked for: a new session from a slot of their
-/// prekey record, carrying `SessionResetAccept`. When its review was held on their
+/// prekey record, carrying `SessionResetAccept`. Their request is answered
+/// only once that session is opened; until then it stays pending. When its review was held on their
 /// verified key changing (`VerifiedKeyChanged`), committing it was the
 /// user's acknowledgement (`acknowledges_key_change`): the change is
 /// acknowledged once the new session is recorded, since that record is
 /// `rekindle_db::ratchet`'s own transaction.
 ///
 /// # Errors
-/// `NotFound` when no reset from them is pending; the session, the
+/// `NotFound` when no reset from them is pending; their record gave no
+/// bundle (the request stays pending), or the session, the
 /// acknowledgement or the send failed.
 pub async fn accept(
     host: &dyn FriendHost,
@@ -104,23 +106,23 @@ pub async fn accept(
             "can only accept session reset from existing friends".to_string(),
         ));
     }
-    host.stores()
-        .incoming_resets
-        .lock()
-        .remove(peer)
-        .ok_or_else(|| {
-            FriendError::NotFound(
-                "no pending session reset for this peer (it may have expired or already been \
-                 processed)"
-                    .to_string(),
-            )
-        })?;
+    if !host.stores().incoming_resets.lock().contains_key(peer) {
+        return Err(FriendError::NotFound(
+            "no pending session reset for this peer (it may have expired or already been \
+             processed)"
+                .to_string(),
+        ));
+    }
     let profile = state::friend(host, peer)
         .and_then(|f| f.dht_record_key)
         .ok_or_else(|| FriendError::Conflict(format!("{peer}'s profile is not known")))?;
     let bundle = crate::operations::prekeys::pick_bundle(host, peer, &profile).await?;
     let frame =
         dm::frame::initiate_frame(host, peer, bundle, &DirectBody::SessionResetAccept).await?;
+    // Answered only once the session is opened: a record that cannot be
+    // read, or is not theirs (B3), leaves the request for the user to
+    // accept again or decline.
+    host.stores().incoming_resets.lock().remove(peer);
     if acknowledges_key_change {
         super::verification::acknowledge_key_change(host, peer).await?;
     }

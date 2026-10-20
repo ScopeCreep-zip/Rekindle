@@ -22,6 +22,8 @@ pub(crate) mod own_presence;
 pub(crate) mod own_profile;
 mod own_records;
 pub mod policy;
+#[cfg(test)]
+mod prekey_tests;
 pub mod runtime;
 mod serve;
 pub mod session;

@@ -401,6 +401,27 @@ impl Netsim {
         Ok(())
     }
 
+    /// The owner keypair `key` was created with, as its creator holds it.
+    /// A record's owner key is not its creator's identity key, so whoever
+    /// holds it (a thief, or the creator's modified client) can rewrite
+    /// the record; a scenario writes with it through
+    /// [`forge_write`](Self::forge_write) to prove that what the record
+    /// carries is checked under the identity (plan E2.4's prekey record).
+    #[must_use]
+    pub fn owner_keypair(&self, key: &str) -> Option<String> {
+        self.net.inner.lock().owners.get(key).cloned()
+    }
+
+    /// A kill -9 on `node`: its record sessions lose the writes they hold
+    /// for a re-push, which live only in memory (a graceful lock saves
+    /// them for the next unlock). Nothing re-pushes them, not even
+    /// [`Fault::Heal`].
+    pub fn lose_held(&self, node: usize) {
+        for pool in self.net.pools(node) {
+            pool.forget_held();
+        }
+    }
+
     /// The blobs of `node`'s live general routes, as a peer who reached
     /// it would hold them (for an outsider in a scenario).
     #[must_use]

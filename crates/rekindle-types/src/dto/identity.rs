@@ -49,7 +49,9 @@ pub struct PrekeyStatus {
     pub spk_age_secs: Option<u64>,
     pub pq_lr_id: Option<u32>,
     pub lr_age_secs: Option<u64>,
-    /// One-time slots holding unused keys, and slots used and not refilled.
+    /// One-time slots holding unused keys, and the consumed one-time keys
+    /// the 30-day archive still holds (a consumed slot is refilled in the
+    /// commit that consumes it, so this counts uses, not empty slots).
     pub fresh_slots: u32,
     pub consumed_slots: u32,
     /// The published head's component sizes, in bytes.

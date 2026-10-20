@@ -59,16 +59,20 @@ impl RecordPort for FakePool {
         );
         let public = writer_public(&owner)?;
         let key = new_key_text(self.rng.as_ref());
-        self.net.inner.lock().records.insert(
-            key.clone(),
-            NetRecord {
-                schema: schema.clone(),
-                owner: public,
-                creator: self.node,
-                published: false,
-                values: vec![None; count],
-            },
-        );
+        {
+            let mut inner = self.net.inner.lock();
+            inner.records.insert(
+                key.clone(),
+                NetRecord {
+                    schema: schema.clone(),
+                    owner: public,
+                    creator: self.node,
+                    published: false,
+                    values: vec![None; count],
+                },
+            );
+            inner.owners.insert(key.clone(), owner.clone());
+        }
         let (lease, _) = self.state.lock().leases.acquire(&key, Some(owner.clone()));
         Ok((lease, key, owner))
     }

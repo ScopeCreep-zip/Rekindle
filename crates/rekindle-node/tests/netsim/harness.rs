@@ -14,6 +14,7 @@ use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
 use rekindle_node::host::{claim, Host, HostConfig, HostStores, TransportSource};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
+use rekindle_types::subscription_events::{FriendEvent, StreamFrame, SubscriptionEvent};
 
 /// Every simulated identity's passphrase.
 pub const PASSPHRASE: &str = "netsim passphrase";
@@ -129,6 +130,43 @@ impl SimNode {
         }
     }
 
+    /// Send `request`, which the gate must hold for the user's review
+    /// (`IntentRequired`); prove and commit it as [`call`](Self::call)
+    /// does.
+    pub async fn call_held(&self, request: IpcRequest) -> Result<serde_json::Value, Refused> {
+        let name = format!("{request:?}");
+        let IpcResponse::IntentRequired(review) = self.host.call(caller(), request).await else {
+            panic!("node {}: {name} was not held for review", self.index);
+        };
+        self.call(IpcRequest::IntentCommit {
+            intent_id: review.intent_id,
+            proof: prove(&review),
+        })
+        .await
+    }
+
+    /// The events this host publishes from now on, as a frontend
+    /// subscribed to its journal sees them (`HostApi::subscribe`).
+    pub async fn events(&self) -> Events {
+        let mut stream = self.host.subscribe(None).await.expect("the event stream");
+        let seen = Events::default();
+        let sink = Arc::clone(&seen.0);
+        tokio::spawn(async move {
+            while let Some(frame) = stream.next().await {
+                if let StreamFrame::Event(sequenced) = frame {
+                    sink.lock().push(sequenced.event);
+                }
+            }
+        });
+        seen
+    }
+
+    /// The unlocked identity's `PrekeyStatus`, as the CLI's `keys prekeys
+    /// status` and the debug `pqxdh_bundle_info` read it.
+    pub async fn prekey_status(&self) -> rekindle_types::dto::identity::PrekeyStatus {
+        serde_json::from_value(self.ok(IpcRequest::PrekeyStatus).await).expect("a prekey status")
+    }
+
     /// [`call`](Self::call), which must succeed.
     pub async fn ok(&self, request: IpcRequest) -> serde_json::Value {
         let name = format!("{request:?}");
@@ -140,7 +178,10 @@ impl SimNode {
         }
     }
 
-    /// Create an identity named `name`; the create unlocks it.
+    /// Create an identity named `name`; the create unlocks it. Returns
+    /// once the unlock's own-records stage holds its records (the prekey
+    /// record filled, then the profile naming it), as a user waits for
+    /// their profile before adding a friend.
     pub async fn unlock_new_identity(&mut self, name: &str) {
         let created = self
             .ok(IpcRequest::IdentityCreate {
@@ -151,6 +192,54 @@ impl SimNode {
         let view: rekindle_types::dto::identity::IdentityView =
             serde_json::from_value(created).expect("the opened identity");
         self.public_key = Some(view.public_key);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
+        while !self.records_held().await {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "node {}: own records not held",
+                self.index
+            );
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    /// Whether the unlocked identity's profile and mailbox are published.
+    async fn records_held(&self) -> bool {
+        let shown = self.ok(IpcRequest::IdentityShow).await;
+        ["profileDhtKey", "mailboxDhtKey"]
+            .iter()
+            .all(|field| shown[field].as_str().is_some_and(|key| !key.is_empty()))
+    }
+}
+
+/// What a host published since [`SimNode::events`] subscribed.
+#[derive(Clone, Default)]
+pub struct Events(Arc<parking_lot::Mutex<Vec<SubscriptionEvent>>>);
+
+impl Events {
+    /// The friend events, in order.
+    pub fn friend(&self) -> Vec<FriendEvent> {
+        self.0
+            .lock()
+            .iter()
+            .filter_map(|event| match event {
+                SubscriptionEvent::Friend(event) => Some(event.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// How many friend events about `peer` match `pick`.
+    pub fn count(&self, peer: &str, pick: fn(&FriendEvent) -> Option<&str>) -> usize {
+        self.friend()
+            .iter()
+            .filter(|event| pick(event) == Some(peer))
+            .count()
+    }
+
+    /// Whether any published event matches `pick`.
+    pub fn any(&self, pick: impl Fn(&SubscriptionEvent) -> bool) -> bool {
+        self.0.lock().iter().any(pick)
     }
 }
 

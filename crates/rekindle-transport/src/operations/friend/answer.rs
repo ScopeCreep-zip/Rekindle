@@ -87,9 +87,11 @@ pub async fn accept(
         public_key.to_string(),
         display_name.to_string(),
     );
+    // A request naming an empty record names none (a modified client's).
+    let named = |key: &Option<String>| key.clone().filter(|k| !k.is_empty());
     let (profile_key, mailbox_key) = (
-        answer.profile_dht_key.clone(),
-        answer.mailbox_dht_key.clone(),
+        named(&answer.profile_dht_key),
+        named(&answer.mailbox_dht_key),
     );
     state::db_call!(host, "store accepted friend", move |conn| {
         rekindle_db::repo::friends::insert_accepted(conn, &ok, &pk, &dn, now)?;
@@ -114,12 +116,13 @@ pub async fn accept(
         display_name.to_string(),
         FriendshipState::Accepted,
     );
-    friend.dht_record_key.clone_from(&answer.profile_dht_key);
-    friend.mailbox_dht_key.clone_from(&answer.mailbox_dht_key);
+    friend.dht_record_key = named(&answer.profile_dht_key);
+    friend.mailbox_dht_key = named(&answer.mailbox_dht_key);
+    let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
 
-    open_session(host, public_key, answer.profile_dht_key.as_deref()).await;
-    if let Some(profile_key) = &answer.profile_dht_key {
+    open_session(host, public_key, profile_key.as_deref()).await;
+    if let Some(profile_key) = &profile_key {
         host.watch_friend(public_key, profile_key).await;
     }
     if let Some(invite_id) = &answer.invite_id {

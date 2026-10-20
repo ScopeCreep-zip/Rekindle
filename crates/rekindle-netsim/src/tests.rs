@@ -424,3 +424,34 @@ async fn outside_writes_check_the_writer_and_a_conflict_keeps_its_seq() {
     let forged = b.get(theirs, 0, true).await.unwrap().unwrap();
     assert_eq!((forged.seq, forged.data.as_slice()), (1, &b"forged"[..]));
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_creator_s_owner_key_rewrites_and_a_crash_loses_held_writes() {
+    let (sim, nodes) = Netsim::nodes(1, 10);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, owner) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 2 }, None)
+        .await
+        .unwrap();
+    assert_eq!(sim.owner_keypair(&key), Some(owner.clone()));
+    assert_eq!(sim.owner_keypair("VLD0:unknown"), None);
+    pool.set(lease, 0, b"honest".to_vec(), None).await.unwrap();
+    sim.forge_write(&key, 0, b"rewritten".to_vec(), &owner)
+        .unwrap();
+    assert_eq!(sim.network_value(&key, 0).unwrap().data, b"rewritten");
+
+    sim.fault(Fault::DhtOffline {
+        node: 0,
+        offline: true,
+    });
+    assert_eq!(
+        pool.set_durable(lease, 1, b"held".to_vec(), None)
+            .await
+            .unwrap(),
+        SetOutcome::Offline
+    );
+    sim.lose_held(0);
+    assert!(pool.held_writes().is_empty());
+    sim.fault(Fault::Heal);
+    assert_eq!(sim.network_value(&key, 1), None);
+}
