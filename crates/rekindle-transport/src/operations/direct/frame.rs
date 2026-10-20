@@ -23,7 +23,7 @@ use super::admission;
 use super::replay::Sighting;
 use crate::operations::dm::frame::{
     ad_extra, init_from_body, peer_address, presession_signing_bytes, ratchet_message, sealed_aad,
-    sealed_info,
+    sealed_info, Nonce,
 };
 use crate::operations::friend::{state, FriendHost};
 
@@ -41,16 +41,49 @@ pub struct Opened {
     /// Its `unprocessed` row, until the apply deletes it; `None` for a
     /// sealed frame.
     pub unprocessed: Option<UnprocessedKey>,
+    /// A sealed frame's nonce, as the replay guard remembers it; `None`
+    /// for a ratchet message.
+    pub nonce: Option<Nonce>,
 }
 
-/// Open the frame in `bytes` (after the `'D'` tag); `None` (logged) for
-/// any reason it is dropped.
-pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
+/// Why an inbound frame did not open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dropped {
+    /// A copy of a frame that already opened: its receipt stands.
+    Duplicate,
+    /// Refused (undecodable, not admitted, a bad signature, stale, or a
+    /// failed decrypt): no receipt.
+    Refused,
+}
+
+/// A step that refuses with no more to say.
+trait OrRefused<T> {
+    fn or_refused(self) -> Result<T, Dropped>;
+}
+
+impl<T> OrRefused<T> for Option<T> {
+    fn or_refused(self) -> Result<T, Dropped> {
+        self.ok_or(Dropped::Refused)
+    }
+}
+
+impl<T, E> OrRefused<T> for Result<T, E> {
+    fn or_refused(self) -> Result<T, Dropped> {
+        self.map_err(|_| Dropped::Refused)
+    }
+}
+
+/// Open the frame in `bytes` (after the `'D'` tag), or why (logged) it is
+/// dropped.
+///
+/// # Errors
+/// [`Dropped`]: a duplicate of a frame that opened, or refused.
+pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped> {
     let frame = match DmFrame::decode(bytes) {
         Ok(frame) => frame,
         Err(e) => {
             tracing::debug!(error = %e, "dropping malformed 1:1 frame");
-            return None;
+            return Err(Dropped::Refused);
         }
     };
     let sender_hex = hex::encode(frame.sender);
@@ -58,7 +91,7 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
         FrameBody::PreKeyInit(init) => init.first_type_id,
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
     };
-    let status = admission::unblocked(host, &sender_hex).await?;
+    let status = admission::unblocked(host, &sender_hex).await.or_refused()?;
     let admitted = match &frame.body {
         FrameBody::PreKeyInit(_) => admission::init_admitted(host, &sender_hex, kind, status),
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => {
@@ -66,7 +99,7 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
         }
     };
     if !admitted {
-        return None;
+        return Err(Dropped::Refused);
     }
     match frame.body {
         FrameBody::Sealed(sealed) => {
@@ -89,14 +122,14 @@ fn open_sealed(
     sender_hex: String,
     type_id: DmTypeId,
     sealed: &SealedBody,
-) -> Option<Opened> {
-    let identity = host.local_party().ok()?.identity;
+) -> Result<Opened, Dropped> {
+    let identity = host.local_party().or_refused()?.identity;
     let now = host.clock().now_ms();
     let content = match open_presession(&identity, &sender, type_id, sealed, now) {
         Ok(content) => content,
         Err(why) => {
             tracing::warn!(from = %sender_hex, ?type_id, why, "dropping sealed frame");
-            return None;
+            return Err(Dropped::Refused);
         }
     };
     match host
@@ -108,21 +141,32 @@ fn open_sealed(
         Sighting::First => {}
         Sighting::Duplicate => {
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate sealed frame");
-            return None;
+            return Err(Dropped::Duplicate);
         }
         Sighting::Full => {
             tracing::warn!(from = %sender_hex, "replay guard full — dropping sealed frame");
-            return None;
+            return Err(Dropped::Refused);
         }
     }
-    let body = decode_body(&sender_hex, type_id, &content.payload)?;
-    Some(Opened {
+    let Some(body) = decode_body(&sender_hex, type_id, &content.payload) else {
+        forget(host, &sender, &content.nonce);
+        return Err(Dropped::Refused);
+    };
+    Ok(Opened {
         sender_hex,
         type_id,
         sent_at_ms: content.sent_at_ms,
         body,
         unprocessed: None,
+        nonce: Some(content.nonce),
     })
+}
+
+/// The replay guard forgets a sealed frame that opened but was not
+/// applied, so its retry (same nonce) is not taken for a copy of one that
+/// landed.
+pub(crate) fn forget(host: &dyn FriendHost, sender: &[u8; 32], nonce: &Nonce) {
+    host.stores().replay.lock().forget(sender, nonce);
 }
 
 /// The content of a sealed frame from `sender` to `identity` at `now_ms`:
@@ -174,12 +218,12 @@ async fn open_ratchet(
     sender_hex: String,
     type_id: DmTypeId,
     body: &RatchetBody,
-) -> Option<Opened> {
-    let local = host.local_party().ok()?;
+) -> Result<Opened, Dropped> {
+    let local = host.local_party().or_refused()?;
     let inbound = ratchet::decrypt_and_record_inbound(
-        &host.db().ok()?,
+        &host.db().or_refused()?,
         &local,
-        &peer_address(&sender_hex).ok()?,
+        &peer_address(&sender_hex).or_refused()?,
         ratchet_message(body),
         &ad_extra(type_id),
         type_id.as_u16(),
@@ -201,12 +245,12 @@ async fn open_init(
     sender_hex: String,
     init: &PreKeyInitBody,
     status: admission::Status,
-) -> Option<Opened> {
-    let local = host.local_party().ok()?;
+) -> Result<Opened, Dropped> {
+    let local = host.local_party().or_refused()?;
     let accepted = ratchet::accept_init(
-        &host.db().ok()?,
+        &host.db().or_refused()?,
         &local,
-        &peer_address(&sender_hex).ok()?,
+        &peer_address(&sender_hex).or_refused()?,
         init_from_body(sender, init),
         // Only an accept of the reset we asked for may replace an
         // established session (ruling Q1; plan audit G2).
@@ -227,17 +271,17 @@ async fn open_init(
         Err(RatchetError::ReplayedLastResortInit) => {
             // B9: a replayed last-resort init is dropped without a word.
             tracing::debug!(from = %sender_hex, "dropping a replayed last-resort PreKeyInit");
-            return None;
+            return Err(Dropped::Refused);
         }
         Err(RatchetError::EstablishedSession) => {
             tracing::warn!(from = %sender_hex, kind = ?init.first_type_id,
                 "refusing a PreKeyInit over our established session with them");
-            return None;
+            return Err(Dropped::Refused);
         }
         Err(RatchetError::UnknownPrekey { kind, id }) => {
             tracing::info!(from = %sender_hex, %kind, id, "PreKeyInit names prekeys we no longer hold");
             crate::operations::prekeys::reject_init(host, sender, &sender_hex, init, status);
-            return None;
+            return Err(Dropped::Refused);
         }
         Err(e) => Err(e),
     };
@@ -261,16 +305,16 @@ fn recorded(
     sender_hex: String,
     type_id: DmTypeId,
     inbound: Result<ratchet::Inbound, RatchetError>,
-) -> Option<Opened> {
+) -> Result<Opened, Dropped> {
     let inbound = match inbound {
         Ok(inbound) => inbound,
         Err(RatchetError::Crypto(CryptoError::DuplicateMessage)) => {
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
-            return None;
+            return Err(Dropped::Duplicate);
         }
         Err(e) => {
             tracing::warn!(from = %sender_hex, ?type_id, error = %e, "dropping 1:1 message: ratchet step failed");
-            return None;
+            return Err(Dropped::Refused);
         }
     };
     debug_assert_eq!(inbound.key.peer_identity, sender);
@@ -278,16 +322,17 @@ fn recorded(
         Ok(content) => content,
         Err(e) => {
             tracing::warn!(from = %sender_hex, error = %e, "dropping 1:1 message: content does not decode");
-            return None;
+            return Err(Dropped::Refused);
         }
     };
-    let body = decode_body(&sender_hex, type_id, &content.payload)?;
-    Some(Opened {
+    let body = decode_body(&sender_hex, type_id, &content.payload).or_refused()?;
+    Ok(Opened {
         sender_hex,
         type_id,
         sent_at_ms: content.sent_at_ms,
         body,
         unprocessed: Some(inbound.key),
+        nonce: None,
     })
 }
 
@@ -324,6 +369,7 @@ pub(crate) fn replayed(row: &rekindle_db::repo::unprocessed::Unprocessed) -> Opt
         sent_at_ms: content.sent_at_ms,
         body,
         unprocessed: Some(row.key),
+        nonce: None,
     })
 }
 

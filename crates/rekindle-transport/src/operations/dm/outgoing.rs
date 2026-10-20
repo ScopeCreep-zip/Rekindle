@@ -10,7 +10,7 @@ use rekindle_crypto::signal::PreKeyBundle;
 use rekindle_records::port::RouteClass;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
-use super::send::{send_frame, send_to_peer, send_to_peer_call};
+use super::send::{call_or_send, send_frame, send_to_peer, Delivery};
 use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// How long a friend request waits for our route to be published, when it
@@ -21,9 +21,11 @@ const ROUTE_WAIT: Duration = Duration::from_secs(5);
 /// Send a friend request, sealed to `to` and naming our profile, so the
 /// receiver can open the session from our prekey record when they accept.
 ///
-/// It goes by `app_call` when we hold a route to them: the call's return is
-/// the receipt, raising `RequestAcknowledged`. Otherwise it is sent like
-/// any frame (refreshed, then queued) and the accept is its receipt.
+/// It goes by `app_call` when we hold a route to them: the call's empty
+/// return is the receipt (the receiver stored it), raising
+/// `RequestAcknowledged`. Otherwise — no route, a timeout, a NAK — the same
+/// frame, under the same nonce, is sent like any other (refreshed, then
+/// queued) and the accept is its receipt.
 ///
 /// # Errors
 /// Our profile or route is not published yet, or the send failed.
@@ -57,20 +59,14 @@ pub async fn send_friend_request(
         mailbox_dht_key: own.mailbox_dht_key,
         invite_id: invite_id.map(str::to_string),
     });
-    match send_to_peer_call(host, to, &request).await {
-        Ok(_) => {
-            host.publish(SubscriptionEvent::Friend(
-                FriendEvent::RequestAcknowledged {
-                    peer_key: to.to_string(),
-                },
-            ));
-            Ok(())
-        }
-        Err(e) => {
-            tracing::debug!(to = %to, error = %e, "friend request not delivered by app_call — sending");
-            send_to_peer(host, to, &request).await
-        }
+    if let Delivery::Receipted = call_or_send(host, to, &request).await? {
+        host.publish(SubscriptionEvent::Friend(
+            FriendEvent::RequestAcknowledged {
+                peer_key: to.to_string(),
+            },
+        ));
     }
+    Ok(())
 }
 
 /// Accept `to`'s request: open the session from `bundle` (picked from their

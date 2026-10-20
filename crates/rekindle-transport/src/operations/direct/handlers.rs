@@ -22,8 +22,25 @@ fn dm_typing(sender: &str) -> TypingContext {
     }
 }
 
+/// What one apply came to.
+pub(super) enum Applied {
+    /// It ran; `false` when its store failed (its row is kept for the
+    /// replay, a sealed frame's nonce forgotten for its retry).
+    Done(bool),
+    /// A kind whose owner step has not come, handed back.
+    Unported(Box<Opened>),
+}
+
 /// Handle `opened`, or hand it back when its owner step has not come.
 pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
+    match apply(host, opened).await {
+        Applied::Done(_) => Routed::Handled,
+        Applied::Unported(opened) => Routed::Unported(opened),
+    }
+}
+
+/// Apply `opened`, and say whether it stored.
+pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
     let sender = opened.sender_hex.as_str();
     let mut applied = true;
     match &opened.body {
@@ -49,7 +66,7 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
                 mailbox_dht_key: &r.mailbox_dht_key,
                 invite_id: r.invite_id.as_deref(),
             };
-            inbound::on_friend_request(host, &req).await;
+            applied = inbound::on_friend_request(host, &req).await;
         }
         DirectBody::FriendAccept(a) => {
             let accept = IncomingFriendAccept {
@@ -111,15 +128,20 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
         | DirectBody::GroupCallParticipantJoined(_)
         | DirectBody::GroupCallParticipantLeft(_) => {
             processed(host, &opened);
-            return Routed::Unported(Box::new(opened));
+            return Applied::Unported(Box::new(opened));
         }
     }
     if applied {
         processed(host, &opened);
     } else {
         tracing::warn!(from = %sender, kind = ?opened.type_id, "message not applied — kept for the replay");
+        if let (Some(nonce), Ok(from)) = (opened.nonce, hex::decode(sender)) {
+            if let Ok(from) = <[u8; 32]>::try_from(from) {
+                super::frame::forget(host, &from, &nonce);
+            }
+        }
     }
-    Routed::Handled
+    Applied::Done(applied)
 }
 
 /// Store a friend's direct message (once: a replayed one is already held),

@@ -221,15 +221,59 @@ pub async fn build_and_queue(
 /// `None` for an empty reply (the call's return is the receipt).
 ///
 /// # Errors
-/// No cached route, the call failed, or the reply is not a frame from `to`
-/// that opens.
+/// No cached route, the call failed, the peer refused it (a NAK), or the
+/// reply is not a frame from `to` that opens.
 pub async fn send_to_peer_call(
     host: &dyn FriendHost,
     to: &str,
     body: &DirectBody,
 ) -> Result<Option<Opened>, FriendError> {
     let (frame, _) = framed(host, to, body).await?;
-    let datagram = frame::wire(&frame)?;
+    call_frame(host, to, &frame).await
+}
+
+/// What [`call_or_send`] came to.
+#[derive(Debug)]
+pub enum Delivery {
+    /// The call returned its receipt.
+    Receipted,
+    /// The call did not land; the same frame went down the send fallbacks
+    /// (sent, or queued).
+    Sent,
+}
+
+/// `app_call` `body` to `to`; when no receipt comes back (no route, a
+/// timeout, a NAK), send the same frame like any other. A sealed kind
+/// keeps the call's nonce on the fallback and in the queue, so a copy of a
+/// call that did land is dropped by the receiver's replay guard (plan
+/// audit G4).
+///
+/// # Errors
+/// The frame could not be sealed, or the fallback failed.
+pub async fn call_or_send(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<Delivery, FriendError> {
+    let (frame, queued) = framed(host, to, body).await?;
+    match call_frame(host, to, &frame).await {
+        Ok(_) => Ok(Delivery::Receipted),
+        Err(e) => {
+            tracing::debug!(to = %to, kind = ?frame.type_id, error = %e,
+                "not receipted by app_call — sending");
+            deliver(host, to, &frame, &queued, false).await?;
+            Ok(Delivery::Sent)
+        }
+    }
+}
+
+/// `app_call` `frame` to `to` and open the reply ([`send_to_peer_call`]).
+async fn call_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    frame: &DmFrame,
+) -> Result<Option<Opened>, FriendError> {
+    let datagram = frame::wire(frame)?;
     let node = host.node()?;
     let target = route::cached_target(&node, to)
         .ok_or_else(|| FriendError::NotReady(format!("no cached route for peer {to}")))?;
@@ -241,11 +285,14 @@ pub async fn send_to_peer_call(
     if reply.is_empty() {
         return Ok(None);
     }
+    if reply == crate::operations::direct::NAK {
+        return Err(FriendError::Failed(format!("{to} refused the app_call")));
+    }
     let opened = super::unwire(&reply)
         .ok_or_else(|| FriendError::Failed("app_call reply is not a 1:1 frame".into()))?;
     let opened = crate::operations::direct::frame::open(host, opened)
         .await
-        .ok_or_else(|| FriendError::Failed("app_call reply does not open".into()))?;
+        .map_err(|_| FriendError::Failed("app_call reply does not open".into()))?;
     if opened.sender_hex != to {
         return Err(FriendError::Failed(format!(
             "app_call reply from {} for a call to {to}",

@@ -9,7 +9,7 @@ pub mod frame;
 mod handlers;
 pub mod replay;
 
-pub use frame::Opened;
+pub use frame::{Dropped, Opened};
 use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use crate::operations::dm;
@@ -27,11 +27,16 @@ pub enum Routed {
     Unported(Box<Opened>),
 }
 
+/// The `app_call` reply that refuses a call: no receipt (plan audit G3).
+/// One byte, so it is never empty (the receipt) nor a `'D'` frame.
+pub const NAK: &[u8] = b"N";
+
 /// What became of an inbound 1:1 `app_call`.
 #[derive(Debug)]
 pub enum Called {
-    /// The reply: empty for a handled call (its return is the receipt), or
-    /// a frame.
+    /// The reply: empty for a call that opened and was applied, or a
+    /// duplicate of one (its return is the receipt); [`NAK`] for any drop;
+    /// or a frame.
     Answered(Vec<u8>),
     /// A kind whose owner step has not come; the desktop answers it.
     Unported(Box<Opened>),
@@ -44,28 +49,44 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
         tracing::debug!(len = datagram.len(), "dropping untagged 1:1 message");
         return Routed::Handled;
     };
-    let Some(opened) = frame::open(host, bytes).await else {
+    let Ok(opened) = frame::open(host, bytes).await else {
         return Routed::Handled;
     };
     handlers::handle(host, opened).await
 }
 
 /// Handle one inbound `app_call`. A relay offer is unported (the desktop
-/// replies with its ack). Anything else is answered as soon as it is open
-/// — the ratchet step and its `unprocessed` row are committed — with the
-/// empty reply that is its receipt, and applied after (D24: the ack
-/// follows the commit, the apply follows the ack).
+/// replies with its ack). A dropped frame is answered [`NAK`], and a copy
+/// of one that opened the empty receipt (plan audit G3). A sealed kind
+/// advances no ratchet and leaves no `unprocessed` row, so it is applied
+/// before the answer, and only a stored one is receipted (G4). A ratchet
+/// kind is answered once open — its step and `unprocessed` row are
+/// committed — and applied after (D24: the ack follows the commit, the
+/// apply follows the ack, the replay covers a crash between).
 pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::debug!(len = datagram.len(), "dropping untagged 1:1 call");
-        return Called::Answered(Vec::new());
+        return Called::Answered(NAK.to_vec());
     };
-    let Some(opened) = frame::open(host, bytes).await else {
-        return Called::Answered(Vec::new());
+    let opened = match frame::open(host, bytes).await {
+        Ok(opened) => opened,
+        Err(Dropped::Duplicate) => return Called::Answered(Vec::new()),
+        Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
     };
     if matches!(opened.body, DirectBody::RelayOffer(_)) {
         frame::processed(host, &opened);
         return Called::Unported(Box::new(opened));
+    }
+    if opened.unprocessed.is_none() {
+        return match handlers::apply(host, opened).await {
+            handlers::Applied::Done(true) => Called::Answered(Vec::new()),
+            handlers::Applied::Done(false) => Called::Answered(NAK.to_vec()),
+            handlers::Applied::Unported(opened) => {
+                tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
+                    "unported kind by app_call — dropped");
+                Called::Answered(NAK.to_vec())
+            }
+        };
     }
     let owned = host.owned();
     host.scope().spawn_or_drop("apply 1:1 call", async move {

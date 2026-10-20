@@ -72,6 +72,15 @@ impl ReplayGuard {
         Sighting::First
     }
 
+    /// Forget `(sender, nonce)`: it opened but was not applied, so a retry
+    /// under the same nonce must go through.
+    pub fn forget(&mut self, sender: &[u8], nonce: &[u8]) {
+        let key = replay_key(sender, nonce);
+        if self.expiry_by_key.remove(&key).is_some() {
+            self.order.retain(|(k, _)| *k != key);
+        }
+    }
+
     /// Forget everything (logout).
     pub fn clear(&mut self) {
         self.expiry_by_key.clear();

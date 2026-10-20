@@ -27,11 +27,12 @@ async fn send_or_queue(host: &dyn FriendHost, to: &str, body: &DirectBody, what:
 }
 
 /// Store the request; persisted before the event, so the row exists when a
-/// window acts on it (B5/P3.1).
+/// window acts on it (B5/P3.1). Whether it is new: the same request again
+/// (a retry whose receipt was lost) changes nothing.
 async fn persist_request(
     host: &dyn FriendHost,
     req: &IncomingFriendRequest<'_>,
-) -> Result<(), FriendError> {
+) -> Result<bool, FriendError> {
     let owner = state::owner(host)?;
     let pk = req.sender_hex.to_string();
     let dn = req.display_name.to_string();
@@ -93,8 +94,13 @@ async fn admit_invite(
     }
 }
 
-/// An incoming friend request.
-pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
+/// An incoming friend request, applied once: the same request again stores
+/// nothing new and raises no second event (plan audit G4). Whether it is
+/// done: `false` when a store failed, so the sender is not receipted.
+pub(crate) async fn on_friend_request(
+    host: &dyn FriendHost,
+    req: &IncomingFriendRequest<'_>,
+) -> bool {
     if !req.route_blob.is_empty() {
         if let Ok(node) = host.node() {
             dm::route::cache(&node, req.sender_hex, req.route_blob.to_vec());
@@ -105,19 +111,19 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
         Some(FriendshipState::PendingOut) => {
             tracing::info!(from = %req.sender_hex, "cross-request detected — auto-accepting");
             accept_crossing_request(host, req).await;
-            return;
+            return true;
         }
         Some(FriendshipState::Accepted) => {
             // A network retry (our receipt never reached them): the call's
             // return answers it, and nothing else changes.
             tracing::info!(from = %req.sender_hex, "friend request from an accepted friend — a retry");
-            return;
+            return true;
         }
         Some(FriendshipState::Removing) => {
             // We removed them: the stale row goes, and the request is a
             // fresh contact.
             if !state::write_forget(host, req.sender_hex).await {
-                return;
+                return false;
             }
             state::take(host, req.sender_hex);
             tracing::info!(from = %req.sender_hex,
@@ -128,19 +134,27 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
 
     if let Some(invite_id) = req.invite_id {
         if !admit_invite(host, req, invite_id).await {
-            return;
+            return true;
         }
     }
-    if let Err(e) = persist_request(host, req).await {
-        tracing::warn!(from = %req.sender_hex, error = %e,
-            "failed to persist friend request — skipping the event to avoid phantom UI state");
-        return;
+    match persist_request(host, req).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::debug!(from = %req.sender_hex, "friend request already held — a retry");
+            return true;
+        }
+        Err(e) => {
+            tracing::warn!(from = %req.sender_hex, error = %e,
+                "failed to persist friend request — skipping the event to avoid phantom UI state");
+            return false;
+        }
     }
     host.publish(SubscriptionEvent::Friend(FriendEvent::RequestReceived {
         from_key: req.sender_hex.to_string(),
         display_name: req.display_name.to_string(),
         message: req.message.to_string(),
     }));
+    true
 }
 
 /// An incoming friend accept: the friend `Accepted` with the records it

@@ -11,7 +11,7 @@ use rekindle_codec::capnp_codec::direct::{
 use rekindle_db::repo::unprocessed::UnprocessedKey;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
-use rekindle_transport::operations::direct::replay_unprocessed;
+use rekindle_transport::operations::direct::{self, replay_unprocessed};
 use rekindle_transport::operations::friend::FriendHost;
 use rekindle_types::intent::{Fact, IntentProof, ProofRequired};
 
@@ -374,4 +374,163 @@ async fn a_friend_accept_whose_store_fails_keeps_its_row() {
         0,
         "applied once the store works"
     );
+}
+
+/// Now, on the host's clock (the system's).
+fn now_ms() -> u64 {
+    rekindle_utils::time::Clock::now_ms(&rekindle_utils::SystemClock)
+}
+
+/// A friend request from `from` to `to`, sealed under `nonce` at `sent_at`.
+fn sealed_request(
+    from: &rekindle_crypto::Identity,
+    to: [u8; 32],
+    nonce: [u8; 16],
+    sent_at: u64,
+) -> rekindle_codec::capnp_codec::direct::DmFrame {
+    let body = DirectBody::FriendRequest(rekindle_codec::capnp_codec::direct::FriendRequest {
+        display_name: "Bob".into(),
+        message: "hi".into(),
+        profile_dht_key: format!("VLD0:{}", "A".repeat(43)),
+        route_blob: Vec::new(),
+        mailbox_dht_key: format!("VLD0:{}", "B".repeat(43)),
+        invite_id: None,
+    });
+    rekindle_transport::operations::dm::frame::seal_presession(from, &to, &body, nonce, sent_at)
+        .unwrap()
+}
+
+/// `frame` by `app_call` to `host`; its reply.
+async fn call(host: &Host, frame: &rekindle_codec::capnp_codec::direct::DmFrame) -> Vec<u8> {
+    let datagram = rekindle_transport::operations::dm::wire(frame).unwrap();
+    reply(host, &datagram).await
+}
+
+/// `datagram` by `app_call` to `host`; its reply.
+async fn reply(host: &Host, datagram: &[u8]) -> Vec<u8> {
+    match host.receive_direct_call(datagram).await {
+        direct::Called::Answered(reply) => reply,
+        direct::Called::Unported(opened) => panic!("unported {:?}", opened.type_id),
+    }
+}
+
+/// The friend requests Ann holds.
+async fn requests(host: &Host, owner: [u8; 32]) -> usize {
+    let owner = hex::encode(owner);
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::pending_requests::list(conn, &owner))
+        .await
+        .unwrap()
+        .len()
+}
+
+/// How many `RequestReceived` events are already in `stream`.
+async fn received_events(stream: &mut rekindle_events::EventStream) -> usize {
+    let mut count = 0;
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await
+    {
+        count += usize::from(format!("{frame:?}").contains("RequestReceived"));
+    }
+    count
+}
+
+/// Audit G3: a call that does not open is answered with a NAK, never the
+/// empty receipt — one case per class of drop.
+#[tokio::test]
+async fn every_dropped_call_is_answered_with_a_nak() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let (bob, mallory) = (
+        rekindle_crypto::Identity::generate(),
+        rekindle_crypto::Identity::generate(),
+    );
+    let nak = direct::NAK.to_vec();
+
+    // Undecodable: untagged, and a tagged frame that is not one.
+    assert_eq!(reply(&host, b"hello").await, nak);
+    assert_eq!(reply(&host, b"Dnot a frame").await, nak);
+
+    // Not admitted: a stranger may not ask to reset a session.
+    let reset =
+        DirectBody::SessionResetRequest(rekindle_codec::capnp_codec::direct::SessionResetRequest {
+            reason: String::new(),
+        });
+    let frame = rekindle_transport::operations::dm::frame::seal_presession(
+        &bob,
+        &owner,
+        &reset,
+        [1; 16],
+        now_ms(),
+    )
+    .unwrap();
+    assert_eq!(call(&host, &frame).await, nak);
+
+    // A bad signature: Mallory's frame in Bob's name.
+    let mut forged = sealed_request(&mallory, owner, [2; 16], now_ms());
+    forged.sender = bob.public_key_bytes();
+    assert_eq!(call(&host, &forged).await, nak);
+
+    // Stale: sent long outside the freshness window.
+    let stale = sealed_request(&bob, owner, [3; 16], now_ms() - 3_600_000);
+    assert_eq!(call(&host, &stale).await, nak);
+
+    assert_eq!(requests(&host, owner).await, 0, "nothing was stored");
+}
+
+/// Audit G4: a sealed request is stored before its receipt; a copy (the
+/// same frame, or re-sealed under its nonce) is a duplicate, receipted
+/// again; the same request under a new nonce stores nothing new. One row,
+/// one event.
+#[tokio::test]
+async fn a_receipted_request_is_stored_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let mut events = host.ctx.journal.subscribe(None);
+    let bob = rekindle_crypto::Identity::generate();
+
+    let first = sealed_request(&bob, owner, [4; 16], now_ms());
+    assert!(call(&host, &first).await.is_empty(), "receipted");
+    assert_eq!(requests(&host, owner).await, 1, "stored before the answer");
+
+    assert!(call(&host, &first).await.is_empty(), "a copy is receipted");
+    let resealed = sealed_request(&bob, owner, [4; 16], now_ms() + 1);
+    assert!(call(&host, &resealed).await.is_empty(), "so is a re-seal");
+    let again = sealed_request(&bob, owner, [5; 16], now_ms());
+    assert!(
+        call(&host, &again).await.is_empty(),
+        "the same request again"
+    );
+
+    assert_eq!(requests(&host, owner).await, 1);
+    assert_eq!(received_events(&mut events).await, 1, "one event");
+}
+
+/// Audit G4: a request whose store fails is refused, and its retry under
+/// the same nonce goes through once the store works.
+#[tokio::test]
+async fn a_request_whose_store_fails_is_refused_and_its_retry_lands() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let bob = rekindle_crypto::Identity::generate();
+    let db = host.ctx.db.current().unwrap();
+    db.call(|conn| {
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER refuse_requests BEFORE INSERT ON main.pending_friend_requests \
+             BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+        )
+    })
+    .await
+    .unwrap();
+    let frame = sealed_request(&bob, owner, [6; 16], now_ms());
+    assert_eq!(call(&host, &frame).await, direct::NAK.to_vec());
+
+    db.call(|conn| conn.execute_batch("DROP TRIGGER temp.refuse_requests;"))
+        .await
+        .unwrap();
+    assert!(call(&host, &frame).await.is_empty(), "the retry lands");
+    assert_eq!(requests(&host, owner).await, 1);
 }
