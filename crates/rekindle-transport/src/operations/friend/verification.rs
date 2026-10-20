@@ -168,6 +168,22 @@ pub async fn key_change(
 ///
 /// # Errors
 /// `Conflict` while the change is unacknowledged, or it could not be read.
+/// Whether `kind` only withdraws from, or refuses, the peer: removing them,
+/// rejecting their request, declining their reset, refusing their prekeys.
+/// These go even while their key change is unacknowledged, so the user can
+/// always back away from a changed key (threat model S1).
+pub(crate) fn is_protective(kind: rekindle_codec::capnp_codec::direct::DmTypeId) -> bool {
+    use rekindle_codec::capnp_codec::direct::DmTypeId;
+    matches!(
+        kind,
+        DmTypeId::Unfriended
+            | DmTypeId::UnfriendedAck
+            | DmTypeId::FriendReject
+            | DmTypeId::SessionResetDecline
+            | DmTypeId::PreKeyRejected
+    )
+}
+
 pub(crate) async fn require_acknowledged(
     host: &dyn FriendHost,
     peer: &str,
@@ -213,5 +229,29 @@ mod tests {
             .all(|row| row.chars().all(|c| c == '0' || c == '1')));
         // The finder pattern's corner module is dark.
         assert!(rows[0].starts_with('1'));
+    }
+
+    /// Withdrawing and refusing go through an unacknowledged key change;
+    /// content, typing and session openers do not.
+    #[test]
+    fn only_withdrawals_skip_the_key_change_hold() {
+        use rekindle_codec::capnp_codec::direct::DmTypeId;
+        for kind in [
+            DmTypeId::Unfriended,
+            DmTypeId::UnfriendedAck,
+            DmTypeId::FriendReject,
+            DmTypeId::SessionResetDecline,
+            DmTypeId::PreKeyRejected,
+        ] {
+            assert!(super::is_protective(kind), "{kind:?}");
+        }
+        for kind in [
+            DmTypeId::DmText,
+            DmTypeId::Typing,
+            DmTypeId::PreKeyInit,
+            DmTypeId::CallInvite,
+        ] {
+            assert!(!super::is_protective(kind), "{kind:?}");
+        }
     }
 }
